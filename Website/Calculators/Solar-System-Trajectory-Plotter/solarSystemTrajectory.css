@@ -1,0 +1,239 @@
+/* Solar System Trajectory Plotter */
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0;
+	height: 100%;
+	background: #05060a;
+	color: #d8dde6;
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 14px;
+}
+
+#sst-app {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100vh;
+	overflow: hidden;
+}
+
+#sst-main {
+	flex: 1 1 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: row;
+	width: 100%;
+	position: relative;
+}
+
+/* ---- straddling burn-readout panes ---- */
+#sst-burn-readouts { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.sst-readout {
+	position: absolute;
+	box-sizing: border-box;
+	min-width: 122px;
+	padding: 7px 11px;
+	background: rgba(14,18,28,0.94);
+	border: 1px solid #2a3142;
+	border-radius: 7px;
+	box-shadow: 0 2px 12px rgba(0,0,0,0.55);
+	pointer-events: none;
+}
+.sst-readout-row { display: flex; flex-direction: column; align-items: flex-start; margin: 4px 0; }
+.sst-readout-label { color: #8b94a7; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.sst-readout-val { font-size: 13px; font-weight: 600; line-height: 1.2; }
+
+/* ---- marker card (top-left of the view pane) ---- */
+#sst-marker-card {
+	position: absolute;
+	top: 12px;
+	left: 12px;
+	width: 196px;
+	padding: 9px 11px 10px;
+	background: rgba(14,18,28,0.94);
+	border: 1px solid #2a3142;
+	border-radius: 7px;
+	box-shadow: 0 2px 12px rgba(0,0,0,0.55);
+	z-index: 5;
+	pointer-events: auto;
+}
+.sst-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sst-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
+.sst-marker-x {
+	padding: 0; width: 20px; height: 20px; line-height: 18px; text-align: center;
+	font-size: 12px; border-radius: 4px; color: #aeb6c6;
+}
+.sst-marker-slider { width: 100%; display: block; margin: 2px 0 9px; cursor: ew-resize; touch-action: none; }
+.sst-marker-slider:disabled { opacity: 0.35; cursor: default; }
+.sst-marker-mode { display: flex; gap: 4px; margin: 0 0 9px; }
+.sst-mode-btn {
+	flex: 1; padding: 3px 0; font-size: 11px; border-radius: 4px;
+	background: #141a28; color: #aeb6c6; border: 1px solid #2a3142; cursor: pointer;
+}
+.sst-mode-btn.active { background: #1b2740; color: #cfe0ff; border-color: #2f4060; }
+.sst-marker-budget { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 6px; font-size: 11px; color: #8b94a7; }
+.sst-marker-budget input { width: 62px; padding: 3px 5px; }
+.sst-marker-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 4px 0; }
+.sst-marker-label { color: #8b94a7; font-size: 11px; }
+.sst-marker-val { font-size: 13px; font-weight: 600; color: #e6ebf4; }
+.sst-marker-km { color: #6b7589; font-size: 10px; text-align: right; margin: -2px 0 2px; }
+
+/* ---- ephemeris date bar (full width, across the top) ---- */
+#sst-datebar {
+	flex: 0 0 auto;
+	padding: 9px 18px 12px;
+	background: #0c0f17;
+	border-bottom: 1px solid #1b2030;
+}
+#sst-date-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.sst-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
+#sst-date-hint { margin-left: auto; }
+.sst-slider-line { display: flex; align-items: center; gap: 12px; margin: 5px 0; }
+.sst-slider-line input[type="range"] { flex: 1 1 auto; width: auto; }
+.sst-slider-end { flex: 0 0 auto; min-width: 60px; font-size: 11px; color: #8b94a7; }
+.sst-slider-line .sst-slider-end:last-child { text-align: right; }
+.sst-fine-end { min-width: 92px; color: #aeb6c6; }
+
+/* ---- 3D view ---- */
+#sst-view {
+	position: relative;
+	flex: 1 1 0;
+	min-width: 0;
+	background: radial-gradient(circle at 50% 40%, #0b1020 0%, #05060a 70%);
+}
+#sst-canvas-holder { position: absolute; inset: 0; }
+#sst-canvas-holder canvas { display: block; }
+
+#sst-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+.sst-label {
+	position: absolute;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 11px;
+	line-height: 1;
+	color: #d3d9e6;
+	text-shadow: 0 0 3px #000, 0 0 2px #000, 0 1px 2px #000;
+	white-space: nowrap;
+	transform: translateY(-50%);
+	pointer-events: none;
+}
+
+#sst-view-hud {
+	position: absolute;
+	left: 12px;
+	bottom: 12px;
+	font-size: 12px;
+	color: #8b94a7;
+	pointer-events: none;
+	text-shadow: 0 1px 2px #000;
+}
+.sst-hud-line { margin-top: 2px; }
+.sst-hud-key {
+	display: inline-block;
+	padding: 0 5px;
+	border: 1px solid #2a3142;
+	border-radius: 3px;
+	color: #aeb6c6;
+	background: rgba(20,26,40,0.6);
+}
+
+/* ---- input panel ---- */
+#sst-panel {
+	flex: 0 0 360px;
+	max-width: 360px;
+	height: 100%;
+	overflow-y: auto;
+	padding: 16px 18px 32px;
+	background: #0c0f17;
+	border-left: 1px solid #1b2030;
+}
+#sst-panel h1 { font-size: 18px; margin: 0 0 14px; font-weight: 650; }
+#sst-panel h2 { font-size: 13px; margin: 0 0 8px; font-weight: 600; color: #c7cedd; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.sst-block {
+	padding: 12px 0;
+	border-top: 1px solid #1b2030;
+}
+.sst-block:first-of-type { border-top: none; }
+
+.sst-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.sst-muted { color: #8b94a7; font-size: 12px; }
+.sst-fineprint { color: #6b7589; font-size: 11px; line-height: 1.5; margin-top: 18px; }
+
+input[type="range"] { width: 100%; accent-color: #5aa9ff; }
+input[type="date"], select, input[type="number"] {
+	background: #131826;
+	color: #d8dde6;
+	border: 1px solid #2a3142;
+	border-radius: 4px;
+	padding: 5px 7px;
+	font-size: 13px;
+	font-family: inherit;
+}
+select { width: 100%; }
+input[type="number"] { width: 78px; }
+
+button {
+	background: #1b2740;
+	color: #cfe0ff;
+	border: 1px solid #2f4060;
+	border-radius: 5px;
+	padding: 6px 14px;
+	font-size: 13px;
+	cursor: pointer;
+}
+button:hover { background: #243559; }
+
+.sst-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #aeb6c6; cursor: pointer; }
+.sst-check input { accent-color: #5aa9ff; }
+
+/* isometric burn-vector widget */
+.sst-vecwidget {
+	width: 100%;
+	height: auto;
+	display: block;
+	margin: 2px 0 2px;
+	touch-action: none;            /* let pointer drags work on touch */
+	cursor: crosshair;
+	user-select: none;
+}
+.sst-vec-nums { display: flex; gap: 10px; margin-top: 2px; }
+.sst-vec-num { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1; min-width: 0; font-size: 11px; font-weight: 600; }
+.sst-vec-num input { width: 100%; min-width: 0; font-weight: 400; }
+.sst-legend { gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; flex-wrap: wrap; }
+.sst-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 2px; vertical-align: -1px; }
+.sst-legend .sst-swatch + .sst-swatch, .sst-legend .sst-swatch:not(:first-child) { margin-left: 8px; }
+
+.sst-waypoint {
+	border: 1px solid #233149;
+	border-radius: 6px;
+	padding: 10px;
+	margin: 10px 0;
+	background: #0e1422;
+}
+.sst-waypoint-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sst-waypoint-head .sst-wp-title { font-weight: 600; color: #cfe0ff; }
+.sst-wp-x {
+	padding: 0; width: 20px; height: 20px; line-height: 18px; text-align: center;
+	font-size: 12px; border-radius: 4px; color: #aeb6c6;
+}
+.sst-wp-snaps { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 6px; }
+.sst-wp-snap { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #aeb6c6; cursor: pointer; }
+.sst-wp-snap input { margin: 0; }
+.sst-wp-slider { width: 100%; display: block; margin: 2px 0 8px; cursor: pointer; }
+.sst-wp-slider:disabled { opacity: 0.35; cursor: default; }
+
+/* "Create waypoint" header row */
+.sst-wp-create { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.sst-wp-create h2 { margin: 0; }
+.sst-wp-create .sst-check { font-size: 12px; color: #aeb6c6; }
+.sst-wp-create .sst-check input:disabled { opacity: 0.4; }
+
+/* responsive: stack the panel under the view on narrow screens */
+@media (max-width: 720px) {
+	#sst-main { flex-direction: column; }
+	#sst-view { flex: 0 0 52vh; height: 52vh; }
+	#sst-panel { flex: 1 1 auto; max-width: none; width: 100%; height: auto; border-left: none; border-top: 1px solid #1b2030; }
+	#sst-date-hint { display: none; }
+}

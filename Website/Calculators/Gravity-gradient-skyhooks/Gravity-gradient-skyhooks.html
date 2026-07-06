@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Gravity-gradient Skyhooks</title>
+	<meta charset="utf-8">
+	<link rel="stylesheet" href="Gravity-gradient-skyhooks.css">
+	<script src="../../Shared/orbit.js"></script>
+	<script src="../../Shared/math-utils.js"></script>
+	<script src="../../Shared/constants.js"></script>
+</head>
+<body>
+	<div class="wrapper">
+		<div class="intro">
+			<h1>Gravity-gradient Skyhook Calculator</h1>
+			<p>
+			A gravity-gradient skyhook is a long <b>vertical</b> tether whose <b>centre of mass</b> orbits a body at
+			orbital speed. The tether does <b>not</b> rotate &mdash; it stays aligned with the local vertical, held
+			taut by the gravity gradient (the tidal force). Because the whole structure shares the centre of mass's
+			angular velocity, the <b>top</b> travels faster than the local circular-orbit speed, so there centrifugal
+			effect exceeds gravity and it is flung outward, while the <b>foot</b> travels slower than local orbital
+			speed, so there gravity exceeds centrifugal effect and it is pulled inward. These opposing pulls put the
+			tether in tension, greatest at the centre of mass. The slow, low-sweeping foot is ideal for pick-up; the
+			fast-moving top gives a payload a boost on release.
+			</p>
+			<p>
+			The centre of mass is where gravity and centrifugal effect balance &mdash; the tension maximum, and the
+			top of the effective-potential hill, analogous to the L1 point of a Moon&ndash;L1 elevator. Climbing
+			foot&nbsp;&rarr;&nbsp;centre is uphill; centre&nbsp;&rarr;&nbsp;top is downhill (regenerative).
+			</p>
+			<p class="note">
+			This calculator reproduces the geometry, velocities, taper ratios, masses, climber energies and release
+			targets of the original tether tool, and adds a dedicated <b>tip-payload mass</b> (which sizes the
+			absolute <b>Tension at Centre of Mass</b>) plus a <b>Cargo throughput</b> section reporting
+			<b>Throughput to the top</b>. Drag the red markers, or edit the fields and press <em>Update</em>.
+			</p>
+		</div>
+		
+		<div id="insertItHere"></div>
+	</div>
+
+	<script src="Gravity-gradient-skyhooks.js"></script>
+	<div class="methodology">
+			<h2>Why station-keeping propellant scales with angular momentum, not &Delta;v</h2>
+			<p>
+			A natural first guess is to take the cargo's change in <em>speed</em> from foot to top, multiply by
+			its mass, and call that the momentum the engines must replace. That under-counts, because in orbit the
+			conserved currency is <b>angular momentum</b> (mass &times; speed &times; radius), not linear momentum &mdash;
+			gravity points straight at the planet's centre, so it exerts no torque and cannot change it. As cargo
+			climbs, <b>both</b> its speed <em>and</em> its radius grow, so its angular momentum grows by more than the
+			speed change alone. The figure shows the two effects, and how the thruster's mount radius (its lever arm)
+			sets the final fuel bill. Numbers are for the default Moon setup (foot&nbsp;10&nbsp;km, centre&nbsp;275&nbsp;km,
+			top&nbsp;1000&nbsp;km, exhaust&nbsp;8&nbsp;km/s).
+			</p>
+			<svg viewBox="0 0 700 700" xmlns="http://www.w3.org/2000/svg" role="img"
+			     aria-label="Angular momentum boxes, lever-arm of the reboost thruster, and reconciliation of the delta-v estimate.">
+				<defs>
+					<marker id="arr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+						<path d="M0,0 L6,3 L0,6 z" fill="#333"/>
+					</marker>
+					<marker id="arrR" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
+						<path d="M0,0 L6,3 L0,6 z" fill="#c0392b"/>
+					</marker>
+				</defs>
+
+				<text x="20" y="28" font-size="17" font-weight="bold" fill="#1c2a44">From a speed change to a fuel bill</text>
+
+				<!-- Panel 1: angular-momentum boxes -->
+				<text x="20" y="80" font-size="14" font-weight="bold" fill="#23406e">&#9312; Angular momentum L = speed &times; radius  (the area of the box)</text>
+				<!-- total (top) box, then foot box drawn on top: the blue L-shape is the debt -->
+				<rect x="90" y="100" width="300" height="170" fill="#cfe2f3" stroke="#5b8fc9" stroke-width="1.5"/>
+				<rect x="90" y="161.5" width="191.5" height="108.5" fill="#ffffff" stroke="#5b8fc9" stroke-width="1.5"/>
+				<!-- guides -->
+				<line x1="90" y1="100" x2="390" y2="100" stroke="#9bb6d8" stroke-width="1" stroke-dasharray="4 3"/>
+				<line x1="90" y1="161.5" x2="281.5" y2="161.5" stroke="#9bb6d8" stroke-width="1" stroke-dasharray="4 3"/>
+				<line x1="281.5" y1="270" x2="281.5" y2="161.5" stroke="#9bb6d8" stroke-width="1" stroke-dasharray="4 3"/>
+				<line x1="390" y1="270" x2="390" y2="100" stroke="#9bb6d8" stroke-width="1" stroke-dasharray="4 3"/>
+				<!-- axes -->
+				<line x1="90" y1="270" x2="90" y2="88" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+				<line x1="90" y1="270" x2="412" y2="270" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+				<!-- axis + tick labels -->
+				<text x="84" y="104" font-size="11.5" text-anchor="end" fill="#333">v_top = 2124</text>
+				<text x="84" y="165" font-size="11.5" text-anchor="end" fill="#333">v_foot = 1356</text>
+				<text x="78" y="96" font-size="12" text-anchor="end" fill="#555" font-style="italic">speed</text>
+				<text x="281.5" y="285" font-size="11.5" text-anchor="middle" fill="#333">r_foot</text>
+				<text x="390" y="285" font-size="11.5" text-anchor="middle" fill="#333">r_top</text>
+				<text x="250" y="299" font-size="12" text-anchor="middle" fill="#555" font-style="italic">radius from planet centre &#8594;</text>
+				<!-- box labels -->
+				<text x="150" y="220" font-size="12" text-anchor="middle" fill="#234">L_foot</text>
+				<!-- delta-L callout -->
+				<line x1="425" y1="130" x2="350" y2="120" stroke="#23406e" stroke-width="1"/>
+				<text x="430" y="126" font-size="12.5" font-weight="bold" fill="#23406e">&Delta;L = the debt to repay</text>
+				<text x="430" y="146" font-size="12" fill="#234">= &#969;(r_top&#178; &minus; r_foot&#178;)</text>
+				<text x="430" y="168" font-size="11.5" fill="#555">the blue L-shape: both v and r</text>
+				<text x="430" y="184" font-size="11.5" fill="#555">grew, so it's the <tspan font-style="italic">area</tspan> change,</text>
+				<text x="430" y="200" font-size="11.5" fill="#555">not just the height (&Delta;v).</text>
+
+				<!-- Panel 2: lever arm -->
+				<text x="20" y="350" font-size="14" font-weight="bold" fill="#23406e">&#9313; Repaying it: a thruster makes torque = force &times; its radius</text>
+				<line x1="120" y1="520" x2="500" y2="520" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+				<circle cx="120" cy="520" r="9" fill="#8a8a8a"/>
+				<text x="120" y="544" font-size="11" text-anchor="middle" fill="#555">planet centre</text>
+				<!-- mount points -->
+				<circle cx="343.4" cy="520" r="3.5" fill="#c0392b"/>
+				<circle cx="377.3" cy="520" r="3.5" fill="#c0392b"/>
+				<circle cx="470"   cy="520" r="3.5" fill="#c0392b"/>
+				<!-- force arrows: length proportional to 1/r -->
+				<line x1="343.4" y1="520" x2="343.4" y2="400"   stroke="#c0392b" stroke-width="2.5" marker-end="url(#arrR)"/>
+				<line x1="377.3" y1="520" x2="377.3" y2="415.8" stroke="#c0392b" stroke-width="2.5" marker-end="url(#arrR)"/>
+				<line x1="470"   y1="520" x2="470"   y2="443.4" stroke="#c0392b" stroke-width="2.5" marker-end="url(#arrR)"/>
+				<text x="338" y="396" font-size="11.5" text-anchor="end" fill="#c0392b">F_foot = 22.8 kN</text>
+				<text x="377" y="408" font-size="11.5" text-anchor="middle" fill="#c0392b">F_CoM = 19.8 kN</text>
+				<text x="478" y="440" font-size="11.5" text-anchor="start" fill="#c0392b">F_top = 14.6 kN</text>
+				<text x="343.4" y="537" font-size="10.5" text-anchor="middle" fill="#555">foot</text>
+				<text x="377.3" y="565" font-size="10.5" text-anchor="middle" fill="#555">CoM</text>
+				<text x="470"   y="537" font-size="10.5" text-anchor="middle" fill="#555">top</text>
+				<text x="120" y="592" font-size="12" fill="#234">Same torque &#964; = F &middot; r cancels the orbital drain &mdash; a longer lever arm r means smaller thrust F, so less propellant.</text>
+
+				<!-- Panel 3: reconciliation -->
+				<line x1="20" y1="612" x2="680" y2="612" stroke="#d0d8e6" stroke-width="1"/>
+				<text x="20" y="634" font-size="14" font-weight="bold" fill="#23406e">&#9314; Reconciling your spreadsheet</text>
+				<text x="20" y="656" font-size="12.5" fill="#234">Your &Delta;v estimate:  j = v_top &minus; v_foot = 768 m/s   &#8594;  &#8776; 9.6% of cargo</text>
+				<text x="20" y="676" font-size="12.5" fill="#234">Truth:  j = &#969;(r_top&#178; &minus; r_foot&#178;) / r_engine  =  (your j) &times; (r_top + r_foot)/r_engine</text>
+				<text x="20" y="696" font-size="12.5" fill="#234">at centre of mass: &times;2.23 &#8594; 1712 m/s &#8594; 21.4%      at top: &times;1.64 &#8594; 1258 m/s &#8594; 15.7%</text>
+			</svg>
+			<p>
+			<b>The reconciliation in one line:</b> <span class="eq">j_real / j_&Delta;v = (r_top + r_foot) / r_engine</span>.
+			Your spreadsheet captured <span class="eq">&Delta;v = &#969;(r_top &minus; r_foot)</span>; the angular-momentum debt is
+			<span class="eq">&#969;(r_top&#178; &minus; r_foot&#178;)</span>, and the difference factors as
+			<span class="eq">(r_top &minus; r_foot)(r_top + r_foot)</span>. The extra <span class="eq">(r_top + r_foot)</span> is the
+			radius growth you weren't counting; dividing by <span class="eq">r_engine</span> is the lever arm of where you push.
+			For the default setup that factor is (2737 + 1747)/2012 = <b>2.23&times;</b> at the centre of mass and
+			(2737 + 1747)/2737 = <b>1.64&times;</b> at the top &mdash; which is why a straight-line &Delta;v guess of about 9.6%
+			becomes 21.4% (CoM) or 15.7% (top).
+			</p>
+		</div>
+</body>
+</html>

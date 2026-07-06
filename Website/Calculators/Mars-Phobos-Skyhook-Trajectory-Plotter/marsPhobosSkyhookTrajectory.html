@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Mars-Phobos Skyhook Trajectory Plotter</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="marsPhobosSkyhookTrajectory.css">
+	<!-- Shared libraries (classic scripts; load before the page script). -->
+	<script src="../../Shared/three.min.js"></script>
+	<script src="../../Shared/orbit.js"></script>
+	<script src="../../Shared/constants.js"></script>
+	<script src="../../Shared/math-utils.js"></script>
+</head>
+<body>
+	<div id="mps-app">
+
+		<!-- Ephemeris date bar: full width across the top -->
+		<div id="mps-datebar">
+			<div id="mps-date-head">
+				<span class="mps-date-caption">Ephemeris date</span>
+				<input type="date" id="mps-date-field" min="2030-01-01" max="2042-01-01" value="2030-01-01">
+				<span id="mps-jd" class="mps-muted"></span>
+				<span class="mps-muted" id="mps-date-hint">top: 12&nbsp;years &nbsp;·&nbsp; bottom: one Phobos orbit around it</span>
+			</div>
+			<div class="mps-slider-line">
+				<label class="mps-lock-toggle" title="Lock: keep Phobos' phase relative to the Sun fixed while scrubbing this slider (e.g. always at Mars midnight, opposite the Sun)">
+					<input type="checkbox" id="mps-lock-year"><span class="mps-lock-ico">&#128274;</span>
+				</label>
+				<span class="mps-slider-end">2030</span>
+				<input type="range" id="mps-date-coarse" min="0" max="4383" step="1" value="0">
+				<span class="mps-slider-end">2042</span>
+			</div>
+			<div class="mps-slider-line">
+				<span class="mps-slider-tag">Phobos orbit</span>
+				<span class="mps-slider-end" id="mps-fine-lo"></span>
+				<input type="range" id="mps-date-fine" min="-0.1595" max="0.1595" step="0.00025" value="0">
+				<span class="mps-slider-end" id="mps-fine-hi"></span>
+			</div>
+		</div>
+
+		<div id="mps-main">
+
+			<!-- 3D Mars-Phobos view (left / top) -->
+			<div id="mps-view">
+				<div id="mps-canvas-holder"></div>
+				<button id="mps-view-toggle" type="button" title="Switch between the Mars&ndash;Phobos view and a heliocentric solar-system view">&#127760; Solar system view</button>
+				<div id="mps-view-hud">
+					<div class="mps-hud-line"><span class="mps-hud-key">drag</span> rotate &nbsp; <span class="mps-hud-key">wheel</span> zoom &nbsp; <span class="mps-hud-key">right-drag</span> pan</div>
+					<div class="mps-hud-line" id="mps-hud-status">Double-click Mars or Phobos to focus; double-click empty space to release. Tick 1/2 under Waypoint burns to add a burn once the trajectory escapes Mars, then switch to the solar system view to see and snap it.</div>
+				</div>
+			</div>
+
+			<!-- Input pane (right / bottom) -->
+			<div id="mps-panel">
+				<h1>Mars-Phobos Skyhook Trajectory Plotter</h1>
+
+				<!-- Mars-Phobos (geo) view: skyhook geometry + release point -->
+				<div id="mps-panel-geo">
+
+				<section class="mps-block mps-block-first">
+					<h2>Skyhook</h2>
+					<div class="mps-muted" style="margin-bottom:8px">
+						Phobos itself is the skyhook's centre of mass &mdash; the tether
+						rides along on Phobos' own orbit, rather than a separate
+						synthetic altitude.
+					</div>
+					<div class="mps-fieldpair">
+						<div class="mps-field">
+							<label>Phobos (CoM)</label>
+							<div class="mps-inwrap"><span class="mps-ro-val" id="mps-com-alt">&mdash;</span></div>
+							<div class="mps-readouts">
+								<div class="mps-ro"><span class="mps-ro-label">orbital velocity</span><span class="mps-ro-val" id="mps-vcom">&mdash;</span></div>
+							</div>
+						</div>
+						<div class="mps-field">
+							<label for="mps-top">Upper tether end</label>
+							<div class="mps-inwrap"><input type="number" id="mps-top" value="25000" min="10" step="100"><span class="mps-unit">km</span></div>
+							<div class="mps-readouts">
+								<div class="mps-ro"><span class="mps-ro-label">tether speed</span><span class="mps-ro-val" id="mps-omega-top">&mdash;</span></div>
+								<div class="mps-ro"><span class="mps-ro-label">centrifugal</span><span class="mps-ro-val" id="mps-cf-top">&mdash;</span></div>
+							</div>
+						</div>
+					</div>
+					<div class="mps-fieldpair" style="margin-top:10px">
+						<div class="mps-field">
+							<label for="mps-bot">Lower tether end</label>
+							<div class="mps-inwrap"><input type="number" id="mps-bot" value="150" min="1" step="5"><span class="mps-unit">km</span></div>
+							<div class="mps-readouts">
+								<div class="mps-ro"><span class="mps-ro-label">tether speed</span><span class="mps-ro-val" id="mps-omega-bot">&mdash;</span></div>
+								<div class="mps-ro"><span class="mps-ro-label">centrifugal</span><span class="mps-ro-val" id="mps-cf-bot">&mdash;</span></div>
+							</div>
+						</div>
+						<div class="mps-field">
+							<label>&nbsp;</label>
+							<div class="mps-muted" id="mps-atm-note" style="margin-top:6px">Mars' sensible atmosphere runs to ~100 km altitude.</div>
+						</div>
+					</div>
+					<div class="mps-muted" id="mps-period" style="margin-top:7px"></div>
+				</section>
+
+				<section class="mps-block">
+					<h2>Release point</h2>
+					<div class="mps-row" style="margin-bottom:8px">
+						<label class="mps-check"><input type="radio" name="mps-side" id="mps-side-above" checked> Above Phobos (outbound)</label>
+						<label class="mps-check"><input type="radio" name="mps-side" id="mps-side-below"> Below Phobos (inbound)</label>
+					</div>
+					<div class="mps-field mps-rel-slider-field">
+						<input type="range" id="mps-rel-slider" min="5987" max="25000" step="1" value="25000">
+						<div class="mps-muted" id="mps-rel-slider-hint">drag to set release altitude &nbsp;·&nbsp; hold <span class="mps-hud-key">shift</span> to fine-tune (0.1&times; speed)</div>
+					</div>
+					<div class="mps-field">
+						<label for="mps-rel">Altitude <span class="mps-muted" style="text-transform:none">(above Mars' surface &mdash; or drag the marker in the view)</span></label>
+						<div class="mps-inwrap"><input type="number" id="mps-rel" value="25000" min="1" step="10"><span class="mps-unit">km</span></div>
+					</div>
+					<div class="mps-readouts mps-release-readout">
+						<div class="mps-ro"><span class="mps-ro-label">speed on release</span><span class="mps-ro-val" id="mps-vrel">&mdash;</span></div>
+						<div class="mps-ro"><span class="mps-ro-label">v&#8734; at Mars SOI</span><span class="mps-ro-val" id="mps-vinf-mars">&mdash;</span></div>
+					</div>
+
+					<!-- shown when "Above Phobos" -->
+					<div id="mps-outbound-block">
+						<div class="mps-readouts mps-release-readout">
+							<div class="mps-ro"><span class="mps-ro-label">trajectory primary</span><span class="mps-ro-val" id="mps-traj-primary">&mdash;</span></div>
+							<div class="mps-ro"><span class="mps-ro-label">periapsis</span><span class="mps-ro-val" id="mps-traj-peri">&mdash;</span></div>
+							<div class="mps-ro"><span class="mps-ro-label">apoapsis</span><span class="mps-ro-val" id="mps-traj-apo">&mdash;</span></div>
+							<div class="mps-ro"><span class="mps-ro-label" id="mps-traj-incl-label">heliocentric inclination</span><span class="mps-ro-val" id="mps-traj-incl">&mdash;</span></div>
+						</div>
+						<div class="mps-muted mps-ro-sub" id="mps-sun-note" style="margin-top:6px"></div>
+						<div class="mps-readouts mps-release-readout">
+							<div class="mps-ro"><span class="mps-ro-label">v&#8734; heliocentric</span><span class="mps-ro-val" id="mps-vinf-sun">&mdash;</span></div>
+						</div>
+					</div>
+
+					<!-- shown when "Below Phobos" -->
+					<div id="mps-inbound-block" style="display:none">
+						<div class="mps-muted" id="mps-entry-classify" style="margin:8px 0"></div>
+						<div class="mps-readouts mps-release-readout" id="mps-entry-readouts">
+							<div class="mps-ro"><span class="mps-ro-label">entry-interface speed</span><span class="mps-ro-val" id="mps-entry-speed">&mdash;</span></div>
+							<div class="mps-ro"><span class="mps-ro-label">flight-path angle</span><span class="mps-ro-val" id="mps-entry-fpa">&mdash;</span></div>
+							<div class="mps-ro"><span class="mps-ro-label">peak deceleration</span><span class="mps-ro-val" id="mps-entry-decel">&mdash;</span></div>
+							<div class="mps-ro"><span class="mps-ro-label">peak heat flux</span><span class="mps-ro-val" id="mps-entry-heat">&mdash;</span></div>
+						</div>
+						<div class="mps-fieldpair" style="margin-top:8px">
+							<div class="mps-field">
+								<label for="mps-veh-mass">Entry vehicle mass</label>
+								<div class="mps-inwrap"><input type="number" id="mps-veh-mass" value="4000" min="1" step="100"><span class="mps-unit">kg</span></div>
+							</div>
+							<div class="mps-field">
+								<label for="mps-veh-diam">Aeroshell diameter</label>
+								<div class="mps-inwrap"><input type="number" id="mps-veh-diam" value="5" min="0.1" step="0.1"><span class="mps-unit">m</span></div>
+							</div>
+						</div>
+						<div class="mps-muted" style="margin-top:4px">Used only for the peak heat-flux estimate (Cd fixed at 1.5, nose radius = diameter/2).</div>
+					</div>
+				</section>
+
+				</div><!-- /#mps-panel-geo -->
+
+				<!-- Solar-system (helio) view: destination marker + waypoint burns -->
+				<div id="mps-panel-helio" style="display:none">
+
+				<section class="mps-block mps-block-first">
+					<h2>Destination</h2>
+					<div class="mps-row">
+						<select id="mps-destination"></select>
+					</div>
+					<div class="mps-muted" id="mps-dest-info">No destination selected.</div>
+					<div class="mps-row" id="mps-approach-row" style="display:none;">
+						<span class="mps-muted" id="mps-approach-info"></span>
+						<button type="button" id="mps-approach-jump">Jump to closest point</button>
+					</div>
+				</section>
+
+				<section class="mps-block" id="mps-waypoints">
+					<div class="mps-wp-create">
+						<h2>Waypoint burns</h2>
+						<label class="mps-check"><input type="checkbox" id="mps-create-wp1"> 1</label>
+						<label class="mps-check"><input type="checkbox" id="mps-create-wp2"> 2</label>
+					</div>
+					<div class="mps-muted" id="mps-waypoints-empty">No waypoints yet — tick 1/2 above (the trajectory must escape Mars first), then snap each to a feature below.</div>
+					<div id="mps-waypoint-list"></div>
+				</section>
+
+				</div><!-- /#mps-panel-helio -->
+
+				<section class="mps-block">
+					<div class="mps-row">
+						<button id="mps-reset" type="button">Reset</button>
+						<label class="mps-check"><input type="checkbox" id="mps-show-soi" checked> SOI sphere</label>
+						<label class="mps-check"><input type="checkbox" id="mps-show-orbit" checked> Phobos orbit</label>
+						<label class="mps-check"><input type="checkbox" id="mps-show-hook" checked> Skyhook</label>
+						<label class="mps-check"><input type="checkbox" id="mps-show-traj" checked> Trajectory</label>
+						<label class="mps-check"><input type="checkbox" id="mps-show-burnvecs" checked> Burn vectors</label>
+					</div>
+					<div class="mps-row mps-legend">
+						<span class="mps-swatch" style="background:#9fb6ff"></span> upper tether end
+						<span class="mps-swatch" style="background:#ffd24a"></span> Phobos orbit (CoM)
+						<span class="mps-swatch" style="background:#ff5fd0"></span> release point
+					</div>
+					<div class="mps-row mps-legend">
+						<span class="mps-swatch" style="background:#40d27f"></span> orbits Mars
+						<span class="mps-swatch" style="background:#ff9a3c"></span> heliocentric
+						<span class="mps-swatch" style="background:#ff5050"></span> atmospheric entry
+					</div>
+					<div class="mps-row mps-legend">
+						<span class="mps-swatch" style="background:#ff5fd0"></span> burn &Delta;v
+						<span class="mps-swatch" style="background:#ffd24a"></span> prograde speed change
+					</div>
+					<div class="mps-row mps-legend">
+						<span class="mps-swatch" style="background:#ffffff"></span> ship marker / destination &times;
+						<span class="mps-swatch" style="background:#5aa9ff"></span> phasing ring (solar system view)
+					</div>
+				</section>
+
+				<p class="mps-fineprint">
+				Mars-centred view. Mars is placed from its Keplerian heliocentric
+				elements (Shared/orbit.js); Phobos is approximated as circular and
+				exactly equatorial (its real ~1.5% eccentricity and ~1&deg;
+				inclination to Mars' equator are neglected), orbiting at its mean
+				distance of 9,376 km. The skyhook is a rigid, gravity-gradient
+				structure co-rotating with Phobos: since Phobos itself is the
+				centre of mass, the whole tether &mdash; lower end, Phobos, upper
+				end &mdash; traces concentric circles around Mars, not around
+				Phobos. A point at radius r moves at &omega;r, where &omega; is
+				Phobos' own orbital angular rate. Phobos has no meaningful sphere
+				of influence (smaller than Phobos itself) and is treated as
+				massless in the trajectory integration &mdash; only Mars and the
+				Sun's gravity act on a released vessel. The released trajectory is
+				integrated (RK4) under Mars + Sun gravity, with Mars at its real
+				ephemeris position, so escape to a heliocentric orbit is
+				continuous. Released "below Phobos" is sub-orbital by
+				construction (the tether's fixed angular rate is slower than local
+				circular speed at any radius under Phobos), so most such releases
+				dive toward Mars; where the path crosses Mars' ~100 km
+				atmosphere interface, the entry speed and flight-path angle are
+				read from the integrated path, and the peak deceleration
+				(Allen&ndash;Eggers) and peak convective heat flux
+				(Sutton&ndash;Graves, using the classical Allen&ndash;Eggers
+				peak-density/peak-speed point) are estimated for the given entry
+				vehicle. This is a ballistic-entry estimate only &mdash; no
+				descent, landing site or ground track is modelled. Up to two
+				waypoint burns (prograde/radial/normal, km/s) can be added along
+				the trajectory; each burn is resolved in the velocity frame of
+				whichever body locally dominates at that point (Mars, or the Sun
+				once well past Mars' SOI). Plane change is always measured
+				against the ecliptic.
+				</p>
+			</div>
+
+		</div>
+
+	</div>
+	<script src="marsPhobosSkyhookTrajectory.js"></script>
+</body>
+</html>

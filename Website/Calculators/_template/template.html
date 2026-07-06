@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Calculator Template</title>
+	<meta charset="utf-8">
+	<link rel="stylesheet" href="template.css">
+	<!-- Shared libraries (classic scripts; load before the page script).
+	     Include only the ones this calculator needs. -->
+	<script src="../../Shared/orbit.js"></script>
+	<script src="../../Shared/math-utils.js"></script>
+	<script src="../../Shared/format-utils.js"></script>
+	<script src="../../Shared/ui-components.js"></script>
+</head>
+<body>
+	<div class="wrapper">
+		<h1>Calculator Template</h1>
+		<p>
+		Minimal example wiring the shared utilities together: <code>orbit.js</code>
+		(body data), <code>math-utils.js</code> (<code>OrbitalMath</code>),
+		<code>format-utils.js</code> (<code>Fmt</code>) and
+		<code>ui-components.js</code> (<code>create</code>). Copy this folder to
+		<code>Calculators/&lt;YourCalc&gt;/</code> to start a new calculator.
+		</p>
+		<div id="insertItHere"></div>
+	</div>
+	<script src="template.js"></script>
+</body>
+</html>

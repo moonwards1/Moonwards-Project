@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Solar System Trajectory Plotter</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="solarSystemTrajectory.css">
+	<!-- Shared libraries (classic scripts; load before the page script). -->
+	<script src="../../Shared/three.min.js"></script>
+	<script src="../../Shared/orbit.js"></script>
+	<script src="../../Shared/math-utils.js"></script>
+</head>
+<body>
+	<div id="sst-app">
+
+		<!-- Ephemeris date bar: full width across the top -->
+		<div id="sst-datebar">
+			<div id="sst-date-head">
+				<span class="sst-date-caption">Ephemeris date</span>
+				<input type="date" id="sst-date-field" min="2030-01-01" max="2130-01-01" value="2030-01-01">
+				<span id="sst-jd" class="sst-muted"></span>
+				<span class="sst-muted" id="sst-date-hint">coarse slider: 100&nbsp;years &nbsp;·&nbsp; fine slider: ±6&nbsp;months around it</span>
+			</div>
+			<div class="sst-slider-line">
+				<span class="sst-slider-end">2030</span>
+				<input type="range" id="sst-date-coarse" min="0" max="36525" step="1" value="0">
+				<span class="sst-slider-end">2130</span>
+			</div>
+			<div class="sst-slider-line">
+				<span class="sst-slider-end sst-fine-end" id="sst-fine-lo"></span>
+				<input type="range" id="sst-date-fine" min="-182.625" max="182.625" step="0.125" value="0">
+				<span class="sst-slider-end sst-fine-end" id="sst-fine-hi"></span>
+			</div>
+		</div>
+
+		<div id="sst-main">
+
+			<!-- 3D solar-system view (left / bottom) -->
+			<div id="sst-view">
+				<div id="sst-canvas-holder"></div>
+				<div id="sst-view-hud">
+					<div class="sst-hud-line"><span class="sst-hud-key">drag</span> rotate &nbsp; <span class="sst-hud-key">wheel</span> zoom &nbsp; <span class="sst-hud-key">right-drag</span> pan</div>
+					<div class="sst-hud-line" id="sst-hud-status">Click the trajectory to place a marker; tick 1/2 to add waypoints.</div>
+				</div>
+			</div>
+
+			<!-- Input pane (right / bottom) -->
+			<div id="sst-panel">
+				<h1>Solar System Trajectory Plotter</h1>
+
+				<section class="sst-block">
+					<h2>Origin</h2>
+				<div class="sst-row">
+					<select id="sst-origin"></select>
+				</div>
+				<div class="sst-muted" id="sst-origin-info"></div>
+			</section>
+
+			<section class="sst-block">
+				<h2>Destination</h2>
+				<div class="sst-row">
+					<select id="sst-destination"></select>
+				</div>
+				<div class="sst-muted" id="sst-dest-info"></div>
+			</section>
+
+			<section class="sst-block">
+				<h2>Departure burn <span class="sst-muted">(km/s, relative to the origin body)</span></h2>
+				<div id="sst-departure-vectors"></div>
+				<div class="sst-row sst-muted" id="sst-departure-readout"></div>
+			</section>
+
+			<section class="sst-block" id="sst-waypoints">
+				<div class="sst-wp-create">
+					<h2>Create waypoint</h2>
+					<label class="sst-check"><input type="checkbox" id="sst-create-wp1"> 1</label>
+					<label class="sst-check"><input type="checkbox" id="sst-create-wp2"> 2</label>
+				</div>
+				<div class="sst-muted" id="sst-waypoints-empty">No waypoints yet — tick 1/2 above (clicking the trajectory now places a marker instead).</div>
+				<div id="sst-waypoint-list"></div>
+			</section>
+
+			<section class="sst-block">
+				<div class="sst-row">
+					<button id="sst-reset" type="button">Reset</button>
+					<label class="sst-check"><input type="checkbox" id="sst-show-soi" checked> SOI spheres</label>
+					<label class="sst-check"><input type="checkbox" id="sst-show-orbits" checked> Orbits</label>
+					<label class="sst-check"><input type="checkbox" id="sst-show-burnvecs" checked> Burn vectors</label>
+				</div>
+				<div class="sst-row sst-muted sst-legend">
+					<span class="sst-swatch" style="background:#ff5fd0"></span> Δv (the burn)
+					<span class="sst-swatch" style="background:#ffd24a"></span> prograde speed change
+				</div>
+			</section>
+
+			<p class="sst-fineprint">
+			Heliocentric two-body arcs joined by impulsive burns; bodies placed from
+			mean Keplerian elements. A planning tool — positions agree with JPL
+			Horizons to well under a degree, not to the kilometre.
+			</p>
+			</div>
+
+		</div>
+
+	</div>
+	<script src="solarSystemTrajectory.js"></script>
+</body>
+</html>

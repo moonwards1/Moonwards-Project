@@ -1,0 +1,12 @@
+body{
+	background-color:#202030;
+	font-family: sans-serif;
+}
+.wrapper{
+	margin-left: 5%;
+	margin-right: 5%;
+	padding: 20px;
+	background: white;
+}
+.label{ margin-left: 5px; }
+#out{ font-weight: bold; }

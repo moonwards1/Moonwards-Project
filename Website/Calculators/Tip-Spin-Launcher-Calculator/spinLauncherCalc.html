@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Tip Spin-Launcher Calculator</title>
+	<meta charset="utf-8">
+	<link rel="stylesheet" href="spinLauncherCalc.css">
+	<script src="../../Shared/math-utils.js"></script>
+	<script src="../../Shared/constants.js"></script>
+</head>
+<body>
+<div class="wrapper">
+<div class="calcMain">
+<h1>Tip Spin-Launcher Calculator</h1>
+<p class="note">Sizes a counter-rotating spin launcher mounted at the tip (counterweight) of an asteroid space elevator. The elevator section is the same model as the Space Elevator Calculator; the spin-launcher section adds a chosen retrograde boost and plane change on top of the elevator's throw, and works out the arm it would take. Trajectory parameters (the retrograde speed and plane-change angle) come from other calculators and are entered here.</p>
+
+<h2>Space elevator</h2>
+
+<!-- ── BODY PARAMETERS ────────────────────────────────────── -->
+<div class="container">
+	<h4>Asteroid parameters</h4>
+	<div class="row"><label>Presets</label>
+		<select id="bodyPreset">
+			<option value="">— choose —</option><option value="ceres">Ceres</option><option value="vesta">4 Vesta</option><option value="psyche">16 Psyche</option></select></div>
+	<div class="row"><label>Body radius</label>
+		<input type="number" id="radius"  value="476.2"  min="1" step="any"> <span class="unit">km</span></div>
+	<div class="row"><label>Surface gravity</label>
+		<input type="number" id="gsurf"   value="0.2763" min="0.001" step="any"> <span class="unit">m/s²</span></div>
+	<div class="row"><label>Rotation period (day)</label>
+		<input type="number" id="period" value="9.074"  step="any"> <span class="unit">hours</span></div>
+	<div class="row"><label>Axial tilt</label>
+		<input type="number" id="axialTilt" value="4" min="0" step="any"> <span class="unit">°</span></div>
+	<div style="margin:18px 0 0 0">
+		<div class="row" style="margin-bottom:3px"><label>Distance from Sun:</label></div>
+		<div class="option">
+			<div>
+				<span>min AU</span>
+				<div>
+					<input type="radio" name="sunRef" value="peri" style="margin:0">
+					<input type="number" id="sunPeri"  value="2.55" step="0.01" min="0.01">
+				</div>
+			</div>
+			<div>
+				<span>average AU</span>
+				<div>
+					<input type="radio" name="sunRef" value="avg" checked style="margin:0">
+					<input type="number" id="sunOrbit" value="2.77" step="0.01" min="0.01">
+				</div>
+			</div>
+			<div>
+				<span>max AU</span>
+				<div>
+					<input type="radio" name="sunRef" value="apo" style="margin:0">
+					<input type="number" id="sunApo"   value="2.99" step="0.01" min="0.01">
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- ── CABLE MATERIAL ────────────────────────────────────── -->
+<div class="container">
+	<h4>Cable material (elevator)</h4>
+	<div class="row"><label>Presets</label>   <select id="materialPreset">
+		<option value="">— choose material —</option>
+		<option value="steel">Steel</option>
+		<option value="zylon">Zylon</option>
+		<option value="esilica">Early Lunar silica</option>
+		<option value="msilica">Mature Lunar silica</option>
+		<option value="ecnt">Early CNT</option>
+		<option value="mcnt">Mature CNT</option>
+	</select></div>
+	<div class="row"><label>Tensile strength</label>
+		<input type="number" id="strength" value="42"    step="any" min="0.01" oninput="updateBreakingLength()"> <span class="unit">GPa</span></div>
+	<div class="row"><label>Density</label>            <input type="number" id="density"  value="1400"  step="any" min="1"    oninput="updateBreakingLength()"> <span class="unit">kg/m³</span></div>
+	<div class="row"><label>Breaking length</label>    <span id="o-breaking" style="font-size: 0.9em; min-width:80px; display:inline-block;">—</span> <span class="unit">km</span></div>
+	<div class="row"><label>Safety factor</label>      <input type="number" id="safety"   value="2"     step="0.1" min="1">    <span class="unit">×</span></div>
+</div>
+
+<!-- ── TETHER GEOMETRY ───────────────────────────────────── -->
+<div style="margin: 5px; padding: 10px 10px 10px 0;">
+	<div class="row"><label><strong>Counterweight altitude (tip of tether)</strong></label> <input type="number" id="tipAlt" value="20000" min="0"> <span class="unit">km <span class="note">(0 = auto: 20% above sync)</span></span></div>
+	<div class="row"><label><strong>Target heliocentric periapsis</strong></label> <input type="number" id="targetPeri" value="1.0" min="0.01" step="0.01"> <span class="unit">AU <span class="note">(periapsis the ship should reach — ~1 AU for Earth)</span></span></div>
+</div>
+
+<h2>Spin launcher at the tip</h2>
+<p class="note">Two equal counter-rotating arms (one carries the ship, the other an equal counter-mass) so the steady spin is balanced and stores almost no net angular momentum. Numbers below are what one launch demands of that assembly.</p>
+
+<!-- ── SPIN LAUNCHER REQUIREMENT ─────────────────────────── -->
+<div class="container">
+	<h4>What it must deliver</h4>
+	<div class="row"><label>Plane-change angle</label>
+		<input type="number" id="planeChange" value="3.5" min="0" step="any"> <span class="unit">°</span></div>
+	<div class="row"><span class="note">The retrograde boost and the velocity being tilted are now <em>derived</em> from the target periapsis (elevator section) and the elevator's own throw — see the spin-launcher outputs. Out-of-plane component = (velocity tilted) × tan(angle); release speed = √(boost² + out-of-plane²).</span></div>
+</div>
+
+<!-- ── SPIN LAUNCHER GEOMETRY ────────────────────────────── -->
+<div class="container">
+	<h4>Arm sizing</h4>
+	<div class="mode-row">
+		<input type="radio" name="sizeMode" id="modeG" value="g" checked>
+		<label for="modeG" style="min-width:auto">Limit tip g, find arm length:</label>
+		<input type="number" id="gLimit" value="10" min="0.01" step="any"> <span class="unit">g</span>
+	</div>
+	<div class="mode-row">
+		<input type="radio" name="sizeMode" id="modeL" value="L">
+		<label for="modeL" style="min-width:auto">Set arm length, find tip g:</label>
+		<input type="number" id="armLen" value="24" min="0.01" step="any"> <span class="unit">km</span>
+	</div>
+	<div class="row"><label>Max load at arm tip (ship)</label>
+		<input type="number" id="tipLoad" value="63000" min="0.001" step="any"> <span class="unit">t</span></div>
+	<div class="row"><label>Counterweight / hub mass</label>
+		<input type="number" id="hubMass" value="2500000" min="0.001" step="any"> <span class="unit">t</span></div>
+	<div class="row"><label>Launches per rotation day</label>
+		<input type="number" id="launchesPerDay" value="1" min="0.01" step="any"> <span class="unit"></span></div>
+</div>
+
+<!-- ── ARM MATERIAL ──────────────────────────────────────── -->
+<div class="container">
+	<h4>Arm material</h4>
+	<div class="row"><label>Presets</label>   <select id="armMaterialPreset">
+		<option value="">— choose material —</option>
+		<option value="steel">Steel</option>
+		<option value="zylon">Zylon</option>
+		<option value="esilica">Early Lunar silica</option>
+		<option value="msilica">Mature Lunar silica</option>
+		<option value="ecnt">Early CNT</option>
+		<option value="mcnt">Mature CNT</option>
+	</select></div>
+	<div class="row"><label>Tensile strength</label>
+		<input type="number" id="armStrength" value="42" step="any" min="0.01"> <span class="unit">GPa</span></div>
+	<div class="row"><label>Density</label> <input type="number" id="armDensity" value="1400" step="any" min="1"> <span class="unit">kg/m³</span></div>
+	<div class="row"><label>Safety factor</label> <input type="number" id="armSafety" value="2" step="0.1" min="1"> <span class="unit">× <span class="note">(match cable if you like)</span></span></div>
+</div>
+
+<div>
+	<button onclick="calculate()">Calculate</button>
+	<button onclick="resetDefaults()">Reset to Ceres defaults</button>
+</div>
+
+<!-- ── OUTPUTS ───────────────────────────────────────────── -->
+<div class="output-section" id="output" style="display:none">
+
+	<svg id="combined-svg" width="860" height="220"
+		style="border:1px solid black; border-radius:4px; background:#f0f8ff; display:block; margin:10px 0; cursor:default;">
+	</svg>
+
+	<div class="result-block">
+		<h4>Elevator — orbital mechanics</h4>
+		<div class="result-row">Synchronous orbit altitude: <span id="o-hsync"></span> km (above surface)</div>
+		<div class="result-row">Sync. orbital velocity: <span id="o-vsync"></span> m/s</div>
+	</div>
+
+	<div class="result-block">
+		<h4>Elevator — cable</h4>
+		<div class="result-row">Taper ratio (sync / tip): <span id="o-taper"></span></div>
+		<div class="result-row">Cable mass per kg of tip payload: <span id="o-massratio"></span> kg</div>
+	</div>
+
+	<div class="result-block">
+		<h4>Elevator — tip release</h4>
+		<div class="result-row">Tip velocity (inertial): <span id="o-vtip"></span></div>
+		<div class="result-row">Artificial gravity at tip: <span id="o-tipgrav"></span> m/s²</div>
+		<div class="result-row">Tip escape velocity: <span id="o-vesc"></span></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Elevator — orbit after release</h4>
+		<div class="result-row" id="o-escrow"></div>
+		<div class="result-row"><span id="o-lastrow-label">Heliocentric periapsis (retrograde release):</span> <span id="o-helioperi"></span></div>
+		<div class="result-row" id="o-prograde-row" style="display:none">Heliocentric apoapsis (prograde release): <span id="o-heliopro"></span></div>
+	</div>
+
+	<div class="result-block spin">
+		<h4>Spin launcher — kinematics</h4>
+		<div class="result-row">Velocity being tilted (heliocentric): <span id="s-vref"></span> m/s</div>
+		<div class="result-row">Total retrograde throw needed: <span id="s-totretro"></span> m/s</div>
+		<div class="result-row">Spin in-plane boost (after elevator): <span id="s-boost"></span> m/s</div>
+		<div class="result-row">Out-of-plane component: <span id="s-vperp"></span> m/s</div>
+		<div class="result-row">Required release (tip) speed: <span id="s-vspin"></span> m/s</div>
+		<div class="result-row">Arm length: <span id="s-armlen"></span></div>
+		<div class="result-row">Tip acceleration: <span id="s-tipg"></span></div>
+		<div class="result-row">Spin rate: <span id="s-rate"></span></div>
+		<div class="result-row">Rotation period: <span id="s-period"></span></div>
+		<div class="result-row">Required spin-plane tilt: <span id="s-tilt"></span></div>
+	</div>
+
+	<div class="result-block spin">
+		<h4>Spin launcher — structure</h4>
+		<div class="result-row">Arm taper ratio (hub / tip): <span id="s-taper"></span></div>
+		<div class="result-row">Tip cross-section (per arm): <span id="s-atip"></span></div>
+		<div class="result-row">Mass of one arm: <span id="s-armmass"></span></div>
+		<div class="result-row">Total structure (2 arms + counter-mass): <span id="s-totmass"></span></div>
+		<div class="result-row">Peak hub tension (per arm): <span id="s-hubtension"></span></div>
+	</div>
+
+	<div class="result-block spin">
+		<h4>Spin launcher — energy &amp; power</h4>
+		<div class="result-row">Energy to payload per launch: <span id="s-epay"></span></div>
+		<div class="result-row">Stored spin energy (both arms): <span id="s-eflywheel"></span></div>
+		<div class="result-row">Avg spin-up power (payload): <span id="s-power"></span></div>
+	</div>
+
+	<div class="result-block spin">
+		<h4>Spin launcher — dynamics</h4>
+		<div class="result-row">Angular momentum per arm: <span id="s-Lone"></span></div>
+		<div class="result-row">Net angular momentum: <span id="s-Lnet"></span></div>
+		<div class="result-row">Gyro torque (daily reorient): <span id="s-gyro"></span></div>
+		<div class="result-row">Release recoil impulse: <span id="s-recoil"></span></div>
+		<div class="result-row">Counterweight velocity kick: <span id="s-kick"></span></div>
+		<div class="result-row">Tip-load / hub-mass ratio: <span id="s-massratio2"></span></div>
+	</div>
+
+	<div class="result-block spin">
+		<h4>Spin launcher — timing</h4>
+		<div class="result-row">Velocity error per ms of slip: <span id="s-timing"></span> m/s</div>
+		<div class="result-row">Tumble handed to payload: <span id="s-tumble"></span></div>
+	</div>
+
+</div><!-- /output -->
+
+<div class="notes-block">
+	<h4>About a couple of the fields</h4>
+	<p><strong>Where the numbers come from (target periapsis):</strong> a plane change is an angle, but turning it into a velocity needs the speed of the vector being tilted — the ship's heliocentric in-plane speed at release. Release is exactly retrograde, so that speed is fixed by the target periapsis: the ship sits at the aphelion of its transfer ellipse (Ceres' distance), so v = √(GM<sub>☉</sub>(2/r<sub>Ceres</sub> − 1/a)) with a = ½(r<sub>Ceres</sub> + r<sub>periapsis</sub>). That same speed sets the total retrograde throw needed (v<sub>Ceres</sub> − v); the elevator supplies its tip speed and the spin launcher makes up the rest. So you only set the target periapsis and the plane-change angle — the retrograde boost and the velocity being tilted are derived. Out-of-plane component = v × tan(angle).</p>
+	<p><strong>Axial tilt vs. required spin-plane tilt — two different angles:</strong> Axial tilt (4° for Ceres) is the fixed angle between Ceres' equator and its orbital plane. The elevator is anchored on the equator, so its tip sweeps the equatorial plane — already 4° off the orbital plane. The <em>required spin-plane tilt</em> reported above is a separate, adjustable angle: how far the spin launcher's own rotation plane must be tipped out of the retrograde-throw direction so that part of the tip velocity points out of plane and produces the plane change. It is just atan(out-of-plane ÷ retrograde) — the direction of the velocity the arm adds. Where that velocity has to point in inertial space (which is where axial tilt and orbital inclination come in) is a trajectory question for the other calculators; this tool only sizes the machine that delivers it.</p>
+</div>
+
+</div><!-- /calcMain -->
+</div><!-- /wrapper -->
+
+	<script src="spinLauncherCalc.js"></script>
+</body>
+</html>

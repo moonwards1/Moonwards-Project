@@ -1,0 +1,31 @@
+body{
+	background-color:#202030;
+	font-family: sans-serif;
+}
+.wrapper{
+	margin-left: 5%;
+	margin-right: 5%;
+	padding: 20px;
+	background: white;
+}
+.intro{
+	max-width: 900px;
+	color: #333;
+	font-size: 0.95em;
+	line-height: 1.4;
+}
+.intro .note{ color:#555; font-size:0.88em; }
+.methodology{
+	max-width: 900px;
+	margin-top: 18px;
+	padding: 14px 18px;
+	background: #f6f8fc;
+	border: 1px solid #d4ddec;
+	border-radius: 10px;
+	color: #233;
+	font-size: 0.9em;
+	line-height: 1.45;
+}
+.methodology h2{ font-size: 1.05em; margin: 0 0 6px; }
+.methodology svg{ width: 100%; height: auto; max-width: 700px; display: block; margin: 8px 0; }
+.methodology .eq{ font-family: "Cambria Math", Georgia, serif; background:#eef3fb; padding:2px 6px; border-radius:4px; }

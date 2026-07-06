@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Lunar Mass Driver Launch Calculator</title>
+	<meta charset="utf-8">
+	<link rel="stylesheet" href="massDriverCalc.css">
+</head>
+<body>
+<div class="wrapper">
+<div class="calcMain">
+<h1>Lunar Mass Driver Launch Calculator</h1>
+<p class="note">An equatorial mass driver accelerates a payload west&rarr;east (prograde) and releases it horizontally from a track elevated above the ground (25&nbsp;m by default).
+The Moon's eastward rotation (about 4.6&nbsp;m/s) adds to the release speed. Set a release speed, or tick the box to set a target apoapsis instead.
+Below orbital speed the payload arcs down from the release height and lands downrange.</p>
+
+<!-- INPUTS -->
+<div class="container">
+	<h4>Mass driver</h4>
+	<div class="row"><label>Mass driver length</label>
+		<input type="number" id="length" value="37400" min="1" step="any"> <span class="unit">m</span></div>
+	<div class="row"><label>Payload mass</label>
+		<input type="number" id="payload" value="13.4" min="0.0001" step="any"> <span class="unit">tonnes</span></div>
+	<div class="row"><label>Sled deceleration length</label>
+		<input type="number" id="declen" value="2200" min="1" step="any"> <span class="unit">m</span></div>
+	<div class="row"><label>Release height above ground</label>
+		<input type="number" id="height" value="25" min="0" step="any"> <span class="unit">m</span></div>
+	<div class="row"><label>System energy efficiency</label>
+		<input type="number" id="eff" value="80" min="1" max="100" step="any"> <span class="unit">%</span></div>
+	<div class="row"><label class="note" style="min-width:215px">Sled mass = 7% of payload</label>
+		<span id="sledmass" class="note">&mdash;</span></div>
+</div>
+
+<div class="container">
+	<h4>Release condition</h4>
+	<div class="row"><label>Speed at release (vs. ground)</label>
+		<input type="number" id="speed" value="1727.3" min="0" step="any"> <span class="unit">m/s</span></div>
+	<div class="checkrow">
+		<input type="checkbox" id="useApo">
+		<label for="useApo" style="cursor:pointer">Set apoapsis altitude instead (solve for release speed)</label>
+	</div>
+	<div class="row" id="apoRow"><label>Apoapsis altitude</label>
+		<input type="number" id="apoalt" value="200" min="0.001" step="any" disabled> <span class="unit">km</span></div>
+	<p class="note" style="max-width:260px">If there is an apoapsis, a burn there raises periapsis to 10&nbsp;km above the surface.</p>
+</div>
+
+<div>
+	<button onclick="calculate()">Calculate</button>
+	<button onclick="resetDefaults()">Reset defaults</button>
+</div>
+
+<!-- OUTPUTS -->
+<div class="output-section" id="output" style="display:none">
+
+	<div id="banner"></div>
+
+	<svg id="diagram" width="520" height="430"
+		style="border:1px solid black; border-radius:4px; background:#0b0b18; display:block; margin:10px 5px;"></svg>
+
+	<div class="result-block">
+		<h4>Release &amp; reference speeds</h4>
+		<div class="result-row">Release speed vs. ground: <span class="val" id="o-vg"></span> m/s</div>
+		<div class="result-row">Release speed (inertial): <span class="val" id="o-vi"></span> m/s</div>
+		<div class="result-row">Surface rotation boost: <span class="val" id="o-vsurf"></span> m/s</div>
+		<div class="result-row">Circular speed (surface): <span class="val" id="o-vcirc"></span> m/s</div>
+		<div class="result-row">Escape speed (surface): <span class="val" id="o-vesc"></span> m/s</div>
+	</div>
+
+	<div class="result-block" id="blk-orbit">
+		<h4>Trajectory / orbit</h4>
+		<div class="result-row" id="r-apo">Apoapsis altitude: <span class="val" id="o-apoalt"></span></div>
+		<div class="result-row" id="r-ecc">Eccentricity (pre-burn): <span class="val" id="o-ecc"></span></div>
+		<div class="result-row" id="r-vapo">Speed at apoapsis: <span class="val" id="o-vapo"></span></div>
+		<div class="result-row" id="r-vperi">Speed at periapsis (release): <span class="val" id="o-vperi"></span></div>
+		<div class="result-row" id="r-coast">Coast time to apoapsis (&frac12; orbit): <span class="val" id="o-coast"></span></div>
+		<div class="result-row" id="r-period">Orbital period (after burn): <span class="val" id="o-period"></span></div>
+	</div>
+
+	<div class="result-block" id="blk-burn">
+		<h4>Periapsis-raise burn (at apoapsis)</h4>
+		<div class="result-row">Raises periapsis to: <span class="val">10 km</span> above surface</div>
+		<div class="result-row">&Delta;v of burn: <span class="val" id="o-dv"></span></div>
+		<div class="result-row">Speed at apoapsis after burn: <span class="val" id="o-vapo2"></span></div>
+		<div class="result-row">Speed at new periapsis: <span class="val" id="o-vperi2"></span></div>
+	</div>
+
+	<div class="result-block" id="blk-land">
+		<h4>Sub-orbital landing</h4>
+		<div class="result-row note" id="o-landnote">Released <span id="o-htrack"></span> m above the ground (track height).</div>
+		<div class="result-row">Downrange landing distance: <span class="val" id="o-dist"></span></div>
+		<div class="result-row">Flight time: <span class="val" id="o-tflight"></span></div>
+		<div class="result-row">Ground angle traversed: <span class="val" id="o-phi"></span></div>
+		<div class="result-row">Impact speed: <span class="val" id="o-vimp"></span></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Launch energy (input)</h4>
+		<div class="result-row">Energy needed per kg of payload: <span class="val" id="o-ekg"></span></div>
+		<div class="result-row">Energy needed per payload: <span class="val" id="o-epay"></span></div>
+		<div class="result-row note">Total input incl. sled, at <span id="o-effnote"></span>% efficiency: <span class="val" id="o-etot"></span></div>
+		<div class="result-row note">Ideal kinetic energy per payload (100%): <span class="val" id="o-epayid"></span></div>
+		<div class="result-row note">Sled kinetic energy (recoverable on braking): <span class="val" id="o-esled"></span></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Acceleration phase (payload + sled)</h4>
+		<div class="result-row">Acceleration: <span class="val" id="o-acc"></span></div>
+		<div class="result-row">Force on payload: <span class="val" id="o-fpay"></span></div>
+		<div class="result-row">Time on driver (accelerating): <span class="val" id="o-tacc"></span></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Sled deceleration phase</h4>
+		<div class="result-row note">Payload is released; only the sled decelerates.</div>
+		<div class="result-row">Deceleration: <span class="val" id="o-dec"></span></div>
+		<div class="result-row">Force on sled: <span class="val" id="o-fsled"></span></div>
+		<div class="result-row">Time decelerating: <span class="val" id="o-tdec"></span></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Power to the track (input)</h4>
+		<div class="result-row"><strong>Avg. power per 10 m of track: <span class="val" id="o-p10"></span></strong></div>
+		<div class="result-row">Peak power (release end, active section): <span class="val" id="o-ppeak"></span></div>
+		<div class="result-row">Avg. power, whole driver: <span class="val" id="o-pavg"></span></div>
+		<div class="result-row note">Power scales with local speed (&prop;&radic;(x/L)), so coils near the release end carry far more than the average.</div>
+	</div>
+
+</div><!-- /output -->
+</div><!-- /calcMain -->
+</div><!-- /wrapper -->
+
+	<script src="massDriverCalc.js"></script>
+</body>
+</html>

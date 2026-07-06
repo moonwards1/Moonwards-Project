@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Moon Skyhook Trajectory Plotter</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="moonSkyhookTrajectory.css">
+	<!-- Shared libraries (classic scripts; load before the page script). -->
+	<script src="../../Shared/three.min.js"></script>
+	<script src="../../Shared/orbit.js"></script>
+	<script src="../../Shared/math-utils.js"></script>
+	<script src="../../Shared/lunar-ephemeris.js"></script>
+</head>
+<body>
+	<div id="msk-app">
+
+		<!-- Ephemeris date bar: full width across the top -->
+		<div id="msk-datebar">
+			<div id="msk-date-head">
+				<span class="msk-date-caption">Ephemeris date</span>
+				<input type="date" id="msk-date-field" min="2030-01-01" max="2033-12-31" value="2030-01-01">
+				<span id="msk-jd" class="msk-muted"></span>
+				<span class="msk-muted" id="msk-date-hint">top: 3&nbsp;years &nbsp;·&nbsp; middle: one lunar month around it &nbsp;·&nbsp; bottom: skyhook phase</span>
+			</div>
+			<div class="msk-slider-line">
+				<label class="msk-lock-toggle" title="Lock: keep the Moon's phase relative to the Sun fixed while scrubbing this slider (e.g. always the same side of Earth's orbit)">
+					<input type="checkbox" id="msk-lock-year"><span class="msk-lock-ico">&#128274;</span>
+				</label>
+				<span class="msk-slider-end">2030</span>
+				<input type="range" id="msk-date-coarse" min="0" max="1460" step="1" value="0">
+				<span class="msk-slider-end">2033</span>
+			</div>
+			<div class="msk-slider-line">
+				<label class="msk-lock-toggle" title="Lock: keep the skyhook's orientation relative to the Moon's motion fixed while scrubbing this slider (e.g. always retrograde)">
+					<input type="checkbox" id="msk-lock-month"><span class="msk-lock-ico">&#128274;</span>
+				</label>
+				<span class="msk-slider-end" id="msk-fine-lo"></span>
+				<input type="range" id="msk-date-fine" min="-13.66" max="13.66" step="0.02" value="0">
+				<span class="msk-slider-end" id="msk-fine-hi"></span>
+			</div>
+			<div class="msk-slider-line">
+				<span class="msk-slider-tag">Skyhook phase</span>
+				<input type="range" id="msk-hook-phase" min="0" max="360" step="0.5" value="0">
+				<span class="msk-slider-tag" id="msk-hook-phase-val" style="text-align:right">0&deg;</span>
+			</div>
+		</div>
+
+		<div id="msk-main">
+
+			<!-- 3D Earth-Moon view (left / top) -->
+			<div id="msk-view">
+				<div id="msk-canvas-holder"></div>
+				<button id="msk-view-toggle" type="button" title="Switch between the Earth&ndash;Moon view and a heliocentric solar-system view">&#127760; Solar system view</button>
+				<div id="msk-view-hud">
+					<div class="msk-hud-line"><span class="msk-hud-key">drag</span> rotate &nbsp; <span class="msk-hud-key">wheel</span> zoom &nbsp; <span class="msk-hud-key">right-drag</span> pan</div>
+					<div class="msk-hud-line" id="msk-hud-status">Double-click the Moon or Earth to focus; double-click empty space to release. Tick 1/2 under Waypoint burns to add a burn, then drag its gizmo along the trajectory.</div>
+				</div>
+			</div>
+
+			<!-- Input pane (right / bottom) -->
+			<div id="msk-panel">
+				<h1>Moon Skyhook Trajectory Plotter</h1>
+
+				<section class="msk-block">
+					<h2>Skyhook</h2>
+					<div class="msk-fieldpair">
+						<div class="msk-field">
+							<label for="msk-com">CoM altitude</label>
+							<div class="msk-inwrap"><input type="number" id="msk-com" value="275" min="20" step="5"><span class="msk-unit">km</span></div>
+							<div class="msk-readouts">
+								<div class="msk-ro"><span class="msk-ro-label">orbital velocity</span><span class="msk-ro-val" id="msk-vcom">—</span></div>
+							</div>
+						</div>
+						<div class="msk-field">
+							<label for="msk-top">Top altitude</label>
+							<div class="msk-inwrap"><input type="number" id="msk-top" value="6000" min="40" step="50"><span class="msk-unit">km</span></div>
+							<div class="msk-readouts">
+								<div class="msk-ro"><span class="msk-ro-label">tether top speed</span><span class="msk-ro-val" id="msk-omega">—</span></div>
+								<div class="msk-ro"><span class="msk-ro-label">centrifugal</span><span class="msk-ro-val" id="msk-cf">—</span></div>
+							</div>
+						</div>
+					</div>
+					<div class="msk-muted" id="msk-period" style="margin-top:7px"></div>
+				</section>
+
+				<section class="msk-block">
+					<h2>Release point</h2>
+					<div class="msk-field msk-rel-slider-field">
+						<input type="range" id="msk-rel-slider" min="275" max="6000" step="1" value="950">
+						<div class="msk-muted" id="msk-rel-slider-hint">drag to set release altitude &nbsp;·&nbsp; hold <span class="msk-hud-key">shift</span> to fine-tune (0.1&times; speed)</div>
+					</div>
+					<div class="msk-field">
+						<label for="msk-rel">Altitude <span class="msk-muted" style="text-transform:none">(between CoM and top — or drag the marker in the view)</span></label>
+						<div class="msk-inwrap"><input type="number" id="msk-rel" value="950" min="20" step="10"><span class="msk-unit">km</span></div>
+					</div>
+					<div class="msk-readouts msk-release-readout">
+						<div class="msk-ro"><span class="msk-ro-label">speed on release</span><span class="msk-ro-val" id="msk-vrel">—</span></div>
+						<div class="msk-ro"><span class="msk-ro-label">v&#8734; at Moon SOI</span><span class="msk-ro-val" id="msk-vinf-moon">—</span></div>
+						<div class="msk-ro"><span class="msk-ro-label">v&#8734; at Earth SOI</span><span class="msk-ro-val" id="msk-vinf-earth">—</span></div>
+					</div>
+					<div class="msk-muted msk-ro-sub" id="msk-earth-note" style="margin-top:6px"></div>
+					<div class="msk-readouts msk-release-readout">
+						<div class="msk-ro"><span class="msk-ro-label">trajectory primary</span><span class="msk-ro-val" id="msk-traj-primary">—</span></div>
+						<div class="msk-ro"><span class="msk-ro-label">periapsis</span><span class="msk-ro-val" id="msk-traj-peri">—</span></div>
+						<div class="msk-ro"><span class="msk-ro-label">apoapsis</span><span class="msk-ro-val" id="msk-traj-apo">—</span></div>
+						<div class="msk-ro"><span class="msk-ro-label" id="msk-traj-incl-label">heliocentric inclination</span><span class="msk-ro-val" id="msk-traj-incl">—</span></div>
+					</div>
+				</section>
+
+				<section class="msk-block" id="msk-waypoints">
+					<div class="msk-wp-create">
+						<h2>Waypoint burns</h2>
+						<label class="msk-check"><input type="checkbox" id="msk-create-wp1"> 1</label>
+						<label class="msk-check"><input type="checkbox" id="msk-create-wp2"> 2</label>
+					</div>
+					<div class="msk-muted" id="msk-waypoints-empty">No waypoints yet — tick 1/2 above, then drag its gizmo along the trajectory in the view.</div>
+					<div id="msk-waypoint-list"></div>
+				</section>
+
+				<section class="msk-block">
+					<div class="msk-row">
+						<button id="msk-reset" type="button">Reset</button>
+						<label class="msk-check"><input type="checkbox" id="msk-show-soi" checked> SOI spheres</label>
+						<label class="msk-check"><input type="checkbox" id="msk-show-orbit" checked> Moon orbit</label>
+						<label class="msk-check"><input type="checkbox" id="msk-show-hook" checked> Skyhook</label>
+						<label class="msk-check"><input type="checkbox" id="msk-show-traj" checked> Trajectory</label>
+						<label class="msk-check"><input type="checkbox" id="msk-show-burnvecs" checked> Burn vectors</label>
+					</div>
+					<div class="msk-row msk-legend">
+						<span class="msk-swatch" style="background:#9fb6ff"></span> top orbit
+						<span class="msk-swatch" style="background:#ffd24a"></span> CoM orbit
+						<span class="msk-swatch" style="background:#ff5fd0"></span> release point
+					</div>
+					<div class="msk-row msk-legend">
+						<span class="msk-swatch" style="background:#b060ff"></span> orbits Moon
+						<span class="msk-swatch" style="background:#40d27f"></span> orbits Earth
+						<span class="msk-swatch" style="background:#ff9a3c"></span> heliocentric
+					</div>
+					<div class="msk-row msk-legend">
+						<span class="msk-swatch" style="background:#ff5fd0"></span> burn &Delta;v
+						<span class="msk-swatch" style="background:#ffd24a"></span> prograde speed change
+					</div>
+				</section>
+
+				<p class="msk-fineprint">
+				Geocentric Earth-Moon view. The Moon is placed from a Meeus
+				low-precision lunar ephemeris (position good to ~arcminute). The
+				skyhook is a gravity-gradient (radial) tether rotating once per
+				orbit, so a point at radius r moves at &omega;r. The released
+				trajectory is integrated (RK4) under Earth + Moon + Sun gravity,
+				with the Moon and Sun at their real ephemeris positions (Meeus), so
+				the SOI transition is continuous. The Earth-SOI v&#8734; and the
+				orbit's primary, apsides and inclination are read from that
+				integrated path (inclination is against the ecliptic once Earth
+				or the Sun is the primary, or against the skyhook's own orbital
+				plane while still Moon-bound after a waypoint burn). The Sun's
+				disk is a marker in its true direction at
+				a capped distance (the real Sun is far off this view).
+				Up to two waypoint burns (prograde/radial/normal, km/s) can be added
+				along the trajectory; each burn is resolved in the velocity frame of
+				whichever body locally dominates at that point (the Moon during a
+				lunar flyby, otherwise Earth, or the Sun once well past Earth's SOI),
+				so a burn placed near a close flyby correctly shows an Oberth-boosted
+				effect. Plane change is always measured against the ecliptic.
+				</p>
+			</div>
+
+		</div>
+
+	</div>
+	<script src="moonSkyhookTrajectory.js"></script>
+</body>
+</html>

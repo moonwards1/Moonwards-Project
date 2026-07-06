@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Moon–L1 Space Elevator Calculator</title>
+	<meta charset="utf-8">
+	<link rel="stylesheet" href="MoonL1ElevatorCalc.css">
+	<script src="../../Shared/math-utils.js"></script>
+	<script src="../../Shared/constants.js"></script>
+</head>
+<body>
+<div class="wrapper">
+<div class="calcMain">
+<h1>Moon–L1 Space Elevator Calculator</h1>
+<p class="note">
+A tether rising from the Moon's surface along the Earth–Moon line, through the Earth–Moon L1 point,
+continuing beyond it and terminating in a counterweight. The cable is sized so that <em>with its full
+cargo load on it</em> the stress everywhere equals strength ÷ safety factor. Because the counterweight
+needed depends on how much cargo rides the cable, this is a two-step tool: set the structure and traffic
+first, read off the minimum counterweight, then choose a counterweight at or above it.
+</p>
+
+<!-- ════════════════════ STEP 1 ════════════════════ -->
+<div id="step1">
+<div class="stepHead">Step 1 — structure, material &amp; traffic</div>
+
+<!-- ── SYSTEM PARAMETERS ──────────────────────────────────── -->
+<div class="container">
+	<h4>Earth–Moon system</h4>
+	<div class="row"><label>Moon radius (equator)</label>
+		<input type="number" id="Rmoon" value="1738" step="any" min="1"> <span class="unit">km</span></div>
+	<div class="row"><label>Earth–Moon distance</label>
+		<input type="number" id="Dist" value="384400" step="any" min="1"> <span class="unit">km</span></div>
+	<div class="row"><label>Barycentre from Earth centre</label>
+		<input type="number" id="Bary" value="4671" step="any" min="0"> <span class="unit">km</span></div>
+	<div class="row"><label>Moon GM</label>
+		<input type="number" id="GMm" value="4.902e12" step="any"> <span class="unit">m³/s²</span></div>
+	<div class="row"><label>Earth GM</label>
+		<input type="number" id="GMe" value="3.986e14" step="any"> <span class="unit">m³/s²</span></div>
+	<div class="row"><label>L1 from Moon centre</label>
+		<input type="number" id="L1" value="58000" step="any" min="1"> <span class="unit">km</span></div>
+	<div class="row" style="margin-top:10px"><label>Rotation rate from</label>
+		<select id="omegaSrc">
+			<option value="kepler" selected>Kepler: √(G(M⊕+M☾)/D³)</option>
+			<option value="vorb">Orbital speed ÷ barycentre radius</option>
+		</select></div>
+	<div class="row"><label>Moon orbital speed</label>
+		<input type="number" id="Vorb" value="1.022" step="any" min="0"> <span class="unit">km/s</span></div>
+	<div class="row note">(orbital speed is only used when that option is selected above)</div>
+</div>
+
+<!-- ── MATERIAL ──────────────────────────────────────────── -->
+<div class="container">
+	<h4>Cable material</h4>
+	<div class="row"><label>Presets</label>   <select id="materialPreset">
+		<option value="">— choose material —</option>
+		<option value="steel">Steel</option>
+		<option value="zylon">Zylon</option>
+		<option value="esilica">Early Lunar silica</option>
+		<option value="msilica">Mature Lunar silica</option>
+		<option value="ecnt">Early CNT</option>
+		<option value="mcnt">Mature CNT</option>
+	</select></div>
+	<div class="row"><label>Tensile strength</label>
+		<input type="number" id="strength" value="42" step="any" min="0.01" oninput="updateBreakingLength()"> <span class="unit">GPa</span></div>
+	<div class="row"><label>Density</label>
+		<input type="number" id="density" value="1400" step="any" min="1" oninput="updateBreakingLength()"> <span class="unit">kg/m³</span></div>
+	<div class="row"><label>Breaking length (1 g₀)</label>
+		<span id="o-breaking" style="font-size:0.9em; min-width:80px; display:inline-block;">—</span> <span class="unit">km</span></div>
+	<div class="row"><label>Safety factor</label>
+		<input type="number" id="safety" value="3" step="0.1" min="1"> <span class="unit">×</span></div>
+	<div class="row note" style="max-width:230px">Default is Mature CNT. Operating stress for sizing = strength ÷ safety factor, applied to the <em>loaded</em> cable.</div>
+</div>
+
+<!-- ── COUNTERWEIGHT POSITION ─────────────────────────────── -->
+<div class="container">
+	<h4>Counterweight position</h4>
+	<div class="row"><label>Counterweight distance<br>(from Moon centre)</label>
+		<input type="number" id="rCW" value="222100" step="any" min="1"> <span class="unit">km</span></div>
+	<div class="row note" style="max-width:230px">Must sit beyond L1, where the net effective force points outward (toward Earth), putting the whole tether in tension. The counterweight <em>mass</em> is set in Step 2.</div>
+</div>
+
+<!-- ── CARGO THROUGHPUT ──────────────────────────────────── -->
+<div class="container">
+	<h4>Cargo throughput</h4>
+	<div class="row"><label>Delivery rate to counterweight</label>
+		<input type="number" id="rate" value="30700" step="any" min="0"> <span class="unit">t/day</span></div>
+	<div class="row"><label>Cargo per climber</label>
+		<input type="number" id="perClimber" value="1000" step="any" min="0.001"> <span class="unit">t</span></div>
+	<div class="row"><label>Climb speed</label>
+		<input type="number" id="vClimb" value="200" step="any" min="0.1"> <span class="unit">m/s</span></div>
+	<div class="row"><label>Drive efficiency</label>
+		<input type="number" id="effDrive" value="85" step="any" min="1" max="100"> <span class="unit">%</span></div>
+	<div class="row"><label>Climber tare</label>
+		<input type="number" id="infraPct" value="10" step="any" min="0"> <span class="unit">% of cargo</span></div>
+	<div class="row"><label>Track minimum gauge</label>
+		<input type="number" id="trackMin" value="0.4" step="any" min="0"> <span class="unit">kg/m</span></div>
+	<div class="row"><label>Track traction reinforcement</label>
+		<input type="number" id="trackGrav" value="1.2" step="any" min="0"> <span class="unit">kg/m</span></div>
+	<div class="row note" style="max-width:230px"><b>Climber tare</b> (vehicle, wheels, motors, solar) scales with cargo, present only when loaded. The <b>track</b> is always on and tapers: a minimum gauge everywhere (guidance, dynamics, micrometeoroid survivability) plus traction reinforcement that scales with local gravity — so it is thickest near the Moon (≈ min+reinforcement) and thins to the minimum above the gravity well. All are carried by the cable, so all drive the taper, mass and minimum counterweight.</div>
+</div>
+
+<div>
+	<button onclick="computeFloor()">Compute minimum counterweight →</button>
+	<button onclick="resetDefaults()">Reset to example</button>
+	<span id="stepErr" class="warn"></span>
+</div>
+</div><!-- /step1 -->
+
+<!-- ════════════════════ STEP 2 ════════════════════ -->
+<div id="step2">
+<div class="stepHead">Step 2 — choose the counterweight</div>
+
+<div class="container" style="min-width:300px">
+	<h4>Counterweight mass</h4>
+	<div class="row" id="o-floorHint" style="max-width:300px; display:block;"></div>
+	<div class="row" style="margin-top:8px"><label>Counterweight mass</label>
+		<input type="number" id="mCW" value="700" step="any" min="0" disabled> <span class="unit">kilotonnes</span></div>
+</div>
+
+<!-- ── REENTRY TARGET ────────────────────────────────────── -->
+<div class="container">
+	<h4>Orbit after release</h4>
+	<div class="row"><label>Earth radius</label>
+		<input type="number" id="Rearth" value="6371" step="any" min="1"> <span class="unit">km</span></div>
+	<div class="row"><label>Target perigee altitude</label>
+		<input type="number" id="reAlt" value="50" step="any" min="-300"> <span class="unit">km</span></div>
+	<div class="row"><label>Entry interface altitude</label>
+		<input type="number" id="ifaceAlt" value="122" step="any" min="1"> <span class="unit">km</span></div>
+	<div class="row note" style="max-width:230px">A vessel let go at the counterweight keeps the system's rotation speed but is far below circular speed about Earth, so release is its apogee. A burn at apogee lowers perigee to this target.</div>
+</div>
+
+<div>
+	<button onclick="calculate()" id="btnCalc" disabled>Calculate</button>
+</div>
+</div><!-- /step2 -->
+
+<!-- ── OUTPUTS ───────────────────────────────────────────── -->
+<div class="output-section" id="output" style="display:none">
+
+	<svg id="diagram" width="860" height="240"
+		style="border:1px solid black; border-radius:4px; background:#f0f8ff; display:block; margin:10px 0;">
+	</svg>
+
+	<div class="result-block">
+		<h4>Rotating frame</h4>
+		<div class="result-row">Angular velocity ω: <span id="o-omega"></span> rad/s</div>
+		<div class="result-row">Implied orbital speed: <span id="o-vimp"></span> km/s</div>
+		<div class="result-row">Barycentre from Moon centre: <span id="o-baryM"></span> km</div>
+		<div class="result-row">Net force at L1 (should ≈ 0): <span id="o-gL1"></span> m/s²</div>
+	</div>
+
+	<div class="result-block">
+		<h4>Counterweight sizing</h4>
+		<div class="result-row">Minimum counterweight (or it falls): <span id="o-floorOut"></span></div>
+		<div class="result-row">Headroom (chosen ÷ minimum): <span id="o-cwRatio"></span></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Cable properties (loaded)</h4>
+		<div class="result-row">Taper ratio (L1 / surface anchor): <span id="o-taperSurf"></span></div>
+		<div class="result-row">Taper ratio (L1 / counterweight): <span id="o-taperCW"></span></div>
+		<div class="result-row">Tether (cable) mass: <span id="o-mass"></span></div>
+		<div class="result-row">Track + fixtures mass: <span id="o-trackmass"></span></div>
+		<div class="result-row">Structure total (cable + track): <span id="o-structtot"></span></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Cross-sections &amp; anchor</h4>
+		<div class="result-row">Area at L1 (climax): <span id="o-AL1"></span> mm²</div>
+		<div class="result-row">Area at surface anchor: <span id="o-Asurf"></span> mm²</div>
+		<div class="result-row">Area at counterweight: <span id="o-Acw"></span> mm²</div>
+	</div>
+
+	<div class="result-block">
+		<h4>Forces (full load)</h4>
+		<div class="result-row">Tension at L1 (peak): <span id="o-TL1"></span></div>
+		<div class="result-row">Hold-down tension at surface: <span id="o-Tsurf"></span></div>
+		<div class="result-row">Net acceleration at counterweight: <span id="o-anet"></span></div>
+	</div>
+
+	<div class="result-block" style="min-width:330px">
+		<h4>Throughput to counterweight</h4>
+		<div class="result-row">Trip time (surface → counterweight): <span id="o-trip"></span></div>
+		<div class="result-row">Departure cadence: <span id="o-cadence"></span></div>
+		<div class="result-row">Climbers on the cable at once: <span id="o-nclimb"></span></div>
+		<div class="result-row">Mean spacing between climbers: <span id="o-spacing"></span> km</div>
+		<div class="result-row">Cargo on the cable at once: <span id="o-oncable"></span></div>
+		<div class="result-row">Lift power (to L1, at efficiency): <span id="o-power"></span></div>
+		<div class="result-row">Energy per tonne delivered: <span id="o-epert"></span></div>
+	</div>
+
+	<div class="result-block" id="sweepBlock" style="min-width:330px">
+		<h4>Cruise-speed trade (mass vs. climb speed)</h4>
+		<div class="result-row note" style="max-width:560px">Re-sizing the structure at climb
+			speeds around the chosen value, holding throughput, material and counterweight
+			headroom (chosen ÷ minimum) fixed. The live load on the cable ∝ 1/v, so faster
+			climbing shrinks the cable and counterweight — with diminishing returns, while track
+			wear rises ∝ v². The row matching the current climb speed is highlighted.</div>
+		<table id="sweepTable" class="sweep"></table>
+	</div>
+
+	<div class="result-block" style="min-width:330px">
+		<h4>Orbit after release</h4>
+		<div class="result-row">Release radius from Earth (apogee): <span id="o-rRel"></span></div>
+		<div class="result-row">Tangential speed at release: <span id="o-vRel"></span></div>
+		<div class="result-row">Perigee of released vessel: <span id="o-perigee"></span></div>
+		<div class="result-row">Δv burn at apogee for reentry: <span id="o-dvReentry"></span></div>
+		<div class="result-row">Entry flight-path angle (at interface): <span id="o-fpa"></span></div>
+		<div class="result-row">Estimated peak deceleration: <span id="o-peakg"></span></div>
+		<div class="result-row note">Two-body Earth orbit; reentry burn is retrograde at apogee (right after release), lowering perigee to the target. Peak g is a ballistic Allen–Eggers estimate calibrated to Stardust flight data (±~20%); lift/guidance reduces it.</div>
+	</div>
+
+	<div class="mathbox" id="mathbox"></div>
+
+</div><!-- /output -->
+</div><!-- /calcMain -->
+</div><!-- /wrapper -->
+
+	<script src="MoonL1ElevatorCalc.js"></script>
+</body>
+</html>

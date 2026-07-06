@@ -1,0 +1,303 @@
+/* Mars-Phobos Skyhook Trajectory Plotter */
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0;
+	height: 100%;
+	background: #05060a;
+	color: #d8dde6;
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 14px;
+}
+
+#mps-app {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100vh;
+	overflow: hidden;
+}
+
+#mps-main {
+	flex: 1 1 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: row;
+	width: 100%;
+	position: relative;
+}
+
+/* ---- ephemeris date bar (full width, across the top) ---- */
+#mps-datebar {
+	flex: 0 0 auto;
+	padding: 9px 18px 12px;
+	background: #0c0f17;
+	border-bottom: 1px solid #1b2030;
+}
+#mps-date-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.mps-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
+#mps-date-hint { margin-left: auto; }
+.mps-slider-line { display: flex; align-items: center; gap: 12px; margin: 5px 0; }
+.mps-slider-line input[type="range"] { flex: 1 1 auto; width: auto; }
+.mps-slider-end { flex: 0 0 auto; min-width: 64px; font-size: 11px; color: #8b94a7; }
+.mps-slider-line .mps-slider-end:last-child { text-align: right; }
+.mps-slider-tag { flex: 0 0 auto; min-width: 90px; font-size: 11px; color: #8b94a7; }
+.mps-slider-tag b { color: #aeb6c6; font-weight: 600; }
+
+.mps-lock-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; cursor: pointer; }
+.mps-lock-toggle input { accent-color: #5aa9ff; margin: 0; cursor: pointer; }
+.mps-lock-ico { margin-left: 4px; font-size: 11px; opacity: 0.4; filter: grayscale(1); }
+.mps-lock-toggle:has(input:checked) .mps-lock-ico { opacity: 1; filter: none; }
+
+/* ---- 3D view ---- */
+#mps-view {
+	position: relative;
+	flex: 1 1 0;
+	min-width: 0;
+	background: radial-gradient(circle at 50% 40%, #0b1020 0%, #05060a 70%);
+}
+#mps-canvas-holder { position: absolute; inset: 0; }
+#mps-canvas-holder canvas { display: block; }
+
+#mps-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+.mps-label {
+	position: absolute;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 11px;
+	line-height: 1;
+	color: #d3d9e6;
+	text-shadow: 0 0 3px #000, 0 0 2px #000, 0 1px 2px #000;
+	white-space: nowrap;
+	transform: translateY(-50%);
+	pointer-events: none;
+}
+
+/* helio-context label layer (mirrors #mps-labels; shown only in solar view) */
+#mps-helio-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+
+/* top-left button that toggles the heliocentric solar-system context view */
+#mps-view-toggle {
+	position: absolute;
+	left: 12px;
+	top: 12px;
+	z-index: 4;
+	font-size: 12px;
+	padding: 5px 11px;
+	background: rgba(20,26,40,0.82);
+	border: 1px solid #2f4060;
+	border-radius: 6px;
+	color: #cfe0ff;
+	cursor: pointer;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+#mps-view-toggle:hover { background: rgba(36,53,89,0.9); }
+#mps-view-toggle.mps-view-toggle-on { background: rgba(58,111,208,0.85); border-color: #5aa9ff; color: #eaf1ff; }
+
+/* ---- marker card (top-left of the view pane, below the view-toggle
+   button; solar-system view only) ---- */
+#mps-marker-card {
+	position: absolute;
+	top: 54px;
+	left: 12px;
+	width: 196px;
+	padding: 9px 11px 10px;
+	background: rgba(14,18,28,0.94);
+	border: 1px solid #2a3142;
+	border-radius: 7px;
+	box-shadow: 0 2px 12px rgba(0,0,0,0.55);
+	z-index: 5;
+	pointer-events: auto;
+}
+.mps-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.mps-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
+.mps-marker-x {
+	padding: 0; width: 20px; height: 20px; line-height: 18px; text-align: center;
+	font-size: 12px; border-radius: 4px; color: #aeb6c6;
+}
+.mps-marker-slider { width: 100%; display: block; margin: 2px 0 9px; cursor: ew-resize; touch-action: none; }
+.mps-marker-slider:disabled { opacity: 0.35; cursor: default; }
+.mps-marker-mode { display: flex; gap: 4px; margin: 0 0 9px; }
+.mps-mode-btn {
+	flex: 1; padding: 3px 0; font-size: 11px; border-radius: 4px;
+	background: #141a28; color: #aeb6c6; border: 1px solid #2a3142; cursor: pointer;
+}
+.mps-mode-btn.active { background: #1b2740; color: #cfe0ff; border-color: #2f4060; }
+.mps-mode-btn:disabled { opacity: 0.35; cursor: default; }
+.mps-marker-budget { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 6px; font-size: 11px; color: #8b94a7; }
+.mps-marker-budget input { width: 62px; padding: 3px 5px; }
+.mps-marker-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 4px 0; }
+.mps-marker-label { color: #8b94a7; font-size: 11px; }
+.mps-marker-val { font-size: 13px; font-weight: 600; color: #e6ebf4; }
+.mps-marker-km { color: #6b7589; font-size: 10px; text-align: right; margin: -2px 0 2px; }
+
+#mps-view-hud {
+	position: absolute;
+	left: 12px;
+	bottom: 12px;
+	font-size: 12px;
+	color: #8b94a7;
+	pointer-events: none;
+	text-shadow: 0 1px 2px #000;
+}
+.mps-hud-line { margin-top: 2px; }
+.mps-hud-key {
+	display: inline-block;
+	padding: 0 5px;
+	border: 1px solid #2a3142;
+	border-radius: 3px;
+	color: #aeb6c6;
+	background: rgba(20,26,40,0.6);
+}
+
+/* ---- input panel ---- */
+#mps-panel {
+	flex: 0 0 366px;
+	max-width: 366px;
+	height: 100%;
+	overflow-y: auto;
+	padding: 16px 18px 32px;
+	background: #0c0f17;
+	border-left: 1px solid #1b2030;
+}
+#mps-panel h1 { font-size: 18px; margin: 0 0 14px; font-weight: 650; }
+#mps-panel h2 { font-size: 13px; margin: 0 0 8px; font-weight: 600; color: #c7cedd; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.mps-block {
+	padding: 12px 0;
+	border-top: 1px solid #1b2030;
+}
+/* Marks the visually-first block within whichever of #mps-panel-geo /
+   #mps-panel-helio is currently shown (NOT :first-of-type -- the two
+   panels are separate containers now, so :first-of-type would also
+   (wrongly) strip the border off the Reset section, which sits after
+   both as a direct child of #mps-panel and is otherwise unrelated). */
+.mps-block-first { border-top: none; }
+
+.mps-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+.mps-muted { color: #8b94a7; font-size: 12px; }
+.mps-fineprint { color: #6b7589; font-size: 11px; line-height: 1.5; margin-top: 18px; }
+
+/* paired altitude inputs (CoM / top / bottom) */
+.mps-fieldpair { display: flex; gap: 14px; }
+.mps-field { flex: 1; min-width: 0; }
+.mps-field label { display: block; font-size: 11px; color: #8b94a7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
+.mps-field .mps-inwrap { display: flex; align-items: baseline; gap: 5px; }
+.mps-field input[type="number"] { width: 100%; min-width: 0; }
+.mps-unit { color: #6b7589; font-size: 11px; }
+
+.mps-rel-slider-field { margin-bottom: 12px; }
+#mps-rel-slider-hint { margin-top: 4px; font-size: 10px; }
+
+/* readout block beneath a field */
+.mps-readouts { margin-top: 7px; }
+.mps-ro { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 3px 0; }
+.mps-ro-label { color: #8b94a7; font-size: 11px; }
+.mps-ro-val { font-size: 13px; font-weight: 600; color: #e6ebf4; white-space: nowrap; }
+.mps-ro-sub { color: #6b7589; font-size: 10px; }
+
+.mps-release-readout .mps-ro-val { color: #66f0ff; }
+
+input[type="range"] { width: 100%; accent-color: #5aa9ff; }
+input[type="date"], select, input[type="number"] {
+	background: #131826;
+	color: #d8dde6;
+	border: 1px solid #2a3142;
+	border-radius: 4px;
+	padding: 5px 7px;
+	font-size: 13px;
+	font-family: inherit;
+}
+select { width: 100%; }
+input[type="number"] { width: 78px; }
+input[type="number"].mps-bad { border-color: #b4533a; }
+
+button {
+	background: #1b2740;
+	color: #cfe0ff;
+	border: 1px solid #2f4060;
+	border-radius: 5px;
+	padding: 6px 14px;
+	font-size: 13px;
+	cursor: pointer;
+}
+button:hover { background: #243559; }
+
+/* "closest approach" readout under the Destination dropdown -- reports how
+   near the current (waypoint-free, if none exist yet) coast ever gets to the
+   chosen destination's orbit, since the proximity ring only lights up inside
+   APPROACH_FAR and a bare Mars-escape release rarely comes that close. */
+#mps-approach-row { justify-content: space-between; }
+#mps-approach-info { flex: 1 1 auto; }
+#mps-approach-jump { padding: 3px 10px; font-size: 11px; flex: 0 0 auto; }
+
+.mps-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #aeb6c6; cursor: pointer; }
+.mps-check input { accent-color: #5aa9ff; }
+
+.mps-legend { gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; flex-wrap: wrap; display: flex; }
+.mps-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 2px; vertical-align: -1px; }
+
+/* ---- straddling burn-readout panes (escape #mps-panel's clipping) ---- */
+#mps-burn-readouts { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.mps-readout {
+	position: absolute;
+	box-sizing: border-box;
+	min-width: 122px;
+	padding: 7px 11px;
+	background: rgba(14,18,28,0.94);
+	border: 1px solid #2a3142;
+	border-radius: 7px;
+	box-shadow: 0 2px 12px rgba(0,0,0,0.55);
+	pointer-events: none;
+}
+.mps-readout-row { display: flex; flex-direction: column; align-items: flex-start; margin: 4px 0; }
+.mps-readout-label { color: #8b94a7; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.mps-readout-val { font-size: 13px; font-weight: 600; line-height: 1.2; }
+
+/* isometric burn-vector widget (prograde/radial/normal, per waypoint) */
+.mps-vecwidget {
+	width: 100%;
+	height: auto;
+	display: block;
+	margin: 2px 0 2px;
+	touch-action: none;
+	cursor: crosshair;
+	user-select: none;
+}
+.mps-vec-nums { display: flex; gap: 10px; margin-top: 2px; }
+.mps-vec-num { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1; min-width: 0; font-size: 11px; font-weight: 600; }
+.mps-vec-num input { width: 100%; min-width: 0; font-weight: 400; }
+
+/* waypoint cards */
+.mps-waypoint {
+	border: 1px solid #233149;
+	border-radius: 6px;
+	padding: 10px;
+	margin: 10px 0;
+	background: #0e1422;
+}
+.mps-waypoint-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.mps-waypoint-head .mps-wp-title { font-weight: 600; color: #cfe0ff; }
+.mps-wp-x {
+	padding: 0; width: 20px; height: 20px; line-height: 18px; text-align: center;
+	font-size: 12px; border-radius: 4px; color: #aeb6c6;
+}
+.mps-wp-snaps { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 6px; }
+.mps-wp-snap { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #aeb6c6; cursor: pointer; }
+.mps-wp-snap input { margin: 0; }
+.mps-wp-slider { width: 100%; display: block; margin: 2px 0 8px; cursor: pointer; }
+.mps-wp-slider:disabled { opacity: 0.35; cursor: default; }
+
+/* "Waypoint burns" header row */
+.mps-wp-create { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.mps-wp-create h2 { margin: 0; }
+.mps-wp-create .mps-check { font-size: 12px; color: #aeb6c6; }
+.mps-wp-create .mps-check input:disabled { opacity: 0.4; }
+
+/* responsive: stack the panel under the view on narrow screens */
+@media (max-width: 760px) {
+	#mps-main { flex-direction: column; }
+	#mps-view { flex: 0 0 52vh; height: 52vh; }
+	#mps-panel { flex: 1 1 auto; max-width: none; width: 100%; height: auto; border-left: none; border-top: 1px solid #1b2030; }
+	#mps-date-hint { display: none; }
+}

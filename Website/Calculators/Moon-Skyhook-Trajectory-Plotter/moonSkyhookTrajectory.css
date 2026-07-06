@@ -1,0 +1,249 @@
+/* Moon Skyhook Trajectory Plotter */
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0;
+	height: 100%;
+	background: #05060a;
+	color: #d8dde6;
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 14px;
+}
+
+#msk-app {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100vh;
+	overflow: hidden;
+}
+
+#msk-main {
+	flex: 1 1 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: row;
+	width: 100%;
+	position: relative;
+}
+
+/* ---- ephemeris date bar (full width, across the top) ---- */
+#msk-datebar {
+	flex: 0 0 auto;
+	padding: 9px 18px 12px;
+	background: #0c0f17;
+	border-bottom: 1px solid #1b2030;
+}
+#msk-date-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.msk-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
+#msk-date-hint { margin-left: auto; }
+.msk-slider-line { display: flex; align-items: center; gap: 12px; margin: 5px 0; }
+.msk-slider-line input[type="range"] { flex: 1 1 auto; width: auto; }
+.msk-slider-end { flex: 0 0 auto; min-width: 64px; font-size: 11px; color: #8b94a7; }
+.msk-slider-line .msk-slider-end:last-child { text-align: right; }
+.msk-slider-tag { flex: 0 0 auto; min-width: 116px; font-size: 11px; color: #8b94a7; }
+.msk-slider-tag b { color: #aeb6c6; font-weight: 600; }
+
+/* "lock relationship" toggle to the left of the year / lunar-month sliders */
+.msk-lock-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; cursor: pointer; }
+.msk-lock-toggle input { accent-color: #5aa9ff; margin: 0; cursor: pointer; }
+.msk-lock-ico { margin-left: 4px; font-size: 11px; opacity: 0.4; filter: grayscale(1); }
+.msk-lock-toggle:has(input:checked) .msk-lock-ico { opacity: 1; filter: none; }
+
+/* ---- 3D view ---- */
+#msk-view {
+	position: relative;
+	flex: 1 1 0;
+	min-width: 0;
+	background: radial-gradient(circle at 50% 40%, #0b1020 0%, #05060a 70%);
+}
+#msk-canvas-holder { position: absolute; inset: 0; }
+#msk-canvas-holder canvas { display: block; }
+
+#msk-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+.msk-label {
+	position: absolute;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 11px;
+	line-height: 1;
+	color: #d3d9e6;
+	text-shadow: 0 0 3px #000, 0 0 2px #000, 0 1px 2px #000;
+	white-space: nowrap;
+	transform: translateY(-50%);
+	pointer-events: none;
+}
+
+/* helio-context label layer (mirrors #msk-labels; shown only in solar view) */
+#msk-helio-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+
+/* top-left button that toggles the heliocentric solar-system context view */
+#msk-view-toggle {
+	position: absolute;
+	left: 12px;
+	top: 12px;
+	z-index: 4;
+	font-size: 12px;
+	padding: 5px 11px;
+	background: rgba(20,26,40,0.82);
+	border: 1px solid #2f4060;
+	border-radius: 6px;
+	color: #cfe0ff;
+	cursor: pointer;
+	box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+#msk-view-toggle:hover { background: rgba(36,53,89,0.9); }
+#msk-view-toggle.msk-view-toggle-on { background: rgba(58,111,208,0.85); border-color: #5aa9ff; color: #eaf1ff; }
+
+#msk-view-hud {
+	position: absolute;
+	left: 12px;
+	bottom: 12px;
+	font-size: 12px;
+	color: #8b94a7;
+	pointer-events: none;
+	text-shadow: 0 1px 2px #000;
+}
+.msk-hud-line { margin-top: 2px; }
+.msk-hud-key {
+	display: inline-block;
+	padding: 0 5px;
+	border: 1px solid #2a3142;
+	border-radius: 3px;
+	color: #aeb6c6;
+	background: rgba(20,26,40,0.6);
+}
+
+/* ---- input panel ---- */
+#msk-panel {
+	flex: 0 0 366px;
+	max-width: 366px;
+	height: 100%;
+	overflow-y: auto;
+	padding: 16px 18px 32px;
+	background: #0c0f17;
+	border-left: 1px solid #1b2030;
+}
+#msk-panel h1 { font-size: 18px; margin: 0 0 14px; font-weight: 650; }
+#msk-panel h2 { font-size: 13px; margin: 0 0 8px; font-weight: 600; color: #c7cedd; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.msk-block {
+	padding: 12px 0;
+	border-top: 1px solid #1b2030;
+}
+.msk-block:first-of-type { border-top: none; }
+
+.msk-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.msk-muted { color: #8b94a7; font-size: 12px; }
+.msk-fineprint { color: #6b7589; font-size: 11px; line-height: 1.5; margin-top: 18px; }
+
+/* paired altitude inputs (CoM / top) */
+.msk-fieldpair { display: flex; gap: 14px; }
+.msk-field { flex: 1; min-width: 0; }
+.msk-field label { display: block; font-size: 11px; color: #8b94a7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
+.msk-field .msk-inwrap { display: flex; align-items: baseline; gap: 5px; }
+.msk-field input[type="number"] { width: 100%; min-width: 0; }
+.msk-unit { color: #6b7589; font-size: 11px; }
+
+.msk-rel-slider-field { margin-bottom: 12px; }
+#msk-rel-slider-hint { margin-top: 4px; font-size: 10px; }
+
+/* readout block beneath a field */
+.msk-readouts { margin-top: 7px; }
+.msk-ro { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 3px 0; }
+.msk-ro-label { color: #8b94a7; font-size: 11px; }
+.msk-ro-val { font-size: 13px; font-weight: 600; color: #e6ebf4; white-space: nowrap; }
+.msk-ro-sub { color: #6b7589; font-size: 10px; }
+
+.msk-release-readout .msk-ro-val { color: #66f0ff; }
+
+input[type="range"] { width: 100%; accent-color: #5aa9ff; }
+input[type="date"], select, input[type="number"] {
+	background: #131826;
+	color: #d8dde6;
+	border: 1px solid #2a3142;
+	border-radius: 4px;
+	padding: 5px 7px;
+	font-size: 13px;
+	font-family: inherit;
+}
+select { width: 100%; }
+input[type="number"] { width: 78px; }
+input[type="number"].msk-bad { border-color: #b4533a; }
+
+button {
+	background: #1b2740;
+	color: #cfe0ff;
+	border: 1px solid #2f4060;
+	border-radius: 5px;
+	padding: 6px 14px;
+	font-size: 13px;
+	cursor: pointer;
+}
+button:hover { background: #243559; }
+
+.msk-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #aeb6c6; cursor: pointer; }
+.msk-check input { accent-color: #5aa9ff; }
+
+.msk-legend { gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; flex-wrap: wrap; display: flex; }
+.msk-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 2px; vertical-align: -1px; }
+
+/* ---- straddling burn-readout panes (escape #msk-panel's clipping) ---- */
+#msk-burn-readouts { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.msk-readout {
+	position: absolute;
+	box-sizing: border-box;
+	min-width: 122px;
+	padding: 7px 11px;
+	background: rgba(14,18,28,0.94);
+	border: 1px solid #2a3142;
+	border-radius: 7px;
+	box-shadow: 0 2px 12px rgba(0,0,0,0.55);
+	pointer-events: none;
+}
+.msk-readout-row { display: flex; flex-direction: column; align-items: flex-start; margin: 4px 0; }
+.msk-readout-label { color: #8b94a7; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.msk-readout-val { font-size: 13px; font-weight: 600; line-height: 1.2; }
+
+/* isometric burn-vector widget (prograde/radial/normal, per waypoint) */
+.msk-vecwidget {
+	width: 100%;
+	height: auto;
+	display: block;
+	margin: 2px 0 2px;
+	touch-action: none;
+	cursor: crosshair;
+	user-select: none;
+}
+.msk-vec-nums { display: flex; gap: 10px; margin-top: 2px; }
+.msk-vec-num { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1; min-width: 0; font-size: 11px; font-weight: 600; }
+.msk-vec-num input { width: 100%; min-width: 0; font-weight: 400; }
+
+/* waypoint cards */
+.msk-waypoint {
+	border: 1px solid #233149;
+	border-radius: 6px;
+	padding: 10px;
+	margin: 10px 0;
+	background: #0e1422;
+}
+.msk-waypoint-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.msk-waypoint-head .msk-wp-title { font-weight: 600; color: #cfe0ff; }
+.msk-wp-x {
+	padding: 0; width: 20px; height: 20px; line-height: 18px; text-align: center;
+	font-size: 12px; border-radius: 4px; color: #aeb6c6;
+}
+
+/* "Waypoint burns" header row */
+.msk-wp-create { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+.msk-wp-create h2 { margin: 0; }
+.msk-wp-create .msk-check { font-size: 12px; color: #aeb6c6; }
+.msk-wp-create .msk-check input:disabled { opacity: 0.4; }
+
+/* responsive: stack the panel under the view on narrow screens */
+@media (max-width: 760px) {
+	#msk-main { flex-direction: column; }
+	#msk-view { flex: 0 0 52vh; height: 52vh; }
+	#msk-panel { flex: 1 1 auto; max-width: none; width: 100%; height: auto; border-left: none; border-top: 1px solid #1b2030; }
+	#msk-date-hint { display: none; }
+}

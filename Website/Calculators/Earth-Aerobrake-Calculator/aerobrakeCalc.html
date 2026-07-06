@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Earth Aerobrake Reality-Check Calculator</title>
+	<meta charset="utf-8">
+	<link rel="stylesheet" href="aerobrakeCalc.css">
+	<!-- Shared libraries (classic scripts; load before the page script). -->
+	<script src="../../Shared/orbit.js"></script>
+	<script src="../../Shared/constants.js"></script>
+	<script src="../../Shared/math-utils.js"></script>
+	<script src="aerobrakeCalc.js" defer></script>
+</head>
+<body>
+<div class="wrapper">
+<div class="calcMain">
+<h1>Earth Aerobrake Reality-Check Calculator</h1>
+<p class="intro note">
+Sizing check for the inbound Ceres-fleet manoeuvre in
+<code>CeresTransportSystem.md</code>: a ship arrives on a hyperbolic approach,
+makes a single grazing pass through Earth's upper atmosphere, and exits into a
+very eccentric orbit whose apoapsis sits near the edge of Earth's sphere of
+influence (where the inclination/periapsis burn for the Moon is cheap). The pass
+sheds only a small slice off the top of the entry speed, so this is the
+<em>grazing</em> regime, not a steep capsule entry: peak deceleration is set by
+the speed lost and the geometry, and is independent of ballistic coefficient —
+but the heating and dynamic pressure are <em>not</em>, and that is where the
+design is really tested. Pure orbital and entry maths come from
+<code>OrbitalMath</code> (<code>../../Shared/math-utils.js</code>).
+</p>
+
+<h2>Inputs</h2>
+<div class="containers">
+
+	<div class="container">
+		<h4>Trajectory</h4>
+		<div class="row"><label>Entry speed at atmosphere</label>
+			<input type="number" id="vEntry" value="13.0" step="0.1" min="8"> <span class="unit">km/s</span></div>
+		<div class="row"><label>Braking periapsis altitude (nominal)</label>
+			<input type="number" id="hPeri" value="70" step="1" min="20"> <span class="unit">km</span></div>
+		<div class="row"><label>Target apoapsis (× SOI radius)</label>
+			<input type="number" id="apoFrac" value="1.0" step="0.05" min="0.05" max="1"> <span class="unit">×SOI</span></div>
+		<div class="row"><label>Atmosphere scale height</label>
+			<input type="number" id="scaleH" value="7160" step="10" min="4000"> <span class="unit">m</span></div>
+	</div>
+
+	<div class="container">
+		<h4>Ship &amp; masses</h4>
+		<div class="row"><label>Cargo mass</label>
+			<input type="number" id="cargo" value="60000" step="1000" min="1"> <span class="unit">t</span></div>
+		<div class="row"><label>Structure (% of cargo)</label>
+			<input type="number" id="structPct" value="5" step="0.5" min="0"> <span class="unit">%</span></div>
+		<div class="row"><label>Heat shield (% of cargo)</label>
+			<input type="number" id="tpsPct" value="3.5" step="0.25" min="0"> <span class="unit">%</span></div>
+		<div class="row"><label>Residual fuel at entry</label>
+			<input type="number" id="fuel" value="700" step="50" min="0"> <span class="unit">t</span></div>
+	</div>
+
+	<div class="container">
+		<h4>Heat shield / aero shape</h4>
+		<div class="row"><label>Heat-shield diameter</label>
+			<input type="number" id="shieldD" value="150" step="5" min="5"> <span class="unit">m</span></div>
+		<div class="row"><label>Drag coefficient C<sub>d</sub></label>
+			<input type="number" id="cd" value="1.5" step="0.05" min="0.3"> <span class="unit"></span></div>
+		<div class="row"><label>Nose radius (0 = ½ diameter)</label>
+			<input type="number" id="noseR" value="0" step="1" min="0"> <span class="unit">m</span></div>
+		<div class="row"><label>PICA effective heat of ablation</label>
+			<input type="number" id="qStar" value="15" step="1" min="3"> <span class="unit">MJ/kg</span></div>
+	</div>
+
+</div>
+
+<button id="calcBtn">Calculate</button>
+
+<div class="output-section" id="out"></div>
+
+<div class="notes-block">
+	<h4>How to read this</h4>
+	<p><strong>Peak g and the orbit</strong> are robust — they depend only on the
+	speed shed and the geometry. <strong>Ballistic coefficient</strong> (set by mass
+	÷ C<sub>d</sub>·area) is the swing variable: a compact, high-β ship must dive
+	deep into dense air (huge dynamic pressure and heat flux), while a large, low-β
+	decelerator brakes high and gently. Watch the periapsis altitude, dynamic
+	pressure, and heat-flux readouts as you change the shield diameter.</p>
+	<p><strong>Heat-shield mass</strong> is a convective-only estimate (Sutton–Graves
+	flux × soak time ÷ heat of ablation, with a ×2.5 allowance for char, insulation
+	and margin). It <em>excludes radiative heating</em>, which becomes significant
+	above ~11 km/s and grows with nose radius — so the larger-diameter designs carry
+	an unmodelled radiative penalty. Treat the TPS figure as a lower bound and a
+	first-cut reality check, not a flight sizing. A proper orbital simulator plus a
+	coupled radiative/ablation TPS code is needed to firm these up.</p>
+</div>
+
+</div>
+</div>
+</body>
+</html>

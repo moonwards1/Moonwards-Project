@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Shuttle trips from Mass Driver to Skyhook Receiving Deck</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0b0b17;
+  color: #bbb;
+  font-family: 'Courier New', Courier, monospace;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 16px;
+  min-height: 100vh;
+}
+h1 {
+  font-size: 16px;
+  letter-spacing: 1.5px;
+  color: #9c9b9b;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+canvas { display: block; }
+#controls {
+  width: 700px;
+  max-width: 100%;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#scrub-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#scrub {
+  flex: 1;
+  accent-color: #666;
+  cursor: pointer;
+}
+#time-display {
+  font-size: 18px;
+  color: #000;
+  background: #b9a380;
+  white-space: nowrap;
+  min-width: 120px;
+  text-align: right;
+  padding: 2px 6px;
+}
+#btn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+button, select {
+  background: #0e0e1e;
+  color: #aaa;
+  border: 1px solid #333;
+  padding: 5px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 1px;
+}
+button:hover, select:hover { background: #181828; }
+#loop-btn.on { color: #8899ff; border-color: #556; }
+</style>
+</head>
+<body>
+
+<h1>Shuttle trips from Mass Driver to Skyhook Receiving Deck</h1>
+<canvas id="c" width="700" height="700"></canvas>
+<div id="controls">
+  <div id="scrub-row">
+    <input id="scrub" type="range" min="0" max="20000" value="0" step="1">
+    <div id="time-display">T+0h 00m 00s</div>
+  </div>
+  <div id="btn-row">
+    <button id="play-btn">&#9654; PLAY</button>
+    <select id="speed-sel">
+      <option value="0.5">0.5&#215;</option>
+      <option value="1" selected>1&#215;</option>
+      <option value="2">2&#215;</option>
+      <option value="4">4&#215;</option>
+    </select>
+    <button id="loop-btn" class="on">&#8635; LOOP</button>
+  </div>
+</div>
+
+<script>
+  /*
+  This is an animation of a gravity-gradient skyhook orbiting the moon, and three shuttles that are launched from a mass driver on the lunar surface rendezvousing with the skyhook. It is meant to show the real physics of such a process.
+  */
+'use strict';
+
+// ── PHYSICS CONSTANTS ────────────────────────────────────────────
+const MOON_R_M   = 1_738_100;
+const MOON_GM    = 4.902800118e12;
+const MOON_R_KM  = MOON_R_M / 1000;
+const COM_PERIOD = 8_105;   // s
+
+const SCENARIOS = {
+  Direct: { v: 1731.50 },
+  Fast:   { v: 1770.00 },
+  Slow:   { v: 1700.00 },
+};
+
+// ── SKYHOOK RADII (km from moon center) ─────────────────────────
+const R_FOOT = MOON_R_KM + 30;
+const R_TIP  = MOON_R_KM + 2250;
+const R_RZ   = MOON_R_KM + 233;
+const R_COM  = MOON_R_KM + 275;
+
+// ── ORBITAL MECHANICS (calcOrbit needed before timing constants) ──
+function calcOrbit(v_m_s) {
+  const r      = MOON_R_M;
+  const energy = v_m_s * v_m_s / 2 - MOON_GM / r;
+  const sma    = -MOON_GM / (2 * energy);
+  const h      = v_m_s * r;
+  const ecc    = Math.sqrt(1 + 2 * energy * h * h / (MOON_GM * MOON_GM));
+  const period = 2 * Math.PI * Math.sqrt(sma ** 3 / MOON_GM);
+  return { sma, ecc, period };
+}
+
+// ── ANGLE / TIME CONSTANTS ───────────────────────────────────────
+const DEG_PER_S = 360 / COM_PERIOD;
+
+// Orbital periods derived from launch velocities
+const T_FAST_PERIOD   = calcOrbit(SCENARIOS.Fast.v).period;
+const T_DIRECT_PERIOD = calcOrbit(SCENARIOS.Direct.v).period;
+const T_SLOW_PERIOD   = calcOrbit(SCENARIOS.Slow.v).period;
+
+// All three hit periapsis simultaneously after exactly one full orbit each;
+// launch times are staggered so each shuttle's travel time equals its own period.
+const T_FAST_LAUNCH   = 0;
+const T_BURN          = T_FAST_PERIOD;                          // ≈ 7592 s
+const T_DIRECT_LAUNCH = T_BURN - T_DIRECT_PERIOD;              // ≈  425 s
+const T_SLOW_LAUNCH   = T_BURN - T_SLOW_PERIOD;                // ≈  966 s
+const T_FAST_APO      = T_FAST_PERIOD / 2;                     // ≈ 3796 s
+const T_DIRECT_APO    = T_DIRECT_LAUNCH + T_DIRECT_PERIOD / 2; // ≈ 4009 s
+const T_SLOW_APO      = T_SLOW_LAUNCH   + T_SLOW_PERIOD   / 2; // ≈ 4279 s
+const T_RENDEZVOUS    = T_BURN + T_DIRECT_PERIOD / 2;          // ≈ 11176 s
+const T_FORMATION     = 2 * 3600;                              // 7200 s — icon switches to formation at 2h mission time
+
+// Skyhook start heading: computed so it faces "up" (toward apoapsis) at rendezvous
+const ANG_FAST_LAUNCH = 180 - DEG_PER_S * T_RENDEZVOUS;
+
+const LAUNCH_T = { Fast: T_FAST_LAUNCH, Direct: T_DIRECT_LAUNCH, Slow: T_SLOW_LAUNCH };
+const APO_T    = { Fast: T_FAST_APO,    Direct: T_DIRECT_APO,    Slow: T_SLOW_APO    };
+
+// ── ORBITAL MECHANICS (continued) ────────────────────────────────
+
+function solveKepler(M, ecc) {
+  let E = M;
+  for (let i = 0; i < 50; i++) {
+    const dE = (M - E + ecc * Math.sin(E)) / (1 - ecc * Math.cos(E));
+    E += dE;
+    if (Math.abs(dE) < 1e-10) break;
+  }
+  return E;
+}
+
+function buildGeom(v_m_s) {
+  const { sma, ecc, period } = calcOrbit(v_m_s);
+  const a = sma / 1000;
+  const b = Math.sqrt(sma ** 2 * (1 - ecc * ecc)) / 1000;
+  const c = a * ecc;
+  return { a, b, c, ecc, period };
+}
+
+const GEOM = {};
+for (const name of ['Direct', 'Fast', 'Slow']) {
+  GEOM[name] = buildGeom(SCENARIOS[name].v);
+}
+
+function lerpGeom(g1, g2, t) {
+  return { a: g1.a + (g2.a - g1.a) * t, b: g1.b + (g2.b - g1.b) * t, c: g1.c + (g2.c - g1.c) * t };
+}
+
+function orbitBlend(disp_t) {
+  const t0 = missionToDisp(T_BURN);
+  if (disp_t <= t0) return 0;
+  if (disp_t >= t0 + 0.5) return 1;
+  return (disp_t - t0) / 0.5;
+}
+
+function orbitPos(geom, elapsed_s) {
+  const { a, b, c, ecc, period } = geom;
+  const M  = (2 * Math.PI / period) * elapsed_s;
+  const E  = solveKepler(M, ecc);
+  const tp = E - Math.PI / 2;
+  const x  = b * Math.cos(tp);
+  const y  = c + a * Math.sin(tp);
+  const ddx = -b * Math.sin(tp);
+  const ddy =  a * Math.cos(tp);
+  const len = Math.hypot(ddx, ddy);
+  const tx = ddx / len, ty = ddy / len;
+  return { x, y, tx, ty, px: -ty, py: tx };
+}
+
+// ── SHUTTLE STATE ────────────────────────────────────────────────
+function shuttlePos(name, t) {
+  const tl = LAUNCH_T[name];
+  if (t < tl) {
+    const g = GEOM[name];
+    return { x: 0, y: g.c - g.a, tx: 1, ty: 0, px: 0, py: 1, prelaunch: true };
+  }
+  const geom = (t >= T_BURN) ? GEOM.Direct : GEOM[name];
+  const t0   = (t >= T_BURN) ? T_BURN      : tl;
+  return { ...orbitPos(geom, t - t0), prelaunch: false };
+}
+
+function shuttleFlash(name, t) {
+  if (t < LAUNCH_T[name]) return 0;
+  const WINDOW  = 150;
+  const apo_dt  = Math.abs(t - APO_T[name]);
+  const peri_dt = Math.abs(t - T_BURN);
+  const dt = Math.min(apo_dt, peri_dt);
+  return dt < WINDOW ? Math.max(0, 1 - dt / WINDOW) : 0;
+}
+
+// ── CANVAS TRANSFORM ─────────────────────────────────────────────
+// Viewport: x ∈ [-2667, 2667] km, y ∈ [-2929, 2433] km  (1.5× zoom)
+const CW = 700, CH = 700;
+const SCALE = CW * 1.5 / 8000;       // px per km  (1.5× original scale)
+const OX    = 350;                   // px — canvas x at x_km=0
+const OY    = 319;                   // px — canvas y at y_km=0
+
+function px(x_km, y_km) {
+  return { x: OX + x_km * SCALE, y: OY - y_km * SCALE };
+}
+
+// ── VISUAL CONSTANTS ─────────────────────────────────────────────
+const TRI_SIZE   = 170 / 2;         // km — 3/4 of base size; uniform across all shuttles
+const TRI_TANG   = -0.2 * TRI_SIZE; // km tangent offset
+const STACK_STEP = 2 * TRI_SIZE;    // km — vertical gap between stacked pre-launch shuttles
+
+const COLORS = { Direct: '#00e5ff', Fast: '#ff8c00', Slow: '#c142ff' };
+
+// ── DRAW FUNCTIONS ───────────────────────────────────────────────
+function drawMoon(ctx) {
+  const c = px(0, 0);
+  const r = MOON_R_KM * SCALE - 5;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#b9a380';
+  ctx.fill();
+  ctx.strokeStyle = '#a08050';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawOrbit(ctx, geom, color) {
+  const center = px(0, geom.c);
+  ctx.beginPath();
+  ctx.ellipse(center.x, center.y, geom.b * SCALE, geom.a * SCALE, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+}
+
+function skyhookRad(t) {
+  const deg = ANG_FAST_LAUNCH + DEG_PER_S * t;
+  return (-90 + deg) * Math.PI / 180;
+}
+
+function drawSkyhook(ctx, t) {
+  const rad = skyhookRad(t);
+  const dx  = Math.cos(rad), dy = Math.sin(rad);
+
+  const foot = px(R_FOOT * dx, R_FOOT * dy);
+  const tip  = px(R_TIP  * dx, R_TIP  * dy);
+  const rz   = px(R_RZ   * dx, R_RZ   * dy);
+  const com  = px(R_COM  * dx, R_COM  * dy);
+
+  ctx.beginPath();
+  ctx.moveTo(foot.x, foot.y);
+  ctx.lineTo(tip.x,  tip.y);
+  ctx.strokeStyle = '#bbb';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Center of mass dot
+  ctx.beginPath();
+  ctx.arc(com.x, com.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#ccc';
+  ctx.fill();
+
+  // Receiving deck dot (drawn last — sits in front of COM dot)
+  ctx.beginPath();
+  ctx.arc(rz.x, rz.y, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#333';
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 1.5;
+  ctx.fill();
+  ctx.stroke();
+}
+
+// Mass driver label appears at start, then fades out as shuttles launch
+function massDriverAlpha(disp_t) {
+  if (disp_t <= 2.0) return 1;
+  if (disp_t >= 2.2) return 0;
+  return 1 - (disp_t - 2.0) / 0.2;
+}
+
+function drawMassDriver(ctx, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  const pos      = px(0, -MOON_R_KM);
+  const halfSize = 12;   // px — slightly larger than the ~15px shuttle triangles
+  const stemLen  = 80;   // vertical line below square
+
+  ctx.strokeStyle = '#ddd';
+  ctx.fillStyle   = 'transparent';
+  ctx.lineWidth   = 1.0;
+
+  // Hollow square
+  ctx.strokeRect(pos.x - halfSize, pos.y - halfSize, halfSize * 2, halfSize * 2);
+
+  // Vertical stem downward from square bottom
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y + halfSize);
+  ctx.lineTo(pos.x, pos.y + halfSize + stemLen);
+  ctx.stroke();
+
+  // Label
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillStyle = '#ddd';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Mass Driver Site', pos.x, pos.y + halfSize + stemLen + 4);
+
+  ctx.restore();
+}
+
+// ── LAUNCH LABELS ────────────────────────────────────────────────
+function launchLabelAlpha(disp_t, t0, hold = 1.5) {
+  if (disp_t < t0) return 0;
+  if (disp_t < t0 + hold) return 1;
+  if (disp_t < t0 + hold + 0.2) return 1 - (disp_t - (t0 + hold)) / 0.2;
+  return 0;
+}
+
+function drawBurn1Label(ctx, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '17px Courier New';
+  ctx.fillStyle = '#ffee00';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('Burn 1: 2 m/s', CW / 2, 15);
+  ctx.restore();
+}
+
+function missionToDisp(t) {
+  return (t / COM_PERIOD) * ANIM_DUR;
+}
+
+function drawLaunchArrow(ctx, arrowY, color, text) {
+  const pos = px(0, -MOON_R_KM);
+  const arrowX = pos.x + 10;
+  const arrowW = 50, headW = 15, headH = 10;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(arrowX, arrowY);
+  ctx.lineTo(arrowX + arrowW, arrowY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(arrowX + arrowW - headW, arrowY - headH);
+  ctx.lineTo(arrowX + arrowW, arrowY);
+  ctx.lineTo(arrowX + arrowW - headW, arrowY + headH);
+  ctx.stroke();
+
+  ctx.font = '17px Courier New';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, arrowX + arrowW + 15, arrowY);
+}
+
+function drawFastLaunchLabel(ctx, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const pos = px(0, -MOON_R_KM);
+  drawLaunchArrow(ctx, pos.y + 22, COLORS.Fast, '1770 m/s');
+  ctx.restore();
+}
+
+function drawDirectLaunchLabel(ctx, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const pos = px(0, -MOON_R_KM);
+  drawLaunchArrow(ctx, pos.y + 52, COLORS.Direct, '1731.5 m/s');
+  ctx.restore();
+}
+
+function drawSlowLaunchLabel(ctx, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const pos = px(0, -MOON_R_KM);
+  drawLaunchArrow(ctx, pos.y + 82, COLORS.Slow, '1700 m/s');
+  ctx.restore();
+}
+
+function drawBurn2Label(ctx, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  const pos = px(0, -MOON_R_KM);
+  const labelY = pos.y + TRI_SIZE * SCALE + 10;
+  const cx = CW / 2;
+  const lineH = 22;
+
+  ctx.font = '17px Courier New';
+  ctx.textBaseline = 'top';
+
+  // Line 1: 'Burn 2:' in yellow, centered
+  ctx.fillStyle = '#ffee00';
+  ctx.textAlign = 'center';
+  ctx.fillText('Burn 2:', cx, labelY);
+
+  // Line 2: three colored segments, centered as a group
+  const segs = [
+    { text: '-44 m/s', color: COLORS.Fast   },
+    { text: '0 m/s',   color: COLORS.Direct },
+    { text: '42 m/s',  color: COLORS.Slow   },
+  ];
+  const gap = 8;
+  const widths = segs.map(s => ctx.measureText(s.text).width);
+  const totalW = widths.reduce((a, w) => a + w, 0) + gap * (segs.length - 1);
+  let x = cx - totalW / 2;
+  ctx.textAlign = 'left';
+  for (let i = 0; i < segs.length; i++) {
+    ctx.fillStyle = segs[i].color;
+    ctx.fillText(segs[i].text, x, labelY + lineH);
+    x += widths[i] + gap;
+  }
+
+  ctx.restore();
+}
+
+function labelAlpha(disp_t) {
+  if (disp_t <= 1.0) return 1;
+  if (disp_t >= 1.2) return 0;
+  return 1 - (disp_t - 1.0) / 0.2;
+}
+
+function drawSkyhookLabels(ctx, t, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  const rad = skyhookRad(t);
+  const dx  = Math.cos(rad), dy = Math.sin(rad);
+
+  // "Skyhook" labels the tether body — anchor midway between COM and tip,
+  // line goes diagonally up-right to the label
+  const R_SH = R_COM + (R_TIP - R_COM) * 0.55;
+  const shAnchor = px(R_SH * dx, R_SH * dy);
+  const shLabel  = { x: shAnchor.x + 55, y: shAnchor.y - 26 };
+
+  // "Center of Mass" and "Receiving Deck" — horizontal lines from their dots
+  const comPos = px(R_COM * dx, R_COM * dy);
+  const rzPos  = px(R_RZ  * dx, R_RZ  * dy);
+  const hLen = 46;
+
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 1.0;
+
+  // Skyhook — diagonal line to tether body
+  ctx.beginPath();
+  ctx.moveTo(shAnchor.x, shAnchor.y);
+  ctx.lineTo(shLabel.x, shLabel.y);
+  ctx.stroke();
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ddd';
+  ctx.font = 'bold 18px Courier New';
+  ctx.fillText('Skyhook', shLabel.x + 4, shLabel.y);
+
+  // Center of Mass — horizontal line
+  ctx.font = '15px Courier New';
+  ctx.beginPath();
+  ctx.moveTo(comPos.x + 7, comPos.y);
+  ctx.lineTo(comPos.x + 7 + hLen, comPos.y);
+  ctx.stroke();
+  ctx.fillStyle = '#ccc';
+  ctx.fillText('Center of Mass', comPos.x + 7 + hLen + 4, comPos.y);
+
+  // Receiving Deck — horizontal line
+  ctx.beginPath();
+  ctx.moveTo(rzPos.x + 5, rzPos.y);
+  ctx.lineTo(rzPos.x + 5 + hLen, rzPos.y);
+  ctx.stroke();
+  ctx.fillText('Receiving Deck', rzPos.x + 5 + hLen + 4, rzPos.y);
+
+  ctx.restore();
+}
+
+// Draws one solid shuttle triangle at a km position + orbit orientation vectors
+function drawShuttleAt(ctx, name, kmX, kmY, tx, ty, perpX, perpY) {
+  const s  = TRI_SIZE;
+  const to = TRI_TANG;
+  const x1 = kmX + to * tx;
+  const y1 = kmY + to * ty;
+
+  const tip = px(x1 + tx * s,                             y1 + ty * s);
+  const bl  = px(x1 - tx * s * 0.35 + perpX * s * 0.45,  y1 - ty * s * 0.35 + perpY * s * 0.45);
+  const br  = px(x1 - tx * s * 0.35 - perpX * s * 0.45,  y1 - ty * s * 0.35 - perpY * s * 0.45);
+
+  ctx.beginPath();
+  ctx.moveTo(tip.x, tip.y);
+  ctx.lineTo(bl.x,  bl.y);
+  ctx.lineTo(br.x,  br.y);
+  ctx.closePath();
+  ctx.fillStyle = COLORS[name];
+  ctx.fill();
+}
+
+// Three shuttles in close triangular formation flying on the Direct orbit
+function drawFormation(ctx, t) {
+  const pos = shuttlePos('Direct', t);
+  const F   = TRI_SIZE * 0.85;  // offset from formation centre to each shuttle
+
+  // Fast at forward tip; Direct upper-back (top); Slow lower-back (bottom)
+  const members = [
+    { name: 'Slow',   dt: -F * 0.5, dp: -F * 0.866 },
+    { name: 'Direct', dt: -F * 0.5, dp:  F * 0.866 },
+    { name: 'Fast',   dt:  F,       dp:  0          },
+  ];
+  for (const { name, dt, dp } of members) {
+    drawShuttleAt(ctx, name,
+      pos.x + dt * pos.tx + dp * pos.px,
+      pos.y + dt * pos.ty + dp * pos.py,
+      pos.tx, pos.ty, pos.px, pos.py);
+  }
+}
+
+function drawShuttle(ctx, name, t) {
+  const pos   = shuttlePos(name, t);
+  const flash = shuttleFlash(name, t);
+
+  if (flash > 0) {
+    const offset = TRI_SIZE * 0.7 + 5 / SCALE;  // km retrograde from shuttle centre
+    const ctr = px(pos.x - pos.tx * offset, pos.y - pos.ty * offset);
+    ctx.beginPath();
+    ctx.arc(ctr.x, ctr.y, TRI_SIZE * SCALE / 2, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffee00';
+    ctx.fill();
+  }
+
+  drawShuttleAt(ctx, name, pos.x, pos.y, pos.tx, pos.ty, pos.px, pos.py);
+}
+
+
+function drawLegend(ctx) {
+  const items = [['Fastest Launch', '#ff8c00'], ['Natural Rendezvous', '#00e5ff'], ['Slowest Launch', '#c142ff']];
+  const PAD = 10, TITLE_H = 26, ITEM_H = 19, BOX_W = 195;
+  const BOX_H = PAD + TITLE_H + ITEM_H * items.length + PAD;
+  const boxX = 8, boxY = CH - 6 - BOX_H;
+
+  // Box outline
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(boxX, boxY, BOX_W, BOX_H);
+
+  // Title
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillStyle = '#ddd';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText('Example Shuttles', boxX + PAD, boxY + PAD);
+
+  // Items
+  let lx = boxX + PAD, ly = boxY + PAD + TITLE_H;
+  ctx.font = '14px Courier New';
+  ctx.textBaseline = 'middle';
+  for (const [name, color] of items) {
+    ctx.fillStyle = color;
+    ctx.fillRect(lx, ly - 5, 12, 10);
+    ctx.fillStyle = '#bbb';
+    ctx.fillText(name, lx + 16, ly);
+    ly += ITEM_H;
+  }
+}
+
+function drawMissionTime(ctx, t_mission) {
+  const h  = Math.floor(t_mission / 3600);
+  const m  = Math.floor((t_mission % 3600) / 60);
+  const s  = Math.floor(t_mission % 60);
+  const label = `T+${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+  ctx.font = '12px Courier New';
+  ctx.fillStyle = '#666';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(label, 10, 10);
+}
+
+function drawMoonLabel(ctx, alpha) {
+  if (alpha <= 0) return;
+  const center = px(0, 0);
+  const r      = MOON_R_KM * SCALE + 5;  // just outside the circle
+  const text   = 'Equator of the moon';
+
+  ctx.save();
+  ctx.globalAlpha  = alpha;
+  ctx.font         = '15px Courier New';
+  ctx.letterSpacing = '1.5px';
+  ctx.fillStyle    = '#a08050';
+  ctx.textBaseline = 'bottom';  // baseline on circle, letters extend outward above
+  ctx.textAlign    = 'left';
+
+  const charWidths = [...text].map(c => ctx.measureText(c).width);
+  const totalArc   = charWidths.reduce((s, w) => s + w, 0) / r;
+
+  const midAngle = -Math.PI / 2 - Math.PI / 6;  // top of circle, shifted 30° CCW
+  let angle = midAngle - totalArc / 2;
+
+  for (let i = 0; i < text.length; i++) {
+    const charArc = charWidths[i] / r;
+    angle += charArc / 2;
+
+    ctx.save();
+    ctx.translate(center.x + r * Math.cos(angle), center.y + r * Math.sin(angle));
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillText(text[i], 0, 0);
+    ctx.restore();
+
+    angle += charArc / 2;
+  }
+  ctx.restore();
+}
+
+// ── EXPLAINER LABELS ─────────────────────────────────────────────
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line ? line + ' ' + word : word;
+    if (line && ctx.measureText(test).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Fades in, holds, fades out. startDisp in display seconds.
+function explainerLabel(ctx, disp_t, text, startDisp, hold = 2.0, fadeIn = 0.25, fadeOut = 0.25) {
+  const end = startDisp + fadeIn + hold + fadeOut;
+  let alpha;
+  if      (disp_t < startDisp)            return;
+  else if (disp_t < startDisp + fadeIn)   alpha = (disp_t - startDisp) / fadeIn;
+  else if (disp_t < startDisp + fadeIn + hold) alpha = 1;
+  else if (disp_t < end)                  alpha = 1 - (disp_t - (startDisp + fadeIn + hold)) / fadeOut;
+  else                                    return;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '18px Courier New';
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const maxWidth  = 240;
+  const lineH     = 26;
+  const center    = px(0, 0);
+  const lines     = wrapText(ctx, text, maxWidth);
+  const startY    = center.y - (lines.length - 1) * lineH / 2;
+
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], center.x, startY + i * lineH);
+  }
+  ctx.restore();
+}
+
+// ── MAIN RENDER ──────────────────────────────────────────────────
+function render(ctx, t_mission, disp_t = 0) {
+  ctx.clearRect(0, 0, CW, CH);
+  ctx.fillStyle = '#1e1e27';
+  ctx.fillRect(0, 0, CW, CH);
+
+  drawMoon(ctx);
+
+  // Orbit ellipses drawn on top of moon — Fast/Slow morph to Direct after T_BURN, then disappear
+  const ORBIT_COLORS = { Direct: 'rgba(0,229,255,0.3)', Fast: 'rgba(255,140,0,0.3)', Slow: 'rgba(171,27,255,0.3)' };
+  const blend = orbitBlend(disp_t);
+  const DRAW_GEOM = {
+    Direct: GEOM.Direct,
+    Fast:   lerpGeom(GEOM.Fast,   GEOM.Direct, blend),
+    Slow:   lerpGeom(GEOM.Slow,   GEOM.Direct, blend),
+  };
+  if (blend < 1) {
+    drawOrbit(ctx, DRAW_GEOM.Slow, ORBIT_COLORS.Slow);
+    drawOrbit(ctx, DRAW_GEOM.Fast, ORBIT_COLORS.Fast);
+  }
+  drawOrbit(ctx, DRAW_GEOM.Direct, ORBIT_COLORS.Direct);
+
+  drawMassDriver(ctx, massDriverAlpha(disp_t));
+  drawFastLaunchLabel(ctx,   launchLabelAlpha(disp_t, FREEZE));
+  drawDirectLaunchLabel(ctx, launchLabelAlpha(disp_t, missionToDisp(T_DIRECT_LAUNCH)));
+  drawSlowLaunchLabel(ctx,   launchLabelAlpha(disp_t, missionToDisp(T_SLOW_LAUNCH)));
+  drawBurn1Label(ctx, launchLabelAlpha(disp_t, missionToDisp(T_FAST_APO), 2.0));
+  drawBurn2Label(ctx, launchLabelAlpha(disp_t, missionToDisp(T_BURN), 2.0));
+  drawSkyhook(ctx, t_mission);
+  drawSkyhookLabels(ctx, t_mission, labelAlpha(disp_t));
+
+  // Previous batch: always past T_BURN, shown as formation until they dock
+  const t_prev = t_mission + COM_PERIOD;
+  if (t_prev < T_RENDEZVOUS) {
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    drawFormation(ctx, t_prev);
+    ctx.restore();
+  }
+
+  // Current batch: individual shuttles before T_FORMATION, formation after
+  if (t_mission >= T_FORMATION) {
+    drawFormation(ctx, t_mission);
+  } else {
+    for (const name of ['Slow', 'Direct', 'Fast']) {
+      if (t_mission >= LAUNCH_T[name]) drawShuttle(ctx, name, t_mission);
+    }
+  }
+
+  // Pre-launch stack: each shuttle waits above the mass driver then slides 0.25 display-s to pad
+  {
+    const sl    = 0.25;
+    const clamp = t => Math.max(0, Math.min(1, t));
+    const DL_D  = missionToDisp(T_DIRECT_LAUNCH);
+    const DL_S  = missionToDisp(T_SLOW_LAUNCH);
+    // Direct: 1 × STACK_STEP above pad; slides down to pad at its launch time
+    if (t_mission < T_DIRECT_LAUNCH)
+      drawShuttleAt(ctx, 'Direct', 0,
+        -MOON_R_KM + STACK_STEP * (1 - clamp((disp_t - (DL_D - sl)) / sl)),
+        1, 0, 0, 1);
+    // Slow: 2 × STACK_STEP above pad
+    if (t_mission < T_SLOW_LAUNCH)
+      drawShuttleAt(ctx, 'Slow', 0,
+        -MOON_R_KM + 2 * STACK_STEP * (1 - clamp((disp_t - (DL_S - sl)) / sl)),
+        1, 0, 0, 1);
+    // Fast (next-batch prep): slides in from 1 × STACK_STEP above pad at end of loop
+    if (disp_t >= ANIM_DUR - sl)
+      drawShuttleAt(ctx, 'Fast', 0,
+        -MOON_R_KM + STACK_STEP * (1 - clamp((disp_t - (ANIM_DUR - sl)) / sl)),
+        1, 0, 0, 1);
+  }
+
+  // Explainer labels — centered on moon face during key events
+  explainerLabel(ctx, disp_t, 'Staggered launches enabled by changing launch speeds', 2.0, 2.5);
+
+  // Label 2: appears when Direct shuttle flashes at apogee, fades out with Burn 1 label
+  const burn1End = missionToDisp(T_FAST_APO) + 2.2;
+  explainerLabel(ctx, disp_t, 'Circularizing orbits', missionToDisp(T_DIRECT_APO),
+                 burn1End - missionToDisp(T_DIRECT_APO) - 0.5);
+
+  // Label 3: half a second after Burn 2 label appears
+  explainerLabel(ctx, disp_t, 'Sync orbits and fly in formation', missionToDisp(T_BURN) + 0.5, 1.0);
+
+  // Label 4: persists at end of animation, no fade out
+  explainerLabel(ctx, disp_t, 'Receiving deck catches shuttles coming in at 3 m/s', ANIM_DUR - 2.75, 2.5, 0.25, 0);
+
+  drawMoonLabel(ctx, massDriverAlpha(disp_t));
+  drawLegend(ctx);
+}
+
+// ── ANIMATION & CONTROLS ─────────────────────────────────────────
+const ANIM_DUR = 20.0;  // display seconds — maps to exactly one skyhook orbital period
+const FREEZE   = 0.0;   // no freeze: skyhook rotates continuously across the loop boundary
+
+function dispToMission(d) {
+  return (d / ANIM_DUR) * COM_PERIOD;
+}
+
+const canvas   = document.getElementById('c');
+const ctx      = canvas.getContext('2d');
+const playBtn  = document.getElementById('play-btn');
+const speedSel = document.getElementById('speed-sel');
+const loopBtn  = document.getElementById('loop-btn');
+const scrub    = document.getElementById('scrub');
+const timeDisp = document.getElementById('time-display');
+
+let playing  = false;
+let looping  = true;
+let disp_t   = 0;
+let speed    = 1.0;
+let lastTS   = null;
+let scrubbing= false;
+
+function fmtTime(s) {
+  const h  = Math.floor(s / 3600);
+  const m  = Math.floor((s % 3600) / 60);
+  const ss = Math.floor(s % 60);
+  return `T+${h}h ${String(m).padStart(2,'0')}m ${String(ss).padStart(2,'0')}s`;
+}
+
+function updateUI(t_mission) {
+  timeDisp.textContent = fmtTime(t_mission);
+  scrub.value = Math.round(disp_t * 1000);
+}
+
+function frame(ts) {
+  if (playing && !scrubbing) {
+    if (lastTS !== null) {
+      disp_t += (ts - lastTS) / 1000 * speed;
+      if (disp_t >= ANIM_DUR) {
+        if (looping) {
+          disp_t = 0;
+        } else {
+          disp_t = ANIM_DUR;
+          playing = false;
+          playBtn.textContent = '\u25B6 PLAY';
+        }
+      }
+    }
+    lastTS = ts;
+  }
+
+  const mt = dispToMission(disp_t);
+  updateUI(mt);
+  render(ctx, mt, disp_t);
+
+  if (playing) requestAnimationFrame(frame);
+}
+
+playBtn.addEventListener('click', () => {
+  playing = !playing;
+  playBtn.textContent = playing ? '\u23F8 PAUSE' : '\u25B6 PLAY';
+  if (playing) {
+    if (disp_t >= ANIM_DUR) disp_t = 0;
+    lastTS = null;
+    requestAnimationFrame(frame);
+  }
+});
+
+speedSel.addEventListener('change', () => {
+  speed = parseFloat(speedSel.value);
+});
+
+loopBtn.addEventListener('click', () => {
+  looping = !looping;
+  loopBtn.classList.toggle('on', looping);
+});
+
+scrub.addEventListener('mousedown',  () => { scrubbing = true; });
+scrub.addEventListener('touchstart', () => { scrubbing = true; }, { passive: true });
+scrub.addEventListener('input', () => {
+  disp_t = parseInt(scrub.value) / 1000;
+  const mt = dispToMission(disp_t);
+  updateUI(mt);
+  render(ctx, mt, disp_t);
+});
+scrub.addEventListener('mouseup',  () => { scrubbing = false; });
+scrub.addEventListener('touchend', () => { scrubbing = false; });
+
+// Initial draw
+render(ctx, 0);
+updateUI(0);
+</script>
+</body>
+</html>

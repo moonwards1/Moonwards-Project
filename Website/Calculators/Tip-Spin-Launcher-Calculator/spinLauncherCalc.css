@@ -1,0 +1,115 @@
+body {
+	background-color: #202030;
+	font-family: sans-serif;
+}
+.wrapper {
+	margin-left: 5%;
+	margin-right: 5%;
+	padding: 20px;
+	background: white;
+}
+.calcMain {
+	background-color: #F6F6F0;
+	border-radius: 10px;
+	padding: 20px;
+}
+.calcMain h1 { margin-top: 0; }
+.calcMain h2 {
+	margin: 22px 0 4px 0;
+	font-size: 1.15em;
+	border-bottom: 2px solid #8aa;
+	padding-bottom: 3px;
+}
+.container {
+	display: inline-block;
+	border-radius: 10px;
+	border: 1px solid black;
+	padding: 10px;
+	margin: 5px;
+	vertical-align: top;
+}
+.container h4 { margin-top: 0; }
+.row {
+	display: flex;
+	align-items: center;
+	margin: 4px 0;
+	gap: 6px;
+}
+.row label { min-width: 200px; font-size: 0.9em; }
+.row input[type=number], .row input[type=text] {
+	width: 80px;
+	padding: 2px 4px;
+}
+.row input[type=range] { width: 160px; }
+.row .unit { font-size: 0.8em; color: #555; min-width: 40px; }
+select { padding: 2px 4px; }
+button {
+	margin: 8px 4px 8px 0;
+	padding: 6px 14px;
+	cursor: pointer;
+}
+.option {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	margin: 8px 0;
+	font-size: 0.85em;
+	color: #666;
+}
+.option > div {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+}
+.option > div > div {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+.option input[type=number] {
+	width: 55px;
+	padding: 2px 4px;
+}
+.mode-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 6px 0;
+	font-size: 0.9em;
+}
+.mode-row input[type=radio] { margin: 0 2px 0 0; }
+.mode-row input[type=number] { width: 80px; padding: 2px 4px; }
+.disabledField { opacity: 0.4; }
+.output-section {
+	margin-top: 12px;
+}
+.result-block {
+	display: inline-block;
+	border-radius: 10px;
+	border: 1px solid #888;
+	padding: 10px 14px;
+	margin: 5px;
+	vertical-align: top;
+	background: white;
+	min-width: 240px;
+}
+.result-block.spin { border-color: #66a; background: #f6f8ff; }
+.result-block h4 { margin: 0 0 6px 0; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+.result-row { font-size: 0.9em; margin: 3px 0; }
+.result-row span { font-weight: bold; }
+.warn  { color: #c00; font-weight: bold; }
+.ok    { color: #080; font-weight: bold; }
+.note  { color: #555; font-size: 0.82em; }
+.notes-block {
+	margin-top: 16px;
+	padding: 12px 16px;
+	background: #fffdf4;
+	border: 1px solid #ddc;
+	border-radius: 8px;
+	font-size: 0.85em;
+	color: #444;
+	max-width: 880px;
+}
+.notes-block h4 { margin: 0 0 6px 0; }
+.notes-block p { margin: 6px 0; }
