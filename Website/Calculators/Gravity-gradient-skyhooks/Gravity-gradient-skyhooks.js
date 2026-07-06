@@ -1,4 +1,15 @@
+// ES module (loaded with <script type="module">).
+import { systems } from "../../Shared/orbit.js";
+import { OrbitalMath } from "../../Shared/math-utils.js";
+import { Const } from "../../Shared/constants.js";
+
 function skyhookTool(DOMnode){
+
+// Declarations for variables shared across the tool's inner functions.
+// (As a classic script these were implicit globals; modules run in strict
+// mode, where assigning to an undeclared name throws.)
+var minimum_x_coordinate, minimum_y_coordinate, minimum_x_distance, minimum_y_distance,
+	svg_tether, marker_container, text_marker_container;
 
 //part 1: utility functions
 

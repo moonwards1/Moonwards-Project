@@ -12,11 +12,17 @@
  * Phase 1 builds the scene, the controls and the scalar read-outs. Drawing the
  * actual escape / Earth-flyby trajectories is deferred to Phase 2.
  *
- * Depends on Shared/three.min.js, Shared/orbit.js (global `systems`),
- * Shared/math-utils.js (global `OrbitalMath`) and
- * Shared/lunar-ephemeris.js (global `LunarEphemeris`). Classic scripts,
- * file://-safe.
+ * ES module (loaded with <script type="module">); imports `systems`,
+ * `OrbitalMath` and `LunarEphemeris` from Shared/. Three.js is the one
+ * classic-script exception: Shared/three.min.js is loaded before this module
+ * and provides the global `THREE`.
  */
+/* global THREE */
+
+import { systems } from "../../Shared/orbit.js";
+import { OrbitalMath } from "../../Shared/math-utils.js";
+import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
+
 (function () {
 	"use strict";
 

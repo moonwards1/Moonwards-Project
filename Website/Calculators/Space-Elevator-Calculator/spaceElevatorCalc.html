@@ -4,8 +4,6 @@
 	<title>Space Elevator Calculator</title>
 	<meta charset="utf-8">
 	<link rel="stylesheet" href="spaceElevatorCalc.css">
-	<script src="../../Shared/math-utils.js"></script>
-	<script src="../../Shared/constants.js"></script>
 </head>
 <body>
 <div class="wrapper">
@@ -120,6 +118,7 @@
 </div><!-- /calcMain -->
 </div><!-- /wrapper -->
 
-	<script src="spaceElevatorCalc.js"></script>
+	<!-- ES module; imports its Shared/ dependencies itself. -->
+	<script type="module" src="spaceElevatorCalc.js"></script>
 </body>
 </html>

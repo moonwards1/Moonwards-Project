@@ -9,6 +9,12 @@
 //
 // Pure maths live in Shared/math-utils.js (OrbitalMath); body data in orbit.js;
 // constants in constants.js. This file only reads the form and presents results.
+//
+// ES module (loaded with <script type="module">).
+
+import { systems } from "../../Shared/orbit.js";
+import { OrbitalMath } from "../../Shared/math-utils.js";
+import { Const } from "../../Shared/constants.js";
 
 (function () {
 	"use strict";

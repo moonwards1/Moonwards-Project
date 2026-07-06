@@ -11,11 +11,9 @@
  * Also provides the Sun's geocentric ecliptic longitude (Meeus Ch. 25,
  * low precision) for the lighting direction in the 3-D view.
  *
- * Classic script (file://-safe). Pure maths, no DOM. Node-testable via
- * module.exports. Global: `LunarEphemeris`.
+ * ES module: import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
+ * Pure maths, no DOM — imports directly in Node for testing.
  */
-(function (global) {
-	"use strict";
 
 	var DEG = Math.PI / 180;
 	function rev(x) { return x - 360 * Math.floor(x / 360); }   // wrap to [0,360)
@@ -194,7 +192,7 @@
 		return [R*cosd(l), R*sind(l), 0];
 	}
 
-	var LunarEphemeris = {
+	export const LunarEphemeris = {
 		moonEcliptic: moonEcliptic,
 		moonVector: moonVector,
 		moonState: moonState,
@@ -203,10 +201,3 @@
 		sunDistance: sunDistance,
 		sunVector: sunVector
 	};
-
-	global.LunarEphemeris = LunarEphemeris;
-	if (typeof module !== "undefined" && module.exports) {
-		module.exports = LunarEphemeris;
-	}
-
-})(typeof window !== "undefined" ? window : globalThis);

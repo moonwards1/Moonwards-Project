@@ -1,20 +1,22 @@
 # Moonwards World-building Project - Aims
 
-- Present a complete architecture for an industrial space economy, that:
-  
-  - Makes economic sense - returning real value to the Earth for the investment made
-  
-  - Is entirely technically realistic - starting with a few sensible assumptions, the world portrayed is a reliable, productive, efficient industrial design
-  
-  - Is a usable model: the main steps for all major processes are laid out, work together, and make sense
+- Present the probable architectures that will one day be used to build an industrial space economy. They must:
 
-- Educate and inspire users by conveying:
-  
-  - How space works and how that's engineered for
-  
+  - Makes economic sense - returning real value to the Earth for the investment made
+
+  - Be entirely technically realistic - starting with sensible extrapolations, the world portrayed is a reliable, productive, efficient industrial design
+
+  - Be a usable model: the main steps for all major processes are laid out
+
+- Engage users by conveying:
+
+  - How space works and how to engineer for it
+
   - The vastness and potential of the solar system
-  
-  - The vastness and potential of our future, as various transformative technologies mature
+
+  - The transformative nature of space development and advanced technology
+
+- Present the full range of realistic options for space transport in a developed space economy, specializing in fixed infrastructure approaches
 
 - Provide means to explore and expand on this world
 
@@ -23,21 +25,19 @@
 ## Website - First step and core reference
 
 - Relies on interactives, calculators, diagrams, and animations
-  
+
   - In js and svg
-  
-  - Plain text outside js / svg content is minimized
+
+  - Plain text external to js / svg content is minimized. Instead, uses pop-ups in context through Nutshell, see below
 
 - Lays out how the envisioned industry and transport works
 
-- Architecture is Fetch-based HTML fragments
-
 - One pager with lazy-load sections
-  
+
   - May be split into a few pages if it becomes too heavy
 
 - 3d models of infrastructure and equipment is included in viewers
-  
+
   - Which would work here? modelviewer.dev?
 
 - 3d models also can be downloaded
@@ -54,9 +54,9 @@
 
 - Try to enable this in annotations within 3d viewer
 
-### 3D models - Next step and critical enabler
+### 3D models - Next step
 
-- Models of major infrastructure and equipment is built in Blender
+- Models of major infrastructure and equipment built in Blender
 
 - Designs are low-poly
 
@@ -64,7 +64,7 @@
 
 - Communicate the engineering and operations
 
-- 3D models are being developed in folders separate from Moonwards Project
+- 3D models developed outside repository
 
 ### Virtual environment - Final destination to enable storytelling
 
@@ -95,7 +95,7 @@ is moving to ES modules, which browsers refuse to load from `file://` links.
 - Founder and owner of project, has worked on it for a number of years
 
 - Does design - worldbuilding, artwork, writing
-  
+
   - Works in Blender and has some knowledge of Unreal
 
 - Has some knowledge in planetary science, space development, and orbital mechanics
@@ -122,11 +122,4 @@ is moving to ES modules, which browsers refuse to load from `file://` links.
 
 - Communication is through their Discord server
 
-# Current tasks
-
-- [x] Organize the project file structure
-
-- [ ] Set up and document best practice conventions for collaboration on the website and research
-
-- [x] Create README docs for the subfolders of the project, where appropriate
 

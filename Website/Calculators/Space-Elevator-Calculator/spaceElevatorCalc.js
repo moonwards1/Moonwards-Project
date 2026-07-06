@@ -1,3 +1,7 @@
+// ES module (loaded with <script type="module">).
+import { OrbitalMath } from "../../Shared/math-utils.js";
+import { Const } from "../../Shared/constants.js";
+
 // ── constants ──────────────────────────────────────────────────
 const G      = Const.G;
 const GM_sun = Const.GM_sun; // m³/s²

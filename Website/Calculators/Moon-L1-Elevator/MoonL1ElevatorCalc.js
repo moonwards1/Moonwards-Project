@@ -34,6 +34,10 @@
 //  safety factor (reported as "spare safety factor when empty").
 // ───────────────────────────────────────────────────────────────────
 
+// ES module (loaded with <script type="module">).
+import { OrbitalMath } from "../../Shared/math-utils.js";
+import { Const } from "../../Shared/constants.js";
+
 const KM = 1e3;
 
 const MATERIALS = {

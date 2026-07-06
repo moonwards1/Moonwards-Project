@@ -6,7 +6,12 @@
 // (from other trajectory tools) and sizes the rotating arm needed to add them.
 //
 // Shared maths live in ../../Shared/math-utils.js (OrbitalMath) and
-// ../../Shared/constants.js (Const). Classic scripts, file:// friendly.
+// ../../Shared/constants.js (Const).
+//
+// ES module (loaded with <script type="module">).
+
+import { OrbitalMath } from "../../Shared/math-utils.js";
+import { Const } from "../../Shared/constants.js";
 
 // ── constants ──────────────────────────────────────────────────
 const G      = Const.G;

@@ -4,11 +4,8 @@
 	<title>Earth Aerobrake Reality-Check Calculator</title>
 	<meta charset="utf-8">
 	<link rel="stylesheet" href="aerobrakeCalc.css">
-	<!-- Shared libraries (classic scripts; load before the page script). -->
-	<script src="../../Shared/orbit.js"></script>
-	<script src="../../Shared/constants.js"></script>
-	<script src="../../Shared/math-utils.js"></script>
-	<script src="aerobrakeCalc.js" defer></script>
+	<!-- ES module; imports its Shared/ dependencies itself. -->
+	<script type="module" src="aerobrakeCalc.js"></script>
 </head>
 <body>
 <div class="wrapper">

@@ -1,19 +1,15 @@
 //orbital mechanics, vectors, etc.
 //
-// Shared maths helpers for the Moonwards calculators.
-// Loaded as a classic <script> (no ES modules, so the calculators keep working
-// when opened directly from a file:// link) and also require()-able in Node for
-// unit testing.  Everything hangs off the global `OrbitalMath`.
+// Shared maths helpers for the Moonwards calculators. ES module:
+//   import { OrbitalMath } from "../../Shared/math-utils.js";
+// Everything hangs off the `OrbitalMath` namespace.
 //
 // Conventions: GM is the standard gravitational parameter (m^3/s^2); r / a are
 // radii / semi-major axes from the body centre in metres; v is a speed in m/s;
-// angles are radians. All functions are pure (no DOM, no globals besides the
-// OrbitalMath namespace) so they can be unit-tested in Node.
+// angles are radians. All functions are pure (no DOM), so the module imports
+// directly in Node for unit testing.
 
-(function (global) {
-	"use strict";
-
-	var OrbitalMath = {
+export const OrbitalMath = {
 
 		// ---- speeds on an orbit ------------------------------------------------
 
@@ -736,14 +732,4 @@
 			var s = ((frac * 24 - h) * 60 - m) * 60;
 			return { Y: Y, Mo: Mo, D: D, h: h, m: m, s: s };
 		}
-	};
-
-	// Browser (classic script, incl. file://): expose as a global.
-	global.OrbitalMath = OrbitalMath;
-
-	// Node (unit tests): expose via module.exports.
-	if (typeof module !== "undefined" && module.exports) {
-		module.exports = OrbitalMath;
-	}
-
-})(typeof window !== "undefined" ? window : globalThis);
+};

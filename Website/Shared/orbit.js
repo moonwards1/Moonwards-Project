@@ -1,3 +1,11 @@
+//planetary-system data & orbit classes
+//
+// ES module: import { systems } from "../../Shared/orbit.js";
+// `systems` is a Map of bodies (System instances: GM, radius, orbit, …).
+// The Orbit / System / Vector / Time / Transfer classes and the `constants`
+// object are also exported (see the export list at the end of the file).
+// Pure data + maths (no DOM), so it imports directly in Node for tests.
+
 function roughFloatsAbsolute(float1,float2){
 	return Math.abs(float1 - float2) < 0.00001;
 }
@@ -2096,4 +2104,8 @@ a(r) = w^2 * (a*mu1/(mu1 + mu2) - r) + mu2/r² - mu1/(a - r)^2
 w² * (-x^2 / 2 + a*mu1*x/(mu1 + mu2)) + mu1/(x - a) - mu2/x
 
 */
+
+// Public API. Everything else above (roughFloats*, bowlMin, brok, yuri*,
+// asteroid_return, the per-body shorthands, …) is module-internal.
+export { systems, System, Orbit, Vector, Time, Transfer, Atmosphere, Geology, constants };
 

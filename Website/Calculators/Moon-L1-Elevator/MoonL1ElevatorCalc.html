@@ -4,8 +4,6 @@
 	<title>Moon–L1 Space Elevator Calculator</title>
 	<meta charset="utf-8">
 	<link rel="stylesheet" href="MoonL1ElevatorCalc.css">
-	<script src="../../Shared/math-utils.js"></script>
-	<script src="../../Shared/constants.js"></script>
 </head>
 <body>
 <div class="wrapper">
@@ -216,6 +214,7 @@ first, read off the minimum counterweight, then choose a counterweight at or abo
 </div><!-- /calcMain -->
 </div><!-- /wrapper -->
 
-	<script src="MoonL1ElevatorCalc.js"></script>
+	<!-- ES module; imports its Shared/ dependencies itself. -->
+	<script type="module" src="MoonL1ElevatorCalc.js"></script>
 </body>
 </html>

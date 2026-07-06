@@ -15,9 +15,16 @@
  * the orbit of the destination, showing how far the destination body will have 
  * moved during the time of flight of the ship represented by the chevron marker.
  *
- * Depends on Shared/three.min.js, Shared/orbit.js (global `systems`) and
- * Shared/math-utils.js (global `OrbitalMath`). Classic scripts, file://-safe.
+ * ES module (loaded with <script type="module">); imports `systems` and
+ * `OrbitalMath` from Shared/. Three.js is the one classic-script exception:
+ * Shared/three.min.js is loaded before this module and provides the global
+ * `THREE`.
  */
+/* global THREE */
+
+import { systems } from "../../Shared/orbit.js";
+import { OrbitalMath } from "../../Shared/math-utils.js";
+
 (function () {
 	"use strict";
 

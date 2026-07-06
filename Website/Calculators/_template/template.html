@@ -4,12 +4,10 @@
 	<title>Calculator Template</title>
 	<meta charset="utf-8">
 	<link rel="stylesheet" href="template.css">
-	<!-- Shared libraries (classic scripts; load before the page script).
-	     Include only the ones this calculator needs. -->
-	<script src="../../Shared/orbit.js"></script>
-	<script src="../../Shared/math-utils.js"></script>
-	<script src="../../Shared/format-utils.js"></script>
-	<script src="../../Shared/ui-components.js"></script>
+	<!-- The page script is an ES module; it imports what it needs from
+	     ../../Shared/. Serve over http(s) — ES modules do not load from
+	     file:// links (run serve.bat at the repo root during development). -->
+	<script type="module" src="template.js"></script>
 </head>
 <body>
 	<div class="wrapper">
@@ -23,6 +21,5 @@
 		</p>
 		<div id="insertItHere"></div>
 	</div>
-	<script src="template.js"></script>
 </body>
 </html>
