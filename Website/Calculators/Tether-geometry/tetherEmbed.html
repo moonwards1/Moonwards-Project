@@ -3,8 +3,6 @@
 	<head>
 		<title>Tethers</title>
 		<meta charset="utf-8">
-		<script src="../../Shared/orbit.js"></script>
-		<script src="js/tetherTool_2.js"></script>
 		<style>
 body{
 	background-color:#202030;
@@ -26,7 +24,8 @@ pre{
 		<div class="wrapper">
 			<div id="insertItHere"></div>
 		</div>
-		<script>
+		<script type="module">
+import { tetherTool } from "./js/tetherTool_2.js";
 tetherTool(document.getElementById("insertItHere"))
 		</script>
 	</body>

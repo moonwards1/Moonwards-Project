@@ -250,10 +250,11 @@ Exchange.linkFor(packet, url);                   // url + "#pkt=" + base64(JSON)
 4. **Clipboard JSON** — a small copy-packet affordance next to each send
    button, and a paste box in each receiver, as the universal fallback.
 
-**Origin note.** The site is always viewed over `http(s)` — GitHub Pages when
-deployed, a local server (`serve.bat`) during development — so all four
-transports work and `localStorage` sees one clean origin. Transports 3 and 4
-still earn their keep, as shareable links and as the universal fallback.
+**Origin note.** The site is always viewed over `http(s)` — GitHub Pages
+(<https://moonwards1.github.io/Moonwards-Project/>) when deployed, a local
+server (`serve.bat`) during development — so all four transports work and
+`localStorage` sees one clean origin. Transports 3 and 4 still earn their
+keep, as shareable links and as the universal fallback.
 
 The mailbox's pure parts (envelope validation, base64url encode/decode, the
 pending-slot logic) take plain objects and return plain objects, so they get
@@ -278,11 +279,14 @@ view draws. The camera transition between views can start as a plain toggle
 
 Each step is independently useful; nothing requires a big-bang rewrite.
 
-0. **Repo, Pages, ES modules** *(in progress)*. The project becomes a git
-   repository published via GitHub Pages
-   (`.github/workflows/deploy-pages.yml`), then the whole codebase converts
-   from classic scripts to ES modules in one sweep. Local viewing goes through
-   `serve.bat`, since ES modules do not load over `file://`.
+0. **Repo, Pages, ES modules** *(done, 2026-07)*. The project is a git
+   repository (`github.com/moonwards1/Moonwards-Project`) published via
+   GitHub Pages (`.github/workflows/deploy-pages.yml`) at
+   <https://moonwards1.github.io/Moonwards-Project/>, and the codebase is ES
+   modules throughout — every `Shared/` library and calculator uses
+   `import`/`export`, with `Shared/three.min.js` the one remaining classic
+   script (it provides the global `THREE`). Local viewing goes through
+   `serve.bat` at the repo root, since ES modules do not load over `file://`.
 1. **Keep extracting the scene kit.** As the plotters get touched, move
    camera / date bar / body renderer / rings / marker / burn-widget code into
    `Shared/sim/`. The plotters shrink; the kit accumulates.
@@ -301,9 +305,11 @@ Each step is independently useful; nothing requires a big-bang rewrite.
 ## Conventions
 
 - **ES modules throughout** — `import`/`export`, one `<script type="module">`
-  per page. The site is always viewed over `http(s)`: GitHub Pages deployed,
-  `serve.bat` locally. (This supersedes the old classic-scripts-for-`file://`
-  convention.)
+  per page, named exports from `Shared/`. The site is always viewed over
+  `http(s)`: GitHub Pages deployed, `serve.bat` locally. (This supersedes the
+  old classic-scripts-for-`file://` convention.) The one exception is
+  `Shared/three.min.js`, a vendored classic script loaded with a plain
+  `<script src>` tag before the page module; it provides the global `THREE`.
 - **Pure logic stays pure** — physics and packet-handling take plain values and
   are Node-testable (plain `import`, no DOM); DOM and Three.js stay in the view
   layer.

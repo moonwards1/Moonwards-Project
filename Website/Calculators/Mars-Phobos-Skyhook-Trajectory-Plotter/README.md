@@ -9,7 +9,7 @@ atmospheric-entry read-outs for a vessel released from it.
 
 - `marsPhobosSkyhookTrajectory.html` — markup and script/stylesheet wiring.
 - `marsPhobosSkyhookTrajectory.css` — styling (`mps-` prefix).
-- `marsPhobosSkyhookTrajectory.js` — the tool (IIFE, classic script).
+- `marsPhobosSkyhookTrajectory.js` — the tool (ES module; imports from `Shared/`, with `three.min.js` loaded as a classic script ahead of it).
 - `Mars-Phobos-Skyhook-Trajectory-Plotter.md` — the design spec this tool was built to.
 - No `Mars-Wrap.jpg` / `Phobos-Wrap.jpg` ship with this tool (see
   **Known simplifications**) — drop matching image files into this folder to

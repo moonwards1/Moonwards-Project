@@ -1,4 +1,15 @@
-function tetherTool(DOMnode){
+// ES module: the embedding page does
+//   import { tetherTool } from "./js/tetherTool_2.js";
+// and calls tetherTool(<container element>).
+import { systems } from "../../../Shared/orbit.js";
+
+export function tetherTool(DOMnode){
+
+// Declarations for variables shared across the tool's inner functions.
+// (As a classic script these were implicit globals; modules run in strict
+// mode, where assigning to an undeclared name throws.)
+var minimum_x_coordinate, minimum_y_coordinate, minimum_x_distance, minimum_y_distance,
+	svg_tether, marker_container, text_marker_container;
 
 //part 1: utility functions
 

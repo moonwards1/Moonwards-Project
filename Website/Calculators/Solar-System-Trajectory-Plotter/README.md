@@ -17,9 +17,11 @@ speed and ecliptic latitude.
 
 Loads, by relative path, from `../../Shared/`:
 
-- `three.min.js` — Three.js r128, bundled locally so the tool works from a
-  `file://` link (the CDN build of `OrbitControls` does **not**, so this
-  calculator uses its own small mouse-orbit controller instead).
+- `three.min.js` — Three.js r128, bundled locally (no CDN dependency); loaded
+  as a classic script providing the global `THREE` — the one exception to the
+  ESM convention. This calculator uses its own small mouse-orbit controller
+  rather than `OrbitControls` (a leftover of the `file://` era that still
+  serves fine).
 - `orbit.js` — the `systems` body database. This tool relies on the
   **ephemeris fields** added to the Sun-orbiting bodies: `epoch` (JD) and
   `meanAnomaly` (rad), plus `inclination`, `longitude` (Ω) and `argument` (ω).

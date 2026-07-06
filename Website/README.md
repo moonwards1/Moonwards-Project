@@ -6,32 +6,53 @@ The site is a **single-page app with lazy-loaded sections**. One shell page (`in
 
 All visual content — diagrams, animations, calculators — is implemented in **JS and SVG**. Plain prose is minimized; the site teaches through interactives.
 
+The codebase is **ES modules throughout** (`Shared/three.min.js`, which provides the global `THREE`, is the one classic script left), so pages are always viewed over http(s) — ES modules do not load from `file://` links. The site is live at <https://moonwards1.github.io/Moonwards-Project/> (GitHub Pages serves this folder exactly as committed, no build step); for local viewing run `serve.bat` at the repo root and open `http://localhost:8000/`.
+
+The longer-term plan for growing the standalone calculators into one integrated solar-system simulator is described in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ## File Structure
 
 ```
 Website/
-├── index.html              # Shell page — layout, nav, section mount points
-├── main.js                 # Bootstrap: registers sections, sets up scroll observers, fetches fragments
+├── index.html              # Shell page — layout, nav, section mount points (stub)
+├── main.js                 # Bootstrap: registers sections, scroll observers, fragment fetching (stub)
 ├── main.css                # Layout, typography, CSS custom properties (no component styles here)
+├── ARCHITECTURE.md         # Plan: calculators → modules of one integrated simulator
 │
-├── Sections/               # One subfolder per section; each is a self-contained fragment
-│   ├── Intro/
-│   ├── MainLunarSkyhook/
-│   ├── DeepspaceLunarSkyhook/
-│   ├── LetsCalculate/
-│   └── WorldMap/
+├── Sections/               # One subfolder per section; each is a self-contained fragment (all stubs)
+│   ├── Intro/  WorldMap/  LetsCalculate/  Moon/
+│   ├── LunarMassDriver/  MainLunarSkyhook/  DeepspaceLunarSkyhook/  EarthSkyhook/
+│   └── Ceres/  CeresSpaceElevator/  PsycheSpinLauncher/
 │
-├── Calculators/            # Standalone calculator tools, embeddable or linked from sections
-│   ├── Modified-tether-tool/   # Tether/skyhook simulator (adapted from Sigvart Brendberg's tether-tool)
-│   └── Space-Elevator-Calculator/
+├── Calculators/            # Standalone calculator tools (ES-module pages), embeddable or linked from sections
+│   ├── _template/                              # Canonical wiring — copy this to start a new calculator
+│   ├── Earth-Aerobrake-Calculator/
+│   ├── Gravity-gradient-skyhooks/
+│   ├── Mars-Phobos-Skyhook-Trajectory-Plotter/
+│   ├── Mass-Driver-Launch-Calculator/
+│   ├── Modified-tether-tool/                   # Tether/skyhook simulator (adapted from Sigvart Brendberg's tether-tool)
+│   ├── Moon-L1-Elevator/
+│   ├── Moon-Skyhook-Trajectory-Plotter/
+│   ├── Skyhook-Spin-Launcher/
+│   ├── Solar-System-Trajectory-Plotter/
+│   ├── Space-Elevator-Calculator/
+│   ├── Tether-geometry/
+│   └── Tip-Spin-Launcher-Calculator/
 │
 ├── Animations/             # Standalone animation files (SVG/JS), referenced by sections
-│   └── skyhook_animation.html
+│   ├── skyhook_animation.html
+│   └── skyhook_animation_275.html
 │
-├── Shared/                 # Utilities imported by multiple sections — do not duplicate logic here
-│   ├── math-utils.js       # Orbital mechanics, vectors, physics calculations
-│   ├── animation.js        # Shared animation helpers (requestAnimationFrame patterns, easing, etc.)
-│   └── ui-components.js    # Reusable UI elements (tooltips, Nutshell expanders, etc.)
+├── Shared/                 # ES modules (named exports) used by calculators and sections
+│   │                       #   — canonical description: Shared/README.md
+│   ├── orbit.js            # Planetary-system data (`systems`) + orbit/system classes
+│   ├── math-utils.js       # Orbital mechanics (`OrbitalMath`) — pure, Node-testable
+│   ├── lunar-ephemeris.js  # Meeus Moon/Sun positions (`LunarEphemeris`)
+│   ├── constants.js        # Physical/astronomical constants (`Const`)
+│   ├── format-utils.js     # Number/unit formatting (`Fmt`)
+│   ├── ui-components.js    # DOM builder (`create`)
+│   ├── animation.js        # SVG reveal / viewBox-tween helpers (`SkyAnim`)
+│   └── three.min.js        # Vendored Three.js — the one classic script (global `THREE`)
 │
 └── General_Assets/         # Logos and brand assets
 ```
@@ -48,11 +69,11 @@ Each section folder contains at minimum:
 
 ## Shared Utilities
 
-Before adding logic to a section, check `Shared/` first. If the same calculation or UI pattern is needed in two or more sections, it belongs in `Shared/`. Do not import from one section into another — go through `Shared/`.
+Before adding logic to a section, check `Shared/` first. If the same calculation or UI pattern is needed in two or more sections, it belongs in `Shared/`. Do not import from one section into another — go through `Shared/`. [`Shared/README.md`](Shared/README.md) is the canonical description of the libraries, their exports, and the conventions (named exports, pure logic stays Node-testable, one responsibility per file).
 
 ## Calculators
 
-Calculators in `Calculators/` are self-contained and can run standalone (for direct linking or embedding) as well as being referenced from within a section. The **Modified-tether-tool** is adapted from [Sigvart Brendberg's tether-tool](https://hohmiyazawa.github.io/tether-tool/tetherEmbed.html) — see its own README for details.
+Calculators in `Calculators/` are self-contained ES-module pages that run standalone (for direct linking or embedding) as well as being referenced from within a section. Each folder carries its own README stating what it computes and which `Shared/` modules it imports; new calculators start by copying `_template/`. The **Modified-tether-tool** (and the `Tether-geometry` variant of it) is adapted from [Sigvart Brendberg's tether-tool](https://hohmiyazawa.github.io/tether-tool/tetherEmbed.html) — see its own README for details.
 
 ## Nutshell
 

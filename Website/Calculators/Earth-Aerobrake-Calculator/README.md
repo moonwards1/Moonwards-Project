@@ -51,4 +51,5 @@ Loads from `Website/Shared/`: `orbit.js` (Earth/Sun data), `constants.js`
 `grazingPathScale`, `grazingPeakDecel`, `grazingPeriapsisDensity`,
 `ballisticCoefficient`, `dynamicPressure`, `suttonGravesHeatFlux`,
 `altitudeForDensity`). Breaks if its folder is moved without `Website/Shared/`
-coming along. Classic scripts only, so it works opened from a `file://` link.
+coming along. ES module — view over http(s) (`serve.bat` locally, or the
+deployed site); ES modules do not load from `file://` links.

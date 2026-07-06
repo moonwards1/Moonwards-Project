@@ -12,7 +12,7 @@ effect) is Phase 2 and is not yet implemented.
 
 - `moonSkyhookTrajectory.html` — markup and script/stylesheet wiring.
 - `moonSkyhookTrajectory.css` — styling (`msk-` prefix).
-- `moonSkyhookTrajectory.js` — the tool (IIFE, classic script).
+- `moonSkyhookTrajectory.js` — the tool (ES module; imports from `Shared/`, with `three.min.js` loaded as a classic script ahead of it).
 - `2k_moon-Wrap.jpg`, `NASA-Earth-world.200407.3x5400x2700.jpg` — sphere textures.
 
 ## What it shows

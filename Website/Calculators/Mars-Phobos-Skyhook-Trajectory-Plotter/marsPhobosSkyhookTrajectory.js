@@ -28,10 +28,17 @@
  * equatorial, same style of stated simplification the Moon tool uses for the
  * skyhook's own orbital plane.
  *
- * Depends on Shared/three.min.js, Shared/orbit.js (global `systems`),
- * Shared/constants.js (global `Const`) and Shared/math-utils.js (global
- * `OrbitalMath`). Classic scripts, file://-safe.
+ * ES module (loaded with <script type="module">); imports `systems`, `Const`
+ * and `OrbitalMath` from Shared/. Three.js is the one classic-script
+ * exception: Shared/three.min.js is loaded before this module and provides
+ * the global `THREE`.
  */
+/* global THREE */
+
+import { systems } from "../../Shared/orbit.js";
+import { OrbitalMath } from "../../Shared/math-utils.js";
+import { Const } from "../../Shared/constants.js";
+
 (function () {
 	"use strict";
 

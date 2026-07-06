@@ -5,11 +5,9 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" href="marsPhobosSkyhookTrajectory.css">
-	<!-- Shared libraries (classic scripts; load before the page script). -->
+	<!-- three.min.js is the one remaining classic script (provides the global
+	     THREE); the page script is an ES module and imports the rest itself. -->
 	<script src="../../Shared/three.min.js"></script>
-	<script src="../../Shared/orbit.js"></script>
-	<script src="../../Shared/constants.js"></script>
-	<script src="../../Shared/math-utils.js"></script>
 </head>
 <body>
 	<div id="mps-app">
@@ -250,6 +248,6 @@
 		</div>
 
 	</div>
-	<script src="marsPhobosSkyhookTrajectory.js"></script>
+	<script type="module" src="marsPhobosSkyhookTrajectory.js"></script>
 </body>
 </html>
