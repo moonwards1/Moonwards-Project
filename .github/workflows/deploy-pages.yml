@@ -1,4 +1,4 @@
-# Publishes Website/ to GitHub Pages on every push to main.
+# Publishes Website/ to GitHub Pages on every push to the default branch.
 # The folder is served exactly as committed — no build step. The Actions
 # route (upload-pages-artifact) skips Jekyll, so underscore-prefixed paths
 # like Website/Calculators/_template/ publish correctly; Website/.nojekyll
@@ -9,7 +9,7 @@ name: Deploy website to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:

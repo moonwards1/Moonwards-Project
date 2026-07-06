@@ -56,7 +56,7 @@ To split or relocate a large file (e.g. pull an inline `<script>` into a sibling
 
 - **Git cannot operate on the mounted project from the shell.** Every git write goes through lock files that must be renamed/unlinked, and the mount's no-delete guard blocks that. A `git init` attempt (2026-07-06) died on `.git/config.lock` and left a corrupt half-created `.git` that Kim had to delete by hand. Do not run `git init`/`add`/`commit`/`checkout` against the mount — and be wary of `git status`, which opportunistically rewrites the index.
 - **The repo is operated from Kim's side (GitHub Desktop):** Claude edits files with the file tools; Kim reviews the diff in Desktop, commits, and pushes. Read-only commands (`git log`, `git show`, `git diff`) from the shell are fine once `.git` exists.
-- The published site is `Website/` via GitHub Pages (workflow: `.github/workflows/deploy-pages.yml`, deploys on push to `main`). `Notes/` is untracked by `.gitignore`.
+- The repo is `https://github.com/moonwards1/Moonwards-Project` (org `moonwards1`), default branch **`master`**. The published site is `Website/` via GitHub Pages (workflow: `.github/workflows/deploy-pages.yml`, deploys on push). `Notes/` is untracked by `.gitignore`.
 
 ## Concurrency: more than one job may touch a file
 
