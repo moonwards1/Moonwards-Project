@@ -8,3 +8,5 @@ Desktop.ini
 
 # Tooling
 node_modules/
+
+* text=auto eol=lf
