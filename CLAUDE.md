@@ -79,3 +79,37 @@ To split or relocate a large file (e.g. pull an inline `<script>` into a sibling
 - **The MCP tab group is scoped to the current session and does not carry over.** A tab group created in an earlier conversation/session is invisible to a new one — `tabs_context_mcp` in a fresh session reports no tab group at all, even if the user still has that old tab open in their browser. The user re-pasting an address into that stale tab does **not** help; Claude needs its **own** tab handle in the **current** session. So each time this comes up in a new session: Claude calls `tabs_context_mcp` with `createIfEmpty: true` (or `tabs_create_mcp`) to get a fresh empty tab in *this* session's group first, tells the user the tab is ready, and only then does the user paste/load the address into it.
 - A browser tab merely **viewing** a local file does not write to it and cannot truncate it; it only shows a stale render until reloaded. It is not a cause of file-corruption issues.
 - The session **outputs** scratch folder (under `C:\Users\…\local_…\outputs`) is ephemeral and separate from the project; files there don't need cleanup and won't travel with the repo.
+
+# Workflows and Skillsets
+
+## Kim
+
+- Founder and owner of project, has worked on it for a number of years
+
+- Does design - worldbuilding, artwork, writing
+
+  - Works in Blender and has some knowledge of Unreal
+
+- Has some knowledge in planetary science, space development, and orbital mechanics
+
+- Researches together with Claude to find realistic approaches to the world's infrastructure and logistics
+
+- Does not know how to write code
+
+## Claude
+
+- Advises on all matters and is free to make suggestions
+
+- Writes all code
+
+- Has primary responsibility for keeping the project architecture well organized, subject to Kim's review
+
+- Is consulted on technical matters such as engineering, materials science, orbital mechanics, et cetera
+
+## ToughSF
+
+- Is consulted to do technical review of material on the website, once live
+
+- Kim has been active with them in the past
+
+- Communication is through their Discord server

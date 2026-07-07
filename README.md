@@ -6,7 +6,7 @@
 
   - Be entirely technically realistic - starting with sensible extrapolations, the world portrayed is a reliable, productive, efficient industrial design
 
-  - Be a usable model: the main steps for all major processes are laid out
+  - Be a usable model - the main steps for all major processes are laid out
 
 - Engage users by conveying:
 
@@ -87,39 +87,3 @@ To view the site locally after cloning or downloading, double-click
 
 then open http://localhost:8000/. A local server is required because the site
 is moving to ES modules, which browsers refuse to load from `file://` links.
-
-# Workflows and Skillsets
-
-## Kim
-
-- Founder and owner of project, has worked on it for a number of years
-
-- Does design - worldbuilding, artwork, writing
-
-  - Works in Blender and has some knowledge of Unreal
-
-- Has some knowledge in planetary science, space development, and orbital mechanics
-
-- Researches together with Claude to find realistic approaches to the world's infrastructure and logistics
-
-- Does not know how to write code
-
-## Claude
-
-- Advises on all matters and is free to make suggestions
-
-- Writes all code
-
-- Has primary responsibility for keeping the project architecture well organized, subject to Kim's review
-
-- Is consulted on technical matters such as engineering, materials science, orbital mechanics, et cetera
-
-## ToughSF
-
-- Is consulted to do technical review of material on the website, once live
-
-- Kim has been active with them in the past
-
-- Communication is through their Discord server
-
-
