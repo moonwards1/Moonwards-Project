@@ -288,9 +288,11 @@ Each step is independently useful; nothing requires a big-bang rewrite.
    `import`/`export`, with `Shared/three.min.js` the one remaining classic
    script (it provides the global `THREE`). Local viewing goes through
    `serve.bat` at the repo root, since ES modules do not load over `file://`.
+
 1. **Keep extracting the scene kit.** As the plotters get touched, move
    camera / date bar / body renderer / rings / marker / burn-widget code into
    `Shared/sim/`. The plotters shrink; the kit accumulates.
+
    - **Camera controller** *(done, 2026-07)*: `Shared/sim/camera-controller.js`
      — `createCam`/`updateCamera`/`bindCameraControls`/`raycastPickPoint`,
      covering rotate/pan/cursor-centred zoom/focus-lock/deferred-click-vs-
@@ -417,11 +419,14 @@ Each step is independently useful; nothing requires a big-bang rewrite.
      the module's header comment for the full reasoning.
 
    All scene-kit items are now migrated.
+
 2. **Build `Shared/exchange.js` + `exchange-types.js` and wire the first
    buttons** between existing standalone tools (e.g. trajectory plotter →
    aerobrake calculator; tether tool → skyhook plotter). This ships real value
    immediately and validates the packet contract before the shell exists.
+
 3. **Promote frame patching** into `Shared/` with Node tests.
+
 4. **Build the shell** (`Website/MissionPlanner/`): world object, one scene,
    module registry, profile-chain UI. Port the lunar skyhook as the first
    technology module and the SST compute core as the transfer-leg module; then

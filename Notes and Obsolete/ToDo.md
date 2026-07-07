@@ -10,12 +10,6 @@ These are Kim's notes to herself. This is not organized and only some of it will
 
 - Return at some point to the matter of wheel configuration for climbers, and go over the approach from Desktop/1032Pearson.pdf - the deforming wheels that greatly spread the contact area of each. Top speed? Materials? Lifetime?
 
-- Thinking through a single skyhook architecture that does it all. Would be good to see the animation of launches in this scenario - ask Claude to do a new one with the parameters in the new spreadsheet (Moonwards Single Lunar Skyhook Architecture). I think it will work - the full trip takes 3 hours for the direct launch speed, and one skyhook orbit is 2.25 hours, but if there is just a window that is offset from when the skyhook is at the apoapsis of the shuttles by 3 hours, then they can still be launched every 2.25 hours, there shouldn't be a problem. I need to check this. 
-
-  - The advantage of using just the one skyhook with a far shorter orbital period, is that the mass driver infrastructure can be smaller. The infrastructure is basically used twice as often while being half as big. Some things will wear out faster, but the number of things is about the same - half as many things, repaired twice as often. I'm sure it isn't all a linear thing, but I think this reduces the size of the build by a fair bit. The catcher has to deal with much higher speeds, but it can do it in 10 lanes instead of 20, so even if each lane is longer, it works out alright. (Also I'm reducing the mass sent up, as the inputs coming from Ceres and Psyche reduce the demand for stuff from the surface to get to that 10 MT total.)
-
-- Re-ask Claude, or Gemini, about plane changes via flyby of Earth, to see how big an inclination can result. 
-
 - Finish write-up of Ceres transport system. This becomes the example for other docs.
 
   - With this piece done, that leaves only Psyche's transport system to design. This should be the last major thorn regarding a realistic and economic transport system. Psyche's system should be very similar, ship design follows from launch, flyby, and capture design. 
