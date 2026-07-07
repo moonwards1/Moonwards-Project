@@ -26,6 +26,24 @@ import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { createCam, updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
 import { createDateBar } from "../../Shared/sim/date-bar.js";
+import {
+	createBody, createSunBody,
+	addLabel as brAddLabel, updateLabels as brUpdateLabels, updateScales as brUpdateScales,
+	worldSizeAtPointForPx
+} from "../../Shared/sim/body-renderer.js";
+import { createKeplerOrbitRing } from "../../Shared/sim/orbit-rings.js";
+import {
+	makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier
+} from "../../Shared/sim/approach-markers.js";
+import { createWaypointGizmo, makeBurnArrow as burnWidgetArrow } from "../../Shared/sim/burn-widget.js";
+import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPosition } from "../../Shared/sim/readout-panes.js";
+import {
+	makeShipSprite, makeXMarkSprite, orientMarkerSprite,
+	markerFraction as mcMarkerFraction, sweepAngleFrom, phasingDays as mcPhasingDays,
+	refineApproach as mcRefineApproach, followCrossing as mcFollowCrossing,
+	buildMarkerCard as mcBuildMarkerCard, updateMarkerModeButtons as mcUpdateMarkerModeButtons,
+	fmtKm, fmtTof, fmtDate
+} from "../../Shared/sim/marker-card.js";
 
 (function () {
 	"use strict";
@@ -98,7 +116,6 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	var markerSprite = null;      // the slidable 'x' probe marker (THREE.Sprite)
 	var markerCard = null;        // its top-left readout card (HTML)
 	var orbitApproachMarks = [];  // hollow-ring sprites where the path nears a body's orbit
-	var _ringTex = {};            // ring textures, keyed by outline width
 	var APPROACH_FAR   = 0.004  * AU;   // m: a faint ring appears within this of a body's orbit
 	var APPROACH_NEAR  = 0.001  * AU;   // m: brighter ring within this
 	var APPROACH_CLOSE = 0.0002 * AU;   // m: brightest ring within this
@@ -142,9 +159,8 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	var pickMeshes = [], pickSoiSpheres = [];   // built once in initScene, for cursor-centred zoom
 
 	// A body/SOI sphere is drawn only while its projected radius is at least a
-	// pixel or two; below that it collapses to a single bright on-orbit pixel.
-	var PX_BODY = 1.4;            // px: show the body sphere at/above this radius
-	var PX_SOI  = 2.0;            // px: show the SOI shell at/above this radius
+	// pixel or two; below that it collapses to a single bright on-orbit pixel
+	// (thresholds and the per-frame pass live in Shared/sim/body-renderer.js).
 
 	function initScene() {
 		scene = new THREE.Scene();
@@ -171,44 +187,19 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 
 		// Sun (real radius; collapses to a bright pixel when far)
 		var sunSys = systems.get("Sun");
-		var sunRadAU = Number(sunSys.radius) / AU;
-		var sunCore = new THREE.Mesh(
-			new THREE.SphereGeometry(sunRadAU, 24, 18),
-			new THREE.MeshBasicMaterial({ color: 0xffe066 }));
-		var sunPoint = makePoint(0xfff2a0, 3);
-		sunGroup = new THREE.Group();
-		sunGroup.add(sunCore); sunGroup.add(sunPoint);
-		scene.add(sunGroup);
-		scaleList.push({ name: "Sun", group: sunGroup, core: sunCore, point: sunPoint,
-		                 soi: null, radiusAU: sunRadAU, soiAU: 0 });
+		var sunBody = createSunBody(scene, scaleList, { sys: sunSys, AU: AU });
+		sunGroup = sunBody.group;
 		addLabel("Sun", sunGroup);
 
 		// bodies + orbits — everything at true scale
 		BODIES.forEach(function (name) {
 			var sys = systems.get(name);
-			var col = new THREE.Color(sys.color || "#bcc3d0");
-			var radAU = Number(sys.radius) / AU;
+			var b = createBody(scene, scaleList, name, { sys: sys, AU: AU, primaryMass: SUN_MASS });
+			bodyGroups[name] = { group: b.group, core: b.core, soi: b.soi, point: b.point };
+			addLabel(name, b.group);
 
-			var core = new THREE.Mesh(
-				new THREE.SphereGeometry(radAU, 16, 12),
-				new THREE.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(0.3), roughness: 0.85 }));
-
-			var soiAU = soiRadiusAU(sys);
-			var soi = new THREE.Mesh(
-				new THREE.SphereGeometry(soiAU, 24, 16),
-				new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.10, depthWrite: false }));
-
-			var point = makePoint(col.clone().lerp(new THREE.Color(0xffffff), 0.45).getHex(), 2.5);
-
-			var g = new THREE.Group();
-			g.add(core); g.add(soi); g.add(point);
-			scene.add(g);
-			bodyGroups[name] = { group: g, core: core, soi: soi, point: point };
-			scaleList.push({ name: name, group: g, core: core, point: point,
-			                 soi: soi, radiusAU: radAU, soiAU: soiAU });
-			addLabel(name, g);
-
-			var line = makeOrbitLine(sys, col);
+			var line = createKeplerOrbitRing({
+				orbit: sys.orbit, GM: GM_SUN, color: new THREE.Color(sys.color || "#bcc3d0"), AU: AU });
 			scene.add(line);
 			orbitLines[name] = line;
 		});
@@ -270,190 +261,51 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		return new THREE.Points(g, new THREE.PointsMaterial({ color: 0x666f86, size: 1.5, sizeAttenuation: false }));
 	}
 
-	// True sphere-of-influence radius in AU (0 for the Sun).
-	function soiRadiusAU(sys) {
-		if (!sys.orbit) { return 0; }
-		var m = sys.mass || (sys.GM / 6.6743e-11);
-		return O.sphereOfInfluence(sys.orbit.a, m, SUN_MASS) / AU;
-	}
-
-	// A one-vertex Points object: a constant-size bright pixel at the group origin.
-	function makePoint(colorHex, sizePx) {
-		var g = new THREE.BufferGeometry();
-		g.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
-		return new THREE.Points(g, new THREE.PointsMaterial({
-			color: colorHex, size: sizePx, sizeAttenuation: false,
-			transparent: true, depthTest: false }));
-	}
-
-	// Create a floating HTML label tied to an object's world position.
+	// Create a floating HTML label tied to an object's world position
+	// (Shared/sim/body-renderer.js).
 	function addLabel(name, group) {
-		var el = document.createElement("span");
-		el.className = "sst-label";
-		el.textContent = name;
-		labelLayer.appendChild(el);
-		labelList.push({ el: el, group: group });
+		brAddLabel(labelLayer, labelList, name, group, "sst-label");
 	}
 
 	function groupOf(name) {
 		return name === "Sun" ? sunGroup : (bodyGroups[name] && bodyGroups[name].group);
 	}
 
-	// One axis of a waypoint gizmo: a line from the origin out along a unit
-	// direction, drawn on top of everything else.
-	function makeAxisLine(dir, colorHex) {
-		var g = new THREE.BufferGeometry().setFromPoints(
-			[new THREE.Vector3(0, 0, 0), new THREE.Vector3(dir[0], dir[1], dir[2])]);
-		return new THREE.Line(g, new THREE.LineBasicMaterial({
-			color: colorHex, depthTest: false, transparent: true }));
-	}
-
-	// A prograde / radial / normal gizmo at a waypoint, aligned to that point's
-	// coast frame (the same frame the burn sliders act in — the ecliptic-anchored
-	// frame from OrbitalMath.burnFrame, so the normal is a plane change vs the
-	// ecliptic and holds steady through a flyby instead of swinging sunward).
-	// Colours match the panel: prograde green, radial orange, normal blue. Held at
-	// constant on-screen size by updateGizmos().
+	// A prograde / radial / normal gizmo at a waypoint (Shared/sim/burn-widget.js).
 	function makeWaypointGizmo(point) {
-		var f = O.burnFrame(point.r, point.v);
-		var vhat = f.pro, nhat = f.nrm, rhat = f.rad;
-		var g = new THREE.Group();
-		g.add(makeAxisLine(vhat, 0x6fd49a));   // prograde
-		g.add(makeAxisLine(rhat, 0xffb45a));   // radial
-		g.add(makeAxisLine(nhat, 0x8ab4ff));   // normal
-		g.position.set(point.r[0]/AU, point.r[1]/AU, point.r[2]/AU);
-		g.renderOrder = 10;
-		return g;
+		return createWaypointGizmo(point.r, point.v,
+			new THREE.Vector3(point.r[0]/AU, point.r[1]/AU, point.r[2]/AU));
 	}
 
 	// Keep each waypoint gizmo ~42 px long regardless of zoom.
 	function updateGizmos() {
-		var h = holder.clientHeight || 1;
-		var f = (h / 2) / Math.tan(camera.fov * Math.PI / 360);
 		for (var i = 0; i < wpMarkers.length; i++) {
 			var g = wpMarkers[i];
-			var dist = camera.position.distanceTo(g.position) || 1e-9;
-			g.scale.setScalar(42 * dist / f);
+			g.scale.setScalar(worldSizeAtPointForPx(camera, holder, g.position, 42));
 		}
 		if (markerSprite && markerSprite.visible) {
-			var md = camera.position.distanceTo(markerSprite.position) || 1e-9;
-			markerSprite.scale.setScalar(26 * md / f);
-			// point the ship along its screen-space heading
-			if (markerVelDir) {
-				var a3 = markerSprite.position.clone().project(camera);
-				var b3 = markerSprite.position.clone().addScaledVector(markerVelDir, md * 0.01).project(camera);
-				markerSprite.material.rotation = Math.atan2(b3.y - a3.y, b3.x - a3.x);
-			}
+			markerSprite.scale.setScalar(worldSizeAtPointForPx(camera, holder, markerSprite.position, 26));
+			// point the ship along its screen-space heading (Shared/sim/marker-card.js)
+			if (markerVelDir) { orientMarkerSprite(camera, markerSprite, markerVelDir); }
 		}
 		if (destSprite && destSprite.visible) {
-			var dd = camera.position.distanceTo(destSprite.position) || 1e-9;
-			destSprite.scale.setScalar(22 * dd / f);
+			destSprite.scale.setScalar(worldSizeAtPointForPx(camera, holder, destSprite.position, 22));
 		}
-		if (tempRing && tempRing.visible) {
-			var td = camera.position.distanceTo(tempRing.position) || 1e-9;
-			tempRing.scale.setScalar((tempRing.userData.px || 30) * td / f);
-		}
-		for (var j = 0; j < orbitApproachMarks.length; j++) {
-			var rm = orbitApproachMarks[j];
-			var rd = camera.position.distanceTo(rm.position) || 1e-9;
-			// Hold a fixed on-screen size when far away; but once the view is close
-			// enough that the tier's true distance projects larger than that fixed
-			// size, grow the ring to its physical size (ring centre-line radius =
-			// worldR AU, which is 0.375 of the sprite-quad width).
-			var sFixed = (rm.userData.px || 16) * rd / f;
-			var sPhys  = (rm.userData.worldR || 0) / 0.375;
-			rm.scale.setScalar(Math.max(sFixed, sPhys));
-		}
+		// Shared/sim/approach-markers.js.
+		if (tempRing && tempRing.visible) { scaleApproachMark(camera, holder, tempRing); }
+		for (var j = 0; j < orbitApproachMarks.length; j++) { scaleApproachMark(camera, holder, orbitApproachMarks[j]); }
 	}
 
-	// Projected radius, in CSS pixels, of a sphere of world radius `worldR` seen
-	// from distance `dist`.
-	function screenPxRadius(worldR, dist) {
-		var h = holder.clientHeight || 1;
-		var f = (h / 2) / Math.tan(camera.fov * Math.PI / 360);   // px per radian
-		return worldR / dist * f;
-	}
-
-	// Per-frame: show each body / SOI as a real sphere when big enough on screen,
-	// otherwise collapse it to its bright pixel.
+	// Per-frame: show each body / SOI as a real sphere when big enough on
+	// screen, otherwise collapse it to its bright pixel (Shared/sim/body-renderer.js).
 	function updateScales() {
-		var wantSOI = soiToggle.checked;
-		for (var i = 0; i < scaleList.length; i++) {
-			var b = scaleList[i];
-			var dist = camera.position.distanceTo(b.group.position) || 1e-9;
-			var showCore = screenPxRadius(b.radiusAU, dist) >= PX_BODY;
-			b.core.visible = showCore;
-			b.point.visible = !showCore;
-			if (b.soi) {
-				b.soi.visible = wantSOI && screenPxRadius(b.soiAU, dist) >= PX_SOI;
-			}
-		}
+		brUpdateScales(camera, holder, scaleList, { wantSOI: soiToggle.checked });
 	}
 
-	// Per-frame: place each name label beside its body in screen space.
-	var _lp = new THREE.Vector3();
+	// Per-frame: place each name label beside its body in screen space
+	// (Shared/sim/body-renderer.js).
 	function updateLabels() {
-		var w = holder.clientWidth, h = holder.clientHeight;
-		for (var i = 0; i < labelList.length; i++) {
-			var L = labelList[i];
-			_lp.copy(L.group.position).project(camera);
-			if (_lp.z < 1 && _lp.x > -1.06 && _lp.x < 1.06 && _lp.y > -1.06 && _lp.y < 1.06) {
-				L.el.style.display = "block";
-				L.el.style.left = ((_lp.x * 0.5 + 0.5) * w + 7) + "px";
-				L.el.style.top  = ((-_lp.y * 0.5 + 0.5) * h) + "px";
-			} else {
-				L.el.style.display = "none";
-			}
-		}
-	}
-
-	// One full orbit of a body, drawn as two arcs split at the line of nodes
-	// so the nodes are visible: the arc above the ecliptic (north, z >= 0) is
-	// drawn bright, the arc below (south) dim. Small markers sit on each node.
-	// (J2000 ecliptic, AU units.) Returns a Group; orbitLines[name].visible
-	// toggles the whole thing.
-	function makeOrbitLine(sys, col) {
-		var o = sys.orbit;
-		var inc = o.inclination || 0;
-		var grp = new THREE.Group();
-
-		// Sample an arc of true anomaly [nu0, nu0 + span] into Vector3 points.
-		function arc(nu0, span, N) {
-			var pts = [];
-			for (var k = 0; k <= N; k++) {
-				var nu = nu0 + span * k / N;
-				var s = O.stateFromElements(GM_SUN, o.a, o.e, inc,
-					o.longitude || 0, o.argument || 0, nu);
-				pts.push(new THREE.Vector3(s.r[0] / AU, s.r[1] / AU, s.r[2] / AU));
-			}
-			return pts;
-		}
-		function lineFrom(pts, lineCol, opacity) {
-			var g = new THREE.BufferGeometry().setFromPoints(pts);
-			return new THREE.Line(g, new THREE.LineBasicMaterial({
-				color: lineCol, transparent: true, opacity: opacity }));
-		}
-
-		// Orbits sensibly coplanar with the ecliptic (e.g. Earth) have no
-		// meaningful nodes — draw a single uniform ring.
-		if (inc < 0.5 * Math.PI / 180) {
-			grp.add(lineFrom(arc(0, 2 * Math.PI, 360), col, 0.32));
-			return grp;
-		}
-
-		// Argument of latitude u = argument + nu; z = 0 at u = 0 (ascending)
-		// and u = pi (descending). So the ascending node is at nu = -argument.
-		// The arcs swap brightness at the nodes, so the colour change marks them.
-		var nuAsc = -(o.argument || 0);
-		// South arc colour: the body colour nudged toward a cool blue so the
-		// two halves read as distinct even at a glance.
-		var southCol = col.clone().lerp(new THREE.Color(0x4a78ff), 0.3);
-		// North arc (z >= 0): ascending -> descending. Drawn brighter.
-		grp.add(lineFrom(arc(nuAsc, Math.PI, 180), col, 0.6));
-		// South arc (z <= 0): descending -> ascending. Dimmer + colour-shifted.
-		grp.add(lineFrom(arc(nuAsc + Math.PI, Math.PI, 180), southCol, 0.3));
-
-		return grp;
+		brUpdateLabels(camera, holder, labelList);
 	}
 
 	// ---- camera controls: Shared/sim/camera-controller.js (see `cameraView`
@@ -685,21 +537,11 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		return 12 * 365.25 * DAY;
 	}
 
-	// One arrow for a velocity-like vector (m/s) anchored at world point r (m).
-	// Length is BURN_VEC_SCALE AU per km/s; drawn on top so it's always visible.
-	// Returns null for a negligible vector.
+	// One arrow for a velocity-like vector (m/s) anchored at world point r (m)
+	// (Shared/sim/burn-widget.js). Length is BURN_VEC_SCALE AU per km/s.
 	function makeBurnArrow(r, vec, colorHex) {
-		var kms = O.vMag(vec) / 1000;
-		if (kms < 0.05) { return null; }
-		var len = kms * BURN_VEC_SCALE;
-		var dir = new THREE.Vector3(vec[0], vec[1], vec[2]).normalize();
 		var origin = new THREE.Vector3(r[0] / AU, r[1] / AU, r[2] / AU);
-		var arrow = new THREE.ArrowHelper(dir, origin, len, colorHex, len * 0.22, len * 0.12);
-		[arrow.line, arrow.cone].forEach(function (o) {
-			o.material.depthTest = false; o.material.depthWrite = false;
-			o.material.transparent = true; o.renderOrder = 12;
-		});
-		return arrow;
+		return burnWidgetArrow(origin, vec, colorHex, BURN_VEC_SCALE);
 	}
 
 	// At a burn point: a magenta dV arrow (the burn = v_after - v_before) and an
@@ -736,50 +578,17 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		};
 	}
 
-	function fmtSigned(x, digits, unit) {
-		return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(digits) + unit;
-	}
-
 	// Rebuild the readout boxes from a list of { host, data } (data may be null).
 	function renderBurnReadouts(entries) {
-		if (!readoutLayer) { return; }
-		readoutBoxes.forEach(function (b) { readoutLayer.removeChild(b.el); });
-		readoutBoxes = [];
-		entries.forEach(function (en) {
-			if (!en.data || !en.host) { return; }
-			var box = document.createElement("div");
-			box.className = "sst-readout";
-			box.innerHTML =
-				'<div class="sst-readout-row"><span class="sst-readout-label">burn Δv</span>'
-				+ '<span class="sst-readout-val" style="color:' + dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
-				+ '<div class="sst-readout-row"><span class="sst-readout-label">plane change</span>'
-				+ '<span class="sst-readout-val" style="color:' + dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
-				+ '<div class="sst-readout-row"><span class="sst-readout-label">prograde Δv</span>'
-				+ '<span class="sst-readout-val" style="color:' + spdHex + '">' + fmtSigned(en.data.progradeDv, 2, ' km/s') + '</span></div>';
-			readoutLayer.appendChild(box);
-			readoutBoxes.push({ el: box, host: en.host });
-		});
+		readoutBoxes = readoutRender(readoutLayer, readoutBoxes, entries,
+			{ classPrefix: "sst", dvHex: dvHex, spdHex: spdHex });
 		positionBurnReadouts();
 	}
 
 	// Place each readout box straddling the panel's left edge, vertically centred
 	// on its burn widget. Hidden when its widget is scrolled out of the panel.
 	function positionBurnReadouts() {
-		if (!readoutBoxes.length || !mainEl || !panelEl) { return; }
-		var mr = mainEl.getBoundingClientRect();
-		var pr = panelEl.getBoundingClientRect();
-		var boundary = pr.left - mr.left;            // panel's left edge in main coords
-		readoutBoxes.forEach(function (b) {
-			var hr = b.host.getBoundingClientRect();
-			var visible = hr.bottom > pr.top + 4 && hr.top < pr.bottom - 4;
-			b.el.style.display = visible ? "" : "none";
-			if (!visible) { return; }
-			var w = b.el.offsetWidth, h = b.el.offsetHeight;
-			var left = boundary - w / 2;
-			if (left < 4) { left = 4; }              // stacked layout: keep on-screen
-			b.el.style.left = left + "px";
-			b.el.style.top  = (hr.top - mr.top + hr.height / 2 - h / 2) + "px";
-		});
+		readoutPosition(readoutBoxes, mainEl, panelEl);
 	}
 
 	function drawTrajectory() {
@@ -832,30 +641,11 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		{ color: 0xd6a02f, opacity: 0.70, px: 17, lw: 7,  worldR: 0.001  },  // 1: near  — brighter, medium
 		{ color: 0xfff1b0, opacity: 1.00, px: 11, lw: 5,  worldR: 0.0002 }   // 2: close — brightest, smallest, thinnest
 	];
-	function ringTexture(lw) {
-		if (_ringTex[lw]) { return _ringTex[lw]; }
-		var cv = document.createElement("canvas");
-		cv.width = cv.height = 64;
-		var ctx = cv.getContext("2d");
-		ctx.strokeStyle = "#ffffff"; ctx.lineWidth = lw;
-		ctx.beginPath(); ctx.arc(32, 32, 24, 0, 2 * Math.PI); ctx.stroke();
-		var t = new THREE.CanvasTexture(cv);
-		t.minFilter = THREE.LinearFilter;
-		_ringTex[lw] = t;
-		return t;
-	}
+	// Shared/sim/approach-markers.js.
 	function makeApproachRing(tier) {
 		var st = APPROACH_TIERS[tier] || APPROACH_TIERS[0];
-		var mat = new THREE.SpriteMaterial({ map: ringTexture(st.lw), transparent: true,
-			depthTest: false, depthWrite: false });
-		mat.color.setHex(st.color);
-		mat.opacity = st.opacity;
-		var sp = new THREE.Sprite(mat);
-		sp.renderOrder = 14;
-		sp.userData.px = st.px;                          // fixed on-screen size (when zoomed out)
-		sp.userData.worldR = st.worldR;                  // physical radius it marks (AU)
-		sp.scale.setScalar(0.01);
-		return sp;
+		return makeRingSprite({ lineWidth: st.lw, color: st.color, opacity: st.opacity,
+			px: st.px, worldR: st.worldR, renderOrder: 14 });
 	}
 	function rebuildApproachMarks() {
 		orbitApproachMarks.forEach(function (m) { scene.remove(m); if (m.material) { m.material.dispose(); } });
@@ -868,18 +658,8 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	}
 	// Golden-section refine of the closest approach over a time bracket, using the
 	// *true* Kepler arc (stateAtGlobalTime) so sub-sample resolution isn't limited
-	// by the polyline spacing. Returns {r (m), dist (m)} at the minimum.
-	function refineApproach(orbit, tA, tB) {
-		var gr = (Math.sqrt(5) - 1) / 2, a = tA, b = tB;
-		function f(t) { var s = stateAtGlobalTime(t); return s ? O.distanceToOrbit(orbit, s.r) : Infinity; }
-		var c = b - gr * (b - a), d = a + gr * (b - a), fc = f(c), fd = f(d);
-		for (var k = 0; k < 48 && (b - a) > 1; k++) {
-			if (fc < fd) { b = d; d = c; fd = fc; c = b - gr * (b - a); fc = f(c); }
-			else { a = c; c = d; fc = fd; d = a + gr * (b - a); fd = f(d); }
-		}
-		var tm = (a + b) / 2, s = stateAtGlobalTime(tm);
-		return s ? { r: s.r, dist: O.distanceToOrbit(orbit, s.r), t: tm } : null;
-	}
+	// by the polyline spacing (Shared/sim/marker-card.js's refineApproach, also
+	// used by followCrossing() below).
 	// Scan the path for local minima of distance-to-each-orbit, then refine each.
 	// A cheap per-sample pre-filter (out-of-plane gap + in-plane radial band) keeps
 	// the exact point-to-ellipse solve to the few samples that are actually near.
@@ -916,9 +696,9 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 			}
 			for (var m = 1; m < n - 1; m++) {
 				if (dists[m] < CAND && dists[m] < dists[m-1] && dists[m] <= dists[m+1]) {
-					var r = refineApproach(orbit, trajSamples[m-1].t, trajSamples[m+1].t);
-					if (r && r.dist < APPROACH_FAR) {
-						var tier = r.dist < APPROACH_CLOSE ? 2 : (r.dist < APPROACH_NEAR ? 1 : 0);
+					var r = mcRefineApproach(orbit, stateAtGlobalTime, trajSamples[m-1].t, trajSamples[m+1].t);
+					var tier = r ? pickProximityTier(r.dist, APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE) : -1;
+					if (tier >= 0) {
 						out.push({ pos: new THREE.Vector3(r.r[0]/AU, r.r[1]/AU, r.r[2]/AU),
 						           dist: r.dist, tier: tier, body: name });
 					}
@@ -931,74 +711,14 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	// =======================================================================
 	//  Marker: a slidable 'x' probe on the trajectory
 	// =======================================================================
-	// A camera-facing 'x' sprite (white stroke on a dark halo so it reads on any
-	// background), drawn on top of everything and held at constant on-screen size
-	// by updateGizmos(). Now used for the DESTINATION body's arrival position.
-	function makeMarkerSprite() {
-		var cv = document.createElement("canvas");
-		cv.width = cv.height = 64;
-		var ctx = cv.getContext("2d");
-		ctx.lineCap = "round";
-		function strokeX() {
-			ctx.beginPath();
-			ctx.moveTo(16, 16); ctx.lineTo(48, 48);
-			ctx.moveTo(48, 16); ctx.lineTo(16, 48);
-			ctx.stroke();
-		}
-		ctx.strokeStyle = "rgba(0,0,0,0.85)"; ctx.lineWidth = 13; strokeX();   // halo
-		ctx.strokeStyle = "#ffffff";          ctx.lineWidth = 7;  strokeX();   // mark
-		var tex = new THREE.CanvasTexture(cv);
-		tex.minFilter = THREE.LinearFilter;
-		var sp = new THREE.Sprite(new THREE.SpriteMaterial({
-			map: tex, depthTest: false, depthWrite: false, transparent: true }));
-		sp.renderOrder = 15;
-		sp.scale.setScalar(0.01);
-		return sp;
-	}
-
-	// The TRAJECTORY marker: an elongated chevron (ship) drawn pointing +x; its
-	// material.rotation is set each frame (updateGizmos) to the screen-space
-	// heading so the nose points along the direction of travel.
-	function makeShipSprite() {
-		var cv = document.createElement("canvas");
-		cv.width = cv.height = 64;
-		var ctx = cv.getContext("2d");
-		ctx.lineJoin = "round";
-		ctx.beginPath();
-		ctx.moveTo(58, 32);     // nose (+x)
-		ctx.lineTo(13, 15);     // back-left
-		ctx.lineTo(25, 32);     // concave notch
-		ctx.lineTo(13, 49);     // back-right
-		ctx.closePath();
-		ctx.fillStyle = "#ffffff";
-		ctx.strokeStyle = "rgba(0,0,0,0.9)"; ctx.lineWidth = 4;
-		ctx.fill(); ctx.stroke();
-		var tex = new THREE.CanvasTexture(cv);
-		tex.minFilter = THREE.LinearFilter;
-		var sp = new THREE.Sprite(new THREE.SpriteMaterial({
-			map: tex, depthTest: false, depthWrite: false, transparent: true }));
-		sp.renderOrder = 15;
-		sp.scale.setScalar(0.01);
-		return sp;
-	}
+	// Sprite factories (the ship chevron, the destination 'x') live in
+	// Shared/sim/marker-card.js as makeShipSprite/makeXMarkSprite.
 
 	// A temporal-proximity ring around the ship (one blue texture; tier sets
 	// colour/opacity/size). Held at constant on-screen size by updateGizmos().
-	function makeTempRing() {
-		var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(7),
-			transparent: true, depthTest: false, depthWrite: false }));
-		sp.renderOrder = 13;
-		sp.scale.setScalar(0.01);
-		return sp;
-	}
+	function makeTempRing() { return makeRingSprite({ lineWidth: 7, px: 30, renderOrder: 13 }); }
 
-	// Slider angle (deg, -180..180) -> fraction of the whole path (0..1). The
-	// clicked point is f0 at 0°; -180° maps to the path start, +180° to the end
-	// (each side scaled linearly, so resolution is densest near the click).
-	function markerFraction(f0, angleDeg) {
-		var a = Math.max(-180, Math.min(180, angleDeg));
-		return a <= 0 ? f0 * (a + 180) / 180 : f0 + (1 - f0) * (a / 180);
-	}
+	// markerFraction, fmtKm/fmtTof/fmtDate: Shared/sim/marker-card.js.
 
 	// Heliocentric state (r,v in m, m/s) at a global time along the path.
 	function stateAtGlobalTime(t) {
@@ -1011,73 +731,24 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
 	}
 
-	function fmtKm(m) {
-		return (m / 1000).toLocaleString("en-US", { maximumFractionDigits: 0 }) + " km";
-	}
-
 	// Heliocentric angle (deg, 0–360) swept around the Sun from the departure point
-	// (the trajectory start = origin body at the departure date) to a point r (m),
-	// measured in the direction of travel. The rotation axis is the departure
-	// angular-momentum direction, so prograde motion increases the angle.
+	// (the trajectory start = origin body at the departure date) to a point r (m).
+	// Shared/sim/marker-card.js's sweepAngleFrom, given the departure r0/v0.
 	function sweptFromOrigin(r) {
 		if (!trajSegs.length) { return 0; }
-		var r0 = trajSegs[0].r0, v0 = trajSegs[0].v0;
-		var hx = r0[1]*v0[2] - r0[2]*v0[1], hy = r0[2]*v0[0] - r0[0]*v0[2], hz = r0[0]*v0[1] - r0[1]*v0[0];
-		var hm = Math.hypot(hx, hy, hz) || 1; hx /= hm; hy /= hm; hz /= hm;
-		var cx = r0[1]*r[2] - r0[2]*r[1], cy = r0[2]*r[0] - r0[0]*r[2], cz = r0[0]*r[1] - r0[1]*r[0];
-		var ang = Math.atan2(cx*hx + cy*hy + cz*hz, r0[0]*r[0] + r0[1]*r[1] + r0[2]*r[2]) * 180 / Math.PI;
-		return ang < 0 ? ang + 360 : ang;
-	}
-
-	function fmtTof(sec) {
-		var d = sec / DAY;
-		return d.toFixed(0) + " d (" + (d / 365.25).toFixed(2) + " yr)";
-	}
-	function fmtDate(jd) {
-		var d = O.dateFromJulian(jd);
-		return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
-	}
-
-	// Phasing (days) at meeting point P (m) reached at time-of-flight tofSec: the
-	// signed gap between when the destination body passes through P and when the
-	// ship arrives. + => the body gets there AFTER the ship (ship early); − => the
-	// body has already gone by (ship late). Uses the nearest pass (mod one period).
-	function phasingDays(orbit, P, tofSec) {
-		var n = O.meanMotion(GM_SUN, orbit.a);
-		var arrJd = state.jd + tofSec / DAY;
-		var Mb = (orbit.meanAnomaly || 0) + n * (arrJd - (orbit.epoch || 2451545.0)) * DAY;
-		var i = orbit.inclination || 0, Om = orbit.longitude || 0, w = orbit.argument || 0;
-		var cO = Math.cos(Om), sO = Math.sin(Om), ci = Math.cos(i), si = Math.sin(i),
-		    cw = Math.cos(w), sw = Math.sin(w);
-		var ux = cO*cw - sO*sw*ci, uy = sO*cw + cO*sw*ci, uz = sw*si;
-		var vx = -cO*sw - sO*cw*ci, vy = -sO*sw + cO*cw*ci, vz = cw*si;
-		var nuP = Math.atan2(P[0]*vx + P[1]*vy + P[2]*vz, P[0]*ux + P[1]*uy + P[2]*uz);
-		var Mp = O.meanAnomalyFromTrue(nuP, orbit.e);
-		var dM = Mp - Mb;
-		dM -= 2 * Math.PI * Math.round(dM / (2 * Math.PI));   // nearest pass, (-π,π]
-		return (dM / n) / DAY;
+		return sweepAngleFrom(trajSegs[0].r0, trajSegs[0].v0, r);
 	}
 
 	// Keep the marker glued to the destination-orbit crossing while it is inside an
-	// encounter ring; freeze (do nothing) when out of range, so it never skips to a
-	// far crossing — it re-engages only when a ring sweeps back over its own spot.
-	// Drives state.marker.f0/angle. Used by Track mode and by released Target mode.
+	// encounter ring; freeze (do nothing) when out of range (Shared/sim/marker-card.js's
+	// followCrossing). Drives state.marker.f0/angle. Used by Track mode and by released
+	// Target mode.
 	function followCrossing() {
-		if (!state.marker) { return; }
+		if (!state.marker || !trajSegs.length) { return; }
 		var dn = state.destination;
 		if (!dn || dn === "(none)" || dn === state.origin) { return; }
 		var orbit = systems.get(dn).orbit;
-		if (!orbit || orbit.e >= 1 || !trajSegs.length || trajTotalT <= 0) { return; }
-		var tCur = markerFraction(state.marker.f0, state.marker.angle) * trajTotalT;
-		var sCur = stateAtGlobalTime(tCur);
-		if (!sCur || O.distanceToOrbit(orbit, sCur.r) >= APPROACH_FAR) { return; }  // freeze
-		var avgdt = trajTotalT / Math.max(1, trajSamples.length - 1);
-		var win = 6 * avgdt;
-		var r = refineApproach(orbit, Math.max(0, tCur - win), Math.min(trajTotalT, tCur + win));
-		if (r && r.dist < APPROACH_FAR) {
-			state.marker.f0 = Math.max(0, Math.min(1, r.t / trajTotalT));
-			state.marker.angle = 0;
-		}
+		mcFollowCrossing(state.marker, orbit, trajTotalT, trajSamples.length, stateAtGlobalTime, APPROACH_FAR);
 	}
 
 	// Target mode (Stage 2): hold the arrival date fixed and re-solve the TERMINAL
@@ -1160,7 +831,7 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		}
 		if (mode === "target") {
 			m._savedF0 = m.f0; m._savedAngle = m.angle;      // restore the marker here on leaving Target
-			var tof = markerFraction(m.f0, m.angle) * trajTotalT;
+			var tof = mcMarkerFraction(m.f0, m.angle) * trajTotalT;
 			m.targetArrJd = state.jd + tof / DAY;            // hold this arrival date
 			var tb2 = termBurn();
 			m._baseBurn = tb2 ? { pro: tb2.pro, rad: tb2.rad, nrm: tb2.nrm } : { pro: 0, rad: 0, nrm: 0 };
@@ -1185,23 +856,20 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		var orbit = systems.get(dn).orbit;
 		var arrJd = state.jd + tofSec / DAY;
 		var b = O.bodyStateAtJD(GM_SUN, orbit, arrJd);
-		if (!destSprite) { destSprite = makeMarkerSprite(); destSprite.renderOrder = 13; scene.add(destSprite); }
+		if (!destSprite) { destSprite = makeXMarkSprite(); destSprite.renderOrder = 13; scene.add(destSprite); }
 		destSprite.visible = true;
 		destSprite.material.color.set(systems.get(dn).color || "#ffffff");
 		destSprite.position.set(b.r[0] / AU, b.r[1] / AU, b.r[2] / AU);
 
 		var nearOrbit = orbit.e < 1 && O.distanceToOrbit(orbit, markerR) < APPROACH_FAR;
 		if (nearOrbit) {
-			var dt = phasingDays(orbit, markerR, tofSec);
+			var dt = mcPhasingDays(GM_SUN, orbit, markerR, arrJd);
 			markerValPhase.textContent = (dt >= 0 ? "+" : "−") + Math.abs(dt).toFixed(1) + " d";
 			var ad = Math.abs(dt);
-			var tier = ad < TEMP_CLOSE ? 2 : (ad < TEMP_NEAR ? 1 : (ad < TEMP_FAR ? 0 : -1));
+			var tier = pickProximityTier(ad, TEMP_FAR, TEMP_NEAR, TEMP_CLOSE);
 			if (tier >= 0) {
 				if (!tempRing) { tempRing = makeTempRing(); scene.add(tempRing); }
-				var st = TEMPORAL_TIERS[tier];
-				tempRing.material.color.setHex(st.color);
-				tempRing.material.opacity = st.opacity;
-				tempRing.userData.px = st.px;
+				applyTierToSprite(tempRing, TEMPORAL_TIERS[tier]);
 				tempRing.visible = true;
 				if (markerSprite) { tempRing.position.copy(markerSprite.position); }
 			} else if (tempRing) { tempRing.visible = false; }
@@ -1212,130 +880,46 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	}
 
 	function updateMarkerModeButtons() {
-		Object.keys(markerModeBtns).forEach(function (k) {
-			var on = state.marker && state.marker.mode === k;
-			markerModeBtns[k].className = "sst-mode-btn" + (on ? " active" : "");
-		});
+		mcUpdateMarkerModeButtons(markerModeBtns, "sst", state.marker && state.marker.mode);
 	}
 
-	// Build the top-left marker card (once). Holds the slider, a Free/Track mode
-	// selector, and the readouts.
+	// Build the top-left marker card (once), via Shared/sim/marker-card.js.
+	// Holds the slider, the Free/Track/Target selector, and the readouts.
 	function buildMarkerCard() {
-		markerCard = document.createElement("div");
-		markerCard.id = "sst-marker-card";
-
-		var head = document.createElement("div"); head.className = "sst-marker-head";
-		var title = document.createElement("span"); title.className = "sst-marker-title";
-		title.textContent = "Marker";
-		var rm = document.createElement("button"); rm.className = "sst-marker-x";
-		rm.textContent = "✕"; rm.title = "remove marker";
-		rm.addEventListener("click", function () { removeMarker(); });
-		head.appendChild(title); head.appendChild(rm);
-		markerCard.appendChild(head);
-
-		markerSlider = document.createElement("input");
-		markerSlider.type = "range"; markerSlider.className = "sst-marker-slider";
-		var MARK_STEP = 1 / 3;                 // keyboard step: 3× finer than 1°/step
-		markerSlider.min = -180; markerSlider.max = 180; markerSlider.step = MARK_STEP; markerSlider.value = 0;
-		markerSlider.title = "drag to slide the marker along the whole path (0° = where you clicked); "
-			+ "~10× more mouse travel than the track for fine control, ×4 finer again with Shift. "
-			+ "Arrow keys nudge by ⅓° (¹⁄₁₂° with Shift) when focused.";
-
-		// Keyboard: the native input drives the angle directly, with a 3×-finer
-		// step (×4 again while Shift is held).
-		markerSlider.addEventListener("input", function () {
-			if (state.marker) { state.marker.angle = parseFloat(markerSlider.value); updateMarker(); }
+		var built = mcBuildMarkerCard({
+			classPrefix: "sst",
+			hostEl: viewEl || document.body,
+			sliderTitle: "drag to slide the marker along the whole path (0° = where you clicked); "
+				+ "~10× more mouse travel than the track for fine control, ×4 finer again with Shift. "
+				+ "Arrow keys nudge by ⅓° (¹⁄₁₂° with Shift) when focused.",
+			modeTitles: {
+				free: "slide the marker freely",
+				track: "follow the destination orbit crossing while within an encounter ring (burns fixed)",
+				target: "re-solve the terminal burn (Lambert) to hold the encounter as the date scrubs; releases above the Δv budget"
+			},
+			rows: [
+				{ key: "rad", label: "radius" },
+				{ key: "spd", label: "prograde velocity" },
+				{ key: "lat", label: "ecliptic latitude" },
+				{ key: "deg", label: "radial from origin" },
+				{ key: "tof", label: "time of flight" },
+				{ key: "arr", label: "arrival date" },
+				{ key: "phase", label: "phasing" }
+			],
+			getAngle: function () { return state.marker ? state.marker.angle : 0; },
+			onSliderChange: function (a) { if (state.marker) { state.marker.angle = a; updateMarker(); } },
+			onRemove: function () { removeMarker(); },
+			onModeClick: function (mode) { setMarkerMode(mode); },
+			onBudgetChange: function (dvBudget) { if (state.marker) { state.marker.dvBudget = dvBudget; refresh(); } }
 		});
-		function markerStep(e) { markerSlider.step = e.shiftKey ? MARK_STEP / 4 : MARK_STEP; }
-		window.addEventListener("keydown", markerStep);
-		window.addEventListener("keyup", markerStep);
-
-		// Mouse: custom RELATIVE drag, so fineness is decoupled from the track's
-		// pixel width. A native range maps ~(360° / trackPx) per pixel; we move at
-		// 1/10 of that (≈10× more hand travel per degree), and 1/4 of THAT while
-		// Shift is held. Accumulating relatively (rather than from an absolute thumb
-		// position) lets you lift and re-grab to "ratchet" across the full range,
-		// and keeps the precise, unsnapped angle in state.marker.angle.
-		var mdrag = false, mLastX = 0, mNativeDegPerPx = 2;
-		markerSlider.addEventListener("pointerdown", function (e) {
-			if (!state.marker) { return; }
-			e.preventDefault();                       // suppress the native jump-to-click
-			mdrag = true; mLastX = e.clientX;
-			mNativeDegPerPx = 360 / (markerSlider.clientWidth || 174);
-			try { markerSlider.setPointerCapture(e.pointerId); } catch (_) {}
-			markerSlider.focus();
-		});
-		markerSlider.addEventListener("pointermove", function (e) {
-			if (!mdrag || !state.marker) { return; }
-			var dx = e.clientX - mLastX; mLastX = e.clientX;
-			var sens = (mNativeDegPerPx / 10) * (e.shiftKey ? 0.25 : 1);
-			var a = Math.max(-180, Math.min(180, state.marker.angle + dx * sens));
-			state.marker.angle = a;
-			markerSlider.value = a;                   // thumb (snaps to step; cosmetic only)
-			updateMarker();
-		});
-		function endMarkerDrag(e) {
-			if (!mdrag) { return; }
-			mdrag = false;
-			try { markerSlider.releasePointerCapture(e.pointerId); } catch (_) {}
-		}
-		markerSlider.addEventListener("pointerup", endMarkerDrag);
-		markerSlider.addEventListener("pointercancel", endMarkerDrag);
-
-		markerCard.appendChild(markerSlider);
-
-		// Free / Track / Target mode selector
-		var modeRow = document.createElement("div"); modeRow.className = "sst-marker-mode";
-		markerModeBtns = {};
-		var modeTitles = {
-			free: "slide the marker freely",
-			track: "follow the destination orbit crossing while within an encounter ring (burns fixed)",
-			target: "re-solve the terminal burn (Lambert) to hold the encounter as the date scrubs; releases above the Δv budget"
-		};
-		[["free", "Free"], ["track", "Track"], ["target", "Target"]].forEach(function (m) {
-			var b = document.createElement("button");
-			b.type = "button"; b.className = "sst-mode-btn"; b.textContent = m[1];
-			b.title = modeTitles[m[0]];
-			b.addEventListener("click", function () { setMarkerMode(m[0]); });
-			markerModeBtns[m[0]] = b; modeRow.appendChild(b);
-		});
-		markerCard.appendChild(modeRow);
-
-		function row(label) {
-			var r = document.createElement("div"); r.className = "sst-marker-row";
-			var l = document.createElement("span"); l.className = "sst-marker-label"; l.textContent = label;
-			var v = document.createElement("span"); v.className = "sst-marker-val";
-			r.appendChild(l); r.appendChild(v); markerCard.appendChild(r); return v;
-		}
-		markerValRad = row("radius");
-		markerValRadKm = document.createElement("div"); markerValRadKm.className = "sst-marker-km";
-		markerCard.appendChild(markerValRadKm);
-		markerValSpd = row("prograde velocity");
-		markerValLat = row("ecliptic latitude");
-		markerValDeg = row("radial from origin");
-		markerValTof = row("time of flight");
-		markerValArr = row("arrival date");
-		markerValPhase = row("phasing");
-
-		// Target-mode controls (shown only in Target mode)
-		markerBudgetRow = document.createElement("label"); markerBudgetRow.className = "sst-marker-budget";
-		var blab = document.createElement("span"); blab.textContent = "Δv budget (km/s)";
-		markerBudgetInput = document.createElement("input");
-		markerBudgetInput.type = "number"; markerBudgetInput.min = 0; markerBudgetInput.step = 0.5; markerBudgetInput.value = "10";
-		markerBudgetInput.addEventListener("change", function () {
-			var v = parseFloat(markerBudgetInput.value); if (!isFinite(v) || v < 0) { v = 0; }
-			if (state.marker) { state.marker.dvBudget = v * 1000; refresh(); }
-		});
-		markerBudgetRow.appendChild(blab); markerBudgetRow.appendChild(markerBudgetInput);
-		markerCard.appendChild(markerBudgetRow);
-
-		markerTdvRow = document.createElement("div"); markerTdvRow.className = "sst-marker-row";
-		var tlab = document.createElement("span"); tlab.className = "sst-marker-label"; tlab.textContent = "target Δv";
-		markerValTdv = document.createElement("span"); markerValTdv.className = "sst-marker-val";
-		markerTdvRow.appendChild(tlab); markerTdvRow.appendChild(markerValTdv);
-		markerCard.appendChild(markerTdvRow);
-
-		(viewEl || document.body).appendChild(markerCard);
+		markerCard = built.el;
+		markerSlider = built.slider;
+		markerModeBtns = built.modeBtns;
+		markerValRad = built.vals.rad; markerValRadKm = built.vals.radKm;
+		markerValSpd = built.vals.spd; markerValLat = built.vals.lat; markerValDeg = built.vals.deg;
+		markerValTof = built.vals.tof; markerValArr = built.vals.arr; markerValPhase = built.vals.phase;
+		markerBudgetRow = built.budgetRow; markerBudgetInput = built.budgetInput;
+		markerTdvRow = built.tdvRow; markerValTdv = built.valTdv;
 	}
 
 	// Recompute the marker's world position and card readouts from its slider
@@ -1359,7 +943,7 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 			} else { followCrossing(); }                         // released -> behave like Track
 		}
 
-		var f = markerFraction(state.marker.f0, state.marker.angle);
+		var f = mcMarkerFraction(state.marker.f0, state.marker.angle);
 		var tof = f * trajTotalT;
 		var s = stateAtGlobalTime(tof);
 		if (!s) {

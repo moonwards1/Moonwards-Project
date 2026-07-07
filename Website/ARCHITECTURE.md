@@ -58,6 +58,7 @@ file):
   label, per-frame screen-size logic,
 - **orbit rings** — the two-tone north/south arcs split at the line of nodes,
 - **marker card** — the slidable chevron probe with its readout card, and the 'x' marker that appears on the orbit of the destination body that's related to it.
+  - (note: the related 'x' marker wouldn't apply in some cases where the marker card is still useful. Perhaps that portion can be made optional, or further split out.)
 - **burn widget** — the isometric prograde/radial/normal arrow triad,
 - **approach markers** — orbit-proximity and temporal-proximity rings,
 - **readout panes** — the panel-edge-straddling burn readouts.
@@ -318,8 +319,104 @@ Each step is independently useful; nothing requires a big-bang rewrite.
      plotter's own `state` object (read from dozens of places per file) —
      the module mutates them in place rather than keeping a private copy,
      unlike `camera-controller.js`'s self-contained `cam`.
-   - Remaining in this step: body renderer, orbit rings, marker card, burn
-     widget.
+   - **Body renderer** *(done, 2026-07)*: `Shared/sim/body-renderer.js` —
+     `createBody`/`createSunBody`/`updateScales` for the Kepler-scale
+     multi-body pattern (a sphere that collapses to a constant-pixel point
+     below a screen-size threshold, plus a same-behaviour SOI shell), which
+     was byte-identical across the Solar-System-Trajectory-Plotter's main
+     scene and the Moon-Skyhook/Mars-Phobos plotters' heliocentric "Helio"
+     overlays — all three now share one implementation. The "hero body"
+     local views (textured, tidally-locked Earth/Moon and Mars/Phobos) stay
+     calculator-specific — texture loading and spin-group wiring aren't
+     generic scene-kit concerns — but their small duplicated helpers
+     (`makePoint`, the back-face `makeSOIShell`, the pixel-scale math) moved
+     into the same module. Floating labels were unified across BOTH patterns
+     (`addLabel`/`updateLabels`), tracking any `Object3D` via
+     `getWorldPosition` — one implementation instead of two. See the
+     module's header comment for the full reasoning.
+   - **Orbit rings** *(done, 2026-07)*: `Shared/sim/orbit-rings.js` —
+     `createKeplerOrbitRing` for the fixed-Kepler-orbit two-tone ring, again
+     byte-identical across the Solar-System-Trajectory-Plotter's main scene
+     and the other two plotters' Helio overlays (including the near-ecliptic
+     single-ring fallback). The lower-level primitives it's built from
+     (`sampleEllipseArc`, `makeArcLine`) are also shared directly by
+     Moon-Skyhook's own geocentric Moon-orbit ring — a related but distinct
+     case, since it re-derives osculating elements from the live ephemeris
+     every rebuild rather than drawing a fixed `sys.orbit` — and by
+     Mars-Phobos' Phobos-orbit ring, which needed only `makeArcLine` since
+     Phobos is modelled as circular (no ellipse sampling at all, per that
+     file's stated simplification). See the module's header comment for the
+     full reasoning.
+   - **Approach markers** *(done, 2026-07)*: `Shared/sim/approach-markers.js`
+     — a hollow, camera-facing ring sprite that holds a constant on-screen
+     size until the camera is close enough for its true physical size to
+     read larger, plus `pickProximityTier` (map a distance/time value to a
+     3-tier index) and `applyTierToSprite` (re-colour/resize an existing
+     ring in place). The orbit-proximity rings (mark where a path passes
+     near another body's orbit) currently only exist in the
+     Solar-System-Trajectory-Plotter; the temporal-proximity ring (around
+     the ship, coloured by how close in time the destination is at arrival)
+     is byte-identical between that plotter and the Mars-Phobos plotter's
+     Helio overlay, tier table included. Moon-Skyhook doesn't have this
+     feature. Each tool's own tier table (colours/opacity/px/physical size)
+     stays local, as plain data — only the ring-sprite mechanics moved.
+   - **Burn widget** *(done, 2026-07)*: `Shared/sim/burn-widget.js` —
+     `createWaypointGizmo` (the prograde/radial/normal axis triad, oriented
+     via `OrbitalMath.burnFrame`, fixed green/orange/blue colours, hit-test
+     arm endpoints stored for the draggable gizmos) and `makeBurnArrow` (the
+     dV / prograde-speed-change arrows, physical scale and negligible-vector
+     threshold passed in per tool). All four sites (the Solar-System-
+     Trajectory-Plotter; Moon-Skyhook's and Mars-Phobos's local views; both
+     of their Helio overlays) agreed on colours, arrow styling, and the burn
+     frame; what genuinely differed (scene-unit scale per km/s, and — for
+     Moon-Skyhook/Mars-Phobos's flyby handling — the drawn position and the
+     burn-frame position sometimes being different points) stayed as
+     parameters rather than forcing one shape. The per-frame constant-size
+     pass reuses body-renderer.js's `worldSizeAtPointForPx` directly instead
+     of a third copy of that formula.
+   - **Readout panes** *(done, 2026-07)*: `Shared/sim/readout-panes.js` —
+     `renderReadoutBoxes` (rebuilds the panel-edge-straddling burn-readout
+     cards from a `{ host, data }` list) and `positionReadoutBoxes` (the
+     vertically-centred, hide-when-scrolled-out positioning math), both
+     byte-identical logic across all three plotters. What genuinely differed
+     stayed caller-supplied: the CSS class prefix (`sst-`/`msk-`/`mps-`), the
+     "plane change" row's wording (plain on the Solar-System-Trajectory-
+     Plotter, "plane change (to ecliptic)" on Moon-Skyhook/Mars-Phobos, since
+     their burns are body-relative), and the row colours (each tool's own
+     DV_COLOR/DSPEED_COLOR-derived hex strings, identical today but declared
+     per tool). `burnReadoutData` — the |Δv|/plane-change/prograde-Δv physics
+     — stayed local to each calculator; it's a few lines reading tool-specific
+     state (GM_SUN vs GM_S, local-vs-absolute r/vBefore), not worth a shared
+     signature for three call sites.
+   - **Marker card** *(done, 2026-07)*: `Shared/sim/marker-card.js` — the
+     slidable ship-marker probe, its floating card, and the destination "X".
+     This is the item this document's own note flagged as possibly needing
+     splitting further, and that's roughly how it landed: the MECHANICAL
+     layer is shared (`makeShipSprite`/`makeXMarkSprite`, `orientMarkerSprite`
+     for the per-frame heading rotation, the card's DOM/CSS skeleton via
+     `buildMarkerCard`, the custom relative-drag slider physics via
+     `bindRelativeDragSlider`, and pure orbital-mechanics helpers —
+     `markerFraction`, `sweepAngleFrom`, `phasingDays`, `refineApproach`,
+     `followCrossing`), while the Free/Track/Target STATE MACHINE
+     (`setMarkerMode`, `applyTargeting`'s Lambert re-solve, `updateMarker`,
+     `updateDestinationMarker`) stayed local to each calculator. That
+     orchestration reads and mutates each tool's own trajectory
+     representation, which are structurally different shapes (the
+     Solar-System-Trajectory-Plotter's `computeTrajectory()` returns
+     `res.points`/`res.departure` directly; Mars-Phobos's returns
+     `res.helioChain.points`, since its marker slides the post-Mars-escape
+     chain, not the whole departure-to-arrival path — see the project's
+     marker-port note), and Mars-Phobos's Target mode has a genuine
+     behavioural difference (requires >=1 waypoint; there's no user-set
+     "departure burn" to fall back on at an escape point) rather than a
+     parameter that could be threaded through one shared function. Moon-
+     Skyhook has none of this feature. `refineApproach` turned out to have a
+     second, pre-existing local call site in the Solar-System-Trajectory-
+     Plotter (the orbit-proximity-ring scan, `computeOrbitApproaches`) that
+     predated this extraction and folded into the same shared function. See
+     the module's header comment for the full reasoning.
+
+   All scene-kit items are now migrated.
 2. **Build `Shared/exchange.js` + `exchange-types.js` and wire the first
    buttons** between existing standalone tools (e.g. trajectory plotter →
    aerobrake calculator; tether tool → skyhook plotter). This ships real value

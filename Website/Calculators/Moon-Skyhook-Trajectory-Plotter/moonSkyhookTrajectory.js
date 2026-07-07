@@ -24,6 +24,15 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 import { createCam, updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
 import { createDateBar } from "../../Shared/sim/date-bar.js";
+import {
+	makePoint as brMakePoint, makeSOIShell as brMakeSOIShell,
+	createBody, createSunBody,
+	addLabel as brAddLabel, updateLabels as brUpdateLabels, updateScales as brUpdateScales,
+	worldSizeAtPointForPx
+} from "../../Shared/sim/body-renderer.js";
+import { makeArcLine, sampleEllipseArc, createKeplerOrbitRing } from "../../Shared/sim/orbit-rings.js";
+import { createWaypointGizmo, makeBurnArrow as burnWidgetArrow } from "../../Shared/sim/burn-widget.js";
+import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPosition } from "../../Shared/sim/readout-panes.js";
 
 (function () {
 	"use strict";
@@ -329,14 +338,12 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		return new THREE.Points(g, new THREE.PointsMaterial({ color: 0x666f86, size: 1.4, sizeAttenuation: false }));
 	}
 
-	// A constant-size bright pixel at a group's origin (so a far body is visible).
-	function makePoint(colorHex, sizePx) {
-		var g = new THREE.BufferGeometry();
-		g.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
-		return new THREE.Points(g, new THREE.PointsMaterial({
-			color: colorHex, size: sizePx, sizeAttenuation: false,
-			transparent: true, depthTest: false }));
-	}
+	// A constant-size bright pixel at a group's origin (so a far body is
+	// visible); a back-face SOI shell; a floating name label — all shared
+	// with the other plotters (Shared/sim/body-renderer.js).
+	function makePoint(colorHex, sizePx) { return brMakePoint(colorHex, sizePx); }
+	function makeSOIShell(radiusU, colorHex, opacity) { return brMakeSOIShell(radiusU, colorHex, opacity); }
+	function addLabel(name, obj) { brAddLabel(labelLayer, labelList, name, obj, "msk-label"); }
 
 	// A dot sized in world units (sizeAttenuation), so it scales with the view
 	// and shrinks to nothing as the camera pulls away — like the in-plane
@@ -347,22 +354,6 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		return new THREE.Points(g, new THREE.PointsMaterial({
 			color: colorHex, size: sizeU, sizeAttenuation: true,
 			transparent: true, depthTest: false }));
-	}
-
-	function makeSOIShell(radiusU, colorHex, opacity) {
-		var m = new THREE.Mesh(
-			new THREE.SphereGeometry(radiusU, 32, 24),
-			new THREE.MeshBasicMaterial({ color: colorHex, transparent: true,
-				opacity: opacity, depthWrite: false, side: THREE.BackSide }));
-		return m;
-	}
-
-	function addLabel(name, obj) {
-		var el = document.createElement("span");
-		el.className = "msk-label";
-		el.textContent = name;
-		labelLayer.appendChild(el);
-		labelList.push({ el: el, obj: obj });
 	}
 
 	// =======================================================================
@@ -377,23 +368,14 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		if (!isFinite(el.a) || el.e >= 1) { moonOrbitGroup = null; return; }
 
 		var grp = new THREE.Group();
-		function arc(nu0, span, N) {
-			var pts = [];
-			for (var k = 0; k <= N; k++) {
-				var nu = nu0 + span * k / N;
-				var s = O.stateFromElements(GM_E, el.a, el.e, el.i, el.Omega, el.omega, nu);
-				pts.push(new THREE.Vector3(mToU(s.r[0]), mToU(s.r[1]), mToU(s.r[2])));
-			}
-			return pts;
-		}
-		function lineFrom(pts, col, op) {
-			var g = new THREE.BufferGeometry().setFromPoints(pts);
-			return new THREE.Line(g, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op }));
-		}
+		// Shared/sim/orbit-rings.js: the same ellipse-sampling loop and
+		// line-from-points helper the Kepler-body rings use, fed this Moon
+		// orbit's own freshly-derived (osculating, not fixed) elements.
+		function arc(nu0, span, N) { return sampleEllipseArc(GM_E, el.a, el.e, el.i, el.Omega, el.omega, nu0, span, N, mToU); }
 		var nuAsc = -el.omega;                              // z = 0 at u = 0 (ascending)
 		var northCol = 0xc9d4ff, southCol = 0x5570c0;
-		grp.add(lineFrom(arc(nuAsc, Math.PI, 160), northCol, 0.75));         // north (bright)
-		grp.add(lineFrom(arc(nuAsc + Math.PI, Math.PI, 160), southCol, 0.4)); // south (dim)
+		grp.add(makeArcLine(arc(nuAsc, Math.PI, 160), northCol, 0.75));         // north (bright)
+		grp.add(makeArcLine(arc(nuAsc + Math.PI, Math.PI, 160), southCol, 0.4)); // south (dim)
 
 		grp.visible = orbitToggle.checked;
 		scene.add(grp);
@@ -1219,65 +1201,22 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	// =======================================================================
 	//  Waypoint gizmos + burn-vector arrows + straddling readout cards
 	// =======================================================================
-	// One axis of a waypoint gizmo: a line from the origin out along a unit
-	// direction, drawn on top of everything else.
-	function makeAxisLine(dir, colorHex) {
-		var g = new THREE.BufferGeometry().setFromPoints(
-			[new THREE.Vector3(0, 0, 0), new THREE.Vector3(dir[0], dir[1], dir[2])]);
-		return new THREE.Line(g, new THREE.LineBasicMaterial({
-			color: colorHex, depthTest: false, transparent: true }));
-	}
-
-	// A prograde / radial / normal gizmo at a waypoint, aligned via the SAME
-	// OrbitalMath.burnFrame the burn is applied in (applyBurn/burnEffect):
-	// prograde along the local velocity, normal = ecliptic north with its
-	// prograde part removed, radial = the leftover axis — matching the
-	// Solar-System-Trajectory-Plotter's gizmo exactly. (It previously drew
-	// the osculating orbit frame, n = r×v, which is NOT the frame the burn
-	// sliders act in — the drawn normal/radial arms were tilted away from
-	// the real burn axes whenever the orbit plane wasn't the ecliptic.)
-	// Colours match the vector-editor widget: prograde green, radial orange,
-	// normal blue. Positioned at renderPosM (Moon-relative or geocentric
-	// metres, matching the leg it sits on) but oriented from the LOCAL burn
-	// frame, which can differ from the render frame during a flyby — that's
+	// A prograde / radial / normal gizmo at a waypoint (Shared/sim/burn-widget.js).
+	// Positioned at renderPosM (Moon-relative or geocentric metres, matching the
+	// leg it sits on) but oriented from the LOCAL burn frame (rLocalM/vLocalMS),
+	// which can differ from the render frame during a flyby — that's
 	// intentional (see localFrameAt).
 	function makeWaypointGizmo(renderPosM, rLocalM, vLocalMS) {
-		var f = O.burnFrame(rLocalM, vLocalMS);
-		var vhat = f.pro, nhat = f.nrm, rhat = f.rad;
-		var g = new THREE.Group();
-		g.add(makeAxisLine(vhat, 0x6fd49a));   // prograde
-		g.add(makeAxisLine(rhat, 0xffb45a));   // radial
-		g.add(makeAxisLine(nhat, 0x8ab4ff));   // normal
-		g.position.set(mToU(renderPosM[0]), mToU(renderPosM[1]), mToU(renderPosM[2]));
-		g.renderOrder = 10;
-		// Local-space unit endpoints of the three drawn arms, kept for hit
-		// testing (hitWaypoint) — the arms are what's actually visible on
-		// screen (they extend well past the centre point), so grabbing needs
-		// to test against their full length, not just the gizmo's origin.
-		g.userData.axes = [
-			new THREE.Vector3(vhat[0], vhat[1], vhat[2]),
-			new THREE.Vector3(rhat[0], rhat[1], rhat[2]),
-			new THREE.Vector3(nhat[0], nhat[1], nhat[2])
-		];
-		return g;
+		return createWaypointGizmo(rLocalM, vLocalMS,
+			new THREE.Vector3(mToU(renderPosM[0]), mToU(renderPosM[1]), mToU(renderPosM[2])));
 	}
 
 	// One arrow for a velocity-like vector (m/s), anchored at renderPosM
 	// (metres, in whichever space the caller's group lives in). Length is
-	// BURN_VEC_SCALE scene-units (i.e. 1000 km) per km/s; drawn on top so it's
-	// always visible. Returns null for a negligible vector.
+	// BURN_VEC_SCALE scene-units (i.e. 1000 km) per km/s (Shared/sim/burn-widget.js).
 	function makeBurnArrow(renderPosM, vecMS, colorHex) {
-		var kms = O.vMag(vecMS) / 1000;
-		if (kms < 0.02) { return null; }
-		var len = kms * BURN_VEC_SCALE;
-		var dir = new THREE.Vector3(vecMS[0], vecMS[1], vecMS[2]).normalize();
 		var origin = new THREE.Vector3(mToU(renderPosM[0]), mToU(renderPosM[1]), mToU(renderPosM[2]));
-		var arrow = new THREE.ArrowHelper(dir, origin, len, colorHex, len * 0.22, len * 0.12);
-		[arrow.line, arrow.cone].forEach(function (o) {
-			o.material.depthTest = false; o.material.depthWrite = false;
-			o.material.transparent = true; o.renderOrder = 12;
-		});
-		return arrow;
+		return burnWidgetArrow(origin, vecMS, colorHex, BURN_VEC_SCALE, 0.02);
 	}
 
 	// Rebuild the draggable gizmos and dV / prograde-speed-change arrows for
@@ -1321,29 +1260,10 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	}
 
 	// ---- burn readouts: a small pane straddling the panel edge, per burn ----
-	function fmtSigned(x, digits, unit) {
-		return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(digits) + unit;
-	}
-
 	// Rebuild the readout boxes from a list of { host, data } (data may be null).
 	function renderBurnReadouts(entries) {
-		if (!readoutLayer) { return; }
-		readoutBoxes.forEach(function (b) { readoutLayer.removeChild(b.el); });
-		readoutBoxes = [];
-		entries.forEach(function (en) {
-			if (!en.data || !en.host) { return; }
-			var box = document.createElement("div");
-			box.className = "msk-readout";
-			box.innerHTML =
-				'<div class="msk-readout-row"><span class="msk-readout-label">burn Δv</span>'
-				+ '<span class="msk-readout-val" style="color:' + dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
-				+ '<div class="msk-readout-row"><span class="msk-readout-label">plane change (to ecliptic)</span>'
-				+ '<span class="msk-readout-val" style="color:' + dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
-				+ '<div class="msk-readout-row"><span class="msk-readout-label">prograde Δv</span>'
-				+ '<span class="msk-readout-val" style="color:' + spdHex + '">' + fmtSigned(en.data.progradeDv, 2, ' km/s') + '</span></div>';
-			readoutLayer.appendChild(box);
-			readoutBoxes.push({ el: box, host: en.host });
-		});
+		readoutBoxes = readoutRender(readoutLayer, readoutBoxes, entries,
+			{ classPrefix: "msk", dvHex: dvHex, spdHex: spdHex, planeChangeLabel: "plane change (to ecliptic)" });
 		positionBurnReadouts();
 	}
 
@@ -1351,48 +1271,15 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 	// centred on its burn widget. Hidden when its widget is scrolled out of
 	// the panel.
 	function positionBurnReadouts() {
-		if (!readoutBoxes.length || !mainEl || !panelEl) { return; }
-		var mr = mainEl.getBoundingClientRect();
-		var pr = panelEl.getBoundingClientRect();
-		var boundary = pr.left - mr.left;            // panel's left edge in main coords
-		readoutBoxes.forEach(function (b) {
-			var hr = b.host.getBoundingClientRect();
-			var visible = hr.bottom > pr.top + 4 && hr.top < pr.bottom - 4;
-			b.el.style.display = visible ? "" : "none";
-			if (!visible) { return; }
-			var w = b.el.offsetWidth, h = b.el.offsetHeight;
-			var left = boundary - w / 2;
-			if (left < 4) { left = 4; }              // stacked layout: keep on-screen
-			b.el.style.left = left + "px";
-			b.el.style.top  = (hr.top - mr.top + hr.height / 2 - h / 2) + "px";
-		});
+		readoutPosition(readoutBoxes, mainEl, panelEl);
 	}
 
 	// =======================================================================
 	//  Per-frame: camera, label/point/marker sizing
 	// =======================================================================
-	var _lp = new THREE.Vector3();
-	function updateLabels() {
-		var w = holder.clientWidth, h = holder.clientHeight;
-		for (var i = 0; i < labelList.length; i++) {
-			var L = labelList[i];
-			L.obj.getWorldPosition(_lp).project(camera);
-			if (_lp.z < 1 && _lp.x > -1.06 && _lp.x < 1.06 && _lp.y > -1.06 && _lp.y < 1.06) {
-				L.el.style.display = "block";
-				L.el.style.left = ((_lp.x * 0.5 + 0.5) * w + 7) + "px";
-				L.el.style.top  = ((-_lp.y * 0.5 + 0.5) * h) + "px";
-			} else {
-				L.el.style.display = "none";
-			}
-		}
-	}
-
-	function screenScaleAt(pos, px) {
-		var h = holder.clientHeight || 1;
-		var f = (h / 2) / Math.tan(camera.fov * Math.PI / 360);
-		var dist = camera.position.distanceTo(pos) || 1e-9;
-		return px * dist / f;
-	}
+	// Shared/sim/body-renderer.js.
+	function updateLabels() { brUpdateLabels(camera, holder, labelList); }
+	function screenScaleAt(pos, px) { return worldSizeAtPointForPx(camera, holder, pos, px); }
 
 	var _mkPos = new THREE.Vector3();
 	function updateMarkers() {
@@ -2088,7 +1975,6 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		AU: 149597870700,                                  // m per AU
 		BODIES: ["Mercury", "Venus", "Earth", "Mars", "Ceres", "Vesta",
 		         "Psyche", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"],
-		PX_BODY: 1.4, PX_SOI: 2.0,
 		built: false,
 		scene: null, camera: null,
 		cam: createCam(6, 0.6, 1.1, new THREE.Vector3(0, 0, 0)),
@@ -2124,40 +2010,17 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 			holder.appendChild(this.labelLayer);
 
 			// Sun (real radius; collapses to a bright pixel when far)
-			var sunRadAU = Number(SUN_SYS.radius) / AU;
-			var sunCore = new THREE.Mesh(new THREE.SphereGeometry(sunRadAU, 24, 18),
-				new THREE.MeshBasicMaterial({ color: 0xffe066 }));
-			var sunPoint = makePoint(0xfff2a0, 3);
-			var sunGroup = new THREE.Group();
-			sunGroup.add(sunCore); sunGroup.add(sunPoint);
-			sc.add(sunGroup);
-			this.sunGroup = sunGroup;
-			this.scaleList.push({ group: sunGroup, core: sunCore, point: sunPoint, soi: null, radiusAU: sunRadAU, soiAU: 0 });
-			this.addLabel("Sun", sunGroup);
-
-			function soiRadiusAU(sys) {
-				if (!sys.orbit) { return 0; }
-				var m = sys.mass || (sys.GM / 6.6743e-11);
-				return O.sphereOfInfluence(sys.orbit.a, m, M_SUN) / AU;
-			}
+			var sunBody = createSunBody(sc, this.scaleList, { sys: SUN_SYS, AU: AU });
+			this.sunGroup = sunBody.group;
+			this.addLabel("Sun", this.sunGroup);
 
 			this.BODIES.forEach(function (name) {
 				var sys = systems.get(name);
-				var col = new THREE.Color(sys.color || "#bcc3d0");
-				var radAU = Number(sys.radius) / AU;
-				var core = new THREE.Mesh(new THREE.SphereGeometry(radAU, 16, 12),
-					new THREE.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(0.3), roughness: 0.85 }));
-				var soiAU = soiRadiusAU(sys);
-				var soi = new THREE.Mesh(new THREE.SphereGeometry(soiAU, 24, 16),
-					new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.10, depthWrite: false }));
-				var point = makePoint(col.clone().lerp(new THREE.Color(0xffffff), 0.45).getHex(), 2.5);
-				var g = new THREE.Group();
-				g.add(core); g.add(soi); g.add(point);
-				sc.add(g);
-				self.bodyGroups[name] = { group: g, core: core, soi: soi, point: point };
-				self.scaleList.push({ group: g, core: core, point: point, soi: soi, radiusAU: radAU, soiAU: soiAU });
-				self.addLabel(name, g);
-				var line = self.makeOrbitLine(sys.orbit, col, GM_SUN);
+				var b = createBody(sc, self.scaleList, name, { sys: sys, AU: AU, primaryMass: M_SUN });
+				self.bodyGroups[name] = { group: b.group, core: b.core, soi: b.soi, point: b.point };
+				self.addLabel(name, b.group);
+				var line = createKeplerOrbitRing({
+					orbit: sys.orbit, GM: GM_SUN, color: new THREE.Color(sys.color || "#bcc3d0"), AU: AU });
 				sc.add(line);
 				self.orbitLines[name] = line;
 			});
@@ -2166,38 +2029,8 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 			this.resize();
 		},
 
-		addLabel: function (name, group) {
-			var el = document.createElement("span");
-			el.className = "msk-label";
-			el.textContent = name;
-			this.labelLayer.appendChild(el);
-			this.labelList.push({ el: el, group: group });
-		},
-
-		// One full orbit, drawn as two arcs split at the line of nodes (north bright,
-		// south dim + cool-shifted), or a single ring for near-ecliptic orbits.
-		makeOrbitLine: function (o, col, GM_SUN) {
-			var AU = this.AU, inc = o.inclination || 0, grp = new THREE.Group();
-			function arc(nu0, span, N) {
-				var pts = [];
-				for (var k = 0; k <= N; k++) {
-					var nu = nu0 + span * k / N;
-					var s = O.stateFromElements(GM_SUN, o.a, o.e, inc, o.longitude || 0, o.argument || 0, nu);
-					pts.push(new THREE.Vector3(s.r[0]/AU, s.r[1]/AU, s.r[2]/AU));
-				}
-				return pts;
-			}
-			function lineFrom(pts, c, op) {
-				return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
-					new THREE.LineBasicMaterial({ color: c, transparent: true, opacity: op }));
-			}
-			if (inc < 0.5 * Math.PI / 180) { grp.add(lineFrom(arc(0, 2 * Math.PI, 360), col, 0.32)); return grp; }
-			var nuAsc = -(o.argument || 0);
-			var southCol = col.clone().lerp(new THREE.Color(0x4a78ff), 0.3);
-			grp.add(lineFrom(arc(nuAsc, Math.PI, 180), col, 0.6));
-			grp.add(lineFrom(arc(nuAsc + Math.PI, Math.PI, 180), southCol, 0.3));
-			return grp;
-		},
+		// Shared/sim/body-renderer.js.
+		addLabel: function (name, group) { brAddLabel(this.labelLayer, this.labelList, name, group, "msk-label"); },
 
 		// Place each planet at the current ephemeris date.
 		placeBodies: function () {
@@ -2253,27 +2086,14 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 				var rGeo = (wr.space === "moon") ? O.vAdd(moonGeoPos(wr.jde), wr.renderPosM) : wr.renderPosM;
 				var rHel = O.vAdd(earthHelio(wr.jde).r, rGeo);
 				var pos = new THREE.Vector3(rHel[0]/AU, rHel[1]/AU, rHel[2]/AU);
-				var f = O.burnFrame(wr.rLocal, wr.vLocal);
-				var g = new THREE.Group();
-				g.add(makeAxisLine(f.pro, 0x6fd49a));   // prograde
-				g.add(makeAxisLine(f.rad, 0xffb45a));   // radial
-				g.add(makeAxisLine(f.nrm, 0x8ab4ff));   // normal
-				g.position.copy(pos);
-				g.renderOrder = 10;
+				var g = createWaypointGizmo(wr.rLocal, wr.vLocal, pos);
 				grp.add(g);
 				self.wpGizmos.push(g);
+				// dV last => on top where they overlap; AU per km/s, as in the SS plotter.
 				[ { vec: wr.eff.dSpeedVec, col: DSPEED_COLOR },
-				  { vec: wr.eff.dv,        col: DV_COLOR } ].forEach(function (a) {   // dV last => on top
-					var kms = O.vMag(a.vec) / 1000;
-					if (kms < 0.02) { return; }
-					var dir = new THREE.Vector3(a.vec[0], a.vec[1], a.vec[2]).normalize();
-					var len = kms * 0.03;                // AU per km/s, as in the SS plotter
-					var arrow = new THREE.ArrowHelper(dir, pos, len, a.col, len * 0.22, len * 0.12);
-					[arrow.line, arrow.cone].forEach(function (o) {
-						o.material.depthTest = false; o.material.depthWrite = false;
-						o.material.transparent = true; o.renderOrder = 12;
-					});
-					grp.add(arrow);
+				  { vec: wr.eff.dv,        col: DV_COLOR } ].forEach(function (a) {
+					var arrow = burnWidgetArrow(pos, a.vec, a.col, 0.03, 0.02);
+					if (arrow) { grp.add(arrow); }
 				});
 			});
 
@@ -2305,33 +2125,12 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 			this.scene.add(grp);
 		},
 
-		screenPxRadius: function (worldR, dist) {
-			var h = holder.clientHeight || 1;
-			return worldR / dist * ((h / 2) / Math.tan(this.camera.fov * Math.PI / 360));
-		},
+		// Shared/sim/body-renderer.js.
 		updateScales: function () {
-			var wantSOI = soiToggle.checked;
-			for (var i = 0; i < this.scaleList.length; i++) {
-				var b = this.scaleList[i];
-				var dist = this.camera.position.distanceTo(b.group.position) || 1e-9;
-				var showCore = this.screenPxRadius(b.radiusAU, dist) >= this.PX_BODY;
-				b.core.visible = showCore;
-				b.point.visible = !showCore;
-				if (b.soi) { b.soi.visible = wantSOI && this.screenPxRadius(b.soiAU, dist) >= this.PX_SOI; }
-			}
+			brUpdateScales(this.camera, holder, this.scaleList, { wantSOI: soiToggle.checked });
 		},
-		_lp: new THREE.Vector3(),
 		updateLabels: function () {
-			var w = holder.clientWidth, h = holder.clientHeight, cam = this.camera, p = this._lp;
-			for (var i = 0; i < this.labelList.length; i++) {
-				var L = this.labelList[i];
-				p.copy(L.group.position).project(cam);
-				if (p.z < 1 && p.x > -1.06 && p.x < 1.06 && p.y > -1.06 && p.y < 1.06) {
-					L.el.style.display = "block";
-					L.el.style.left = ((p.x * 0.5 + 0.5) * w + 7) + "px";
-					L.el.style.top  = ((-p.y * 0.5 + 0.5) * h) + "px";
-				} else { L.el.style.display = "none"; }
-			}
+			brUpdateLabels(this.camera, holder, this.labelList);
 		},
 		resize: function () {
 			if (!this.built) { return; }
@@ -2342,13 +2141,9 @@ import { createDateBar } from "../../Shared/sim/date-bar.js";
 		// Keep each waypoint gizmo ~42 px long regardless of zoom (the burn
 		// arrows keep their fixed physical AU scale, as in the SS plotter).
 		updateGizmos: function () {
-			if (!this.wpGizmos.length) { return; }
-			var h = holder.clientHeight || 1;
-			var f = (h / 2) / Math.tan(this.camera.fov * Math.PI / 360);
 			for (var i = 0; i < this.wpGizmos.length; i++) {
 				var g = this.wpGizmos[i];
-				var dist = this.camera.position.distanceTo(g.position) || 1e-9;
-				g.scale.setScalar(42 * dist / f);
+				g.scale.setScalar(worldSizeAtPointForPx(this.camera, holder, g.position, 42));
 			}
 		},
 		render: function () {
