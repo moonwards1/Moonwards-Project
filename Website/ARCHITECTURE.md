@@ -57,7 +57,7 @@ file):
 - **body renderer** — sphere / bright-point collapse, SOI shell, floating
   label, per-frame screen-size logic,
 - **orbit rings** — the two-tone north/south arcs split at the line of nodes,
-- **marker card** — the slidable `x` probe with its readout card,
+- **marker card** — the slidable chevron probe with its readout card, and the 'x' marker that appears on the orbit of the destination body that's related to it.
 - **burn widget** — the isometric prograde/radial/normal arrow triad,
 - **approach markers** — orbit-proximity and temporal-proximity rings,
 - **readout panes** — the panel-edge-straddling burn readouts.
@@ -290,6 +290,36 @@ Each step is independently useful; nothing requires a big-bang rewrite.
 1. **Keep extracting the scene kit.** As the plotters get touched, move
    camera / date bar / body renderer / rings / marker / burn-widget code into
    `Shared/sim/`. The plotters shrink; the kit accumulates.
+   - **Camera controller** *(done, 2026-07)*: `Shared/sim/camera-controller.js`
+     — `createCam`/`updateCamera`/`bindCameraControls`/`raycastPickPoint`,
+     covering rotate/pan/cursor-centred zoom/focus-lock/deferred-click-vs-
+     double-click. All three plotters (Solar-System-Trajectory-Plotter,
+     Moon-Skyhook-Trajectory-Plotter, Mars-Phobos-Skyhook-Trajectory-Plotter,
+     the latter two driving both their local and heliocentric "Helio" views
+     through one shared binding) now import it instead of carrying their own
+     copy. The Moon-Skyhook raycast-based cursor-zoom became the one
+     canonical implementation (see the module's header comment for the
+     behavioural differences this reconciled).
+   - **Date bar** *(done, 2026-07)*: `Shared/sim/date-bar.js` —
+     `createDateBar(state, opts)`, owning only the coarse (tool-wide span) +
+     fine (local offset) slider pair, the typed date field, and the JD
+     readout; module-specific sliders (skyhook release point, hook phase)
+     stayed out, mounted in their own module's panel card as before. The
+     Solar-System-Trajectory-Plotter implementation — click-to-jump,
+     Shift-drag to fine-tune (4x slower), and a fine-slider "wrap" that
+     advances the coarse base past its end — is the canonical one; porting
+     Moon-Skyhook and Mars-Phobos to it was a real behavioural upgrade, not
+     just a lift, since neither had drag/wrap before. Each tool's "lock this
+     phase" toggle (Moon-Skyhook: lock Moon phase, nudges the coarse target;
+     Mars-Phobos: lock Phobos phase, nudges the fine offset instead) is kept
+     as an optional `resolveBaseDays`/`resolveFineReset` hook rather than
+     forced into one shape, since the two tools genuinely resolve their lock
+     at different points. `state.jd`/`state.baseDays` stay owned by each
+     plotter's own `state` object (read from dozens of places per file) —
+     the module mutates them in place rather than keeping a private copy,
+     unlike `camera-controller.js`'s self-contained `cam`.
+   - Remaining in this step: body renderer, orbit rings, marker card, burn
+     widget.
 2. **Build `Shared/exchange.js` + `exchange-types.js` and wire the first
    buttons** between existing standalone tools (e.g. trajectory plotter →
    aerobrake calculator; tether tool → skyhook plotter). This ships real value
@@ -317,4 +347,3 @@ Each step is independently useful; nothing requires a big-bang rewrite.
   prefixes per tool.
 - New orbital maths goes in `Shared/math-utils.js` with a test, never inline in
   a module.
-

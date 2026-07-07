@@ -24,6 +24,8 @@
 
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
+import { createCam, updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
+import { createDateBar } from "../../Shared/sim/date-bar.js";
 
 (function () {
 	"use strict";
@@ -135,8 +137,9 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 	var labelLayer = null;        // HTML overlay holding the labels
 	var sunGroup = null;          // the Sun's group (not in bodyGroups)
 
-	// camera spherical state around `target`
-	var cam = { radius: 6, theta: 0.6, phi: 1.1, target: new THREE.Vector3(0, 0, 0) };
+	// camera spherical state around `target` (Shared/sim/camera-controller.js)
+	var cam = createCam(6, 0.6, 1.1, new THREE.Vector3(0, 0, 0));
+	var pickMeshes = [], pickSoiSpheres = [];   // built once in initScene, for cursor-centred zoom
 
 	// A body/SOI sphere is drawn only while its projected radius is at least a
 	// pixel or two; below that it collapses to a single bright on-orbit pixel.
@@ -210,10 +213,46 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 			orbitLines[name] = line;
 		});
 
+		// Cursor-centred zoom targets: every body's core mesh (direct hit), plus
+		// its SOI as a fallback "head toward this body" zone (the Sun has none —
+		// soiAU 0 — so it's raycastable but has no fallback zone). scaleList
+		// entries hold live references, so these lists stay correct as bodies move.
+		for (var pi = 0; pi < scaleList.length; pi++) {
+			var pb = scaleList[pi];
+			pickMeshes.push(pb.core);
+			if (pb.soiAU > 0) {
+				pickSoiSpheres.push({ center: pb.group.position, radius: pb.soiAU, nearFaceRadius: pb.radiusAU });
+			}
+		}
+
 		resize();
 		window.addEventListener("resize", resize);
-		bindControls();
+		bindCameraControls(renderer.domElement, getCameraView);
 		animate();
+	}
+
+	// ---- camera controls (Shared/sim/camera-controller.js) -----------------
+	// Single view, so the config object never changes; bindCameraControls()
+	// still calls getCameraView() fresh on every event (dual-view plotters
+	// rely on that to switch between local/Helio configs).
+	var cameraView = {
+		cam: null, camera: null,     // filled in below once `cam`/`camera` exist
+		zoomMin: 1e-4, zoomMax: 500,
+		pickPoint: function (e) {
+			return raycastPickPoint(camera, renderer.domElement, e, { meshes: pickMeshes, soiSpheres: pickSoiSpheres });
+		},
+		lockedZoomTarget: function () {
+			return (state.markerFocused && markerSprite && markerSprite.visible) ? markerSprite.position : null;
+		},
+		onFreeZoom: function () { state.focus = null; },   // scrolling always releases a body lock
+		onPan: function () { state.focus = null; state.markerFocused = false; },
+		onPick: function (e) { handlePick(e); },
+		onDoubleClick: function (e) { focusNearest(e); }
+	};
+	function getCameraView() {
+		cameraView.cam = cam;
+		cameraView.camera = camera;
+		return cameraView;
 	}
 
 	function makeStars() {
@@ -417,99 +456,8 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 		return grp;
 	}
 
-	// ---- camera controls (custom; OrbitControls isn't file://-safe) --------
-	function updateCamera() {
-		var r = cam.radius;
-		var sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
-		camera.position.set(
-			cam.target.x + r * sp * Math.cos(cam.theta),
-			cam.target.y + r * sp * Math.sin(cam.theta),
-			cam.target.z + r * cp);
-		camera.up.set(0, 0, 1);
-		camera.lookAt(cam.target);
-	}
-
-	function bindControls() {
-		var el = renderer.domElement;
-		var dragging = null, lx = 0, ly = 0, moved = false, clickTimer = null;
-
-		el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-		el.addEventListener("mousedown", function (e) {
-			// A second press cancels a pending single-click pick, so a double-click
-			// (which focuses a body) never also drops a waypoint.
-			if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-			dragging = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
-			lx = e.clientX; ly = e.clientY; moved = false;
-		});
-		window.addEventListener("mousemove", function (e) {
-			if (!dragging) return;
-			var dx = e.clientX - lx, dy = e.clientY - ly;
-			lx = e.clientX; ly = e.clientY;
-			if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
-			if (dragging === "rotate") {
-				cam.theta -= dx * 0.005;
-				cam.phi = Math.max(0.05, Math.min(Math.PI - 0.05, cam.phi - dy * 0.005));
-			} else {
-				var panScale = cam.radius * 0.0018;
-				// pan in the camera's screen plane
-				var right = new THREE.Vector3().crossVectors(
-					new THREE.Vector3().subVectors(cam.target, camera.position), camera.up).normalize();
-				var up = camera.up.clone();
-				cam.target.addScaledVector(right, -dx * panScale);
-				cam.target.addScaledVector(up,  dy * panScale);
-				state.focus = null;        // free navigation releases a body lock
-				state.markerFocused = false;
-			}
-		});
-		window.addEventListener("mouseup", function (e) {
-			if (dragging === "rotate" && !moved) {
-				// defer the pick so a double-click (focus) can cancel it — the next
-				// mousedown clears this timer, so a double-click adds no waypoint
-				var ev = e;
-				if (clickTimer) { clearTimeout(clickTimer); }
-				clickTimer = setTimeout(function () { clickTimer = null; handlePick(ev); }, 350);
-			}
-			dragging = null;
-		});
-		el.addEventListener("dblclick", function (e) {
-			if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-			focusNearest(e);
-		});
-		el.addEventListener("wheel", function (e) {
-			e.preventDefault();
-			var f = Math.exp(e.deltaY * 0.001);
-			// while the marker is the focus, zoom straight toward it (stay centred)
-			if (state.markerFocused && markerSprite && markerSprite.visible) {
-				cam.radius = Math.max(1e-4, Math.min(500, cam.radius * f));
-				cam.target.copy(markerSprite.position);
-				return;
-			}
-			var P = cursorWorldAtTargetDepth(e);
-			// scale the world about the point under the cursor, so that point
-			// stays fixed on screen while the camera dollies in/out
-			cam.target.set(
-				P.x + (cam.target.x - P.x) * f,
-				P.y + (cam.target.y - P.y) * f,
-				P.z + (cam.target.z - P.z) * f);
-			cam.radius = Math.max(1e-4, Math.min(500, cam.radius * f));
-			state.focus = null;            // free navigation releases a body lock
-		}, { passive: false });
-	}
-
-	// World point under the cursor, on the plane through the camera target that
-	// faces the camera — the focus point for cursor-centred zoom.
-	function cursorWorldAtTargetDepth(e) {
-		var rect = renderer.domElement.getBoundingClientRect();
-		var ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-		var ndcY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
-		var dir = new THREE.Vector3(ndcX, ndcY, 0.5).unproject(camera)
-			.sub(camera.position).normalize();
-		var view = new THREE.Vector3().subVectors(cam.target, camera.position);
-		var viewDir = view.clone().normalize();
-		var denom = dir.dot(viewDir);
-		if (Math.abs(denom) < 1e-6) { return cam.target.clone(); }
-		return camera.position.clone().addScaledVector(dir, view.dot(viewDir) / denom);
-	}
+	// ---- camera controls: Shared/sim/camera-controller.js (see `cameraView`
+	// / `getCameraView` above, wired up in initScene) -------------------------
 
 	// Double-click a body (or its pixel/label area) to lock the camera onto it.
 	// The Sun recenters heliocentric; empty space just releases a lock (no jump).
@@ -553,7 +501,7 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 
 	function animate() {
 		requestAnimationFrame(animate);
-		updateCamera();
+		updateCamera(camera, cam);
 		updateScales();
 		updateGizmos();
 		updateLabels();
@@ -1906,29 +1854,16 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 		updateMarker();
 	}
 
-	// ---- date model: a coarse 100-year base + a fine +/- 6-month offset ----
+	// ---- date model: Shared/sim/date-bar.js (see `dateBar` below, bound in init) ----
 	var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
 	              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 	function shortDate(jd) { var d = O.dateFromJulian(jd); return MONTHS[d.Mo - 1] + " " + d.Y; }
-
-	// Recompute state.jd from the coarse base + fine offset, and sync the labels.
-	function applyDate() {
-		var eff = Math.max(0, Math.min(SPAN_DAYS, state.baseDays + parseFloat(fineSlider.value)));
-		state.jd = JD0 + eff;
-		var d = O.dateFromJulian(state.jd);
-		dateField.value = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
-		jdLabel.textContent = "JD " + state.jd.toFixed(1);
-		fineLo.textContent = shortDate(JD0 + Math.max(0, state.baseDays - 182.625));
-		fineHi.textContent = shortDate(JD0 + Math.min(SPAN_DAYS, state.baseDays + 182.625));
-	}
-
-	// Move the coarse base to a day-from-epoch and recenter the fine slider on it.
-	function setBaseDays(days) {
-		state.baseDays = Math.max(0, Math.min(SPAN_DAYS, Math.round(days)));
-		coarseSlider.value = state.baseDays;
-		fineSlider.value = 0;
-		applyDate();
-	}
+	var dateBar = createDateBar(state, {
+		coarseSlider: coarseSlider, fineSlider: fineSlider,
+		fineLoLabel: fineLo, fineHiLabel: fineHi,
+		dateField: dateField, jdLabel: jdLabel,
+		jd0: JD0, spanDays: SPAN_DAYS, shortDate: shortDate
+	});
 
 	// =======================================================================
 	//  Wiring
@@ -1949,82 +1884,8 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 			state.departure[axis] = mps; refresh();
 		});
 
-		coarseSlider.addEventListener("input", function () {
-			setBaseDays(parseInt(coarseSlider.value, 10));
-			refresh();
-		});
-		fineSlider.addEventListener("input", function () {
-			applyDate();
-			refresh();
-		});
+		dateBar.bind(refresh);
 
-		// Marker-style fine dragging for the date sliders. A plain press jumps the date
-		// to the clicked position (native feel), then dragging fine-tunes RELATIVELY;
-		// holding Shift makes the drag 4× slower (×0.25), exactly like the marker
-		// slider. A Shift-press fine-tunes from the current date without jumping.
-		// (The native `input` listeners above still handle keyboard arrows.)
-		function enableShiftDrag(slider, apply, onOverflow) {
-			var drag = false, lastX = 0, perPx = 1;
-			var lo = parseFloat(slider.min), hi = parseFloat(slider.max);
-			function setVal(v) {
-				// past an end, an overflow handler (the fine slider's wrap) may advance
-				// the period and return a residual value back inside the track
-				if (onOverflow && (v > hi || v < lo)) { v = onOverflow(v); }
-				slider.value = Math.max(lo, Math.min(hi, v)); apply();
-			}
-			slider.addEventListener("pointerdown", function (e) {
-				e.preventDefault();                       // take over from the native thumb
-				drag = true; lastX = e.clientX;
-				perPx = (hi - lo) / (slider.clientWidth || 1);   // native units per pixel
-				if (!e.shiftKey) {                        // plain press: jump to the click
-					var rect = slider.getBoundingClientRect();
-					var frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-					setVal(lo + frac * (hi - lo));
-				}
-				try { slider.setPointerCapture(e.pointerId); } catch (_) {}
-				slider.focus();
-			});
-			slider.addEventListener("pointermove", function (e) {
-				if (!drag) { return; }
-				var dx = e.clientX - lastX; lastX = e.clientX;
-				setVal(parseFloat(slider.value) + dx * perPx * (e.shiftKey ? 0.25 : 1));
-			});
-			function end(e) {
-				if (!drag) { return; }
-				drag = false;
-				try { slider.releasePointerCapture(e.pointerId); } catch (_) {}
-			}
-			slider.addEventListener("pointerup", end);
-			slider.addEventListener("pointercancel", end);
-		}
-		enableShiftDrag(coarseSlider, function () { setBaseDays(parseInt(coarseSlider.value, 10)); refresh(); });
-
-		// Fine-slider wrap: when dragged past an end, advance the coarse base by half the
-		// fine span so the point that was at the end becomes the new centre, and carry
-		// the overshoot as the new (near-centred) fine value. The absolute date stays
-		// continuous (base+fine is unchanged by a wrap); the dot snaps back near the
-		// middle. Stops wrapping at the global 2030–2130 limits (then just clamps).
-		var FINE_HALF = parseFloat(fineSlider.max);     // 182.625 days = half the fine span
-		function wrapFine(v) {
-			while (v > FINE_HALF && state.baseDays + FINE_HALF <= SPAN_DAYS) {
-				state.baseDays += FINE_HALF; v -= FINE_HALF;
-			}
-			while (v < -FINE_HALF && state.baseDays - FINE_HALF >= 0) {
-				state.baseDays -= FINE_HALF; v += FINE_HALF;
-			}
-			coarseSlider.value = Math.round(state.baseDays);
-			return v;
-		}
-		enableShiftDrag(fineSlider, function () { applyDate(); refresh(); }, wrapFine);
-
-		dateField.addEventListener("change", function () {
-			var parts = dateField.value.split("-");
-			if (parts.length === 3) {
-				var jd = O.julianDate(+parts[0], +parts[1], +parts[2], 0, 0, 0);
-				setBaseDays(jd - JD0);
-				refresh();
-			}
-		});
 		originSel.addEventListener("change", function () {
 			state.origin = originSel.value;
 			// retarget the camera to keep the origin neighbourhood in view
@@ -2081,7 +1942,7 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 			});
 		}
 
-		setBaseDays(0);
+		dateBar.setBaseDays(0);
 		refresh();
 	}
 

@@ -21,6 +21,20 @@ unit testing.
 | `animation.js`       | `SkyAnim`                                                                                           | SVG reveal / viewBox-tween helpers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `three.min.js`       | *(none — classic script)*                                                                           | Vendored Three.js. **The one exception to the ESM convention:** loaded with a plain `<script src>` tag before the page module; provides the global `THREE`.                                                                                                                                                                                                                                                                                                                                                                                 |
 
+## Shared/sim/ — the scene kit
+
+A second family of modules, one responsibility per file, for the Three.js
+view code shared by the trajectory plotters (camera, date bar, body
+renderer, rings, marker card, burn widget — see `Website/ARCHITECTURE.md`,
+"Scene kit" and "Migration path" step 1). Named exports, same conventions as
+above; DOM/Three.js-facing rather than pure, so no Node tests, but still one
+file per concern.
+
+| File                    | Named exports                                                              | Purpose                                                                                                                                                                                                              |
+| ------------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sim/camera-controller.js` | `createCam`, `updateCamera`, `bindCameraControls`, `raycastPickPoint`     | The custom drag/pan/zoom orbiter (rotate, pan, cursor-centred zoom, a body focus-lock, deferred single-click-vs-double-click picking). One `bindCameraControls()` call per canvas; a dual-view plotter creates two `cam` states via `createCam()` (one per view) and a `getView()` selector switches which one the single binding drives. See the module's header comment for the per-view behavioural differences it reconciles. |
+| `sim/date-bar.js`          | `createDateBar`                                                           | The ephemeris date control: a coarse (tool-wide span) + fine (local offset) slider pair, typed date field, and JD readout, with click-to-jump and Shift-drag fine-tuning on both sliders. `createDateBar(state, opts)` reads/writes `state.jd`/`state.baseDays` on the caller's own state object (those fields are read from all over each plotter, so the module can't own a private copy); `opts.resolveBaseDays`/`opts.resolveFineReset` are optional hooks for a tool's own "lock this phase" toggle. Module-specific sliders (a skyhook release point, a hook-phase dial) stay out of this file entirely — they mount in their own module's panel card instead. |
+
 ## Using them in a calculator
 
 Give the page one module script (head or end of body — module scripts are

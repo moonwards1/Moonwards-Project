@@ -38,6 +38,8 @@
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
+import { createCam, updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
+import { createDateBar } from "../../Shared/sim/date-bar.js";
 
 (function () {
 	"use strict";
@@ -86,8 +88,9 @@ import { Const } from "../../Shared/constants.js";
 	// capped distance in its true ecliptic direction (context only).
 	var SUN_DRAW_DIST = 30000, SUN_DRAW_RADIUS = 900;
 
-	// A generous (non-physical) "go to Phobos" zoom zone for pickPoint() --
-	// Phobos has no real SOI worth using for this (see SOI_MARS note above),
+	// A generous (non-physical) "go to Phobos" zoom zone for localView.pickPoint
+	// (Shared/sim/camera-controller.js) -- Phobos has no real SOI worth using
+	// for this (see SOI_MARS note above),
 	// but it is tiny (11 km) and would otherwise be nearly unpickable from afar.
 	var PHOBOS_ZOOM_ZONE = kmToU(2000);
 
@@ -312,7 +315,7 @@ import { Const } from "../../Shared/constants.js";
 	// =======================================================================
 	//  THREE.js scene
 	// =======================================================================
-	var scene, camera, renderer, raycaster;
+	var scene, camera, renderer;
 	var marsMesh, marsPoint, marsSOI, sunMesh, marsOrbitLine;
 	var phobosPosGroup, phobosSpinGroup, phobosMesh, phobosPoint;
 	var phobosOrbitGroup = null;     // Phobos' (= the hook's CoM) orbit ring
@@ -375,8 +378,8 @@ import { Const } from "../../Shared/constants.js";
 	var dvHex = "#ff5fd0";        // CSS form of DV_COLOR (pink) for the readouts
 	var spdHex = "#ffd24a";       // CSS form of DSPEED_COLOR (amber) for the readouts
 
-	// camera spherical state around `target` (scene units)
-	var cam = { radius: 35, theta: 0.7, phi: 1.05, target: new THREE.Vector3(0, 0, 0) };
+	// camera spherical state around `target` (scene units; Shared/sim/camera-controller.js)
+	var cam = createCam(35, 0.7, 1.05, new THREE.Vector3(0, 0, 0));
 
 	function initScene() {
 		scene = new THREE.Scene();
@@ -388,8 +391,6 @@ import { Const } from "../../Shared/constants.js";
 		labelLayer = document.createElement("div");
 		labelLayer.id = "mps-labels";
 		holder.appendChild(labelLayer);
-
-		raycaster = new THREE.Raycaster();
 
 		scene.add(new THREE.AmbientLight(0x556070, 0.35));
 		sunLight = new THREE.DirectionalLight(0xfff4e6, 1.5);
@@ -449,8 +450,59 @@ import { Const } from "../../Shared/constants.js";
 
 		resize();
 		window.addEventListener("resize", resize);
-		bindControls();
+		bindCameraControls(renderer.domElement, getCameraView);
 		animate();
+	}
+
+	// ---- camera controls (Shared/sim/camera-controller.js) -----------------
+	// Two views share one binding: bindCameraControls() calls getCameraView()
+	// fresh on every DOM event, so it always drives whichever camera (local
+	// Mars-Phobos `cam`, or `Helio.cam`) matches the current state.view —
+	// binding twice would double-register listeners on the same canvas and
+	// move both cameras from one drag.
+	var localView = {
+		cam: null, camera: null,
+		zoomMin: 0.0001, zoomMax: 40000,
+		shiftZoom: true,                 // Shift held while scrolling: ~5x finer zoom
+		panSpeed: 0.0016,
+		pickPoint: function (e) {
+			var phobosWorld = phobosPosGroup.getWorldPosition(new THREE.Vector3());
+			return raycastPickPoint(camera, renderer.domElement, e, {
+				meshes: [phobosMesh, marsMesh],
+				soiSpheres: [{ center: phobosWorld, radius: PHOBOS_ZOOM_ZONE, nearFaceRadius: mToU(R_PHOBOS) }]
+			});
+		},
+		isLocked: function () { return !!state.focus; },      // zoom in place while a body is focused
+		onPan: function () { state.focus = null; },           // free navigation releases a body lock
+		onDoubleClick: function (e) { focusNearest(e); },
+		captureDrag: function (e) {
+			if (e.button === 0 && releaseMesh && releaseMesh.visible && hookToggle.checked && hitRelease(e)) {
+				return "release";
+			}
+			return false;
+		},
+		onCapturedMove: function (e) { dragRelease(e); }
+	};
+	var helioView = {
+		cam: null, camera: null,
+		zoomMin: 1e-4, zoomMax: 500,
+		shiftZoom: true,
+		lockedZoomTarget: function () {
+			return (state.markerFocused && markerSprite && markerSprite.visible) ? markerSprite.position : null;
+		},
+		onPan: function () { state.markerFocused = false; },   // free navigation releases the marker lock
+		onPick: function (e) { handleHelioPick(e); },
+		onDoubleClick: function (e) { Helio.focusNearest(e); }
+	};
+	function getCameraView() {
+		if (state.view === "helio") {
+			helioView.cam = Helio.cam;
+			helioView.camera = Helio.camera;
+			return helioView;
+		}
+		localView.cam = cam;
+		localView.camera = camera;
+		return localView;
 	}
 
 	// Load a texture into a material, keeping the fallback colour if it fails
@@ -1275,17 +1327,6 @@ import { Const } from "../../Shared/constants.js";
 	// =======================================================================
 	//  Per-frame: camera, label/point/marker sizing
 	// =======================================================================
-	function updateCamera() {
-		var r = cam.radius;
-		var sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
-		camera.position.set(
-			cam.target.x + r * sp * Math.cos(cam.theta),
-			cam.target.y + r * sp * Math.sin(cam.theta),
-			cam.target.z + r * cp);
-		camera.up.set(0, 0, 1);
-		camera.lookAt(cam.target);
-	}
-
 	var _lp = new THREE.Vector3();
 	function updateLabels() {
 		var w = holder.clientWidth, h = holder.clientHeight;
@@ -1327,146 +1368,15 @@ import { Const } from "../../Shared/constants.js";
 	function animate() {
 		requestAnimationFrame(animate);
 		if (state.view === "helio" && Helio.built) { Helio.render(); return; }
-		updateCamera();
+		updateCamera(camera, cam);
 		updateMarkers();
 		updateLabels();
 		positionBurnReadouts();
 		renderer.render(scene, camera);
 	}
 
-	// =======================================================================
-	//  Camera controls (custom; OrbitControls isn't file://-safe)
-	// =======================================================================
-	function bindControls() {
-		var el = renderer.domElement;
-		var dragging = null, lx = 0, ly = 0, draggingRelease = false;
-		var hDragging = null, hlx = 0, hly = 0, hMoved = false, hClickTimer = null;
-
-		el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-
-		el.addEventListener("mousedown", function (e) {
-			if (state.view === "helio") {
-				// A second press cancels a pending single-click pick, so a
-				// double-click (focus) never also drops/moves the marker.
-				if (hClickTimer) { clearTimeout(hClickTimer); hClickTimer = null; }
-				hDragging = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
-				hlx = e.clientX; hly = e.clientY; hMoved = false;
-				return;
-			}
-			if (e.button === 0 && releaseMesh && releaseMesh.visible && hookToggle.checked && hitRelease(e)) {
-				draggingRelease = true;
-				return;
-			}
-			dragging = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
-			lx = e.clientX; ly = e.clientY;
-		});
-
-		window.addEventListener("mousemove", function (e) {
-			if (state.view === "helio") {
-				if (!hDragging) { return; }
-				var hdx = e.clientX - hlx, hdy = e.clientY - hly;
-				hlx = e.clientX; hly = e.clientY;
-				if (Math.abs(hdx) + Math.abs(hdy) > 2) { hMoved = true; }
-				var hc = Helio.cam;
-				if (hDragging === "rotate") {
-					hc.theta -= hdx * 0.005;
-					hc.phi = Math.max(0.05, Math.min(Math.PI - 0.05, hc.phi - hdy * 0.005));
-				} else {
-					var hp = hc.radius * 0.0018;
-					var hright = new THREE.Vector3().crossVectors(
-						new THREE.Vector3().subVectors(hc.target, Helio.camera.position), Helio.camera.up).normalize();
-					hc.target.addScaledVector(hright, -hdx * hp);
-					hc.target.addScaledVector(Helio.camera.up.clone(), hdy * hp);
-					state.markerFocused = false;    // free navigation (panning) releases the marker lock
-				}
-				return;
-			}
-			if (draggingRelease) { dragRelease(e); return; }
-			if (!dragging) { return; }
-			var dx = e.clientX - lx, dy = e.clientY - ly;
-			lx = e.clientX; ly = e.clientY;
-			if (dragging === "rotate") {
-				cam.theta -= dx * 0.005;
-				cam.phi = Math.max(0.05, Math.min(Math.PI - 0.05, cam.phi - dy * 0.005));
-			} else {
-				var panScale = cam.radius * 0.0016;
-				var right = new THREE.Vector3().crossVectors(
-					new THREE.Vector3().subVectors(cam.target, camera.position), camera.up).normalize();
-				cam.target.addScaledVector(right, -dx * panScale);
-				cam.target.addScaledVector(camera.up.clone(), dy * panScale);
-				state.focus = null;
-			}
-		});
-
-		window.addEventListener("mouseup", function (e) {
-			if (state.view === "helio") {
-				if (hDragging === "rotate" && !hMoved) {
-					// defer the pick so a double-click (focus) can cancel it
-					var ev = e;
-					if (hClickTimer) { clearTimeout(hClickTimer); }
-					hClickTimer = setTimeout(function () { hClickTimer = null; handleHelioPick(ev); }, 350);
-				}
-				hDragging = null;
-				return;
-			}
-			dragging = null; draggingRelease = false; hDragging = null;
-		});
-
-		el.addEventListener("dblclick", function (e) {
-			if (state.view === "helio") {
-				if (hClickTimer) { clearTimeout(hClickTimer); hClickTimer = null; }
-				Helio.focusNearest(e);
-				return;
-			}
-			focusNearest(e);
-		});
-
-		el.addEventListener("wheel", function (e) {
-			e.preventDefault();
-			if (state.view === "helio") {
-				var hf = Math.exp(e.deltaY * (e.shiftKey ? 0.0002 : 0.001));
-				if (state.markerFocused && markerSprite && markerSprite.visible) {
-					Helio.cam.target.copy(markerSprite.position);
-				}
-				Helio.cam.radius = Math.max(1e-4, Math.min(500, Helio.cam.radius * hf));
-				return;
-			}
-			var rate = e.shiftKey ? 0.0002 : 0.001;
-			var f = Math.exp(e.deltaY * rate);
-			if (state.focus) {
-				cam.radius = Math.max(0.0001, Math.min(40000, cam.radius * f));
-				return;
-			}
-			if (f < 1) {
-				var hit = pickPoint(e);
-				if (hit) { cam.target.lerp(hit, 1 - f); }
-			}
-			cam.radius = Math.max(0.0001, Math.min(40000, cam.radius * f));
-		}, { passive: false });
-	}
-
-	// World-space point to zoom toward for the cursor, or null to leave the
-	// target alone. A direct hit on a body returns that surface point.
-	// Failing that, within a generous zone around Phobos (see
-	// PHOBOS_ZOOM_ZONE -- Phobos has no real SOI to use here) heads for
-	// Phobos' near face.
-	function pickPoint(e) {
-		var rect = renderer.domElement.getBoundingClientRect();
-		var ndc = new THREE.Vector2(
-			((e.clientX - rect.left) / rect.width) * 2 - 1,
-			-(((e.clientY - rect.top) / rect.height) * 2 - 1));
-		raycaster.setFromCamera(ndc, camera);
-		var hits = raycaster.intersectObjects([phobosMesh, marsMesh], true);
-		if (hits.length) { return hits[0].point.clone(); }
-		var phobosWorld = new THREE.Vector3();
-		phobosPosGroup.getWorldPosition(phobosWorld);
-		if (raycaster.ray.intersectsSphere(new THREE.Sphere(phobosWorld, PHOBOS_ZOOM_ZONE))) {
-			var toCam = camera.position.clone().sub(phobosWorld);
-			var d = toCam.length() || 1;
-			return phobosWorld.addScaledVector(toCam, mToU(R_PHOBOS) / d);
-		}
-		return null;
-	}
+	// ---- camera controls: Shared/sim/camera-controller.js (see `localView` /
+	// `helioView` / `getCameraView` above, wired up in initScene) -----------
 
 	function cursorRay(e) {
 		var rect = renderer.domElement.getBoundingClientRect();
@@ -1630,34 +1540,26 @@ import { Const } from "../../Shared/constants.js";
 		return mo[d.Mo - 1] + " " + d.D + ", " + d.Y;
 	}
 
-	function applyDate() {
-		var eff = Math.max(0, Math.min(SPAN_DAYS, state.baseDays + parseFloat(fineSlider.value)));
-		state.jd = JD0 + eff;
-		var d = O.dateFromJulian(state.jd);
-		dateField.value = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
-		jdLabel.textContent = "JD " + state.jd.toFixed(2);
-		fineLo.textContent = shortDate(JD0 + Math.max(0, state.baseDays - PHOBOS_PERIOD_DAYS / 2));
-		fineHi.textContent = shortDate(JD0 + Math.min(SPAN_DAYS, state.baseDays + PHOBOS_PERIOD_DAYS / 2));
-	}
-
-	// Sets the coarse (year) slider's day count. When lockPhobosPhase is on,
-	// the fine slider is set to whatever sub-day offset restores Phobos'
-	// locked phase relative to the Sun (see solveFineOffsetForElongation),
-	// instead of being reset to 0 -- so e.g. "Phobos at Mars midnight" stays
-	// true as you scrub across years, with Phobos' displayed position
-	// jumping to wherever within its current orbit satisfies that.
-	function setBaseDays(days) {
-		state.baseDays = Math.max(0, Math.min(SPAN_DAYS, Math.round(days)));
-		coarseSlider.value = state.baseDays;
-		if (state.lockPhobosPhase) {
-			var off = solveFineOffsetForElongation(JD0 + state.baseDays, state.lockedElongation);
+	// Shared/sim/date-bar.js. `resolveFineReset` is the "lock Phobos phase"
+	// (year slider) hook: when active, instead of resetting to 0 the fine
+	// slider is set to whatever sub-day offset restores Phobos' locked phase
+	// relative to the Sun (see solveFineOffsetForElongation) -- so e.g.
+	// "Phobos at Mars midnight" stays true as you scrub across years, with
+	// Phobos' displayed position jumping to wherever within its current
+	// orbit satisfies that.
+	var dateBar = createDateBar(state, {
+		coarseSlider: coarseSlider, fineSlider: fineSlider,
+		fineLoLabel: fineLo, fineHiLabel: fineHi,
+		dateField: dateField, jdLabel: jdLabel,
+		jd0: JD0, spanDays: SPAN_DAYS, shortDate: shortDate,
+		jdDecimals: 2,
+		resolveFineReset: function (baseDays) {
+			if (!state.lockPhobosPhase) { return 0; }
+			var off = solveFineOffsetForElongation(JD0 + baseDays, state.lockedElongation);
 			var fMin = parseFloat(fineSlider.min), fMax = parseFloat(fineSlider.max);
-			fineSlider.value = Math.max(fMin, Math.min(fMax, off));
-		} else {
-			fineSlider.value = 0;
+			return Math.max(fMin, Math.min(fMax, off));
 		}
-		applyDate();
-	}
+	});
 
 	// =======================================================================
 	//  Refresh orchestration
@@ -2661,7 +2563,7 @@ import { Const } from "../../Shared/constants.js";
 		PX_BODY: 1.4, PX_SOI: 2.0,
 		built: false,
 		scene: null, camera: null,
-		cam: { radius: 6, theta: 0.6, phi: 1.1, target: new THREE.Vector3(0, 0, 0) },
+		cam: createCam(6, 0.6, 1.1, new THREE.Vector3(0, 0, 0)),
 		bodyGroups: {}, orbitLines: {}, scaleList: [], labelList: [], labelLayer: null,
 		sunGroup: null, trajGroup: null, wpGizmos: [],
 
@@ -2881,12 +2783,6 @@ import { Const } from "../../Shared/constants.js";
 			this.scene.add(grp);
 		},
 
-		updateCamera: function () {
-			var c = this.cam, r = c.radius, sp = Math.sin(c.phi), cp = Math.cos(c.phi), cam = this.camera;
-			cam.position.set(c.target.x + r*sp*Math.cos(c.theta), c.target.y + r*sp*Math.sin(c.theta), c.target.z + r*cp);
-			cam.up.set(0, 0, 1);
-			cam.lookAt(c.target);
-		},
 		screenPxRadius: function (worldR, dist) {
 			var h = holder.clientHeight || 1;
 			return worldR / dist * ((h / 2) / Math.tan(this.camera.fov * Math.PI / 360));
@@ -2950,7 +2846,7 @@ import { Const } from "../../Shared/constants.js";
 			}
 		},
 		render: function () {
-			this.updateCamera();
+			updateCamera(this.camera, this.cam);
 			this.updateScales();
 			this.updateGizmos();
 			this.updateLabels();
@@ -3018,10 +2914,7 @@ import { Const } from "../../Shared/constants.js";
 		if (mainEl) { mainEl.appendChild(readoutLayer); }
 		if (panelEl) { panelEl.addEventListener("scroll", positionBurnReadouts); }
 
-		coarseSlider.addEventListener("input", function () {
-			setBaseDays(parseInt(coarseSlider.value, 10));
-			refreshDate();
-		});
+		dateBar.bind(refreshDate);
 
 		// "Lock Phobos phase" (year slider): capture the CURRENT Phobos-Sun
 		// geometry the instant the toggle is switched on, so it's that
@@ -3034,20 +2927,6 @@ import { Const } from "../../Shared/constants.js";
 				if (state.lockPhobosPhase) { state.lockedElongation = phobosSunElongation(state.jd); }
 			});
 		}
-
-		fineSlider.addEventListener("input", function () {
-			applyDate();
-			refreshDate();
-		});
-
-		dateField.addEventListener("change", function () {
-			var parts = dateField.value.split("-");
-			if (parts.length === 3) {
-				var jd = O.julianDate(+parts[0], +parts[1], +parts[2], 0, 0, 0);
-				setBaseDays(jd - JD0);
-				refreshDate();
-			}
-		});
 
 		[topInput, botInput].forEach(function (inp) {
 			inp.addEventListener("input", function () { readTetherInputs(); refreshHook(); });
@@ -3161,7 +3040,7 @@ import { Const } from "../../Shared/constants.js";
 
 		readTetherInputs();
 		applyReleaseSide();
-		setBaseDays(0);
+		dateBar.setBaseDays(0);
 		refreshDate();
 	}
 

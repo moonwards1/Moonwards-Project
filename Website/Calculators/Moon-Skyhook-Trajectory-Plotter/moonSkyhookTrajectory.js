@@ -22,6 +22,8 @@
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
+import { createCam, updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
+import { createDateBar } from "../../Shared/sim/date-bar.js";
 
 (function () {
 	"use strict";
@@ -59,7 +61,6 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 	// Slider epoch (day 0) and span: 2030-01-01 .. 2033-12-31 (midnight).
 	var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 	var SPAN_DAYS = 1460;
-	var SIDEREAL_MONTH = 27.321661;                       // days (Moon 360 deg)
 
 	// ---- application state ------------------------------------------------
 	var state = {
@@ -130,7 +131,7 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 	// =======================================================================
 	//  THREE.js scene
 	// =======================================================================
-	var scene, camera, renderer, raycaster;
+	var scene, camera, renderer;
 	var earthMesh, earthPoint, earthSOI, sunMesh;
 	var moonPosGroup, moonSpinGroup, moonMesh, moonPoint, moonSOI;
 	var hookGroup = null;            // skyhook geometry (rebuilt on change)
@@ -155,8 +156,8 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 	var dvHex = "#ff5fd0";        // CSS form of DV_COLOR (pink) for the readouts
 	var spdHex = "#ffd24a";       // CSS form of DSPEED_COLOR (amber) for the readouts
 
-	// camera spherical state around `target` (scene units)
-	var cam = { radius: 1500, theta: 0.7, phi: 1.05, target: new THREE.Vector3(0, 0, 0) };
+	// camera spherical state around `target` (scene units; Shared/sim/camera-controller.js)
+	var cam = createCam(1500, 0.7, 1.05, new THREE.Vector3(0, 0, 0));
 
 	function initScene() {
 		scene = new THREE.Scene();
@@ -168,8 +169,6 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 		labelLayer = document.createElement("div");
 		labelLayer.id = "msk-labels";
 		holder.appendChild(labelLayer);
-
-		raycaster = new THREE.Raycaster();
 
 		scene.add(new THREE.AmbientLight(0x556070, 0.35));
 		sunLight = new THREE.DirectionalLight(0xfff4e6, 1.5);
@@ -238,8 +237,67 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 
 		resize();
 		window.addEventListener("resize", resize);
-		bindControls();
+		bindCameraControls(renderer.domElement, getCameraView);
 		animate();
+	}
+
+	// ---- camera controls (Shared/sim/camera-controller.js) -----------------
+	// Two views share one binding: bindCameraControls() calls getCameraView()
+	// fresh on every DOM event, so it always drives whichever camera
+	// (local Earth-Moon `cam`, or `Helio.cam`) matches the current
+	// state.view — binding twice would double-register listeners on the same
+	// canvas and move both cameras from one drag.
+	var wpDrag = { x: 0, y: 0, s: 0 };   // seeded in captureDrag, consumed by dragWaypoint
+	var localView = {
+		cam: null, camera: null,
+		zoomMin: 0.01, zoomMax: 40000,
+		shiftZoom: true,                 // Shift held while scrolling: ~5x finer zoom
+		panSpeed: 0.0016,
+		pickPoint: function (e) {
+			var moonWorld = moonPosGroup.getWorldPosition(new THREE.Vector3());
+			return raycastPickPoint(camera, renderer.domElement, e, {
+				meshes: [moonMesh, earthMesh],
+				soiSpheres: [{ center: moonWorld, radius: mToU(SOI_MOON), nearFaceRadius: mToU(R_M) }]
+			});
+		},
+		isLocked: function () { return !!state.focus; },      // zoom in place while a body is focused
+		onPan: function () { state.focus = null; },           // free navigation releases a body lock
+		onDoubleClick: function (e) { focusNearest(e); },
+		captureDrag: function (e) {
+			if (e.button === 0 && releaseMesh && releaseMesh.visible && hookToggle.checked && hitRelease(e)) {
+				return "release";
+			}
+			if (e.button === 0) {
+				var wpHit = hitWaypoint(e);
+				if (wpHit >= 0) {
+					var wpLeg = wpMarkers[wpHit].leg, wpVal = state.waypoints[wpHit];
+					wpDrag.s = wpVal ? timeToDistanceAlongLeg(wpLeg, wpVal.t) : 0;
+					wpDrag.x = e.clientX; wpDrag.y = e.clientY;
+					return { wp: wpHit };
+				}
+			}
+			return false;
+		},
+		onCapturedMove: function (e, token) {
+			if (token === "release") { dragRelease(e); return; }
+			dragWaypoint(e, token.wp, wpDrag);
+		}
+	};
+	var helioView = {
+		cam: null, camera: null,
+		zoomMin: 1e-4, zoomMax: 500,
+		shiftZoom: true,
+		onDoubleClick: function (e) { Helio.focusNearest(e); }
+	};
+	function getCameraView() {
+		if (state.view === "helio") {
+			helioView.cam = Helio.cam;
+			helioView.camera = Helio.camera;
+			return helioView;
+		}
+		localView.cam = cam;
+		localView.camera = camera;
+		return localView;
 	}
 
 	// Load a texture into a material, keeping the fallback colour if it fails
@@ -1313,17 +1371,6 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 	// =======================================================================
 	//  Per-frame: camera, label/point/marker sizing
 	// =======================================================================
-	function updateCamera() {
-		var r = cam.radius;
-		var sp = Math.sin(cam.phi), cp = Math.cos(cam.phi);
-		camera.position.set(
-			cam.target.x + r * sp * Math.cos(cam.theta),
-			cam.target.y + r * sp * Math.sin(cam.theta),
-			cam.target.z + r * cp);
-		camera.up.set(0, 0, 1);
-		camera.lookAt(cam.target);
-	}
-
 	var _lp = new THREE.Vector3();
 	function updateLabels() {
 		var w = holder.clientWidth, h = holder.clientHeight;
@@ -1367,7 +1414,7 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 	function animate() {
 		requestAnimationFrame(animate);
 		if (state.view === "helio" && Helio.built) { Helio.render(); return; }
-		updateCamera();
+		updateCamera(camera, cam);
 		updateMarkers();
 		updateLabels();
 		updateWaypointGizmos();
@@ -1375,141 +1422,8 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 		renderer.render(scene, camera);
 	}
 
-	// =======================================================================
-	//  Camera controls (custom; OrbitControls isn't file://-safe)
-	// =======================================================================
-	function bindControls() {
-		var el = renderer.domElement;
-		var dragging = null, lx = 0, ly = 0, draggingRelease = false, draggingWp = -1;
-		// Waypoint-drag state (see dragWaypoint) — an object so it can be
-		// passed by reference and mutated across mousemove calls without
-		// nesting dragWaypoint inside this closure.
-		var wpDrag = { x: 0, y: 0, s: 0 };
-		var hDragging = null, hlx = 0, hly = 0;   // solar-system-view drag state
-
-		el.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-
-		el.addEventListener("mousedown", function (e) {
-			if (state.view === "helio") {
-				hDragging = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
-				hlx = e.clientX; hly = e.clientY;
-				return;
-			}
-			// start a release-marker drag if the press lands on it
-			if (e.button === 0 && releaseMesh && releaseMesh.visible && hookToggle.checked && hitRelease(e)) {
-				draggingRelease = true;
-				return;
-			}
-			// start a waypoint-gizmo drag if the press lands on one — seed the
-			// drag's arc-length position from the waypoint's CURRENT time, so
-			// the very first mousemove nudges it from there rather than jumping.
-			if (e.button === 0) {
-				var wpHit = hitWaypoint(e);
-				if (wpHit >= 0) {
-					draggingWp = wpHit;
-					var wpLeg = wpMarkers[wpHit].leg, wpVal = state.waypoints[wpHit];
-					wpDrag.s = wpVal ? timeToDistanceAlongLeg(wpLeg, wpVal.t) : 0;
-					wpDrag.x = e.clientX; wpDrag.y = e.clientY;
-					return;
-				}
-			}
-			dragging = (e.button === 2 || e.shiftKey) ? "pan" : "rotate";
-			lx = e.clientX; ly = e.clientY;
-		});
-
-		window.addEventListener("mousemove", function (e) {
-			if (state.view === "helio") {
-				if (!hDragging) { return; }
-				var hdx = e.clientX - hlx, hdy = e.clientY - hly;
-				hlx = e.clientX; hly = e.clientY;
-				var hc = Helio.cam;
-				if (hDragging === "rotate") {
-					hc.theta -= hdx * 0.005;
-					hc.phi = Math.max(0.05, Math.min(Math.PI - 0.05, hc.phi - hdy * 0.005));
-				} else {
-					var hp = hc.radius * 0.0018;
-					var hright = new THREE.Vector3().crossVectors(
-						new THREE.Vector3().subVectors(hc.target, Helio.camera.position), Helio.camera.up).normalize();
-					hc.target.addScaledVector(hright, -hdx * hp);
-					hc.target.addScaledVector(Helio.camera.up.clone(), hdy * hp);
-				}
-				return;
-			}
-			if (draggingRelease) { dragRelease(e); return; }
-			if (draggingWp >= 0) { dragWaypoint(e, draggingWp, wpDrag); return; }
-			if (!dragging) { return; }
-			var dx = e.clientX - lx, dy = e.clientY - ly;
-			lx = e.clientX; ly = e.clientY;
-			if (dragging === "rotate") {
-				cam.theta -= dx * 0.005;
-				cam.phi = Math.max(0.05, Math.min(Math.PI - 0.05, cam.phi - dy * 0.005));
-			} else {
-				var panScale = cam.radius * 0.0016;
-				var right = new THREE.Vector3().crossVectors(
-					new THREE.Vector3().subVectors(cam.target, camera.position), camera.up).normalize();
-				cam.target.addScaledVector(right, -dx * panScale);
-				cam.target.addScaledVector(camera.up.clone(), dy * panScale);
-				state.focus = null;
-			}
-		});
-
-		window.addEventListener("mouseup", function () { dragging = null; draggingRelease = false; draggingWp = -1; hDragging = null; });
-
-		el.addEventListener("dblclick", function (e) {
-			if (state.view === "helio") { Helio.focusNearest(e); return; }
-			focusNearest(e);
-		});
-
-		el.addEventListener("wheel", function (e) {
-			e.preventDefault();
-			if (state.view === "helio") {
-				var hf = Math.exp(e.deltaY * (e.shiftKey ? 0.0002 : 0.001));
-				Helio.cam.radius = Math.max(1e-4, Math.min(500, Helio.cam.radius * hf));
-				return;
-			}
-			// Hold Shift to zoom ~5x slower (finer control near the surface).
-			var rate = e.shiftKey ? 0.0002 : 0.001;
-			var f = Math.exp(e.deltaY * rate);
-			if (state.focus) {
-				cam.radius = Math.max(0.01, Math.min(40000, cam.radius * f));
-				return;
-			}
-			// Zoom toward the real 3D point under the cursor when it lands on a
-			// body, so pointing at the Moon zooms smoothly all the way in. (The
-			// old target-depth-plane math converged on a near point in empty
-			// space and stuck.) Over empty space, dolly about the current target.
-			if (f < 1) {
-				var hit = pickPoint(e);
-				if (hit) { cam.target.lerp(hit, 1 - f); }
-			}
-			cam.radius = Math.max(0.01, Math.min(40000, cam.radius * f));
-		}, { passive: false });
-	}
-
-	// World-space point to zoom toward for the cursor, or null to leave the
-	// target alone. A direct hit on a body returns that surface point (so you can
-	// aim at a spot on the Moon). Failing that, if the cursor lies within the
-	// Moon's sphere of influence we head for the Moon's near face — the Moon's
-	// pickable disk is a pinprick from far out, so the SOI gives a generous
-	// "go to the Moon" zone. Outside the SOI we return null, so zoom simply
-	// dollies about the current target (e.g. to study a point on the orbit).
-	function pickPoint(e) {
-		var rect = renderer.domElement.getBoundingClientRect();
-		var ndc = new THREE.Vector2(
-			((e.clientX - rect.left) / rect.width) * 2 - 1,
-			-(((e.clientY - rect.top) / rect.height) * 2 - 1));
-		raycaster.setFromCamera(ndc, camera);
-		var hits = raycaster.intersectObjects([moonMesh, earthMesh], true);
-		if (hits.length) { return hits[0].point.clone(); }
-		var moonWorld = new THREE.Vector3();
-		moonPosGroup.getWorldPosition(moonWorld);
-		if (raycaster.ray.intersectsSphere(new THREE.Sphere(moonWorld, mToU(SOI_MOON)))) {
-			var toCam = camera.position.clone().sub(moonWorld);
-			var d = toCam.length() || 1;
-			return moonWorld.addScaledVector(toCam, mToU(R_M) / d);   // Moon near face
-		}
-		return null;
-	}
+	// ---- camera controls: Shared/sim/camera-controller.js (see `localView` /
+	// `helioView` / `getCameraView` above, wired up in initScene) -----------
 
 	// Ray (origin + dir) through the cursor, in world (scene) coordinates.
 	function cursorRay(e) {
@@ -1833,32 +1747,23 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 		phaseVal.textContent = Math.round(deg) + "°";
 	}
 
-	function applyDate() {
-		var eff = Math.max(0, Math.min(SPAN_DAYS, state.baseDays + parseFloat(fineSlider.value)));
-		state.jd = JD0 + eff;
-		var d = O.dateFromJulian(state.jd);
-		dateField.value = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
-		jdLabel.textContent = "JD " + state.jd.toFixed(1);
-		fineLo.textContent = shortDate(JD0 + Math.max(0, state.baseDays - SIDEREAL_MONTH / 2));
-		fineHi.textContent = shortDate(JD0 + Math.min(SPAN_DAYS, state.baseDays + SIDEREAL_MONTH / 2));
-	}
-
-	// Sets the coarse (year) slider's day count. When lockMoonPhase is on,
-	// the requested day is nudged to the nearest day whose Moon phase
-	// matches lockedElongation (the phase captured when the lock was turned
-	// on), so the Earth-Moon-Sun geometry — and so which side of Earth's
-	// orbit the Moon is on — stays the same as you scrub across years.
-	function setBaseDays(days) {
-		var target = Math.max(0, Math.min(SPAN_DAYS, Math.round(days)));
-		if (state.lockMoonPhase) {
+	// Shared/sim/date-bar.js. `resolveBaseDays` is the "lock Moon phase"
+	// (year slider) hook: when active, the requested coarse target is nudged
+	// to the nearest day whose Moon phase matches lockedElongation (the phase
+	// captured when the lock was turned on), so the Earth-Moon-Sun geometry —
+	// and so which side of Earth's orbit the Moon is on — stays the same as
+	// you scrub across years.
+	var dateBar = createDateBar(state, {
+		coarseSlider: coarseSlider, fineSlider: fineSlider,
+		fineLoLabel: fineLo, fineHiLabel: fineHi,
+		dateField: dateField, jdLabel: jdLabel,
+		jd0: JD0, spanDays: SPAN_DAYS, shortDate: shortDate,
+		resolveBaseDays: function (target) {
+			if (!state.lockMoonPhase) { return target; }
 			var solved = solveDateForElongation(JD0 + target, state.lockedElongation);
-			target = Math.max(0, Math.min(SPAN_DAYS, Math.round(solved - JD0)));
+			return Math.max(0, Math.min(SPAN_DAYS, Math.round(solved - JD0)));
 		}
-		state.baseDays = target;
-		coarseSlider.value = state.baseDays;
-		fineSlider.value = 0;
-		applyDate();
-	}
+	});
 
 	// =======================================================================
 	//  Refresh orchestration
@@ -2186,7 +2091,7 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 		PX_BODY: 1.4, PX_SOI: 2.0,
 		built: false,
 		scene: null, camera: null,
-		cam: { radius: 6, theta: 0.6, phi: 1.1, target: new THREE.Vector3(0, 0, 0) },
+		cam: createCam(6, 0.6, 1.1, new THREE.Vector3(0, 0, 0)),
 		bodyGroups: {}, orbitLines: {}, scaleList: [], labelList: [], labelLayer: null,
 		sunGroup: null, trajGroup: null, wpGizmos: [],
 
@@ -2400,12 +2305,6 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 			this.scene.add(grp);
 		},
 
-		updateCamera: function () {
-			var c = this.cam, r = c.radius, sp = Math.sin(c.phi), cp = Math.cos(c.phi), cam = this.camera;
-			cam.position.set(c.target.x + r*sp*Math.cos(c.theta), c.target.y + r*sp*Math.sin(c.theta), c.target.z + r*cp);
-			cam.up.set(0, 0, 1);
-			cam.lookAt(c.target);
-		},
 		screenPxRadius: function (worldR, dist) {
 			var h = holder.clientHeight || 1;
 			return worldR / dist * ((h / 2) / Math.tan(this.camera.fov * Math.PI / 360));
@@ -2453,7 +2352,7 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 			}
 		},
 		render: function () {
-			this.updateCamera();
+			updateCamera(this.camera, this.cam);
 			this.updateScales();
 			this.updateGizmos();
 			this.updateLabels();
@@ -2487,14 +2386,7 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 		if (mainEl) { mainEl.appendChild(readoutLayer); }
 		if (panelEl) { panelEl.addEventListener("scroll", positionBurnReadouts); }
 
-		coarseSlider.addEventListener("input", function () {
-			setBaseDays(parseInt(coarseSlider.value, 10));
-			refreshDate();
-		});
-		fineSlider.addEventListener("input", function () {
-			applyDate();
-			refreshDate();
-		});
+		dateBar.bind(refreshDate);
 		phaseSlider.addEventListener("input", function () {
 			state.hookPhase = parseFloat(phaseSlider.value) * Math.PI / 180;
 			phaseVal.textContent = Math.round(parseFloat(phaseSlider.value)) + "°";
@@ -2529,15 +2421,6 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 				}
 			});
 		}
-
-		dateField.addEventListener("change", function () {
-			var parts = dateField.value.split("-");
-			if (parts.length === 3) {
-				var jd = O.julianDate(+parts[0], +parts[1], +parts[2], 0, 0, 0);
-				setBaseDays(jd - JD0);
-				refreshDate();
-			}
-		});
 
 		[comInput, topInput].forEach(function (inp) {
 			inp.addEventListener("input", function () { readAltInputs(); refreshHook(); });
@@ -2629,7 +2512,7 @@ import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 		}
 
 		readAltInputs();
-		setBaseDays(0);
+		dateBar.setBaseDays(0);
 		refreshDate();
 	}
 
