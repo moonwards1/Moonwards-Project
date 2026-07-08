@@ -463,7 +463,30 @@ Each step is independently useful; nothing requires a big-bang rewrite.
      material (same as the producer) — they're informational only in this
      pairing, per their optional status in `exchange-types.js`.
 
-3. **Promote frame patching** into `Shared/` with Node tests.
+3. **Promote frame patching** into `Shared/` with Node tests. *(done, 2026-07)*:
+   `Shared/frames.js` (`Frames`) — `bodyHelioState`, `localToHelio`/
+   `helioToLocal` (the r_helio = r_local + R_B(jd) shift from "Packets — the
+   data contract" > "Frames" above), `convert(shipStateData, targetFrame)` for
+   packet-level `"helio"`/`"body:<Name>"` conversion (handling same-frame,
+   one-hop, and body-to-body two-hop-via-helio cases), and frame-string
+   parsing (`bodyNameFromFrame`/`frameForBody`). Ported from the Mars-Phobos
+   plotter's `marsHelioState`/`escR`,`escV` escape-state lift — the doc's own
+   reference implementation — rather than written fresh; the plotter itself
+   was then switched to call `Frames.localToHelio`/`Frames.bodyHelioState`
+   instead of keeping a parallel copy, matching how every scene-kit item in
+   step 1 ported its source tool rather than just extracting a second copy.
+   Node-tested (round-trips, and a direct cross-check against the plotter's
+   original inline formula for a sample state, confirming the port is
+   faithful) and browser-verified afterward (`serve.bat`): the plotter's
+   heliocentric periapsis/apoapsis and Solar-system-view closest-approach
+   readouts, which depend on this exact lift, still compute correctly.
+   Deliberately scoped to one hop (a body directly orbiting the Sun) — that
+   covers every plotter that currently needs it; a moon-relative frame (e.g.
+   `"body:Phobos"`) would need a second hop, added here rather than resolved
+   ad hoc in a calculator, if a tool ever needs one. Other direct
+   `OrbitalMath.bodyStateAtJD` calls elsewhere in the Mars-Phobos plotter
+   (destination-marker/approach-ring body lookups, unrelated to lifting a
+   ship state between frames) were left as-is — out of this step's scope.
 
 4. **Build the shell** (`Website/MissionPlanner/`): world object, one scene,
    module registry, profile-chain UI. Port the lunar skyhook as the first

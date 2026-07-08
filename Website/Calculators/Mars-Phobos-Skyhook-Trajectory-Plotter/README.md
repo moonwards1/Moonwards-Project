@@ -164,7 +164,11 @@ $$
 ## Dependencies
 
 Loads from `../../Shared/`: `three.min.js`, `orbit.js` (`systems`),
-`constants.js` (`Const`), and `math-utils.js` (`OrbitalMath`).
+`constants.js` (`Const`), `math-utils.js` (`OrbitalMath`), and `frames.js`
+(`Frames`) — the Mars-relative escape-state lift into heliocentric
+coordinates (`escR`/`escV`) goes through `Frames.localToHelio`/
+`Frames.bodyHelioState` rather than a local copy; see `ARCHITECTURE.md`,
+"Migration path" step 3.
 **Moving this folder without `Website/Shared/` coming along will break it.**
 
 `math-utils.js` gained two small additions for this tool —

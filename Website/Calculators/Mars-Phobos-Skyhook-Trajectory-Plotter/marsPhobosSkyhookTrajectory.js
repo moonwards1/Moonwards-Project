@@ -38,6 +38,7 @@
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
+import { Frames } from "../../Shared/frames.js";
 import { createCam, updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
 import { createDateBar } from "../../Shared/sim/date-bar.js";
 import {
@@ -265,7 +266,10 @@ import {
 	// elements (Shared/orbit.js) -- both position and velocity directly, no
 	// finite-difference needed (unlike the sister tool's earthHelio, which
 	// had to difference a Meeus geocentric-Sun vector).
-	function marsHelioState(jde) { return O.bodyStateAtJD(GM_S, MARS.orbit, jde); }
+	// Ported to Shared/frames.js (migration step 3, Website/ARCHITECTURE.md) —
+	// this is Mars' heliocentric state, the "R_B(jd)" half of the local<->helio
+	// vector shift, now the one blessed implementation instead of a local copy.
+	function marsHelioState(jde) { return Frames.bodyHelioState("Mars", jde); }
 	// Sun's position (m) relative to Mars at Julian date jde.
 	function sunRelPos(jde) { var s = marsHelioState(jde); return [-s.r[0], -s.r[1], -s.r[2]]; }
 
@@ -815,8 +819,10 @@ import {
 			var vmagNow = Math.hypot(v[0], v[1], v[2]);
 			var E = vmagNow*vmagNow/2 - GM_MARS/rmag;
 			if (boundCap == null && E >= 0 && rmag > cutoff) {
-				var mh = marsHelioState(jde);
-				escR = O.vAdd(mh.r, r); escV = O.vAdd(mh.v, v); escJde = jde;
+				// Lift the Mars-relative escape state into heliocentric coordinates
+				// (Shared/frames.js, the shift r_helio = r_local + R_Mars(jd)).
+				var lifted = Frames.localToHelio("Mars", jde, r, v);
+				escR = lifted.r; escV = lifted.v; escJde = jde;
 				helioEl = O.elementsFromState(GM_S, escR, escV);
 				branch = "sun";
 				break;
@@ -824,8 +830,8 @@ import {
 		}
 		if (!branch) { branch = boundCap != null ? "mars" : "sun"; }
 		if (branch === "sun" && !helioEl) {
-			var mhf = marsHelioState(jd0 + t/86400);
-			escR = O.vAdd(mhf.r, r); escV = O.vAdd(mhf.v, v); escJde = jd0 + t/86400;
+			var liftedFinal = Frames.localToHelio("Mars", jd0 + t/86400, r, v);
+			escR = liftedFinal.r; escV = liftedFinal.v; escJde = jd0 + t/86400;
 			helioEl = O.elementsFromState(GM_S, escR, escV);
 		}
 		if (branch === "sun" && helioEl) {

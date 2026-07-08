@@ -79,6 +79,8 @@ Calculators in `Calculators/` are self-contained ES-module pages that run standa
 
 Technical detail is layered using **[Nutshell](https://ncase.me/nutshell/)**, a library that lets readers expand inline explanations without leaving the page. It should not exceed two levels of nesting. The goal is to also enable Nutshell-style annotations within 3D model viewers — this may require adaptation of the library once we get there. This is the principal means of reducing plain text to a minimum.
 
+Not yet integrated (no vendored file or script tag exists yet — still planning-stage). When the 3D-viewer adaptation work starts, it happens in **[moonwards1/nutshell](https://github.com/moonwards1/nutshell)**, a fork of the upstream `ncase/nutshell` (CC0-licensed, so forking/modifying it is unrestricted). The built `nutshell.js` from that fork then gets vendored into `Shared/` as a plain `<script>` include — the same pattern already used for `Shared/three.min.js`, the repo's one other classic-script exception to the ES-modules convention. Two integration notes for whoever picks this up: Nutshell's default `startOnLoad` behavior only scans the page once, so any content built by dynamically-loaded modules (per `ARCHITECTURE.md`) needs an explicit `Nutshell.start(element)` call on that subtree after it's added to the DOM — Nutshell does not watch for DOM mutations on its own.
+
 ## 3D Models
 
 3D model files are developed separately (outside this folder) in Blender, exported as `.usdz`. Viewers are embedded in relevant sections. The viewer library under consideration is [model-viewer](https://modelviewer.dev). Models are also available for download.

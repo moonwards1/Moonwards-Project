@@ -54,6 +54,8 @@
 
 - Try to enable this in annotations within 3d viewer
 
+- Adaptation for the 3D viewer happens in a fork, **https://github.com/moonwards1/nutshell** (upstream is CC0, so this is unrestricted); the fork's built file then gets vendored into `Website/Shared/` (see `Website/README.md`, "Nutshell")
+
 ### 3D models - Next step
 
 - Models of major infrastructure and equipment built in Blender
