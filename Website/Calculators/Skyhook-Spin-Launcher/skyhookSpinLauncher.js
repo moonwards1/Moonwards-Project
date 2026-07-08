@@ -2,6 +2,8 @@
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
+import { Exchange } from "../../Shared/exchange.js";
+import { PacketTypes } from "../../Shared/exchange-types.js";
 
 function skyhookTool(DOMnode){
 
@@ -100,6 +102,19 @@ skyhookStyle.textContent = `
 const svgNS = "http://www.w3.org/2000/svg";
 let mainContainer = create("div","tetherToolMain",false,DOMnode);
 create("h2",false,"Skyhook",mainContainer);
+
+// Receive banner for a tether-spec packet sent from the Gravity-gradient
+// Skyhook Calculator (or another producer) — see Shared/exchange.js and
+// Website/ARCHITECTURE.md, "Exchange — trading data with the calculators".
+// Hidden until a matching packet is pending/arrives; Apply never fires
+// without the user clicking it.
+let tetherBanner = create("div","#tetherBanner",false,mainContainer,
+	"display:none; background:#eef8ff; border:1px solid #6cf; border-radius:4px; padding:8px 10px; margin-bottom:10px;");
+let tetherBannerText = create("span",false,false,tetherBanner);
+create("br",false,false,tetherBanner);
+let tetherApplyBtn = create("button",false,"Apply",tetherBanner,"margin-right:6px;");
+let tetherDismissBtn = create("button",false,"Dismiss",tetherBanner);
+
 create("span",false,"System",mainContainer);
 let selector = create("select",false,false,mainContainer);
 	selector.name = "system";
@@ -1278,5 +1293,40 @@ var hardReload = function(){
 };
 calc();hardReload();
 selector.oninput = function(){calc();hardReload();}
+
+// Wire the tether-spec receive banner (see its DOM near the top of this
+// function). "Apply" maps the packet's geometry/material onto this tool's
+// own foot/centre/top + material-override fields and recomputes; "Dismiss"
+// just clears it from the mailbox without applying. Either way the packet
+// is consumed by its own id, so a newer send that arrived in the meantime
+// (a fresh id in the same slot) is never mistakenly discarded.
+var showTetherBanner = function(packet){
+	var d = packet.data;
+	var src = packet.source || {};
+	tetherBannerText.innerText = "Tether design from " + (src.tool || "another tool")
+		+ (src.iso ? " (" + src.iso + ")" : "") + ": " + d.body + " — foot "
+		+ (d.footAlt / 1000).toFixed(1) + " km / CoM " + (d.centreAlt / 1000).toFixed(1)
+		+ " km / top " + (d.topAlt / 1000).toFixed(1) + " km.";
+	tetherBanner.style.display = "block";
+
+	tetherApplyBtn.onclick = function(){
+		selector.value = d.body;
+		form.foot.value = d.footAlt / 1000;
+		form.centre.value = d.centreAlt / 1000;
+		form.top.value = d.topAlt / 1000;
+		form.overrideMaterial.checked = true;
+		materialOverride.style.display = "block"; // the checkbox's own oninput toggles this normally, but setting .checked from script doesn't fire that event
+		form.tensileStrength.value = d.material.sigma;
+		form.density.value = d.material.rho;
+		calc(); hardReload();
+		Exchange.consume(packet.id);
+		tetherBanner.style.display = "none";
+	};
+	tetherDismissBtn.onclick = function(){
+		Exchange.consume(packet.id);
+		tetherBanner.style.display = "none";
+	};
+};
+Exchange.accept(["tether-spec"], showTetherBanner, "skyhook-spin-launcher");
 }
 skyhookTool(document.getElementById("insertItHere"));

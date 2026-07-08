@@ -2,6 +2,8 @@
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
+import { Exchange } from "../../Shared/exchange.js";
+import { PacketTypes } from "../../Shared/exchange-types.js";
 
 function skyhookTool(DOMnode){
 
@@ -302,6 +304,33 @@ let tether = {
 
 let updateButton = create("button",false,"Update",mainContainer,"display: block");
 	updateButton.onclick = function(){ calc(); hardReload() };
+
+// Send this design to the Skyhook + Tip Spin-Launcher Calculator (a variant
+// of this same tool) as a tether-spec packet — see Shared/exchange.js and
+// Website/ARCHITECTURE.md, "Exchange — trading data with the calculators".
+let sendTetherButton = create("button",false,"Send tether → Skyhook Spin-Launcher",mainContainer,"display: block; margin-top: 6px;");
+let sendTetherStatus = create("span","label",false,mainContainer);
+sendTetherButton.onclick = function(){
+	calc();
+	var gnum = function(field){ return Number(form[field].value); };
+	var material = form.overrideMaterial.checked
+		? { sigma: gnum("tensileStrength"), rho: gnum("density") }
+		: { sigma: tether.materials[form["material"].value].strength,
+			rho: tether.materials[form["material"].value].density };
+	var packet = PacketTypes.make("tether-spec", {
+		body: selector.options[selector.selectedIndex].value,
+		footAlt: tether.foot, centreAlt: tether.centre, topAlt: tether.top,
+		material: material,
+		period: tether.time, tipSpeed: tether.topVel,
+		taperRatio: { upper: tether.highRatio, lower: tether.lowRatio }
+	}, {
+		tool: "gravity-gradient-skyhooks",
+		label: selector.options[selector.selectedIndex].value + " tether",
+		iso: new Date().toISOString().slice(0, 10)
+	});
+	Exchange.send(packet, { target: "skyhook-spin-launcher" });
+	sendTetherStatus.innerText = "Sent — open the Skyhook Spin-Launcher calculator to apply it.";
+};
 create("p",false,"You can also adjust the tether by dragging the red markers below:",mainContainer);
 let output = create("div","#output",false,mainContainer);
 	let tetherSketchContainer = create("div","container",false,output);

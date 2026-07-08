@@ -105,7 +105,7 @@ standalone calculator — uses one envelope:
 | type               | payload (all SI units)                                                                                    | produced by                                               | consumed by                                     |
 | ------------------ | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------- |
 | `ship-state`       | `r` [m ×3], `v` [m/s ×3], `jd`, `frame`, optional `mass` [kg], `dvUsed` [m/s]                             | skyhook release, spin launcher, transfer leg, marker card | transfer leg, elevator/skyhook catch, aerobrake |
-| `tether-spec`      | body, CoM orbit radius, upper/lower arm lengths, rotation period, tip speed, material (σ, ρ), taper ratio | tether tool, skyhook calculators                          | skyhook modules, spin-launcher calc             |
+| `tether-spec`      | body, foot/centre/top altitudes above the surface, material (σ, ρ); optional: period, tip speed, taper ratio | tether tool, skyhook calculators                          | skyhook modules, spin-launcher calc             |
 | `entry-state`      | body, entry speed, flight-path angle, altitude                                                            | transfer leg / flyby                                      | aerobrake calculator                            |
 | `launch-spec`      | body, site (lat/lon or altitude), exit speed, exit direction                                              | mass driver / spin launcher calcs                         | their sim modules, transfer leg                 |
 | `transfer-summary` | departure `jd`, arrival `jd`, per-burn Δv list, v∞ at each end                                            | transfer leg                                              | comparison tables, elevator/catch calcs         |
@@ -424,6 +424,44 @@ Each step is independently useful; nothing requires a big-bang rewrite.
    buttons** between existing standalone tools (e.g. trajectory plotter →
    aerobrake calculator; tether tool → skyhook plotter). This ships real value
    immediately and validates the packet contract before the shell exists.
+
+   - **Mailbox + payload registry** *(done, 2026-07)*: `Shared/exchange-types.js`
+     (`PacketTypes`) holds the versioned registry from "Packets — the data
+     contract" above (`ship-state`, `tether-spec`, `entry-state`,
+     `launch-spec`, `transfer-summary`) plus `validate`/`make`/`isKnownType`;
+     `Shared/exchange.js` (`Exchange`) is the mailbox — `send`/`accept`/
+     `pending`/`consume`/`linkFor`, same-document delivery plus the
+     `localStorage`+`storage`-event, URL-fragment, and clipboard transports.
+     One pending slot per `(type, target)` pair (newest write wins, per the
+     doc above); each `send()` stamps a fresh id and `consume(id)` removes by
+     that id rather than by slot, so an Apply racing a newer incoming packet
+     can't delete the newer one. `accept(types, cb, target)` adds an explicit
+     `target` beyond the doc's original two-argument sketch — the pending-slot
+     model needs a receiver identity to look up its own slot, and making it
+     optional keeps a page that's the sole receiver of a type simple. The
+     store-manipulation functions (`slotKey`, `putPending`, `getPending`,
+     `getAllPendingByType`, `removePendingById`) and the base64url
+     `encodeFragment`/`decodeFragment` pair are pure and Node-tested.
+   - **First real pairing** *(done, 2026-07)*: Gravity-gradient-skyhooks.js
+     (producer) → Skyhook-Spin-Launcher.js (a variant of the same tool, per
+     its README) trade a `tether-spec`. Both tools share identical field
+     names (`foot`/`centre`/`top`, `tensileStrength`/`density`/`safety`,
+     the `system` body selector), so the Apply mapping is a direct field
+     copy — no new physics needed, unlike an SST-marker→Aerobrake `entry-
+     state` pairing, which would require frame-patching math that doesn't
+     exist yet (deferred to migration step 3). The send button calls
+     `calc()` first, then reads whichever material fields are authoritative
+     (override vs. the selected preset in `tether.materials`) — mirroring
+     logic already in each tool's own `calc()`. Browser-tested end to end
+     (`serve.bat`): caught and fixed a real bug where `Apply` set
+     `form.overrideMaterial.checked = true` from script, which does *not*
+     fire the checkbox's own `oninput` handler, so the custom-material
+     fields stayed hidden despite driving the computation correctly —
+     fixed by toggling `materialOverride.style.display` directly in the
+     Apply handler. `period`/`tipSpeed`/`taperRatio` are sent but unused by
+     Apply, since the receiver recomputes them itself from geometry +
+     material (same as the producer) — they're informational only in this
+     pairing, per their optional status in `exchange-types.js`.
 
 3. **Promote frame patching** into `Shared/` with Node tests.
 
