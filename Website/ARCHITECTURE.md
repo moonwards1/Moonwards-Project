@@ -31,19 +31,60 @@ simulator is mostly a matter of un-fusing those parts once, into three layers.
 
 ### 1. World — the single source of truth
 
-One plain, serializable object holding everything that *defines* the current
-situation:
+One plain, serializable object holding everything that *defines* the mission:
 
-- the ephemeris date `jd`,
+- the ephemeris date `jd` — **one clock, shared by every view**; a pane with
+  its own time would silently be a different mission,
 - the set of active modules and each module's parameters,
-- the **mission profile** (the ordered chain of modules — see below),
-- view preferences that matter to reproducibility (origin body, toggles).
+- the **mission profile** (the ordered chain of modules — see below).
 
 Everything on screen and every number in every readout is **derived** from
 World; nothing else is authoritative. Because World is one JSON-able object, a
 mission profile can be saved, shared, diffed, and A/B-compared for free.
 Modules never mutate World directly — they raise a change through the shell
 (`world.set(...)`), which triggers recomputation (see *Recompute rules*).
+
+Decisions baked in from the start, because retrofitting them is expensive:
+
+- **Stable stage ids.** The profile is a linear list (not a DAG — a list
+  covers the near term and gives the novice-friendly mission-timeline UI),
+  but stages are referenced by a stable per-stage id, never by array index.
+  Save files, undo entries, UI bindings, and diagnostics all key off ids, and
+  ids keep the door open to branching/comparison later without a schema break.
+- **One choke point.** Every mutation goes through `world.set()`. Undo/redo,
+  share links, and saved missions may ship much later, but routing all changes
+  through one door makes them cheap instead of a rework. Continuous gestures
+  (date-bar drags, gizmo drags) produce transient sets coalesced into one undo
+  entry when the gesture ends.
+- **Versioned serialization.** World carries a schema version, like packets
+  do, from day one, so saved missions survive schema evolution.
+- **Always storable.** World may describe a physically infeasible mission — it
+  is never rejected at the data layer. Feasibility is a *diagnostic*, not a
+  validity condition (see *Recompute rules*).
+
+#### World, workspace, ephemeral — the three state tiers
+
+The shell presents multiple simultaneous 3D views — a main window plus
+floating, swappable panes (see *Scale and frames: multiple views*) — which
+splits "state" three ways:
+
+1. **World (the mission)** — as above. The only tier that triggers
+   recomputation, participates in undo, and defines what a shared mission
+   *is*.
+2. **Workspace (the arrangement)** — which views are open, which is main,
+   pane positions/sizes, and *per-view* settings: frame (`"helio"`,
+   `"body:Earth-Moon"`, …), origin/focus body, camera pose, display toggles
+   (SOI shells, labels). Serialized separately from World with its own
+   version number; persisted in `localStorage` so the layout survives reload;
+   optionally attached to a share link ("see what I saw"); never a recompute
+   trigger and never in mission undo.
+3. **Ephemeral** — hover, drag-in-progress, tweens. Never saved.
+
+The membership rule: a value goes in World iff it changes the numbers or is
+needed to reproduce the *meaning* of a shared mission. (An earlier draft of
+this section put "origin body, toggles" in World; with several views each
+having its own origin and toggles, those are workspace state. World got
+slimmer — the mission is the same mission whether one pane is open or five.)
 
 ### 2. Scene kit — reusable view components
 
@@ -64,8 +105,15 @@ file):
 - **readout panes** — the panel-edge-straddling burn readouts.
 
 Each standalone plotter then shrinks to *its* specific physics and wiring, and
-the integrated shell assembles the same components — one scene, one camera, one
-date bar.
+the integrated shell assembles the same components — one date bar, one render
+loop, N views.
+
+**Multi-view caveat.** The kit was extracted from single-canvas tools, so the
+per-frame screen-size logic in `body-renderer.js`, label projection
+(`addLabel`/`updateLabels`), and readout positioning assume one canvas and one
+camera. The shell's multiple views mean each needs a per-view (camera,
+viewport rect) parameter, and labels need clipping to pane bounds. Check each
+kit module's signature for this before the shell hardens around it.
 
 ### 3. Modules — technologies and transfer legs
 
@@ -159,6 +207,21 @@ framework, no async, no caching subtleties. This is the waypoint behaviour the
 plotters already have ("downstream arcs recompute automatically"), generalized
 to whole missions.
 
+### Infeasibility is a diagnostic, not an error
+
+Novices will constantly build impossible missions (a skyhook that can't catch
+at that v∞, an arrival before a departure). The difference between "the tool
+explains what's wrong and how far you got" and "everything goes blank" is the
+whole accessibility story, so:
+
+- A stage's `update()` returns either its output packet **or a structured
+  diagnostic** (stage id, what failed, the offending numbers, and — where
+  cheap to compute — what would fix it).
+- Downstream stages render as *blocked, waiting on stage N*, keeping their
+  parameters and UI intact rather than disappearing.
+- World stores the infeasible profile as readily as a feasible one; saving,
+  sharing, and undoing broken missions all work.
+
 Comparisons ("elevator with vs. without spin launcher", "from Earth vs. from
 Mars") are two serialized profiles differing in one entry, both rendered; a
 comparison table reads each chain's `transfer-summary` packets.
@@ -177,24 +240,38 @@ export default {
   attachesTo: "Ceres",              // body name, or null for transfer legs
   accepts: ["ship-state"],          // upstream packet types it can consume
   emits:   ["ship-state"],          // packet types it produces downstream
+  rendersIn: ["body:Ceres", "helio"], // frames this module draws in
 
-  init(ctx)        {},              // build UI in ctx.panelHost, meshes in ctx.group
+  init(ctx)        {},              // build UI in ctx.panelHost
+  viewAdded(view)  {},              // a view in one of rendersIn's frames
+                                    // opened: build meshes in view.group
+  viewRemoved(view){},              // that view closed: drop references
   activate()       {},              // shown / participating in the profile
   deactivate()     {},              // hidden, state retained
   dispose()        {},              // full teardown
 
   update(world, input) {            // jd or upstream packet changed;
-    return outputPacket;            // recompute, redraw own meshes,
-  }                                 // return the downstream packet (or null)
+    return outputPacket;            // recompute, redraw own meshes, return
+  }                                 // the downstream packet (or null) — or a
+                                    // structured diagnostic if infeasible
+                                    // (see Recompute rules)
 };
 ```
 
-`ctx` provides: `world` (read + `set()`), `group` (a `THREE.Group` the shell
-adds/removes — a module never touches the scene outside it), `panelHost` (a
-sidebar card element, built with `create` from `ui-components.js`), and
-`exchange` (the calculator-trading mailbox, below). Rules: derive everything
-from World and the input packet; no reach-ins to other modules; pure maths goes
-in `Shared/math-utils.js` with a Node test, not inline.
+`ctx` provides: `world` (read + `set()`), `panelHost` (a sidebar card element,
+built with `create` from `ui-components.js`), and `exchange` (the
+calculator-trading mailbox, below). Rendering is **per view**: because panes
+open and close dynamically, a module declares the frames it draws in
+(`rendersIn`) and gets a `viewAdded`/`viewRemoved` call per matching view,
+each carrying that view's own `THREE.Group` — a module never touches a scene
+outside its groups. A technology module typically renders full hardware in
+its body-local frame and only a marker (or nothing) in `"helio"`.
+
+The module UI surface is deliberately minimal — a host element and packets,
+nothing else; the shell owns all layout, so UI redesigns don't ripple into
+modules. Rules: derive everything from World and the input packet; no
+reach-ins to other modules; pure maths goes in `Shared/math-utils.js` with a
+Node test, not inline.
 
 The standalone calculator pages survive as thin wrappers hosting one module
 each — they stay the place to *learn* a technology in depth, while the
@@ -261,20 +338,38 @@ The mailbox's pure parts (envelope validation, base64url encode/decode, the
 pending-slot logic) take plain objects and return plain objects, so they get
 Node tests like the rest of `Shared/`.
 
-## Scale and frames in one scene
+## Scale and frames: multiple views
 
 Phobos' orbit is ~9,400 km across; a mission profile spans multiple AU. One
-scene cannot show both usefully, so the shell generalizes the Mars–Phobos
-plotter's context-view toggle:
+scene cannot show both usefully, so the shell shows **several views at once**
+— a main window plus floating, swappable panes, each rendering one frame:
 
 - a **heliocentric view** (the Solar System Trajectory Plotter's scene) showing
   transfer legs and planet-scale geometry, and
 - **body-local views** (Earth–Moon, Mars–Phobos, Ceres…) where technology
   modules render their hardware to scale.
 
-A module declares its natural frame; the frame-patching maths decides what each
-view draws. The camera transition between views can start as a plain toggle
-(as in the Mars–Phobos plotter) and become a continuous zoom later if wanted.
+A view is a **lens**: a pure function of (World, its workspace entry — frame,
+origin, camera pose, toggles). Nothing authoritative lives in a view. Two
+consequences:
+
+- **Swapping is layout-only.** Promoting a pane to the main window reassigns
+  which view descriptor renders into which screen region — no World change, no
+  recompute, no module involvement. The swap feature lives entirely in the
+  shell's layout code.
+- **Every pane is a peer editor.** A gizmo drag in any pane goes: pane-local
+  raycast → `world.set()` → recompute → *all* views redraw. Cross-view
+  consistency is free. (Small panes can start camera-only if hit-testing in
+  tiny rects proves fiddly — a polish choice, not an architecture one.)
+
+**Rendering: one renderer, one full-window canvas, scissored viewports** (the
+standard Three.js multiple-views technique). Browsers cap WebGL contexts at
+roughly 8–16, so canvas-per-pane is a trap; the shell owns the single render
+loop and walks the view list each frame.
+
+Views are described in workspace state, not World (see the three state tiers
+above). The camera transition when swapping views can start as a plain cut
+and become a continuous zoom later if wanted.
 
 ## Migration path
 
@@ -488,12 +583,59 @@ Each step is independently useful; nothing requires a big-bang rewrite.
    (destination-marker/approach-ring body lookups, unrelated to lifting a
    ship state between frames) were left as-is — out of this step's scope.
 
-4. **Build the shell** (`Website/MissionPlanner/`): world object, one scene,
-   module registry, profile-chain UI. Port the lunar skyhook as the first
-   technology module and the SST compute core as the transfer-leg module; then
-   add endpoints (Ceres elevator, spin launcher, mass driver, aerobrake) one at
-   a time. Rewrap the standalone pages as single-module hosts as each port
-   lands.
+4. **Build the shell** (`Website/MissionPlanner/`), in this order:
+
+   1. **Headless core first** — World + module registry + chain recompute +
+      the diagnostic model, as pure ES modules with Node tests; no DOM, no
+      Three.js. The recompute/blocked semantics get verified before any UI
+      exists.
+
+      *(done, 2026-07)*: `Website/MissionPlanner/core/` — `world.js`
+      (`createWorld`/`deserializeWorld`), `diagnostics.js`
+      (`makeDiagnostic`/`isDiagnostic`), `registry.js` (`createRegistry`),
+      `recompute.js` (`createEngine`), one responsibility per file, with
+      committed `node:test` suites in `core/tests/` (~50 tests; run
+      `node --test Website/MissionPlanner/core/tests/*.test.js`). Everything
+      above held up in implementation — stable never-reused stage ids,
+      always-storable infeasible missions, versioned serialization refusing
+      newer saves politely, diagnostic-blocks-downstream with params intact —
+      with three refinements worth recording. (1) `update(ctx, input)`, not
+      `update(world, input)`: the same module can appear at two stages of one
+      profile (two transfer legs), so each call carries that stage's own
+      params and id — `ctx = { world, jd, stageId, params }`. (2) "Modules
+      never mutate World from update()" is enforced, not just documented: the
+      engine locks the World for the duration of a pass and `world.set()`
+      throws immediately (before mutating) while locked, surfacing as a
+      `module-error` diagnostic. (3) The engine converts its own failure
+      modes into the same diagnostic shape a module authors (codes:
+      `unknown-module`, `missing-input`, `input-type-mismatch`,
+      `module-error`, `bad-output`), so the UI will render both identically —
+      in particular a profile naming a module the registry doesn't have is
+      user data (always storable), not an exception. `world.set()` takes one
+      change record (`{jd}` / `{stage, params}` / `{addStage, before}` /
+      `{removeStage}` / `{moveStage, before}` / `{swapStage, moduleId,
+      params}`) and notifies listeners with the earliest affected chain
+      index, which is exactly the engine's dirty-from index (jd → 0: one
+      clock feeds every stage). "Active modules" needed no separate World
+      field — profile membership is activation, so World stayed at
+      `{ jd, stages }`. See `MissionPlanner/README.md` for the API summary.
+   2. **Mock the mission-profile chain strip early.** It is the one UI
+      element with no precedent in the existing tools (the visible sequence
+      of stages you add to, reorder, swap); everything else already exists
+      in some form in the plotters. Cheap mockups before the scaffold
+      hardens around it.
+   3. **A deliberately plain scaffold UI** — single renderer with scissored
+      views, shared date bar, sidebar cards — hosting the first two modules:
+      the lunar skyhook as the first technology module and the SST compute
+      core as the transfer-leg module. The scaffold is disposable; the World
+      boundary is what makes repeated UI rebuilds safe.
+   4. **The worked-example default.** A fresh load opens a small preset
+      mission in a curated pane arrangement (teaching by example), loaded
+      through the same code path as share links — deciding this early makes
+      it nearly free.
+   5. **Then add endpoints** (Ceres elevator, spin launcher, mass driver,
+      aerobrake) one at a time, rewrapping the standalone pages as
+      single-module hosts as each port lands.
 
 ## Conventions
 

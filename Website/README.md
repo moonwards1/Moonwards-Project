@@ -43,6 +43,10 @@ Website/
 │   ├── skyhook_animation.html
 │   └── skyhook_animation_275.html
 │
+├── MissionPlanner/         # The integrated simulator shell (ARCHITECTURE.md step 4)
+│   └── core/               # Headless mission core: World, registry, diagnostics,
+│                           #   chain-recompute engine + Node tests (no UI yet)
+│
 ├── Shared/                 # ES modules (named exports) used by calculators and sections
 │   │                       #   — canonical description: Shared/README.md
 │   ├── orbit.js            # Planetary-system data (`systems`) + orbit/system classes
