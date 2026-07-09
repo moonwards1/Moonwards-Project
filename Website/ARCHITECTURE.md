@@ -150,13 +150,13 @@ standalone calculator — uses one envelope:
 
 ### Payload type registry (initial)
 
-| type               | payload (all SI units)                                                                                    | produced by                                               | consumed by                                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------- |
-| `ship-state`       | `r` [m ×3], `v` [m/s ×3], `jd`, `frame`, optional `mass` [kg], `dvUsed` [m/s]                             | skyhook release, spin launcher, transfer leg, marker card | transfer leg, elevator/skyhook catch, aerobrake |
+| type               | payload (all SI units)                                                                                       | produced by                                               | consumed by                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- | ----------------------------------------------- |
+| `ship-state`       | `r` [m ×3], `v` [m/s ×3], `jd`, `frame`, optional `mass` [kg], `dvUsed` [m/s]                                | skyhook release, spin launcher, transfer leg, marker card | transfer leg, elevator/skyhook catch, aerobrake |
 | `tether-spec`      | body, foot/centre/top altitudes above the surface, material (σ, ρ); optional: period, tip speed, taper ratio | tether tool, skyhook calculators                          | skyhook modules, spin-launcher calc             |
-| `entry-state`      | body, entry speed, flight-path angle, altitude                                                            | transfer leg / flyby                                      | aerobrake calculator                            |
-| `launch-spec`      | body, site (lat/lon or altitude), exit speed, exit direction                                              | mass driver / spin launcher calcs                         | their sim modules, transfer leg                 |
-| `transfer-summary` | departure `jd`, arrival `jd`, per-burn Δv list, v∞ at each end                                            | transfer leg                                              | comparison tables, elevator/catch calcs         |
+| `entry-state`      | body, entry speed, flight-path angle, altitude                                                               | transfer leg / flyby                                      | aerobrake calculator                            |
+| `launch-spec`      | body, site (lat/lon or altitude), exit speed, exit direction                                                 | mass driver / spin launcher calcs                         | their sim modules, transfer leg                 |
+| `transfer-summary` | departure `jd`, arrival `jd`, per-burn Δv list, v∞ at each end                                               | transfer leg                                              | comparison tables, elevator/catch calcs         |
 
 New types are added to the registry file (`Shared/exchange-types.js`) with a
 version number; receivers ignore fields they don't know and refuse (politely,
@@ -619,20 +619,24 @@ Each step is independently useful; nothing requires a big-bang rewrite.
       clock feeds every stage). "Active modules" needed no separate World
       field — profile membership is activation, so World stayed at
       `{ jd, stages }`. See `MissionPlanner/README.md` for the API summary.
+
    2. **Mock the mission-profile chain strip early.** It is the one UI
       element with no precedent in the existing tools (the visible sequence
       of stages you add to, reorder, swap); everything else already exists
       in some form in the plotters. Cheap mockups before the scaffold
       hardens around it.
+
    3. **A deliberately plain scaffold UI** — single renderer with scissored
       views, shared date bar, sidebar cards — hosting the first two modules:
       the lunar skyhook as the first technology module and the SST compute
       core as the transfer-leg module. The scaffold is disposable; the World
       boundary is what makes repeated UI rebuilds safe.
+
    4. **The worked-example default.** A fresh load opens a small preset
       mission in a curated pane arrangement (teaching by example), loaded
       through the same code path as share links — deciding this early makes
       it nearly free.
+
    5. **Then add endpoints** (Ceres elevator, spin launcher, mass driver,
       aerobrake) one at a time, rewrapping the standalone pages as
       single-module hosts as each port lands.

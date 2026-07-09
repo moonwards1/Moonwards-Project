@@ -2,10 +2,12 @@
 
 This folder is where the standalone calculators compose into one mission
 simulator — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md), "Migration path"
-step 4. **Current status: headless core only (step 4.1).** There is no page,
-no UI, no Three.js here yet; `core/` is pure logic with Node tests, so the
-recompute/blocked semantics were verified before any UI exists (step 4.3, the
-scaffold UI, builds on top of this).
+step 4. **Current status: headless core (step 4.1) + chain-strip mockups
+(step 4.2, under review).** There is no real UI or Three.js here yet; `core/`
+is pure logic with Node tests, so the recompute/blocked semantics were
+verified before any UI exists (step 4.3, the scaffold UI, builds on top of
+this), and `mockups/chain-strip/` holds the disposable step-4.2 layout
+mockups (see its README).
 
 ## core/ — the headless mission core
 

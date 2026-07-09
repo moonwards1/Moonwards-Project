@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chain-strip mockups — Mission Planner (step 4.2)</title>
+<link rel="stylesheet" href="chain-strip.css">
+</head>
+<body>
+<div class="chs-page">
+
+	<h1>Mission-profile chain strip — mockups</h1>
+	<p class="chs-blurb">
+		Migration step 4.2: cheap, clickable mockups of the one UI element with no
+		precedent in the existing tools — the visible sequence of mission stages you
+		add to, reorder, and swap. Three layout variants below, all driven by
+		<strong>one shared fake mission</strong> (the worked example from
+		ARCHITECTURE.md), so a change made in any variant appears in all three.
+		No real physics, no core imports — every number is canned.
+	</p>
+	<p class="chs-blurb chs-cheatsheet">
+		<strong>Try:</strong> click a stage to select it · drag a stage to reorder ·
+		hover a connector for the <span class="chs-kbd">+</span> insert point ·
+		<span class="chs-kbd">⇄</span> swaps the module · <span class="chs-kbd">✕</span> removes ·
+		the failure toggle below shows the diagnostic + blocked-downstream states.
+	</p>
+
+	<div class="chs-controls">
+		<label class="chs-check">
+			<input type="checkbox" id="chs-inject">
+			Inject failure at “Ceres capture”
+		</label>
+		<span class="chs-muted">(the elevator catch downstream then renders as blocked, parameters intact)</span>
+		<button id="chs-reset" class="chs-resetbtn">Reset mission</button>
+	</div>
+
+	<div class="chs-legend">
+		<span><i class="chs-dot" style="background:#4cc38a"></i> ok / feasible</span>
+		<span><i class="chs-dot" style="background:#ff7a5c"></i> diagnostic (infeasible here)</span>
+		<span><i class="chs-dot" style="background:#6b7589"></i> blocked, waiting upstream</span>
+		<span><i class="chs-dot chs-dot-ring"></i> selected</span>
+	</div>
+
+	<!-- ======================= Variant A ======================= -->
+	<section class="chs-variant">
+		<h2>A — horizontal card strip</h2>
+		<p class="chs-blurb">
+			Full cards across the top, under the date bar. The mission reads
+			left-to-right like a timeline and each stage carries its own key numbers,
+			so the whole profile is glanceable without touching the panel. Costs the
+			most vertical space of the three; long missions scroll sideways.
+		</p>
+		<div class="chs-frame">
+			<div class="chs-fake-datebar">Ephemeris date — 2031-04-17 · JD 2463253.5 <span class="chs-fake-sliders">▬▬▬▬▬●▬▬▬▬▬▬</span></div>
+			<div class="chs-strip-a" id="chs-strip-a"></div>
+			<div class="chs-frame-main">
+				<div class="chs-fake-view">3D views — main window + floating panes<br><span>(not part of this mockup)</span></div>
+				<div class="chs-fake-panel"><div id="chs-panel-a"></div></div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ======================= Variant B ======================= -->
+	<section class="chs-variant">
+		<h2>B — vertical list in the sidebar</h2>
+		<p class="chs-blurb">
+			Stages stack in the sidebar, styled like the plotters’ existing waypoint
+			cards, with the selected stage’s panel card directly beneath — chain and
+			parameters share one column and one scroll. The 3D views keep the full
+			window height; the trade is that the mission never reads as a timeline.
+		</p>
+		<div class="chs-frame">
+			<div class="chs-fake-datebar">Ephemeris date — 2031-04-17 · JD 2463253.5 <span class="chs-fake-sliders">▬▬▬▬▬●▬▬▬▬▬▬</span></div>
+			<div class="chs-frame-main chs-frame-tall">
+				<div class="chs-fake-view">3D views — main window + floating panes<br><span>(not part of this mockup)</span></div>
+				<div class="chs-fake-panel chs-fake-panel-b">
+					<h3 class="chs-panel-h">Mission profile</h3>
+					<div id="chs-strip-b"></div>
+					<div class="chs-panel-divider"></div>
+					<div id="chs-panel-b"></div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ======================= Variant C ======================= -->
+	<section class="chs-variant">
+		<h2>C — compact “metro line” strip</h2>
+		<p class="chs-blurb">
+			A thin strip of status-coloured nodes on a line — the chain stays ~55&nbsp;px
+			tall, leaving nearly all vertical space to the views. Numbers, the full
+			diagnostic text, and the destructive actions (swap / remove) live only in
+			the selected stage’s panel card. Least glanceable, most room.
+		</p>
+		<div class="chs-frame">
+			<div class="chs-fake-datebar">Ephemeris date — 2031-04-17 · JD 2463253.5 <span class="chs-fake-sliders">▬▬▬▬▬●▬▬▬▬▬▬</span></div>
+			<div class="chs-strip-c" id="chs-strip-c"></div>
+			<div class="chs-frame-main">
+				<div class="chs-fake-view">3D views — main window + floating panes<br><span>(not part of this mockup)</span></div>
+				<div class="chs-fake-panel"><div id="chs-panel-c"></div></div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ======================= What this is meant to settle ======================= -->
+	<section class="chs-variant">
+		<h2>What these mockups are meant to settle</h2>
+		<ul class="chs-questions">
+			<li><strong>Orientation and placement</strong> — top strip (A, C) vs. sidebar column (B), and how much space the chain deserves relative to the 3D views.</li>
+			<li><strong>Stage density</strong> — should a stage show its numbers in the strip (A, B) or only in the panel (C)?</li>
+			<li><strong>Packet-type pills</strong> — the little “ship-state” tags on the connectors: informative or noise?</li>
+			<li><strong>How failure reads</strong> — toggle the failure and judge: is “diagnostic here, blocked-with-params-kept downstream” obvious in each variant?</li>
+			<li><strong>Where actions live</strong> — add on connectors, swap/remove on cards (A, B) vs. everything in the panel card (C). The panel card always carries them regardless.</li>
+			<li><strong>Reordering feel</strong> — drag a stage in each variant; which is least fiddly?</li>
+		</ul>
+		<p class="chs-blurb">
+			None of this code is meant to survive: the real strip will be rebuilt
+			against <code>MissionPlanner/core</code> in step 4.3 once a direction is
+			picked. Mix-and-match verdicts are welcome (e.g. “B’s cards, but across
+			the top” or “C, but with Δv on the labels”).
+		</p>
+	</section>
+
+</div>
+<script type="module" src="chain-strip.js"></script>
+</body>
+</html>
