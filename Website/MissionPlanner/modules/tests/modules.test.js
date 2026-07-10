@@ -8,15 +8,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createWorld } from "../../core/world.js";
+import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import skyhook, { computeRelease, defaultParams as skyhookDefaults } from "../lunar-skyhook/lunar-skyhook.js";
 import transferLeg, { computeLeg, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
+import { defaultMission } from "../../presets/default-mission.js";
+import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 
-var JD_RELEASE = O.julianDate(2033, 5, 14, 6, 0, 0);
+// The worked example's release epoch (2031-12-20 06:00 UT) — the module
+// defaults are the example's values, so tests pin the same date.
+var JD_RELEASE = O.julianDate(2031, 12, 20, 6, 0, 0);
 
 function makeRegistry() {
 	var reg = createRegistry();
@@ -36,16 +40,32 @@ function makeChain(skyhookParams, legParams) {
 
 // ---- computeRelease (pure physics) ----------------------------------------
 
-test("computeRelease: default geometry escapes the Moon and Earth", function () {
-	var phys = computeRelease(Object.assign({}, skyhookDefaults, { releaseJd: JD_RELEASE }));
+test("computeRelease: the worked-example geometry escapes the Moon and Earth", function () {
+	var phys = computeRelease(skyhookDefaults);   // defaults ARE the example
 	assert.equal(phys.ok, true);
-	// omega * rRel with CoM at 275 km, release at 950 km
-	assert.ok(phys.vRel > 2000 && phys.vRel < 2200, "release speed ~2.1 km/s, got " + phys.vRel);
-	assert.ok(phys.vInfMoon > 700 && phys.vInfMoon < 1000, "lunar v-inf ~0.8 km/s, got " + phys.vInfMoon);
-	assert.ok(phys.vInfEarth > 900 && phys.vInfEarth < 1500, "Earth v-inf ~1.2 km/s, got " + phys.vInfEarth);
-	// The emitted state sits at Earth, moving faster than Earth alone.
-	var earthV = O.vMag(O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Earth").orbit, JD_RELEASE).v);
-	assert.ok(O.vMag(phys.v) !== earthV);
+	// omega * rRel with CoM at 275 km, release from the top at 6000 km
+	assert.ok(phys.vRel > 5900 && phys.vRel < 6100, "release speed ~6.0 km/s, got " + phys.vRel);
+	assert.ok(phys.vInfMoon > 5700 && phys.vInfMoon < 6100, "lunar v-inf ~5.9 km/s, got " + phys.vInfMoon);
+	assert.ok(phys.vInfEarth > 5000 && phys.vInfEarth < 6000, "Earth v-inf ~5.5 km/s, got " + phys.vInfEarth);
+});
+
+test("computeRelease: the release phase aims the escape (2031-12-20 geometry)", function () {
+	// Phase 92 deg on this date points the lunar v-infinity within a few
+	// degrees of Earth's heliocentric prograde; the post-release orbit is
+	// therefore OUTWARD (apoapsis well beyond 1 AU). The same geometry at
+	// phase 272 (opposite tangent) must fall inward instead.
+	var GM_SUN = systems.get("Sun").GM;
+	var aimed = computeRelease(skyhookDefaults);
+	var elAimed = O.elementsFromState(GM_SUN, aimed.r, aimed.v);
+	var AU = 149597870700;
+	assert.ok(elAimed.a * (1 + elAimed.e) / AU > 2.0,
+		"aimed apoapsis > 2 AU, got " + (elAimed.a * (1 + elAimed.e) / AU).toFixed(2));
+
+	var opposite = computeRelease(Object.assign({}, skyhookDefaults, { releasePhaseDeg: 272 }));
+	assert.equal(opposite.ok, true);   // still escapes Earth (5.9 km/s dwarfs the losses)
+	var elOpp = O.elementsFromState(GM_SUN, opposite.r, opposite.v);
+	assert.ok(elOpp.a * (1 - elOpp.e) < elAimed.a * (1 - elAimed.e),
+		"opposite-phase periapsis falls inside the aimed one");
 });
 
 test("computeRelease: a low release point is bound at the Moon, with a fix", function () {
@@ -124,7 +144,7 @@ test("chain: a bound-at-moon skyhook blocks the leg, params intact", function ()
 	assert.equal(r2.blockedOn, c.ids.skyhook);
 	assert.equal(c.world.getStage(c.ids.leg).params.legDays, 480);
 	// fixing the release altitude unblocks the whole chain
-	c.world.set({ stage: c.ids.skyhook, params: { relAlt: 950e3 } });
+	c.world.set({ stage: c.ids.skyhook, params: { relAlt: 6000e3 } });
 	assert.equal(c.engine.resultFor(c.ids.leg).status, "ok");
 });
 
@@ -157,6 +177,33 @@ test("chain: moving the clock recomputes but does not change the mission", funct
 	c.world.set({ jd: JD_RELEASE + 100 });   // the viewing clock, not the release epoch
 	var after = c.engine.resultFor(c.ids.leg).output.data.r;
 	assert.deepEqual(after, before);
+});
+
+// ---- the shipped worked-example preset (step 4.4) ---------------------------
+
+test("preset: deserializes and genuinely rendezvouses (no warnings)", function () {
+	var res = deserializeWorld(defaultMission);
+	assert.equal(res.ok, true, res.reason);
+	var engine = createEngine(res.world, makeRegistry());
+	var stages = res.world.stages();
+	assert.equal(stages.length, 2);
+	var r1 = engine.resultFor(stages[0].id);
+	var r2 = engine.resultFor(stages[1].id);
+	assert.equal(r1.status, "ok");
+	assert.equal(r2.status, "ok");
+	assert.equal(r2.warnings.length, 0, "the example must actually arrive: " +
+		JSON.stringify(r2.warnings.map(function (w) { return w.message; })));
+	// arrival: release + 750 days = 2034-01-08
+	var arr = O.dateFromJulian(r2.output.data.jd);
+	assert.deepEqual([arr.Y, arr.Mo, arr.D], [2034, 1, 8]);
+});
+
+test("preset: survives the share-link fragment round trip", function () {
+	var res = deserializeWorld(defaultMission);
+	var frag = encodeFragment(res.world.serialize());
+	var back = deserializeWorld(decodeFragment(frag));
+	assert.equal(back.ok, true);
+	assert.deepEqual(back.world.serialize(), res.world.serialize());
 });
 
 test("transfer-leg update: converts a body-frame input to helio", function () {

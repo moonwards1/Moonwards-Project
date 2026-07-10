@@ -9,17 +9,29 @@
  *   1. Tether kinematics: the CoM's circular rate omega = sqrt(GM_M/rCom^3);
  *      the release point at radius rRel moves at vRel = omega * rRel.
  *   2. Moon escape: v-infinity leaving the Moon's SOI is the hyperbolic
- *      excess of vRel at rRel (a diagnostic if bound).
- *   3. Earth escape: the ship is assumed released ALIGNED WITH THE MOON'S
- *      GEOCENTRIC MOTION (the best case — the plotter integrates the real
- *      three-body path; this module keeps the analytic idealization), so its
- *      geocentric speed at the Moon's distance is |vMoon| + vInfMoon, and
- *      v-infinity leaving Earth's SOI is the hyperbolic excess of that
- *      (a diagnostic if bound).
+ *      excess of vRel at rRel (a diagnostic if bound). Its DIRECTION is the
+ *      tether-tangential direction at the release phase — the plotter's
+ *      hookDir/prograde convention, phase 0 pointing the tether at ecliptic
+ *      longitude 0, release velocity 90 deg ahead of it — with the Moon's
+ *      ~1.5 deg equatorial tilt and the hyperbola's asymptote deflection
+ *      both ignored. The phase is therefore the AIMING control: it chooses
+ *      where the lunar v-infinity points in the ecliptic plane, exactly as
+ *      it does (with more fidelity) in the Moon-Skyhook plotter.
+ *   3. Earth escape: the geocentric velocity is the vector sum of the
+ *      Moon's geocentric velocity and the lunar v-infinity; the Earth-escape
+ *      v-infinity is the hyperbolic excess of its magnitude at the Moon's
+ *      distance (a diagnostic if bound), along the geocentric velocity
+ *      direction (asymptote deflection again ignored).
  *   4. The emitted ship-state is the standard "v-infinity at the planet"
  *      idealization the transfer-leg compute core itself uses: Earth's
  *      heliocentric state at the release date, plus the Earth-escape
- *      v-infinity along the Moon's geocentric velocity direction.
+ *      v-infinity along that direction.
+ *
+ * What this still cannot capture from the real plotter: the geocentric leg
+ * itself — in particular an Oberth burn at a low-Earth perigee, which is how
+ * a plotted mission cheaply amplifies v-infinity. A departure burn here
+ * applies at the patched heliocentric state, with no Oberth gain, so burn
+ * numbers tuned in the plotters land near, but not on, this model.
  *
  * update() is pure (no DOM, no THREE) so the whole chain is Node-testable;
  * the view layer lives in the optional hooks below it (`init` builds the
@@ -46,11 +58,15 @@ var GM_M = MOON.GM, R_M = MOON.radius;
 var GM_E = EARTH.GM;
 var DAY = 86400;
 
+// Defaults are the worked-example mission's values (Kim's Moon->Ceres 2031
+// design): release from the tether top, phase aimed so the lunar v-infinity
+// leaves near Earth's heliocentric prograde on the release date.
 export var defaultParams = {
 	comAlt: 275e3,       // m — centre-of-mass altitude (sets the orbit + rotation rate)
 	topAlt: 6000e3,      // m — tether top altitude
-	relAlt: 950e3,       // m — release-point altitude along the tether
-	releaseJd: 2463731.75   // 2033-05-14 06:00 UT; the shell's default mission overrides this
+	relAlt: 6000e3,      // m — release-point altitude along the tether
+	releasePhaseDeg: 92, // deg — tether phase at release (the aiming control; see header)
+	releaseJd: 2463220.75   // 2031-12-20 06:00 UT
 };
 
 function isoOf(jd) {
@@ -64,11 +80,14 @@ function isoOf(jd) {
 export function computeRelease(params) {
 	var p = params || {};
 	var comAlt = p.comAlt, topAlt = p.topAlt, relAlt = p.relAlt, releaseJd = p.releaseJd;
+	var phaseDeg = (p.releasePhaseDeg === undefined || p.releasePhaseDeg === null) ? 0 : p.releasePhaseDeg;
 
-	if (!(isFinite(comAlt) && comAlt > 0 && isFinite(topAlt) && isFinite(relAlt) && isFinite(releaseJd))) {
+	if (!(isFinite(comAlt) && comAlt > 0 && isFinite(topAlt) && isFinite(relAlt) &&
+	      isFinite(releaseJd) && isFinite(phaseDeg))) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The skyhook needs finite CoM / top / release altitudes and a release date.",
-			{ values: { comAlt: comAlt, topAlt: topAlt, relAlt: relAlt, releaseJd: releaseJd } }) };
+			"The skyhook needs finite CoM / top / release altitudes, a release phase, and a release date.",
+			{ values: { comAlt: comAlt, topAlt: topAlt, relAlt: relAlt,
+			            releasePhaseDeg: p.releasePhaseDeg, releaseJd: releaseJd } }) };
 	}
 	if (topAlt <= comAlt) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
@@ -103,10 +122,16 @@ export function computeRelease(params) {
 	var ms = LE.moonState(releaseJd);
 	var rMoon = O.vScale(ms.r, 1e3), vMoon = O.vScale(ms.v, 1e3);
 	var moonDist = O.vMag(rMoon);
-	var moonSpeed = O.vMag(vMoon);
 
-	// Best case: released along the Moon's motion, so speeds add directly.
-	var vGeo = moonSpeed + vInfMoon;
+	// The lunar v-infinity leaves along the tether-tangential direction at
+	// the release phase (the plotter's hookDir prograde convention, tilt
+	// ignored): tether points at (cos phi, sin phi, 0), tip moves 90 deg
+	// ahead at (-sin phi, cos phi, 0). The geocentric velocity is the
+	// VECTOR sum — this is the aiming that phase controls.
+	var phi = phaseDeg * Math.PI / 180;
+	var tHat = [-Math.sin(phi), Math.cos(phi), 0];
+	var vGeoVec = O.vAdd(vMoon, O.vScale(tHat, vInfMoon));
+	var vGeo = O.vMag(vGeoVec);
 	var vEscEarth = O.escapeVelocity(GM_E, moonDist);
 	var vInfEarth = O.hyperbolicExcess(vGeo, GM_E, moonDist);
 
@@ -115,17 +140,17 @@ export function computeRelease(params) {
 			"Geocentric speed at the Moon's distance is " + Math.round(vGeo) +
 			" m/s, below Earth escape there (" + Math.round(vEscEarth) +
 			" m/s) — the payload stays bound to Earth.",
-			{ values: { vGeo: vGeo, vEscEarth: vEscEarth, vInfMoon: vInfMoon },
-			  fix: "The skyhook must add at least " + Math.round(vEscEarth - moonSpeed) +
-			       " m/s of lunar v-infinity; raise the release altitude or lower the CoM." }) };
+			{ values: { vGeo: vGeo, vEscEarth: vEscEarth, vInfMoon: vInfMoon,
+			            releasePhaseDeg: phaseDeg },
+			  fix: "Aim closer to the Moon's own direction of motion (release phase), " +
+			       "raise the release altitude, or lower the CoM to spin the tether faster." }) };
 	}
 
 	// Heliocentric departure state: Earth's state plus the escape v-infinity
-	// along the Moon's geocentric velocity direction (asymptote deflection
-	// ignored — see the header comment).
+	// along the geocentric velocity direction (asymptote deflection ignored
+	// — see the header comment).
 	var earth = Frames.bodyHelioState("Earth", releaseJd);
-	var dir = O.vUnit(vMoon);
-	var vHelio = O.vAdd(earth.v, O.vScale(dir, vInfEarth));
+	var vHelio = O.vAdd(earth.v, O.vScale(O.vUnit(vGeoVec), vInfEarth));
 
 	return {
 		ok: true,
@@ -133,7 +158,7 @@ export function computeRelease(params) {
 		rCom: rCom, rRel: rRel, rTop: rTop,
 		vRel: vRel, vEscMoon: vEscMoon, vInfMoon: vInfMoon,
 		vGeo: vGeo, vInfEarth: vInfEarth,
-		releaseJd: releaseJd,
+		releasePhaseDeg: phaseDeg, releaseJd: releaseJd,
 		r: earth.r.slice(), v: vHelio
 	};
 }
@@ -229,6 +254,8 @@ export default {
 			function (v) { setParam("topAlt", v * 1e3); });
 		numRow("release altitude", "km", param("relAlt") / 1e3, 25,
 			function (v) { setParam("relAlt", v * 1e3); });
+		numRow("release phase", "deg", param("releasePhaseDeg"), 1,
+			function (v) { setParam("releasePhaseDeg", v); });
 
 		// Release date (whole days; finer timing waits for comply mode).
 		var row = document.createElement("div"); row.className = "mp-inrow";
@@ -279,12 +306,12 @@ export default {
 		view.group.add(circleLine(rTop, 0x9fb6ff, 0.8));
 		view.group.add(circleLine(rCom, 0xffd24a, 0.8));
 
-		// Tether orientation: rotating at omega, phased so it points at the
-		// release direction (phase 0) at the release date. Drawn in the
-		// ecliptic plane — the Moon's ~1.5 deg equatorial tilt is a visual
-		// nicety the scaffold skips.
+		// Tether orientation: rotating at omega, at the release phase on the
+		// release date. Drawn in the ecliptic plane — the Moon's ~1.5 deg
+		// equatorial tilt is a visual nicety the scaffold skips.
 		var omega = O.angularVelocity(GM_M, R_M + params.comAlt);
-		var phase = omega * (snap.world.jd - params.releaseJd) * DAY;
+		var phase = (params.releasePhaseDeg * Math.PI / 180) +
+			omega * (snap.world.jd - params.releaseJd) * DAY;
 		var dir = new THREE.Vector3(Math.cos(phase), Math.sin(phase), 0);
 		view.group.add(new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints(

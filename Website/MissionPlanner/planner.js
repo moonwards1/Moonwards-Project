@@ -24,13 +24,14 @@
  */
 /* global THREE */
 
-import { createWorld } from "./core/world.js";
+import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
 import { createEngine } from "./core/recompute.js";
+import { defaultMission, defaultWorkspaceMain } from "./presets/default-mission.js";
 import { systems } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { LunarEphemeris } from "../Shared/lunar-ephemeris.js";
-import { Exchange } from "../Shared/exchange.js";
+import { Exchange, encodeFragment, decodeFragment } from "../Shared/exchange.js";
 import { createCam, updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import {
@@ -66,14 +67,29 @@ var registry = createRegistry();
 var loaded = await Promise.all(MODULE_URLS.map(function (u) { return import(u); }));
 loaded.forEach(function (m) { registry.register(m.default); });
 
-// ---- World: the default mission (the curated worked example is step 4.4;
-// this is just a sensible feasible chain) -----------------------------------
-var JD_RELEASE = O.julianDate(2033, 5, 14, 6, 0, 0);
-var world = createWorld({ jd: JD_RELEASE });
-var skyhookStageId = world.set({ addStage: { moduleId: "lunar-skyhook", params: {
-	comAlt: 275e3, topAlt: 6000e3, relAlt: 950e3, releaseJd: JD_RELEASE } } });
-var legStageId = world.set({ addStage: { moduleId: "transfer-leg", params: {
-	burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: "Ceres" } } });
+// ---- World: from a share link if the URL carries one, else the shipped
+// worked-example preset — one code path for both (migration step 4.4). A
+// bad or too-new fragment falls back to the preset WITH a banner, never a
+// blank page (missions are user data; refusals are polite).
+var loadNotice = null;
+
+function worldFromLocation() {
+	var m = /[#&]mission=([^&]+)/.exec(location.hash || "");
+	if (m) {
+		var saved = null;
+		try { saved = decodeFragment(m[1]); } catch (e) { /* not base64url JSON */ }
+		var res = saved ? deserializeWorld(saved) : { ok: false, reason: "the link's mission data is unreadable" };
+		if (res.ok) { return res.world; }
+		loadNotice = "Couldn't load the linked mission (" + res.reason + ") — opened the default mission instead.";
+	}
+	var preset = deserializeWorld(defaultMission);
+	if (!preset.ok) {   // an authoring error in the preset file; fail loud
+		throw new Error("presets/default-mission.js does not deserialize: " + preset.reason);
+	}
+	return preset.world;
+}
+
+var world = worldFromLocation();
 var engine = createEngine(world, registry);
 
 // ---- DOM refs ---------------------------------------------------------------
@@ -262,7 +278,7 @@ frames["body:Earth-Moon"] = buildEarthMoonFrame();
 // =======================================================================
 //  Workspace: which frame is main, camera poses. localStorage, never World.
 // =======================================================================
-var workspace = { version: 1, main: "body:Earth-Moon", cams: {} };
+var workspace = { version: 1, main: defaultWorkspaceMain, cams: {} };
 (function loadWorkspace() {
 	try {
 		var saved = JSON.parse(localStorage.getItem(WS_KEY));
@@ -344,6 +360,28 @@ function swapMain(frameId) {
 phaseBtns["body:Earth-Moon"].addEventListener("click", function () { swapMain("body:Earth-Moon"); });
 phaseBtns["helio"].addEventListener("click", function () { swapMain("helio"); });
 syncPhaseButtons();
+
+// ---- share link: the current World, through the same fragment encoding the
+// load path reads. Copying, not navigating — the URL is the artifact.
+var shareBtn = document.getElementById("mp-share");
+shareBtn.addEventListener("click", function () {
+	var url = location.origin + location.pathname + "#mission=" + encodeFragment(world.serialize());
+	navigator.clipboard.writeText(url).then(function () {
+		shareBtn.textContent = "Copied!";
+		setTimeout(function () { shareBtn.textContent = "Copy mission link"; }, 1600);
+	}, function () {
+		// clipboard blocked: show the link so it can be copied by hand
+		window.prompt("Copy the mission link:", url);
+	});
+});
+
+// Load-failure banner (bad/foreign share link fell back to the preset).
+if (loadNotice) {
+	var banner = document.getElementById("mp-banner");
+	banner.textContent = loadNotice;
+	banner.hidden = false;
+	banner.addEventListener("click", function () { banner.hidden = true; });
+}
 
 // ---- camera controls: bound once, on the main pane; the config follows
 // whichever frame is main (floats are click-to-swap only — the doc's

@@ -6,7 +6,8 @@ step 4, and `MissionPlannerDesign.md` in this folder, Kim's UI design the
 shell follows (phase-based mission tabs, comply mode). **Current status:
 headless core (step 4.1) + phase-layout mockups (step 4.2, direction chosen:
 mockup A, plain phase buttons) + the scaffold UI with the first two modules
-(step 4.3).** `core/` is pure logic with Node tests, so the recompute/blocked
+(step 4.3) + the worked-example preset and share-link load path (step 4.4's
+mechanism half; curation waits for the fuller interface).** `core/` is pure logic with Node tests, so the recompute/blocked
 semantics were verified before any UI existed; `planner.html/css/js` is the
 deliberately-plain, disposable shell over it; `modules/` holds the first two
 mission modules; `mockups/` holds the disposable step-4.2 layout mockups (see
@@ -81,6 +82,26 @@ mission persistence, no undo — those are later steps. Layout/camera state
 ("workspace") lives in `localStorage` (`mw-missionplanner-workspace`), never
 in World; swapping a pane into the main window is layout-only.
 
+### The worked-example preset + share links (step 4.4, mechanism half)
+
+On load, `planner.js` builds its World from `#mission=<base64url JSON>` in
+the URL — decoded with `Shared/exchange.js`'s `encodeFragment`/
+`decodeFragment`, rebuilt with `deserializeWorld` — and falls back to
+`presets/default-mission.js` (a serialized World checked in as plain data)
+when there is no fragment; a bad or too-new fragment gets a dismissible
+banner and the default, never a blank page. The **"Copy mission link"**
+button serializes the current World into the same fragment, so the round
+trip is one code path, as the architecture doc wanted. Fragments are read at
+page load (a share link opens in a new tab); editing the hash of an open
+page does nothing until reload.
+
+The shipped preset is Kim's **Moon → Ceres 2031** design (release
+2031-12-20 06:00, skyhook CoM 275 km / release from the 6000 km top /
+phase 92°, waypoint at day 475), Lambert-tuned to a genuine rendezvous:
+arrival 2034-01-08 (750 days), miss 0.0001 AU, 3.78 km/s relative to Ceres,
+4.87 km/s total burns. Re-curating the example (or its pane arrangement,
+via `defaultWorkspaceMain`) is editing that one file.
+
 ### modules/ — the first two mission modules
 
 Each module is a folder whose script default-exports its descriptor
@@ -88,12 +109,16 @@ Each module is a folder whose script default-exports its descriptor
 
 - **`modules/lunar-skyhook/`** — the first technology module. Gravity-gradient
   lunar skyhook; `update()` runs the patched-conic release chain (tether
-  kinematics → lunar v∞ → aligned-with-the-Moon's-motion geocentric speed →
+  kinematics → lunar v∞ **along the tether-tangential direction at the
+  release phase**, vector-summed with the Moon's geocentric velocity →
   Earth-escape v∞ → heliocentric ship-state at Earth) lifted from the
   Moon-Skyhook plotter's `releaseState()`/`computeReadouts()` math, with real
   module-authored diagnostics (`bound-at-moon`, `bound-at-earth`, each with a
-  cheap computed fix). Emits `ship-state`; release epoch is a stage param
-  (`releaseJd`), not the shared clock.
+  cheap computed fix). The release phase is the *aiming* control, as in the
+  plotter; what the model still can't express is the geocentric leg itself
+  (notably a perigee Oberth burn — see the module header). Emits
+  `ship-state`; release epoch and phase are stage params, not the shared
+  clock.
 - **`modules/transfer-leg/`** — the canonical transfer-leg module: the SST
   `computeTrajectory()` segment chain (departure burn → up to two waypoint
   burns → final coast), input converted to `"helio"` via `Shared/frames.js`.
@@ -126,10 +151,12 @@ Recorded here because they extend the "headless part" contract above:
 mutations/serialization, registry validation, the
 recompute/diagnostic/blocked semantics, and the warnings/events envelope
 (`warnings-events.test.js`, including a comply-mode-shaped chain).
-`modules/tests/modules.test.js` — 11 more exercising the two real modules'
+`modules/tests/modules.test.js` — 14 more exercising the two real modules'
 pure sides, chained through the actual World + registry + engine (release
-physics, blocked-then-fixed recovery, the non-blocking miss warning, frame
-conversion). Run from the repo root:
+physics and phase aiming, blocked-then-fixed recovery, the non-blocking miss
+warning, frame conversion, and the shipped preset itself: it deserializes,
+rendezvouses warning-free, and survives the share-fragment round trip). Run
+from the repo root:
 
 ```
 node --test Website/MissionPlanner/core/tests/*.test.js
@@ -143,9 +170,9 @@ at the copy's root.)
 ## Not here yet
 
 The mission-tab / Ephemeris-tab flow and comply-mode plan freezing from
-`MissionPlannerDesign.md`, the curated worked-example default mission loaded
-through the share-link code path (step 4.4), the remaining endpoint modules
-(Ceres elevator, spin launcher, mass driver, aerobrake — step 4.5, along
-with the marker/targeting and snap-to ports), mission persistence/undo, and
-in-scene editing (waypoint gizmo drags) — see ARCHITECTURE.md for the
-ordering and reasoning.
+`MissionPlannerDesign.md`, the curation half of step 4.4 (what a newcomer
+should see first, once the interface can show it off), the remaining
+endpoint modules (Ceres elevator, spin launcher, mass driver, aerobrake —
+step 4.5, along with the marker/targeting and snap-to ports), mission
+persistence/undo, and in-scene editing (waypoint gizmo drags) — see
+ARCHITECTURE.md for the ordering and reasoning.

@@ -696,6 +696,31 @@ Each step is independently useful; nothing requires a big-bang rewrite.
       through the same code path as share links — deciding this early makes
       it nearly free.
 
+      *(mechanism done, 2026-07-10)*: the load path and the preset are in;
+      the deeper curation waits for the fuller interface. `planner.js` now
+      builds its World from `#mission=<base64url>` (the `Shared/exchange.js`
+      `encodeFragment`/`decodeFragment` pair) via `deserializeWorld`, falling
+      back — with a dismissible banner, never a blank page — to
+      `MissionPlanner/presets/default-mission.js`, a serialized World checked
+      in as data; a "Copy mission link" button emits the same fragment, so
+      the round trip is real. The preset is Kim's Moon→Ceres 2031 design
+      (release 2031-12-20, skyhook CoM 275 km / release from the 6000 km
+      top / phase 92°; waypoint at day 475), fine-tuned by a Lambert
+      re-solve to a genuine rendezvous: arrival 2034-01-08 (750 d), miss
+      0.0001 AU, 3.78 km/s relative to Ceres, 4.87 km/s of burns. Getting
+      there forced a real model upgrade recorded in the lunar-skyhook module:
+      the release's lunar v∞ now leaves along the tether-tangential direction
+      at the RELEASE PHASE, vector-summed with the Moon's geocentric
+      velocity — phase is the aiming control, exactly as in the plotter
+      (Kim's 92° aims within ~2° of Earth's prograde on that date), where
+      the first draft's "aligned with the Moon's motion" best case silently
+      wasted the aim. What the patched-conic still cannot express — an
+      Oberth burn at a low-Earth perigee — is why the tuned burns differ
+      from Kim's plotted ones (1.21 + 3.66 km/s vs 2.85 + 2.61); noted in
+      the module header. Node tests pin the shipped preset itself:
+      deserializes, rendezvouses warning-free, survives the fragment round
+      trip (`modules/tests/modules.test.js`, now 14 tests).
+
    5. **Then add endpoints** (Ceres elevator, spin launcher, mass driver,
       aerobrake) one at a time, rewrapping the standalone pages as
       single-module hosts as each port lands.

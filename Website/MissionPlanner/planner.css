@@ -44,8 +44,14 @@ body {
 .mp-dot.err { background: var(--err); }
 .mp-dot.blocked { background: #5a6478; }
 
-#mp-brand { margin-left: auto; font-size: 13px; color: var(--bright); }
+#mp-brand { margin-left: auto; font-size: 13px; color: var(--bright); display: flex; align-items: center; gap: 12px; }
 #mp-brand .mp-muted { margin-left: 6px; }
+
+#mp-banner {
+	flex: none; padding: 6px 14px; font-size: 12.5px; cursor: pointer;
+	background: #241a20; color: var(--warn);
+	border-bottom: 1px solid #6b5226;
+}
 
 /* ---------- date bar ---------- */
 #mp-datebar {

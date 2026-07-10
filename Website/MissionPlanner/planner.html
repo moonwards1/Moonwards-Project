@@ -19,8 +19,15 @@
 			<button class="mp-phase" id="mp-phase-arr" type="button" disabled
 				title="No arrival module yet — Ceres elevator and friends land in migration step 4.5">Arrival</button>
 			<div id="mp-stage-strip"></div>
-			<div id="mp-brand">Mission Planner <span class="mp-muted">scaffold — step 4.3</span></div>
+			<div id="mp-brand">
+				<button id="mp-share" class="mp-btn" type="button"
+					title="Copy a link that opens this exact mission">Copy mission link</button>
+				Mission Planner <span class="mp-muted">scaffold — steps 4.3–4.4</span>
+			</div>
 		</div>
+
+		<!-- shown only when a #mission= share link failed to load -->
+		<div id="mp-banner" hidden title="Click to dismiss"></div>
 
 		<!-- Ephemeris date bar: the one shared clock -->
 		<div id="mp-datebar">
