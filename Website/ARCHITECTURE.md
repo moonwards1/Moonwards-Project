@@ -661,6 +661,36 @@ Each step is independently useful; nothing requires a big-bang rewrite.
       core as the transfer-leg module. The scaffold is disposable; the World
       boundary is what makes repeated UI rebuilds safe.
 
+      *(done, 2026-07)*: `Website/MissionPlanner/planner.html/css/js` over
+      the headless core, plus `MissionPlanner/modules/lunar-skyhook/` and
+      `modules/transfer-leg/` (folder-per-module, default-exported
+      descriptors, dynamic `import()`), browser-verified end to end
+      (chain computes; a bound-at-the-Moon release shows the diagnostic +
+      fix and blocks the leg with params intact; the default mission's
+      Ceres miss reports through the warnings channel; pane swap, phase
+      buttons, event-click clock-set, and workspace persistence all work;
+      clean console). One renderer, scissored per pane, exactly as "Scale
+      and frames" prescribes; frames so far are `"helio"` (Kepler bodies +
+      rings straight from the step-1 scene kit) and `"body:Earth-Moon"`
+      (plain untextured hero bodies; the plotters' textured ones stay
+      theirs). Floating panes are click-to-swap only — the "small panes can
+      start camera-only" polish note, taken further; per-pane hit-testing
+      can come later. Two contract refinements worth recording (details in
+      `MissionPlanner/README.md`): **update() stays pure** — the sketch
+      above says update() also redraws meshes, but update() must run under
+      Node, so modules instead expose `draw(view, snapshot)` which the
+      shell calls per attached view after each recompute (modules cache
+      draw data per stageId during update()); and **ctx gains
+      `onResult(cb)`** so a module's card refreshes its readouts from its
+      own stage's engine result without reaching into the engine. Views
+      carry `metresPerUnit`, and a technology module's view group is
+      parented at its `attachesTo` body's node — the skyhook rides the
+      Moon for free. The transfer-leg module is the manual-burns segment
+      chain (departure burn → waypoints → coast); snap-to and Lambert
+      targeting port later with the marker card (step 4.5). 11 Node tests
+      chain the two real modules through the actual World+registry+engine
+      (`modules/tests/modules.test.js`).
+
    4. **The worked-example default.** A fresh load opens a small preset
       mission in a curated pane arrangement (teaching by example), loaded
       through the same code path as share links — deciding this early makes

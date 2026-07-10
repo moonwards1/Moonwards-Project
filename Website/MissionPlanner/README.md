@@ -5,10 +5,11 @@ simulator — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md), "Migration path"
 step 4, and `MissionPlannerDesign.md` in this folder, Kim's UI design the
 shell follows (phase-based mission tabs, comply mode). **Current status:
 headless core (step 4.1) + phase-layout mockups (step 4.2, direction chosen:
-mockup A, plain phase buttons).** There is no real UI or Three.js here yet;
-`core/` is pure logic with Node tests, so the recompute/blocked semantics
-were verified before any UI exists (step 4.3, the scaffold UI, builds on top
-of this), and `mockups/` holds the disposable step-4.2 layout mockups (see
+mockup A, plain phase buttons) + the scaffold UI with the first two modules
+(step 4.3).** `core/` is pure logic with Node tests, so the recompute/blocked
+semantics were verified before any UI existed; `planner.html/css/js` is the
+deliberately-plain, disposable shell over it; `modules/` holds the first two
+mission modules; `mockups/` holds the disposable step-4.2 layout mockups (see
 its README; `mockups/chain-strip/` is an earlier, superseded round).
 
 ## core/ — the headless mission core
@@ -59,16 +60,80 @@ every downstream stage, params intact.
 Imports from `../../Shared/` (`exchange-types.js`); this folder breaks if
 moved without `Website/Shared/` coming along.
 
-## Tests
+## The scaffold shell (step 4.3)
+
+`planner.html` + `planner.css` + `planner.js` — view at
+`http://localhost:8000/MissionPlanner/planner.html` via `serve.bat` (or the
+deployed site). One renderer with **scissored views** (a main pane plus
+floating, click-to-swap panes, each rendering one frame — `"helio"` and
+`"body:Earth-Moon"` so far), one **shared date bar** (`Shared/sim/date-bar.js`)
+writing `world.set({jd})`, **phase buttons** per the chosen mockup A
+(Departure ↔ Earth–Moon main, Coast ↔ helio main, Arrival greyed until an
+arrival module exists), a **stage strip** with status dots, an **events bar**
+fed by the envelope's `events` channel (click an event to set the clock), and
+**sidebar cards** — one per stage; the module builds its controls in the card
+body, the shell renders status chips and diagnostics/warnings uniformly
+(engine- and module-authored ones look identical, as the core intends).
+
+The scaffold is **disposable** (the World boundary is what makes rebuilding
+it safe) and deliberately plain: no mission tabs, no Ephemeris-tab flow, no
+mission persistence, no undo — those are later steps. Layout/camera state
+("workspace") lives in `localStorage` (`mw-missionplanner-workspace`), never
+in World; swapping a pane into the main window is layout-only.
+
+### modules/ — the first two mission modules
+
+Each module is a folder whose script default-exports its descriptor
+(dynamic-`import()`ed by the shell), per ARCHITECTURE.md "Module interface":
+
+- **`modules/lunar-skyhook/`** — the first technology module. Gravity-gradient
+  lunar skyhook; `update()` runs the patched-conic release chain (tether
+  kinematics → lunar v∞ → aligned-with-the-Moon's-motion geocentric speed →
+  Earth-escape v∞ → heliocentric ship-state at Earth) lifted from the
+  Moon-Skyhook plotter's `releaseState()`/`computeReadouts()` math, with real
+  module-authored diagnostics (`bound-at-moon`, `bound-at-earth`, each with a
+  cheap computed fix). Emits `ship-state`; release epoch is a stage param
+  (`releaseJd`), not the shared clock.
+- **`modules/transfer-leg/`** — the canonical transfer-leg module: the SST
+  `computeTrajectory()` segment chain (departure burn → up to two waypoint
+  burns → final coast), input converted to `"helio"` via `Shared/frames.js`.
+  A configured destination reports its arrival miss distance through the
+  **warnings** channel (non-blocking) — the scaffold's default mission
+  deliberately misses Ceres so the channel shows live. Snap-to and Lambert
+  targeting stay in the plotter until the marker/targeting port (step 4.5).
+
+### Module-contract refinements the scaffold added
+
+Recorded here because they extend the "headless part" contract above:
+
+- **`update()` stays pure; drawing is a separate `draw(view, snapshot)` hook.**
+  ARCHITECTURE.md's sketch had update() also redrawing meshes, but update()
+  must run under Node; the shell instead calls `draw` after every recompute
+  pass, once per attached view, with `snapshot = { world, stageId, params,
+  result }`. Modules cache what draw needs (samples, physics figures) per
+  stageId during update() — plain data, Node-safe.
+- **`ctx.onResult(cb)`** — init()'s ctx gains a subscription scoped to that
+  stage's engine result, so a card can refresh its readouts without reaching
+  into the engine.
+- **`view.metresPerUnit`** — each view carries its frame's scene scale
+  (AU for `"helio"`, 1000 km for `"body:Earth-Moon"`), so modules draw in
+  scene units without hardcoding a frame's convention.
+- **`attachesTo` parenting** — a module's view group is parented at its
+  `attachesTo` body's node when the frame has that body (the skyhook's group
+  rides the Moon), falling back to the scene root (transfer legs).
 
 `core/tests/*.test.js` — `node:test` suites, 63 tests covering World
 mutations/serialization, registry validation, the
 recompute/diagnostic/blocked semantics, and the warnings/events envelope
-(`warnings-events.test.js`, including a comply-mode-shaped chain). Run from
-the repo root:
+(`warnings-events.test.js`, including a comply-mode-shaped chain).
+`modules/tests/modules.test.js` — 11 more exercising the two real modules'
+pure sides, chained through the actual World + registry + engine (release
+physics, blocked-then-fixed recovery, the non-blocking miss warning, frame
+conversion). Run from the repo root:
 
 ```
 node --test Website/MissionPlanner/core/tests/*.test.js
+node --test Website/MissionPlanner/modules/tests/modules.test.js
 ```
 
 (If copying elsewhere to test, keep the `Website/MissionPlanner/core` +
@@ -77,7 +142,10 @@ at the copy's root.)
 
 ## Not here yet
 
-The mission-profile chain-strip UI (step 4.2 mockups first), the scaffold
-shell with scissored multi-views (4.3), the worked-example default mission
-(4.4), and the technology/transfer-leg modules themselves (4.5) — see
-ARCHITECTURE.md for the ordering and reasoning.
+The mission-tab / Ephemeris-tab flow and comply-mode plan freezing from
+`MissionPlannerDesign.md`, the curated worked-example default mission loaded
+through the share-link code path (step 4.4), the remaining endpoint modules
+(Ceres elevator, spin launcher, mass driver, aerobrake — step 4.5, along
+with the marker/targeting and snap-to ports), mission persistence/undo, and
+in-scene editing (waypoint gizmo drags) — see ARCHITECTURE.md for the
+ordering and reasoning.

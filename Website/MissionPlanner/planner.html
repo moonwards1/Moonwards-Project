@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Mission Planner — scaffold</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="planner.css">
+	<!-- three.min.js is the one remaining classic script (provides the global
+	     THREE); the page script is an ES module and imports the rest itself. -->
+	<script src="../Shared/three.min.js"></script>
+</head>
+<body>
+	<div id="mp-app">
+
+		<!-- Phase buttons (mockup A direction) + per-stage status strip -->
+		<div id="mp-phasebar">
+			<button class="mp-phase" id="mp-phase-dep" type="button">Departure</button>
+			<button class="mp-phase" id="mp-phase-coast" type="button">Coast</button>
+			<button class="mp-phase" id="mp-phase-arr" type="button" disabled
+				title="No arrival module yet — Ceres elevator and friends land in migration step 4.5">Arrival</button>
+			<div id="mp-stage-strip"></div>
+			<div id="mp-brand">Mission Planner <span class="mp-muted">scaffold — step 4.3</span></div>
+		</div>
+
+		<!-- Ephemeris date bar: the one shared clock -->
+		<div id="mp-datebar">
+			<div id="mp-date-head">
+				<span class="mp-date-caption">Ephemeris date</span>
+				<input type="date" id="mp-date-field" min="2030-01-01" max="2130-01-01" value="2033-05-14">
+				<span id="mp-jd" class="mp-muted"></span>
+				<span class="mp-muted">one clock, every view &nbsp;·&nbsp; coarse: 100&nbsp;years, fine: ±6&nbsp;months</span>
+			</div>
+			<div class="mp-slider-line">
+				<span class="mp-slider-end">2030</span>
+				<input type="range" id="mp-date-coarse" min="0" max="36525" step="1" value="0">
+				<span class="mp-slider-end">2130</span>
+			</div>
+			<div class="mp-slider-line">
+				<span class="mp-slider-end mp-fine-end" id="mp-fine-lo"></span>
+				<input type="range" id="mp-date-fine" min="-182.625" max="182.625" step="0.125" value="0">
+				<span class="mp-slider-end mp-fine-end" id="mp-fine-hi"></span>
+			</div>
+		</div>
+
+		<!-- Mission events, from the modules' envelope events -->
+		<div id="mp-eventsbar"></div>
+
+		<div id="mp-main">
+			<!-- One canvas, scissored into the main view + floating panes -->
+			<div id="mp-scene">
+				<div id="mp-pane-main" class="mp-pane">
+					<span class="mp-pane-cap"></span>
+					<div class="mp-hud">
+						<span class="mp-hud-key">drag</span> rotate &nbsp;
+						<span class="mp-hud-key">wheel</span> zoom &nbsp;
+						<span class="mp-hud-key">right-drag</span> pan &nbsp;
+						<span class="mp-hud-key">click a small pane</span> swap it in
+					</div>
+				</div>
+				<div id="mp-floats"></div>
+			</div>
+
+			<!-- Sidebar: one card per mission stage -->
+			<div id="mp-panel"></div>
+		</div>
+
+	</div>
+	<script type="module" src="planner.js"></script>
+</body>
+</html>

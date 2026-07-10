@@ -1,0 +1,176 @@
+// Node tests for the first two mission modules' headless side: the
+// lunar-skyhook technology module and the transfer-leg module, chained
+// through the real World + registry + recompute engine. Run from the repo
+// root:
+//   node --test Website/MissionPlanner/modules/tests/modules.test.js
+// The view hooks (init/draw) are browser-only and not exercised here.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { createWorld } from "../../core/world.js";
+import { createRegistry } from "../../core/registry.js";
+import { createEngine } from "../../core/recompute.js";
+import skyhook, { computeRelease, defaultParams as skyhookDefaults } from "../lunar-skyhook/lunar-skyhook.js";
+import transferLeg, { computeLeg, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
+import { OrbitalMath as O } from "../../../Shared/math-utils.js";
+import { systems } from "../../../Shared/orbit.js";
+
+var JD_RELEASE = O.julianDate(2033, 5, 14, 6, 0, 0);
+
+function makeRegistry() {
+	var reg = createRegistry();
+	reg.register(skyhook);
+	reg.register(transferLeg);
+	return reg;
+}
+
+function makeChain(skyhookParams, legParams) {
+	var world = createWorld({ jd: JD_RELEASE });
+	var ids = {};
+	ids.skyhook = world.set({ addStage: { moduleId: "lunar-skyhook", params: skyhookParams } });
+	ids.leg = world.set({ addStage: { moduleId: "transfer-leg", params: legParams } });
+	var engine = createEngine(world, makeRegistry());
+	return { world: world, engine: engine, ids: ids };
+}
+
+// ---- computeRelease (pure physics) ----------------------------------------
+
+test("computeRelease: default geometry escapes the Moon and Earth", function () {
+	var phys = computeRelease(Object.assign({}, skyhookDefaults, { releaseJd: JD_RELEASE }));
+	assert.equal(phys.ok, true);
+	// omega * rRel with CoM at 275 km, release at 950 km
+	assert.ok(phys.vRel > 2000 && phys.vRel < 2200, "release speed ~2.1 km/s, got " + phys.vRel);
+	assert.ok(phys.vInfMoon > 700 && phys.vInfMoon < 1000, "lunar v-inf ~0.8 km/s, got " + phys.vInfMoon);
+	assert.ok(phys.vInfEarth > 900 && phys.vInfEarth < 1500, "Earth v-inf ~1.2 km/s, got " + phys.vInfEarth);
+	// The emitted state sits at Earth, moving faster than Earth alone.
+	var earthV = O.vMag(O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Earth").orbit, JD_RELEASE).v);
+	assert.ok(O.vMag(phys.v) !== earthV);
+});
+
+test("computeRelease: a low release point is bound at the Moon, with a fix", function () {
+	var phys = computeRelease(Object.assign({}, skyhookDefaults,
+		{ relAlt: 300e3, releaseJd: JD_RELEASE }));
+	assert.equal(phys.ok, false);
+	assert.equal(phys.diagnostic.code, "bound-at-moon");
+	assert.ok(phys.diagnostic.fix.indexOf("km") !== -1);
+});
+
+test("computeRelease: rejects a release point beyond the tether top", function () {
+	var phys = computeRelease(Object.assign({}, skyhookDefaults,
+		{ relAlt: 7000e3, releaseJd: JD_RELEASE }));
+	assert.equal(phys.ok, false);
+	assert.equal(phys.diagnostic.code, "bad-params");
+});
+
+// ---- computeLeg (pure chain) -----------------------------------------------
+
+var HELIO_START = (function () {
+	var e = O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Earth").orbit, JD_RELEASE);
+	return { r: e.r, v: O.vAdd(e.v, O.vScale(O.vUnit(e.v), 1200)), jd: JD_RELEASE, frame: "helio", dvUsed: 0 };
+})();
+
+test("computeLeg: propagates, applies burns, accumulates dv, reports miss", function () {
+	var leg = computeLeg({
+		burn: { pro: 3000, rad: 0, nrm: 0 },
+		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
+		legDays: 480, destination: "Ceres"
+	}, HELIO_START);
+	assert.equal(leg.ok, true);
+	assert.equal(leg.totalDv, 3500);
+	assert.equal(leg.end.jd, JD_RELEASE + 480);
+	assert.ok(leg.samples.length > 200);
+	assert.ok(typeof leg.miss === "number" && leg.miss >= 0);
+	// events: departure burn + waypoint burn + leg end
+	assert.equal(leg.events.length, 3);
+});
+
+test("computeLeg: waypoint outside the leg is a diagnostic", function () {
+	var leg = computeLeg({
+		burn: { pro: 0, rad: 0, nrm: 0 },
+		waypoints: [{ days: 500, burn: { pro: 0, rad: 0, nrm: 0 } }],
+		legDays: 480, destination: ""
+	}, HELIO_START);
+	assert.equal(leg.ok, false);
+	assert.equal(leg.diagnostic.code, "waypoint-outside-leg");
+});
+
+// ---- the chained profile through the engine --------------------------------
+
+test("chain: skyhook release feeds the transfer leg; both ok", function () {
+	var c = makeChain(
+		{ releaseJd: JD_RELEASE },
+		{ burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: "" });
+	var r1 = c.engine.resultFor(c.ids.skyhook);
+	var r2 = c.engine.resultFor(c.ids.leg);
+	assert.equal(r1.status, "ok");
+	assert.equal(r1.output.type, "ship-state");
+	assert.equal(r1.output.data.frame, "helio");
+	assert.equal(r1.events.length, 1);
+	assert.equal(r2.status, "ok");
+	assert.equal(r2.output.data.jd, JD_RELEASE + 480);
+	assert.equal(r2.output.data.dvUsed, 3000);
+});
+
+test("chain: a bound-at-moon skyhook blocks the leg, params intact", function () {
+	var c = makeChain(
+		{ relAlt: 100e3, releaseJd: JD_RELEASE },
+		{ burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: "" });
+	var r1 = c.engine.resultFor(c.ids.skyhook);
+	var r2 = c.engine.resultFor(c.ids.leg);
+	assert.equal(r1.status, "diagnostic");
+	assert.equal(r1.diagnostic.code, "bound-at-moon");
+	assert.equal(r2.status, "blocked");
+	assert.equal(r2.blockedOn, c.ids.skyhook);
+	assert.equal(c.world.getStage(c.ids.leg).params.legDays, 480);
+	// fixing the release altitude unblocks the whole chain
+	c.world.set({ stage: c.ids.skyhook, params: { relAlt: 950e3 } });
+	assert.equal(c.engine.resultFor(c.ids.leg).status, "ok");
+});
+
+test("chain: missing a destination by a lot is a WARNING, not a block", function () {
+	var c = makeChain(
+		{ releaseJd: JD_RELEASE },
+		{ burn: { pro: 1000, rad: 0, nrm: 0 }, waypoints: [], legDays: 200, destination: "Ceres" });
+	var r2 = c.engine.resultFor(c.ids.leg);
+	assert.equal(r2.status, "ok");
+	assert.equal(r2.warnings.length, 1);
+	assert.equal(r2.warnings[0].code, "misses-destination");
+	assert.ok(r2.warnings[0].values.missAU > MISS_WARN_AU);
+	assert.ok(r2.output !== null, "the leg still emits its output while warning");
+});
+
+test("chain: a transfer leg with nothing upstream is missing-input", function () {
+	var world = createWorld({ jd: JD_RELEASE });
+	var id = world.set({ addStage: { moduleId: "transfer-leg", params: {} } });
+	var engine = createEngine(world, makeRegistry());
+	var r = engine.resultFor(id);
+	assert.equal(r.status, "diagnostic");
+	assert.equal(r.diagnostic.code, "missing-input");
+});
+
+test("chain: moving the clock recomputes but does not change the mission", function () {
+	var c = makeChain(
+		{ releaseJd: JD_RELEASE },
+		{ burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: "" });
+	var before = c.engine.resultFor(c.ids.leg).output.data.r.slice();
+	c.world.set({ jd: JD_RELEASE + 100 });   // the viewing clock, not the release epoch
+	var after = c.engine.resultFor(c.ids.leg).output.data.r;
+	assert.deepEqual(after, before);
+});
+
+test("transfer-leg update: converts a body-frame input to helio", function () {
+	// Hand the leg a ship-state expressed relative to Earth; the module must
+	// lift it to helio before propagating.
+	var reg = makeRegistry();
+	var earth = O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Earth").orbit, JD_RELEASE);
+	var local = { r: [3.844e8, 0, 0], v: [0, 1500, 0], jd: JD_RELEASE, frame: "body:Earth" };
+	var input = { kind: "moonwards-packet", type: "ship-state", version: 1, source: {}, data: local };
+	var out = reg.get("transfer-leg").update(
+		{ world: null, jd: JD_RELEASE, stageId: "stg-t", params: { burn: { pro: 0, rad: 0, nrm: 0 }, waypoints: [], legDays: 10, destination: "" } },
+		input);
+	assert.equal(out.packet.data.frame, "helio");
+	// The starting point of the propagation was ~Earth's position + 3.844e8 m.
+	var startR = out.packet.data.r;   // after 10 days it has moved, but stays near 1 AU
+	assert.ok(Math.abs(O.vMag(startR) - O.vMag(earth.r)) < 0.2 * O.vMag(earth.r));
+});
