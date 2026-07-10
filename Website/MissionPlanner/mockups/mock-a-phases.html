@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission Planner mockup A — phase buttons</title>
+<style>
+  :root{
+    --bg:#0b0e14; --pane:#0d111c; --panel:#141a2a; --panel2:#151b2b;
+    --line:#1f2637; --line2:#2a3450;
+    --text:#cfd6e4; --bright:#e8ecf5; --dim:#8a93a8;
+    --acc:#6ab0f3; --ok:#58c48a; --warn:#e0a84a; --err:#e06a5a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.45 system-ui,Segoe UI,sans-serif;
+       display:flex;flex-direction:column;overflow:hidden}
+
+  /* ---------- tab bar ---------- */
+  .tabbar{display:flex;align-items:flex-end;gap:6px;padding:8px 12px 0;
+          background:#0e1220;border-bottom:1px solid var(--line);flex:none}
+  .tab{padding:7px 16px;border-radius:8px 8px 0 0;background:#121728;color:var(--dim);
+       cursor:pointer;border:1px solid var(--line);border-bottom:none;font-size:13px;
+       white-space:nowrap;user-select:none}
+  .tab.active{background:#1b2338;color:var(--bright)}
+  .tab .x{margin-left:9px;color:#5a6478;font-size:12px}
+  .tab-plus{padding:5px 11px;margin-bottom:3px;border-radius:6px;color:var(--dim);cursor:pointer;
+            border:1px dashed var(--line2);font-size:13px}
+  .variant{margin-left:auto;margin-bottom:6px;font-size:11.5px;color:var(--dim);letter-spacing:.5px}
+
+  /* ---------- phase bar ---------- */
+  .phasebar{display:flex;align-items:center;gap:10px;padding:9px 14px 7px;flex:none;
+            background:#0f1322;border-bottom:1px solid var(--line)}
+  .phase-btn{padding:7px 20px;border-radius:8px;background:var(--panel2);border:1px solid var(--line2);
+             color:var(--dim);cursor:pointer;font-size:13.5px;user-select:none;
+             display:flex;align-items:center;gap:8px}
+  .phase-btn.active{background:#22304e;border-color:#3c5788;color:var(--bright)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)}
+  .coredata{margin-left:auto;text-align:right;font-size:12.5px;color:var(--dim);line-height:1.5}
+  .coredata b{color:var(--text);font-weight:600}
+  .clock{color:var(--acc)}
+
+  /* ---------- slider zone ---------- */
+  .sliderzone{flex:none;background:#0e1220;border-bottom:1px solid var(--line);padding:8px 14px 22px}
+  .timeline{display:none;position:relative}
+  .timeline.on{display:block}
+  .tl-cap{font-size:11.5px;color:var(--dim);margin-bottom:5px;display:flex;justify-content:space-between}
+  .track{display:flex;gap:3px;position:relative;height:26px}
+  .seg{border:1px solid var(--line2);background:var(--panel2);border-radius:4px;position:relative;
+       display:flex;align-items:center;justify-content:center;font-size:11px;color:#9aa3b8;
+       overflow:visible;white-space:nowrap}
+  .seg small{position:absolute;top:29px;left:50%;transform:translateX(-50%);
+             font-size:10px;color:#5f6a82;white-space:nowrap}
+  .seg.coast-tick{background:transparent;border:none;border-left:1px solid var(--line2);
+                  border-radius:0;justify-content:flex-start;padding-left:5px;color:#5f6a82}
+  .playhead{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--acc);border-radius:1px}
+  .playhead::after{content:"";position:absolute;top:-4px;left:-3px;border:4px solid transparent;
+                   border-top-color:var(--acc)}
+  .playhead.pinned{background:#3d4c6b}
+  .playhead.pinned::after{border-top-color:#3d4c6b}
+
+  /* ---------- main content ---------- */
+  .content{display:flex;flex:1;min-height:0}
+  .scene{flex:1;position:relative;background:var(--pane);margin:10px 0 10px 10px;
+         border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  svg.mainview{position:absolute;inset:0;width:100%;height:100%;display:none}
+  svg.mainview.on{display:block}
+  .scene-cap{position:absolute;left:12px;top:10px;font-size:12px;color:var(--dim);
+             letter-spacing:.4px;pointer-events:none;z-index:3}
+
+  .floats{position:absolute;right:12px;top:12px;display:none;flex-direction:column;gap:10px;z-index:4}
+  .floats.on{display:flex}
+  .float{width:196px;height:138px;background:#10131d;border:1px solid var(--line2);border-radius:8px;
+         overflow:hidden;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.45);position:relative}
+  .float:hover{border-color:#3c5788}
+  .float .cap{position:absolute;left:8px;top:6px;font-size:10.5px;color:var(--dim);z-index:2}
+  .float svg{position:absolute;inset:0;width:100%;height:100%}
+
+  /* ---------- sidebar ---------- */
+  .sidebar{width:334px;flex:none;overflow-y:auto;padding:10px;display:none;
+           flex-direction:column;gap:10px}
+  .sidebar.on{display:flex}
+  .card{background:var(--panel);border:1px solid #232c44;border-radius:10px;padding:10px 12px;flex:none}
+  .card h3{margin:0 0 8px;font-size:13px;color:var(--bright);letter-spacing:.3px;
+           display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .chip{font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid;font-weight:400}
+  .chip.ok{color:var(--ok);border-color:#2c5a44}
+  .chip.warn{color:var(--warn);border-color:#6b5226}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:2.5px 0;font-size:13px}
+  .row .k{color:var(--dim)} .row .v{text-align:right}
+  .v.ok{color:var(--ok)} .v.warn{color:var(--warn)}
+  .inrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:3px 0;font-size:13px}
+  .inrow label{color:var(--dim)}
+  input[type=number],select{background:#0f1424;border:1px solid var(--line2);color:var(--text);
+        border-radius:6px;padding:4px 7px;font:inherit;font-size:12.5px;width:110px}
+  select{width:100%}
+  .unit{color:#5f6a82;font-size:11.5px;margin-left:4px}
+  .reqgrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:3px 10px;font-size:12.5px;margin:4px 0}
+  .reqgrid .h{color:var(--dim);font-size:11px;letter-spacing:.4px}
+  .assist{background:#1a2030;border-left:3px solid var(--warn);padding:7px 9px;border-radius:0 6px 6px 0;
+          font-size:12.5px;margin-top:8px;line-height:1.5}
+  .assist b{color:var(--warn);font-weight:600}
+  .btnrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .btn{background:#1c2540;border:1px solid #31406a;color:#aecdf3;border-radius:7px;
+       padding:5px 11px;font-size:12px;cursor:pointer}
+  .btn:hover{background:#233054}
+  .btn.big{width:100%;padding:9px;font-size:13.5px;background:#24406b;border-color:#3c5f9b;color:#dceafc}
+  .btn.ghost{background:transparent;border-style:dashed;color:var(--dim)}
+  .cap-note{font-size:11.5px;color:var(--dim);margin-top:6px;line-height:1.45}
+  .plannote{font-size:12px;color:var(--dim);border-top:1px dashed var(--line2);margin-top:8px;
+            padding-top:7px;line-height:1.5}
+
+  /* ---------- bottom note / dialog ---------- */
+  .notebar{flex:none;padding:5px 14px;background:#0e1220;border-top:1px solid var(--line);
+           font-size:11.5px;color:#5f6a82}
+  .dialog-wrap{position:fixed;inset:0;background:rgba(5,8,14,.6);display:none;
+               align-items:center;justify-content:center;z-index:20}
+  .dialog-wrap.on{display:flex}
+  .dialog{background:var(--panel);border:1px solid #31406a;border-radius:12px;padding:18px 20px;width:340px}
+  .dialog h3{margin:0 0 10px;font-size:15px;color:var(--bright)}
+  .dialog input[type=text]{width:100%;background:#0f1424;border:1px solid var(--line2);color:var(--text);
+        border-radius:6px;padding:7px 9px;font:inherit;margin-bottom:12px}
+
+  .view{display:none;flex-direction:column;flex:1;min-height:0}
+  .view.on{display:flex}
+
+  svg text{font-family:system-ui,sans-serif}
+</style>
+</head>
+<body>
+
+<!-- ======================= TAB BAR ======================= -->
+<div class="tabbar">
+  <div class="tab" id="tab-eph" onclick="setTab('eph')">Ephemeris</div>
+  <div class="tab active" id="tab-mission" onclick="setTab('mission')">Luna &rarr; Ceres 2033 <span class="x">&times;</span></div>
+  <div class="tab-plus" title="New missions are started from the Ephemeris tab">+</div>
+  <div class="variant">MOCKUP A &mdash; PHASE BUTTONS &middot; numbers illustrative</div>
+</div>
+
+<!-- ======================= EPHEMERIS VIEW ======================= -->
+<div class="view" id="view-eph">
+  <div class="phasebar">
+    <span style="font-size:13px;color:var(--dim)">Solar-System Trajectory Plotter &mdash; build a flight plan, then promote it to a mission</span>
+    <div class="coredata">system: <b>Solar system</b> <span style="color:#5f6a82">(switchable: Earth&ndash;Moon, Mars&ndash;Phobos)</span></div>
+  </div>
+  <div class="sliderzone">
+    <div class="timeline on">
+      <div class="tl-cap"><span>ephemeris date</span><span>2033-05-14 06:12 UT &middot; JD 2 463 732.8</span></div>
+      <div class="track">
+        <div class="seg coast-tick" style="flex:1">2032</div>
+        <div class="seg coast-tick" style="flex:1">2033</div>
+        <div class="seg coast-tick" style="flex:1">2034</div>
+        <div class="seg coast-tick" style="flex:1">2035</div>
+        <div class="playhead" style="left:38%"></div>
+      </div>
+    </div>
+  </div>
+  <div class="content">
+    <div class="scene">
+      <div class="scene-cap">SOLAR SYSTEM &middot; heliocentric J2000 ecliptic</div>
+      <svg class="mainview on" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+        <circle cx="500" cy="310" r="15" fill="#ffd27a"/>
+        <circle cx="500" cy="310" r="140" fill="none" stroke="#3a4763" stroke-width="1.2"/>
+        <ellipse cx="520" cy="300" rx="300" ry="268" fill="none" stroke="#3a4763" stroke-width="1.2"/>
+        <path d="M376,225 C 470,60 800,120 795,415" fill="none" stroke="#6ab0f3" stroke-width="1.6" stroke-dasharray="7 5"/>
+        <circle cx="376" cy="225" r="7" fill="#3b6ea8"/>
+        <text x="352" y="208" fill="#8a93a8" font-size="12">Earth</text>
+        <circle cx="795" cy="415" r="5" fill="#8d8f96"/>
+        <text x="810" y="412" fill="#8a93a8" font-size="12">Ceres</text>
+        <circle cx="795" cy="415" r="26" fill="none" stroke="#e0a84a" stroke-width="1.4" opacity=".85"/>
+        <path d="M787,407 l16,16 M803,407 l-16,16" stroke="#e06a5a" stroke-width="2"/>
+        <path d="M598,118 l16,7 -16,7 4,-7 z" fill="#e8ecf5"/>
+        <text x="620" y="112" fill="#8a93a8" font-size="12">ship marker</text>
+        <circle cx="700" cy="160" r="4" fill="#e8ecf5"/>
+        <path d="M700,160 l22,-8 M700,160 l-9,-20 M700,160 l14,16" stroke-width="2"
+              stroke="#58c48a" fill="none"/>
+        <text x="712" y="182" fill="#8a93a8" font-size="12">WP-1</text>
+        <text x="796" y="452" fill="#e0a84a" font-size="11">closest-approach rings: inside both</text>
+      </svg>
+    </div>
+    <div class="sidebar on">
+      <div class="card">
+        <h3>Ship marker <span class="chip ok">rendezvous ok</span></h3>
+        <div class="row"><span class="k">departure</span><span class="v">Earth &middot; 2033-05-14 06:12</span></div>
+        <div class="row"><span class="k">destination</span><span class="v">Ceres &middot; 2034-02-02 09:41</span></div>
+        <div class="row"><span class="k">flight time</span><span class="v">264 d</span></div>
+        <div class="row"><span class="k">v&#8734; departure</span><span class="v">3.42 km/s</span></div>
+        <div class="row"><span class="k">v&#8734; arrival</span><span class="v">4.05 km/s</span></div>
+        <div class="row"><span class="k">closest approach</span><span class="v ok">0.0012 AU &mdash; inside ring</span></div>
+        <div class="row"><span class="k">timing offset</span><span class="v ok">6 h &mdash; inside ring</span></div>
+        <div class="btnrow">
+          <button class="btn big" onclick="openDialog()">Start Mission Plan</button>
+        </div>
+        <div class="cap-note">Enabled because the marker sits inside both closest-approach rings
+          (space <b>and</b> time). Otherwise this button is greyed out and says why.</div>
+      </div>
+      <div class="card">
+        <h3>WP-1 &mdash; mid-course burn</h3>
+        <div class="row"><span class="k">epoch</span><span class="v">2033-09-02 11:30</span></div>
+        <div class="row"><span class="k">|&Delta;v|</span><span class="v">0.62 km/s</span></div>
+        <div class="cap-note">Waypoints made before starting a mission are copied into it.</div>
+      </div>
+      <div class="card">
+        <div class="cap-note" style="margin-top:0">Starting a mission <b>copies</b> this flight plan into a new
+        tab and freezes it there as the plan to comply with. This Ephemeris tab stays as it is &mdash; clear the
+        marker and build another plan to start a second mission.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= MISSION VIEW ======================= -->
+<div class="view on" id="view-mission">
+
+  <div class="phasebar">
+    <div class="phase-btn" id="pb-dep" onclick="setPhase('dep')"><span class="dot warn"></span>Departure</div>
+    <div class="phase-btn" id="pb-coast" onclick="setPhase('coast')"><span class="dot ok"></span>Coast</div>
+    <div class="phase-btn" id="pb-arr" onclick="setPhase('arr')"><span class="dot ok"></span>Arrival</div>
+    <div class="coredata">
+      plan (frozen): <b>2033-05-14 &rarr; 2034-02-02</b> &middot; 264 d &middot; v&#8734; <b>3.42 / 4.05</b> km/s<br>
+      shared clock: <span class="clock">2033-06-20 14:02 UT &middot; JD 2 463 769.9</span>
+    </div>
+  </div>
+
+  <div class="sliderzone">
+    <!-- departure: event-scaled -->
+    <div class="timeline ph-dep">
+      <div class="tl-cap"><span>DEPARTURE &mdash; event-scaled (not linear time)</span>
+        <span>clock is past this phase &mdash; playhead pinned at end</span></div>
+      <div class="track">
+        <div class="seg" style="flex:2.2">spin-up &amp; load<small>2033-05-12</small></div>
+        <div class="seg" style="flex:1.4">climb to tip<small>05-13</small></div>
+        <div class="seg" style="flex:1">release<small>05-14 06:12</small></div>
+        <div class="seg" style="flex:1.6">WP-A burn<small>05-15 02:10</small></div>
+        <div class="seg" style="flex:1.8">Earth SOI exit<small>05-19</small></div>
+        <div class="playhead pinned" style="left:calc(100% - 2px)"></div>
+      </div>
+    </div>
+    <!-- coast: date-scaled -->
+    <div class="timeline ph-coast">
+      <div class="tl-cap"><span>COAST &mdash; date-scaled, departure &rarr; arrival</span>
+        <span>playhead = the one shared clock</span></div>
+      <div class="track">
+        <div class="seg coast-tick" style="flex:1">2033-06</div>
+        <div class="seg coast-tick" style="flex:1">2033-08</div>
+        <div class="seg coast-tick" style="flex:1">2033-10</div>
+        <div class="seg coast-tick" style="flex:1">2033-12</div>
+        <div class="seg coast-tick" style="flex:1">2034-02</div>
+        <div class="playhead" style="left:14%"></div>
+      </div>
+    </div>
+    <!-- arrival: event-scaled -->
+    <div class="timeline ph-arr">
+      <div class="tl-cap"><span>ARRIVAL &mdash; event-scaled (not linear time)</span>
+        <span>clock is before this phase &mdash; playhead pinned at start</span></div>
+      <div class="track">
+        <div class="seg" style="flex:1.6">Ceres SOI entry<small>2034-01-24</small></div>
+        <div class="seg" style="flex:1.4">WP-B braking<small>01-28</small></div>
+        <div class="seg" style="flex:1">elevator catch<small>02-02 09:41</small></div>
+        <div class="seg" style="flex:1.8">ride down &amp; offload<small>02-03</small></div>
+        <div class="playhead pinned" style="left:0"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="scene">
+      <div class="scene-cap" id="scene-cap">EARTH&ndash;MOON SYSTEM &middot; departure</div>
+
+      <!-- ===== main view: DEPARTURE (Earth–Moon) ===== -->
+      <svg class="mainview ph-dep" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+        <circle cx="300" cy="310" r="290" fill="none" stroke="#232c44" stroke-width="1" stroke-dasharray="3 6"/>
+        <text x="185" y="595" fill="#3d4c6b" font-size="11">Earth SOI</text>
+        <circle cx="300" cy="310" r="46" fill="#3b6ea8"/>
+        <text x="282" y="380" fill="#8a93a8" font-size="13">Earth</text>
+        <circle cx="300" cy="310" r="210" fill="none" stroke="#3a4763" stroke-width="1.2"/>
+        <circle cx="490" cy="221" r="14" fill="#9aa3b5"/>
+        <text x="480" y="258" fill="#8a93a8" font-size="12">Moon</text>
+        <line x1="455" y1="190" x2="525" y2="254" stroke="#e0a84a" stroke-width="3"/>
+        <circle cx="455" cy="190" r="4" fill="#e0a84a"/><circle cx="525" cy="254" r="4" fill="#e0a84a"/>
+        <text x="530" y="270" fill="#e0a84a" font-size="12">lunar skyhook</text>
+        <path d="M455,190 C 560,80 760,60 960,110" fill="none" stroke="#6ab0f3" stroke-width="1.8" stroke-dasharray="7 5"/>
+        <text x="430" y="168" fill="#6ab0f3" font-size="12">release</text>
+        <circle cx="700" cy="72" r="4" fill="#e8ecf5"/>
+        <path d="M700,72 l24,-4 M700,72 l-7,-21 M700,72 l13,17" stroke="#58c48a" stroke-width="2" fill="none"/>
+        <text x="712" y="98" fill="#8a93a8" font-size="12">WP-A escape burn</text>
+        <text x="850" y="140" fill="#8a93a8" font-size="12">to heliocentric &rarr;</text>
+      </svg>
+
+      <!-- ===== main view: COAST (solar system) ===== -->
+      <svg class="mainview ph-coast" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+        <circle cx="500" cy="310" r="15" fill="#ffd27a"/>
+        <text x="488" y="345" fill="#8a93a8" font-size="12">Sun</text>
+        <circle cx="500" cy="310" r="140" fill="none" stroke="#3a4763" stroke-width="1.2"/>
+        <ellipse cx="520" cy="300" rx="300" ry="268" fill="none" stroke="#3a4763" stroke-width="1.2"/>
+        <path d="M376,225 C 470,60 800,120 795,415" fill="none" stroke="#6ab0f3" stroke-width="1.8" stroke-dasharray="7 5"/>
+        <circle cx="376" cy="225" r="7" fill="#3b6ea8"/>
+        <text x="322" y="212" fill="#8a93a8" font-size="12">Earth &middot; dep</text>
+        <circle cx="795" cy="415" r="5" fill="#8d8f96"/>
+        <text x="810" y="412" fill="#8a93a8" font-size="12">Ceres &middot; arr</text>
+        <circle cx="795" cy="415" r="26" fill="none" stroke="#e0a84a" stroke-width="1.4" opacity=".85"/>
+        <path d="M787,407 l16,16 M803,407 l-16,16" stroke="#e06a5a" stroke-width="2"/>
+        <path d="M520,105 l16,4 -14,10 2,-7 z" fill="#e8ecf5"/>
+        <text x="500" y="92" fill="#8a93a8" font-size="12">ship &middot; 2033-06-20</text>
+        <circle cx="700" cy="160" r="4" fill="#e8ecf5"/>
+        <path d="M700,160 l22,-8 M700,160 l-9,-20 M700,160 l14,16" stroke="#58c48a" stroke-width="2" fill="none"/>
+        <text x="712" y="182" fill="#8a93a8" font-size="12">WP-1 &middot; 0.62 km/s</text>
+      </svg>
+
+      <!-- ===== main view: ARRIVAL (Ceres) ===== -->
+      <svg class="mainview ph-arr" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+        <circle cx="430" cy="340" r="90" fill="#7e8189"/>
+        <circle cx="430" cy="340" r="90" fill="none" stroke="#565a63" stroke-width="1"/>
+        <text x="408" y="460" fill="#8a93a8" font-size="13">Ceres</text>
+        <line x1="430" y1="250" x2="430" y2="80" stroke="#e0a84a" stroke-width="2.5"/>
+        <rect x="418" y="62" width="24" height="16" fill="#e0a84a"/>
+        <text x="450" y="76" fill="#e0a84a" font-size="12">counterweight</text>
+        <circle cx="430" cy="150" r="5" fill="#e8ecf5"/>
+        <text x="446" y="146" fill="#8a93a8" font-size="12">catch point &middot; 2034-02-02 09:41</text>
+        <path d="M960,140 C 760,155 560,118 434,148" fill="none" stroke="#6ab0f3" stroke-width="1.8" stroke-dasharray="7 5"/>
+        <text x="800" y="122" fill="#6ab0f3" font-size="12">approach &middot; v&#8734; 4.05 km/s</text>
+        <circle cx="640" cy="128" r="4" fill="#e8ecf5"/>
+        <path d="M640,128 l-24,4" stroke="#e06a5a" stroke-width="2.5"/>
+        <text x="612" y="112" fill="#8a93a8" font-size="12">WP-B braking &middot; 310 m/s retro</text>
+        <text x="332" y="180" fill="#e0a84a" font-size="12">space elevator</text>
+      </svg>
+
+      <!-- ===== floating panes per phase (the other two systems) ===== -->
+      <div class="floats ph-dep">
+        <div class="float" onclick="setPhase('coast')" title="Make main view">
+          <span class="cap">COAST &middot; solar system</span>
+          <svg viewBox="0 0 200 140"><circle cx="100" cy="70" r="5" fill="#ffd27a"/>
+            <circle cx="100" cy="70" r="32" fill="none" stroke="#3a4763"/>
+            <ellipse cx="104" cy="68" rx="66" ry="59" fill="none" stroke="#3a4763"/>
+            <path d="M73,51 C 94,14 166,28 165,93" fill="none" stroke="#6ab0f3" stroke-dasharray="4 3"/></svg>
+        </div>
+        <div class="float" onclick="setPhase('arr')" title="Make main view">
+          <span class="cap">ARRIVAL &middot; Ceres</span>
+          <svg viewBox="0 0 200 140"><circle cx="86" cy="82" r="26" fill="#7e8189"/>
+            <line x1="86" y1="56" x2="86" y2="18" stroke="#e0a84a" stroke-width="1.6"/>
+            <path d="M196,34 C 150,40 110,30 88,38" fill="none" stroke="#6ab0f3" stroke-dasharray="4 3"/></svg>
+        </div>
+      </div>
+      <div class="floats ph-coast">
+        <div class="float" onclick="setPhase('dep')" title="Make main view">
+          <span class="cap">DEPARTURE &middot; Earth&ndash;Moon</span>
+          <svg viewBox="0 0 200 140"><circle cx="70" cy="74" r="13" fill="#3b6ea8"/>
+            <circle cx="70" cy="74" r="46" fill="none" stroke="#3a4763"/>
+            <circle cx="111" cy="53" r="5" fill="#9aa3b5"/>
+            <line x1="103" y1="45" x2="119" y2="61" stroke="#e0a84a" stroke-width="1.6"/>
+            <path d="M103,45 C 130,16 168,14 198,26" fill="none" stroke="#6ab0f3" stroke-dasharray="4 3"/></svg>
+        </div>
+        <div class="float" onclick="setPhase('arr')" title="Make main view">
+          <span class="cap">ARRIVAL &middot; Ceres</span>
+          <svg viewBox="0 0 200 140"><circle cx="86" cy="82" r="26" fill="#7e8189"/>
+            <line x1="86" y1="56" x2="86" y2="18" stroke="#e0a84a" stroke-width="1.6"/>
+            <path d="M196,34 C 150,40 110,30 88,38" fill="none" stroke="#6ab0f3" stroke-dasharray="4 3"/></svg>
+        </div>
+      </div>
+      <div class="floats ph-arr">
+        <div class="float" onclick="setPhase('coast')" title="Make main view">
+          <span class="cap">COAST &middot; solar system</span>
+          <svg viewBox="0 0 200 140"><circle cx="100" cy="70" r="5" fill="#ffd27a"/>
+            <circle cx="100" cy="70" r="32" fill="none" stroke="#3a4763"/>
+            <ellipse cx="104" cy="68" rx="66" ry="59" fill="none" stroke="#3a4763"/>
+            <path d="M73,51 C 94,14 166,28 165,93" fill="none" stroke="#6ab0f3" stroke-dasharray="4 3"/></svg>
+        </div>
+        <div class="float" onclick="setPhase('dep')" title="Make main view">
+          <span class="cap">DEPARTURE &middot; Earth&ndash;Moon</span>
+          <svg viewBox="0 0 200 140"><circle cx="70" cy="74" r="13" fill="#3b6ea8"/>
+            <circle cx="70" cy="74" r="46" fill="none" stroke="#3a4763"/>
+            <circle cx="111" cy="53" r="5" fill="#9aa3b5"/>
+            <line x1="103" y1="45" x2="119" y2="61" stroke="#e0a84a" stroke-width="1.6"/>
+            <path d="M103,45 C 130,16 168,14 198,26" fill="none" stroke="#6ab0f3" stroke-dasharray="4 3"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== sidebar: DEPARTURE ===== -->
+    <div class="sidebar ph-dep">
+      <div class="card">
+        <h3>Departure technology</h3>
+        <select>
+          <option selected>Lunar skyhook</option>
+          <option>Moon-L1 space elevator (future)</option>
+          <option>Lunar mass driver (future)</option>
+          <option>Chemical rocket, direct</option>
+        </select>
+        <div class="btnrow"><button class="btn ghost">Load configuration from a calculator&hellip;</button></div>
+      </div>
+
+      <div class="card">
+        <h3>Lunar skyhook <span class="chip warn">short 0.24 km/s</span></h3>
+        <div class="inrow"><label>tip speed</label><span><input type="number" value="2.40" step="0.05"><span class="unit">km/s</span></span></div>
+        <div class="inrow"><label>release altitude</label><span><input type="number" value="1200"><span class="unit">km</span></span></div>
+        <div class="inrow"><label>tether length</label><span><input type="number" value="2600"><span class="unit">km</span></span></div>
+        <div class="inrow"><label>release phase</label><span><input type="number" value="14.2" step="0.1"><span class="unit">deg</span></span></div>
+        <div class="btnrow">
+          <button class="btn">Send tether-spec &rarr; Tether tool</button>
+          <button class="btn">Open in Skyhook calculator &#8599;</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Plan compliance <span class="chip warn">not met</span></h3>
+        <div class="reqgrid">
+          <span class="h"></span><span class="h">PLAN REQUIRES</span><span class="h">TECH DELIVERS</span>
+          <span class="k" style="color:var(--dim)">v&#8734; out</span><span>3.42 km/s</span><span class="v warn">3.18 km/s</span>
+          <span class="k" style="color:var(--dim)">epoch</span><span>05-14 06:12</span><span class="v ok">05-14 06:12</span>
+          <span class="k" style="color:var(--dim)">asymptote</span><span>RA 214.6&deg;</span><span class="v ok">214.1&deg;</span>
+        </div>
+        <div class="assist"><b>Short by 0.24 km/s.</b> Raise tip speed to &asymp;2.61 km/s,
+          or increase the WP-A escape burn by &ge;240 m/s.
+          <div class="btnrow"><button class="btn">Set tip speed 2.61</button><button class="btn">Adjust WP-A</button></div>
+        </div>
+        <div class="plannote">Comply mode: the frozen flight plan is authoritative. The tech and its burns
+          are compared against it &mdash; the plan never re-solves to follow the tech.</div>
+      </div>
+
+      <div class="card">
+        <h3>Waypoint burns in this system <span class="chip ok">1 of 2</span></h3>
+        <div class="row"><span class="k">WP-A &middot; prograde</span><span class="v">120 m/s &middot; 2033-05-15 02:10</span></div>
+        <div class="btnrow"><button class="btn ghost">+ add burn (1 left)</button></div>
+      </div>
+    </div>
+
+    <!-- ===== sidebar: COAST ===== -->
+    <div class="sidebar ph-coast">
+      <div class="card">
+        <h3>Flight plan <span class="chip ok">frozen at mission start</span></h3>
+        <div class="row"><span class="k">depart Earth</span><span class="v">2033-05-14 06:12</span></div>
+        <div class="row"><span class="k">arrive Ceres</span><span class="v">2034-02-02 09:41</span></div>
+        <div class="row"><span class="k">flight time</span><span class="v">264 d</span></div>
+        <div class="row"><span class="k">v&#8734; out / in</span><span class="v">3.42 / 4.05 km/s</span></div>
+        <div class="row"><span class="k">plan &Delta;v (WP-1)</span><span class="v">0.62 km/s</span></div>
+        <div class="plannote">Departure and Arrival must comply with these endpoint states.
+          A &ldquo;re-solve plan from actual release state&rdquo; action may come later.</div>
+      </div>
+
+      <div class="card">
+        <h3>WP-1 &mdash; mid-course burn <span class="chip ok">rendezvous ok</span></h3>
+        <div class="row"><span class="k">epoch</span><span class="v">2033-09-02 11:30</span></div>
+        <div class="row"><span class="k">prograde</span><span class="v">+0.48 km/s</span></div>
+        <div class="row"><span class="k">radial</span><span class="v">&minus;0.21 km/s</span></div>
+        <div class="row"><span class="k">normal</span><span class="v">+0.33 km/s</span></div>
+        <div class="row"><span class="k">|&Delta;v|</span><span class="v">0.62 km/s</span></div>
+        <div class="cap-note">Drag WP-1 along the trajectory, or edit here. Changes must still reach the
+          rendezvous point on time &mdash; deviations show as diagnostics, not silent re-plans.</div>
+        <div class="btnrow"><button class="btn">Send ship-state &rarr; calculator</button></div>
+      </div>
+
+      <div class="card">
+        <h3>Rendezvous check <span class="chip ok">inside both rings</span></h3>
+        <div class="row"><span class="k">closest approach</span><span class="v ok">0.0012 AU</span></div>
+        <div class="row"><span class="k">timing offset</span><span class="v ok">6 h</span></div>
+      </div>
+
+      <div class="card">
+        <div class="btnrow" style="margin-top:0"><button class="btn ghost">+ add waypoint (1 of 2 free)</button></div>
+      </div>
+    </div>
+
+    <!-- ===== sidebar: ARRIVAL ===== -->
+    <div class="sidebar ph-arr">
+      <div class="card">
+        <h3>Arrival technology</h3>
+        <select>
+          <option selected>Ceres space elevator</option>
+          <option>Tip spin launcher catch (future)</option>
+          <option>Aerobrake &mdash; n/a at Ceres</option>
+          <option>Chemical capture burn</option>
+        </select>
+        <div class="btnrow"><button class="btn ghost">Load configuration from a calculator&hellip;</button></div>
+      </div>
+
+      <div class="card">
+        <h3>Ceres space elevator <span class="chip ok">configured</span></h3>
+        <div class="inrow"><label>counterweight alt.</label><span><input type="number" value="61000"><span class="unit">km</span></span></div>
+        <div class="inrow"><label>catch point alt.</label><span><input type="number" value="38000"><span class="unit">km</span></span></div>
+        <div class="inrow"><label>max catch speed</label><span><input type="number" value="4.50" step="0.05"><span class="unit">km/s</span></span></div>
+        <div class="btnrow">
+          <button class="btn">Send tether-spec &rarr; Tether tool</button>
+          <button class="btn">Open in Elevator calculator &#8599;</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Plan compliance <span class="chip ok">met</span></h3>
+        <div class="reqgrid">
+          <span class="h"></span><span class="h">PLAN REQUIRES</span><span class="h">TECH ACCEPTS</span>
+          <span style="color:var(--dim)">v&#8734; in</span><span>4.05 km/s</span><span class="v ok">&le; 4.50 km/s</span>
+          <span style="color:var(--dim)">epoch</span><span>02-02 09:41</span><span class="v ok">catch window ok</span>
+          <span style="color:var(--dim)">margin</span><span></span><span class="v ok">+0.45 km/s</span>
+        </div>
+        <div class="plannote">After WP-B braking (310 m/s retro), approach speed at the catch point is
+          within the elevator&rsquo;s capability.</div>
+      </div>
+
+      <div class="card">
+        <h3>Braking waypoints <span class="chip ok">1 of 2</span></h3>
+        <div class="row"><span class="k">WP-B &middot; retrograde</span><span class="v">310 m/s &middot; 2034-01-28</span></div>
+        <div class="btnrow"><button class="btn ghost">+ add burn (1 left)</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notebar">Mockup A &mdash; static, all numbers illustrative. Click the phase buttons, the tabs, or a
+floating pane (promotes it to the main view). One shared clock drives every slider.</div>
+
+<!-- name-your-mission dialog -->
+<div class="dialog-wrap" id="dialog">
+  <div class="dialog">
+    <h3>Name this mission</h3>
+    <input type="text" value="Luna &rarr; Ceres 2033" id="mname">
+    <div class="btnrow" style="justify-content:flex-end">
+      <button class="btn" onclick="closeDialog()">Cancel</button>
+      <button class="btn big" style="width:auto" onclick="createMission()">Create mission tab</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function setPhase(p){
+    document.querySelectorAll('[class*="ph-"]').forEach(function(el){
+      el.classList.toggle('on', el.classList.contains('ph-' + p));
+    });
+    ['dep','coast','arr'].forEach(function(k){
+      document.getElementById('pb-' + k).classList.toggle('active', k === p);
+    });
+    var caps = { dep:'EARTH–MOON SYSTEM · departure',
+                 coast:'SOLAR SYSTEM · coast · heliocentric J2000 ecliptic',
+                 arr:'CERES · arrival' };
+    document.getElementById('scene-cap').textContent = caps[p];
+  }
+  function setTab(t){
+    document.getElementById('view-eph').classList.toggle('on', t === 'eph');
+    document.getElementById('view-mission').classList.toggle('on', t === 'mission');
+    document.getElementById('tab-eph').classList.toggle('active', t === 'eph');
+    document.getElementById('tab-mission').classList.toggle('active', t === 'mission');
+  }
+  function openDialog(){ document.getElementById('dialog').classList.add('on'); }
+  function closeDialog(){ document.getElementById('dialog').classList.remove('on'); }
+  function createMission(){ closeDialog(); setTab('mission'); }
+  setPhase('dep');
+</script>
+</body>
+</html>

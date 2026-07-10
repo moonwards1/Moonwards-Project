@@ -23,10 +23,39 @@
 //
 // Per-stage results, keyed by stable stage id (never array index):
 //
-//   { stageId, moduleId, status, output, diagnostic, blockedOn }
+//   { stageId, moduleId, status, output, diagnostic, blockedOn,
+//     warnings, events }
 //     status "ok"          — update returned a packet (in `output`) or null
 //     status "diagnostic"  — this stage failed; see `diagnostic`
 //     status "blocked"     — an upstream stage failed; its id is `blockedOn`
+//     warnings             — non-blocking diagnostics (see envelope below);
+//                            always an array, empty unless status is "ok"
+//     events               — [{ jd, label, ... }] timeline entries for this
+//                            stage (the phase sliders and the stage strip
+//                            read these); always an array, empty unless
+//                            status is "ok"
+//
+// ENVELOPE RETURNS (added 2026-07-09 for the Mission Planner's comply mode —
+// see MissionPlannerDesign.md). Besides a bare packet / null / diagnostic,
+// update() may return an envelope:
+//
+//   { packet, warnings, events }
+//     packet   — anything a bare return accepts: a packet, null, or a
+//                diagnostic (a diagnostic still fails the stage hard, and
+//                the envelope's warnings/events are then dropped)
+//     warnings — optional array of diagnostic-shaped objects (diagnostics.js)
+//                that do NOT block downstream. This is how comply mode
+//                reports "the tech misses the frozen plan by X" while the
+//                plan's own numbers keep flowing: the frozen-plan stage
+//                emits its output regardless and carries the mismatch here.
+//                stageId is filled with the authoring stage's id when absent
+//                (set it explicitly to point the warning at another stage).
+//     events   — optional array of { jd, label } (extra fields pass through
+//                untouched); jd must be a finite number, label a non-empty
+//                string
+//
+// An object with no `kind` and none of those three keys is not an envelope —
+// it falls through to packet validation and becomes "bad-output", as before.
 //
 // The engine also converts its own failure modes into the same diagnostic
 // shape, so the UI renders them identically. Engine codes:
@@ -41,7 +70,8 @@
 //   "module-error"         — update() threw; the message is preserved
 //   "bad-output"           — update() returned something that is neither a
 //                            valid packet of a declared `emits` type, nor
-//                            null, nor a diagnostic
+//                            null, nor a diagnostic, nor a valid envelope
+//                            (malformed `warnings` or `events` land here too)
 //
 // DEVIATION from the ARCHITECTURE.md sketch (`update(world, input)`): the
 // engine calls `update(ctx, input)` with ctx = { world, jd, stageId,
@@ -63,6 +93,53 @@ export function createEngine(world, registry) {
 
 	function engineDiag(stageId, code, message, values, fix) {
 		return makeDiagnostic(code, message, { stageId: stageId, values: values, fix: fix });
+	}
+
+	// An envelope is a plain object with no `kind` marker carrying at least
+	// one of the three envelope keys (see header comment). Packets and
+	// diagnostics both have `kind`, so they can never be mistaken for one.
+	function isEnvelope(x) {
+		return !!x && typeof x === "object" && x.kind === undefined && (
+			Object.prototype.hasOwnProperty.call(x, "packet") ||
+			Object.prototype.hasOwnProperty.call(x, "warnings") ||
+			Object.prototype.hasOwnProperty.call(x, "events")
+		);
+	}
+
+	// Check an envelope's `warnings`. Returns { ok, list } or { ok: false,
+	// reason }. Fills each warning's stageId with `stageId` when absent —
+	// same policy as hard diagnostics; an explicitly-set stageId (a warning
+	// pointed at another stage) is left alone.
+	function checkWarnings(warnings, stageId) {
+		if (!Array.isArray(warnings)) {
+			return { ok: false, reason: "warnings must be an array" };
+		}
+		for (var i = 0; i < warnings.length; i++) {
+			if (!isDiagnostic(warnings[i])) {
+				return { ok: false, reason: "warnings[" + i + "] is not a diagnostic (use makeDiagnostic)" };
+			}
+			if (warnings[i].stageId === null || warnings[i].stageId === undefined) {
+				warnings[i].stageId = stageId;
+			}
+		}
+		return { ok: true, list: warnings.slice() };
+	}
+
+	// Check an envelope's `events`: [{ jd, label, ... }], jd finite, label a
+	// non-empty string. Extra fields pass through untouched.
+	function checkEvents(events) {
+		if (!Array.isArray(events)) {
+			return { ok: false, reason: "events must be an array" };
+		}
+		for (var i = 0; i < events.length; i++) {
+			var e = events[i];
+			if (!e || typeof e !== "object" ||
+				typeof e.jd !== "number" || !isFinite(e.jd) ||
+				typeof e.label !== "string" || e.label === "") {
+				return { ok: false, reason: "events[" + i + "] needs a finite numeric jd and a non-empty label" };
+			}
+		}
+		return { ok: true, list: events.slice() };
 	}
 
 	// One synchronous pass from chain index `from` downstream. Results for
@@ -94,7 +171,9 @@ export function createEngine(world, registry) {
 					status: "ok",
 					output: null,
 					diagnostic: null,
-					blockedOn: null
+					blockedOn: null,
+					warnings: [],
+					events: []
 				};
 
 				if (blockedOn !== null) {
@@ -136,24 +215,59 @@ export function createEngine(world, registry) {
 							{});
 					}
 					if (!diag) {
-						if (isDiagnostic(out)) {
-							if (out.stageId === null || out.stageId === undefined) { out.stageId = stage.id; }
-							diag = out;
-						} else if (out === null || out === undefined) {
+						// Unwrap an envelope; a bare return is its own payload.
+						// (Explicit undefined initializers: `var` hoists to
+						// function scope, so without them a previous loop
+						// iteration's envelope would leak into this stage.)
+						var payload = out, envWarnings = undefined, envEvents = undefined;
+						if (isEnvelope(out)) {
+							payload = (out.packet === undefined) ? null : out.packet;
+							envWarnings = out.warnings;
+							envEvents = out.events;
+						}
+
+						if (isDiagnostic(payload)) {
+							if (payload.stageId === null || payload.stageId === undefined) { payload.stageId = stage.id; }
+							diag = payload;
+						} else if (payload === null || payload === undefined) {
 							res.output = null;
 						} else {
-							var v = PacketTypes.validate(out);
+							var v = PacketTypes.validate(payload);
 							if (!v.ok) {
 								diag = engineDiag(stage.id, "bad-output",
 									"'" + desc.title + "' returned an invalid packet: " + v.reason,
 									{});
-							} else if (desc.emits.indexOf(out.type) === -1) {
+							} else if (desc.emits.indexOf(payload.type) === -1) {
 								diag = engineDiag(stage.id, "bad-output",
-									"'" + desc.title + "' returned a '" + out.type +
+									"'" + desc.title + "' returned a '" + payload.type +
 									"' packet but declares emits: [" + desc.emits.join(", ") + "].",
-									{ got: out.type, emits: desc.emits.slice() });
+									{ got: payload.type, emits: desc.emits.slice() });
 							} else {
-								res.output = out;
+								res.output = payload;
+							}
+						}
+
+						// warnings/events attach only when the stage didn't
+						// fail hard (a diagnostic drops them — see header).
+						if (!diag && envWarnings !== undefined && envWarnings !== null) {
+							var wc = checkWarnings(envWarnings, stage.id);
+							if (!wc.ok) {
+								diag = engineDiag(stage.id, "bad-output",
+									"'" + desc.title + "' returned malformed warnings: " + wc.reason, {});
+								res.output = null;
+							} else {
+								res.warnings = wc.list;
+							}
+						}
+						if (!diag && envEvents !== undefined && envEvents !== null) {
+							var ec = checkEvents(envEvents);
+							if (!ec.ok) {
+								diag = engineDiag(stage.id, "bad-output",
+									"'" + desc.title + "' returned malformed events: " + ec.reason, {});
+								res.output = null;
+								res.warnings = [];
+							} else {
+								res.events = ec.list;
 							}
 						}
 					}

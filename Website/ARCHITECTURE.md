@@ -594,7 +594,7 @@ Each step is independently useful; nothing requires a big-bang rewrite.
       (`createWorld`/`deserializeWorld`), `diagnostics.js`
       (`makeDiagnostic`/`isDiagnostic`), `registry.js` (`createRegistry`),
       `recompute.js` (`createEngine`), one responsibility per file, with
-      committed `node:test` suites in `core/tests/` (~50 tests; run
+      committed `node:test` suites in `core/tests/` (63 tests; run
       `node --test Website/MissionPlanner/core/tests/*.test.js`). Everything
       above held up in implementation — stable never-reused stage ids,
       always-storable infeasible missions, versioned serialization refusing
@@ -620,11 +620,40 @@ Each step is independently useful; nothing requires a big-bang rewrite.
       field — profile membership is activation, so World stayed at
       `{ jd, stages }`. See `MissionPlanner/README.md` for the API summary.
 
+      *(extended 2026-07)*: a fourth refinement, driven by
+      `MissionPlanner/MissionPlannerDesign.md` choosing **comply mode** (the
+      flight plan frozen at mission creation is authoritative; departure and
+      arrival tech are diagnosed against it, never silently re-planned): a
+      compliance miss must not blank the rest of the mission, but the
+      original contract had no non-blocking channel — any diagnostic blocked
+      everything downstream. `update()` may now return an envelope
+      `{ packet, warnings, events }`: `warnings` are diagnostic-shaped and
+      **non-blocking** (the frozen-plan stage keeps emitting its output while
+      carrying "tech misses the plan by X"; stageId filled with the authoring
+      stage when absent, settable to aim at another stage), `events` are
+      `{ jd, label }` timeline entries for the phase sliders and stage strip.
+      Malformed extras are authoring errors (`bad-output`); bare returns and
+      all hard-failure blocking semantics are unchanged (63 tests, including
+      a comply-mode-shaped chain in `core/tests/warnings-events.test.js`).
+
    2. **Mock the mission-profile chain strip early.** It is the one UI
       element with no precedent in the existing tools (the visible sequence
       of stages you add to, reorder, swap); everything else already exists
       in some form in the plotters. Cheap mockups before the scaffold
       hardens around it.
+
+      *(done, 2026-07 — twice)*: a first round of generic chain-strip
+      mockups (`MissionPlanner/mockups/chain-strip/`, three variants) was
+      superseded by Kim's `MissionPlanner/MissionPlannerDesign.md` — the
+      phase-based mission-tab design (Ephemeris tab → gated "Start Mission
+      Plan" → per-mission tabs with Departure/Coast/Arrival, comply mode,
+      one shared clock with event-scaled phase sliders). A second round
+      mocked that design (`mockups/mock-a-phases.html` and
+      `mock-b-chain-strip.html`); Kim picked **A, plain phase buttons**
+      (phases remain a grouping/view of the underlying stage list, which is
+      unchanged in World). The freed top-strip space may show per-stage
+      info — the envelope's `events`/`warnings` are the intended data
+      source.
 
    3. **A deliberately plain scaffold UI** — single renderer with scissored
       views, shared date bar, sidebar cards — hosting the first two modules:
