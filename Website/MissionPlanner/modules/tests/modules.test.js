@@ -68,6 +68,31 @@ test("computeRelease: the release phase aims the escape (2031-12-20 geometry)", 
 		"opposite-phase periapsis falls inside the aimed one");
 });
 
+test("computeRelease: emits ordered flight milestones (release < Moon SOI < Earth SOI)", function () {
+	var phys = computeRelease(skyhookDefaults);
+	assert.ok(phys.moonSoiJd != null && phys.earthSoiJd != null, "both SOI milestones resolve");
+	assert.ok(phys.moonSoiJd > phys.releaseJd, "Moon SOI exit is after release");
+	assert.ok(phys.earthSoiJd > phys.moonSoiJd, "Earth SOI exit is after Moon SOI exit");
+	// Moon SOI exit within a few hours; Earth SOI exit within a few days —
+	// the very different gaps are what make the departure slider event-scaled.
+	var hMoon = (phys.moonSoiJd - phys.releaseJd) * 24;
+	var dEarth = phys.earthSoiJd - phys.releaseJd;
+	assert.ok(hMoon > 1 && hMoon < 12, "Moon SOI exit ~hours, got " + hMoon.toFixed(2) + " h");
+	assert.ok(dEarth > 0.5 && dEarth < 10, "Earth SOI exit ~days, got " + dEarth.toFixed(2) + " d");
+});
+
+test("coastTimeToRadius: dt lands the propagated state on the target radius", function () {
+	// Hyperbolic escape: coast from a 7000 km periapsis out to 66 000 km.
+	var GM = systems.get("Moon").GM;
+	var dt = O.coastTimeToRadius(GM, [7.0e6, 0, 0], [0, 6000, 0], 66.0e6);
+	assert.ok(dt > 0);
+	assert.ok(Math.abs(O.vMag(O.propagateState(GM, [7.0e6, 0, 0], [0, 6000, 0], dt).r) - 66.0e6) < 1, "lands at 66 000 km");
+	// A radius inside periapsis, or beyond a bound orbit's apoapsis, is unreachable.
+	var GMe = systems.get("Earth").GM;
+	assert.equal(O.coastTimeToRadius(GMe, [7.0e6, 0, 0], [0, 9000, 0], 5.0e6), null);
+	assert.equal(O.coastTimeToRadius(GMe, [7.0e6, 0, 0], [0, 9000, 0], 1.0e9), null);
+});
+
 test("computeRelease: a low release point is bound at the Moon, with a fix", function () {
 	var phys = computeRelease(Object.assign({}, skyhookDefaults,
 		{ relAlt: 300e3, releaseJd: JD_RELEASE }));
@@ -126,7 +151,8 @@ test("chain: skyhook release feeds the transfer leg; both ok", function () {
 	assert.equal(r1.status, "ok");
 	assert.equal(r1.output.type, "ship-state");
 	assert.equal(r1.output.data.frame, "helio");
-	assert.equal(r1.events.length, 1);
+	// release + the two flight milestones (Moon-SOI exit, Earth-SOI exit)
+	assert.equal(r1.events.length, 3);
 	assert.equal(r2.status, "ok");
 	assert.equal(r2.output.data.jd, JD_RELEASE + 480);
 	assert.equal(r2.output.data.dvUsed, 3000);

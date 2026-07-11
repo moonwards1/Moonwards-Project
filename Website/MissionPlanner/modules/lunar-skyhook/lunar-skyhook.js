@@ -54,8 +54,10 @@ var O = OrbitalMath;
 var LE = LunarEphemeris;
 var MOON = systems.get("Moon");
 var EARTH = systems.get("Earth");
+var SUN = systems.get("Sun");
 var GM_M = MOON.GM, R_M = MOON.radius;
 var GM_E = EARTH.GM;
+var GM_SUN = SUN.GM;
 var DAY = 86400;
 
 // Defaults are the worked-example mission's values (Kim's Moon->Ceres 2031
@@ -129,6 +131,7 @@ export function computeRelease(params) {
 	// ahead at (-sin phi, cos phi, 0). The geocentric velocity is the
 	// VECTOR sum — this is the aiming that phase controls.
 	var phi = phaseDeg * Math.PI / 180;
+	var rHat = [Math.cos(phi), Math.sin(phi), 0];
 	var tHat = [-Math.sin(phi), Math.cos(phi), 0];
 	var vGeoVec = O.vAdd(vMoon, O.vScale(tHat, vInfMoon));
 	var vGeo = O.vMag(vGeoVec);
@@ -152,6 +155,23 @@ export function computeRelease(params) {
 	var earth = Frames.bodyHelioState("Earth", releaseJd);
 	var vHelio = O.vAdd(earth.v, O.vScale(O.vUnit(vGeoVec), vInfEarth));
 
+	// Timeline milestones for the departure slider (task B3): the ship's
+	// flight from release out to the heliocentric hand-off, as two-body coast
+	// times along the SAME patched conics this release physics already uses —
+	// so they add no fidelity the header doesn't already claim, they only date
+	// the leg. (1) Moon-SOI exit: coast on the lunar escape hyperbola (the
+	// release point is its periapsis: velocity is purely tangential) out to
+	// the Moon's Laplace SOI. (2) Earth-SOI exit → heliocentric: coast on the
+	// geocentric escape hyperbola from the Moon's distance out to Earth's SOI.
+	// Either is null (and simply omitted downstream) if the geometry doesn't
+	// yield an outbound crossing.
+	var soiMoon = O.sphereOfInfluence(moonDist, GM_M, GM_E);
+	var dtMoonSoi = O.coastTimeToRadius(GM_M, O.vScale(rHat, rRel), O.vScale(tHat, vRel), soiMoon);
+	var soiEarth = O.sphereOfInfluence(O.vMag(earth.r), GM_E, GM_SUN);
+	var dtEarthSoi = O.coastTimeToRadius(GM_E, rMoon, vGeoVec, soiEarth);
+	var moonSoiJd = (dtMoonSoi != null && isFinite(dtMoonSoi)) ? releaseJd + dtMoonSoi / DAY : null;
+	var earthSoiJd = (dtEarthSoi != null && isFinite(dtEarthSoi)) ? releaseJd + dtEarthSoi / DAY : null;
+
 	return {
 		ok: true,
 		omega: omega, period: 2 * Math.PI / omega,
@@ -159,6 +179,7 @@ export function computeRelease(params) {
 		vRel: vRel, vEscMoon: vEscMoon, vInfMoon: vInfMoon,
 		vGeo: vGeo, vInfEarth: vInfEarth,
 		releasePhaseDeg: phaseDeg, releaseJd: releaseJd,
+		moonSoiJd: moonSoiJd, earthSoiJd: earthSoiJd,
 		r: earth.r.slice(), v: vHelio
 	};
 }
@@ -221,11 +242,15 @@ export default {
 			{ r: phys.r, v: phys.v, jd: phys.releaseJd, frame: "helio", dvUsed: 0 },
 			{ tool: "mission-planner/lunar-skyhook", label: "skyhook release", iso: isoOf(phys.releaseJd) });
 
-		return {
-			packet: packet,
-			events: [{ jd: phys.releaseJd,
-			           label: "Skyhook release — v∞ " + (phys.vInfEarth / 1000).toFixed(2) + " km/s" }]
-		};
+		// release + the flight milestones (task B3): the ship's flight, which
+		// is what the departure slider scales. Nothing before release (still on
+		// the tether) or after the heliocentric hand-off belongs on it.
+		var events = [{ jd: phys.releaseJd,
+		                label: "Skyhook release — v∞ " + (phys.vInfEarth / 1000).toFixed(2) + " km/s" }];
+		if (phys.moonSoiJd) { events.push({ jd: phys.moonSoiJd, label: "Moon SOI exit" }); }
+		if (phys.earthSoiJd) { events.push({ jd: phys.earthSoiJd, label: "Earth SOI exit → heliocentric" }); }
+
+		return { packet: packet, events: events };
 	},
 
 	// ---- view layer (shell-called; never runs in Node) --------------------

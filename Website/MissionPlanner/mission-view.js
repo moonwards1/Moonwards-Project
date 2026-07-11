@@ -47,7 +47,7 @@ import {
 	addLabel as brAddLabel, updateLabels as brUpdateLabels, updateScales as brUpdateScales
 } from "../Shared/sim/body-renderer.js";
 import { createKeplerOrbitRing, makeArcLine } from "../Shared/sim/orbit-rings.js";
-import { createCoastSlider } from "./ui/phase-slider.js";
+import { createCoastSlider, createEventSlider } from "./ui/phase-slider.js";
 
 var O = OrbitalMath;
 var LE = LunarEphemeris;
@@ -339,6 +339,7 @@ export function createMissionView(opts) {
 	var eventsBarEl = q(".mp-eventsbar");
 	var dateBarEl = q(".mp-datebar");
 	var coastSliderEl = q(".mp-coast-slider");
+	var depSliderEl = q(".mp-dep-slider");
 	var phaseBtns = {
 		departure: q(".mp-phase-dep"),
 		coast: q(".mp-phase-coast"),
@@ -435,13 +436,15 @@ export function createMissionView(opts) {
 		if (from) { setPaneFrame(from, old); }
 	}
 
-	// Which slider shows (task B2): the Coast phase gets the date-scaled
-	// coast slider; Departure/Arrival still share the full-span date bar
-	// until their event-scaled sliders land (B3).
+	// Which slider shows: Coast gets the date-scaled coast slider (B2),
+	// Departure gets the event-scaled flight slider (B3); each phase's slider
+	// IS its clock control, so the raw Ephemeris date bar only shows for
+	// Arrival, which has no slider yet (until H2).
 	function syncSliderVisibility() {
-		var isCoast = workspace.phase === "coast";
-		dateBarEl.style.display = isCoast ? "none" : "";
-		coastSliderEl.style.display = isCoast ? "" : "none";
+		var phase = workspace.phase;
+		depSliderEl.style.display = phase === "departure" ? "" : "none";
+		coastSliderEl.style.display = phase === "coast" ? "" : "none";
+		dateBarEl.style.display = (phase === "departure" || phase === "coast") ? "none" : "";
 	}
 
 	// The phase selectors (task B1): drives the main-pane frame (via
@@ -712,6 +715,13 @@ export function createMissionView(opts) {
 
 	// ---- the mission's clock: Shared/sim/date-bar.js writing world.set({jd})
 	function shortDate(jd) { var d = O.dateFromJulian(jd); return MONTHS[d.Mo - 1] + " " + d.Y; }
+	// A finer stamp for the departure slider — its flight milestones can sit
+	// hours apart, which a month-year label would collapse.
+	function pad2(n) { return String(n).padStart(2, "0"); }
+	function shortStamp(jd) {
+		var d = O.dateFromJulian(jd);
+		return MONTHS[d.Mo - 1] + " " + d.D + " " + pad2(d.h) + ":" + pad2(d.m);
+	}
 
 	var dateState = { jd: world.jd, baseDays: 0 };
 	var dateBar = createDateBar(dateState, {
@@ -753,6 +763,27 @@ export function createMissionView(opts) {
 		return { start: Math.min.apply(null, jds), end: Math.max.apply(null, jds) };
 	}
 
+	// ---- the Departure slider (task B3): event-scaled, spanning the ship's
+	// flight from release to the heliocentric hand-off. Its segments are the
+	// gaps between the departure-phase stages' flight events.
+	var depSlider = createEventSlider(depSliderEl, {
+		onSetJd: setClock, stamp: shortStamp,
+		caption: "DEPARTURE — event-scaled (not linear time)"
+	});
+
+	// The departure phase's flight events (release, Moon-SOI exit, Earth-SOI
+	// exit today). Flight-only: an event flagged flight:false (pre-launch or
+	// post-catch — none emitted yet) is kept off the flight scrubber.
+	function departureEvents(results) {
+		var evs = [];
+		results.forEach(function (res) {
+			var stage = world.getStage(res.stageId);
+			if (!stage || stagePhaseOf(stage) !== "departure") { return; }
+			res.events.forEach(function (e) { if (e.flight !== false) { evs.push(e); } });
+		});
+		return evs;
+	}
+
 	// ---- wiring: World changes place bodies; engine passes redraw the rest --
 	function placeAll(jd) {
 		Object.keys(frames).forEach(function (id) { frames[id].place(jd); });
@@ -772,6 +803,7 @@ export function createMissionView(opts) {
 		renderEventsBar(results);
 		var span = coastSpan(results);
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
+		depSlider.update(departureEvents(results), world.jd);
 	});
 
 	// ---- rendering: the shared renderer, scissored per pane, only while this
@@ -830,6 +862,7 @@ export function createMissionView(opts) {
 		engine.dispose();
 		unbindCamera();
 		coastSlider.dispose();
+		depSlider.dispose();
 		active = false;
 		// The canvas is the shell's; hand it back rather than letting root
 		// removal orphan it (the caller normally show()s another view first).

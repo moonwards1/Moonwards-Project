@@ -555,6 +555,28 @@ export const OrbitalMath = {
 			return Math.sqrt(GM / Math.pow(Math.abs(a), 3));
 		},
 
+		// Time (s) to coast OUTWARD from the current state to the first future
+		// crossing of radius rTarget, along the two-body conic through
+		// (rvec, vvec). Works for ellipse and hyperbola. Uses the outbound
+		// (0..pi) true-anomaly branch, so a body still inbound coasts through
+		// periapsis first. Returns null when rTarget doesn't lie on the orbit
+		// (inside periapsis, or beyond a bound orbit's apoapsis) or the crossing
+		// is already in the past. Handy for patched-conic timeline milestones
+		// like "SOI exit" without a full numerical propagation.
+		coastTimeToRadius: function (GM, rvec, vvec, rTarget) {
+			var el = OrbitalMath.elementsFromState(GM, rvec, vvec);
+			var a = el.a, e = el.e;
+			var p = a * (1 - e * e);                    // semi-latus rectum (>0 both conics)
+			if (!(p > 0) || !(rTarget > 0)) { return null; }
+			var cosNu = (p / rTarget - 1) / e;
+			if (!(cosNu >= -1 && cosNu <= 1)) { return null; }   // radius not on the orbit
+			var nuTarget = Math.acos(cosNu);            // outbound crossing, 0..pi
+			var M0 = OrbitalMath.meanAnomalyFromTrue(el.nu, e);
+			var M1 = OrbitalMath.meanAnomalyFromTrue(nuTarget, e);
+			var dt = (M1 - M0) / OrbitalMath.meanMotion(GM, a);
+			return dt >= 0 ? dt : null;
+		},
+
 		// Propagate a heliocentric state forward by dt seconds (two-body, any conic).
 		propagateState: function (GM, rvec, vvec, dt) {
 			var el = OrbitalMath.elementsFromState(GM, rvec, vvec);

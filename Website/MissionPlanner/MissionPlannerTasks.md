@@ -207,14 +207,44 @@ All within one mission view; the mockup is the spec throughout.
   after switching back to Departure; breaking the skyhook stage falls back
   to the empty-state placeholder and recovers cleanly once fixed; no
   console errors. Node suites (84 tests, 7 new) green.
-- [ ] **B3. Event-scaled Departure/Arrival sliders.** ★★★
-  Same widget family, but segments are sized by the module-emitted `events`
-  (the envelope channel, already flowing — see `renderEventsBar`,
-  planner.js:550–574), not by linear time; greyed out until events exist;
-  playhead pinned when the clock is outside the phase span. The subtle part is
-  the nonlinear jd↔position mapping and keeping drag behaviour sane across
-  segment boundaries. Mockup: mock-a-phases.html:229–240 (departure),
-  255–265 (arrival). Depends on B2.
+- [x] **B3. Event-scaled Departure slider.** ★★★
+  **Done 2026-07-11.** `ui/phase-slider.js` gains the event-scaled layer as a
+  sibling of B2's coast layer, on the same `createSegmentedSlider` primitive:
+  `eventSliderState(opts)` (pure: N flight events → N−1 equal-width gaps, each
+  labelled by the milestone it reaches; playhead fraction; pin outside the
+  span) and its inverse `eventSliderJd(events, fraction)`, with the thin
+  `createEventSlider` DOM wrapper. Both pure halves are Node-tested
+  (`ui/tests/phase-slider.test.js`, +7: empty <2 events, equal-width gaps,
+  the nonlinear-but-continuous jd↔fraction map, pin/edge cases, unsorted
+  input, and a scrub round-trip).
+  **Kim's two design calls shaped this:** (1) *no dragging bridges a phase* —
+  already true since B2 (three separate sliders, one shared clock, each pins
+  outside its own span), so the only "boundaries" left are the little
+  event-to-event gaps *within* one slider; those cross cleanly because the
+  wrapper stores no drag state — every scrub is a fresh `eventSliderJd →
+  setClock → re-derive playhead`. (2) *the slider is the ship's flight only,
+  release → catch* — pre-launch (on the tether) and post-catch (on the
+  elevator) events are filtered out; `departureEvents()` in mission-view.js
+  drops any event flagged `flight:false` (none emitted yet, the hook is there
+  for F5/H2).
+  **The data to scale didn't exist**, so per Kim we added it honestly rather
+  than faking segments: `lunar-skyhook` now emits two flight milestones beyond
+  release — **Moon-SOI exit** (~3 h) and **Earth-SOI exit → heliocentric**
+  (~2.5 d) — computed as two-body coast times along the SAME patched conics
+  the release physics already uses (new pure helper
+  `OrbitalMath.coastTimeToRadius`, round-trip Node-tested; the lunar hyperbola's
+  periapsis is the release point, the geocentric hyperbola runs from the Moon's
+  distance to Earth's Laplace SOI). The ~3 h vs ~2.5 d gap is exactly the scale
+  disparity that makes event-scaling worth it — linear time would crush the
+  first gap to a sliver. `syncSliderVisibility()` is now three-way: Departure →
+  event slider, Coast → date slider, Arrival → the raw date bar (until H2);
+  each phase's slider IS its clock control. Node suites: 92 green (84 + 8, one
+  prior `events.length` assertion updated 1→3). **Arrival's event-scaled
+  slider is deferred with H2** (no arrival module, phase button still disabled)
+  — the widget is arrival-ready, it just has nothing to feed it yet.
+  *In-browser verification still pending* (the browser tool's safety
+  classifier was unavailable at build time).
+  Mockup: mock-a-phases.html:229–240 (departure). Depends on B2.
 - [ ] **B4. Core-data readout in the phase bar.** ★
   Frozen-plan summary (dates, flight time, v∞ out/in) + the shared clock,
   top-right of the phase bar. Pure DOM; data comes from the frozen plan (C1).

@@ -78,10 +78,11 @@
 				</div>
 			</div>
 
-			<!-- Coast phase slider (task B2): date-scaled, built by
-			     ui/phase-slider.js, shown only during the Coast phase — the
-			     date bar above is Departure/Arrival's clock control until
-			     their event-scaled sliders land (B3). -->
+			<!-- Per-phase clock sliders, built by ui/phase-slider.js; exactly
+			     one shows at a time (syncSliderVisibility). Departure (B3):
+			     event-scaled over the ship's flight. Coast (B2): date-scaled.
+			     Arrival still falls back to the date bar above until H2. -->
+			<div class="mp-sliderzone mp-dep-slider"></div>
 			<div class="mp-sliderzone mp-coast-slider"></div>
 
 			<!-- Mission events, from the modules' envelope events -->
