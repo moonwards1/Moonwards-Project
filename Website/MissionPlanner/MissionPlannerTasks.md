@@ -22,8 +22,9 @@ as "look here", not exact anchors.
 
 Regardless of model: every task follows CLAUDE.md conventions (ES modules,
 pure logic stays Node-testable, one responsibility per file), keeps the
-existing Node suites green (`node --test Website/MissionPlanner/core/tests/*.test.js`
-and `modules/tests/modules.test.js`), and browser-verifies via `serve.bat` at
+existing Node suites green (`node --test Website/MissionPlanner/core/tests/*.test.js`,
+`modules/tests/modules.test.js`, and `ui/tests/*.test.js`), and
+browser-verifies via `serve.bat` at
 `http://localhost:8000/MissionPlanner/planner.html`.
 
 ## Where things stand (the gap, in one paragraph)
@@ -130,22 +131,82 @@ World, plus a distinct Ephemeris tab.
 
 All within one mission view; the mockup is the spec throughout.
 
-- [ ] **B1. Real phase state.** ★★
-  A mission view gets `phase ∈ {departure, coast, arrival}` (workspace state,
-  not World). Phase buttons (planner.html:16–27, planner.js:338–362) go from
-  view-swap shortcuts to phase selectors that drive: main-pane frame, float
-  contents, which slider shows, and which sidebar cards show. Status dots on
-  the buttons aggregate their phase's stage results (the per-stage dot logic
-  exists in `renderStageStrip`, planner.js:528–548). Mockup:
-  mock-a-phases.html:217–225, 526–537.
-- [ ] **B2. Coast slider (date-scaled).** ★★
-  A fixed-span slider from frozen departure→arrival dates with segment ticks
-  and a playhead = the shared clock; clicking/dragging sets `world.set({jd})`;
-  playhead pins at the ends when the clock is outside the span. This is a new
-  widget, but `Shared/sim/date-bar.js` (the coarse-slider half) and the events
-  bar's clock-setting (`setClock`, planner.js:593–596) supply all the parts.
-  Mockup: mock-a-phases.html:242–253. Put it in its own file (e.g.
-  `MissionPlanner/ui/phase-slider.js`) so B3 can extend it.
+- [x] **B1. Real phase state.** ★★
+  **Done 2026-07-11.** `mission-view.js` gets a `workspace.phase ∈
+  {departure, coast, arrival}` (workspace state, not World; persisted in the
+  same slot as `main`/`cams`, task A3's mechanism — additive field, no
+  version bump needed). Two new module-scope maps, `PHASE_FRAME` (phase →
+  its frame id) and its reverse `FRAME_PHASE`, replace the old frame-keyed
+  `phaseBtns`/`swapMain`: phase buttons now call `setPhase(phase)`, which
+  drives the main-pane frame (via `PHASE_FRAME` — floats follow for free,
+  since they're just "every non-main frame", already true pre-B1), which
+  sidebar cards show (`applyPhaseToCards`, filtering by each stage's
+  `stagePhaseOf()` — derived from the stage's module descriptor `rendersIn`
+  matched against `FRAME_PHASE`, so `lunar-skyhook` → departure and
+  `transfer-leg` → coast fall out automatically, no hardcoded stage list),
+  and the phase buttons' active highlight. Clicking a floating pane (layout
+  promotion) now ALSO switches phase when the frame maps to one, per the
+  mockup's own framing that a float click is an alternate way to change
+  phase, not just layout — `swapMain` delegates to `setPhase` in that case,
+  falling back to a phase-less `promoteFrame` otherwise. Status dots
+  (`<span class="mp-dot">`, added to each phase button in planner.html)
+  aggregate their phase's stage results with `renderPhaseDots`, worst wins
+  (err > blocked > warn > ok — `PHASE_DOT_RANK`); a phase with no mapped
+  stage (arrival, until H2) keeps the neutral default dot. Factored
+  `dotClassFor(res)` out of `renderStageStrip` so the stage strip and the
+  phase dots share one status→class mapping. **"Which slider shows" is
+  explicitly NOT built here** — there's still one shared date bar; that's
+  B2 (Coast, date-scaled) and B3 (Departure/Arrival, event-scaled). Arrival
+  stays unreachable (its phase button is still `disabled`, no frame exists
+  for it in `PHASE_FRAME` yet — H1/H2), but the phase machinery already
+  treats it correctly (present in `PHASES`, dot logic, workspace
+  save/load) so enabling it later shouldn't need rework here. Verified
+  in-browser: Departure ↔ Coast via both phase buttons and float-pane
+  clicks (main pane, floats, sidebar cards, active highlight all follow);
+  dots aggregate correctly (introducing a miss-distance warning turned only
+  the Coast dot `warn`, Departure's stayed `ok`); phase persists across
+  reload (task A3's mechanism, now carrying `phase` too); Node suites (77
+  tests, untouched — this is UI-only) still green.
+- [x] **B2. Coast slider (date-scaled).** ★★
+  **Done 2026-07-11.** New file `MissionPlanner/ui/phase-slider.js`, split
+  in two layers for B3 to build on: `createSegmentedSlider(container, opts)`
+  is the DOM primitive (captioned track of flex-sized segments + a
+  click/drag-scrubbable playhead, mirroring mock-a-phases.html's
+  `.timeline`/`.track`/`.seg`/`.playhead`, `mp-` prefixed to match the
+  shell's convention) — it knows nothing about dates, just 0..1 fractions,
+  so B3's nonlinear event-scaled sliders can reuse it directly.
+  `coastSliderState(opts)` is B2's actual math, kept pure and DOM-free
+  (segments + playhead fraction + pinned flag from a span/jd/tick-count/
+  formatter) with its own Node suite (`ui/tests/phase-slider.test.js`, 7
+  tests — empty/inverted spans, mid-span fraction, pin-at-either-end,
+  inclusive edges, default and custom tick counts); `createCoastSlider`
+  is the thin DOM wrapper.
+  **The "frozen departure→arrival dates" the task text names don't exist
+  yet** (C1, the frozen-plan module, is unbuilt) — so the span is instead
+  the live min/max jd among events emitted THIS recompute pass by
+  departure- and coast-phase stages (`coastSpan()` in mission-view.js,
+  using B1's `stagePhaseOf`), same as everything else pre-comply-mode: it
+  tracks current params, not a frozen commitment. Once C1 lands this is a
+  one-line swap to read the frozen plan's dates instead — the widget itself
+  doesn't care where the span comes from. Clicking/dragging the track calls
+  `setClock` (already existed, ex-`planner.js` now in `mission-view.js`),
+  so the slider is just another way to move the one shared clock — the
+  events bar, date field, and JD readout all stay in sync automatically.
+  Wired into the existing `unRecompute` pass (which already fires on every
+  jd change, not just param changes — confirmed by the events bar's
+  existing "past" styling needing the same) rather than a separate
+  subscription. **Which slider shows** (B1's deferred item) is now real for
+  Coast: `syncSliderVisibility()` hides the full-span date bar and shows
+  the coast slider when `workspace.phase === "coast"`, and reverses it
+  otherwise — Departure/Arrival still share the date bar until B3.
+  A stage in a broken/blocked state (no events) shows a "No computed span
+  yet" placeholder rather than a stale or crashing slider. Verified
+  in-browser: correct tick labels and pinned-at-start playhead on load
+  (matches the release epoch vs. the coarse slider's day-rounding);
+  clicking mid-track moves the shared clock and the date bar reflects it
+  after switching back to Departure; breaking the skyhook stage falls back
+  to the empty-state placeholder and recovers cleanly once fixed; no
+  console errors. Node suites (84 tests, 7 new) green.
 - [ ] **B3. Event-scaled Departure/Arrival sliders.** ★★★
   Same widget family, but segments are sized by the module-emitted `events`
   (the envelope channel, already flowing — see `renderEventsBar`,

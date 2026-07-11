@@ -8,7 +8,9 @@ headless core (step 4.1) + phase-layout mockups (step 4.2, direction chosen:
 mockup A, plain phase buttons) + the scaffold UI with the first two modules
 (step 4.3) + the worked-example preset and share-link load path (step 4.4's
 mechanism half; curation waits for the fuller interface) + the multi-mission
-tab bar with persistence across reloads (build-out tasks A1–A3).** `core/` is pure logic with Node tests, so the recompute/blocked
+tab bar with persistence across reloads (build-out tasks A1–A3) + real
+phase-driven mission tabs with a date-scaled Coast slider (tasks B1–B2).**
+`core/` is pure logic with Node tests, so the recompute/blocked
 semantics were verified before any UI existed; `planner.html/css/js` is the
 deliberately-plain, disposable shell over it; `modules/` holds the first two
 mission modules; `mockups/` holds the disposable step-4.2 layout mockups (see
@@ -96,11 +98,20 @@ first** (a `WeakMap`), because coexisting missions reuse stage ids like
 Per mission view: **scissored panes** (a main pane plus floating,
 click-to-swap panes, each rendering one frame — `"helio"` and
 `"body:Earth-Moon"` so far), a **date bar** (`Shared/sim/date-bar.js`)
-writing `world.set({jd})`, **phase buttons** per the chosen mockup A
-(Departure ↔ Earth–Moon main, Coast ↔ helio main, Arrival greyed until an
-arrival module exists), a **stage strip** with status dots, an **events bar**
-fed by the envelope's `events` channel (click an event to set the clock), and
-**sidebar cards** — one per stage; the module builds its controls in the card
+writing `world.set({jd})` — Departure/Arrival's clock control until B3 —
+plus the **Coast slider** (task B2, `ui/phase-slider.js`) that replaces it
+during the Coast phase: a date-scaled track spanning the departure/coast
+phases' own events (not a frozen plan — C1 doesn't exist yet), with a
+click/drag-scrubbable playhead that pins at either end when the clock falls
+outside the span, real **phase buttons** (task B1 — `workspace.phase ∈
+{departure, coast, arrival}`, driving the main-pane frame via `PHASE_FRAME`,
+which sidebar cards show, which slider shows, and the active highlight;
+Arrival stays disabled until an arrival module exists to give it a frame), a
+**stage strip** with status dots plus the same dots aggregated onto the
+phase buttons (`renderPhaseDots`, worst-status-wins per phase), an **events bar** fed by the
+envelope's `events` channel (click an event to set the clock), and
+**sidebar cards** — one per stage, now filtered to the active phase via each
+stage's `rendersIn` frame (`stagePhaseOf`); the module builds its controls in the card
 body, the shell renders status chips and diagnostics/warnings uniformly
 (engine- and module-authored ones look identical, as the core intends).
 
@@ -203,12 +214,15 @@ recompute/diagnostic/blocked semantics, and the warnings/events envelope
 pure sides, chained through the actual World + registry + engine (release
 physics and phase aiming, blocked-then-fixed recovery, the non-blocking miss
 warning, frame conversion, and the shipped preset itself: it deserializes,
-rendezvouses warning-free, and survives the share-fragment round trip). Run
-from the repo root:
+rendezvouses warning-free, and survives the share-fragment round trip).
+`ui/tests/phase-slider.test.js` — 7 more covering `coastSliderState` (task
+B2), the pure half of the phase-slider widgets: tick generation, playhead
+fraction, and pinning at either end of the span. Run from the repo root:
 
 ```
 node --test Website/MissionPlanner/core/tests/*.test.js
 node --test Website/MissionPlanner/modules/tests/modules.test.js
+node --test Website/MissionPlanner/ui/tests/*.test.js
 ```
 
 (If copying elsewhere to test, keep the `Website/MissionPlanner/core` +

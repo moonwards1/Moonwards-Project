@@ -47,6 +47,7 @@ import {
 	addLabel as brAddLabel, updateLabels as brUpdateLabels, updateScales as brUpdateScales
 } from "../Shared/sim/body-renderer.js";
 import { createKeplerOrbitRing, makeArcLine } from "../Shared/sim/orbit-rings.js";
+import { createCoastSlider } from "./ui/phase-slider.js";
 
 var O = OrbitalMath;
 var LE = LunarEphemeris;
@@ -62,6 +63,24 @@ var SPAN_DAYS = 36525;
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 var HELIO_BODIES = ["Mercury", "Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche", "Jupiter"];
+
+// ---- phase <-> frame mapping (task B1). "departure" is the Earth-Moon
+// system, where the departure tech lives; "coast" is the heliocentric leg.
+// "arrival" has no frame yet — that's H1 (a generic body-frame factory) +
+// H2 (a first arrival module) — so it's absent from PHASE_FRAME and its
+// phase button stays disabled until then; PHASES still lists it so the
+// rest of the phase machinery (dots, card filtering, workspace save/load)
+// is already correct the day H2 lands.
+var PHASES = ["departure", "coast", "arrival"];
+var PHASE_FRAME = { departure: "body:Earth-Moon", coast: "helio" };
+var FRAME_PHASE = { "body:Earth-Moon": "departure", "helio": "coast" };
+var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
+
+function dotClassFor(res) {
+	return res.status === "ok"
+		? (res.warnings.length ? "warn" : "ok")
+		: (res.status === "diagnostic" ? "err" : "blocked");
+}
 
 // =======================================================================
 //  Workspace store: one localStorage key, one slot per mission.
@@ -318,9 +337,17 @@ export function createMissionView(opts) {
 	var panelEl = q(".mp-panel");
 	var stageStripEl = q(".mp-stage-strip");
 	var eventsBarEl = q(".mp-eventsbar");
+	var dateBarEl = q(".mp-datebar");
+	var coastSliderEl = q(".mp-coast-slider");
 	var phaseBtns = {
-		"body:Earth-Moon": q(".mp-phase-dep"),
-		"helio": q(".mp-phase-coast")
+		departure: q(".mp-phase-dep"),
+		coast: q(".mp-phase-coast"),
+		arrival: q(".mp-phase-arr")
+	};
+	var phaseDotEls = {
+		departure: phaseBtns.departure.querySelector(".mp-dot"),
+		coast: phaseBtns.coast.querySelector(".mp-dot"),
+		arrival: phaseBtns.arrival.querySelector(".mp-dot")
 	};
 
 	var engine = createEngine(world, registry);
@@ -329,13 +356,18 @@ export function createMissionView(opts) {
 	frames["helio"] = buildHelioFrame();
 	frames["body:Earth-Moon"] = buildEarthMoonFrame();
 
-	// ---- workspace: which frame is main, camera poses. This mission's slot
-	// of the shared localStorage store, never World. --------------------------
-	var workspace = { main: opts.defaultMain, cams: {} };
+	// ---- workspace: which frame is main, which phase is active (task B1),
+	// camera poses. This mission's slot of the shared localStorage store,
+	// never World. phase and main are kept in lockstep (see setPhase) — main
+	// is just "the frame the active phase points at" via PHASE_FRAME, except
+	// for "arrival", which has no frame yet. -----------------------------------
+	var workspace = { main: opts.defaultMain, phase: FRAME_PHASE[opts.defaultMain] || "departure", cams: {} };
 	(function loadWorkspace() {
 		var saved = loadWorkspaceSlot(missionId);
 		if (!saved) { return; }
 		if (saved.main && frames[saved.main]) { workspace.main = saved.main; }
+		workspace.phase = (typeof saved.phase === "string" && PHASES.indexOf(saved.phase) !== -1)
+			? saved.phase : (FRAME_PHASE[workspace.main] || workspace.phase);
 		Object.keys(saved.cams || {}).forEach(function (id) {
 			var f = frames[id], c = saved.cams[id];
 			if (!f || !c) { return; }
@@ -352,7 +384,7 @@ export function createMissionView(opts) {
 			cams[id] = { radius: f.cam.radius, theta: f.cam.theta, phi: f.cam.phi,
 			             target: f.cam.target.toArray(), focusBody: f.focusBody };
 		});
-		saveWorkspaceSlot(missionId, { main: workspace.main, cams: cams });
+		saveWorkspaceSlot(missionId, { main: workspace.main, phase: workspace.phase, cams: cams });
 	}
 	window.addEventListener("pagehide", saveWorkspace);
 
@@ -385,14 +417,13 @@ export function createMissionView(opts) {
 	setPaneFrame(mainPane, workspace.main);
 
 	function syncPhaseButtons() {
-		Object.keys(phaseBtns).forEach(function (frameId) {
-			phaseBtns[frameId].classList.toggle("active", workspace.main === frameId);
-		});
+		PHASES.forEach(function (p) { phaseBtns[p].classList.toggle("active", workspace.phase === p); });
 	}
 
 	// Layout-only: promote a frame to the main pane, demote the current main to
-	// the pane the promoted frame came from. No World change, no recompute.
-	function swapMain(frameId) {
+	// the pane the promoted frame came from. No World change, no recompute,
+	// no phase change (callers that mean "switch phase" go through setPhase).
+	function promoteFrame(frameId) {
 		if (frameId === workspace.main || !frames[frameId]) { return; }
 		var from = null;
 		for (var i = 0; i < panes.length; i++) {
@@ -402,13 +433,48 @@ export function createMissionView(opts) {
 		workspace.main = frameId;
 		setPaneFrame(mainPane, frameId);
 		if (from) { setPaneFrame(from, old); }
+	}
+
+	// Which slider shows (task B2): the Coast phase gets the date-scaled
+	// coast slider; Departure/Arrival still share the full-span date bar
+	// until their event-scaled sliders land (B3).
+	function syncSliderVisibility() {
+		var isCoast = workspace.phase === "coast";
+		dateBarEl.style.display = isCoast ? "none" : "";
+		coastSliderEl.style.display = isCoast ? "" : "none";
+	}
+
+	// The phase selectors (task B1): drives the main-pane frame (via
+	// PHASE_FRAME — "arrival" has none yet, so it's a no-op there until H2),
+	// which sidebar cards show (applyPhaseToCards), which slider shows
+	// (syncSliderVisibility, task B2), and the active highlight.
+	function setPhase(phase) {
+		if (PHASES.indexOf(phase) === -1 || phase === workspace.phase) { return; }
+		workspace.phase = phase;
+		var frameId = PHASE_FRAME[phase];
+		if (frameId) { promoteFrame(frameId); }
 		syncPhaseButtons();
+		applyPhaseToCards();
+		syncSliderVisibility();
 		saveWorkspace();
 	}
 
-	phaseBtns["body:Earth-Moon"].addEventListener("click", function () { swapMain("body:Earth-Moon"); });
-	phaseBtns["helio"].addEventListener("click", function () { swapMain("helio"); });
+	// A float pane's click promotes it to main; per the mockup, that's also
+	// how the mockup treats floats — an alternate way to switch phase, not
+	// just layout. If the frame maps to a phase (all of them do today),
+	// switching to that phase does the promotion too.
+	function swapMain(frameId) {
+		var phase = FRAME_PHASE[frameId];
+		if (phase) { setPhase(phase); return; }
+		promoteFrame(frameId);
+		saveWorkspace();
+	}
+
+	PHASES.forEach(function (p) {
+		phaseBtns[p].addEventListener("click", function () { setPhase(p); });
+	});
 	syncPhaseButtons();
+	syncSliderVisibility();
 
 	// ---- share link: THIS mission's World, through the same fragment encoding
 	// the load path reads. Copying, not navigating — the URL is the artifact.
@@ -471,11 +537,34 @@ export function createMissionView(opts) {
 
 	// ---- sidebar: one card per stage; the module builds its own controls in
 	// the card body, the shell renders status chips and diagnostics uniformly.
-	var cards = {};   // stageId -> { cardEl, chipEl, diagEl, callbacks: [fn] }
+	var cards = {};   // stageId -> { cardEl, chipEl, diagEl, phase, callbacks: [fn] }
 
 	function stageTitle(stage) {
 		var desc = registry.get(stage.moduleId);
 		return desc ? desc.title : stage.moduleId;
+	}
+
+	// Which phase "owns" a stage's card (task B1): whichever phase's frame is
+	// among the stage's rendersIn (a stage attached to the Earth-Moon frame is
+	// departure tech, one attached to helio is the coast leg). A stage that
+	// doesn't map to a known phase's frame always shows, rather than vanishing
+	// from the sidebar.
+	function stagePhaseOf(stage) {
+		var desc = registry.get(stage.moduleId);
+		if (!desc || !Array.isArray(desc.rendersIn)) { return null; }
+		for (var i = 0; i < desc.rendersIn.length; i++) {
+			var p = FRAME_PHASE[desc.rendersIn[i]];
+			if (p) { return p; }
+		}
+		return null;
+	}
+
+	function applyPhaseToCards() {
+		Object.keys(cards).forEach(function (stageId) {
+			var entry = cards[stageId];
+			var show = entry.phase === null || entry.phase === workspace.phase;
+			entry.cardEl.style.display = show ? "" : "none";
+		});
 	}
 
 	world.stages().forEach(function (stage) {
@@ -497,7 +586,7 @@ export function createMissionView(opts) {
 		card.appendChild(diag);
 		panelEl.appendChild(card);
 
-		var entry = { cardEl: card, chipEl: chip, diagEl: diag, callbacks: [] };
+		var entry = { cardEl: card, chipEl: chip, diagEl: diag, phase: stagePhaseOf(stage), callbacks: [] };
 		cards[stage.id] = entry;
 
 		if (desc && typeof desc.init === "function") {
@@ -510,6 +599,7 @@ export function createMissionView(opts) {
 			});
 		}
 	});
+	applyPhaseToCards();
 
 	function renderDiagBox(parent, d, cssClass) {
 		var box = document.createElement("div");
@@ -565,10 +655,7 @@ export function createMissionView(opts) {
 			chip.type = "button";
 			chip.className = "mp-stage-chip";
 			var dot = document.createElement("span");
-			var cls = res.status === "ok"
-				? (res.warnings.length ? "warn" : "ok")
-				: (res.status === "diagnostic" ? "err" : "blocked");
-			dot.className = "mp-dot " + cls;
+			dot.className = "mp-dot " + dotClassFor(res);
 			chip.appendChild(dot);
 			var stage = world.getStage(res.stageId);
 			chip.appendChild(document.createTextNode(stage ? stageTitle(stage) : res.moduleId));
@@ -577,6 +664,23 @@ export function createMissionView(opts) {
 				if (entry) { entry.cardEl.scrollIntoView({ behavior: "smooth", block: "start" }); }
 			});
 			stageStripEl.appendChild(chip);
+		});
+	}
+
+	// Phase-button dots (task B1): the worst status among a phase's stages
+	// (err worse than blocked worse than warn worse than ok); a phase with no
+	// stages mapped to it (arrival, today) keeps the neutral default dot.
+	function renderPhaseDots(results) {
+		var worst = {};
+		results.forEach(function (res) {
+			var stage = world.getStage(res.stageId);
+			var phase = stage && stagePhaseOf(stage);
+			if (!phase) { return; }
+			var cls = dotClassFor(res);
+			if (!worst[phase] || PHASE_DOT_RANK[cls] < PHASE_DOT_RANK[worst[phase]]) { worst[phase] = cls; }
+		});
+		PHASES.forEach(function (p) {
+			phaseDotEls[p].className = "mp-dot" + (worst[p] ? " " + worst[p] : "");
 		});
 	}
 
@@ -607,6 +711,8 @@ export function createMissionView(opts) {
 	}
 
 	// ---- the mission's clock: Shared/sim/date-bar.js writing world.set({jd})
+	function shortDate(jd) { var d = O.dateFromJulian(jd); return MONTHS[d.Mo - 1] + " " + d.Y; }
+
 	var dateState = { jd: world.jd, baseDays: 0 };
 	var dateBar = createDateBar(dateState, {
 		coarseSlider: q(".mp-date-coarse"),
@@ -617,13 +723,34 @@ export function createMissionView(opts) {
 		jdLabel: q(".mp-jd"),
 		jd0: JD0,
 		spanDays: SPAN_DAYS,
-		shortDate: function (jd) { var d = O.dateFromJulian(jd); return MONTHS[d.Mo - 1] + " " + d.Y; }
+		shortDate: shortDate
 	});
 	dateBar.bind(function () { world.set({ jd: dateState.jd }); });
 
 	function setClock(jd) {
 		dateBar.setBaseDays(jd - JD0);
 		world.set({ jd: dateState.jd });
+	}
+
+	// ---- the Coast slider (task B2): date-scaled, spanning the departure
+	// and coast phases' own events (coastSpan) — see ui/phase-slider.js.
+	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate });
+
+	// The coast span: earliest-to-latest jd among events emitted by
+	// departure/coast-phase stages this recompute pass (release, departure
+	// burn, waypoint burns, leg-ends — whatever's live today). Deliberately
+	// NOT the frozen plan (C1 doesn't exist yet) — it tracks the current
+	// params, same as everything else pre-comply-mode.
+	function coastSpan(results) {
+		var jds = [];
+		results.forEach(function (res) {
+			var stage = world.getStage(res.stageId);
+			var phase = stage && stagePhaseOf(stage);
+			if (phase !== "departure" && phase !== "coast") { return; }
+			res.events.forEach(function (e) { jds.push(e.jd); });
+		});
+		if (!jds.length) { return null; }
+		return { start: Math.min.apply(null, jds), end: Math.max.apply(null, jds) };
 	}
 
 	// ---- wiring: World changes place bodies; engine passes redraw the rest --
@@ -641,7 +768,10 @@ export function createMissionView(opts) {
 			updateCard(res);
 		});
 		renderStageStrip(results);
+		renderPhaseDots(results);
 		renderEventsBar(results);
+		var span = coastSpan(results);
+		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
 	});
 
 	// ---- rendering: the shared renderer, scissored per pane, only while this
@@ -699,6 +829,7 @@ export function createMissionView(opts) {
 		unRecompute();
 		engine.dispose();
 		unbindCamera();
+		coastSlider.dispose();
 		active = false;
 		// The canvas is the shell's; hand it back rather than letting root
 		// removal orphan it (the caller normally show()s another view first).
