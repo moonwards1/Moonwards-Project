@@ -167,12 +167,17 @@ export function raycastPickPoint(camera, rendererEl, e, opts) {
 //                              are NOT part of this module) interleaved with
 //                              rotate/pan on the same canvas.
 //   onCapturedMove(e, token), onCapturedEnd(e, token) — paired with captureDrag.
+//
+// Returns an unbind function that removes every listener (including the
+// window-level move/up pair), for hosts that create and destroy views —
+// the Mission Planner disposes a mission view when its tab closes. The
+// plotters bind once for the page's life and may ignore the return value.
 export function bindCameraControls(rendererEl, getView) {
 	var dragging = null, lx = 0, ly = 0, moved = false, clickTimer = null, capturedToken = null;
 
-	rendererEl.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+	function onContextMenu(e) { e.preventDefault(); }
 
-	rendererEl.addEventListener("mousedown", function (e) {
+	function onMouseDown(e) {
 		var v = getView();
 		// A second press cancels a pending single-click pick, so a double-click
 		// never also fires the deferred click.
@@ -184,9 +189,9 @@ export function bindCameraControls(rendererEl, getView) {
 		var isPan = v.isPan ? v.isPan(e) : (e.button === 2 || e.shiftKey);
 		dragging = isPan ? "pan" : "rotate";
 		lx = e.clientX; ly = e.clientY; moved = false;
-	});
+	}
 
-	window.addEventListener("mousemove", function (e) {
+	function onMouseMove(e) {
 		var v = getView();
 		if (capturedToken) { if (v.onCapturedMove) { v.onCapturedMove(e, capturedToken); } return; }
 		if (!dragging) { return; }
@@ -206,9 +211,9 @@ export function bindCameraControls(rendererEl, getView) {
 			cam.target.addScaledVector(camera.up.clone(), dy * panScale);
 			if (v.onPan) { v.onPan(); }
 		}
-	});
+	}
 
-	window.addEventListener("mouseup", function (e) {
+	function onMouseUp(e) {
 		var v = getView();
 		if (capturedToken) {
 			var t = capturedToken;
@@ -225,15 +230,15 @@ export function bindCameraControls(rendererEl, getView) {
 			clickTimer = setTimeout(function () { clickTimer = null; v.onPick(ev); }, v.clickDelayMs || 350);
 		}
 		dragging = null;
-	});
+	}
 
-	rendererEl.addEventListener("dblclick", function (e) {
+	function onDblClick(e) {
 		if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
 		var v = getView();
 		if (v.onDoubleClick) { v.onDoubleClick(e); }
-	});
+	}
 
-	rendererEl.addEventListener("wheel", function (e) {
+	function onWheel(e) {
 		e.preventDefault();
 		var v = getView();
 		var cam = v.cam;
@@ -257,5 +262,22 @@ export function bindCameraControls(rendererEl, getView) {
 		}
 		cam.radius = Math.max(v.zoomMin, Math.min(v.zoomMax, cam.radius * f));
 		if (v.onFreeZoom) { v.onFreeZoom(); }
-	}, { passive: false });
+	}
+
+	rendererEl.addEventListener("contextmenu", onContextMenu);
+	rendererEl.addEventListener("mousedown", onMouseDown);
+	window.addEventListener("mousemove", onMouseMove);
+	window.addEventListener("mouseup", onMouseUp);
+	rendererEl.addEventListener("dblclick", onDblClick);
+	rendererEl.addEventListener("wheel", onWheel, { passive: false });
+
+	return function unbind() {
+		rendererEl.removeEventListener("contextmenu", onContextMenu);
+		rendererEl.removeEventListener("mousedown", onMouseDown);
+		window.removeEventListener("mousemove", onMouseMove);
+		window.removeEventListener("mouseup", onMouseUp);
+		rendererEl.removeEventListener("dblclick", onDblClick);
+		rendererEl.removeEventListener("wheel", onWheel);
+		if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+	};
 }

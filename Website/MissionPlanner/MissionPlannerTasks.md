@@ -14,11 +14,11 @@ as "look here", not exact anchors.
 
 ## Difficulty legend (for assigning models)
 
-| Rating | Meaning | Suggested tier |
-| ------ | ------- | -------------- |
-| ★ | Mechanical DOM/CSS work; a pattern already exists to copy; low risk | Small / cheap model (Haiku-class), with the referenced files in context |
-| ★★ | Real wiring across 2–3 files, but the shape is established by existing code | Mid model (Sonnet-class) |
-| ★★★ | Architecture-shaping, cross-cutting, or a fiddly orchestration port; mistakes are expensive | Strongest model (Opus/Fable-class), and worth Kim's review before merging |
+| Rating | Meaning                                                                                     | Suggested tier                                                            |
+| ------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| ★      | Mechanical DOM/CSS work; a pattern already exists to copy; low risk                         | Small / cheap model (Haiku-class), with the referenced files in context   |
+| ★★     | Real wiring across 2–3 files, but the shape is established by existing code                 | Mid model (Sonnet-class)                                                  |
+| ★★★    | Architecture-shaping, cross-cutting, or a fiddly orchestration port; mistakes are expensive | Strongest model (Opus/Fable-class), and worth Kim's review before merging |
 
 Regardless of model: every task follows CLAUDE.md conventions (ES modules,
 pure logic stays Node-testable, one responsibility per file), keeps the
@@ -62,31 +62,69 @@ The scaffold builds one `world + engine + frames + cards` at module scope
 (`planner.js`, whole file). The design needs N missions coexisting, each a
 World, plus a distinct Ephemeris tab.
 
-- [ ] **A1. Refactor `planner.js` into a per-mission factory.** ★★★
-  Extract the current module-scope pipeline into something like
-  `createMissionView(world, registry, containerEl)` returning
-  `{ engine, dispose, show, hide }`, so N instances can exist. Keep **one**
-  renderer and one canvas (browser WebGL-context limits are why the scaffold
-  scissors panes); only the active tab renders. Frame factories
-  (`buildHelioFrame`, `buildEarthMoonFrame`, planner.js:138–273) become
-  per-mission (each mission has its own cameras/scenes) or shared-with-
-  per-mission-state — decide and record which. Workspace persistence
-  (planner.js:279–308) gains a per-mission keying. This is the
-  riskiest, most architecture-shaping task in the whole list; do it first and
-  alone, before other threads touch planner.js.
-- [ ] **A2. Tab bar.** ★★ (★ for the DOM, ★★ for the switching)
-  Ephemeris tab + one tab per mission + active highlight + close "x", per
-  mockup A (mock-a-phases.html:134–140 for markup/CSS, 538–543 for the
-  switching pattern). Closing a mission tab asks for confirmation (missions
-  are user data). Depends on A1.
-- [ ] **A3. Mission persistence across reloads.** ★★
-  Serialize each mission (name + `world.serialize()`) into one versioned
-  localStorage key (`mw-missionplanner-missions`), restore on load. The
-  mechanism is already proven by the share-link path
-  (planner.js:74–92, `presets/default-mission.js` as the data shape).
-  *Decision for Kim first:* the README defers persistence "to later steps" —
-  but tabs without it lose missions on every reload, so recommend doing it
-  here. Depends on A1.
+- [x] **A1. Refactor `planner.js` into a per-mission factory.** ★★★
+  **Done 2026-07-11.** `mission-view.js` exports `createMissionView({ world,
+  registry, renderer, container, template, missionId, defaultMain })`
+  returning `{ world, engine, root, show, hide, render, resize, dispose }`;
+  `planner.js` is now the host (registry, the one renderer, initial World
+  load, `setActiveView` + render loop). Decisions recorded (details in
+  README.md): **frames are per-mission** (own scenes/cameras; only the
+  renderer/canvas is shared — `show()` re-parents it); per-mission DOM is
+  cloned from `planner.html`'s `<template id="mp-mission-template">` and
+  addressed by class, not id; workspace persistence is **version 2**, one
+  slot per mission id (v1 saves adopt as `"m1"`), `deleteWorkspaceSlot` is
+  exported for A2's tab-close; `bindCameraControls` now returns an unbind for
+  `dispose()`. Also fixed for coexistence: the two modules' draw caches are
+  keyed by `(world, stageId)` via `WeakMap` — coexisting Worlds reuse stage
+  ids, so a stageId-only cache cross-contaminated missions. Verified: 77 Node
+  tests green; in-browser two-view test (independent recompute/diagnostics,
+  dispose cleanup) with a clean console; SST plotter unaffected by the
+  camera-controller change.
+- [x] **A2. Tab bar.** ★★ (★ for the DOM, ★★ for the switching)
+  **Done 2026-07-11.** Ephemeris tab + one tab per mission + active
+  highlight + close "x", per mockup A (mp-tabbar/.mp-tab styling lifted from
+  mock-a-phases.html:134–140; the switching logic in planner.js's
+  `selectTab`/`addMissionTab`/`closeMissionTab` follows its `setTab` pattern
+  at 538–543, generalized from two hardcoded views to an N-mission array).
+  The Ephemeris tab is a **stub** (`#mp-eph-view` in planner.html) — its
+  real content (marker/targeting/waypoints) is WP-D; for now it's a plain
+  message and the "+" affordance is inert (per the mockup's own tooltip,
+  "New missions are started from the Ephemeris tab" — that flow is E2).
+  Closing a mission tab confirms via `window.confirm` ("hasn't been saved
+  anywhere and can't be recovered" — true until A3), then `dispose()`s the
+  view and `deleteWorkspaceSlot()`s it (the export A1 added for this).
+  `planner.js` no longer holds a single `activeView`; `missions[]` tracks
+  `{ id, title, view, tabEl }` and the render loop/resize only drive the
+  active mission's view (the Ephemeris stub needs neither). Mission titles
+  aren't part of `World.serialize()` (A3/E2 will need to decide where a
+  name lives); the one mission today is titled "Moon → Ceres 2031" in
+  `planner.js`, matching the preset's own description. Verified in-browser:
+  tab switching, active highlight, close-with-confirm (and cancel), console
+  clean; Node suites untouched by this UI-only change.
+- [x] **A3. Mission persistence across reloads.** ★★
+  **Done 2026-07-11** (Kim confirmed: do it now rather than deferring).
+  Each mission (shell-level title + `world.serialize()`) lives in one
+  versioned localStorage key (`mw-missionplanner-missions` — a distinct key
+  from `mission-view.js`'s `mw-missionplanner-workspace`, which stays
+  layout/camera-only). `planner.js`'s `initialMissions()` restores it on
+  load, merging in a share-link fragment if the URL carries one (added
+  alongside saved missions as an **"Imported mission"** tab, never
+  replacing them — matches the README's "a share link opens in a new tab")
+  and falling back to the shipped preset only when there's nothing saved
+  and no fragment. A bad fragment or an unreadable saved entry drops that
+  one entry (never the whole load) and shows the existing failure banner.
+  `saveMissionsStore()` writes on `pagehide` (mirrors the workspace-slot
+  pattern in mission-view.js) and immediately after any structural change
+  (`addMissionTab`/`closeMissionTab`), so a reload never loses more than
+  in-flight edits since the last save, and a closed mission can't reappear.
+  Verified in-browser: an edited param survives reload; a share-link import
+  persists alongside the existing mission and both restore with the right
+  one active; closing a mission removes it from storage immediately and it
+  stays gone after reload; Node suites (77 tests, untouched by this
+  UI/persistence-only change) still green. A2's close-confirmation copy
+  ("hasn't been saved anywhere") was updated to reflect that missions now
+  persist — closing is still permanent (no undo), just no longer "unsaved."
+  Depends on A1.
 
 ### WP-B — Mission-tab chrome: phases, sliders, core data
 
@@ -287,7 +325,8 @@ World. Source file throughout:
   Options: (a) a minimal "chemical capture burn / intercept check" module now
   (small, unblocks all Arrival UI work: C2's arrival card, B3's arrival
   slider, F1's dropdown), then (b) the real Ceres-elevator catch port as
-  planned in migration step 4.5. Recommend (a) then (b).
+  planned in migration step 4.5. Recommend (a) then (b). 
+  - Comment from Kim: How about using the Mars-Phobos skyhook as the first model where catch planning can be structured? 
 
 ---
 
@@ -298,56 +337,56 @@ World. Source file throughout:
 These were extracted in migration step 1 and are already imported by the
 scaffold; new UI should reach for them before writing anything fresh.
 
-| Module | Exports worth knowing | Used by tasks |
-| ------ | --------------------- | ------------- |
-| `Shared/sim/marker-card.js` (361 lines) | `makeShipSprite`, `makeXMarkSprite`, `orientMarkerSprite`, `buildMarkerCard` (DOM skeleton), `bindRelativeDragSlider`, `markerFraction`, `sweepAngleFrom`, `phasingDays`, `refineApproach`, `followCrossing`. Header comment documents the shared-vs-local split — read it before D3. | D3, D4, E1, G2 |
-| `Shared/sim/burn-widget.js` | `createWaypointGizmo` (prograde/radial/normal triad), `makeBurnArrow` | D2, F5, G1 |
-| `Shared/sim/approach-markers.js` | ring sprite + `pickProximityTier`, `applyTierToSprite` (tier tables stay caller-side) | D4, E1 |
-| `Shared/sim/readout-panes.js` | `renderReadoutBoxes`, `positionReadoutBoxes` (panel-edge burn readouts) | D2, F5 |
-| `Shared/sim/date-bar.js` | `createDateBar` — coarse+fine sliders, date field, JD readout | B2 (as parts donor), already in the shell |
-| `Shared/sim/camera-controller.js`, `body-renderer.js`, `orbit-rings.js` | already wired in planner.js | A1, D1, H1 |
-| `Shared/exchange.js` + `exchange-types.js` | `Exchange.send/accept/pending/consume/linkFor`, `PacketTypes.make/validate`, `encodeFragment`/`decodeFragment` | A3, F2, F3 |
-| `Shared/frames.js` | `localToHelio`/`helioToLocal`/`convert` — frame patching | C1, F5 |
+| Module                                                                  | Exports worth knowing                                                                                                                                                                                                                                                                 | Used by tasks                             |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `Shared/sim/marker-card.js` (361 lines)                                 | `makeShipSprite`, `makeXMarkSprite`, `orientMarkerSprite`, `buildMarkerCard` (DOM skeleton), `bindRelativeDragSlider`, `markerFraction`, `sweepAngleFrom`, `phasingDays`, `refineApproach`, `followCrossing`. Header comment documents the shared-vs-local split — read it before D3. | D3, D4, E1, G2                            |
+| `Shared/sim/burn-widget.js`                                             | `createWaypointGizmo` (prograde/radial/normal triad), `makeBurnArrow`                                                                                                                                                                                                                 | D2, F5, G1                                |
+| `Shared/sim/approach-markers.js`                                        | ring sprite + `pickProximityTier`, `applyTierToSprite` (tier tables stay caller-side)                                                                                                                                                                                                 | D4, E1                                    |
+| `Shared/sim/readout-panes.js`                                           | `renderReadoutBoxes`, `positionReadoutBoxes` (panel-edge burn readouts)                                                                                                                                                                                                               | D2, F5                                    |
+| `Shared/sim/date-bar.js`                                                | `createDateBar` — coarse+fine sliders, date field, JD readout                                                                                                                                                                                                                         | B2 (as parts donor), already in the shell |
+| `Shared/sim/camera-controller.js`, `body-renderer.js`, `orbit-rings.js` | already wired in planner.js                                                                                                                                                                                                                                                           | A1, D1, H1                                |
+| `Shared/exchange.js` + `exchange-types.js`                              | `Exchange.send/accept/pending/consume/linkFor`, `PacketTypes.make/validate`, `encodeFragment`/`decodeFragment`                                                                                                                                                                        | A3, F2, F3                                |
+| `Shared/frames.js`                                                      | `localToHelio`/`helioToLocal`/`convert` — frame patching                                                                                                                                                                                                                              | C1, F5                                    |
 
 ### Port needed — tool-local code that moves into the planner
 
 **From `Calculators/Solar-System-Trajectory-Plotter/solarSystemTrajectory.js` (1549 lines):**
 
-| Section | Lines (2026-07-10) | What it is | Task |
-| ------- | ------------------ | ---------- | ---- |
-| Waypoint gizmo wiring | ~275–363 | `makeWaypointGizmo` + drag handling around the shared triad | D2, G1 |
-| Snap-to helpers | ~378–475 | `snapTargetNu`, `timeToTrueAnomaly`, `snapTau` — apsis/node snapping (pure-ish; candidates for `math-utils.js` promotion with tests) | D2 |
-| Burn readout boxes | ~564–607 | `burnReadoutData` + shared readout-panes calls | D2 |
-| Orbit-approach markers | ~628–710 | `computeOrbitApproaches` scan + tier tables + temporal ring | D4 |
-| **Marker state machine** | ~711–1036 | `applyTargeting` (Lambert re-solve, 761), `setMarkerMode` (816), `updateDestinationMarker` (848), `buildMarkerCard` (888), `updateMarker` (927), `focusMarker`/`removeMarker`/`placeMarkerAtGlobalTime` (1003–1035) | **D3** (the big one) |
-| Trajectory picking | ~1037–1078 | click → nearest trajectory sample → place/move marker | D5, G1 |
-| UI building | ~1079–1345 | `buildDestinationOptions` (1093), `buildWaypointList` (1273) — the **waypoint cards** | D2 |
-| Refresh orchestration | ~1346–1451 | what recomputes on what change — read for understanding, don't port literally (the engine owns this in the planner) | D2/D3 background |
+| Section                  | Lines (2026-07-10) | What it is                                                                                                                                                                                                          | Task                 |
+| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| Waypoint gizmo wiring    | ~275–363           | `makeWaypointGizmo` + drag handling around the shared triad                                                                                                                                                         | D2, G1               |
+| Snap-to helpers          | ~378–475           | `snapTargetNu`, `timeToTrueAnomaly`, `snapTau` — apsis/node snapping (pure-ish; candidates for `math-utils.js` promotion with tests)                                                                                | D2                   |
+| Burn readout boxes       | ~564–607           | `burnReadoutData` + shared readout-panes calls                                                                                                                                                                      | D2                   |
+| Orbit-approach markers   | ~628–710           | `computeOrbitApproaches` scan + tier tables + temporal ring                                                                                                                                                         | D4                   |
+| **Marker state machine** | ~711–1036          | `applyTargeting` (Lambert re-solve, 761), `setMarkerMode` (816), `updateDestinationMarker` (848), `buildMarkerCard` (888), `updateMarker` (927), `focusMarker`/`removeMarker`/`placeMarkerAtGlobalTime` (1003–1035) | **D3** (the big one) |
+| Trajectory picking       | ~1037–1078         | click → nearest trajectory sample → place/move marker                                                                                                                                                               | D5, G1               |
+| UI building              | ~1079–1345         | `buildDestinationOptions` (1093), `buildWaypointList` (1273) — the **waypoint cards**                                                                                                                               | D2                   |
+| Refresh orchestration    | ~1346–1451         | what recomputes on what change — read for understanding, don't port literally (the engine owns this in the planner)                                                                                                 | D2/D3 background     |
 
 **From `Calculators/Moon-Skyhook-Trajectory-Plotter/moonSkyhookTrajectory.js` (2318 lines):**
 
-| Section | Lines | What it is | Task |
-| ------- | ----- | ---------- | ---- |
-| Sidebar card structure | throughout its HTML/JS | the design doc's cited "good example" of a tech card (skyhook geometry + release params) | F1/F4 reference |
-| Released-ship trajectory | ~533–704 | restricted N-body geocentric propagation of the released ship | F5 (the physics the lunar-skyhook module lacks) |
-| Waypoint burns (geocentric) | ~705–1201 | in-system waypoint-burn chain — exactly the design's "up to 2 waypoint burns within this system" | **F5** |
-| Gizmos + arrows + readouts | ~1202–1277 | waypoint gizmo/arrow wiring in the local frame | F5 |
-| Burn-vector editor | ~1754–1922 | the isometric 3-axis draggable-arrow burn editor — a strong in-card alternative to numeric fields | F5, G1 (optional upgrade) |
-| Waypoint list cards | ~1923–1961 | its `buildWaypointList` variant | F5 |
+| Section                     | Lines                  | What it is                                                                                        | Task                                            |
+| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Sidebar card structure      | throughout its HTML/JS | the design doc's cited "good example" of a tech card (skyhook geometry + release params)          | F1/F4 reference                                 |
+| Released-ship trajectory    | ~533–704               | restricted N-body geocentric propagation of the released ship                                     | F5 (the physics the lunar-skyhook module lacks) |
+| Waypoint burns (geocentric) | ~705–1201              | in-system waypoint-burn chain — exactly the design's "up to 2 waypoint burns within this system"  | **F5**                                          |
+| Gizmos + arrows + readouts  | ~1202–1277             | waypoint gizmo/arrow wiring in the local frame                                                    | F5                                              |
+| Burn-vector editor          | ~1754–1922             | the isometric 3-axis draggable-arrow burn editor — a strong in-card alternative to numeric fields | F5, G1 (optional upgrade)                       |
+| Waypoint list cards         | ~1923–1961             | its `buildWaypointList` variant                                                                   | F5                                              |
 
 **From the scaffold and mockup (patterns to extend or copy):**
 
-| Source | Lines | What it gives | Task |
-| ------ | ----- | ------------- | ---- |
-| `planner.js` frame factories | 138–273 | `buildHelioFrame` / `buildEarthMoonFrame` → generalize | A1, H1 |
-| `planner.js` workspace persistence | 279–308 | versioned localStorage save/restore pattern | A3 |
-| `planner.js` card + diagnostics scaffolding | 434–523 | per-stage cards, uniform `renderDiagBox`, `onResult` | C2, C3, F4 |
-| `planner.js` stage strip / events bar | 525–574 | status dots, event → clock | B1, B5 |
-| `planner.js` share-link load path | 74–92, 364–384 | fragment encode/decode + polite fallback banner | A3 |
-| `mockups/mock-a-phases.html` | tab bar 134–140 · Ephemeris marker card 184–209 · phase bar 217–225 · three sliders 227–266 · departure sidebar 382–427 · coast sidebar 430–463 · arrival sidebar 466–506 · dialog 513–523 · switching JS 525–548 | the agreed look and interaction for every WP; lift its CSS wholesale where it fits | all UI tasks |
-| `Calculators/Skyhook-Spin-Launcher/skyhookSpinLauncher.js` | receive-banner + Apply mapping | the proven exchange-receive pattern (incl. the `checked`-from-script display gotcha) | F2 |
-| `Calculators/Gravity-gradient-skyhooks/` | send-button side | producer pattern: `calc()` first, then read authoritative fields | F3 |
-| `modules/transfer-leg/transfer-leg.js` | whole file (332 lines) | the module template: pure compute + descriptor + card-building `init` + `draw` | C1, F5, H2 |
+| Source                                                     | Lines                                                                                                                                                                                                             | What it gives                                                                        | Task         |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------ |
+| `planner.js` frame factories                               | 138–273                                                                                                                                                                                                           | `buildHelioFrame` / `buildEarthMoonFrame` → generalize                               | A1, H1       |
+| `planner.js` workspace persistence                         | 279–308                                                                                                                                                                                                           | versioned localStorage save/restore pattern                                          | A3           |
+| `planner.js` card + diagnostics scaffolding                | 434–523                                                                                                                                                                                                           | per-stage cards, uniform `renderDiagBox`, `onResult`                                 | C2, C3, F4   |
+| `planner.js` stage strip / events bar                      | 525–574                                                                                                                                                                                                           | status dots, event → clock                                                           | B1, B5       |
+| `planner.js` share-link load path                          | 74–92, 364–384                                                                                                                                                                                                    | fragment encode/decode + polite fallback banner                                      | A3           |
+| `mockups/mock-a-phases.html`                               | tab bar 134–140 · Ephemeris marker card 184–209 · phase bar 217–225 · three sliders 227–266 · departure sidebar 382–427 · coast sidebar 430–463 · arrival sidebar 466–506 · dialog 513–523 · switching JS 525–548 | the agreed look and interaction for every WP; lift its CSS wholesale where it fits   | all UI tasks |
+| `Calculators/Skyhook-Spin-Launcher/skyhookSpinLauncher.js` | receive-banner + Apply mapping                                                                                                                                                                                    | the proven exchange-receive pattern (incl. the `checked`-from-script display gotcha) | F2           |
+| `Calculators/Gravity-gradient-skyhooks/`                   | send-button side                                                                                                                                                                                                  | producer pattern: `calc()` first, then read authoritative fields                     | F3           |
+| `modules/transfer-leg/transfer-leg.js`                     | whole file (332 lines)                                                                                                                                                                                            | the module template: pure compute + descriptor + card-building `init` + `draw`       | C1, F5, H2   |
 
 ---
 

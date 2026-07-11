@@ -163,10 +163,23 @@ export function computeRelease(params) {
 	};
 }
 
-// Last computed figures per stage, for the sidebar card and the tether
-// drawing (populated by update(); plain data, so Node sees it too).
-var lastByStage = new Map();
-export function physicsFor(stageId) { return lastByStage.get(stageId) || null; }
+// Last computed figures per (World, stage), for the sidebar card (populated
+// by update(); plain data, so Node sees it too). Keyed by World first because
+// N missions coexist (task A1) and their Worlds reuse stage ids like "stg-1"
+// — a stageId-only cache would let one mission's recompute clobber another's
+// readouts. WeakMap, so a closed mission's entries go with its World.
+var lastByWorld = new WeakMap();
+export function physicsFor(world, stageId) {
+	var m = lastByWorld.get(world);
+	return (m && m.get(stageId)) || null;
+}
+function rememberPhysics(world, stageId, phys) {
+	if (!world || typeof world !== "object") { return; }   // a bare Node call
+	                                                       // (ctx.world null) has no view to feed
+	var m = lastByWorld.get(world);
+	if (!m) { m = new Map(); lastByWorld.set(world, m); }
+	m.set(stageId, phys);
+}
 
 // ---- view helpers (browser only — THREE via the global) -------------------
 
@@ -201,7 +214,7 @@ export default {
 	update: function (ctx) {
 		var params = Object.assign({}, defaultParams, ctx.params);
 		var phys = computeRelease(params);
-		lastByStage.set(ctx.stageId, phys);
+		rememberPhysics(ctx.world, ctx.stageId, phys);
 		if (!phys.ok) { return phys.diagnostic; }
 
 		var packet = PacketTypes.make("ship-state",
@@ -275,7 +288,7 @@ export default {
 		host.appendChild(out);
 
 		ctx.onResult(function () {
-			var phys = physicsFor(ctx.stageId);
+			var phys = physicsFor(ctx.world, ctx.stageId);
 			if (!phys || !phys.ok) { out.innerHTML = ""; return; }
 			out.innerHTML = "";
 			[["release speed", Math.round(phys.vRel) + " m/s"],

@@ -122,9 +122,23 @@ export function computeLeg(params, data) {
 	         events: events, totalDv: totalDv, miss: miss };
 }
 
-// Last computed leg per stage, for the card readouts and the polyline.
-var lastByStage = new Map();
-export function legFor(stageId) { return lastByStage.get(stageId) || null; }
+// Last computed leg per (World, stage), for the card readouts and the
+// polyline. Keyed by World first because N missions coexist (task A1) and
+// their Worlds reuse stage ids like "stg-2" — a stageId-only cache would let
+// one mission's recompute clobber another's drawn leg. WeakMap, so a closed
+// mission's entries go with its World.
+var lastByWorld = new WeakMap();
+export function legFor(world, stageId) {
+	var m = lastByWorld.get(world);
+	return (m && m.get(stageId)) || null;
+}
+function rememberLeg(world, stageId, leg) {
+	if (!world || typeof world !== "object") { return; }   // a bare Node call
+	                                                       // (ctx.world null) has no view to feed
+	var m = lastByWorld.get(world);
+	if (!m) { m = new Map(); lastByWorld.set(world, m); }
+	m.set(stageId, leg);
+}
 
 export default {
 	id: "transfer-leg",
@@ -139,7 +153,7 @@ export default {
 		var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 
 		var leg = computeLeg(params, data);
-		lastByStage.set(ctx.stageId, leg);
+		rememberLeg(ctx.world, ctx.stageId, leg);
 		if (!leg.ok) { return leg.diagnostic; }
 
 		var packet = PacketTypes.make("ship-state",
@@ -268,7 +282,7 @@ export default {
 
 		ctx.onResult(function (result) {
 			out.innerHTML = "";
-			var leg = legFor(ctx.stageId);
+			var leg = legFor(ctx.world, ctx.stageId);
 			if (result.status !== "ok" || !leg || !leg.ok) { return; }
 			var rows = [
 				["total leg Δv", (leg.totalDv / 1000).toFixed(2) + " km/s"],
@@ -298,7 +312,7 @@ export default {
 			if (c.geometry) { c.geometry.dispose(); }
 			if (c.material) { c.material.dispose(); }
 		}
-		var leg = legFor(snap.stageId);
+		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { return; }
 		var U = view.metresPerUnit;
 

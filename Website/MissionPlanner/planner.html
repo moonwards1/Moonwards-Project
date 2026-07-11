@@ -12,66 +12,96 @@
 <body>
 	<div id="mp-app">
 
-		<!-- Phase buttons (mockup A direction) + per-stage status strip -->
-		<div id="mp-phasebar">
-			<button class="mp-phase" id="mp-phase-dep" type="button">Departure</button>
-			<button class="mp-phase" id="mp-phase-coast" type="button">Coast</button>
-			<button class="mp-phase" id="mp-phase-arr" type="button" disabled
-				title="No arrival module yet — Ceres elevator and friends land in migration step 4.5">Arrival</button>
-			<div id="mp-stage-strip"></div>
-			<div id="mp-brand">
-				<button id="mp-share" class="mp-btn" type="button"
-					title="Copy a link that opens this exact mission">Copy mission link</button>
-				Mission Planner <span class="mp-muted">scaffold — steps 4.3–4.4</span>
-			</div>
+		<!-- Tab bar: Ephemeris tab + one tab per mission (task A2) -->
+		<div class="mp-tabbar" id="mp-tabbar">
+			<div class="mp-tab mp-tab-eph" id="mp-tab-eph">Ephemeris</div>
+			<div class="mp-tabs" id="mp-mission-tabs"></div>
+			<div class="mp-tab-plus" title="New missions are started from the Ephemeris tab">+</div>
 		</div>
 
 		<!-- shown only when a #mission= share link failed to load -->
 		<div id="mp-banner" hidden title="Click to dismiss"></div>
 
-		<!-- Ephemeris date bar: the one shared clock -->
-		<div id="mp-datebar">
-			<div id="mp-date-head">
-				<span class="mp-date-caption">Ephemeris date</span>
-				<input type="date" id="mp-date-field" min="2030-01-01" max="2130-01-01" value="2033-05-14">
-				<span id="mp-jd" class="mp-muted"></span>
-				<span class="mp-muted">one clock, every view &nbsp;·&nbsp; coarse: 100&nbsp;years, fine: ±6&nbsp;months</span>
-			</div>
-			<div class="mp-slider-line">
-				<span class="mp-slider-end">2030</span>
-				<input type="range" id="mp-date-coarse" min="0" max="36525" step="1" value="0">
-				<span class="mp-slider-end">2130</span>
-			</div>
-			<div class="mp-slider-line">
-				<span class="mp-slider-end mp-fine-end" id="mp-fine-lo"></span>
-				<input type="range" id="mp-date-fine" min="-182.625" max="182.625" step="0.125" value="0">
-				<span class="mp-slider-end mp-fine-end" id="mp-fine-hi"></span>
-			</div>
+		<!-- Ephemeris tab: a stub for now — the Solar-System Trajectory
+		     Plotter authoring experience (marker, targeting, waypoints) lands
+		     here in WP-D. Toggled by class like a .mp-mission. -->
+		<div id="mp-eph-view" class="mp-eph-view">
+			<p>The Ephemeris tab — plan a trajectory here and promote it to a
+			mission tab — lands in a later build step (WP-D).</p>
 		</div>
 
-		<!-- Mission events, from the modules' envelope events -->
-		<div id="mp-eventsbar"></div>
-
-		<div id="mp-main">
-			<!-- One canvas, scissored into the main view + floating panes -->
-			<div id="mp-scene">
-				<div id="mp-pane-main" class="mp-pane">
-					<span class="mp-pane-cap"></span>
-					<div class="mp-hud">
-						<span class="mp-hud-key">drag</span> rotate &nbsp;
-						<span class="mp-hud-key">wheel</span> zoom &nbsp;
-						<span class="mp-hud-key">right-drag</span> pan &nbsp;
-						<span class="mp-hud-key">click a small pane</span> swap it in
-					</div>
-				</div>
-				<div id="mp-floats"></div>
-			</div>
-
-			<!-- Sidebar: one card per mission stage -->
-			<div id="mp-panel"></div>
-		</div>
+		<!-- one .mp-mission per mission view, cloned from the template below;
+		     the shell shows exactly one at a time -->
+		<div id="mp-views"></div>
 
 	</div>
+
+	<!-- One mission's chrome. mission-view.js clones this per mission, so
+	     everything inside is addressed by CLASS, never id (ids can't repeat
+	     across N instances). -->
+	<template id="mp-mission-template">
+		<div class="mp-mission">
+
+			<!-- Phase buttons (mockup A direction) + per-stage status strip -->
+			<div class="mp-phasebar">
+				<button class="mp-phase mp-phase-dep" type="button">Departure</button>
+				<button class="mp-phase mp-phase-coast" type="button">Coast</button>
+				<button class="mp-phase mp-phase-arr" type="button" disabled
+					title="No arrival module yet — Ceres elevator and friends land in migration step 4.5">Arrival</button>
+				<div class="mp-stage-strip"></div>
+				<div class="mp-brand">
+					<button class="mp-btn mp-share" type="button"
+						title="Copy a link that opens this exact mission">Copy mission link</button>
+					Mission Planner <span class="mp-muted">scaffold — steps 4.3–4.4</span>
+				</div>
+			</div>
+
+			<!-- Ephemeris date bar: the mission's one clock -->
+			<div class="mp-datebar">
+				<div class="mp-date-head">
+					<span class="mp-date-caption">Ephemeris date</span>
+					<input type="date" class="mp-date-field" min="2030-01-01" max="2130-01-01" value="2033-05-14">
+					<span class="mp-jd mp-muted"></span>
+					<span class="mp-muted">one clock, every view &nbsp;·&nbsp; coarse: 100&nbsp;years, fine: ±6&nbsp;months</span>
+				</div>
+				<div class="mp-slider-line">
+					<span class="mp-slider-end">2030</span>
+					<input type="range" class="mp-date-coarse" min="0" max="36525" step="1" value="0">
+					<span class="mp-slider-end">2130</span>
+				</div>
+				<div class="mp-slider-line">
+					<span class="mp-slider-end mp-fine-end mp-fine-lo"></span>
+					<input type="range" class="mp-date-fine" min="-182.625" max="182.625" step="0.125" value="0">
+					<span class="mp-slider-end mp-fine-end mp-fine-hi"></span>
+				</div>
+			</div>
+
+			<!-- Mission events, from the modules' envelope events -->
+			<div class="mp-eventsbar"></div>
+
+			<div class="mp-main">
+				<!-- The shell's one canvas is re-parented in here while this
+				     mission is active, scissored into main + floating panes -->
+				<div class="mp-scene">
+					<div class="mp-pane mp-pane-main">
+						<span class="mp-pane-cap"></span>
+						<div class="mp-hud">
+							<span class="mp-hud-key">drag</span> rotate &nbsp;
+							<span class="mp-hud-key">wheel</span> zoom &nbsp;
+							<span class="mp-hud-key">right-drag</span> pan &nbsp;
+							<span class="mp-hud-key">click a small pane</span> swap it in
+						</div>
+					</div>
+					<div class="mp-floats"></div>
+				</div>
+
+				<!-- Sidebar: one card per mission stage -->
+				<div class="mp-panel"></div>
+			</div>
+
+		</div>
+	</template>
+
 	<script type="module" src="planner.js"></script>
 </body>
 </html>
