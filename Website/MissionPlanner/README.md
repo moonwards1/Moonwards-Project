@@ -175,4 +175,6 @@ should see first, once the interface can show it off), the remaining
 endpoint modules (Ceres elevator, spin launcher, mass driver, aerobrake —
 step 4.5, along with the marker/targeting and snap-to ports), mission
 persistence/undo, and in-scene editing (waypoint gizmo drags) — see
-ARCHITECTURE.md for the ordering and reasoning.
+ARCHITECTURE.md for the ordering and reasoning, and
+`MissionPlannerTasks.md` in this folder for the task-by-task build-out plan
+(work packages, difficulty ratings, and the inventory of adaptable code).
