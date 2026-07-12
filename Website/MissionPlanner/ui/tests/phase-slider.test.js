@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { coastSliderState, eventSliderState, eventSliderJd } from "../phase-slider.js";
+import { coastSliderState, departureSliderState } from "../phase-slider.js";
 
 function shortDate(jd) { return "jd" + Math.round(jd); }
 function stamp(jd) { return "t" + jd; }
@@ -62,61 +62,47 @@ test("coastSliderState: honors a custom tick count and labels each tick's start 
 	assert.equal(s.segments[1].label, shortDate(5));
 });
 
-// ---- B3: the event-scaled slider ------------------------------------------
+// ---- B3: the linear-time Departure slider ---------------------------------
 
-var EV3 = [{ jd: 0, label: "release" }, { jd: 2, label: "Moon SOI" }, { jd: 12, label: "Earth SOI" }];
+// launch at 0, on-course/SOI-exit at 12; one interior mark (Moon SOI) at 2.
+var MARKS = [{ jd: 0, label: "release" }, { jd: 2, label: "Moon SOI" }, { jd: 12, label: "Earth SOI" }];
 
-test("eventSliderState: fewer than two events has no gap to scale (empty)", () => {
-	assert.equal(eventSliderState({ events: [], jd: 0, stamp }).empty, true);
-	assert.equal(eventSliderState({ events: [{ jd: 5, label: "x" }], jd: 5, stamp }).empty, true);
+test("departureSliderState: empty when the span isn't resolvable", () => {
+	assert.equal(departureSliderState({ start: NaN, end: 12, jd: 0, stamp }).empty, true);
+	assert.equal(departureSliderState({ start: 0, end: 0, jd: 0, stamp }).empty, true);   // zero-length
+	assert.equal(departureSliderState({ start: 12, end: 0, jd: 6, stamp }).empty, true);  // inverted
 });
 
-test("eventSliderState: N events give N-1 equal-width gaps, labelled by the reached milestone", () => {
-	var s = eventSliderState({ events: EV3, jd: 0, stamp });
-	assert.equal(s.empty, false);
-	assert.equal(s.segments.length, 2);
-	// equal track width regardless of the 2-day vs 10-day real durations
+test("departureSliderState: time is LINEAR — the playhead fraction is (jd-start)/span", () => {
+	// jd=2 (the Moon-SOI mark) is 2/12 of the way — a sliver, NOT half. That's
+	// the whole point of dropping event-scaling: short milestones stay short.
+	assert.ok(Math.abs(departureSliderState({ start: 0, end: 12, jd: 2, stamp }).playheadFrac - 2 / 12) < 1e-12);
+	assert.equal(departureSliderState({ start: 0, end: 12, jd: 6, stamp }).playheadFrac, 0.5);
+});
+
+test("departureSliderState: even time ticks give the linear scale", () => {
+	var s = departureSliderState({ start: 0, end: 10, jd: 0, ticks: 5, stamp });
+	assert.equal(s.segments.length, 5);
 	assert.equal(s.segments[0].frac0, 0);
-	assert.equal(s.segments[0].frac1, 0.5);
-	assert.equal(s.segments[1].frac1, 1);
-	assert.equal(s.segments[0].label, "Moon SOI");
-	assert.equal(s.segments[1].label, "Earth SOI");
-	assert.equal(s.segments[1].sub, stamp(12));
+	assert.equal(s.segments[4].frac1, 1);
+	assert.equal(s.segments[1].label, stamp(2));   // tick at 1/5 of the span
 });
 
-test("eventSliderState: the fraction<->jd map is nonlinear across gaps but continuous", () => {
-	// jd=1 is halfway through the first (2-day) gap -> a quarter of the track.
-	assert.equal(eventSliderState({ events: EV3, jd: 1, stamp }).playheadFrac, 0.25);
-	// jd=7 is halfway through the second (10-day) gap -> three-quarters.
-	assert.equal(eventSliderState({ events: EV3, jd: 7, stamp }).playheadFrac, 0.75);
-	// a breakpoint maps exactly to a gap boundary
-	assert.equal(eventSliderState({ events: EV3, jd: 2, stamp }).playheadFrac, 0.5);
+test("departureSliderState: interior event marks sit at their true time fractions", () => {
+	var s = departureSliderState({ start: 0, end: 12, jd: 0, marks: MARKS, stamp });
+	// release (frac 0) and Earth SOI (frac 1) are the edges — dropped; only the
+	// interior Moon-SOI mark survives, at 2/12.
+	assert.equal(s.marks.length, 1);
+	assert.equal(s.marks[0].title, "Moon SOI");
+	assert.ok(Math.abs(s.marks[0].frac - 2 / 12) < 1e-12);
 });
 
-test("eventSliderState: the clock outside the flight span pins the playhead", () => {
-	assert.equal(eventSliderState({ events: EV3, jd: -5, stamp }).pinnedAt, "start");
-	assert.equal(eventSliderState({ events: EV3, jd: -5, stamp }).playheadFrac, 0);
-	assert.equal(eventSliderState({ events: EV3, jd: 99, stamp }).pinnedAt, "end");
-	assert.equal(eventSliderState({ events: EV3, jd: 99, stamp }).playheadFrac, 1);
+test("departureSliderState: the clock outside the span pins the playhead", () => {
+	assert.equal(departureSliderState({ start: 0, end: 12, jd: -5, stamp }).pinnedAt, "start");
+	assert.equal(departureSliderState({ start: 0, end: 12, jd: -5, stamp }).playheadFrac, 0);
+	assert.equal(departureSliderState({ start: 0, end: 12, jd: 99, stamp }).pinnedAt, "end");
+	assert.equal(departureSliderState({ start: 0, end: 12, jd: 99, stamp }).playheadFrac, 1);
 	// exactly on an edge is not pinned (inclusive span, matching Coast)
-	assert.equal(eventSliderState({ events: EV3, jd: 0, stamp }).pinnedAt, null);
-	assert.equal(eventSliderState({ events: EV3, jd: 12, stamp }).pinnedAt, null);
-});
-
-test("eventSliderState: sorts unordered events before scaling", () => {
-	var shuffled = [EV3[2], EV3[0], EV3[1]];
-	var s = eventSliderState({ events: shuffled, jd: 1, stamp });
-	assert.equal(s.segments[0].label, "Moon SOI");
-	assert.equal(s.playheadFrac, 0.25);
-});
-
-test("eventSliderJd: inverts fractionOfJd (a scrub round-trips to the same jd)", () => {
-	[0, 0.25, 0.5, 0.75, 1].forEach((frac) => {
-		var jd = eventSliderJd(EV3, frac);
-		assert.ok(Math.abs(eventSliderState({ events: EV3, jd: jd, stamp }).playheadFrac - frac) < 1e-9,
-			"frac " + frac + " -> jd " + jd + " -> back");
-	});
-	// endpoints land on the first/last events
-	assert.equal(eventSliderJd(EV3, 0), 0);
-	assert.equal(eventSliderJd(EV3, 1), 12);
+	assert.equal(departureSliderState({ start: 0, end: 12, jd: 0, stamp }).pinnedAt, null);
+	assert.equal(departureSliderState({ start: 0, end: 12, jd: 12, stamp }).pinnedAt, null);
 });

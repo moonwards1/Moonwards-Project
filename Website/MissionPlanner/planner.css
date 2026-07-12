@@ -142,6 +142,13 @@ body {
 }
 .mp-playhead.mp-pinned { background: #3d4c6b; }
 .mp-playhead.mp-pinned::after { border-top-color: #3d4c6b; }
+/* Event marks overlaid on a linear axis (Departure slider, B3): thin ticks at
+   a milestone's true time fraction, independent of the tick cells. */
+.mp-mark {
+	position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px;
+	background: #e0a84a; opacity: 0.85; pointer-events: auto; cursor: help;
+	border-radius: 1px;
+}
 
 /* ---------- events bar ---------- */
 .mp-eventsbar {

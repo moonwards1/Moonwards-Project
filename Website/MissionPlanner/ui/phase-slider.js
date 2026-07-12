@@ -11,10 +11,10 @@
  *     here with the mp- prefix the rest of the shell uses). It knows
  *     nothing about dates or jd: callers hand it segments (fractions along
  *     a 0..1 track) and a playhead fraction, and get a 0..1 fraction back
- *     whenever the user clicks or drags the track. B3's event-scaled
- *     sliders are siblings of createCoastSlider() below, built on this same
- *     primitive with a different fraction<->jd mapping (nonlinear, sized by
- *     event gaps instead of even ticks).
+ *     whenever the user clicks or drags the track. B3's Departure slider
+ *     (createDepartureSlider below) is a sibling of createCoastSlider, also
+ *     linear in time but over a launch→on-course span the caller computes,
+ *     with event marks overlaid (setMarks).
  *
  *   - coastSliderState(opts) + createCoastSlider(container, opts) — B2's
  *     actual deliverable. coastSliderState is the pure part (segments +
@@ -114,6 +114,19 @@ export function createSegmentedSlider(container, opts) {
 			playhead.style.left = (clamp01(fraction) * 100) + "%";
 			playhead.classList.toggle("mp-pinned", !!pinned);
 		},
+		// Overlay ticks at arbitrary fractions (event marks on a linear axis),
+		// independent of the segment cells. marks: [{ frac, title, cls }].
+		setMarks: function (marks) {
+			Array.prototype.slice.call(track.querySelectorAll(".mp-mark"))
+				.forEach(function (m) { track.removeChild(m); });
+			(marks || []).forEach(function (m) {
+				var el = document.createElement("div");
+				el.className = "mp-mark" + (m.cls ? " " + m.cls : "");
+				el.style.left = (clamp01(m.frac) * 100) + "%";
+				if (m.title) { el.title = m.title; }
+				track.appendChild(el);
+			});
+		},
 		dispose: function () {
 			window.removeEventListener("mousemove", onMove);
 			window.removeEventListener("mouseup", onUp);
@@ -184,116 +197,98 @@ export function createCoastSlider(container, opts) {
 	return { update: update, dispose: slider.dispose };
 }
 
-// ---- B3: the event-scaled Departure/Arrival slider -------------------------
-// Same DOM primitive as Coast, but the track is scaled by EVENTS, not linear
-// time: the flight's events become breakpoints, and each gap between two
-// consecutive events gets an equal share of the track regardless of its real
-// duration ("event-scaled, not linear time"). Within a gap, track position
-// maps linearly to jd — so the whole fraction<->jd map is piecewise-linear
-// and strictly monotonic.
+// ---- B3: the Departure slider ---------------------------------------------
+// LINEAR in time (like Coast), spanning the ship's departure flight: from
+// launch on the LEFT to the moment it must be on course for the coast phase
+// (origin-SOI exit) on the RIGHT. The design intent (Kim, 2026-07-11):
 //
-// Why cross-boundary dragging stays sane (the task's stated worry): the
-// wrapper never stores "which gap am I dragging in". Every scrub converts the
-// pointer fraction straight to a jd (eventSliderJd), sets the shared clock,
-// and the playhead is re-derived from that jd on the next update. A drag is
-// just a rapid series of independent, stateless conversions, so crossing a
-// breakpoint is nothing special — no stale drag state to misbehave.
+//   - The RIGHT edge is the compliance deadline — the time the flight plan
+//     needs the ship on course. It is the fixed anchor.
+//   - The LEFT edge (launch) FLOATS: a well-timed single skyhook release is a
+//     short departure; a release plus Earth- and Moon-flyby burns takes far
+//     longer; an L1 elevator is different again. So the span grows or shrinks
+//     with the departure tech stack, always anchored at the right.
+//   - Default length, before a real trajectory exists, is a Hohmann estimate:
+//     SOI_radius / injection-Δv (computed by the caller — see mission-view's
+//     departureSpan). Once an actual trajectory resolves, its real duration
+//     replaces the estimate. The duration can come from two-body coast today
+//     or CR3BP later — this widget only wants the two edge times.
 //
-// Flight-only: callers pass just the ship's-flight events (release..catch).
-// Things before launch (still on the tether) or after the catch (on the
-// elevator / ground) are a different regime and don't belong on a flight
-// scrubber — the caller filters them out, not this widget.
+// So the caller hands over the two edge jds (already computed however it
+// likes) plus event marks; the widget is a plain linear scrubber over them,
+// identical in feel to the Coast slider. Everything about which times mean
+// what lives in mission-view; nothing event-scaled remains.
 
-// Pure: given the flight events (each {jd, label}) and the clock jd, compute
-// the segments (gaps), the playhead fraction, and the pinned flag. Needs >= 2
-// events to have a gap to scale; fewer -> empty. stamp(jd) formats a segment's
-// milestone time. No DOM — Node-testable.
-export function eventSliderState(opts) {
-	var events = (opts.events || [])
-		.filter(function (e) { return e && isFinite(e.jd); })
-		.slice()
-		.sort(function (a, b) { return a.jd - b.jd; });
-	var jd = opts.jd, stamp = opts.stamp;
-	var n = events.length - 1;                  // gap count == segment count
-	if (n < 1) { return { empty: true }; }
+// Pure: even time ticks across [start, end] for the linear scale, plus the
+// interior event marks placed at their true time fractions, plus the playhead
+// (pinned when the clock is outside the span). No DOM — Node-testable.
+export function departureSliderState(opts) {
+	var start = opts.start, end = opts.end, jd = opts.jd;
+	var ticks = opts.ticks || 5;
+	var stamp = opts.stamp;
+	if (!(isFinite(start) && isFinite(end) && end > start)) { return { empty: true }; }
+	var span = end - start;
 
 	var segments = [];
-	for (var i = 0; i < n; i++) {
+	for (var i = 0; i < ticks; i++) {
+		var f0 = i / ticks;
 		segments.push({
-			frac0: i / n, frac1: (i + 1) / n,
-			// label the gap by the milestone it REACHES (its right event), so
-			// the playhead arrives at each named event exactly on a boundary.
-			label: events[i + 1].short || events[i + 1].label,
-			sub: stamp ? stamp(events[i + 1].jd) : ""
+			frac0: f0, frac1: (i + 1) / ticks, tickOnly: true,
+			label: stamp(start + f0 * span)
 		});
 	}
 
-	var first = events[0].jd, last = events[n].jd;
-	var pinnedAt = jd < first ? "start" : (jd > last ? "end" : null);
+	// Event marks (release, SOI crossings, burns) at their real fractions —
+	// interior only; the launch and on-course ends are the edges themselves.
+	var marks = (opts.marks || [])
+		.filter(function (m) { return m && isFinite(m.jd); })
+		.map(function (m) { return { frac: (m.jd - start) / span, title: m.label, jd: m.jd }; })
+		.filter(function (m) { return m.frac > 0.001 && m.frac < 0.999; });
+
+	var pinnedAt = jd < start ? "start" : (jd > end ? "end" : null);
 	var playheadFrac = pinnedAt === "start" ? 0
 		: pinnedAt === "end" ? 1
-		: fractionOfJd(events, jd);
-	return { empty: false, segments: segments, playheadFrac: playheadFrac,
-	         pinnedAt: pinnedAt, first: first, last: last };
+		: (jd - start) / span;
+	return { empty: false, segments: segments, marks: marks,
+	         playheadFrac: playheadFrac, pinnedAt: pinnedAt };
 }
 
-// jd -> track fraction, piecewise-linear across the equal-width gaps. Assumes
-// events sorted and jd within [first, last] (callers pin outside that).
-function fractionOfJd(events, jd) {
-	var n = events.length - 1;
-	var g = 0;
-	while (g < n - 1 && jd >= events[g + 1].jd) { g++; }
-	var lo = events[g].jd, hi = events[g + 1].jd;
-	var within = hi > lo ? (jd - lo) / (hi - lo) : 0;   // zero-width gap -> its left edge
-	return (g + clamp01(within)) / n;
-}
-
-// track fraction -> jd, the inverse of fractionOfJd (what a scrub produces).
-// Exported so the mapping is Node-tested in both directions.
-export function eventSliderJd(events, fraction) {
-	events = (events || [])
-		.filter(function (e) { return e && isFinite(e.jd); })
-		.slice()
-		.sort(function (a, b) { return a.jd - b.jd; });
-	var n = events.length - 1;
-	if (n < 1) { return NaN; }
-	var x = clamp01(fraction) * n;              // 0..n
-	var g = Math.min(Math.floor(x), n - 1);     // gap index (n at frac==1 -> last gap)
-	var within = x - g;
-	var lo = events[g].jd, hi = events[g + 1].jd;
-	return lo + within * (hi - lo);
-}
-
-// opts: { onSetJd(jd), stamp(jd), caption, emptyMsg }. Returns { update(events,
-// jd), dispose() }. update() is cheap to call every recompute/clock change.
-export function createEventSlider(container, opts) {
+// opts: { onSetJd(jd), stamp(jd), ticks?, caption, emptyMsg }. Returns
+// { update({ start, end, jd, marks, defaulted }), dispose() }. update() is
+// cheap to call on every recompute/clock change.
+export function createDepartureSlider(container, opts) {
 	var onSetJd = opts.onSetJd;
 	var stamp = opts.stamp;
-	var caption = opts.caption || "event-scaled (not linear time)";
+	var ticks = opts.ticks;
+	var caption = opts.caption || "DEPARTURE — launch → on course (linear time)";
 	var emptyMsg = opts.emptyMsg ||
-		"No flight span yet — the ship's flight needs at least two events to scale.";
-	var flightEvents = null;   // last non-empty event set, for scrub -> jd
+		"No departure span yet — the release needs to resolve, and a destination set.";
+	var span = null;   // { start, end } — null while empty
 
 	var slider = createSegmentedSlider(container, {
 		onScrub: function (fraction) {
-			if (flightEvents) { onSetJd(eventSliderJd(flightEvents, fraction)); }
+			if (span) { onSetJd(span.start + fraction * (span.end - span.start)); }
 		}
 	});
 
-	function update(events, jd) {
-		var s = eventSliderState({ events: events, jd: jd, stamp: stamp });
+	function update(state) {
+		var s = departureSliderState({ start: state.start, end: state.end, jd: state.jd,
+			ticks: ticks, stamp: stamp, marks: state.marks });
 		if (s.empty) {
-			flightEvents = null;
+			span = null;
 			slider.setCaption(caption, "");
+			slider.setMarks([]);
 			slider.setEmpty(emptyMsg);
 			return;
 		}
-		flightEvents = events;
+		span = { start: state.start, end: state.end };
 		slider.setCaption(caption,
-			s.pinnedAt === "start" ? "clock is before this phase — playhead pinned at start"
+			s.pinnedAt === "start" ? "clock is before launch — playhead pinned at start"
 			: s.pinnedAt === "end" ? "clock is past this phase — playhead pinned at end"
+			: state.defaulted ? "default length (Hohmann estimate) — no trajectory yet"
 			: "playhead = the one shared clock");
 		slider.setSegments(s.segments);
+		slider.setMarks(s.marks);
 		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt);
 	}
 

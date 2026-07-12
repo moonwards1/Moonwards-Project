@@ -47,7 +47,7 @@ import {
 	addLabel as brAddLabel, updateLabels as brUpdateLabels, updateScales as brUpdateScales
 } from "../Shared/sim/body-renderer.js";
 import { createKeplerOrbitRing, makeArcLine } from "../Shared/sim/orbit-rings.js";
-import { createCoastSlider, createEventSlider } from "./ui/phase-slider.js";
+import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
 
 var O = OrbitalMath;
 var LE = LunarEphemeris;
@@ -738,8 +738,8 @@ export function createMissionView(opts) {
 	dateBar.bind(function () { world.set({ jd: dateState.jd }); });
 
 	function setClock(jd) {
-		dateBar.setBaseDays(jd - JD0);
-		world.set({ jd: dateState.jd });
+		dateBar.setJd(jd);   // exact jd (keeps sub-day precision the departure
+		world.set({ jd: dateState.jd });   // slider and event clicks need)
 	}
 
 	// ---- the Coast slider (task B2): date-scaled, spanning the departure
@@ -763,12 +763,12 @@ export function createMissionView(opts) {
 		return { start: Math.min.apply(null, jds), end: Math.max.apply(null, jds) };
 	}
 
-	// ---- the Departure slider (task B3): event-scaled, spanning the ship's
-	// flight from release to the heliocentric hand-off. Its segments are the
-	// gaps between the departure-phase stages' flight events.
-	var depSlider = createEventSlider(depSliderEl, {
+	// ---- the Departure slider (task B3): LINEAR in time over the ship's
+	// departure flight — launch (left, floats) to on-course/SOI-exit (right,
+	// the anchor). See ui/phase-slider.js and departureSpan() below.
+	var depSlider = createDepartureSlider(depSliderEl, {
 		onSetJd: setClock, stamp: shortStamp,
-		caption: "DEPARTURE — event-scaled (not linear time)"
+		caption: "DEPARTURE — launch → on course (linear time)"
 	});
 
 	// The departure phase's flight events (release, Moon-SOI exit, Earth-SOI
@@ -782,6 +782,55 @@ export function createMissionView(opts) {
 			res.events.forEach(function (e) { if (e.flight !== false) { evs.push(e); } });
 		});
 		return evs;
+	}
+
+	// The destination body the coast leg is aiming at (for the Hohmann default
+	// span). Read from the transfer-leg stage's params; "" / missing => none.
+	function coastDestination() {
+		var stages = world.stages();
+		for (var i = 0; i < stages.length; i++) {
+			if (stages[i].moduleId === "transfer-leg") {
+				var d = stages[i].params && stages[i].params.destination;
+				return (d && systems.has(d)) ? d : null;
+			}
+		}
+		return null;
+	}
+
+	// The departure span for the slider. The RIGHT edge is the compliance time
+	// (when the ship must be on course); the LEFT edge (launch) floats to fit
+	// the departure duration. Today the flight events give both edges directly
+	// (release .. Earth-SOI exit); the Hohmann heuristic is the fallback length
+	// when only a single point resolves. When C1 lands, the right edge becomes
+	// the frozen plan's fixed deadline and this is where that swaps in.
+	function departureSpan(results) {
+		var evs = departureEvents(results);
+		var jds = evs.map(function (e) { return e.jd; });
+		if (jds.length >= 2) {
+			return { start: Math.min.apply(null, jds), end: Math.max.apply(null, jds),
+			         marks: evs, defaulted: false };
+		}
+		if (jds.length === 1) {
+			// only the release resolved: anchor there and use the Hohmann
+			// estimate for the (unknown) time to cross the origin SOI.
+			var def = departureDefaultSpanSeconds();
+			if (!(def > 0)) { return null; }
+			return { start: jds[0], end: jds[0] + def / 86400, marks: evs, defaulted: true };
+		}
+		return null;
+	}
+
+	// Kim's default length: SOI_radius / injection-Δv for a Hohmann transfer
+	// to the destination. Origin body is Earth (the departure system), so its
+	// heliocentric SOI and the Earth->dest Hohmann dv1. Seconds, or null.
+	function departureDefaultSpanSeconds() {
+		var dest = coastDestination();
+		if (!dest) { return null; }
+		var rEarth = EARTH.orbit.a, rDest = systems.get(dest).orbit.a;
+		var dv1 = O.hohmann(GM_SUN, rEarth, rDest).dv1;   // m/s injection burn
+		if (!(dv1 > 0)) { return null; }
+		var soi = O.sphereOfInfluence(rEarth, EARTH.GM, GM_SUN);   // m
+		return soi / dv1;
 	}
 
 	// ---- wiring: World changes place bodies; engine passes redraw the rest --
@@ -803,7 +852,10 @@ export function createMissionView(opts) {
 		renderEventsBar(results);
 		var span = coastSpan(results);
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
-		depSlider.update(departureEvents(results), world.jd);
+		var dep = departureSpan(results);
+		depSlider.update(dep
+			? { start: dep.start, end: dep.end, jd: world.jd, marks: dep.marks, defaulted: dep.defaulted }
+			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
 	});
 
 	// ---- rendering: the shared renderer, scissored per pane, only while this

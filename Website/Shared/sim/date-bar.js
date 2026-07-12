@@ -76,15 +76,24 @@ export function createDateBar(state, opts) {
 	var jdDecimals = opts.jdDecimals == null ? 1 : opts.jdDecimals;
 	var fineHalf = parseFloat(fineSlider.max);   // fine slider is always a symmetric +/- range
 
-	// Recompute state.jd from the coarse base + fine offset, and sync the labels.
-	function applyDate() {
-		var eff = Math.max(0, Math.min(spanDays, state.baseDays + parseFloat(fineSlider.value)));
-		state.jd = jd0 + eff;
+	// Sync the date field, JD readout and fine-span end labels to the current
+	// state.jd / state.baseDays.
+	function syncLabels() {
 		var d = OrbitalMath.dateFromJulian(state.jd);
 		dateField.value = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
 		jdLabel.textContent = "JD " + state.jd.toFixed(jdDecimals);
 		fineLoLabel.textContent = shortDate(jd0 + Math.max(0, state.baseDays - fineHalf));
 		fineHiLabel.textContent = shortDate(jd0 + Math.min(spanDays, state.baseDays + fineHalf));
+	}
+
+	// Recompute state.jd from the coarse base + fine offset, and sync the labels.
+	// This is the slider-driven path: the fine slider's value is stepped, so the
+	// jd it yields is quantised to that step (fine for scrubbing at the tool's
+	// scale). setJd() below is the precise path for programmatic jumps.
+	function applyDate() {
+		var eff = Math.max(0, Math.min(spanDays, state.baseDays + parseFloat(fineSlider.value)));
+		state.jd = jd0 + eff;
+		syncLabels();
 	}
 
 	// Move the coarse base to a day-from-epoch and recenter (or lock-resolve)
@@ -96,6 +105,23 @@ export function createDateBar(state, opts) {
 		coarseSlider.value = state.baseDays;
 		fineSlider.value = opts.resolveFineReset ? opts.resolveFineReset(state.baseDays) : 0;
 		applyDate();
+	}
+
+	// Position the clock at an EXACT jd, keeping the full precision the sliders
+	// can't hold (the coarse slider is whole-day; the fine slider is stepped).
+	// state.jd is set exactly; the coarse base takes the whole-day part and the
+	// fine slider is moved to the fractional day only as a VISUAL thumb position
+	// (its step-snap doesn't feed back into state.jd here). Use this for
+	// programmatic jumps that must land on a precise time — a mission event at
+	// 06:00, a phase-slider scrub within a days-long span — rather than
+	// setBaseDays (whole-day) or the stepped slider path.
+	function setJd(jd) {
+		var eff = Math.max(0, Math.min(spanDays, jd - jd0));
+		state.baseDays = Math.min(spanDays, Math.floor(eff));
+		coarseSlider.value = state.baseDays;
+		fineSlider.value = Math.max(-fineHalf, Math.min(fineHalf, eff - state.baseDays));
+		state.jd = jd0 + eff;   // exact — independent of the fine slider's step
+		syncLabels();
 	}
 
 	// Marker-style fine dragging for a date slider. A plain press jumps the
@@ -183,5 +209,5 @@ export function createDateBar(state, opts) {
 		});
 	}
 
-	return { setBaseDays: setBaseDays, applyDate: applyDate, bind: bind };
+	return { setBaseDays: setBaseDays, setJd: setJd, applyDate: applyDate, bind: bind };
 }
