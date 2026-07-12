@@ -76,10 +76,6 @@ var PHASE_FRAME = { departure: "body:Earth-Moon", coast: "helio" };
 var FRAME_PHASE = { "body:Earth-Moon": "departure", "helio": "coast" };
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
 
-// Comply-mode warning codes (task C1's frozen-plan module) that get their own
-// "Plan compliance" grid (task C2) instead of a generic diagnostic box.
-var COMPLY_WARNING_CODES = new Set(["vinf-mismatch", "epoch-mismatch", "aim-mismatch", "no-departure-tech"]);
-
 function dotClassFor(res) {
 	return res.status === "ok"
 		? (res.warnings.length ? "warn" : "ok")
@@ -339,7 +335,7 @@ export function createMissionView(opts) {
 	var paneMainEl = q(".mp-pane-main");
 	var floatsEl = q(".mp-floats");
 	var panelEl = q(".mp-panel");
-	var stageStripEl = q(".mp-stage-strip");
+	var complianceBarEl = q(".mp-compliance-bar");
 	var eventsBarEl = q(".mp-eventsbar");
 	var dateBarEl = q(".mp-datebar");
 	var coastSliderEl = q(".mp-coast-slider");
@@ -649,34 +645,65 @@ export function createMissionView(opts) {
 				fix: "Parameters are kept; fix the upstream stage and this one recomputes."
 			}, "blocked");
 		}
-		// frozen-plan's comply-mode warnings render as its own "Plan
-		// compliance" grid (task C2, in its card's init/onResult) — skip the
-		// generic box for those codes so they don't show twice.
-		res.warnings.forEach(function (w) {
-			if (res.moduleId === "frozen-plan" && COMPLY_WARNING_CODES.has(w.code)) { return; }
-			renderDiagBox(diag, w, "warn");
-		});
+		res.warnings.forEach(function (w) { renderDiagBox(diag, w, "warn"); });
 
 		entry.callbacks.forEach(function (cb) { cb(res); });
 	}
 
-	// ---- stage strip + events bar (fed by the envelope's events channel) ----
-	function renderStageStrip(results) {
-		stageStripEl.innerHTML = "";
-		results.forEach(function (res) {
-			var chip = document.createElement("button");
-			chip.type = "button";
-			chip.className = "mp-stage-chip";
-			var dot = document.createElement("span");
-			dot.className = "mp-dot " + dotClassFor(res);
-			chip.appendChild(dot);
-			var stage = world.getStage(res.stageId);
-			chip.appendChild(document.createTextNode(stage ? stageTitle(stage) : res.moduleId));
-			chip.addEventListener("click", function () {
-				var entry = cards[res.stageId];
-				if (entry) { entry.cardEl.scrollIntoView({ behavior: "smooth", block: "start" }); }
-			});
-			stageStripEl.appendChild(chip);
+	// ---- plan-compliance bar + events bar (fed by the envelope's events
+	// channel) ----
+	// Task C2, redirected (2026-07-12, Kim): the old stage strip here was a
+	// row of buttons that just scrolled to a sidebar card — not useful once
+	// you can see the cards by switching phase. This space now shows C1's
+	// frozen-plan comparison instead: a compact "PLAN REQUIRES -> TECH
+	// DELIVERS" readout, always visible (not phase-gated, like the shared
+	// clock below it), reached via the registry rather than a static import
+	// so frozen-plan stays a dynamically-loaded module like any other.
+	function cbarDate(jd) {
+		var d = O.dateFromJulian(jd);
+		return String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0") + " " +
+			String(d.h).padStart(2, "0") + ":" + String(d.m).padStart(2, "0");
+	}
+	var CBAR_LABEL = { vinf: "v∞", epoch: "epoch", aim: "aim" };
+	var CBAR_FMT = {
+		vinf: function (v) { return (v / 1000).toFixed(2) + " km/s"; },
+		epoch: cbarDate,
+		aim: function (v) { return v.toFixed(1) + "°"; }
+	};
+	function renderComplianceBar(results) {
+		complianceBarEl.innerHTML = "";
+		var planRes = null;
+		for (var i = 0; i < results.length; i++) {
+			if (results[i].moduleId === "frozen-plan") { planRes = results[i]; break; }
+		}
+		if (!planRes) { return; }   // no comply-mode stage on this mission (an old save)
+
+		var desc = registry.get("frozen-plan");
+		var comp = desc && typeof desc.complianceFor === "function" ? desc.complianceFor(world, planRes.stageId) : null;
+		if (!comp || !comp.ok) { return; }   // a damaged plan already shows as a hard diagnostic on its card
+
+		var chip = document.createElement("span");
+		if (!comp.delivered) {
+			chip.className = "mp-chip blocked";
+			chip.textContent = "compliance: no departure tech";
+			complianceBarEl.appendChild(chip);
+			return;
+		}
+
+		var allOk = comp.rows.every(function (r) { return r.ok; });
+		chip.className = "mp-chip " + (allOk ? "ok" : "warn");
+		chip.textContent = "compliance: " + (allOk ? "met" : "not met");
+		complianceBarEl.appendChild(chip);
+
+		comp.rows.forEach(function (row) {
+			var fmt = CBAR_FMT[row.key];
+			var m = document.createElement("span");
+			m.className = "mp-cbar-metric " + (row.ok ? "ok" : "warn");
+			var b = document.createElement("b"); b.textContent = CBAR_LABEL[row.key] || row.key; m.appendChild(b);
+			m.appendChild(document.createTextNode(row.ok ? fmt(row.delivered) : fmt(row.required) + " → " + fmt(row.delivered)));
+			var w = (planRes.warnings || []).filter(function (x) { return x.code === row.key + "-mismatch"; })[0];
+			if (w && w.fix) { m.title = w.fix; }
+			complianceBarEl.appendChild(m);
 		});
 	}
 
@@ -866,7 +893,7 @@ export function createMissionView(opts) {
 			drawStage(res);
 			updateCard(res);
 		});
-		renderStageStrip(results);
+		renderComplianceBar(results);
 		renderPhaseDots(results);
 		renderEventsBar(results);
 		var span = coastSpan(results);

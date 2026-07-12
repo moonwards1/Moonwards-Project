@@ -54,7 +54,7 @@ It may instead return an **envelope**, `{ packet, warnings, events }`
   it explicitly to aim a warning at another stage.
 - `events` — `[{ jd, label, ... }]` timeline entries (finite `jd`,
   non-empty `label`, extra fields pass through) for the phase sliders and
-  the stage strip.
+  the events bar.
 
 Malformed `warnings`/`events` are authoring errors and fail the stage with
 a `bad-output` diagnostic. Hard-failure blocking semantics are unchanged
@@ -80,8 +80,8 @@ deployed site). Since task A1 (the first step of the build-out plan in
 - **`mission-view.js`** exports `createMissionView({ world, registry,
   renderer, container, template, missionId, defaultMain })` — everything that
   belongs to one mission: its World + engine, frames, panes, sidebar cards,
-  date bar, stage strip, events bar, share button, and its slice of workspace
-  persistence. Returns `{ world, engine, root, show, hide, render, resize,
+  date bar, plan-compliance bar, events bar, share button, and its slice of
+  workspace persistence. Returns `{ world, engine, root, show, hide, render, resize,
   dispose }`; N instances coexist, one per future mission tab. Its DOM is
   cloned from `planner.html`'s `<template id="mp-mission-template">`, which
   is addressed by class, never id (ids can't repeat across instances).
@@ -107,8 +107,14 @@ outside the span, real **phase buttons** (task B1 — `workspace.phase ∈
 {departure, coast, arrival}`, driving the main-pane frame via `PHASE_FRAME`,
 which sidebar cards show, which slider shows, and the active highlight;
 Arrival stays disabled until an arrival module exists to give it a frame), a
-**stage strip** with status dots plus the same dots aggregated onto the
-phase buttons (`renderPhaseDots`, worst-status-wins per phase), an **events bar** fed by the
+**plan-compliance bar** (task C2 — `.mp-compliance-bar`, replacing the
+scaffold's original stage strip, which was just buttons that scrolled to a
+sidebar card) showing the frozen-plan stage's live PLAN REQUIRES → TECH
+DELIVERS comparison (v∞, epoch, aim) as a chip plus compact per-row metrics,
+not phase-gated — reached via `registry.get("frozen-plan").complianceFor`
+so the module stays dynamically loaded rather than statically imported; the
+phase buttons' own status dots (`renderPhaseDots`, worst-status-wins per
+phase) are unrelated and unaffected. An **events bar** fed by the
 envelope's `events` channel (click an event to set the clock), and
 **sidebar cards** — one per stage, now filtered to the active phase via each
 stage's `rendersIn` frame (`stagePhaseOf`); the module builds its controls in the card
@@ -192,7 +198,9 @@ Each module is a folder whose script default-exports its descriptor
   and reports the tech's deviations (v∞ / epoch / aim, tolerances exported)
   through the warnings channel; an empty tech slot is itself a warning, not
   a block (`inputOptional`, below). `computeCompliance`/`complianceFor`
-  expose the full required-vs-delivered rows for task C2's compliance card.
+  expose the full required-vs-delivered rows; `complianceFor` is also
+  attached to the module's registry descriptor so the shell can reach it
+  without a static import (task C2's plan-compliance bar).
   The mission-view's coast slider reads this stage's departure/arrival
   events as its span, so the slider stays pinned to the frozen dates while
   live edits show up as deviations.
