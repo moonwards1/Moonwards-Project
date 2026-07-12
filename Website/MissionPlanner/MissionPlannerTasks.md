@@ -318,12 +318,41 @@ what's missing is the frozen-plan stage itself and its card.
   1.7° aim warnings with the coast still ending 0.000 AU from Ceres,
   legDays 900 leaves the coast slider pinned Dec 2031 → Jan 2034 while the
   leg warns 0.352 AU, all clears on restore, console clean.
-- [ ] **C2. Plan-compliance card UI.** ★★
-  The "PLAN REQUIRES / TECH DELIVERS" grid with ok/warn colouring and an
-  assist box ("Short by 0.24 km/s — raise tip speed to ≈2.61"), rendered by
-  the shell from C1's structured warnings (`values` already carries numbers —
-  see `makeDiagnostic`). Extends `renderDiagBox`/`updateCard`
-  (planner.js:479–523). Mockup: mock-a-phases.html:406–420 (departure),
+- [x] **C2. Plan-compliance card UI.** ★★
+  **Done 2026-07-12.** The "PLAN REQUIRES / TECH DELIVERS" grid (`.mp-reqgrid`,
+  planner.css — mirrors the mockup's `.reqgrid`) plus assist boxes, live —
+  refreshed every recompute via `ctx.onResult`, appended to frozen-plan.js's
+  existing "Flight plan" card (`init`, below the frozen dates/plan Δv rows,
+  above the plannote): a "Plan compliance" sub-header + chip (met/not
+  met/no tech), the 3-row grid (v∞ out, epoch, asymptote — labels/formatters
+  keyed off `computeCompliance`'s row keys), then one `.mp-diag.warn` box per
+  failing row using that warning's `message`/`fix` text. Reads
+  `complianceFor(world, stageId)` for the **full** row set (including ok
+  rows, so a met requirement still shows green) rather than `res.warnings`
+  alone, which only carries the mismatches — matches the README's note that
+  `complianceFor` exists for this card. **Placement deviates from the
+  mockup:** the mockup draws "Plan compliance" as its own card in the
+  Departure/Arrival sidebars; it lives in the Coast-sidebar "Flight plan"
+  card instead, because the shell is one-card-per-stage-per-phase
+  (`stagePhaseOf`, task B1) and frozen-plan is one stage mapped to Coast —
+  splitting one stage's card across two phases would be a phase/card-model
+  change, out of scope for a ★★ task. Flagged for Kim; a follow-up can
+  revisit if the Departure-sidebar placement matters enough to justify it.
+  **Shell change:** `mission-view.js`'s `updateCard` now skips the generic
+  `renderDiagBox` loop for frozen-plan's comply-mode warning codes
+  (`COMPLY_WARNING_CODES`: vinf-mismatch, epoch-mismatch, aim-mismatch,
+  no-departure-tech) so they don't render twice — the grid/assist section
+  is their one rendering. Verified in-browser on the preset (Coast phase):
+  baseline shows "met" with all three rows equal (v∞ 5.50/5.50, epoch
+  12-20 06:00 both sides, asymptote 0.0°/0.0°); detuning the skyhook's
+  release altitude (6000→5000 km, same change C1's own verification used)
+  flips the chip to "not met", v∞ and asymptote go warn (4.67 km/s / 1.7°)
+  while epoch stays ok, and two assist boxes appear with the exact
+  "short by 0.83 km/s" / "1.7° gap" fix text — no duplicate generic diag
+  boxes for those codes, console clean; restoring the value returns to "met"
+  cleanly. Node suites unaffected (init/onResult are browser-only): 109
+  green. Assist buttons ("Set tip speed 2.61") are explicitly **not** built
+  here — that's C3. Mockup: mock-a-phases.html:406–420 (departure),
   489–499 (arrival). Depends on C1.
 - [ ] **C3. Assist actions ("Set tip speed 2.61" buttons).** ★★
   Diagnostics already carry an optional `fix`; extend the convention so a fix

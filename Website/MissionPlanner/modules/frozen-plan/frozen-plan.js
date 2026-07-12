@@ -73,6 +73,15 @@ function isoOf(jd) {
 	return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
 }
 
+// Compact "MM-DD HH:MM" for the compliance grid (task C2) — epoch tolerance
+// is hours-scale, so the date alone (isoOf, used elsewhere on this card)
+// would hide a real mismatch.
+function hmOf(jd) {
+	var d = O.dateFromJulian(jd);
+	return String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0") + " " +
+		String(d.h).padStart(2, "0") + ":" + String(d.m).padStart(2, "0");
+}
+
 function vec3Finite(a) {
 	return Array.isArray(a) && a.length === 3 &&
 		isFinite(a[0]) && isFinite(a[1]) && isFinite(a[2]);
@@ -268,9 +277,14 @@ export default {
 	// ---- view layer (shell-called; never runs in Node) --------------------
 
 	// The read-only "Flight plan" card (the mockup's coast sidebar card):
-	// frozen dates, flight time, v∞ out / in, plan Δv. Params are frozen at
-	// mission creation, so the rows are built once; the compliance grid card
-	// is task C2, not here.
+	// frozen dates, flight time, v∞ out / in, plan Δv (built once — these are
+	// frozen at mission creation), plus the live "Plan compliance" grid (task
+	// C2, refreshed every recompute — see below). The mockup draws compliance
+	// as a separate card in the Departure/Arrival sidebars; it lives here
+	// instead because the shell is currently one card per stage, and this
+	// stage's card is the one Coast shows (`stagePhaseOf`, task B1) — moving
+	// it would need the phase/card model to support more than one phase per
+	// stage, which is out of scope for this task.
 	init: function (ctx) {
 		var host = ctx.panelHost;
 		var stage = ctx.world.getStage(ctx.stageId);
@@ -295,6 +309,89 @@ export default {
 			var k = document.createElement("span"); k.className = "mp-k"; k.textContent = pair[0];
 			var v = document.createElement("span"); v.className = "mp-v"; v.textContent = pair[1];
 			r.appendChild(k); r.appendChild(v); host.appendChild(r);
+		});
+
+		// ---- plan-compliance grid (task C2): PLAN REQUIRES / TECH DELIVERS,
+		// live — refreshed every recompute via onResult, since "delivered" is
+		// the departure tech's current state, not the frozen params. Reads the
+		// full row set (ok and not) from complianceFor, so an on-target row
+		// still shows (green), not just the mismatches (res.warnings only
+		// carries the ones that are wrong).
+		var complyHead = document.createElement("div"); complyHead.className = "mp-wp-head";
+		var complyTitle = document.createElement("span"); complyTitle.textContent = "Plan compliance";
+		var complyChip = document.createElement("span"); complyChip.className = "mp-chip";
+		complyHead.appendChild(complyTitle); complyHead.appendChild(complyChip);
+		host.appendChild(complyHead);
+
+		var grid = document.createElement("div"); grid.className = "mp-reqgrid";
+		host.appendChild(grid);
+		var assist = document.createElement("div");
+		host.appendChild(assist);
+
+		var ROW_LABEL = { vinf: "v∞ out", epoch: "epoch", aim: "asymptote" };
+		var ROW_FMT = {
+			vinf: function (v) { return (v / 1000).toFixed(2) + " km/s"; },
+			epoch: function (v) { return hmOf(v); },
+			aim: function (v) { return v.toFixed(1) + "°"; }
+		};
+
+		function gridCell(text, cls) {
+			var span = document.createElement("span");
+			if (cls) { span.className = cls; }
+			span.textContent = text;
+			return span;
+		}
+
+		ctx.onResult(function (result) {
+			grid.innerHTML = "";
+			assist.innerHTML = "";
+
+			var live = complianceFor(ctx.world, ctx.stageId);
+			if (!live || !live.ok) {
+				complyChip.className = "mp-chip";
+				complyChip.textContent = "—";
+				return;
+			}
+			if (!live.delivered) {
+				complyChip.className = "mp-chip blocked";
+				complyChip.textContent = "no tech";
+				var w = (result.warnings || []).filter(function (x) { return x.code === "no-departure-tech"; })[0];
+				if (w) {
+					var box = document.createElement("div"); box.className = "mp-diag warn";
+					var msg = document.createElement("b"); msg.textContent = w.message; box.appendChild(msg);
+					if (w.fix) {
+						var fix = document.createElement("div"); fix.className = "mp-fix"; fix.textContent = w.fix;
+						box.appendChild(fix);
+					}
+					assist.appendChild(box);
+				}
+				return;
+			}
+
+			var allOk = live.rows.every(function (r) { return r.ok; });
+			complyChip.className = "mp-chip " + (allOk ? "ok" : "warn");
+			complyChip.textContent = allOk ? "met" : "not met";
+
+			grid.appendChild(gridCell(""));
+			grid.appendChild(gridCell("PLAN REQUIRES", "mp-h"));
+			grid.appendChild(gridCell("TECH DELIVERS", "mp-h"));
+			live.rows.forEach(function (row) {
+				var fmt = ROW_FMT[row.key];
+				grid.appendChild(gridCell(ROW_LABEL[row.key] || row.key, "mp-k"));
+				grid.appendChild(gridCell(fmt(row.required)));
+				grid.appendChild(gridCell(fmt(row.delivered), "mp-v " + (row.ok ? "ok" : "warn")));
+			});
+
+			(result.warnings || []).forEach(function (w) {
+				if (w.code !== "vinf-mismatch" && w.code !== "epoch-mismatch" && w.code !== "aim-mismatch") { return; }
+				var box = document.createElement("div"); box.className = "mp-diag warn";
+				var msg = document.createElement("b"); msg.textContent = w.message; box.appendChild(msg);
+				if (w.fix) {
+					var fix = document.createElement("div"); fix.className = "mp-fix"; fix.textContent = w.fix;
+					box.appendChild(fix);
+				}
+				assist.appendChild(box);
+			});
 		});
 
 		var note = document.createElement("div");

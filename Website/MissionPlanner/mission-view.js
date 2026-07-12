@@ -76,6 +76,10 @@ var PHASE_FRAME = { departure: "body:Earth-Moon", coast: "helio" };
 var FRAME_PHASE = { "body:Earth-Moon": "departure", "helio": "coast" };
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
 
+// Comply-mode warning codes (task C1's frozen-plan module) that get their own
+// "Plan compliance" grid (task C2) instead of a generic diagnostic box.
+var COMPLY_WARNING_CODES = new Set(["vinf-mismatch", "epoch-mismatch", "aim-mismatch", "no-departure-tech"]);
+
 function dotClassFor(res) {
 	return res.status === "ok"
 		? (res.warnings.length ? "warn" : "ok")
@@ -645,7 +649,13 @@ export function createMissionView(opts) {
 				fix: "Parameters are kept; fix the upstream stage and this one recomputes."
 			}, "blocked");
 		}
-		res.warnings.forEach(function (w) { renderDiagBox(diag, w, "warn"); });
+		// frozen-plan's comply-mode warnings render as its own "Plan
+		// compliance" grid (task C2, in its card's init/onResult) — skip the
+		// generic box for those codes so they don't show twice.
+		res.warnings.forEach(function (w) {
+			if (res.moduleId === "frozen-plan" && COMPLY_WARNING_CODES.has(w.code)) { return; }
+			renderDiagBox(diag, w, "warn");
+		});
 
 		entry.callbacks.forEach(function (cb) { cb(res); });
 	}

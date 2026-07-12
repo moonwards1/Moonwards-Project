@@ -247,6 +247,17 @@ body {
 	margin-top: 8px; padding-top: 7px; line-height: 1.5;
 }
 
+/* plan-compliance grid (task C2 — mockup .reqgrid): PLAN REQUIRES / TECH
+   DELIVERS, one row per compared quantity (v∞, epoch, aim). */
+.mp-reqgrid {
+	display: grid; grid-template-columns: auto 1fr 1fr; gap: 3px 10px;
+	font-size: 12.5px; margin: 4px 0;
+}
+.mp-reqgrid .mp-h { color: var(--dim); font-size: 11px; letter-spacing: 0.4px; }
+.mp-reqgrid .mp-k { color: var(--dim); }
+.mp-reqgrid .mp-v.ok { color: var(--ok); }
+.mp-reqgrid .mp-v.warn { color: var(--warn); }
+
 .mp-wp-head {
 	display: flex; justify-content: space-between; align-items: center;
 	margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line2);
