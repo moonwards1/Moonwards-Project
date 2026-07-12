@@ -5,13 +5,15 @@
  *
  * Two layers:
  *
- *   - createSegmentedSlider(container, opts) — the DOM primitive. A
- *     captioned track of flex-sized segments plus a playhead, matching
- *     mock-a-phases.html's .timeline/.track/.seg/.playhead markup (mirrored
- *     here with the mp- prefix the rest of the shell uses). It knows
- *     nothing about dates or jd: callers hand it segments (fractions along
- *     a 0..1 track) and a playhead fraction, and get a 0..1 fraction back
- *     whenever the user clicks or drags the track. B3's Departure slider
+ *   - createSegmentedSlider(container, opts) — the DOM primitive. A track of
+ *     flex-sized segments plus a playhead, matching mock-a-phases.html's
+ *     .timeline/.track/.seg/.playhead markup (mirrored here with the mp-
+ *     prefix the rest of the shell uses; the caption row above the track,
+ *     also in that markup, was dropped 2026-07-12 — Kim reclaimed the space
+ *     for the phase bar's now-bigger compliance readout). It knows nothing
+ *     about dates or jd: callers hand it segments (fractions along a 0..1
+ *     track) and a playhead fraction, and get a 0..1 fraction back whenever
+ *     the user clicks or drags the track. B3's Departure slider
  *     (createDepartureSlider below) is a sibling of createCoastSlider, also
  *     linear in time but over a launch→on-course span the caller computes,
  *     with event marks overlaid (setMarks).
@@ -28,21 +30,13 @@ function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 
 // ---- the DOM primitive -----------------------------------------------------
 // opts.onScrub(fraction) — called with a 0..1 track fraction on click/drag.
-// Returns { root, setCaption(left,right), setSegments(segs), setEmpty(msg),
-//   setPlayhead(fraction, pinned), dispose() }.
+// Returns { root, setSegments(segs), setEmpty(msg), setPlayhead(fraction,
+//   pinned), dispose() }.
 export function createSegmentedSlider(container, opts) {
 	var onScrub = opts.onScrub;
 
 	var root = document.createElement("div");
 	root.className = "mp-timeline";
-
-	var cap = document.createElement("div");
-	cap.className = "mp-tl-cap";
-	var capLeft = document.createElement("span");
-	var capRight = document.createElement("span");
-	cap.appendChild(capLeft);
-	cap.appendChild(capRight);
-	root.appendChild(cap);
 
 	var track = document.createElement("div");
 	track.className = "mp-track";
@@ -81,10 +75,6 @@ export function createSegmentedSlider(container, opts) {
 
 	return {
 		root: root,
-		setCaption: function (left, right) {
-			capLeft.textContent = left || "";
-			capRight.textContent = right || "";
-		},
 		// segs: [{ frac0, frac1, label, sub, tickOnly }]
 		setSegments: function (segs) {
 			clearSegments();
@@ -181,15 +171,10 @@ export function createCoastSlider(container, opts) {
 		var s = coastSliderState({ start: state.start, end: state.end, jd: state.jd, ticks: ticks, shortDate: shortDate });
 		if (s.empty) {
 			span = null;
-			slider.setCaption("COAST — date-scaled, departure → arrival", "");
 			slider.setEmpty("No computed span yet — departure and the leg both need to resolve.");
 			return;
 		}
 		span = { start: state.start, end: state.end };
-		slider.setCaption("COAST — date-scaled, departure → arrival",
-			s.pinnedAt === "start" ? "clock is before this phase — playhead pinned at start"
-			: s.pinnedAt === "end" ? "clock is past this phase — playhead pinned at end"
-			: "playhead = the one shared clock");
 		slider.setSegments(s.segments);
 		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt);
 	}
@@ -253,14 +238,13 @@ export function departureSliderState(opts) {
 	         playheadFrac: playheadFrac, pinnedAt: pinnedAt };
 }
 
-// opts: { onSetJd(jd), stamp(jd), ticks?, caption, emptyMsg }. Returns
-// { update({ start, end, jd, marks, defaulted }), dispose() }. update() is
-// cheap to call on every recompute/clock change.
+// opts: { onSetJd(jd), stamp(jd), ticks?, emptyMsg }. Returns { update({
+// start, end, jd, marks, defaulted }), dispose() }. update() is cheap to
+// call on every recompute/clock change.
 export function createDepartureSlider(container, opts) {
 	var onSetJd = opts.onSetJd;
 	var stamp = opts.stamp;
 	var ticks = opts.ticks;
-	var caption = opts.caption || "DEPARTURE — launch → on course (linear time)";
 	var emptyMsg = opts.emptyMsg ||
 		"No departure span yet — the release needs to resolve, and a destination set.";
 	var span = null;   // { start, end } — null while empty
@@ -276,17 +260,11 @@ export function createDepartureSlider(container, opts) {
 			ticks: ticks, stamp: stamp, marks: state.marks });
 		if (s.empty) {
 			span = null;
-			slider.setCaption(caption, "");
 			slider.setMarks([]);
 			slider.setEmpty(emptyMsg);
 			return;
 		}
 		span = { start: state.start, end: state.end };
-		slider.setCaption(caption,
-			s.pinnedAt === "start" ? "clock is before launch — playhead pinned at start"
-			: s.pinnedAt === "end" ? "clock is past this phase — playhead pinned at end"
-			: state.defaulted ? "default length (Hohmann estimate) — no trajectory yet"
-			: "playhead = the one shared clock");
 		slider.setSegments(s.segments);
 		slider.setMarks(s.marks);
 		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt);

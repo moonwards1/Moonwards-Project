@@ -67,8 +67,12 @@ body {
 .mp-phase:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* task C2: the frozen-plan comparison, above the timeline — not phase-gated,
-   same as the shared clock below it. Replaces the old stage-strip. */
-.mp-compliance-bar { display: flex; align-items: center; gap: 14px; margin-left: 18px; min-width: 0; overflow: hidden; }
+   same as the shared clock below it. Replaces the old stage-strip. Also
+   frozen-plan's only view surface now (sidebarCard: false, 2026-07-12): it
+   carries flight time / v∞ in / plan Δv and the hard-diagnostic/blocked
+   states too, so it flexes to use the width freed by dropping the brand
+   text and the timeline caption row. */
+.mp-compliance-bar { display: flex; align-items: center; gap: 14px; margin-left: 18px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
 .mp-cbar-metric { font-size: 12.5px; color: var(--text); white-space: nowrap; }
 .mp-cbar-metric b { color: var(--dim); font-weight: 400; margin-right: 4px; }
 .mp-cbar-metric.ok { color: var(--ok); }
@@ -81,7 +85,6 @@ body {
 .mp-dot.blocked { background: #5a6478; }
 
 .mp-brand { margin-left: auto; font-size: 13px; color: var(--bright); display: flex; align-items: center; gap: 12px; }
-.mp-brand .mp-muted { margin-left: 6px; }
 
 #mp-banner {
 	flex: none; padding: 6px 14px; font-size: 12.5px; cursor: pointer;
@@ -111,10 +114,6 @@ body {
 	padding: 8px 14px 22px;
 }
 .mp-timeline { position: relative; }
-.mp-tl-cap {
-	font-size: 11.5px; color: var(--dim); margin-bottom: 5px;
-	display: flex; justify-content: space-between;
-}
 .mp-track { display: flex; gap: 3px; position: relative; height: 26px; cursor: pointer; }
 .mp-seg {
 	border: 1px solid var(--line2); background: var(--panel2); border-radius: 4px;
@@ -241,12 +240,6 @@ body {
 .mp-row { display: flex; justify-content: space-between; gap: 10px; padding: 2.5px 0; font-size: 13px; }
 .mp-row .mp-k { color: var(--dim); }
 .mp-row .mp-v { text-align: right; }
-
-/* the frozen-plan card's comply note (mockup .plannote) */
-.mp-plannote {
-	font-size: 12px; color: var(--dim); border-top: 1px dashed var(--line2);
-	margin-top: 8px; padding-top: 7px; line-height: 1.5;
-}
 
 .mp-wp-head {
 	display: flex; justify-content: space-between; align-items: center;

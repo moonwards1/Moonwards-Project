@@ -572,6 +572,7 @@ export function createMissionView(opts) {
 
 	world.stages().forEach(function (stage) {
 		var desc = registry.get(stage.moduleId);
+		if (desc && desc.sidebarCard === false) { return; }   // e.g. frozen-plan: its readouts live in the phase bar instead
 		var card = document.createElement("div");
 		card.className = "mp-card";
 
@@ -659,6 +660,12 @@ export function createMissionView(opts) {
 	// DELIVERS" readout, always visible (not phase-gated, like the shared
 	// clock below it), reached via the registry rather than a static import
 	// so frozen-plan stays a dynamically-loaded module like any other.
+	//
+	// frozen-plan has no sidebar card (sidebarCard: false), so this bar is
+	// ALSO now its only view surface: it has to cover the hard-diagnostic and
+	// blocked statuses the generic card used to render, plus the plan's own
+	// facts (flight time, v∞ in, plan Δv — planSummary) that used to sit in
+	// that card's rows.
 	function cbarDate(jd) {
 		var d = O.dateFromJulian(jd);
 		return String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0") + " " +
@@ -670,6 +677,37 @@ export function createMissionView(opts) {
 		epoch: cbarDate,
 		aim: function (v) { return v.toFixed(1) + "°"; }
 	};
+	function appendCbarChip(cls, text, title) {
+		var chip = document.createElement("span");
+		chip.className = "mp-chip " + cls;
+		chip.textContent = text;
+		if (title) { chip.title = title; }
+		complianceBarEl.appendChild(chip);
+	}
+
+	function appendPlanSummary(summary) {
+		if (!summary) { return; }
+		if (summary.flightDays != null) {
+			var ft = document.createElement("span");
+			ft.className = "mp-cbar-metric";
+			var b1 = document.createElement("b"); b1.textContent = "flight time"; ft.appendChild(b1);
+			ft.appendChild(document.createTextNode(Math.round(summary.flightDays) + " d"));
+			complianceBarEl.appendChild(ft);
+		}
+		if (summary.arrivalVInf != null) {
+			var vi = document.createElement("span");
+			vi.className = "mp-cbar-metric";
+			var b2 = document.createElement("b"); b2.textContent = "v∞ in"; vi.appendChild(b2);
+			vi.appendChild(document.createTextNode((summary.arrivalVInf / 1000).toFixed(2) + " km/s"));
+			complianceBarEl.appendChild(vi);
+		}
+		var dv = document.createElement("span");
+		dv.className = "mp-cbar-metric";
+		var b3 = document.createElement("b"); b3.textContent = "plan Δv"; dv.appendChild(b3);
+		dv.appendChild(document.createTextNode((summary.dv / 1000).toFixed(2) + " km/s"));
+		complianceBarEl.appendChild(dv);
+	}
+
 	function renderComplianceBar(results) {
 		complianceBarEl.innerHTML = "";
 		var planRes = null;
@@ -678,22 +716,33 @@ export function createMissionView(opts) {
 		}
 		if (!planRes) { return; }   // no comply-mode stage on this mission (an old save)
 
+		// No sidebar card exists for this stage, so these two statuses (which
+		// the generic card used to render as a diag box) need a home here.
+		if (planRes.status === "diagnostic") {
+			appendCbarChip("err", "plan: " + planRes.diagnostic.message, planRes.diagnostic.message);
+			return;
+		}
+		if (planRes.status === "blocked") {
+			var up = world.getStage(planRes.blockedOn);
+			appendCbarChip("blocked", "plan: blocked — waiting on " + (up ? stageTitle(up) : planRes.blockedOn));
+			return;
+		}
+
 		var desc = registry.get("frozen-plan");
 		var comp = desc && typeof desc.complianceFor === "function" ? desc.complianceFor(world, planRes.stageId) : null;
-		if (!comp || !comp.ok) { return; }   // a damaged plan already shows as a hard diagnostic on its card
+		if (!comp || !comp.ok) { return; }
 
-		var chip = document.createElement("span");
+		var stage = world.getStage(planRes.stageId);
+		var summary = desc && typeof desc.planSummary === "function" && stage ? desc.planSummary(stage.params) : null;
+
 		if (!comp.delivered) {
-			chip.className = "mp-chip blocked";
-			chip.textContent = "compliance: no departure tech";
-			complianceBarEl.appendChild(chip);
+			appendCbarChip("blocked", "compliance: no departure tech");
+			appendPlanSummary(summary);
 			return;
 		}
 
 		var allOk = comp.rows.every(function (r) { return r.ok; });
-		chip.className = "mp-chip " + (allOk ? "ok" : "warn");
-		chip.textContent = "compliance: " + (allOk ? "met" : "not met");
-		complianceBarEl.appendChild(chip);
+		appendCbarChip(allOk ? "ok" : "warn", "compliance: " + (allOk ? "met" : "not met"));
 
 		comp.rows.forEach(function (row) {
 			var fmt = CBAR_FMT[row.key];
@@ -705,6 +754,8 @@ export function createMissionView(opts) {
 			if (w && w.fix) { m.title = w.fix; }
 			complianceBarEl.appendChild(m);
 		});
+
+		appendPlanSummary(summary);
 	}
 
 	// Phase-button dots (task B1): the worst status among a phase's stages
@@ -813,8 +864,7 @@ export function createMissionView(opts) {
 	// departure flight — launch (left, floats) to on-course/SOI-exit (right,
 	// the anchor). See ui/phase-slider.js and departureSpan() below.
 	var depSlider = createDepartureSlider(depSliderEl, {
-		onSetJd: setClock, stamp: shortStamp,
-		caption: "DEPARTURE — launch → on course (linear time)"
+		onSetJd: setClock, stamp: shortStamp
 	});
 
 	// The departure phase's flight events (release, Moon-SOI exit, Earth-SOI

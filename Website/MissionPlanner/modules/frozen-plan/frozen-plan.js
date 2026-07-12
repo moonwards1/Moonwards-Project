@@ -37,10 +37,15 @@
  * recompute.js): a mission spawned with an empty tech slot still shows its
  * plan — no tech upstream is a warning, not a block.
  *
- * update() is pure (no DOM, no THREE) and Node-testable; `init` (the
- * read-only "Flight plan" sidebar card) is the browser-only view hook. There
- * is no draw hook — the plan owns no hardware; in-pane comply indicators are
- * task C4, parked pending design.
+ * update() is pure (no DOM, no THREE) and Node-testable. There is no init
+ * (sidebar card) and no draw hook — Kim redirected the module's whole view
+ * presence (2026-07-12) to the phase bar: dates already surface via the
+ * events bar, the PLAN REQUIRES / TECH DELIVERS comparison lives in
+ * mission-view.js's `renderComplianceBar`, and the plan's own facts (flight
+ * time, v∞ in, plan Δv — `planSummary` below) render there too, via the
+ * registry descriptor (`sidebarCard: false` opts this stage out of the
+ * generic per-stage card entirely). In-pane comply indicators are task C4,
+ * parked pending design.
  *
  * Imports from ../../../Shared/ and ../../core/ — this folder breaks if
  * moved without them coming along.
@@ -87,6 +92,22 @@ export function planDv(params) {
 	var total = burnMag(p.burn || {});
 	(p.waypoints || []).forEach(function (wp) { total += burnMag(wp.burn || {}); });
 	return total;
+}
+
+// The plan's own facts that computeCompliance doesn't carry (it only
+// measures departure v∞, not arrival): flight time and the arrival v∞
+// commitment, plus the readout Δv above. Exported for the phase bar's
+// compliance readout (mission-view.js), reached via the registry like
+// complianceFor — these are plain params reads, no compliance math.
+export function planSummary(params) {
+	var p = Object.assign({}, defaultParams, params);
+	var arr = p.arrival || {};
+	var hasArrival = !!(arr.body && isFinite(arr.jd));
+	return {
+		flightDays: hasArrival ? (arr.jd - p.departure.jd) : null,
+		arrivalVInf: isFinite(arr.vInf) ? arr.vInf : null,
+		dv: planDv(p)
+	};
 }
 
 // The comply-mode comparison, pure. `data` is the departure tech's delivered
@@ -230,6 +251,10 @@ export default {
 	emits: ["ship-state"],
 	inputOptional: true,
 	rendersIn: ["helio"],
+	// No sidebar card (Kim, 2026-07-12): this stage's readouts and diagnostics
+	// all render in the phase bar instead — see renderComplianceBar and its
+	// callers in mission-view.js.
+	sidebarCard: false,
 
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
@@ -265,51 +290,12 @@ export default {
 		return { packet: packet, warnings: complianceWarnings(comp), events: events };
 	},
 
-	// ---- view layer (shell-called; never runs in Node) --------------------
-
-	// The read-only "Flight plan" card (the mockup's coast sidebar card):
-	// frozen dates, flight time, v∞ out / in, plan Δv. Params are frozen at
-	// mission creation, so the rows are built once. The live "Plan
-	// compliance" readout (task C2) is NOT here — Kim redirected it
-	// (2026-07-12) to the phase bar, above the timeline, in place of the
-	// old stage-strip; see mission-view.js's `renderComplianceBar`, which
-	// reads `complianceFor` off this module's registry descriptor (below).
-	init: function (ctx) {
-		var host = ctx.panelHost;
-		var stage = ctx.world.getStage(ctx.stageId);
-		var p = Object.assign({}, defaultParams, stage ? stage.params : {});
-		var comp = computeCompliance(p, null);
-
-		var rows = [];
-		if (comp.ok) {
-			rows.push(["depart " + p.origin, isoOf(p.departure.jd)]);
-			var arr = p.arrival || {};
-			if (arr.body && isFinite(arr.jd)) {
-				rows.push(["arrive " + arr.body, isoOf(arr.jd)]);
-				rows.push(["flight time", Math.round(arr.jd - p.departure.jd) + " d"]);
-			}
-			rows.push(["v∞ out / in",
-				(comp.required.vInf / 1000).toFixed(2) + " / " +
-				(arr.vInf != null && isFinite(arr.vInf) ? (arr.vInf / 1000).toFixed(2) : "—") + " km/s"]);
-			rows.push(["plan Δv", (planDv(p) / 1000).toFixed(2) + " km/s"]);
-		}
-		rows.forEach(function (pair) {
-			var r = document.createElement("div"); r.className = "mp-row";
-			var k = document.createElement("span"); k.className = "mp-k"; k.textContent = pair[0];
-			var v = document.createElement("span"); v.className = "mp-v"; v.textContent = pair[1];
-			r.appendChild(k); r.appendChild(v); host.appendChild(r);
-		});
-
-		var note = document.createElement("div");
-		note.className = "mp-plannote";
-		note.textContent = "Frozen at mission start. Departure and Arrival must comply with " +
-			"these endpoint states — the plan never re-solves to follow the tech.";
-		host.appendChild(note);
-	},
-
-	// Exposed on the descriptor (not just the named export) so the shell can
-	// reach it via `registry.get("frozen-plan")` without a static import —
-	// modules stay dynamically loaded (planner.js's MODULE_URLS), only the
-	// registry is a shared/known handle.
-	complianceFor: complianceFor
+	// No view layer: no init (see sidebarCard above) and no draw hook (the
+	// plan owns no hardware). complianceFor/planSummary are exposed on the
+	// descriptor (not just the named export) so the shell can reach them via
+	// `registry.get("frozen-plan")` without a static import — modules stay
+	// dynamically loaded (planner.js's MODULE_URLS), only the registry is a
+	// shared/known handle.
+	complianceFor: complianceFor,
+	planSummary: planSummary
 };
