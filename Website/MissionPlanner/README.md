@@ -158,10 +158,15 @@ The shipped preset is Kim's **Moon → Ceres 2031** design (release
 2031-12-20 06:00, skyhook CoM 275 km / release from the 6000 km top /
 phase 92°, waypoint at day 475), Lambert-tuned to a genuine rendezvous:
 arrival 2034-01-08 (750 days), miss 0.0001 AU, 3.78 km/s relative to Ceres,
-4.87 km/s total burns. Re-curating the example (or its pane arrangement,
-via `defaultWorkspaceMain`) is editing that one file.
+4.87 km/s total burns. Since task C1 the preset is the full comply-mode
+chain — skyhook → frozen-plan → transfer-leg — with the plan's numbers
+baked from this same design, so the shipped mission complies with itself.
+Re-curating the example (or its pane arrangement, via
+`defaultWorkspaceMain`) is editing that one file. (Missions saved before C1
+simply have no frozen-plan stage — they load and run as before; the plan
+arrives with a fresh preset load or, later, task E2's freeze flow.)
 
-### modules/ — the first two mission modules
+### modules/ — the first three mission modules
 
 Each module is a folder whose script default-exports its descriptor
 (dynamic-`import()`ed by the shell), per ARCHITECTURE.md "Module interface":
@@ -178,12 +183,24 @@ Each module is a folder whose script default-exports its descriptor
   (notably a perigee Oberth burn — see the module header). Emits
   `ship-state`; release epoch and phase are stage params, not the shared
   clock.
+- **`modules/frozen-plan/`** — the frozen flight plan (task C1, comply mode).
+  Its params ARE the plan captured at mission creation: origin body, the
+  frozen heliocentric departure state/epoch the tech must deliver, the
+  arrival commitment (body, epoch, approach v∞), and reference copies of the
+  plan's burns. `update()` **always emits the plan's own departure state**
+  downstream — the coast everyone sees is the commitment, never a re-solve —
+  and reports the tech's deviations (v∞ / epoch / aim, tolerances exported)
+  through the warnings channel; an empty tech slot is itself a warning, not
+  a block (`inputOptional`, below). `computeCompliance`/`complianceFor`
+  expose the full required-vs-delivered rows for task C2's compliance card.
+  The mission-view's coast slider reads this stage's departure/arrival
+  events as its span, so the slider stays pinned to the frozen dates while
+  live edits show up as deviations.
 - **`modules/transfer-leg/`** — the canonical transfer-leg module: the SST
   `computeTrajectory()` segment chain (departure burn → up to two waypoint
   burns → final coast), input converted to `"helio"` via `Shared/frames.js`.
   A configured destination reports its arrival miss distance through the
-  **warnings** channel (non-blocking) — the scaffold's default mission
-  deliberately misses Ceres so the channel shows live. Snap-to and Lambert
+  **warnings** channel (non-blocking). Snap-to and Lambert
   targeting stay in the plotter until the marker/targeting port (step 4.5).
 
 ### Module-contract refinements the scaffold added
@@ -205,23 +222,39 @@ Recorded here because they extend the "headless part" contract above:
 - **`attachesTo` parenting** — a module's view group is parented at its
   `attachesTo` body's node when the frame has that body (the skyhook's group
   rides the Moon), falling back to the scene root (transfer legs).
+- **`inputOptional: true`** (added with task C1) — a descriptor flag telling
+  the engine that missing input is survivable: update() is called with
+  `input === null` instead of the stage failing with `missing-input`. Added
+  for the frozen-plan module, whose plan must keep flowing (and the coast
+  keep drawing) in a mission whose departure-tech slot is empty; the module
+  reports the empty slot as a warning. When input does arrive it is
+  type-checked against `accepts` as usual.
 
-`core/tests/*.test.js` — `node:test` suites, 63 tests covering World
+`core/tests/*.test.js` — `node:test` suites, 65 tests covering World
 mutations/serialization, registry validation, the
-recompute/diagnostic/blocked semantics, and the warnings/events envelope
+recompute/diagnostic/blocked semantics (including `inputOptional`), and the
+warnings/events envelope
 (`warnings-events.test.js`, including a comply-mode-shaped chain).
-`modules/tests/modules.test.js` — 14 more exercising the two real modules'
+`modules/tests/modules.test.js` — 14 more exercising the skyhook and
+transfer-leg modules'
 pure sides, chained through the actual World + registry + engine (release
 physics and phase aiming, blocked-then-fixed recovery, the non-blocking miss
 warning, frame conversion, and the shipped preset itself: it deserializes,
 rendezvouses warning-free, and survives the share-fragment round trip).
-`ui/tests/phase-slider.test.js` — 7 more covering `coastSliderState` (task
-B2), the pure half of the phase-slider widgets: tick generation, playhead
+`modules/tests/frozen-plan.test.js` — 16 more on the comply semantics: the
+compliance rows and their tolerances, the warning texts' numbers, and —
+through the real engine on the shipped preset — that detuning the tech warns
+on the plan while the coast's output does not move, that a mission with no
+tech still shows its whole plan, and that the baked preset plan matches the
+skyhook's own release physics (so model drift says "re-bake", not just
+"warnings appeared").
+`ui/tests/phase-slider.test.js` — 14 more covering the pure halves of the
+phase-slider widgets (tasks B2/B3): tick generation, playhead
 fraction, and pinning at either end of the span. Run from the repo root:
 
 ```
 node --test Website/MissionPlanner/core/tests/*.test.js
-node --test Website/MissionPlanner/modules/tests/modules.test.js
+node --test Website/MissionPlanner/modules/tests/*.test.js
 node --test Website/MissionPlanner/ui/tests/*.test.js
 ```
 
@@ -231,8 +264,10 @@ at the copy's root.)
 
 ## Not here yet
 
-The Ephemeris tab's real content and comply-mode plan freezing from
-`MissionPlannerDesign.md`, the curation half of step 4.4 (what a newcomer
+The Ephemeris tab's real content and the "Start Mission Plan" freeze flow
+from `MissionPlannerDesign.md` (the frozen-plan module itself landed with
+task C1; what's missing is task E2's capture of a plan into it, and task
+C2's compliance-grid card), the curation half of step 4.4 (what a newcomer
 should see first, once the interface can show it off), the remaining
 endpoint modules (Ceres elevator, spin launcher, mass driver, aerobrake —
 step 4.5, along with the marker/targeting and snap-to ports), mission

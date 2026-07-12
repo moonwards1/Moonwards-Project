@@ -277,16 +277,47 @@ The core's warnings channel was built for this
 (`core/tests/warnings-events.test.js` has a comply-mode-shaped chain);
 what's missing is the frozen-plan stage itself and its card.
 
-- [ ] **C1. `modules/frozen-plan/` — the frozen flight-plan module.** ★★★
-  A module whose params ARE the flight plan captured at mission creation
-  (departure state/epoch, arrival body/epoch, plan waypoints, v∞ at each end —
-  decide the exact param schema against what E2 exports). `update()` emits the
-  plan's ship-state downstream and, when its input (the departure tech's
-  output) deviates from the plan, reports the deviation through **warnings**
-  (never re-planning — the design doc's comply rule). Pure, Node-tested like
-  the other modules; `modules/transfer-leg/transfer-leg.js` is the structural
-  template (pure `computeLeg` + thin descriptor). This is core semantics —
-  strongest model, Kim reviews the param schema.
+- [x] **C1. `modules/frozen-plan/` — the frozen flight-plan module.** ★★★
+  **Done 2026-07-11.** `modules/frozen-plan/frozen-plan.js`, structurally the
+  transfer-leg template (pure `computeCompliance` + `complianceWarnings` +
+  thin descriptor; `complianceFor(world, stageId)` WeakMap cache for the
+  cards). **Param schema (for Kim's review — it becomes E2's freeze
+  contract):** `origin` (departure system's primary, "Earth"), `departure:
+  { r, v, jd }` (the frozen helio hand-off state the tech must deliver,
+  PRE-leg-burn), `arrival: { body, jd, vInf }` (the commitment the arrival
+  tech must catch), `burn` + `waypoints` (frozen REFERENCE copies of the
+  plan's burns — the working copies live on the transfer-leg stage; the plan
+  never recomputes the coast from them). v∞ out is DERIVED from
+  departure.v − origin's helio velocity, never stored, so state and
+  requirement can't disagree; v∞ in is stored (computing it would mean
+  re-flying the plan). **Comply semantics:** update() always emits the
+  plan's own departure state — detuning the tech warns (v∞ / epoch / aim
+  rows, tolerances exported: 10 m/s / 0.25 d / 1°) while the coast's output
+  does not move; each warning carries required/delivered in `values` (C2's
+  grid) and a directional fix. **Core addition `inputOptional: true`**
+  (recompute.js, +2 core tests): a mission with an empty tech slot (E2
+  spawns these) runs the plan with input null — the empty slot is a
+  `no-departure-tech` warning, not a chain-wide block. **Chain position:**
+  tech → frozen-plan → transfer-leg; the shipped preset now carries all
+  three ("stg-3" between the two, departure state baked at full precision
+  from `computeRelease(defaults)`, arrival v∞ 3776.34 m/s — a Node test
+  pins baked-vs-model so release-physics drift says "re-bake"). B2's noted
+  one-line swap landed too: mission-view's `coastSpan` reads the plan's
+  departure/arrival events when a frozen-plan stage emits (slider pinned to
+  the frozen dates; live edits deviate visibly), falling back to the event
+  envelope without one. The module's `init` is the read-only coast-sidebar
+  "Flight plan" card (mockup:432–440: dates, flight time, v∞ out/in, plan
+  Δv, comply note — `.mp-plannote` CSS lifted from the mockup); the
+  PLAN-REQUIRES/TECH-DELIVERS grid card stays C2. **B3's right-edge
+  inversion is NOT here:** the idealized chain hands off at the release
+  epoch itself, so there's no independent SOI-exit deadline to pin until
+  the geocentric leg exists (F5). Old saved missions simply lack the stage
+  and run as before. Verified: 109 Node tests green (16 new in
+  `modules/tests/frozen-plan.test.js`); in-browser on the preset — three
+  "ok" cards, detuned skyhook (relAlt 5000) shows "short by 0.83 km/s" +
+  1.7° aim warnings with the coast still ending 0.000 AU from Ceres,
+  legDays 900 leaves the coast slider pinned Dec 2031 → Jan 2034 while the
+  leg warns 0.352 AU, all clears on restore, console clean.
 - [ ] **C2. Plan-compliance card UI.** ★★
   The "PLAN REQUIRES / TECH DELIVERS" grid with ok/warn colouring and an
   assist box ("Short by 0.24 km/s — raise tip speed to ≈2.61"), rendered by
@@ -435,7 +466,7 @@ World. Source file throughout:
   (small, unblocks all Arrival UI work: C2's arrival card, B3's arrival
   slider, F1's dropdown), then (b) the real Ceres-elevator catch port as
   planned in migration step 4.5. Recommend (a) then (b). 
-  - Comment from Kim: How about using the Mars-Phobos skyhook as the first model where catch planning can be structured? 
+  - Comment from Kim: How about using the Mars-Phobos skyhook as the first model where catch planning can be structured?
 
 ---
 

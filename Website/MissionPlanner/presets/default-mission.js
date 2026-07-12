@@ -18,6 +18,12 @@
 // no Oberth gain, so the tuned burns differ from the plotted ones — see the
 // lunar-skyhook module header.)
 //
+// The profile is the full comply-mode chain (task C1): skyhook (the tech) →
+// frozen-plan (the commitment, baked from this same design, so the shipped
+// mission complies with itself) → transfer-leg (the working coast). Detuning
+// the skyhook shows plan-deviation warnings while the coast keeps showing
+// the frozen plan's trajectory.
+//
 // This is a SERIALIZED WORLD (core/world.js `serialize()` shape), loaded
 // through the same deserializeWorld path a share link uses — the whole point
 // of the step. The curation half of 4.4 (which pane arrangement teaches
@@ -30,7 +36,7 @@ export var defaultMission = {
 	kind: "moonwards-world",
 	version: 1,
 	jd: 2463220.75,        // the clock opens at the release epoch
-	nextStage: 3,
+	nextStage: 4,
 	stages: [
 		{
 			id: "stg-1",
@@ -41,6 +47,27 @@ export var defaultMission = {
 				relAlt: 6000e3,
 				releasePhaseDeg: 92,
 				releaseJd: 2463220.75
+			}
+		},
+		{
+			// The frozen flight plan (task C1): the mission's commitment,
+			// captured as if E2 had spawned this tab from the Ephemeris tab.
+			// departure r/v are the skyhook release hand-off state baked at
+			// full precision from computeRelease(defaults) (2026-07-11), so
+			// the shipped mission complies exactly; arrival vInf is the leg's
+			// speed relative to Ceres at release + 750 d.
+			id: "stg-3",
+			moduleId: "frozen-plan",
+			params: {
+				origin: "Earth",
+				departure: {
+					r: [5856642340.899307, 147066185880.355, 0],
+					v: [-35690.86338861716, 1856.5410383241879, -42.00698626736409],
+					jd: 2463220.75
+				},
+				arrival: { body: "Ceres", jd: 2463970.75, vInf: 3776.34 },
+				burn: { pro: 1070, rad: 490, nrm: 280 },
+				waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }]
 			}
 		},
 		{

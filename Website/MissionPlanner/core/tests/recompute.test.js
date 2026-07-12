@@ -305,6 +305,45 @@ test("transient sets (mid-gesture) still recompute live", function () {
 	assert.equal(t.engine.resultFor(t.a).output.data.jd, JD + 0.25);
 });
 
+test("inputOptional: a consumer with nothing upstream runs with input null", function () {
+	// The comply-mode carve-out (see recompute.js header): the frozen-plan
+	// module must emit its plan even when the mission has no departure tech
+	// yet, so a descriptor may declare missing input survivable.
+	var t = fixture();
+	var seen = "unset";
+	t.reg.register({
+		id: "optional-in", title: "Optional consumer",
+		accepts: ["ship-state"], emits: ["ship-state"], inputOptional: true,
+		update: function (ctx, input) {
+			seen = input;
+			return PacketTypes.make("ship-state",
+				{ r: [0, 0, 0], v: [7777, 0, 0], jd: ctx.jd, frame: "helio" },
+				{ tool: "optional-in" });
+		}
+	});
+	// Appended after sink, which emits null — the exact spot where a plain
+	// consumer gets missing-input (see the test above).
+	var d = t.w.set({ addStage: { moduleId: "optional-in" } });
+	var r = t.engine.resultFor(d);
+	assert.equal(r.status, "ok");
+	assert.equal(seen, null);                                       // called, with null
+	assert.equal(r.output.data.v[0], 7777);
+	assert.deepEqual(statuses(t.engine), ["ok", "ok", "ok", "ok"]);
+});
+
+test("inputOptional: when input DOES arrive it is type-checked as usual", function () {
+	var t = fixture();
+	t.reg.register({
+		id: "optional-picky", title: "Optional but picky",
+		accepts: ["tether-spec"], emits: [], inputOptional: true,
+		update: function () { return null; }
+	});
+	var d = t.w.set({ addStage: { moduleId: "optional-picky" }, before: t.c });
+	var r = t.engine.resultFor(d);                                  // fed a ship-state
+	assert.equal(r.status, "diagnostic");
+	assert.equal(r.diagnostic.code, "input-type-mismatch");
+});
+
 test("module-authored diagnostics keep their own stageId if set", function () {
 	var t = fixture();
 	t.reg.register({

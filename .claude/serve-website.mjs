@@ -3,7 +3,10 @@
 // not reliably on PATH in the preview launcher's environment. Mirrors
 // serve.bat: the served root is Website/, so URLs carry no /Website prefix.
 //
-//   node .claude/serve-website.mjs [port]     (default 8123)
+//   node .claude/serve-website.mjs [port]     (default $PORT, then 8123)
+//
+// The PORT env var wins when no arg is given: the preview launcher assigns a
+// free port that way (autoPort), so two chats' servers don't collide on 8123.
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -11,7 +14,7 @@ import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "Website");
-const PORT = parseInt(process.argv[2], 10) || 8123;
+const PORT = parseInt(process.argv[2], 10) || parseInt(process.env.PORT, 10) || 8123;
 
 const MIME = {
 	".html": "text/html; charset=utf-8",
@@ -41,7 +44,12 @@ createServer(async (req, res) => {
 			res.writeHead(403); res.end("forbidden"); return;
 		}
 		const body = await readFile(file);
-		res.writeHead(200, { "Content-Type": MIME[extname(file).toLowerCase()] || "application/octet-stream" });
+		// no-store: this is a dev server for live editing — a heuristically
+		// cached ES module serving stale code cost a debugging session once.
+		res.writeHead(200, {
+			"Content-Type": MIME[extname(file).toLowerCase()] || "application/octet-stream",
+			"Cache-Control": "no-store"
+		});
 		res.end(body);
 	} catch (e) {
 		res.writeHead(e && e.code === "ENOENT" ? 404 : 500);

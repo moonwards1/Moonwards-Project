@@ -746,19 +746,28 @@ export function createMissionView(opts) {
 	// and coast phases' own events (coastSpan) — see ui/phase-slider.js.
 	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate });
 
-	// The coast span: earliest-to-latest jd among events emitted by
-	// departure/coast-phase stages this recompute pass (release, departure
-	// burn, waypoint burns, leg-ends — whatever's live today). Deliberately
-	// NOT the frozen plan (C1 doesn't exist yet) — it tracks the current
-	// params, same as everything else pre-comply-mode.
+	// The coast span. Comply mode (task C1): when a frozen-plan stage is
+	// emitting, the coast phase IS the plan's committed dates (its departure/
+	// arrival events) — the design doc's "beginning to end of the dates set
+	// up when the mission was created" — so live edits (a longer leg, a moved
+	// waypoint) do NOT stretch the slider; they show up as deviations instead.
+	// Without a plan (or while it's blocked/broken), fall back to the
+	// pre-comply behaviour: the envelope of events emitted by departure/
+	// coast-phase stages this recompute pass.
 	function coastSpan(results) {
 		var jds = [];
 		results.forEach(function (res) {
-			var stage = world.getStage(res.stageId);
-			var phase = stage && stagePhaseOf(stage);
-			if (phase !== "departure" && phase !== "coast") { return; }
+			if (res.moduleId !== "frozen-plan") { return; }
 			res.events.forEach(function (e) { jds.push(e.jd); });
 		});
+		if (!jds.length) {
+			results.forEach(function (res) {
+				var stage = world.getStage(res.stageId);
+				var phase = stage && stagePhaseOf(stage);
+				if (phase !== "departure" && phase !== "coast") { return; }
+				res.events.forEach(function (e) { jds.push(e.jd); });
+			});
+		}
 		if (!jds.length) { return null; }
 		return { start: Math.min.apply(null, jds), end: Math.max.apply(null, jds) };
 	}

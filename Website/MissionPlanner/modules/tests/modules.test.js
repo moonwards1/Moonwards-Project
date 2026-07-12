@@ -12,6 +12,7 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import skyhook, { computeRelease, defaultParams as skyhookDefaults } from "../lunar-skyhook/lunar-skyhook.js";
+import frozenPlan from "../frozen-plan/frozen-plan.js";
 import transferLeg, { computeLeg, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
@@ -25,6 +26,7 @@ var JD_RELEASE = O.julianDate(2031, 12, 20, 6, 0, 0);
 function makeRegistry() {
 	var reg = createRegistry();
 	reg.register(skyhook);
+	reg.register(frozenPlan);
 	reg.register(transferLeg);
 	return reg;
 }
@@ -212,15 +214,15 @@ test("preset: deserializes and genuinely rendezvouses (no warnings)", function (
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();
-	assert.equal(stages.length, 2);
-	var r1 = engine.resultFor(stages[0].id);
-	var r2 = engine.resultFor(stages[1].id);
-	assert.equal(r1.status, "ok");
-	assert.equal(r2.status, "ok");
-	assert.equal(r2.warnings.length, 0, "the example must actually arrive: " +
-		JSON.stringify(r2.warnings.map(function (w) { return w.message; })));
+	assert.equal(stages.length, 3);   // skyhook → frozen-plan (C1) → transfer-leg
+	stages.forEach(function (s) {
+		var r = engine.resultFor(s.id);
+		assert.equal(r.status, "ok", s.moduleId);
+		assert.equal(r.warnings.length, 0, s.moduleId + " must comply and arrive: " +
+			JSON.stringify(r.warnings.map(function (w) { return w.message; })));
+	});
 	// arrival: release + 750 days = 2034-01-08
-	var arr = O.dateFromJulian(r2.output.data.jd);
+	var arr = O.dateFromJulian(engine.resultFor(stages[2].id).output.data.jd);
 	assert.deepEqual([arr.Y, arr.Mo, arr.D], [2034, 1, 8]);
 });
 

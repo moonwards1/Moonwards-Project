@@ -4,8 +4,9 @@
 		{
 			"name": "website",
 			"runtimeExecutable": "node",
-			"runtimeArgs": [".claude/serve-website.mjs", "8123"],
-			"port": 8123
+			"runtimeArgs": [".claude/serve-website.mjs"],
+			"port": 8123,
+			"autoPort": true
 		}
 	]
 }

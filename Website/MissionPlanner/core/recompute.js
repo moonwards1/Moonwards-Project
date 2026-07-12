@@ -64,7 +64,16 @@
 //                            doesn't have (a saved mission is always
 //                            storable, so this is data, not an exception)
 //   "missing-input"        — the stage consumes packets but nothing arrived
-//                            (first in chain, or upstream returned null)
+//                            (first in chain, or upstream returned null).
+//                            A descriptor may set `inputOptional: true` to
+//                            opt out: its update() is then called with
+//                            input null instead of failing. This exists for
+//                            the frozen-plan module (comply mode): a mission
+//                            spawned with an empty tech slot must still show
+//                            its plan, so the plan tolerates having no tech
+//                            upstream and reports it as a warning, not a
+//                            block. When input DOES arrive it is type-checked
+//                            against `accepts` exactly as for anyone else.
 //   "input-type-mismatch"  — upstream emitted a type this stage's `accepts`
 //                            doesn't list
 //   "module-error"         — update() threw; the message is preserved
@@ -191,12 +200,12 @@ export function createEngine(world, registry) {
 					diag = engineDiag(stage.id, "unknown-module",
 						"No module '" + stage.moduleId + "' is registered.",
 						{ moduleId: stage.moduleId });
-				} else if (desc.accepts.length > 0 && input === null) {
+				} else if (desc.accepts.length > 0 && input === null && desc.inputOptional !== true) {
 					diag = engineDiag(stage.id, "missing-input",
 						"'" + desc.title + "' needs a " + desc.accepts.join(" / ") +
 						" packet from upstream, but nothing arrived.",
 						{ accepts: desc.accepts.slice() });
-				} else if (desc.accepts.length > 0 && desc.accepts.indexOf(input.type) === -1) {
+				} else if (desc.accepts.length > 0 && input !== null && desc.accepts.indexOf(input.type) === -1) {
 					diag = engineDiag(stage.id, "input-type-mismatch",
 						"'" + desc.title + "' consumes " + desc.accepts.join(" / ") +
 						", but upstream sent '" + input.type + "'.",

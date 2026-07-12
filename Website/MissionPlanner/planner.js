@@ -38,6 +38,7 @@ import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
 // fetched when activated; the scaffold's default mission activates both) ----
 var MODULE_URLS = [
 	"./modules/lunar-skyhook/lunar-skyhook.js",
+	"./modules/frozen-plan/frozen-plan.js",
 	"./modules/transfer-leg/transfer-leg.js"
 ];
 var registry = createRegistry();

@@ -241,6 +241,12 @@ body {
 .mp-row .mp-k { color: var(--dim); }
 .mp-row .mp-v { text-align: right; }
 
+/* the frozen-plan card's comply note (mockup .plannote) */
+.mp-plannote {
+	font-size: 12px; color: var(--dim); border-top: 1px dashed var(--line2);
+	margin-top: 8px; padding-top: 7px; line-height: 1.5;
+}
+
 .mp-wp-head {
 	display: flex; justify-content: space-between; align-items: center;
 	margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line2);
