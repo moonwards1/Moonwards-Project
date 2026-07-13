@@ -36,7 +36,8 @@ var AU = 149597870700;   // m
 var DAY = 86400;
 
 // Bodies offered as leg destinations (a subset of the plotter's list).
-export var DESTINATIONS = ["Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche", "Jupiter"];
+export var DESTINATIONS = ["Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
+	"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"];
 
 // Warn when the leg ends farther than this from the destination body.
 export var MISS_WARN_AU = 0.02;

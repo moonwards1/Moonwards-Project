@@ -22,12 +22,67 @@
 		<!-- shown only when a #mission= share link failed to load -->
 		<div id="mp-banner" hidden title="Click to dismiss"></div>
 
-		<!-- Ephemeris tab: a stub for now — the Solar-System Trajectory
-		     Plotter authoring experience (marker, targeting, waypoints) lands
-		     here in WP-D. Toggled by class like a .mp-mission. -->
+		<!-- Ephemeris tab: the Solar-System Trajectory Plotter authoring
+		     experience, ported inside the planner (WP-D). Task D1 built the
+		     shell (helio frame, date bar); task D2 the Departure/Waypoints
+		     cards (origin, burn, leg duration, destination, up to two
+		     snap-to waypoints) — their CONTENT is built by ephemeris-view.js
+		     into the two host divs below. The marker card (D3) and
+		     "Start Mission Plan" (E1/E2) still don't exist. One instance for
+		     the page's life, so addressed by id/class query like the rest of
+		     the shell-level chrome, not templated (contrast .mp-mission,
+		     cloned per mission). Toggled on/off by ephemeris-view.js's
+		     show/hide. -->
 		<div id="mp-eph-view" class="mp-eph-view">
-			<p>The Ephemeris tab — plan a trajectory here and promote it to a
-			mission tab — lands in a later build step (WP-D).</p>
+			<div class="mp-datebar">
+				<div class="mp-date-head">
+					<span class="mp-date-caption">Ephemeris date</span>
+					<input type="date" class="mp-date-field" min="2030-01-01" max="2130-01-01" value="2030-01-01">
+					<span class="mp-jd mp-muted"></span>
+					<span class="mp-muted">plan a trajectory here, then promote it to a mission &nbsp;·&nbsp; coarse: 100&nbsp;years, fine: ±6&nbsp;months</span>
+				</div>
+				<div class="mp-slider-line">
+					<span class="mp-slider-end">2030</span>
+					<input type="range" class="mp-date-coarse" min="0" max="36525" step="1" value="0">
+					<span class="mp-slider-end">2130</span>
+				</div>
+				<div class="mp-slider-line">
+					<span class="mp-slider-end mp-fine-end mp-fine-lo"></span>
+					<input type="range" class="mp-date-fine" min="-182.625" max="182.625" step="0.125" value="0">
+					<span class="mp-slider-end mp-fine-end mp-fine-hi"></span>
+				</div>
+			</div>
+			<div class="mp-main">
+				<div class="mp-scene">
+					<div class="mp-pane mp-pane-main">
+						<span class="mp-pane-cap"></span>
+						<div class="mp-hud">
+							<span class="mp-hud-key">drag</span> rotate &nbsp;
+							<span class="mp-hud-key">wheel</span> zoom &nbsp;
+							<span class="mp-hud-key">right-drag</span> pan
+						</div>
+					</div>
+				</div>
+				<div class="mp-panel">
+					<!-- Ship-marker card (task D3): ephemeris-view.js builds the
+					     place-marker affordance and the shared marker card
+					     (Shared/sim/marker-card.js) into this host. -->
+					<div class="mp-eph-marker"></div>
+					<div class="mp-card">
+						<h3><span>Departure</span><span class="mp-chip mp-eph-status"></span></h3>
+						<div class="mp-eph-departure"></div>
+					</div>
+					<div class="mp-card">
+						<h3><span>Waypoints</span></h3>
+						<div class="mp-eph-waypoints"></div>
+					</div>
+					<div class="mp-card">
+						<div class="mp-muted">Once a marker meets both closest-approach
+						rings, "Start Mission Plan" (not built yet) will copy this
+						plan into a new mission tab; this tab stays as it is.</div>
+					</div>
+				</div>
+			</div>
 		</div>
 
 		<!-- one .mp-mission per mission view, cloned from the template below;

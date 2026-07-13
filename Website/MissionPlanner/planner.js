@@ -15,9 +15,10 @@
  *     merged with a share-link fragment if the URL carries one, else the
  *     shipped preset — and the failure banner for a bad fragment or an
  *     unreadable saved mission,
- *   - the tab bar (task A2) — Ephemeris tab (a stub until WP-D) + one tab
- *     per mission, active highlight, confirm-then-dispose close — and the
- *     render loop, which only drives the currently active mission's view.
+ *   - the tab bar (task A2) — the Ephemeris tab (its own view since task D1,
+ *     ephemeris-view.js's createEphemerisView()) + one tab per mission,
+ *     active highlight, confirm-then-dispose close — and the render loop,
+ *     which drives whichever tab is currently active.
  *
  * Layout/camera view state ("workspace") lives in the views and
  * localStorage, never in World; see mission-view.js for the per-mission
@@ -33,6 +34,7 @@ import { createRegistry } from "./core/registry.js";
 import { defaultMission, defaultWorkspaceMain } from "./presets/default-mission.js";
 import { decodeFragment } from "../Shared/exchange.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
+import { createEphemerisView } from "./ephemeris-view.js";
 
 // ---- modules (dynamic import per the architecture: a technology's code is
 // fetched when activated; the scaffold's default mission activates both) ----
@@ -155,12 +157,14 @@ renderer.setScissorTest(true);
 var viewsEl = document.getElementById("mp-views");
 var missionTemplate = document.getElementById("mp-mission-template");
 
-// ---- tab bar: Ephemeris tab (stub — see mp-eph-view in planner.html; real
-// content is WP-D) + one tab per mission (task A2). Only one tab is shown
-// at a time; missions[] tracks the mission tabs (the Ephemeris tab isn't a
-// mission and has no World, so it stays out of this list). -----------------
+// ---- tab bar: Ephemeris tab (task D1 — its own helio-frame view, sharing
+// the one renderer like a mission view does) + one tab per mission (task
+// A2). Only one tab is shown at a time; missions[] tracks the mission tabs
+// (the Ephemeris tab isn't a mission and has no World, so it stays out of
+// this list). ---------------------------------------------------------------
 var ephTabEl = document.getElementById("mp-tab-eph");
 var ephViewEl = document.getElementById("mp-eph-view");
+var ephView = createEphemerisView({ renderer: renderer, root: ephViewEl });
 var missionTabsEl = document.getElementById("mp-mission-tabs");
 
 var missions = [];        // [{ id, title, view, tabEl }]
@@ -172,14 +176,14 @@ function activeMission() {
 
 function selectTab(tabId) {
 	if (tabId === activeTabId) { return; }
-	if (activeTabId === "eph") { ephViewEl.classList.remove("on"); }
+	if (activeTabId === "eph") { ephView.hide(); }
 	else { var prev = activeMission(); if (prev) { prev.view.hide(); } }
 
 	activeTabId = tabId;
 	ephTabEl.classList.toggle("active", tabId === "eph");
 	if (tabId === "eph") {
 		viewsEl.style.display = "none";
-		ephViewEl.classList.add("on");
+		ephView.show();
 	} else {
 		viewsEl.style.display = "flex";
 		var next = activeMission();
@@ -268,15 +272,17 @@ if (loadNotice) {
 	banner.addEventListener("click", function () { banner.hidden = true; });
 }
 
-// ---- render loop: one renderer, the active mission's view scissors its
-// own panes; the Ephemeris tab is plain DOM and needs neither. -------------
+// ---- render loop: one renderer; whichever tab is active (the Ephemeris
+// view or a mission's view) scissors its own panes into it. -----------------
 window.addEventListener("resize", function () {
+	if (activeTabId === "eph") { ephView.resize(); return; }
 	var m = activeMission();
 	if (m) { m.view.resize(); }
 });
 
 function animate() {
 	requestAnimationFrame(animate);
+	if (activeTabId === "eph") { ephView.render(); return; }
 	var m = activeMission();
 	if (m) { m.view.render(); }
 }

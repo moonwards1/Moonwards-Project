@@ -379,40 +379,297 @@ a mission World — it's a scratchpad; only "Start Mission Plan" produces a
 World. Source file throughout:
 `Calculators/Solar-System-Trajectory-Plotter/solarSystemTrajectory.js` (SST).
 
-- [ ] **D1. Ephemeris tab shell.** ★★
-  A tab hosting the existing helio frame full-pane, its own date bar, its own
-  sidebar. Reuses `buildHelioFrame` and the scaffold's pane/camera wiring
-  almost verbatim. Depends on A1.
-- [ ] **D2. Destination select + trajectory + waypoints.** ★★
-  Port the SST's destination dropdown (`buildDestinationOptions`, SST:1093),
-  departure setup, trajectory drawing, and the waypoint list sidebar
-  (`buildWaypointList`, SST:1273–1345) with snap-to
-  (SST:378–475: `snapTargetNu`, `timeToTrueAnomaly`, `snapTau`) and waypoint
-  gizmos (`makeWaypointGizmo`, SST:275; rendering via the already-shared
-  `Shared/sim/burn-widget.js`). The compute calls go through the same
-  `computeLeg` maths the transfer-leg module uses where possible — don't fork
-  the physics.
-- [ ] **D3. Marker card + Free/Track/Target state machine.** ★★★
-  The heart of the port. The mechanical layer is already shared
-  (`Shared/sim/marker-card.js` — sprites, card skeleton, drag-slider,
-  `refineApproach`, `phasingDays`, `followCrossing`); what ports is the SST's
-  local orchestration: `setMarkerMode` (SST:816), `applyTargeting` — the
-  Lambert re-solve (SST:761), `updateMarker` (SST:927),
-  `updateDestinationMarker` (SST:848), `buildMarkerCard` (SST:888),
-  `focusMarker`/`removeMarker`/`placeMarkerAtGlobalTime` (SST:1003–1035).
-  Read `marker-card.js`'s header comment first — it documents exactly why
-  this layer stayed local and what shape it has. Fiddly, stateful,
-  behaviour-sensitive: strongest model, verify against the live SST page
-  side by side.
-- [ ] **D4. Approach rings (space + time).** ★★
-  Port the orbit-proximity scan (`computeOrbitApproaches` + tier tables,
-  SST:628–710) and the temporal-proximity ring. Ring mechanics are already in
-  `Shared/sim/approach-markers.js`; the scan and tier tables move as-is.
-  Needed by E1's gating.
-- [ ] **D5. Click-to-place-marker picking.** ★★
-  Screen-space nearest-sample picking on the trajectory (SST:1037–1078),
-  adapted to the scissored-pane raycast context (`raycastPickPoint` config,
-  planner.js:389–400).
+- [x] **D1. Ephemeris tab shell.** ★★
+  **Done 2026-07-12.** `buildHelioFrame`/`buildEarthMoonFrame` (plus their
+  `makeStars`/`makeLabelLayer`/`disposeScene` helpers) moved out of
+  mission-view.js into a new `scene-frames.js` — the task's own "reuses
+  `buildHelioFrame`... almost verbatim" wording meant the builder had to
+  become shared, not re-typed, so mission views and the Ephemeris tab now
+  build their helio scene from the exact same code (named `scene-frames.js`,
+  not `frames.js`, to avoid colliding with `Shared/frames.js`'s unrelated
+  coordinate-patching job). New `ephemeris-view.js` exports
+  `createEphemerisView({ renderer, root })` → `{ show, hide, render, resize
+  }` — one helio frame, full-pane (no floats: unlike a mission view the
+  Ephemeris tab never shows more than one system), its own date bar
+  (`Shared/sim/date-bar.js`, same 2030–2130/±6-month span every plotter
+  uses, its own plain `{ jd, baseDays }` — no World to write into), and its
+  own camera controls (`bindCameraControls`, bound once and never unbound,
+  matching how the standalone plotters treat a page-lifetime view). Since
+  there's exactly one instance for the page's life (unlike mission views,
+  which clone a `<template>` per tab), its DOM lives directly in
+  planner.html's `#mp-eph-view` addressed by class query (`.mp-scene`,
+  `.mp-pane-main`, `.mp-datebar`, …) reusing the shell's existing CSS
+  wholesale, not by new ids. `planner.css`'s `.mp-eph-view` changed from a
+  centered stub paragraph to a flex-column full pane (same shape as
+  `.mp-mission`). `planner.js` creates the one `ephView` alongside the
+  renderer and routes `selectTab`/the render loop/the resize handler to it
+  whenever `activeTabId === "eph"`, replacing the old manual
+  `ephViewEl.classList` toggling. The sidebar carries only a placeholder
+  note for now — destination/trajectory/waypoints (D2) and the marker card
+  (D3) are what actually mount there. **Deliberately deferred:** camera
+  angle and clock position are NOT persisted across reloads (no localStorage
+  slot yet) — the Ephemeris tab is explicitly a scratchpad, and D2/D3 are
+  where the real state-object shape (destination, waypoints, marker) gets
+  decided, which is a more natural point to also decide what's worth saving.
+  Verified: 109 Node tests green (unaffected — UI-only, and the extraction
+  changed no behavior, only where the code lives); in-browser — the
+  existing mission tab renders identically after the extraction (Coast
+  phase, transfer-leg card, compliance bar all intact), the Ephemeris tab
+  shows all 8 helio bodies with orbit rings, drag-rotate/wheel-zoom/date-bar
+  scrubbing (body positions updating, e.g. Earth/Venus/Mercury advancing
+  along their orbits) all work, tab switching back and forth is clean,
+  window resize (tablet preset) reflows correctly, console and network
+  (both new modules load 200) clean throughout. Depends on A1.
+- [x] **D2. Destination select + trajectory + waypoints.** ★★
+  **Done 2026-07-12.** `state.leg` in ephemeris-view.js is shaped exactly
+  like transfer-leg's own `params` (`burn`, `waypoints`, `legDays`,
+  `destination`) — deliberately, so E2's eventual freeze is "hand these
+  fields to a transfer-leg stage," not a translation step. The leg itself —
+  burn application, sample polyline, events, miss distance — goes through
+  transfer-leg.js's exported `computeLeg` directly (imported alongside
+  `defaultParams`/`MISS_WARN_AU`), satisfying the task's "don't fork the
+  physics" literally: this is the SAME function the frozen chain calls once
+  a plan exists, not a re-implementation. What computeLeg doesn't own stayed
+  local: resolving a waypoint's "snap to an orbital feature" request into a
+  concrete day offset, and the view-only glue (polyline, gizmos, burn
+  arrows, readout boxes) — computeLeg's own cache is keyed by
+  `(World, stageId)`, which a viewless scratchpad doesn't have.
+  **Snap-to promoted to `Shared/math-utils.js`** (`apsisFromBurn`,
+  `nodeInfo`, `snapTargetNu`, `timeToTrueAnomaly`, `snapTau`), per the
+  inventory's own "candidates for promotion" note — GM made an explicit
+  parameter (was closed over `GM_SUN` in the SST), with the first
+  `Shared/tests/math-utils.test.js` (12 tests: apsis sense from burn sign,
+  earthlike-vs-inclined node substitution, half-period-to-opposite-point,
+  the zero-at-exact-match case, offset ordering, the "push a coincident
+  feature to its next pass" DAY floor). `resolveWaypoints()` in
+  ephemeris-view.js walks the waypoints in chronological order re-using
+  `propagateState`/`applyBurn` (the same primitives computeLeg itself calls)
+  to resolve each snap against the state at ITS segment's start, then hands
+  the resolved `{days, burn}` list to computeLeg for the authoritative pass.
+  **Bug caught by hand-checking the numbers in-browser, not just
+  screenshotting:** the first cut started the resolve walk from the ORIGIN
+  BODY'S pre-burn state instead of the state just after the departure burn
+  (SST's own `segStartV = v` post-burn) — apoapsis resolved to "half of
+  Earth's own year" (185 d) instead of half the actual transfer orbit's
+  period (259 d for the a=1.26 AU test case, matching a hand calculation).
+  Fixed by applying the departure burn before the walk starts. A second,
+  smaller gap: the resolved day wasn't persisted back to `state`, so
+  unchecking a snap reverted the day field to a stale pre-snap value instead
+  of holding where it last resolved (SST mutates the waypoint object in
+  place every pass; fixed by writing the resolved day back to state while
+  snapped).
+  **Departure card**: origin + destination selects (both built from
+  scene-frames.js's `HELIO_BODIES`, now exported, so a select never offers a
+  body the frame can't place), burn pro/rad/nrm as plain numeric fields
+  (transfer-leg's own `numRow` pattern) rather than porting the SST's
+  165-line isometric SVG vector-editor widget — deliberately deferred,
+  matching how the tasks doc already frames that widget as an "optional
+  upgrade" for F5/G1, not a D2 requirement — plus a leg-duration field (no
+  `finalCoast()` port; a manual days field matching transfer-leg's own card
+  exactly) and a status chip (ok / "misses X by Y AU" / the diagnostic
+  message). **Waypoints card**: up to 2 (matches both the SST's two
+  checkboxes and transfer-leg's own cap), each with the day field (disabled
+  while snapped, showing the resolved value), three mutually-exclusive
+  snap-to checkboxes with live apsis-availability/node-vs-90°substitute
+  labels, a ±90° fine-tune slider, burn fields, and a resolved-state info
+  line. Waypoint gizmos (`Shared/sim/burn-widget.js`'s `createWaypointGizmo`,
+  held at 42px via `worldSizeAtPointForPx` each frame) and burn arrows
+  (dV pink / prograde-Δv amber, `makeBurnArrow`, same 0.03 AU-per-km/s scale
+  as the SST) draw at each waypoint's pre-burn state; the departure burn
+  gets arrows only (no gizmo), matching the SST exactly. Burn readout boxes
+  (`Shared/sim/readout-panes.js`, `classPrefix: "mp"` — new `.mp-readout*`
+  CSS) anchor to each burn's host div and reposition on panel scroll;
+  `burnReadoutData` stayed local per readout-panes.js's own header comment
+  ("stays local to each calculator... isn't worth threading through a
+  shared signature"). `.mp-main` gained `position: relative` for the
+  readout layer's absolute positioning (harmless for mission views — pure
+  flex children, unaffected). Verified: 121 Node tests green (12 new); in
+  browser — burn/destination/leg-duration edits redraw the trajectory and
+  update the status chip live, readout box tracks the departure burn field,
+  waypoint add/remove correctly caps at 2 and cleans up gizmos/arrows on
+  removal, snap-to resolves and re-verified against a hand calculation,
+  unchecking a snap holds the last-resolved day, the mission tab is
+  unaffected by transfer-leg.js now being imported both statically (here)
+  and dynamically (the registry) — console and network clean throughout.
+  **Deliberately not built** (later WP-D/E tasks): the marker card and
+  Free/Track/Target modes (D3), closest-approach rings (D4), click-to-place
+  picking (D5), in-scene dragging (G1). Depends on D1.
+  **Redirected same day (2026-07-12, Kim):** "None of the conditions that
+  come with a mission should exist there" — the "leg duration" field was a
+  mission condition wearing a UI control's clothes (a manually-typed
+  cutoff), which doesn't belong in a tab whose whole point is playing with
+  trajectories before any mission exists. Removed the field entirely;
+  `legDays` is now derived fresh every `refresh()` by a ported `finalCoast`
+  heuristic (one full orbital period if the resulting arc is bound, capped
+  at 60 years; a fixed 12-year escape coast if not) — the SST's own
+  "simplified conic section" approach, applied to whatever's downstream of
+  the last waypoint (or the departure burn if there are none). A bound leg
+  now draws a genuinely closed loop; an unbound one trails off. This also
+  retired the arrival-miss check and the amber "destination at arrival" dot
+  — both rode on a duration that no longer exists, and "did you arrive on
+  time" isn't a coherent question without one (that's the marker's job once
+  D3 lands, sliding along the whole drawn loop against the destination's
+  live position). The status chip is now just ok/error (a genuine physics
+  failure, e.g. a manually-typed waypoint day past the drawn loop's end).
+  **A real bug surfaced by hand-verifying the new numbers, not just
+  eyeballing the render:** `finalCoastDays` needs the state AFTER the last
+  waypoint's burn (or the departure burn) to size the final segment
+  correctly — `resolveWaypoints` already tracked this internally but hadn't
+  exposed it, so the first cut fed it the wrong state for a no-waypoint leg;
+  fixed by returning `{entries, finalR, finalV, tPrev}` instead of a bare
+  array. Also fixed in passing: `setStatus()` was clobbering the chip
+  element's `mp-eph-status` hook class on every call (harmless to the
+  running app — the code holds a direct reference — but broke re-querying
+  it), caught the same way. Verified: 121 Node tests still green (no core
+  logic changed, only ephemeris-view.js); in-browser — a zero-burn leg now
+  draws Earth's own orbit as a full closed circle (previously truncated at
+  480 days), a burn toward Mars closes into a full ellipse instead of
+  stopping mid-arc, a large burn produces a genuine hyperbolic trail-off,
+  status chip and readout boxes still track burns correctly, console clean
+  throughout.
+- [x] **D3. Marker card + Free/Track/Target state machine.** ★★★
+  **Done 2026-07-12.** The SST's marker orchestration
+  (`applyTargeting`/`setMarkerMode`/`updateMarker`/`updateDestinationMarker`/
+  `focusMarker`/`removeMarker`/`placeMarkerAtGlobalTime` + the card build),
+  ported into ephemeris-view.js onto this view's own trajectory
+  representation — a `trajSegs` list of per-segment start states rebuilt
+  each `refresh()` from `resolveWaypoints`' entries + the departure state,
+  same shape the SST kept. The mechanical layer stayed shared exactly as
+  marker-card.js's header prescribes (sprites, card skeleton, drag-slider,
+  `refineApproach`, `followCrossing`; approach-markers.js's ring sprite +
+  `pickProximityTier` for the temporal ring). **Placement decisions:** the
+  card is a normal SIDEBAR card at the top of the panel (the shared skeleton
+  with `classPrefix "mp"`, handed `.mp-card` styling — new `.mp-marker-*` /
+  `.mp-mode-btn` CSS in planner.css), per the mockup's Ephemeris sidebar
+  (mock-a-phases.html:184–209) rather than the SST's floating overlay — E1's
+  gated button lands at its bottom. A **"Place marker" sidebar button**
+  (drops it mid-path; swaps visibility with the card) stands in until D5's
+  click-to-place. The **temporal-proximity ring came along with
+  `updateDestinationMarker`** (it lives inside it), so D4's remaining piece
+  is the orbit-approach scan + its space-ring tables. Target's terminal burn
+  is the CHRONOLOGICALLY last waypoint's (this view's waypoints carry
+  absolute days and may sit out of array order; the SST's per-segment taus
+  were inherently ordered), and solved burns re-sync the numeric fields via
+  `syncBurnInputs` (the SST's `_sstRedraw` equivalent). Camera: marker focus
+  via `lockedZoomTarget`/`onPan` on the existing binding, like the SST.
+  **Two real bugs found by hand-checking numbers in-browser, both fixed in
+  Shared:** (1) the SST decomposes Target's Lambert Δv in the osculating
+  r×v frame, but `O.applyBurn` re-applies components in the
+  ecliptic-anchored `burnFrame` — a slightly wrong Δv on inclined arcs; the
+  port uses new **`O.burnComponents`** (math-utils — the exact inverse of
+  applyBurn, round-trip Node-tested; the SST's own copy still decomposes the
+  old way, flagged as follow-up). (2) **`O.lambert` could return a
+  non-converged solution**: its ψ bisection exhausts the bracket (floor −4π)
+  on strongly hyperbolic transfers and returned the collapsed result anyway —
+  a Target solve asked for a 58-day leg, got a 95-day arc, and put the
+  "encounter" 1.4 AU off Mars. Fixed to honour its own documented contract
+  (null when the achieved dt misses the request by > max(1 s, 1e-6·dt));
+  the SST and Mars-Phobos targeting share the function and inherit the fix.
+  **Verified in-browser, numbers hand-checked:** 2.94 km/s prograde at Earth
+  → marker mid-path reads 1.550 AU / 21.08 km/s / 260 d, matching vis-viva
+  (a = 1.266 AU) exactly; slider −90° → quarter-path (130 d); Target over
+  budget releases (37.9 > 10 km/s, burn untouched), within budget writes the
+  solved burn (component magnitudes ≡ the Δv readout), pins the marker ON
+  Mars (phasing +0.0 d), holds the arrival date while the departure date
+  scrubs (TOF 260→215 d for a +45 d scrub, Δv re-solving), and leaving
+  Target restores both the manual burn and the saved marker position; Track
+  glues to the Mars-orbit crossing while inside the 0.004 AU ring and
+  freezes without jumping when the reshaped arc leaves it (engagement
+  checked against a ground-truth `distanceToOrbit` scan — an ecliptic-plane
+  arc genuinely only enters the ring near the destination's nodes);
+  remove/re-place cycles clean; the mission tab unaffected; console clean
+  throughout. Node suites: **125 green** (4 new — burnComponents round-trips
+  ×2, lambert feasible-case self-consistency, lambert unreachable-case
+  null). Depends on D1/D2.
+- [x] **D4. Approach rings (space + time).** ★★
+  **Done 2026-07-12.** The temporal-proximity ring already came across with
+  D3 (it lives inside `updateDestinationMarker`), so this task's remaining
+  piece was the orbit-proximity SCAN: `computeOrbitApproaches`
+  (SST:628–710, its per-body gate + point-to-ellipse refine) ported into
+  ephemeris-view.js almost verbatim, reusing the ring-sprite mechanics
+  already imported from `Shared/sim/approach-markers.js` (`makeRingSprite`/
+  `applyTierToSprite`/`scaleApproachMark`/`pickProximityTier` — all four were
+  already there for the temporal ring). New `SPACE_TIERS` table (colors/px/
+  lineWidth/worldR — identical values to the SST's `APPROACH_TIERS`) plus
+  `APPROACH_NEAR`/`APPROACH_CLOSE` alongside the existing `APPROACH_FAR`
+  (D3's Track-engagement threshold doubles as the space ring's own farthest
+  tier, same as the SST). **One genuine simplification, not just a port:**
+  the SST's `trajSamples` are pre-scaled `THREE.Vector3`s in AU, so its scan
+  does a `p.x*AU` round-trip back to metres for the ellipse-frame math; this
+  view's `leg.samples` (from `computeLeg`) are already `{r (m), t (s)}`
+  arrays, so the ported scan works directly in metres throughout and skips
+  that conversion. New module state: `trajSamples` (leg.samples verbatim,
+  alongside the existing `trajSegs`/`trajTotalT`) and `orbitApproachMarks`
+  (the live ring sprites). Wired into `refresh()`: the ok-branch stores
+  `trajSamples` and calls the new `rebuildApproachMarks()` after the
+  trajectory/waypoint gizmos are drawn (mirroring the SST's own call at the
+  end of `drawTrajectory`); the failure branch clears `trajSamples` and the
+  rings together with the rest of the marker-hiding cleanup. `render()`
+  scales each ring per frame via `scaleApproachMark`, alongside the temporal
+  ring's own call.
+  **Verified two ways** (the Browser pane's screenshot capture was
+  unreliable this session — timed out repeatedly even though the page
+  itself was healthy: console clean, all modules 200, canvas rendering
+  confirmed via `toDataURL`, `document.readyState` "complete" — so
+  verification leaned on DOM/JS introspection instead of pixel screenshots):
+  (1) the ported ellipse-frame distance formula was checked in Node against
+  the already-trusted `OrbitalMath.distanceToOrbit` for the same orbit/point
+  — bit-identical (to floating-point noise), confirming the inlined
+  pre-filter math is a correct, unit-consistent (all-metres) transcription;
+  (2) in-browser, patching `THREE.Object3D.prototype.add` to log sprite
+  creations, then driving a real scenario (origin Earth, destination Mars,
+  Target mode Lambert-solved with a raised Δv budget so it wasn't released)
+  produced exactly ONE space ring — tier 2 (closest), the correct color/px/
+  worldR from `SPACE_TIERS` — positioned at [0.171, 1.545, 0.028] AU; a
+  direct Node computation of Mars's actual position at the solved arrival
+  date (2030-07-02) gave [0.179, 1.543, 0.028] AU, matching to within a
+  fractional day of orbital motion (the date field only displays whole
+  days). The other 7 candidate bodies correctly produced no rings, and the
+  origin (Earth) was correctly excluded. Node suites unaffected (browser-only
+  change): 125 green. Depends on D1/D2/D3.
+- [x] **D5. Click-to-place-marker picking.** ★★
+  **Done 2026-07-13.** `handlePick(e)` in ephemeris-view.js, the SST's own
+  `handlePick` (SST:1037–1078) ported almost verbatim: a plain click either
+  places/moves the marker at the nearest trajectory sample in screen space,
+  refocuses the camera if the click landed on the marker's own sprite
+  instead, or (clicking empty space) just releases the focus lock. Wired via
+  the shared camera-controller's `onPick` hook (Shared/sim/camera-
+  controller.js — a deferred single-click handler that fires after mouseup
+  only if the press didn't move and wasn't the first half of a double-click,
+  so it never fights rotate-drag), alongside the pane's existing `pickPoint`
+  wheel-zoom config. **One real adaptation, not just a coordinate-frame
+  swap:** the task text's "scissored-pane raycast context" pointed at how
+  `pickPoint` already reads `paneMainEl`'s own rect rather than the renderer
+  canvas's rect (relevant when a mission view's floating panes share one
+  canvas); `handlePick` reads the same `paneMainEl` rect for consistency,
+  though the Ephemeris tab is single-pane today so the two coincide. Also,
+  same as D4's `computeOrbitApproaches`: `trajSamples` here is `leg.samples`
+  in metres (not the SST's pre-scaled AU `THREE.Vector3`s), so each candidate
+  is converted before `.project()`. The old "Place marker" sidebar button
+  (D3's stand-in) is removed — the sidebar hint card now just says "Click
+  the drawn trajectory to place a marker," matching the SST's own click-only
+  UX (it never had a button either).
+  **Verified two ways, since the Browser pane was backgrounded this session**
+  (`document.hidden`/no `requestAnimationFrame` calls confirmed via
+  instrumentation, so `computer{screenshot}` and any real render both hung —
+  an environment condition, not a code issue): (1) DOM inspection confirmed
+  the hint card lost its button and shows the new click-to-place text; (2)
+  `handlePick`'s actual logic was exercised with real dispatched
+  `mousedown`/`mouseup` `MouseEvent`s on the pane, with `THREE.Vector3.
+  prototype.project` overridden to a fixed, known world→NDC mapping (test-
+  only, decoupling the check from the unconfigured camera — `.project()`
+  itself is trusted library code, not something this task wrote) so the
+  expected click pixel for a given trajectory sample could be computed
+  independently and compared. Three real click sequences on a genuine drawn
+  leg (burn pro 3 km/s from Earth) all landed correctly: clicking sample
+  index 100 placed a new marker there (readout: radius 1.564 AU, exactly
+  matching that sample's own magnitude; one new sprite); clicking sample
+  index 50 moved the SAME marker (radius updated to 1.264 AU, no new
+  sprite — confirms move-not-duplicate); clicking the marker's own sprite
+  position refocused only (radius unchanged, no new sprite); clicking a far
+  corner of the pane left the marker untouched. Console clean throughout.
+  Node suites unaffected (browser-only change): 125 green. Depends on
+  D1/D2/D3/D4.
 - [ ] **D6. System switcher (Earth–Moon, Mars–Phobos ephemeris modes).** —
   **defer.** The design doc lists this as the one change from the current
   SST, but each system needs its own authoring loop (the Mars–Phobos marker

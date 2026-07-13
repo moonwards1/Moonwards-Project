@@ -39,13 +39,10 @@ body {
 	border: 1px dashed var(--line2); font-size: 13px;
 }
 
-/* ---------- Ephemeris tab: stub until WP-D builds the real content ---------- */
-.mp-eph-view {
-	display: none; flex: 1; min-height: 0; align-items: center; justify-content: center;
-	background: var(--pane); color: var(--dim); font-size: 13.5px; text-align: center;
-}
+/* ---------- Ephemeris tab (task D1: shell — its own date bar + scene +
+   sidebar, reusing the same classes a mission view's .mp-main uses) ---------- */
+.mp-eph-view { display: none; flex-direction: column; flex: 1; min-height: 0; }
 .mp-eph-view.on { display: flex; }
-.mp-eph-view p { max-width: 420px; margin: 0; padding: 0 20px; line-height: 1.6; }
 
 /* ---------- mission views (one per tab; the shell shows one) ---------- */
 #mp-views { display: flex; flex: 1; min-height: 0; }
@@ -163,7 +160,7 @@ body {
 .mp-event.past b { color: #6c7a94; }
 
 /* ---------- main area ---------- */
-.mp-main { display: flex; flex: 1; min-height: 0; }
+.mp-main { display: flex; flex: 1; min-height: 0; position: relative; }
 
 .mp-scene { flex: 1; position: relative; background: var(--pane); min-width: 0; }
 .mp-scene canvas { position: absolute; inset: 0; display: block; }
@@ -262,3 +259,58 @@ body {
 .mp-diag.blocked { border-left-color: #3d4c6b; color: var(--dim); }
 .mp-diag b { font-weight: 600; }
 .mp-diag .mp-fix { color: var(--dim); margin-top: 3px; }
+
+/* ---------- Ephemeris tab: straddling burn-readout panes (task D2),
+   Shared/sim/readout-panes.js with classPrefix "mp" ---------- */
+.mp-readout-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.mp-readout {
+	position: absolute; box-sizing: border-box; min-width: 122px; padding: 7px 11px;
+	background: rgba(20, 26, 42, 0.94); border: 1px solid var(--line2); border-radius: 7px;
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55); pointer-events: none;
+}
+.mp-readout-row { display: flex; flex-direction: column; align-items: flex-start; margin: 4px 0; }
+.mp-readout-label { color: var(--dim); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.mp-readout-val { font-size: 13px; font-weight: 600; line-height: 1.2; }
+
+/* ---------- Ephemeris tab: waypoint snap-to controls (task D2) ---------- */
+.mp-wp-snaps { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0; }
+.mp-wp-snap { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--dim); cursor: pointer; }
+.mp-wp-snap input { margin: 0; accent-color: var(--acc); }
+.mp-wp-slider { width: 100%; display: block; margin: 2px 0 8px; cursor: pointer; accent-color: var(--acc); }
+.mp-wp-slider:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- Ephemeris tab: ship-marker card (task D3) ----------
+   Skeleton from Shared/sim/marker-card.js with classPrefix "mp"; unlike the
+   SST's floating overlay, it sits in the sidebar as a normal card (mockup
+   mock-a-phases.html:184-209) — ephemeris-view.js adds .mp-card to it. */
+.mp-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.mp-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
+.mp-marker-x {
+	padding: 0; width: 20px; height: 20px; line-height: 18px; text-align: center;
+	font-size: 12px; border-radius: 4px; color: var(--dim);
+	background: transparent; border: 1px solid transparent; cursor: pointer;
+}
+.mp-marker-x:hover { color: var(--err); background: rgba(224, 106, 90, 0.15); }
+.mp-marker-slider {
+	width: 100%; display: block; margin: 2px 0 9px;
+	cursor: ew-resize; touch-action: none; accent-color: var(--acc);
+}
+.mp-marker-slider:disabled { opacity: 0.35; cursor: default; }
+.mp-marker-mode { display: flex; gap: 4px; margin: 0 0 9px; }
+.mp-mode-btn {
+	flex: 1; padding: 3px 0; font-size: 11px; border-radius: 4px;
+	background: #141a28; color: var(--dim); border: 1px solid var(--line2); cursor: pointer;
+}
+.mp-mode-btn.active { background: #1b2740; color: #cfe0ff; border-color: #2f4060; }
+.mp-marker-budget {
+	display: flex; align-items: center; justify-content: space-between; gap: 8px;
+	margin: 2px 0 6px; font-size: 11px; color: var(--dim);
+}
+.mp-marker-budget input {
+	width: 62px; background: #0f1424; border: 1px solid var(--line2); color: var(--text);
+	border-radius: 6px; padding: 3px 5px; font: inherit; font-size: 12px; color-scheme: dark;
+}
+.mp-marker-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 4px 0; }
+.mp-marker-label { color: var(--dim); font-size: 11px; }
+.mp-marker-val { font-size: 13px; font-weight: 600; color: var(--bright); }
+.mp-marker-km { color: #6b7589; font-size: 10px; text-align: right; margin: -2px 0 2px; }

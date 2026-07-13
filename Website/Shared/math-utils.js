@@ -540,6 +540,14 @@ export const OrbitalMath = {
 				sc = stumpff(psi); c2 = sc[0]; c3 = sc[1];
 			}
 			if (!isFinite(y) || y < 0) { return null; }
+			// The bisection can exhaust its psi bracket (psiUp - psiLow < 1e-12)
+			// without reaching the requested dt — e.g. a strongly hyperbolic
+			// transfer whose true psi lies below the -4*pi floor. Returning that
+			// "solution" silently sends the ship somewhere else entirely (a
+			// Target-mode marker solved a 58-day leg and got a 95-day arc,
+			// missing by 1.4 AU — found in task D3's verification), so honour
+			// the documented contract: no convergence, null.
+			if (Math.abs(dtc - dt) > Math.max(1, 1e-6 * dt)) { return null; }
 			var f = 1 - y / R1, g = A * Math.sqrt(y / mu), gdot = 1 - y / R2;
 			if (g === 0 || !isFinite(g)) { return null; }
 			return {
@@ -575,6 +583,103 @@ export const OrbitalMath = {
 			var M1 = OrbitalMath.meanAnomalyFromTrue(nuTarget, e);
 			var dt = (M1 - M0) / OrbitalMath.meanMotion(GM, a);
 			return dt >= 0 ? dt : null;
+		},
+
+		// ---- waypoint "snap to" helpers ----------------------------------------
+		// Promoted from the Solar-System-Trajectory-Plotter (2026-07, Mission
+		// Planner task D2) so the Ephemeris tab's waypoint list can share the
+		// exact geometry, not a fork. Used to place a waypoint on an orbital
+		// FEATURE of the arc it sits on (an apsis the leg's own burn creates, or
+		// a node against the ecliptic) rather than typing a raw day offset.
+
+		// The apsis a leg's *burn* creates opposite the launch point: a net
+		// prograde burn raises the far side to an apoapsis; a net retrograde burn
+		// lowers it to a periapsis. With no prograde/retrograde element there is
+		// no such apsis (available: false). `burn` is the burn that started this
+		// leg (departure, or the previous waypoint's burn).
+		apsisFromBurn: function (burn) {
+			var pro = burn ? burn.pro : 0;
+			if (pro > 0) { return { label: "apoapsis",  nu: Math.PI, available: true }; }
+			if (pro < 0) { return { label: "periapsis", nu: 0,       available: true }; }
+			return { label: "apoapsis", nu: Math.PI, available: false };
+		},
+
+		// Node-like options for the arc through (rvec, vvec). For an inclined
+		// orbit these are the true ascending/descending nodes (against the
+		// ecliptic); for a near-ecliptic arc (e.g. an Earth departure with no
+		// plane change) nodes are meaningless, so substitute the points 90 deg
+		// and 270 deg of true anomaly ahead of the current point.
+		nodeInfo: function (GM, rvec, vvec) {
+			var O = OrbitalMath;
+			var el = O.elementsFromState(GM, rvec, vvec);
+			if (el.i < 0.1 * Math.PI / 180) {
+				return { earthLike: true,
+				         asc: el.nu + Math.PI / 2,  ascLabel: "90°",
+				         desc: el.nu - Math.PI / 2, descLabel: "270°" };
+			}
+			return { earthLike: false,
+			         asc: -el.omega,           ascLabel: "ascending node",
+			         desc: Math.PI - el.omega, descLabel: "descending node" };
+		},
+
+		// Target true anomaly (rad) on the arc through (rvec, vvec) for a snap
+		// key ("apsis" | "asc" | "desc"), or null if not applicable (e.g. an
+		// apsis with no available sense, or a hyperbola with no apoapsis). The
+		// apsis sense comes from the leg-creating `burn` (see apsisFromBurn).
+		snapTargetNu: function (GM, rvec, vvec, burn, snap) {
+			var O = OrbitalMath;
+			if (snap === "apsis") {
+				var ap = O.apsisFromBurn(burn);
+				if (!ap.available) { return null; }
+				if (ap.label === "apoapsis" && O.elementsFromState(GM, rvec, vvec).e >= 1) {
+					return null;                                       // hyperbola: no apoapsis
+				}
+				return ap.nu;
+			}
+			var ni = O.nodeInfo(GM, rvec, vvec);
+			if (snap === "asc")  { return ni.asc; }
+			if (snap === "desc") { return ni.desc; }
+			return null;
+		},
+
+		// Forward time (s) from (rvec, vvec) to a target true anomaly, or null
+		// if unreachable (a hyperbola whose target lies behind it).
+		timeToTrueAnomaly: function (GM, rvec, vvec, nuTarget) {
+			if (nuTarget == null || !isFinite(nuTarget)) { return null; }
+			var O = OrbitalMath;
+			var el = O.elementsFromState(GM, rvec, vvec);
+			var M0 = O.meanAnomalyFromTrue(el.nu, el.e);
+			var Mt = O.meanAnomalyFromTrue(nuTarget, el.e);
+			if (!isFinite(M0) || !isFinite(Mt)) { return null; }
+			var dM = Mt - M0;
+			if (el.e < 1) { dM = ((dM % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); }  // next forward pass
+			else if (dM <= 0) { return null; }                             // hyperbola: already past
+			return dM / O.meanMotion(GM, el.a);
+		},
+
+		// Time (s) from (rvec, vvec) to a snapped feature, plus a slider offset
+		// of `off` radians of true anomaly applied symmetrically about the
+		// feature (so -off lands earlier on the arc, +off later), or null if not
+		// applicable. A feature essentially at the current point (tau ~ 0) is
+		// pushed to its next pass a period later, so a node/apsis that coincides
+		// with the launch point doesn't collapse the waypoint onto the burn.
+		snapTau: function (GM, rvec, vvec, burn, snap, off) {
+			var O = OrbitalMath;
+			var DAY = 86400;
+			var base = O.snapTargetNu(GM, rvec, vvec, burn, snap);
+			if (base == null) { return null; }
+			var el = O.elementsFromState(GM, rvec, vvec);
+			var n = O.meanMotion(GM, el.a);
+			var bound = el.e < 1;
+			var tau = O.timeToTrueAnomaly(GM, rvec, vvec, base);
+			if (tau == null) { return null; }
+			if (off) {
+				var dM = O.meanAnomalyFromTrue(base + off, el.e) - O.meanAnomalyFromTrue(base, el.e);
+				if (bound) { while (dM > Math.PI) { dM -= 2 * Math.PI; } while (dM < -Math.PI) { dM += 2 * Math.PI; } }
+				tau += dM / n;
+			}
+			if (bound) { var period = 2 * Math.PI / n; while (tau < DAY) { tau += period; } }
+			return (isFinite(tau) && tau > DAY) ? tau : null;
 		},
 
 		// Propagate a heliocentric state forward by dt seconds (two-body, any conic).
@@ -642,6 +747,18 @@ export const OrbitalMath = {
 			return O.vAdd(vvec,
 				O.vAdd(O.vScale(f.pro, dvPrograde),
 				O.vAdd(O.vScale(f.nrm, dvNormal), O.vScale(f.rad, dvRadial))));
+		},
+
+		// Inverse of applyBurn's decomposition: split a Δv vector (m/s) into the
+		// { pro, nrm, rad } components that applyBurn(rvec, vvec, pro, nrm, rad)
+		// would turn back into exactly that Δv. Must use the SAME burnFrame()
+		// axes — a solver (e.g. Lambert targeting) that decomposes in any other
+		// frame, such as the osculating r x v normal, produces components that
+		// re-apply to a slightly different Δv on inclined arcs.
+		burnComponents: function (rvec, vvec, dv) {
+			var O = OrbitalMath;
+			var f = O.burnFrame(rvec, vvec);
+			return { pro: O.vDot(dv, f.pro), nrm: O.vDot(dv, f.nrm), rad: O.vDot(dv, f.rad) };
 		},
 
 		// Sample positions along the two-body arc starting at (rvec,vvec), over
