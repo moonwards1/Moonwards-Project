@@ -741,12 +741,17 @@ export function createEphemerisView(opts) {
 
 	// Position the destination "×" (body at arrival), the temporal ring and
 	// the phasing readout, given the meeting point markerR (m) and TOF (s).
+	// Also drives the "Start Mission Plan" gate (task E1): enabled only when
+	// the marker sits inside BOTH closest-approach rings, space (nearOrbit,
+	// same APPROACH_FAR threshold as the space-ring tiers, task D4) and time
+	// (the temporal ring's own tier >= 0) — see updateStartMissionButton.
 	function updateDestinationMarker(markerR, tofSec) {
 		var dn = state.leg.destination;
 		if (!dn) {
 			if (destSprite) { destSprite.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
 			if (mk) { mk.vals.phase.textContent = "—"; }
+			updateStartMissionButton({ hasDest: false });
 			return;
 		}
 		var orbit = systems.get(dn).orbit;
@@ -757,11 +762,15 @@ export function createEphemerisView(opts) {
 		destSprite.material.color.set(systems.get(dn).color || "#ffffff");
 		destSprite.position.set(b.r[0] / AU, b.r[1] / AU, b.r[2] / AU);
 
-		var nearOrbit = orbit.e < 1 && O.distanceToOrbit(orbit, markerR) < APPROACH_FAR;
+		var distToOrbit = orbit.e < 1 ? O.distanceToOrbit(orbit, markerR) : Infinity;
+		var nearOrbit = distToOrbit < APPROACH_FAR;
+		var timeOk = false, dtDays = null;
 		if (nearOrbit) {
 			var dt = mcPhasingDays(GM_SUN, orbit, markerR, arrJd);
+			dtDays = dt;
 			mk.vals.phase.textContent = (dt >= 0 ? "+" : "−") + Math.abs(dt).toFixed(1) + " d";
 			var tier = pickProximityTier(Math.abs(dt), TEMP_FAR, TEMP_NEAR, TEMP_CLOSE);
+			timeOk = tier >= 0;
 			if (tier >= 0) {
 				if (!tempRing) { tempRing = makeTempRing(); frame.scene.add(tempRing); }
 				applyTierToSprite(tempRing, TEMPORAL_TIERS[tier]);
@@ -772,6 +781,32 @@ export function createEphemerisView(opts) {
 			mk.vals.phase.textContent = "—";
 			if (tempRing) { tempRing.visible = false; }
 		}
+		updateStartMissionButton({ hasDest: true, spaceOk: nearOrbit, timeOk: timeOk,
+			distToOrbit: distToOrbit, dtDays: dtDays, destName: dn });
+	}
+
+	// Enable/disable the marker card's "Start Mission Plan" button and set
+	// its explanatory note — always says why, whether enabled or not (per
+	// the mockup's own framing). info: { hasDest, spaceOk, timeOk,
+	// distToOrbit (m), dtDays, destName }.
+	function updateStartMissionButton(info) {
+		if (!mk || !mk.startBtn) { return; }
+		var reason;
+		if (!info.hasDest) {
+			reason = "Select a destination to enable — no destination chosen for this leg.";
+		} else if (!info.spaceOk) {
+			reason = isFinite(info.distToOrbit)
+				? "Marker is " + (info.distToOrbit / AU).toFixed(4) + " AU from " + info.destName +
+					"'s orbit — needs to be within " + (APPROACH_FAR / AU).toFixed(3) + " AU."
+				: "Marker isn't near " + info.destName + "'s orbit.";
+		} else if (!info.timeOk) {
+			reason = "Marker's timing is off by " + Math.abs(info.dtDays).toFixed(1) + " d — needs to be within " +
+				TEMP_FAR + " d of " + info.destName + " passing this point.";
+		} else {
+			reason = "Marker sits inside both closest-approach rings (space and time).";
+		}
+		mk.startBtn.disabled = !(info.hasDest && info.spaceOk && info.timeOk);
+		mk.startNote.textContent = reason;
 	}
 
 	// Build the floating marker card (once), via Shared/sim/marker-card.js —
@@ -806,6 +841,22 @@ export function createEphemerisView(opts) {
 			onBudgetChange: function (dvBudget) { if (state.marker) { state.marker.dvBudget = dvBudget; refresh(); } }
 		});
 		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
+
+		// "Start Mission Plan" (task E1): gated on the marker sitting inside
+		// both closest-approach rings (space and time — see
+		// updateStartMissionButton, fed by updateDestinationMarker's own
+		// nearOrbit/timing computation, task D4's tier data). Freezing the
+		// plan into a new mission tab is task E2, not yet built — the button
+		// stays inert (no click handler) like A2's tab "+" affordance, which
+		// deferred the same way pending the same task.
+		mk.startBtn = document.createElement("button");
+		mk.startBtn.type = "button";
+		mk.startBtn.className = "mp-btn mp-big";
+		mk.startBtn.textContent = "Start Mission Plan";
+		mk.startBtn.title = "Freezes this flight plan into a new mission tab (task E2 — not yet built).";
+		mk.startBtn.disabled = true;
+		mk.el.appendChild(mk.startBtn);
+		mk.startNote = muted(mk.el, "");
 	}
 
 	// Recompute the marker's world position and card readouts from its slider

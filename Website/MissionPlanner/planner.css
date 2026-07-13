@@ -248,7 +248,14 @@ body {
 	border-radius: 7px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer;
 }
 .mp-btn:hover { background: #233054; }
+.mp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mp-btn:disabled:hover { background: #1c2540; }
 .mp-btn.mp-ghost { background: transparent; border-style: dashed; color: var(--dim); margin-top: 8px; }
+.mp-btn.mp-big {
+	display: block; width: 100%; padding: 9px; margin-top: 10px;
+	font-size: 13.5px; background: #24406b; border-color: #3c5f9b; color: #dceafc;
+}
+.mp-btn.mp-big:hover:not(:disabled) { background: #2b4b7d; }
 
 /* diagnostics / warnings, rendered identically whoever authored them */
 .mp-diag {
@@ -297,6 +304,9 @@ body {
 	background: rgba(20, 26, 42, 0.94);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
 }
+/* "Start Mission Plan" (task E1): full-width call-to-action + its always-on
+   explanatory note, appended after the card's own rows. */
+.mp-eph-marker .mp-card .mp-muted { margin-top: 6px; line-height: 1.4; }
 .mp-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .mp-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
 .mp-marker-x {

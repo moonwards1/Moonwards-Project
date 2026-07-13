@@ -684,11 +684,51 @@ World. Source file throughout:
 
 ### WP-E — "Start Mission Plan" flow (stitches A+C+D together)
 
-- [ ] **E1. Gated button on the marker card.** ★★
-  "Start Mission Plan" at the bottom of the D3 card, enabled iff the marker
-  sits inside **both** closest-approach rings (space AND time — D4's tier
-  data); when disabled, it says why. Include waypoint copy-in note. Mockup:
-  mock-a-phases.html:184–209.
+- [x] **E1. Gated button on the marker card.** ★★
+  **Done 2026-07-13.** `buildCard()` (ephemeris-view.js) appends a
+  full-width `.mp-btn.mp-big` "Start Mission Plan" button + a note
+  (`mk.startNote`) straight onto `mk.el`, after `Shared/sim/marker-card.js`'s
+  own rows — that shared skeleton stays generic (the SST has no such
+  button), so this piece is local like the rest of the state machine around
+  it. Gating lives in `updateStartMissionButton(info)`, called from
+  `updateDestinationMarker` (the same place nearOrbit/phasing/the temporal
+  ring already computed their numbers) right after the space/time checks —
+  **no new thresholds**: "space" reuses `nearOrbit`'s existing `APPROACH_FAR`
+  radius (same one the D4 space-ring tiers key off), "time" reuses the
+  temporal ring's own `tier >= 0` (`TEMP_FAR`) — so "inside the ring" here is
+  literally "the ring the marker already draws is currently showing," not a
+  parallel concept. The note **always says why**, matching the mockup's own
+  framing: no destination selected, or the live distance-to-orbit /
+  timing-offset figure and its threshold, or (both satisfied) the plain
+  success line. The click handler is deliberately **inert** — no `onclick`,
+  just a title tooltip — same precedent as A2's tab "+" affordance, both
+  pointing at a later E-numbered task (E2: freeze + spawn) that doesn't
+  exist yet. CSS: `.mp-btn:disabled` (generic dim/not-allowed), `.mp-btn.mp-
+  big` (full-width CTA, values lifted from the mockup's own `.btn.big`), and
+  a small `.mp-eph-marker .mp-card .mp-muted` spacing rule for the note.
+  **Also touched:** the third Ephemeris sidebar card's static placeholder
+  note (planner.html, pre-existing from D1/D2, "'Start Mission Plan' (not
+  built yet)") was reworded now that the gate itself is live — it still
+  correctly flags E2 (the actual freeze) as the unbuilt part. An initial cut
+  also added a "waypoints are copied in" note inside the marker card itself,
+  matching the mockup's card 2; removed it as redundant once the static
+  note already covers that (and the mockup actually puts that line on the
+  *waypoint* card, not the marker card).
+  **Verified in-browser via DOM/JS introspection**, not a screenshot: this
+  session's Browser pane reported `document.hidden === true` throughout
+  (the same environment condition D5's own verification hit), so the render
+  loop never ran, `frame.camera`'s matrices stayed uninitialized, and
+  `handlePick`'s screen-space projection couldn't be exercised for real. A
+  temporary debug hook (`window.__mpEphDebug`, removed before finishing)
+  called the module's own `placeMarkerAtGlobalTime`/`refresh` directly to
+  drive the three cases by hand: no destination → disabled, "Select a
+  destination to enable…"; Mars selected, marker placed 150 d out (0.1638 AU
+  from Mars's orbit) → disabled, "Marker is 0.1638 AU from Mars's orbit —
+  needs to be within 0.004 AU."; Target mode Lambert-solved to Mars (Δv
+  budget raised to 40 km/s to admit the 28.16 km/s solution) → a genuine
+  rendezvous, phase readout "+0.0 d" → **enabled**, "Marker sits inside both
+  closest-approach rings (space and time)." Console clean throughout; Node
+  suites unaffected (browser-only change): 125 green. Depends on D3/D4.
 - [ ] **E2. Freeze + spawn.** ★★★
   On click: name dialog (mockup:513–523) → build a new World whose profile is
   `[frozen-plan (C1)] + copied waypoints + empty tech slots` → register it as
