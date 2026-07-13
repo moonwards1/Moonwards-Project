@@ -581,6 +581,11 @@ World. Source file throughout:
   throughout. Node suites: **125 green** (4 new — burnComponents round-trips
   ×2, lambert feasible-case self-consistency, lambert unreachable-case
   null). Depends on D1/D2.
+  **Placement reversed (2026-07-13, Kim):** moved off the sidebar to a
+  floating overlay atop the 3D pane (`.mp-eph-marker`, top-right of
+  `.mp-scene`), matching the SST's own layout after all. CSS reuses the
+  same rgba/box-shadow treatment as the straddling `.mp-readout` boxes;
+  no JS logic changed, only planner.html's host location and planner.css.
 - [x] **D4. Approach rings (space + time).** ★★
   **Done 2026-07-12.** The temporal-proximity ring already came across with
   D3 (it lives inside `updateDestinationMarker`), so this task's remaining

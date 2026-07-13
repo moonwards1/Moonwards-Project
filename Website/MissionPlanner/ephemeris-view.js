@@ -774,9 +774,10 @@ export function createEphemerisView(opts) {
 		}
 	}
 
-	// Build the sidebar marker card (once), via Shared/sim/marker-card.js —
-	// the SST's card skeleton, restyled as a normal sidebar card rather than
-	// a floating overlay (mockup mock-a-phases.html:184–209 puts it there).
+	// Build the floating marker card (once), via Shared/sim/marker-card.js —
+	// the SST's card skeleton, positioned over the 3D pane the same way the
+	// SST does (planner.css's .mp-eph-marker), rather than the sidebar card
+	// this used to be (reversed 2026-07-13, see planner.css's own comment).
 	function buildCard() {
 		mk = mcBuildMarkerCard({
 			classPrefix: "mp",
@@ -804,7 +805,7 @@ export function createEphemerisView(opts) {
 			onModeClick: function (mode) { setMarkerMode(mode); },
 			onBudgetChange: function (dvBudget) { if (state.marker) { state.marker.dvBudget = dvBudget; refresh(); } }
 		});
-		mk.el.classList.add("mp-card");   // sidebar card, not the SST's floating overlay
+		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
 	}
 
 	// Recompute the marker's world position and card readouts from its slider

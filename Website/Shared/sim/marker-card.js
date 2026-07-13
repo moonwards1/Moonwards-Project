@@ -1,15 +1,16 @@
 /* Shared/sim/marker-card.js
  *
- * The slidable ship "marker" probe on a heliocentric coast, its floating
- * panel-corner card (slider, Free/Track/Target mode selector, readouts), and
- * the destination body's arrival "X" (see Website/ARCHITECTURE.md, "Step 1:
- * scene kit"). Extracted from two call sites — the Solar-System-Trajectory-
- * Plotter (marker slides the whole departure-to-arrival trajectory) and the
- * Mars-Phobos plotter's Helio overlay (marker slides the post-Mars-escape
- * heliocentric chain; ARCHITECTURE.md's own note flags this feature's scope
- * as "maybe needs splitting further" — see below for how that shook out).
- * Moon-Skyhook has none of this (its trajectory never leaves the Earth-Moon
- * system in a way this applies to).
+ * The slidable ship "marker" probe on a heliocentric coast, its floating,
+ * draggable panel-corner card (slider, Free/Track/Target mode selector,
+ * readouts), and the destination body's arrival "X" (see
+ * Website/ARCHITECTURE.md, "Step 1: scene kit"). Extracted from two call
+ * sites — the Solar-System-Trajectory-Plotter (marker slides the whole
+ * departure-to-arrival trajectory) and the Mars-Phobos plotter's Helio
+ * overlay (marker slides the post-Mars-escape heliocentric chain;
+ * ARCHITECTURE.md's own note flags this feature's scope as "maybe needs
+ * splitting further" — see below for how that shook out). Moon-Skyhook has
+ * none of this (its trajectory never leaves the Earth-Moon system in a way
+ * this applies to).
  *
  * What's shared here is the MECHANICAL layer — sprite construction, per-frame
  * screen-facing/orientation, the card's DOM/CSS skeleton, the custom
@@ -259,6 +260,44 @@ export function bindRelativeDragSlider(sliderEl, stepDeg, getAngle, onChange) {
 	sliderEl.addEventListener("pointercancel", endDrag);
 }
 
+// Let the card be repositioned by dragging its title bar. Reads the card's
+// current rendered position -- however its CSS anchored it (each caller
+// pins a different corner: SST top-left, Mars-Phobos top-left below its
+// view-toggle button, Mission Planner top-right) -- into inline left/top on
+// the first drag, relative to its offsetParent (each caller's positioned
+// view/overlay container), then moves it in inline pixels from there. The
+// remove button lives inside the same bar, so clicks on it are excluded
+// (checked via closest, not a class list, so it survives if that button's
+// own class ever changes) -- otherwise dragging would eat the click meant
+// to remove the marker.
+function makeCardDraggable(card, handle) {
+	var dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+	handle.style.cursor = "move";
+	handle.addEventListener("pointerdown", function (e) {
+		if (e.target.closest("button")) { return; }
+		var parent = card.offsetParent || card.parentElement;
+		var pr = parent.getBoundingClientRect(), cr = card.getBoundingClientRect();
+		startLeft = cr.left - pr.left; startTop = cr.top - pr.top;
+		card.style.left = startLeft + "px"; card.style.top = startTop + "px";
+		card.style.right = "auto"; card.style.bottom = "auto";
+		startX = e.clientX; startY = e.clientY;
+		dragging = true;
+		try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+	});
+	handle.addEventListener("pointermove", function (e) {
+		if (!dragging) { return; }
+		card.style.left = (startLeft + e.clientX - startX) + "px";
+		card.style.top = (startTop + e.clientY - startY) + "px";
+	});
+	function endDrag(e) {
+		if (!dragging) { return; }
+		dragging = false;
+		try { handle.releasePointerCapture(e.pointerId); } catch (_) {}
+	}
+	handle.addEventListener("pointerup", endDrag);
+	handle.addEventListener("pointercancel", endDrag);
+}
+
 // Build the floating marker card: title bar + remove button, the angle
 // slider (wired via bindRelativeDragSlider), a Free/Track/Target mode
 // selector, a caller-supplied list of readout rows, and the Target-mode
@@ -293,6 +332,7 @@ export function buildMarkerCard(opts) {
 	rm.addEventListener("click", function () { opts.onRemove(); });
 	head.appendChild(title); head.appendChild(rm);
 	card.appendChild(head);
+	makeCardDraggable(card, head);
 
 	var slider = document.createElement("input");
 	slider.type = "range"; slider.className = cls + "-marker-slider";

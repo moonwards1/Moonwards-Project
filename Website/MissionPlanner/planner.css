@@ -280,9 +280,23 @@ body {
 .mp-wp-slider:disabled { opacity: 0.35; cursor: default; }
 
 /* ---------- Ephemeris tab: ship-marker card (task D3) ----------
-   Skeleton from Shared/sim/marker-card.js with classPrefix "mp"; unlike the
-   SST's floating overlay, it sits in the sidebar as a normal card (mockup
-   mock-a-phases.html:184-209) — ephemeris-view.js adds .mp-card to it. */
+   Skeleton from Shared/sim/marker-card.js with classPrefix "mp", floating
+   atop the 3D pane like the SST's own (2026-07-13: moved off the sidebar,
+   reversing D3's original placement) — ephemeris-view.js adds .mp-card to
+   it for the same look the rest of the app's cards use. .mp-eph-marker
+   itself spans the whole pane (like .mp-readout-layer) and lets clicks
+   through everywhere except the card, so the card can be DRAGGED anywhere
+   in the pane by its title bar (marker-card.js's own makeCardDraggable) —
+   .mp-card is the actual positioned box, starting top-right, restyled here
+   as a floating overlay (same rgba/box-shadow treatment as the straddling
+   .mp-readout boxes) instead of a sidebar card. */
+.mp-eph-marker { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.mp-eph-marker .mp-card {
+	position: absolute; top: 12px; right: 12px; width: 230px;
+	pointer-events: auto;
+	background: rgba(20, 26, 42, 0.94);
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+}
 .mp-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .mp-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
 .mp-marker-x {
