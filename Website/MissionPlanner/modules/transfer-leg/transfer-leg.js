@@ -28,6 +28,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
+import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -86,12 +87,18 @@ export function computeLeg(params, data) {
 	}
 
 	// Walk the chain: each segment ends at the next waypoint (burn applied
-	// there), the last at legDays. Samples accumulate for the drawn polyline.
+	// there), the last at legDays. Samples accumulate for the drawn polyline;
+	// segs keeps each segment's own starting state (r0/v0, post-burn) and
+	// [tStart, tStart+dur) window so stateAtElapsed() below can re-propagate
+	// the EXACT state (with velocity, which the polyline samples don't carry)
+	// at any point along the leg — the ship-marker chevron's position source.
 	var samples = [];
+	var segs = [];
 	var tPrev = 0;   // days since jd0
 	var bounds = wps.map(function (wp) { return wp.days; }).concat([p.legDays]);
 	for (var seg = 0; seg < bounds.length; seg++) {
 		var durS = (bounds[seg] - tPrev) * DAY;
+		segs.push({ r0: r, v0: v, tStart: tPrev * DAY, dur: durS });
 		var arc = O.sampleArc(GM_SUN, r, v, durS, seg === bounds.length - 1 ? 200 : 120);
 		for (var k = (seg > 0 ? 1 : 0); k < arc.length; k++) {
 			samples.push({ r: arc[k].r, t: tPrev * DAY + arc[k].t });
@@ -119,8 +126,28 @@ export function computeLeg(params, data) {
 		events.push({ jd: jdEnd, label: "Leg ends" });
 	}
 
-	return { ok: true, samples: samples, end: { r: r, v: v, jd: jdEnd },
+	return { ok: true, jd0: jd0, samples: samples, segs: segs, end: { r: r, v: v, jd: jdEnd },
 	         events: events, totalDv: totalDv, miss: miss };
+}
+
+// Heliocentric state (r, v in m, m/s) at elapsed time t (s) since the leg's
+// own start (jd0) -- TRUE two-body propagation per segment, matching the
+// Solar-System-Trajectory-Plotter's stateAtGlobalTime (Shared/sim/
+// marker-card.js's doc comment). Unlike `samples` (dense polyline points,
+// position only), this gives velocity too and isn't limited to sample
+// resolution -- the ship-marker chevron's position/orientation source.
+// Clamps into the nearest segment at either end (t<0 sits at the leg start,
+// t>legDays*DAY at its end), so a clock outside the leg's own span still
+// resolves to a sensible pinned state rather than null.
+export function stateAtElapsed(leg, t) {
+	if (!leg || !leg.segs || !leg.segs.length) { return null; }
+	var segs = leg.segs;
+	var seg = segs[segs.length - 1];
+	for (var i = 0; i < segs.length; i++) {
+		if (t <= segs[i].tStart + segs[i].dur + 1e-6) { seg = segs[i]; break; }
+	}
+	var dt = Math.max(0, Math.min(seg.dur, t - seg.tStart));
+	return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
 }
 
 // Last computed leg per (World, stage), for the card readouts and the
@@ -275,9 +302,10 @@ export default {
 			view.group.remove(c);
 			if (c.geometry) { c.geometry.dispose(); }
 			if (c.material) { c.material.dispose(); }
+			if (c.material && c.material.map) { c.material.map.dispose(); }
 		}
 		var leg = legFor(snap.world, snap.stageId);
-		if (!leg || !leg.ok || snap.result.status !== "ok") { return; }
+		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
 
 		var pts = leg.samples.map(function (s) {
@@ -305,6 +333,30 @@ export default {
 		if (params.destination && systems.get(params.destination)) {
 			var dest = O.bodyStateAtJD(GM_SUN, systems.get(params.destination).orbit, leg.end.jd);
 			view.group.add(dot(dest.r, 0xe0a84a, 8));
+		}
+
+		// The ship-marker chevron (ported from the Ephemeris tab's marker —
+		// Shared/sim/marker-card.js's makeShipSprite/orientMarkerSprite):
+		// unlike the Ephemeris marker's own slider, this one has no state of
+		// its own — its position is simply wherever the shared mission clock
+		// (snap.world.jd) currently sits along the leg, via stateAtElapsed's
+		// exact two-body re-propagation (samples alone don't carry velocity,
+		// which the chevron needs to orient along the direction of travel).
+		// Recreated fresh every draw() alongside everything else in the
+		// group; view.chevron is a stable reference the shell's render loop
+		// re-reads every animation frame to keep the sprite screen-facing as
+		// the camera moves (orientMarkerSprite needs the live camera, which
+		// draw() itself is never called with).
+		var t = (snap.world.jd - leg.jd0) * DAY;
+		var s = stateAtElapsed(leg, t);
+		if (s) {
+			var chevron = makeShipSprite();
+			chevron.position.set(s.r[0] / U, s.r[1] / U, s.r[2] / U);
+			view.group.add(chevron);
+			view.chevron = { sprite: chevron,
+				velDir: new THREE.Vector3(s.v[0], s.v[1], s.v[2]).normalize() };
+		} else {
+			view.chevron = null;
 		}
 	}
 };

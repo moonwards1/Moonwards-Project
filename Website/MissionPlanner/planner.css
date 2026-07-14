@@ -108,7 +108,7 @@ body {
 /* ---------- phase sliders (task B2 — ui/phase-slider.js) ---------- */
 .mp-sliderzone {
 	flex: none; background: #0e1220; border-bottom: 1px solid var(--line);
-	padding: 8px 14px 40px;
+	padding: 8px 14px 36px;
 }
 .mp-timeline { position: relative; }
 .mp-track { display: flex; gap: 3px; position: relative; height: 26px; cursor: pointer; }
@@ -139,16 +139,24 @@ body {
 }
 .mp-playhead.mp-pinned { background: #3d4c6b; }
 .mp-playhead.mp-pinned::after { border-top-color: #3d4c6b; }
-/* Floating time readout just below the handle (B4's redesign — was going to
-   be a phase-bar core-data readout, Kim retargeted it here instead). Sits
-   below the tick-label row so it never collides with them. */
+/* Floating "T+" elapsed-time readout, its border touching the bottom of the
+   handle (Kim, 2026-07-14 — briefer than the earlier absolute-date stamp,
+   and tighter to the handle so it doesn't cost the section below any extra
+   room). top:34px is relative to .mp-playhead's OWN box (which spans -4px
+   to 30px in track coordinates, per its top/bottom offsets above), so 34px
+   lands exactly on the handle's bottom edge. Two lines, stacked and
+   centered: "167 d" (bold) over the elapsed HH:MM (dim). */
 .mp-playhead-label {
-	position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
-	font-size: 11px; font-weight: 600; color: var(--bright); white-space: nowrap;
+	position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
+	display: flex; flex-direction: column; align-items: center;
+	white-space: nowrap; pointer-events: none;
 	background: #1a2036; border: 1px solid var(--acc); border-radius: 4px;
-	padding: 1px 6px; pointer-events: none;
+	padding: 2px 6px;
 }
-.mp-playhead.mp-pinned .mp-playhead-label { border-color: #3d4c6b; color: #9aa3b8; }
+.mp-playhead-days { font-size: 11px; font-weight: 600; color: var(--bright); line-height: 1.2; }
+.mp-playhead-time { font-size: 9.5px; color: #9aa3b8; line-height: 1.2; }
+.mp-playhead.mp-pinned .mp-playhead-label { border-color: #3d4c6b; }
+.mp-playhead.mp-pinned .mp-playhead-days { color: #9aa3b8; }
 /* Event marks overlaid on a linear axis (Departure slider, B3): thin ticks at
    a milestone's true time fraction, independent of the tick cells. */
 .mp-mark {

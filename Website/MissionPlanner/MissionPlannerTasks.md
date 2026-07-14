@@ -338,6 +338,128 @@ All within one mission view; the mockup is the spec throughout.
   own ticks only resolve to month/year ("Dec 2031"). Node suites (125)
   green — the pure functions gained a field; no existing assertion depended
   on the old exact shape.
+- [x] **B8. Ship-marker chevron on the Coast trajectory.** ★★
+  **Done 2026-07-14.** Ported the Ephemeris tab's ship "marker" chevron
+  (Shared/sim/marker-card.js's `makeShipSprite`/`orientMarkerSprite`) onto
+  the Coast leg — but adapted, not copied: the Ephemeris marker is a
+  Free/Track/Target probe with its own slider and mode state; this one has
+  no state of its own at all. Its position is simply wherever the shared
+  mission clock (the phase-bar timeline slider) currently sits along the
+  leg, so scrubbing the Coast slider (or Shift-dragging or wheel-scrubbing
+  it, B6) moves the chevron with it directly — no separate control to keep
+  in sync.
+  **Position source:** `transfer-leg.js`'s `computeLeg` now also returns
+  `jd0` and `segs` (each burn-to-burn segment's own starting r0/v0 and
+  [tStart, tStart+dur) window, mirroring the Solar-System-Trajectory-
+  Plotter's `trajSegs`/`stateAtGlobalTime` pattern flagged in marker-card.js's
+  doc comment). The new pure, Node-tested `stateAtElapsed(leg, t)` re-
+  propagates the TRUE two-body state (position AND velocity) at any elapsed
+  time via `O.propagateState` — the drawn polyline's `samples` only carry
+  position, not velocity, which the chevron needs to orient along the
+  direction of travel. Clamps into the nearest segment at either end, so a
+  clock outside the leg's own span (rare, since the Coast slider's own
+  playhead already pins there) still resolves to a sensible state rather
+  than null.
+  **Wiring:** `draw(view, snap)` computes `t = (snap.world.jd - leg.jd0) *
+  DAY`, calls `stateAtElapsed`, and (re)creates the chevron sprite fresh
+  every draw — same rebuild-everything pattern the polyline/dots already
+  use, now also disposing a removed child's texture (`material.map`) since
+  the sprite is the first textured object in this group. Screen-facing
+  orientation needs the LIVE camera, which `draw()` is never called with
+  (module contract, shell-owned) — so `draw()` stores `view.chevron =
+  { sprite, velDir }` (a stable slot on the persistent view object) and
+  `mission-view.js`'s render loop re-reads it every animation frame,
+  calling `orientMarkerSprite(frame.camera, ...)` before each render pass,
+  so the chevron stays correctly oriented even when the camera moves
+  without the clock moving.
+  **Scope (Kim, 2026-07-14):** Coast only for now — Departure/Arrival get
+  their own chevron once a trajectory exists to place it on (their own
+  systems are frames/tech-specific, not this leg). transfer-leg's
+  `rendersIn: ["helio"]` means this chevron is already visible whenever the
+  helio frame renders, main or float, regardless of active phase — same as
+  the leg's existing polyline/dots.
+  Verified: Node suites (130, 5 new `stateAtElapsed` tests — t=0 matches
+  the post-burn start state, t=legDays matches leg.end exactly, a
+  mid-segment state agrees with a drawn polyline sample at the same t,
+  before/after the span clamp to the nearest end, a malformed leg returns
+  null) green. In-browser (local server, Coast phase): a `THREE.Sprite`
+  constructor patch confirmed exactly one chevron sprite is created per
+  draw, visible, textured, correctly parented into the leg's view group;
+  wheel-scrubbing the (correctly-identified, visible) Coast track moved the
+  sprite from ~1 AU out (near Dec 2031, just past departure) to ~2 AU out
+  (Jun 2032, consistent with a Ceres-bound transfer roughly mid-flight) —
+  confirming it tracks the clock along the real trajectory, not a fixed or
+  stale point. `orientMarkerSprite` itself was verified in isolation
+  (synthetic camera + velocity vectors along world +X/+Y resolved to 0°/90°
+  screen rotation as expected) rather than live, since the automated
+  preview tab reports `document.hidden = true` (not the focused tab) and
+  Chromium throttles `requestAnimationFrame` for hidden tabs — the app's
+  own render loop (and therefore the per-frame orientation call) doesn't
+  run in that state. This is an artifact of the headless preview
+  environment, not the app; a normal foregrounded browser tab doesn't hit
+  it. Console clean throughout.
+  **Fixed (2026-07-14): invisible in practice — Kim couldn't see it.** The
+  first cut ported `orientMarkerSprite` but missed the OTHER per-frame call
+  the Ephemeris marker relies on: its `updateGizmos()` also rescales the
+  sprite every frame via `worldSizeAtPointForPx(camera, holder, pos, 26)`
+  (Shared/sim/body-renderer.js), pinning it to a constant 26px on screen
+  regardless of camera distance. Without that, `makeShipSprite()`'s fixed
+  0.01 WORLD-space scale — combined with the helio frame's huge zoom range
+  (6 AU default distance, 1e-4..500 AU min/max) — projected to roughly a
+  single pixel at the default view: technically present, practically
+  invisible, easily lost in the starfield. `mission-view.js`'s
+  `updateChevrons()` now also calls `worldSizeAtPointForPx` (newly imported
+  from body-renderer.js) every frame, sized against the main pane
+  (`paneMainEl`) at the same 26px the Ephemeris marker uses. Verified with
+  the tab actually focused this time (`document.hidden` had been the
+  in-session giveaway, and turned out to be intermittent in the preview
+  sandbox, not a permanent property of it — this pass caught it truly
+  false, with `requestAnimationFrame` measured actively ticking at ~330fps
+  over 2s): a live `THREE.Sprite`-constructor patch on the real running app
+  showed the chevron's `.scale` at ~0.18 (versus the old fixed 0.01 — over
+  10x larger, matching a hand-computed expectation of ~0.22 at 1 AU using
+  the pane's real 596px height) and `.material.rotation` at a genuine
+  nonzero live value (2.92 rad), confirming both the per-frame rescale and
+  the orientation call are actually running and producing sane numbers, not
+  just wired up. Console clean.
+- [x] **B9. Playhead readout: "T+" elapsed time, two lines, touching the
+  handle.** ★
+  **Done 2026-07-14.** Kim: the B7 readout's absolute calendar date ("Dec
+  21, 2031 02:27") was more than needed — briefer as elapsed mission time,
+  split across two lines, with the label's border touching the handle's
+  bottom edge rather than sitting in a gap below it.
+  **Format:** `ui/phase-slider.js`'s new pure `elapsedStamp(jd, start)`
+  (Node-tested — whole-day/midpoint cases, the elapsed-not-calendar-time
+  distinction, a just-before-midnight edge, the minute-rounding carry into
+  the next day, and a negative day count before `start`) replaces the old
+  `stampPlayhead(jd)` formatter entirely — no caller-supplied formatter
+  needed anymore, since it's pure day/time arithmetic on `jd - start`, not
+  a calendar lookup. Both sliders already had a `start` that IS the
+  departure/release epoch (Coast's span start; Departure's own span start
+  IS launch), so no new epoch plumbing was needed. `mission-view.js`'s now-
+  unused `fullStamp` helper was removed. Split into `{ days: "167 d", time:
+  "14:32" }` — the time line is ELAPSED time-within-the-day (the fractional
+  part of `jd - start`), not calendar wall-clock, so the two lines always
+  agree regardless of what time of day departure itself began at.
+  **Layout:** `createSegmentedSlider`'s playhead gained two child lines
+  (`.mp-playhead-days` bold, `.mp-playhead-time` dim) inside
+  `.mp-playhead-label`, `setPlayhead(fraction, pinned, daysText, timeText)`.
+  In `planner.css`, `.mp-playhead-label`'s `top` moved from 44px to 34px —
+  which, since it's positioned relative to `.mp-playhead`'s OWN box (spanning
+  -4px to 30px in track coordinates per its top/bottom offsets), lands
+  exactly on the handle's bottom edge rather than the 14px gap the B7
+  version left. `.mp-sliderzone`'s bottom padding correspondingly shrank
+  40px → 36px. Verified in-browser (both sliders, local server): the
+  label's top edge sits exactly 0px from the handle's bottom (measured via
+  `getBoundingClientRect`), with the section's own bottom edge only ~2.4px
+  past the label's bottom (no overlap with whatever follows, negligible
+  slack); "0 d"/"00:00" at the release event on both sliders, "267 d"/
+  "18:00" at a scrubbed-forward clock (Departure correctly still pinned at
+  its own edge while showing the same true unclamped elapsed time Coast
+  shows unpinned — the B7-era "always show the true clock" behavior
+  carried over intact); all three of the handle/days-line/time-line stay
+  exactly centered on the same x. Node suites (135, 5 new `elapsedStamp`
+  tests) green. Console clean.
 
 ### WP-C — Comply mode: the frozen plan in core and UI
 

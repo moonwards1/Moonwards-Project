@@ -13,7 +13,7 @@ import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import skyhook, { computeRelease, defaultParams as skyhookDefaults } from "../lunar-skyhook/lunar-skyhook.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
-import transferLeg, { computeLeg, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
+import transferLeg, { computeLeg, stateAtElapsed, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -140,6 +140,56 @@ test("computeLeg: waypoint outside the leg is a diagnostic", function () {
 	}, HELIO_START);
 	assert.equal(leg.ok, false);
 	assert.equal(leg.diagnostic.code, "waypoint-outside-leg");
+});
+
+// ---- stateAtElapsed (the ship-marker chevron's position source) -----------
+
+test("stateAtElapsed: t=0 matches the post-departure-burn start state", function () {
+	var leg = computeLeg({
+		burn: { pro: 3000, rad: 0, nrm: 0 },
+		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
+		legDays: 480, destination: ""
+	}, HELIO_START);
+	var s = stateAtElapsed(leg, 0);
+	assert.ok(O.vMag(O.vSub(s.r, leg.segs[0].r0)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.segs[0].v0)) < 1e-6);
+});
+
+test("stateAtElapsed: at the leg's full duration matches leg.end exactly", function () {
+	var leg = computeLeg({
+		burn: { pro: 3000, rad: 0, nrm: 0 },
+		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
+		legDays: 480, destination: ""
+	}, HELIO_START);
+	var s = stateAtElapsed(leg, 480 * 86400);
+	assert.ok(O.vMag(O.vSub(s.r, leg.end.r)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.end.v)) < 1e-6);
+});
+
+test("stateAtElapsed: mid-segment agrees with a drawn polyline sample at the same t", function () {
+	var leg = computeLeg({
+		burn: { pro: 3000, rad: 0, nrm: 0 },
+		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
+		legDays: 480, destination: ""
+	}, HELIO_START);
+	var sample = leg.samples[50];   // well inside the first segment
+	var s = stateAtElapsed(leg, sample.t);
+	assert.ok(O.vMag(O.vSub(s.r, sample.r)) < 1);   // both exact two-body solutions at the same t
+});
+
+test("stateAtElapsed: clamps outside the leg's span to its nearest end", function () {
+	var leg = computeLeg({
+		burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: ""
+	}, HELIO_START);
+	var before = stateAtElapsed(leg, -1e6);
+	assert.ok(O.vMag(O.vSub(before.r, leg.segs[0].r0)) < 1);
+	var after = stateAtElapsed(leg, 480 * 86400 + 1e6);
+	assert.ok(O.vMag(O.vSub(after.r, leg.end.r)) < 1);
+});
+
+test("stateAtElapsed: a leg with no segments (malformed) returns null", function () {
+	assert.equal(stateAtElapsed({ ok: false }, 0), null);
+	assert.equal(stateAtElapsed(null, 0), null);
 });
 
 // ---- the chained profile through the engine --------------------------------

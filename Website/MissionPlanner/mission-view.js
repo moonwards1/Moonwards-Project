@@ -44,8 +44,9 @@ import { OrbitalMath } from "../Shared/math-utils.js";
 import { Exchange, encodeFragment } from "../Shared/exchange.js";
 import { packMissionLink } from "./ui/share-link.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
+import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
-import { updateLabels as brUpdateLabels, updateScales as brUpdateScales } from "../Shared/sim/body-renderer.js";
+import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
 import { buildHelioFrame, buildEarthMoonFrame, disposeScene } from "./scene-frames.js";
 
@@ -654,14 +655,6 @@ export function createMissionView(opts) {
 		var d = O.dateFromJulian(jd);
 		return MONTHS[d.Mo - 1] + " " + d.D + " " + pad2(d.h) + ":" + pad2(d.m);
 	}
-	// The phase sliders' floating playhead readout (B4's redesign): full
-	// precision (day + year + time) regardless of the slider's own tick
-	// granularity — Coast's ticks only show month/year, but the handle can
-	// sit anywhere within that month.
-	function fullStamp(jd) {
-		var d = O.dateFromJulian(jd);
-		return MONTHS[d.Mo - 1] + " " + d.D + ", " + d.Y + " " + pad2(d.h) + ":" + pad2(d.m);
-	}
 
 	var dateState = { jd: world.jd, baseDays: 0 };
 	var dateBar = createDateBar(dateState, {
@@ -684,7 +677,7 @@ export function createMissionView(opts) {
 
 	// ---- the Coast slider (task B2): date-scaled, spanning the departure
 	// and coast phases' own events (coastSpan) — see ui/phase-slider.js.
-	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate, stampPlayhead: fullStamp });
+	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate });
 
 	// The coast span. Comply mode (task C1): when a frozen-plan stage is
 	// emitting, the coast phase IS the plan's committed dates (its departure/
@@ -716,7 +709,7 @@ export function createMissionView(opts) {
 	// departure flight — launch (left, floats) to on-course/SOI-exit (right,
 	// the anchor). See ui/phase-slider.js and departureSpan() below.
 	var depSlider = createDepartureSlider(depSliderEl, {
-		onSetJd: setClock, stamp: shortStamp, stampPlayhead: fullStamp
+		onSetJd: setClock, stamp: shortStamp
 	});
 
 	// The departure phase's flight events (release, Moon-SOI exit, Earth-SOI
@@ -859,8 +852,43 @@ export function createMissionView(opts) {
 		renderer.render(frame.scene, frame.camera);
 	}
 
+	// The ship-marker chevron (transfer-leg's draw()) is screen-facing, so it
+	// needs re-orienting toward the live camera every rendered frame, not just
+	// on the recompute/jd changes that (re)position it — the user can rotate
+	// the view without touching the clock. It also needs RE-SCALING every
+	// frame: makeShipSprite()'s scale is a fixed WORLD-space size (0.01),
+	// which the helio frame's AU-scaled, multi-order-of-magnitude zoom range
+	// (6 AU default, 1e-4..500 AU min/max) shrinks to a fraction of a pixel
+	// at typical zoom — invisible, not just small. The Solar-System-
+	// Trajectory-Plotter's own marker avoids this the same way its waypoint
+	// gizmos do (updateGizmos(), Calculators/Solar-System-Trajectory-Plotter/
+	// solarSystemTrajectory.js): worldSizeAtPointForPx pins it to a constant
+	// ON-SCREEN size regardless of distance. draw() itself never gets a
+	// camera or a DOM element (module contract, not shell-owned), so the
+	// shell closes both loops here: each stage's view.chevron (module-owned,
+	// set fresh every draw()) is a stable slot the render loop re-reads every
+	// tick. Sized against the main pane specifically (mainPane.el) — the
+	// same single-holder choice camera control itself makes; a chevron
+	// shown as a float-pane thumbnail elsewhere sizes for the main pane's
+	// height, matching how the rest of this view treats "main" as the
+	// reference pane.
+	var CHEVRON_PX = 26;   // matches the Ephemeris marker's own on-screen size
+	function updateChevrons() {
+		Object.keys(stageViews).forEach(function (stageId) {
+			stageViews[stageId].forEach(function (view) {
+				var chevron = view.chevron;
+				var frame = frames[view.frame];
+				if (!chevron || !frame) { return; }
+				chevron.sprite.scale.setScalar(
+					worldSizeAtPointForPx(frame.camera, paneMainEl, chevron.sprite.position, CHEVRON_PX));
+				orientMarkerSprite(frame.camera, chevron.sprite, chevron.velDir);
+			});
+		});
+	}
+
 	function render() {
 		if (!active) { return; }
+		updateChevrons();
 		var canvasRect = renderer.domElement.getBoundingClientRect();
 		renderPane(mainPane, canvasRect);
 		for (var i = 0; i < panes.length; i++) {

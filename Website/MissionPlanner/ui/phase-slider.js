@@ -27,13 +27,32 @@
  */
 
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+// "T+" mission-elapsed-time readout for the playhead label (Kim, 2026-07-14
+// — replaces the earlier absolute-date stamp with something briefer):
+// days elapsed since `start` (Coast's own span start IS the departure/
+// release epoch; Departure's own span start IS launch itself, so this needs
+// no separate "departure epoch" plumbing beyond the start each slider
+// already carries), split into a "167 d" line and a separate elapsed
+// HH:MM line — ELAPSED time-within-the-current-day, not calendar
+// wall-clock, so the two lines always agree ("167 d" + "14:32" means
+// exactly that many days+hours+minutes since departure, regardless of what
+// time of day departure itself started at). No DOM, Node-testable.
+export function elapsedStamp(jd, start) {
+	var elapsed = jd - start;
+	var days = Math.floor(elapsed);
+	var totalMin = Math.round((elapsed - days) * 1440);
+	if (totalMin >= 1440) { totalMin -= 1440; days += 1; }
+	return { days: days + " d", time: pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60) };
+}
 
 // ---- the DOM primitive -----------------------------------------------------
 // opts.onScrub(fraction) — called with a 0..1 track fraction on click/drag/
 //   wheel (plain click/drag jumps and tracks 1:1; Shift-drag or the mouse
 //   wheel fine-tune at 10x-slower sensitivity — see onDown/onMove/onWheel).
 // Returns { root, setSegments(segs), setEmpty(msg), setPlayhead(fraction,
-//   pinned, label), dispose() }.
+//   pinned, daysText, timeText), dispose() }.
 export function createSegmentedSlider(container, opts) {
 	var onScrub = opts.onScrub;
 
@@ -50,6 +69,12 @@ export function createSegmentedSlider(container, opts) {
 
 	var playheadLabel = document.createElement("div");
 	playheadLabel.className = "mp-playhead-label";
+	var playheadDaysEl = document.createElement("div");
+	playheadDaysEl.className = "mp-playhead-days";
+	var playheadTimeEl = document.createElement("div");
+	playheadTimeEl.className = "mp-playhead-time";
+	playheadLabel.appendChild(playheadDaysEl);
+	playheadLabel.appendChild(playheadTimeEl);
 	playhead.appendChild(playheadLabel);
 
 	container.appendChild(root);
@@ -134,15 +159,16 @@ export function createSegmentedSlider(container, opts) {
 			track.insertBefore(el, playhead);
 			playhead.style.display = "none";
 		},
-		// label: the formatted current time, shown in a floating readout just
-		// below the handle (omit/empty to hide it — the empty-state path never
-		// calls this, so there's nothing to clear).
-		setPlayhead: function (fraction, pinned, label) {
+		// daysText/timeText: the two lines of the floating readout touching the
+		// bottom of the handle (omit/empty to hide it — the empty-state path
+		// never calls this, so there's nothing to clear).
+		setPlayhead: function (fraction, pinned, daysText, timeText) {
 			currentFraction = clamp01(fraction);
 			playhead.style.left = (currentFraction * 100) + "%";
 			playhead.classList.toggle("mp-pinned", !!pinned);
-			playheadLabel.textContent = label || "";
-			playheadLabel.style.display = label ? "" : "none";
+			playheadDaysEl.textContent = daysText || "";
+			playheadTimeEl.textContent = timeText || "";
+			playheadLabel.style.display = daysText ? "" : "none";
 		},
 		// Overlay ticks at arbitrary fractions (event marks on a linear axis),
 		// independent of the segment cells. marks: [{ frac, title, cls }].
@@ -168,15 +194,12 @@ export function createSegmentedSlider(container, opts) {
 // ---- B2: the Coast slider --------------------------------------------------
 // Pure: given the coast span (start/end jd, from the departure and coast
 // phases' own events — see mission-view.js's coastSpan()), the shared
-// clock's jd, a tick count, a shortDate(jd) formatter for the tick captions
-// and an optional finer stampPlayhead(jd) formatter for the floating
-// readout below the handle (B4 redesign — defaults to shortDate when
-// omitted), compute what the widget should show. No DOM — Node-testable.
+// clock's jd, a tick count and a shortDate(jd) formatter for the tick
+// captions, compute what the widget should show. No DOM — Node-testable.
 export function coastSliderState(opts) {
 	var start = opts.start, end = opts.end, jd = opts.jd;
 	var ticks = opts.ticks || 5;
 	var shortDate = opts.shortDate;
-	var stampPlayhead = opts.stampPlayhead || shortDate;
 
 	if (!(isFinite(start) && isFinite(end) && end > start)) {
 		return { empty: true };
@@ -193,22 +216,22 @@ export function coastSliderState(opts) {
 	var playheadFrac = pinnedAt === "start" ? 0 : (pinnedAt === "end" ? 1 : (jd - start) / (end - start));
 	// The readout always shows the true clock time, even when the handle
 	// itself is pinned at an edge because the clock has wandered outside
-	// the span — that's the point of showing it.
-	var playheadLabel = stampPlayhead(jd);
-	return { empty: false, segments: segments, playheadFrac: playheadFrac, pinnedAt: pinnedAt, playheadLabel: playheadLabel };
+	// the span — that's the point of showing it. start IS the departure/
+	// release epoch here (coastSpan's own envelope minimum, or the frozen
+	// plan's departure date once C1 governs it), so elapsedStamp needs no
+	// separate epoch.
+	var stamp = elapsedStamp(jd, start);
+	return { empty: false, segments: segments, playheadFrac: playheadFrac, pinnedAt: pinnedAt,
+	         playheadDays: stamp.days, playheadTime: stamp.time };
 }
 
-// opts: { onSetJd(jd), shortDate(jd), stampPlayhead(jd)?, ticks? }. Returns
-// { update({start,end, jd}), dispose() }. update() is cheap to call on every
-// recompute/clock change — it just rebuilds a handful of DOM nodes and
-// repositions the playhead. stampPlayhead formats the floating readout below
-// the handle (B4's redesign); defaults to shortDate (month+year) when
-// omitted, but mission-view.js passes a finer stamp since the coast span can
-// run years and shortDate alone can't show what day/time the handle is on.
+// opts: { onSetJd(jd), shortDate(jd), ticks? }. Returns { update({start,end,
+// jd}), dispose() }. update() is cheap to call on every recompute/clock
+// change — it just rebuilds a handful of DOM nodes and repositions the
+// playhead.
 export function createCoastSlider(container, opts) {
 	var onSetJd = opts.onSetJd;
 	var shortDate = opts.shortDate;
-	var stampPlayhead = opts.stampPlayhead;
 	var ticks = opts.ticks;
 	var span = null;   // { start, end } — null while empty
 
@@ -220,7 +243,7 @@ export function createCoastSlider(container, opts) {
 
 	function update(state) {
 		var s = coastSliderState({ start: state.start, end: state.end, jd: state.jd, ticks: ticks,
-			shortDate: shortDate, stampPlayhead: stampPlayhead });
+			shortDate: shortDate });
 		if (s.empty) {
 			span = null;
 			slider.setEmpty("No computed span yet — departure and the leg both need to resolve.");
@@ -228,7 +251,7 @@ export function createCoastSlider(container, opts) {
 		}
 		span = { start: state.start, end: state.end };
 		slider.setSegments(s.segments);
-		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadLabel);
+		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadDays, s.playheadTime);
 	}
 
 	return { update: update, dispose: slider.dispose };
@@ -267,7 +290,6 @@ export function departureSliderState(opts) {
 	var start = opts.start, end = opts.end, jd = opts.jd;
 	var ticks = opts.ticks || 5;
 	var stamp = opts.stamp;
-	var stampPlayhead = opts.stampPlayhead || stamp;
 	if (!(isFinite(start) && isFinite(end) && end > start)) { return { empty: true }; }
 	var span = end - start;
 
@@ -291,20 +313,20 @@ export function departureSliderState(opts) {
 	var playheadFrac = pinnedAt === "start" ? 0
 		: pinnedAt === "end" ? 1
 		: (jd - start) / span;
-	var playheadLabel = stampPlayhead(jd);
+	// start IS launch/departure itself here, so elapsedStamp needs no
+	// separate epoch — "0 d" reads naturally as "same day as launch".
+	var stampVal = elapsedStamp(jd, start);
 	return { empty: false, segments: segments, marks: marks,
-	         playheadFrac: playheadFrac, pinnedAt: pinnedAt, playheadLabel: playheadLabel };
+	         playheadFrac: playheadFrac, pinnedAt: pinnedAt,
+	         playheadDays: stampVal.days, playheadTime: stampVal.time };
 }
 
-// opts: { onSetJd(jd), stamp(jd), stampPlayhead(jd)?, ticks?, emptyMsg }.
-// Returns { update({ start, end, jd, marks, defaulted }), dispose() }.
-// update() is cheap to call on every recompute/clock change. stampPlayhead
-// formats the floating readout below the handle (B4's redesign); defaults
-// to stamp when omitted.
+// opts: { onSetJd(jd), stamp(jd), ticks?, emptyMsg }. Returns { update({
+// start, end, jd, marks, defaulted }), dispose() }. update() is cheap to
+// call on every recompute/clock change.
 export function createDepartureSlider(container, opts) {
 	var onSetJd = opts.onSetJd;
 	var stamp = opts.stamp;
-	var stampPlayhead = opts.stampPlayhead;
 	var ticks = opts.ticks;
 	var emptyMsg = opts.emptyMsg ||
 		"No departure span yet — the release needs to resolve, and a destination set.";
@@ -318,7 +340,7 @@ export function createDepartureSlider(container, opts) {
 
 	function update(state) {
 		var s = departureSliderState({ start: state.start, end: state.end, jd: state.jd,
-			ticks: ticks, stamp: stamp, stampPlayhead: stampPlayhead, marks: state.marks });
+			ticks: ticks, stamp: stamp, marks: state.marks });
 		if (s.empty) {
 			span = null;
 			slider.setMarks([]);
@@ -328,7 +350,7 @@ export function createDepartureSlider(container, opts) {
 		span = { start: state.start, end: state.end };
 		slider.setSegments(s.segments);
 		slider.setMarks(s.marks);
-		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadLabel);
+		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadDays, s.playheadTime);
 	}
 
 	return { update: update, dispose: slider.dispose };

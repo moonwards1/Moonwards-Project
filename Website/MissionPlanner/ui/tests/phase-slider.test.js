@@ -7,10 +7,43 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { coastSliderState, departureSliderState } from "../phase-slider.js";
+import { coastSliderState, departureSliderState, elapsedStamp } from "../phase-slider.js";
 
 function shortDate(jd) { return "jd" + Math.round(jd); }
 function stamp(jd) { return "t" + jd; }
+
+// ---- elapsedStamp (the "T+" playhead readout) ------------------------------
+
+test("elapsedStamp: whole days at exactly midnight-of-start", () => {
+	assert.deepEqual(elapsedStamp(100, 100), { days: "0 d", time: "00:00" });
+	assert.deepEqual(elapsedStamp(267, 100), { days: "167 d", time: "00:00" });
+});
+
+test("elapsedStamp: the fractional day becomes elapsed HH:MM, not calendar time", () => {
+	// 0.5 d elapsed since start -> 12:00, regardless of what time start itself was
+	assert.deepEqual(elapsedStamp(100.5, 100), { days: "0 d", time: "12:00" });
+	// start at a non-midnight time: still reads as elapsed-since-start
+	assert.deepEqual(elapsedStamp(100.75, 100.25), { days: "0 d", time: "12:00" });
+});
+
+test("elapsedStamp: days and time stay consistent just before a day boundary", () => {
+	// 0.999 d elapsed: still day 0, not rounded up to day 1
+	var s = elapsedStamp(100.999, 100);
+	assert.equal(s.days, "0 d");
+	assert.equal(s.time, "23:59" /* 0.999*1440 = 1438.56 -> rounds to 1439min = 23:59 */);
+});
+
+test("elapsedStamp: minute rounding that overflows into the next day carries correctly", () => {
+	// elapsed = 0.99999 d -> 1439.986 min, rounds to 1440 -> carries to day 1, 00:00
+	var s = elapsedStamp(100.99999, 100);
+	assert.equal(s.days, "1 d");
+	assert.equal(s.time, "00:00");
+});
+
+test("elapsedStamp: before the start reads as a negative day count", () => {
+	var s = elapsedStamp(97, 100);
+	assert.equal(s.days, "-3 d");
+});
 
 test("coastSliderState: empty when the span isn't resolvable", () => {
 	assert.equal(coastSliderState({ start: NaN, end: 100, jd: 50, shortDate }).empty, true);
