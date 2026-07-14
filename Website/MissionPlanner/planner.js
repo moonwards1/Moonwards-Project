@@ -33,7 +33,7 @@ import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
 import { defaultMission, defaultWorkspaceMain } from "./presets/default-mission.js";
 import { decodeFragment } from "../Shared/exchange.js";
-import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
+import { unpackMissionLink } from "./ui/share-link.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
 import { createEphemerisView } from "./ephemeris-view.js";
 
@@ -169,6 +169,7 @@ var missionTemplate = document.getElementById("mp-mission-template");
 var ephTabEl = document.getElementById("mp-tab-eph");
 var ephViewEl = document.getElementById("mp-eph-view");
 var missionTabsEl = document.getElementById("mp-mission-tabs");
+var tabPlusEl = document.getElementById("mp-tab-plus");
 
 var missions = [];        // [{ id, title, view, tabEl }]
 var activeTabId = null;   // "eph" or a missionId
@@ -223,22 +224,12 @@ var ephView = createEphemerisView({
 		if (!res.ok) { return { ok: false, reason: res.reason }; }
 		spawnMissionTab(res.world, title, "helio");
 		return { ok: true };
-	},
-
-	// "Paste mission link": accepts a full URL, a #mission=... tail, or the
-	// bare fragment; same decode path a share-link load uses.
-	onImportMission: function (text) {
-		var frag = missionFragmentFrom(text);
-		if (!frag) { return { ok: false, reason: "That doesn't look like a mission link." }; }
-		var decoded = null;
-		try { decoded = decodeFragment(frag); } catch (e) { /* not base64url JSON */ }
-		var unp = decoded ? unpackMissionLink(decoded) : { ok: false, reason: "the link's mission data is unreadable" };
-		if (!unp.ok) { return { ok: false, reason: "Couldn't read the link: " + unp.reason + "." }; }
-		var res = deserializeWorld(unp.world);
-		if (!res.ok) { return { ok: false, reason: "Couldn't load the mission: " + res.reason + "." }; }
-		spawnMissionTab(res.world, unp.title || "Imported mission");
-		return { ok: true };
 	}
+	// "Paste mission link…" no longer spawns a tab directly (revised
+	// 2026-07-14, Kim): it loads the plan's parameters back into the
+	// Ephemeris tab's own scratchpad instead, so it can be revised before
+	// Start Mission Plan is clicked again — decode/deserialize and the
+	// state reconstruction are entirely local to ephemeris-view.js now.
 });
 
 function selectTab(tabId) {
@@ -257,7 +248,48 @@ function selectTab(tabId) {
 		if (next) { next.view.show(); }
 	}
 	missions.forEach(function (m) { m.tabEl.classList.toggle("active", m.id === tabId); });
+	updatePlusTab();
 }
+
+// The "+" tab (task A2 stub, revised 2026-07-14 — Kim): duplicates the
+// ACTIVE mission tab rather than staying inert. Disabled-looking and
+// title-explained while the Ephemeris tab is active, since there's no
+// mission to copy there (the A2 tooltip's original point — new missions
+// start from the Ephemeris tab — still holds for that case).
+function updatePlusTab() {
+	var has = activeTabId !== "eph" && !!activeMission();
+	tabPlusEl.classList.toggle("mp-disabled", !has);
+	tabPlusEl.title = has
+		? "Duplicate this mission tab"
+		: "New missions are started from the Ephemeris tab";
+}
+
+// "<title> (copy)", bumping to "(copy 2)", "(copy 3)", … if that title is
+// already taken — re-duplicating a duplicate re-stems from its own base
+// title rather than stacking "(copy) (copy)".
+function nextCopyTitle(title) {
+	var m = /^(.*) \(copy(?: (\d+))?\)$/.exec(title);
+	var stem = m ? m[1] : title;
+	var n = 1, candidate = stem + " (copy)";
+	while (missions.some(function (x) { return x.title === candidate; })) {
+		n++;
+		candidate = stem + " (copy " + n + ")";
+	}
+	return candidate;
+}
+
+// Clones the active mission's World (a serialize/deserialize round-trip, so
+// the copy shares no live object with the original — editing either tab
+// never touches the other) into a new tab titled with a "(copy)" suffix.
+// A no-op while the Ephemeris tab is active — there's no mission to copy.
+function duplicateActiveMission() {
+	var src = activeMission();
+	if (!src) { return; }
+	var res = deserializeWorld(src.view.world.serialize());
+	if (!res.ok) { return; }   // shouldn't happen: we just serialized it ourselves
+	spawnMissionTab(res.world, nextCopyTitle(src.title));
+}
+tabPlusEl.addEventListener("click", duplicateActiveMission);
 
 // Closing asks for confirmation — missions persist (task A3), but there's
 // no undo yet, so closing is permanent. Disposing before removing the

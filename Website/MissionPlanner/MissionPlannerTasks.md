@@ -102,6 +102,17 @@ World, plus a distinct Ephemeris tab.
   `planner.js`, matching the preset's own description. Verified in-browser:
   tab switching, active highlight, close-with-confirm (and cancel), console
   clean; Node suites untouched by this UI-only change.
+  **Revised 2026-07-14 (Kim):** the "+" tab is no longer inert — clicking it
+  duplicates the ACTIVE mission tab (`planner.js`'s `duplicateActiveMission`,
+  a `serialize()`/`deserializeWorld()` round-trip so the copy shares no live
+  object with the original) into a new tab titled with a "(copy)" suffix
+  (`nextCopyTitle`, bumping to "(copy 2)", … on a collision). Disabled-looking
+  with the original tooltip while the Ephemeris tab is active, since there's
+  no mission to copy there (`updatePlusTab`, called from `selectTab`).
+  Verified in-browser: duplicating twice produced correctly-numbered
+  "(copy)"/"(copy 2)" tabs with independent, persisted World data; the "+"
+  tab correctly disabled (tooltip reverted, click a no-op) on the Ephemeris
+  tab. Node suites (135, unaffected) green.
 - [x] **A3. Mission persistence across reloads.** ★★
   **Done 2026-07-11** (Kim confirmed: do it now rather than deferring).
   Each mission (shell-level title + `world.serialize()`) lives in one
@@ -1032,6 +1043,38 @@ World. Source file throughout:
   paste-back arrived with its real title; test tabs closed clean; console
   clean throughout, including a final reload after removing the hook.
   Depends on C1, D3/D4, E1.
+  **Revised 2026-07-14 (Kim):** "Paste mission link…" no longer spawns a tab
+  directly — it decodes the link locally (`ephemeris-view.js` now imports
+  `deserializeWorld`/`decodeFragment`/`unpackMissionLink`/`missionFragmentFrom`
+  itself; `planner.js`'s `onImportMission` callback is gone) and hands the
+  World to new `loadFrozenPlanIntoState(world)`, which reads the
+  frozen-plan/transfer-leg stages' own params back into this tab's
+  scratchpad (origin, destination, burn, waypoints) and places the marker at
+  the frozen rendezvous — so a shared mission can be revised here before
+  Start Mission Plan freezes it into a new tab, same as anything authored
+  from scratch. The departure burn isn't stored directly (freeze.js bakes it
+  into the post-burn hand-off state) so it's recovered by decomposing
+  `departure.v` minus the origin's natural velocity with `O.burnComponents`
+  — the exact inverse of the `applyBurn` call freeze.js made. Waypoint
+  snap-to intent doesn't survive the round trip (already resolved to a
+  concrete day before freezing) — restored waypoints land unsnapped at
+  their frozen day. The paste dialog's field also now autofills from the OS
+  clipboard as soon as it opens (`navigator.clipboard.readText`,
+  best-effort — a new `dlg.setValue` lets the async read reach the
+  still-open dialog; silently stays blank without clipboard permission).
+  Verified in-browser: a synthetic frozen link (Earth→Mars, hand-built via
+  `core/freeze.js` + `ui/share-link.js` + `Shared/exchange.js` in the page
+  console) loaded with origin/destination/burn/waypoint values matching the
+  source spec exactly (burn km/s components round-tripped to the original
+  authored values) and the marker landed at the correct 250-day rendezvous
+  (TOF readout "250 d"); the Ephemeris tab stayed active with no new mission
+  tab created; a garbage paste and a valid-but-planless world both kept the
+  dialog open with a friendly reason. Node suites (135, unaffected —
+  browser-only change) green. Clipboard read/write both throw
+  permission-denied in the sandboxed preview browser used for this
+  verification (an environment limitation, same class as the
+  `document.hidden` rendering gap noted throughout WP-D/E) — the
+  autofill's own try/catch handles that silently, by design.
 - [ ] **E3. Ephemeris tab reset.** ★
   "Delete marker and start fresh" on the Ephemeris tab after a mission is
   spawned (the design doc's flow). Mostly calls D3's `removeMarker`.

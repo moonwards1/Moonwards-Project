@@ -58,8 +58,13 @@
  * required-v∞-0 consequence of departing from the origin body's own state)
  * is that file's header — and hands the serialized World to planner.js's
  * onStartMission, which registers it as a new mission tab and switches to
- * it. Paste is the same spawn with the World coming from a shared link
- * instead (onImportMission; ui/share-link.js parses URL/fragment/blob).
+ * it. Paste (revised 2026-07-14, Kim) no longer spawns a tab of its own: it
+ * decodes a shared link (ui/share-link.js parses URL/fragment/blob) and
+ * loads the frozen plan's origin/burn/waypoints/destination back into THIS
+ * tab's own scratchpad state (loadFrozenPlanIntoState), placing the marker
+ * at the original rendezvous — so a pasted mission can be revised here
+ * before Start Mission Plan freezes it into a new tab, same as anything
+ * authored from scratch.
  *
  * The orbit-approach ring scan (task D4) rounds out the proximity markers:
  * hollow rings where the drawn path passes near a candidate body's orbit
@@ -103,6 +108,9 @@ import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier
 import { buildHelioFrame, HELIO_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
 import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
+import { deserializeWorld } from "./core/world.js";
+import { decodeFragment } from "../Shared/exchange.js";
+import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -155,9 +163,9 @@ function fmtKmS(mps) { return (mps / 1000).toFixed(2); }
 //    onStartMission(worldData, title) — task E2: spawn a mission tab from a
 //                          frozen serialized World; returns { ok } or
 //                          { ok: false, reason } (shown in the dialog)
-//    onImportMission(text) — spawn a mission tab from a pasted mission
-//                          link/fragment; same return shape
 //  }
+//  "Paste mission link…" is handled entirely locally (loadFrozenPlanIntoState)
+//  — it loads a shared link's plan into THIS tab rather than spawning one.
 //  Returns { show, hide, render, resize }.
 // =======================================================================
 export function createEphemerisView(opts) {
@@ -909,24 +917,46 @@ export function createEphemerisView(opts) {
 		mk.el.appendChild(mk.startBtn);
 		mk.startNote = muted(mk.el, "");
 
-		// "Paste mission link…" — the import half of E2: a link copied with
-		// a mission tab's "Copy mission link" opens here as a new tab, so
-		// shared missions can be added without reloading the page through
-		// the URL fragment (which a same-page hash paste wouldn't trigger
-		// anyway — initialMissions() only runs at load).
+		// "Paste mission link…" — revised 2026-07-14 (Kim): a link copied
+		// with a mission tab's "Copy mission link" now loads its frozen plan
+		// back into THIS tab's own scratchpad (loadFrozenPlanIntoState)
+		// rather than spawning a tab directly, so it can be revised before
+		// Start Mission Plan is clicked again — the same freeze/spawn path
+		// as anything authored from scratch. Decode/deserialize is entirely
+		// local now, no planner.js round-trip needed. The dialog's input
+		// auto-fills from the OS clipboard as soon as it opens (best-effort
+		// — silently stays blank if the browser withholds clipboard-read
+		// permission).
 		mk.pasteBtn = document.createElement("button");
 		mk.pasteBtn.type = "button";
 		mk.pasteBtn.className = "mp-btn mp-ghost mp-paste-btn";
 		mk.pasteBtn.textContent = "Paste mission link…";
-		mk.pasteBtn.title = "Open a mission from a copied \"Copy mission link\" URL as a new tab.";
+		mk.pasteBtn.title = "Load a mission from a copied \"Copy mission link\" URL, to revise it here before starting it.";
 		mk.pasteBtn.addEventListener("click", function () {
 			openDialog({
 				title: "Paste a mission link",
 				value: "",
 				placeholder: "https://…#mission=… (or just the fragment)",
-				okLabel: "Add mission tab",
-				onOk: function (text) { return opts.onImportMission(text); }
+				okLabel: "Load into Ephemeris tab",
+				onOk: function (text) {
+					var frag = missionFragmentFrom(text);
+					if (!frag) { return { ok: false, reason: "That doesn't look like a mission link." }; }
+					var decoded = null;
+					try { decoded = decodeFragment(frag); } catch (e) { /* not base64url JSON */ }
+					var unp = decoded ? unpackMissionLink(decoded) : { ok: false, reason: "the link's mission data is unreadable" };
+					if (!unp.ok) { return { ok: false, reason: "Couldn't read the link: " + unp.reason + "." }; }
+					var res = deserializeWorld(unp.world);
+					if (!res.ok) { return { ok: false, reason: "Couldn't load the mission: " + res.reason + "." }; }
+					return loadFrozenPlanIntoState(res.world);
+				}
 			});
+			// Best-effort clipboard autofill — arrives async, so it lands
+			// just after the dialog opens rather than blocking it.
+			if (navigator.clipboard && navigator.clipboard.readText) {
+				navigator.clipboard.readText().then(function (text) {
+					if (text) { dlg.setValue(text); }
+				}).catch(function () { /* permission withheld or nothing to read — leave blank */ });
+			}
 		});
 		mk.el.appendChild(mk.pasteBtn);
 	}
@@ -967,6 +997,80 @@ export function createEphemerisView(opts) {
 				arrivalVInf: O.vMag(O.vSub(s.v, b.v))
 			}
 		};
+	}
+
+	// The inverse of buildFreezeSpec/core/freeze.js (task E2, revised
+	// 2026-07-14, Kim): reconstructs this tab's scratchpad from a mission
+	// World that was previously frozen — the back half of "Paste mission
+	// link…", so a shared mission loads here for revision instead of
+	// spawning a tab directly. Reads the frozen-plan/transfer-leg stages'
+	// own params (the SAME two stages core/freeze.js writes); any other
+	// stage (a departure tech, once WP-F lands) is ignored — this tab only
+	// ever edits the plan, never a tech's configuration.
+	//
+	// The departure burn itself isn't stored directly: core/freeze.js zeroes
+	// it and bakes the injection into the frozen departure state (see that
+	// file's header on why the hand-off is post-burn). It's recovered here
+	// by subtracting the origin body's own natural velocity at the
+	// departure epoch from the frozen post-burn velocity and decomposing the
+	// difference with O.burnComponents — the exact inverse of the applyBurn
+	// call freezeMissionWorld made, so it round-trips to the same pro/rad/nrm
+	// components a fresh authoring session would have produced.
+	//
+	// Waypoint snap-to intent doesn't survive a freeze (resolveWaypoints
+	// already turned it into a concrete day before core/freeze.js ever saw
+	// it), so restored waypoints land unsnapped at their frozen day — still
+	// revisable, just not re-snappable to the same feature without
+	// re-checking the box.
+	function loadFrozenPlanIntoState(world) {
+		var stages = world.stages();
+		var fpStage = stages.filter(function (s) { return s.moduleId === "frozen-plan"; })[0];
+		var legStage = stages.filter(function (s) { return s.moduleId === "transfer-leg"; })[0];
+		if (!fpStage || !legStage) {
+			return { ok: false, reason: "That mission has no frozen flight plan to load here." };
+		}
+		var p = fpStage.params || {};
+		var lp = legStage.params || {};
+		if (!p.origin || !p.departure || !p.arrival) {
+			return { ok: false, reason: "That mission's flight plan is incomplete." };
+		}
+		var originSys = systems.get(p.origin);
+		if (!originSys) { return { ok: false, reason: "Unknown origin body \"" + p.origin + "\"." }; }
+
+		state.origin = p.origin;
+		dateBar.setJd(p.departure.jd);
+		frame.place(dateState.jd);
+
+		// Recover the authored burn: the frozen departure velocity is the
+		// origin's own natural velocity plus the applied burn (see header).
+		var natural = O.bodyStateAtJD(GM_SUN, originSys.orbit, dateState.jd);
+		var dv = O.vSub(p.departure.v, natural.v);
+		var burn = O.vMag(dv) > 1e-6
+			? O.burnComponents(p.departure.r, natural.v, dv)
+			: { pro: 0, rad: 0, nrm: 0 };
+
+		state.leg.destination = p.arrival.body || "";
+		state.leg.burn = { pro: burn.pro, rad: burn.rad, nrm: burn.nrm };
+		state.leg.waypoints = (lp.waypoints || []).map(function (wp) {
+			var b = wp.burn || {};
+			return { days: wp.days, burn: { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 },
+			         snap: null, snapOffset: 0 };
+		});
+		state.marker = null;
+
+		originSel.value = state.origin;
+		destSel.value = state.leg.destination;
+		rebuildWaypointRows();
+		refresh();
+
+		// Place the marker back at the frozen rendezvous — trajTotalT is now
+		// current (the refresh() just above), so the fraction this resolves
+		// to is against the freshly-restored trajectory, not a stale one.
+		var tof = (p.arrival.jd - dateState.jd) * DAY;
+		if (isFinite(tof) && tof > 0 && trajTotalT > 0) {
+			placeMarkerAtGlobalTime(Math.min(tof, trajTotalT));
+		}
+		return { ok: true };
 	}
 
 	// ---- the one modal dialog (name-your-mission + paste-a-link share it;
@@ -1016,6 +1120,15 @@ export function createEphemerisView(opts) {
 				onOk = o.onOk;
 				wrap.classList.add("on");
 				input.focus(); input.select();
+			},
+			// Programmatic fill for the still-open dialog (the paste button's
+			// async clipboard read) — a no-op if the dialog closed in the
+			// meantime, so a slow/late clipboard promise can't reopen it or
+			// clobber a since-opened different dialog's field.
+			setValue: function (text) {
+				if (!wrap.classList.contains("on")) { return; }
+				input.value = text;
+				input.select();
 			}
 		};
 	})();
