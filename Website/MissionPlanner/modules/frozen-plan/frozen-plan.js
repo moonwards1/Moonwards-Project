@@ -41,11 +41,11 @@
  * (sidebar card) and no draw hook — Kim redirected the module's whole view
  * presence (2026-07-12) to the phase bar: dates already surface via the
  * events bar, the PLAN REQUIRES / TECH DELIVERS comparison lives in
- * mission-view.js's `renderComplianceBar`, and the plan's own facts (flight
- * time, v∞ in, plan Δv — `planSummary` below) render there too, via the
- * registry descriptor (`sidebarCard: false` opts this stage out of the
- * generic per-stage card entirely). In-pane comply indicators are task C4,
- * parked pending design.
+ * mission-view.js's `renderComplianceBar`, and the plan's own facts (v∞
+ * in/out, epoch, flight time, plan Δv — `planSummary` below) render there
+ * too, via the registry descriptor (`sidebarCard: false` opts this stage
+ * out of the generic per-stage card entirely). In-pane comply indicators
+ * are task C4, parked pending design.
  *
  * Imports from ../../../Shared/ and ../../core/ — this folder breaks if
  * moved without them coming along.
@@ -85,28 +85,40 @@ function vec3Finite(a) {
 
 function burnMag(b) { return Math.hypot(b.pro || 0, b.rad || 0, b.nrm || 0); }
 
-// The plan's total committed Δv (departure burn + waypoint burns), m/s.
-// A readout figure, not physics — the working burns live on the leg stage.
-export function planDv(params) {
-	var p = Object.assign({}, defaultParams, params);
-	var total = burnMag(p.burn || {});
-	(p.waypoints || []).forEach(function (wp) { total += burnMag(wp.burn || {}); });
-	return total;
-}
-
-// The plan's own facts that computeCompliance doesn't carry (it only
-// measures departure v∞, not arrival): flight time and the arrival v∞
-// commitment, plus the readout Δv above. Exported for the phase bar's
-// compliance readout (mission-view.js), reached via the registry like
-// complianceFor — these are plain params reads, no compliance math.
+// The plan's own facts for the phase bar's compliance readout
+// (mission-view.js, reached via the registry like complianceFor). Field
+// names follow Kim's convention (2026-07-13): v∞ IN/OUT are from the FLIGHT
+// PLAN's point of view — "in" is the ship entering the plan (leaving the
+// origin's SOI, i.e. the required departure v∞, derived the same way
+// computeCompliance derives it), "out" is the ship leaving the plan
+// (reaching the destination's SOI, the stored arrival commitment). Plan Δv
+// is the mission's total demand: v∞ in + v∞ out + the waypoint burns —
+// the injection and the capture are the endpoint techs' jobs, the waypoint
+// burns the ship's own. (The old planDv, departure-burn + waypoints, went
+// with this redefinition: frozen legs carry a zero departure burn since
+// E2's post-burn hand-off.)
 export function planSummary(params) {
 	var p = Object.assign({}, defaultParams, params);
 	var arr = p.arrival || {};
+	var dep = p.departure || {};
 	var hasArrival = !!(arr.body && isFinite(arr.jd));
+	var origin = systems.get(p.origin);
+
+	var vInfIn = null;
+	if (vec3Finite(dep.r) && vec3Finite(dep.v) && isFinite(dep.jd) && origin && origin.orbit) {
+		vInfIn = O.vMag(O.vSub(dep.v, Frames.bodyHelioState(p.origin, dep.jd).v));
+	}
+	var vInfOut = isFinite(arr.vInf) ? arr.vInf : null;
+	var waypointDv = 0;
+	(p.waypoints || []).forEach(function (wp) { waypointDv += burnMag(wp.burn || {}); });
+
 	return {
-		flightDays: hasArrival ? (arr.jd - p.departure.jd) : null,
-		arrivalVInf: isFinite(arr.vInf) ? arr.vInf : null,
-		dv: planDv(p)
+		epochJd: isFinite(dep.jd) ? dep.jd : null,
+		flightDays: (hasArrival && isFinite(dep.jd)) ? (arr.jd - dep.jd) : null,
+		vInfIn: vInfIn,
+		vInfOut: vInfOut,
+		waypointDv: waypointDv,
+		dv: (vInfIn || 0) + (vInfOut || 0) + waypointDv
 	};
 }
 
@@ -162,8 +174,14 @@ export function computeCompliance(params, data) {
 	var delVec = O.vSub(data.v, Frames.bodyHelioState(p.origin, data.jd).v);
 	var delivered = { vInf: O.vMag(delVec), vInfVec: delVec, jd: data.jd };
 
-	var cosA = O.vDot(O.vUnit(reqVec), O.vUnit(delVec));
-	var aimDeg = Math.acos(Math.max(-1, Math.min(1, cosA))) * 180 / Math.PI;
+	// A ~zero v∞ vector has no direction to compare (vUnit of it is NaN) —
+	// legitimate since E2: a waypoint-only plan freezes to required v∞ 0.
+	// The magnitude row already reports any mismatch in that case.
+	var aimDeg = 0;
+	if (required.vInf > 1e-6 && delivered.vInf > 1e-6) {
+		var cosA = O.vDot(O.vUnit(reqVec), O.vUnit(delVec));
+		aimDeg = Math.acos(Math.max(-1, Math.min(1, cosA))) * 180 / Math.PI;
+	}
 
 	var rows = [
 		{ key: "vinf", required: required.vInf, delivered: delivered.vInf,

@@ -729,12 +729,94 @@ World. Source file throughout:
   rendezvous, phase readout "+0.0 d" → **enabled**, "Marker sits inside both
   closest-approach rings (space and time)." Console clean throughout; Node
   suites unaffected (browser-only change): 125 green. Depends on D3/D4.
-- [ ] **E2. Freeze + spawn.** ★★★
-  On click: name dialog (mockup:513–523) → build a new World whose profile is
-  `[frozen-plan (C1)] + copied waypoints + empty tech slots` → register it as
-  a new mission tab (A1/A2) → switch to it. Defining exactly what gets frozen
-  (states, epochs, v∞s, waypoints) is the contract between D and C — do this
-  with C1's author or the same thread.
+- [x] **E2. Freeze + spawn.** ★★★
+  **Done 2026-07-13**, with two scope additions from Kim at kickoff: the
+  marker card should ALWAYS exist in the 3D pane (not only once a marker is
+  placed), and there was no way to *paste* a copied mission link — so E2
+  built one shared "spawn a mission tab" back half with two front doors,
+  both on that card. **Freeze contract** (`core/freeze.js`, pure +
+  Node-tested — the C1↔D contract the task called for): profile
+  `[frozen-plan, transfer-leg]`, NO tech stage (C1's `inputOptional` makes
+  the empty slot a `no-departure-tech` warning); frozen-plan gets `origin`,
+  `departure { r, v, jd }` = the origin BODY's own helio state at the tab's
+  clock (pre-burn), `arrival { body, jd, vInf }` from the marker's
+  rendezvous (its path time → epoch; its velocity against the destination
+  body's → v∞ in), plus reference copies of the departure burn and the
+  RESOLVED waypoint days (snaps made concrete); transfer-leg gets working
+  copies and `legDays` = the rendezvous time. Waypoints at/after the
+  rendezvous are dropped (they never shaped the flight to arrival), the
+  rest sorted chronologically.
+  **Redirected same day (2026-07-13, Kim) — the hand-off is POST-burn:**
+  the first cut froze the PRE-burn body state (departure burn kept as the
+  leg's burn), which made the requirement a degenerate "arrive co-moving
+  with Earth, v∞ 0" — no direction for the aim comparison, and nothing a
+  real tech could meaningfully be measured against. Kim: the tech should
+  hand the ship off ONTO the mission's coast trajectory — required v∞ is
+  "the speed demanded by the departure burn." So `freezeMissionWorld` now
+  applies the authored burn to the origin state itself (same `O.applyBurn`
+  call/argument order as computeLeg's injection): frozen `departure.v` is
+  the post-burn hand-off, required v∞ = the injection's magnitude with a
+  real asymptote direction, and BOTH burn copies (plan reference + leg
+  working) are zeroed — the injection is the tech's job in the frozen
+  mission; the ship's own commitments are the waypoint burns (so the phase
+  bar's "plan Δv" now reads onboard Δv only). This also matches how the
+  shipped preset was baked (its frozen departure is the skyhook hand-off).
+  A waypoint-only plan (no departure burn) still legitimately freezes to
+  required v∞ 0, which exposed a latent NaN in frozen-plan's aim row
+  (`vUnit` of a ~zero vector): computeCompliance now skips the angle when
+  either v∞ vector is ~0 (the magnitude row still reports the mismatch),
+  with a Node test pinning it. Node suites: **140 green** (3 more beyond
+  the first cut's 137). Re-verified in-browser (same hook-driven Earth→Mars
+  scenario): the frozen world now carries zeroed burns on both stages and
+  the post-burn departure velocity; the spawned tab's events read "Plan
+  departure — v∞ 38.87 km/s" (was 0.00) with NO departure-burn event, the
+  compliance bar's plan Δv reads 0.00 (onboard only), and the leg still
+  ends 0.000 AU from Mars — identical trajectory, re-attributed. Console
+  clean, hook removed, final reload clean.
+  **Flow:** Start Mission Plan (E1's gate, unchanged) → name dialog
+  (mockup:513–523; `.mp-dialog*` CSS lifted from it; suggested name via
+  `defaultMissionTitle`, "Earth → Mars 2030" style) → `freezeMissionWorld`
+  → planner.js's new `spawnMissionTab` (`nextMissionId` + the same
+  `makeMissionView` the initial load now uses) → tab selected, store saved.
+  Spawned missions open on `defaultMain: "helio"` (no departure tech to
+  look at yet, so Coast is the phase with content). **Paste mission
+  link…** (same card, same dialog): new `ui/share-link.js` (pure,
+  Node-tested) parses a full URL / `#mission=` tail / bare fragment and
+  unpacks a title-carrying envelope (`packMissionLink`) that "Copy mission
+  link" now encodes — imports arrive with their real name instead of
+  "Imported mission" (titles live at shell level, so `createMissionView`
+  gained an optional `getTitle` and planner passes a live lookup);
+  pre-E2 bare-world links still load, and decode/deserialize failures show
+  their reason in the dialog instead of closing it. In-page paste also
+  fixes a real gap: pasting a share link into the address bar of an
+  already-open planner fires only a hashchange — `initialMissions()` runs
+  at load — so nothing happened before. **Card restructure:** `buildCard()`
+  runs at init; with no marker the card carries `.mp-empty` (planner.css
+  hides slider/modes/rows/budget/✕ and shows the old hint-card text, which
+  now lives inside the card) plus the always-explained Start button and
+  Paste — `updateStartMissionButton` gained the no-marker reason.
+  planner.html's stale D3/E1/E2 comments and the sidebar note updated.
+  **Verified:** 137 Node tests green (12 new — `core/tests/freeze.test.js`:
+  deserializes, copies-not-refs, waypoint sort/filter, self-compliance
+  with required v∞ ≈ 0; `ui/tests/share-link.test.js`: envelope
+  round-trip, bare-world/garbage/newer-version handling, fragment
+  extraction). In-browser on the local server — the Browser pane was again
+  backgrounded (`document.hidden`, no rAF; same environment condition as
+  D5/E1), so verification drove REAL code paths via dispatched events/JS
+  introspection plus the same temporary `__mpEphDebug` hook (removed
+  after): the empty-state card renders correctly (computed styles
+  checked); paste round-trip spawns/persists/selects a tab, both error
+  paths show friendly reasons; a genuine Earth→Mars Target-mode rendezvous
+  (Δv 38.87 km/s under a 40 budget, phasing −0.0 d) enabled the gate and
+  froze into a mission whose stored world carried exactly the expected
+  stages/params, with the spawned tab rendering live (Coast active,
+  compliance bar "no departure tech" + flight time 250 d / v∞ in
+  24.73 km/s / plan Δv 38.87 km/s, events plan-departure→plan-arrival, leg
+  ending 0.000 AU from Mars); Copy-mission-link on the spawned tab →
+  paste-back arrived with its real title; test tabs closed clean; console
+  clean throughout, including a final reload after removing the hook.
+  Depends on C1, D3/D4, E1.
+- [ ] E2A. Fix freeze and spawn
 - [ ] **E3. Ephemeris tab reset.** ★
   "Delete marker and start fresh" on the Ephemeris tab after a mission is
   spawned (the design doc's flow). Mostly calls D3's `removeMarker`.

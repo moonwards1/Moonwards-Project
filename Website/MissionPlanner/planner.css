@@ -338,3 +338,40 @@ body {
 .mp-marker-label { color: var(--dim); font-size: 11px; }
 .mp-marker-val { font-size: 13px; font-weight: 600; color: var(--bright); }
 .mp-marker-km { color: #6b7589; font-size: 10px; text-align: right; margin: -2px 0 2px; }
+
+/* The card's EMPTY state (task E2 — the card always exists now, as the
+   permanent home of "Start Mission Plan" and "Paste mission link…"): with
+   no marker placed, .mp-empty hides every marker-specific control and the
+   hint line shows instead; placing a marker flips it back
+   (ephemeris-view.js's setCardEmpty). */
+#mp-marker-card.mp-empty .mp-marker-x,
+#mp-marker-card.mp-empty .mp-marker-slider,
+#mp-marker-card.mp-empty .mp-marker-mode,
+#mp-marker-card.mp-empty .mp-marker-row,
+#mp-marker-card.mp-empty .mp-marker-km,
+#mp-marker-card.mp-empty .mp-marker-budget { display: none; }
+#mp-marker-card:not(.mp-empty) .mp-marker-hint { display: none; }
+.mp-paste-btn { display: block; width: 100%; margin-top: 9px; }
+
+/* ---------- modal dialog (task E2: name-your-mission + paste-a-link) ----------
+   Lifted from mock-a-phases.html's .dialog-wrap/.dialog, mp- prefixed and
+   mapped onto the shell's palette vars. One instance, built by
+   ephemeris-view.js and appended to <body>. */
+.mp-dialog-wrap {
+	position: fixed; inset: 0; background: rgba(5, 8, 14, 0.6);
+	display: none; align-items: center; justify-content: center; z-index: 20;
+}
+.mp-dialog-wrap.on { display: flex; }
+.mp-dialog {
+	background: var(--panel); border: 1px solid #31406a; border-radius: 12px;
+	padding: 18px 20px; width: 340px;
+}
+.mp-dialog h3 { margin: 0 0 10px; font-size: 15px; color: var(--bright); }
+.mp-dialog input[type=text] {
+	width: 100%; background: #0f1424; border: 1px solid var(--line2); color: var(--text);
+	border-radius: 6px; padding: 7px 9px; font: inherit; margin-bottom: 12px;
+}
+.mp-dialog-err { color: var(--err); font-size: 12px; margin: -6px 0 10px; }
+.mp-dialog-err:empty { display: none; }
+.mp-dialog-btnrow { display: flex; gap: 8px; justify-content: flex-end; }
+.mp-dialog-btnrow .mp-btn.mp-big { display: inline-block; width: auto; margin-top: 0; }

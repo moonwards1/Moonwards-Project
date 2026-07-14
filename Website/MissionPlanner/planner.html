@@ -27,12 +27,13 @@
 		     shell (helio frame, date bar); task D2 the Departure/Waypoints
 		     cards (origin, burn, leg duration, destination, up to two
 		     snap-to waypoints) — their CONTENT is built by ephemeris-view.js
-		     into the two host divs below. The marker card (D3) and
-		     "Start Mission Plan" (E1/E2) still don't exist. One instance for
-		     the page's life, so addressed by id/class query like the rest of
-		     the shell-level chrome, not templated (contrast .mp-mission,
-		     cloned per mission). Toggled on/off by ephemeris-view.js's
-		     show/hide. -->
+		     into the two host divs below. The marker card (D3) floats over
+		     the 3D pane and since task E2 always exists — it hosts "Start
+		     Mission Plan" (E1 gate, E2 freeze → new mission tab) and "Paste
+		     mission link…" (E2 import). One instance for the page's life,
+		     so addressed by id/class query like the rest of the shell-level
+		     chrome, not templated (contrast .mp-mission, cloned per
+		     mission). Toggled on/off by ephemeris-view.js's show/hide. -->
 		<div id="mp-eph-view" class="mp-eph-view">
 			<div class="mp-datebar">
 				<div class="mp-date-head">
@@ -63,9 +64,11 @@
 						</div>
 					</div>
 					<!-- Ship-marker card (task D3): a floating overlay atop the 3D
-					     pane, like the SST's own (Shared/sim/marker-card.js) —
-					     ephemeris-view.js builds the place-marker hint and the
-					     shared marker card into this host. -->
+					     pane, like the SST's own (Shared/sim/marker-card.js).
+					     Since task E2 the card ALWAYS exists here — no marker
+					     placed shows its empty state (hint + gated "Start
+					     Mission Plan" + "Paste mission link…"); ephemeris-view.js
+					     builds it into this host at init. -->
 					<div class="mp-eph-marker"></div>
 				</div>
 				<div class="mp-panel">
@@ -79,10 +82,10 @@
 					</div>
 					<div class="mp-card">
 						<div class="mp-muted">Once a marker meets both closest-approach
-						rings, the marker card's "Start Mission Plan" button lights up.
-						Starting a mission (task E2, not yet wired up) will copy this
-						plan — including waypoints — into a new mission tab; this tab
-						stays as it is.</div>
+						rings, the marker card's "Start Mission Plan" button lights up —
+						it copies this plan, waypoints included, into a new mission tab
+						(this tab stays as it is). The card's "Paste mission link…"
+						button opens a shared mission the same way.</div>
 					</div>
 				</div>
 			</div>

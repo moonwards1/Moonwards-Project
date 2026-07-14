@@ -42,6 +42,7 @@ import { createEngine } from "./core/recompute.js";
 import { systems } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Exchange, encodeFragment } from "../Shared/exchange.js";
+import { packMissionLink } from "./ui/share-link.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales } from "../Shared/sim/body-renderer.js";
@@ -131,6 +132,9 @@ export function deleteWorkspaceSlot(missionId) {
 //    template   — the <template> holding one mission's chrome (planner.html)
 //    missionId  — stable id for workspace keying ("m1", ...)
 //    defaultMain — frame id for the main pane when no workspace slot exists
+//    getTitle   — optional () -> the mission's current shell-level title
+//                 (titles live in planner.js, not the World); the share
+//                 link embeds it so imports keep the name
 //
 //  Returns { world, engine, root, missionId, show, hide, render, resize,
 //  dispose }. Only the active (shown) view should have render()/resize()
@@ -299,9 +303,13 @@ export function createMissionView(opts) {
 
 	// ---- share link: THIS mission's World, through the same fragment encoding
 	// the load path reads. Copying, not navigating — the URL is the artifact.
+	// The E2 envelope (ui/share-link.js) carries the shell-level TITLE along
+	// with the World, so an import arrives with its real name; getTitle is a
+	// live lookup (planner.js), not a snapshot, in case renaming ever exists.
 	var shareBtn = q(".mp-share");
 	shareBtn.addEventListener("click", function () {
-		var url = location.origin + location.pathname + "#mission=" + encodeFragment(world.serialize());
+		var payload = packMissionLink(opts.getTitle ? opts.getTitle() : null, world.serialize());
+		var url = location.origin + location.pathname + "#mission=" + encodeFragment(payload);
 		navigator.clipboard.writeText(url).then(function () {
 			shareBtn.textContent = "Copied!";
 			setTimeout(function () { shareBtn.textContent = "Copy mission link"; }, 1600);

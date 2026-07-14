@@ -110,6 +110,19 @@ test("compliance: an off-aim asymptote of the same speed warns on aim only", fun
 	assert.ok(AIM_TOL_DEG < 5);
 });
 
+test("compliance: a required v∞ of ~0 has no aim to compare — row stays finite and ok", function () {
+	// Legitimate since E2's freeze contract: a waypoint-only plan (no
+	// departure burn) freezes to a hand-off co-moving with the origin, so
+	// the required v∞ vector is ~0 and has no direction. The aim row must
+	// not go NaN; the v∞ magnitude row still reports the mismatch.
+	var comp = computeCompliance(planParams(0), delivered([3420, 0, 0], JD));
+	var byKey = {};
+	comp.rows.forEach(function (r) { byKey[r.key] = r; });
+	assert.ok(isFinite(byKey.aim.delivered), "aim must be finite, got " + byKey.aim.delivered);
+	assert.equal(byKey.aim.ok, true);
+	assert.equal(byKey.vinf.ok, false);   // the over-delivery still warns, just on magnitude
+});
+
 test("compliance: no tech at all → delivered null, no rows", function () {
 	var comp = computeCompliance(planParams(3420), null);
 	assert.equal(comp.ok, true);

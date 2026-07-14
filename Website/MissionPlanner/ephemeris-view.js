@@ -48,6 +48,19 @@
  * O.applyBurn re-applies it in — where the SST used the osculating r×v
  * frame, which re-applies to a slightly different Δv on inclined arcs.
  *
+ * "Start Mission Plan" (tasks E1/E2) lives on the marker card — which since
+ * E2 ALWAYS exists as the floating overlay on the 3D pane (Kim, 2026-07-13):
+ * with no marker placed it collapses to a hint line + the (disabled, with
+ * its reason) Start button + "Paste mission link…", the marker-specific
+ * controls CSS-hidden via the card's .mp-empty class (planner.css). Start
+ * opens the name dialog (mockup:513–523), freezes the authored plan through
+ * core/freeze.js — the freeze CONTRACT (what gets captured, and the
+ * required-v∞-0 consequence of departing from the origin body's own state)
+ * is that file's header — and hands the serialized World to planner.js's
+ * onStartMission, which registers it as a new mission tab and switches to
+ * it. Paste is the same spawn with the World coming from a shared link
+ * instead (onImportMission; ui/share-link.js parses URL/fragment/blob).
+ *
  * The orbit-approach ring scan (task D4) rounds out the proximity markers:
  * hollow rings where the drawn path passes near a candidate body's orbit
  * (independent of whether the body is actually there then), refreshed
@@ -89,6 +102,7 @@ import {
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
 import { buildHelioFrame, HELIO_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
+import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -135,8 +149,16 @@ var TEMPORAL_TIERS = [
 function fmtKmS(mps) { return (mps / 1000).toFixed(2); }
 
 // =======================================================================
-//  opts: { renderer, root } — root is planner.html's #mp-eph-view, already
-//  in the DOM. Returns { show, hide, render, resize }.
+//  opts: {
+//    renderer, root      — root is planner.html's #mp-eph-view, already in
+//                          the DOM
+//    onStartMission(worldData, title) — task E2: spawn a mission tab from a
+//                          frozen serialized World; returns { ok } or
+//                          { ok: false, reason } (shown in the dialog)
+//    onImportMission(text) — spawn a mission tab from a pasted mission
+//                          link/fragment; same return shape
+//  }
+//  Returns { show, hide, render, resize }.
 // =======================================================================
 export function createEphemerisView(opts) {
 	var renderer = opts.renderer;
@@ -528,12 +550,16 @@ export function createEphemerisView(opts) {
 	//  the drawn path (task D5, see handlePick below) — the SST has no
 	//  placement button either, just this hint card.
 	// =======================================================================
+	// The card ALWAYS exists (Kim, 2026-07-13 — task E2): buildCard() runs at
+	// init, and while no marker is placed the card shows only the hint, the
+	// gated "Start Mission Plan" button (with its why-note), and "Paste
+	// mission link…" — the marker controls are CSS-hidden via .mp-empty.
 	var markerHost = q(".mp-eph-marker");
-	var placeCard = document.createElement("div"); placeCard.className = "mp-card";
-	var markerHint = muted(placeCard,
-		"Click the drawn trajectory to place a marker: probes radius, speed, flight time, and the destination's phasing at any point along it.");
-	markerHost.appendChild(placeCard);
-	function setHint(text) { markerHint.textContent = text; }
+	var markerHint = null;   // assigned by buildCard()
+	var HINT_DEFAULT = "Click the drawn trajectory to place a marker: probes radius, speed, " +
+		"flight time, and the destination's phasing at any point along it.";
+	function setHint(text) { if (markerHint) { markerHint.textContent = text; } }
+	function setCardEmpty(empty) { if (mk) { mk.el.classList.toggle("mp-empty", empty); } }
 
 	// Heliocentric state (r,v in m, m/s) at a global time along the path.
 	function stateAtGlobalTime(t) {
@@ -787,12 +813,17 @@ export function createEphemerisView(opts) {
 
 	// Enable/disable the marker card's "Start Mission Plan" button and set
 	// its explanatory note — always says why, whether enabled or not (per
-	// the mockup's own framing). info: { hasDest, spaceOk, timeOk,
-	// distToOrbit (m), dtDays, destName }.
+	// the mockup's own framing). info: { noMarker } or { hasDest, spaceOk,
+	// timeOk, distToOrbit (m), dtDays, destName }. The no-marker case exists
+	// because the card is always visible now (E2) — the gate has to explain
+	// itself before anything is placed, too.
 	function updateStartMissionButton(info) {
 		if (!mk || !mk.startBtn) { return; }
 		var reason;
-		if (!info.hasDest) {
+		if (info.noMarker) {
+			reason = "Place a marker first — click the drawn trajectory, then bring the marker " +
+				"inside both closest-approach rings (space and time).";
+		} else if (!info.hasDest) {
 			reason = "Select a destination to enable — no destination chosen for this leg.";
 		} else if (!info.spaceOk) {
 			reason = isFinite(info.distToOrbit)
@@ -842,38 +873,169 @@ export function createEphemerisView(opts) {
 		});
 		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
 
-		// "Start Mission Plan" (task E1): gated on the marker sitting inside
-		// both closest-approach rings (space and time — see
-		// updateStartMissionButton, fed by updateDestinationMarker's own
-		// nearOrbit/timing computation, task D4's tier data). Freezing the
-		// plan into a new mission tab is task E2, not yet built — the button
-		// stays inert (no click handler) like A2's tab "+" affordance, which
-		// deferred the same way pending the same task.
+		// The no-marker hint (shown only in the .mp-empty state — this card
+		// is always present now, so it doubles as the old "place a marker"
+		// hint card).
+		markerHint = document.createElement("div");
+		markerHint.className = "mp-muted mp-marker-hint";
+		markerHint.textContent = HINT_DEFAULT;
+		mk.el.appendChild(markerHint);
+
+		// "Start Mission Plan" (task E1 gate + task E2 freeze): enabled only
+		// when the marker sits inside both closest-approach rings (space and
+		// time — see updateStartMissionButton, fed by
+		// updateDestinationMarker's nearOrbit/timing computation, task D4's
+		// tier data). Click: name dialog → core/freeze.js → planner.js
+		// spawns the tab.
 		mk.startBtn = document.createElement("button");
 		mk.startBtn.type = "button";
 		mk.startBtn.className = "mp-btn mp-big";
 		mk.startBtn.textContent = "Start Mission Plan";
-		mk.startBtn.title = "Freezes this flight plan into a new mission tab (task E2 — not yet built).";
+		mk.startBtn.title = "Freeze this flight plan into a new mission tab.";
 		mk.startBtn.disabled = true;
+		mk.startBtn.addEventListener("click", function () {
+			var f = buildFreezeSpec();
+			if (!f.ok) { mk.startNote.textContent = f.reason; return; }   // gate should prevent this
+			openDialog({
+				title: "Name this mission",
+				value: f.defaultTitle,
+				okLabel: "Create mission tab",
+				onOk: function (name) {
+					var title = (name || "").trim() || f.defaultTitle;
+					return opts.onStartMission(freezeMissionWorld(f.spec), title);
+				}
+			});
+		});
 		mk.el.appendChild(mk.startBtn);
 		mk.startNote = muted(mk.el, "");
+
+		// "Paste mission link…" — the import half of E2: a link copied with
+		// a mission tab's "Copy mission link" opens here as a new tab, so
+		// shared missions can be added without reloading the page through
+		// the URL fragment (which a same-page hash paste wouldn't trigger
+		// anyway — initialMissions() only runs at load).
+		mk.pasteBtn = document.createElement("button");
+		mk.pasteBtn.type = "button";
+		mk.pasteBtn.className = "mp-btn mp-ghost mp-paste-btn";
+		mk.pasteBtn.textContent = "Paste mission link…";
+		mk.pasteBtn.title = "Open a mission from a copied \"Copy mission link\" URL as a new tab.";
+		mk.pasteBtn.addEventListener("click", function () {
+			openDialog({
+				title: "Paste a mission link",
+				value: "",
+				placeholder: "https://…#mission=… (or just the fragment)",
+				okLabel: "Add mission tab",
+				onOk: function (text) { return opts.onImportMission(text); }
+			});
+		});
+		mk.el.appendChild(mk.pasteBtn);
 	}
 
+	// Everything core/freeze.js's spec wants, read off the CURRENT authored
+	// state (task E2): the origin body's pre-burn helio state at the tab's
+	// clock, the resolved waypoint days (snaps made concrete — the same
+	// resolveWaypoints pass refresh() draws from), and the marker's
+	// rendezvous — its time along the path as the arrival epoch, its
+	// velocity against the destination body's as the arrival v∞. Returns
+	// { ok: false, reason } if the gate's preconditions somehow aren't met.
+	function buildFreezeSpec() {
+		var dn = state.leg.destination;
+		if (!state.marker || !trajSegs.length || !(trajTotalT > 0)) {
+			return { ok: false, reason: "No marker on a drawn trajectory." };
+		}
+		if (!dn) { return { ok: false, reason: "No destination selected." }; }
+
+		var dep = O.bodyStateAtJD(GM_SUN, systems.get(state.origin).orbit, dateState.jd);
+		var rw = resolveWaypoints(dep.r, dep.v, state.leg);
+		var tof = mcMarkerFraction(state.marker.f0, state.marker.angle) * trajTotalT;
+		var s = stateAtGlobalTime(tof);
+		if (!s) { return { ok: false, reason: "The marker isn't on a valid trajectory." }; }
+
+		var arrJd = dateState.jd + tof / DAY;
+		var b = O.bodyStateAtJD(GM_SUN, systems.get(dn).orbit, arrJd);
+		return {
+			ok: true,
+			defaultTitle: defaultMissionTitle(state.origin, dn, dateState.jd),
+			spec: {
+				origin: state.origin,
+				destination: dn,
+				jd: dateState.jd,
+				departure: { r: dep.r, v: dep.v },
+				burn: state.leg.burn,
+				waypoints: rw.entries.map(function (e) { return { days: e.days, burn: e.burn }; }),
+				arrivalJd: arrJd,
+				arrivalVInf: O.vMag(O.vSub(s.v, b.v))
+			}
+		};
+	}
+
+	// ---- the one modal dialog (name-your-mission + paste-a-link share it;
+	// mockup:513–523 is the visual spec). onOk(value) returns { ok } or
+	// { ok: false, reason } — a failure keeps the dialog open with the
+	// reason shown, success closes it. Built once, appended to body so it
+	// overlays the whole app. ---------------------------------------------------
+	var dlg = (function () {
+		var wrap = document.createElement("div"); wrap.className = "mp-dialog-wrap";
+		var box = document.createElement("div"); box.className = "mp-dialog";
+		var head = document.createElement("h3");
+		var input = document.createElement("input"); input.type = "text";
+		var err = document.createElement("div"); err.className = "mp-dialog-err";
+		var row = document.createElement("div"); row.className = "mp-dialog-btnrow";
+		var cancelBtn = document.createElement("button");
+		cancelBtn.type = "button"; cancelBtn.className = "mp-btn"; cancelBtn.textContent = "Cancel";
+		var okBtn = document.createElement("button");
+		okBtn.type = "button"; okBtn.className = "mp-btn mp-big";
+		row.appendChild(cancelBtn); row.appendChild(okBtn);
+		box.appendChild(head); box.appendChild(input); box.appendChild(err); box.appendChild(row);
+		wrap.appendChild(box);
+		document.body.appendChild(wrap);
+
+		var onOk = null;
+		function close() { wrap.classList.remove("on"); onOk = null; }
+		function submit() {
+			if (!onOk) { return; }
+			var res = onOk(input.value);
+			if (res && res.ok === false) { err.textContent = res.reason || "That didn't work."; return; }
+			close();
+		}
+		cancelBtn.addEventListener("click", close);
+		okBtn.addEventListener("click", submit);
+		wrap.addEventListener("mousedown", function (e) { if (e.target === wrap) { close(); } });
+		input.addEventListener("keydown", function (e) {
+			if (e.key === "Enter") { submit(); }
+			else if (e.key === "Escape") { close(); }
+		});
+
+		return {
+			open: function (o) {
+				head.textContent = o.title;
+				input.value = o.value || "";
+				input.placeholder = o.placeholder || "";
+				okBtn.textContent = o.okLabel || "OK";
+				err.textContent = "";
+				onOk = o.onOk;
+				wrap.classList.add("on");
+				input.focus(); input.select();
+			}
+		};
+	})();
+	function openDialog(o) { dlg.open(o); }
+
 	// Recompute the marker's world position and card readouts from its slider
-	// angle and the current trajectory. Hides the visuals (and offers the
-	// place button again) when unset.
+	// angle and the current trajectory. When unset, the card stays (task E2 —
+	// it's the permanent home of Start/Paste) but collapses to its empty
+	// state (.mp-empty hides the marker controls, shows the hint).
 	function updateMarker() {
-		placeCard.style.display = state.marker ? "none" : "";
 		if (!state.marker) {
 			if (markerSprite) { markerSprite.visible = false; }
 			if (destSprite) { destSprite.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
-			if (mk) { mk.el.style.display = "none"; }
+			setCardEmpty(true);
+			updateStartMissionButton({ noMarker: true });
 			return;
 		}
 		if (!state.marker.mode) { state.marker.mode = "free"; }
 		if (!markerSprite) { markerSprite = makeShipSprite(); frame.scene.add(markerSprite); }
-		if (!mk) { buildCard(); }
 		if (state.marker.mode === "track") { followCrossing(); }
 		else if (state.marker.mode === "target") {
 			if (!state.marker._released && state.marker._encT != null && trajTotalT > 0) {
@@ -886,19 +1048,23 @@ export function createEphemerisView(opts) {
 		var tof = f * trajTotalT;
 		var s = stateAtGlobalTime(tof);
 		if (!s) {
-			markerSprite.visible = false; mk.el.style.display = "none";
+			markerSprite.visible = false;
 			if (destSprite) { destSprite.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
+			setCardEmpty(true);
+			setHint("No drawn trajectory to probe — fix the leg, then click it to place a marker.");
+			updateStartMissionButton({ noMarker: true });
 			return;
 		}
 
 		markerSprite.visible = true;
+		setCardEmpty(false);
+		setHint(HINT_DEFAULT);   // restore for the next empty state
 		markerSprite.position.set(s.r[0] / AU, s.r[1] / AU, s.r[2] / AU);
 		markerVelDir = new THREE.Vector3(s.v[0], s.v[1], s.v[2]).normalize();
 
 		var rmag = O.vMag(s.r);                                   // m
 		var lat = Math.asin(Math.max(-1, Math.min(1, s.r[2] / rmag))) * 180 / Math.PI;
-		mk.el.style.display = "";
 		mk.vals.rad.textContent = (rmag / AU).toFixed(3) + " AU";
 		mk.vals.radKm.textContent = fmtKm(rmag);
 		mk.vals.spd.textContent = (O.vMag(s.v) / 1000).toFixed(2) + " km/s";
@@ -1214,7 +1380,10 @@ export function createEphemerisView(opts) {
 		active = false;
 	}
 
-	// ---- go: place the frame and compute the first leg before the first show().
+	// ---- go: build the always-present marker card (task E2 — empty state
+	// until a marker is placed), place the frame, and compute the first leg
+	// before the first show().
+	buildCard();
 	dateBar.setBaseDays(0);
 	frame.place(dateState.jd);
 	refresh();

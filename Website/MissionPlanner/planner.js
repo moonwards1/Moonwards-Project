@@ -33,6 +33,7 @@ import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
 import { defaultMission, defaultWorkspaceMain } from "./presets/default-mission.js";
 import { decodeFragment } from "../Shared/exchange.js";
+import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
 import { createEphemerisView } from "./ephemeris-view.js";
 
@@ -110,13 +111,16 @@ function initialMissions() {
 	if (hashMatch) {
 		var saved = null;
 		try { saved = decodeFragment(hashMatch[1]); } catch (e) { /* not base64url JSON */ }
-		var res = saved ? deserializeWorld(saved) : { ok: false, reason: "the link's mission data is unreadable" };
+		// Links may carry the E2 title envelope or a pre-E2 bare world —
+		// unpackMissionLink accepts both (ui/share-link.js).
+		var unp = saved ? unpackMissionLink(saved) : { ok: false, reason: "the link's mission data is unreadable" };
+		var res = unp.ok ? deserializeWorld(unp.world) : { ok: false, reason: unp.reason };
 		if (res.ok) {
 			var stored0 = readMissionsStore();
 			var d0 = deserializeStoredList(stored0 && stored0.missions);
 			var id0 = nextMissionId(d0.restored);
 			return {
-				missions: d0.restored.concat([{ id: id0, title: "Imported mission", world: res.world }]),
+				missions: d0.restored.concat([{ id: id0, title: unp.title || "Imported mission", world: res.world }]),
 				activeId: id0
 			};
 		}
@@ -164,7 +168,6 @@ var missionTemplate = document.getElementById("mp-mission-template");
 // this list). ---------------------------------------------------------------
 var ephTabEl = document.getElementById("mp-tab-eph");
 var ephViewEl = document.getElementById("mp-eph-view");
-var ephView = createEphemerisView({ renderer: renderer, root: ephViewEl });
 var missionTabsEl = document.getElementById("mp-mission-tabs");
 
 var missions = [];        // [{ id, title, view, tabEl }]
@@ -173,6 +176,70 @@ var activeTabId = null;   // "eph" or a missionId
 function activeMission() {
 	return missions.find(function (m) { return m.id === activeTabId; }) || null;
 }
+
+function titleFor(missionId) {
+	var m = missions.find(function (x) { return x.id === missionId; });
+	return m ? m.title : "Mission";
+}
+
+// The one place a mission view is built (initial load, E2 spawn, paste
+// import). getTitle looks the title up live so the share link always
+// carries the current name.
+function makeMissionView(world, missionId, defaultMainId) {
+	return createMissionView({
+		world: world,
+		registry: registry,
+		renderer: renderer,
+		container: viewsEl,
+		template: missionTemplate,
+		missionId: missionId,
+		defaultMain: defaultMainId || defaultWorkspaceMain,
+		getTitle: function () { return titleFor(missionId); }
+	});
+}
+
+// Register a freshly built World as a new mission tab and switch to it —
+// the shared back half of task E2's two front doors ("Start Mission Plan"
+// freeze and "Paste mission link" import, both on the Ephemeris tab's
+// marker card). defaultMainId picks the pane/phase the tab opens on.
+function spawnMissionTab(world, title, defaultMainId) {
+	var id = nextMissionId(missions);
+	addMissionTab(makeMissionView(world, id, defaultMainId), title);
+	selectTab(id);
+	saveMissionsStore();   // capture the new activeId, not just the new mission
+	return id;
+}
+
+// ---- the Ephemeris tab's view: needs the two spawn callbacks above --------
+var ephView = createEphemerisView({
+	renderer: renderer,
+	root: ephViewEl,
+
+	// "Start Mission Plan" (E2 freeze): worldData is core/freeze.js's
+	// serialized World. Opens on the helio pane — a spawned mission has no
+	// departure tech yet, so the frozen coast is what there is to see.
+	onStartMission: function (worldData, title) {
+		var res = deserializeWorld(worldData);
+		if (!res.ok) { return { ok: false, reason: res.reason }; }
+		spawnMissionTab(res.world, title, "helio");
+		return { ok: true };
+	},
+
+	// "Paste mission link": accepts a full URL, a #mission=... tail, or the
+	// bare fragment; same decode path a share-link load uses.
+	onImportMission: function (text) {
+		var frag = missionFragmentFrom(text);
+		if (!frag) { return { ok: false, reason: "That doesn't look like a mission link." }; }
+		var decoded = null;
+		try { decoded = decodeFragment(frag); } catch (e) { /* not base64url JSON */ }
+		var unp = decoded ? unpackMissionLink(decoded) : { ok: false, reason: "the link's mission data is unreadable" };
+		if (!unp.ok) { return { ok: false, reason: "Couldn't read the link: " + unp.reason + "." }; }
+		var res = deserializeWorld(unp.world);
+		if (!res.ok) { return { ok: false, reason: "Couldn't load the mission: " + res.reason + "." }; }
+		spawnMissionTab(res.world, unp.title || "Imported mission");
+		return { ok: true };
+	}
+});
 
 function selectTab(tabId) {
 	if (tabId === activeTabId) { return; }
@@ -248,16 +315,7 @@ ephTabEl.addEventListener("click", function () { selectTab("eph"); });
 
 var initial = initialMissions();
 initial.missions.forEach(function (m) {
-	var view = createMissionView({
-		world: m.world,
-		registry: registry,
-		renderer: renderer,
-		container: viewsEl,
-		template: missionTemplate,
-		missionId: m.id,
-		defaultMain: defaultWorkspaceMain
-	});
-	addMissionTab(view, m.title);
+	addMissionTab(makeMissionView(m.world, m.id), m.title);
 });
 selectTab(initial.activeId);
 saveMissionsStore();   // normalizes the store right away (accurate activeId,
