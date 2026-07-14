@@ -126,9 +126,13 @@ export function createDateBar(state, opts) {
 
 	// Marker-style fine dragging for a date slider. A plain press jumps the
 	// date to the clicked position (native feel), then dragging fine-tunes
-	// RELATIVELY; holding Shift makes the drag 4x slower, exactly like the
-	// marker slider. A Shift-press fine-tunes from the current date without
-	// jumping. (The native `input` listener still handles keyboard arrows.)
+	// RELATIVELY; holding Shift makes the drag 10x slower. A Shift-press
+	// fine-tunes from the current date without jumping. Rolling the mouse
+	// wheel over the slider is a second way to reach the same 10x-slower
+	// scrub, without needing to hold Shift or drag at all — each wheel
+	// notch is treated as if the mouse had moved that many pixels, at the
+	// same 0.1 sensitivity. (The native `input` listener still handles
+	// keyboard arrows.)
 	function enableShiftDrag(slider, apply, onOverflow) {
 		var drag = false, lastX = 0, perPx = 1;
 		var lo = parseFloat(slider.min), hi = parseFloat(slider.max);
@@ -153,7 +157,7 @@ export function createDateBar(state, opts) {
 		slider.addEventListener("pointermove", function (e) {
 			if (!drag) { return; }
 			var dx = e.clientX - lastX; lastX = e.clientX;
-			setVal(parseFloat(slider.value) + dx * perPx * (e.shiftKey ? 0.25 : 1));
+			setVal(parseFloat(slider.value) + dx * perPx * (e.shiftKey ? 0.1 : 1));
 		});
 		function end(e) {
 			if (!drag) { return; }
@@ -162,6 +166,11 @@ export function createDateBar(state, opts) {
 		}
 		slider.addEventListener("pointerup", end);
 		slider.addEventListener("pointercancel", end);
+		slider.addEventListener("wheel", function (e) {
+			e.preventDefault();
+			var wheelPerPx = (hi - lo) / (slider.clientWidth || 1);
+			setVal(parseFloat(slider.value) - e.deltaY * wheelPerPx * 0.1);
+		}, { passive: false });
 	}
 
 	// Fine-slider wrap: when dragged past an end, advance the coarse base by

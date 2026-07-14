@@ -114,6 +114,7 @@ export function planSummary(params) {
 
 	return {
 		epochJd: isFinite(dep.jd) ? dep.jd : null,
+		arrivalJd: hasArrival ? arr.jd : null,
 		flightDays: (hasArrival && isFinite(dep.jd)) ? (arr.jd - dep.jd) : null,
 		vInfIn: vInfIn,
 		vInfOut: vInfOut,

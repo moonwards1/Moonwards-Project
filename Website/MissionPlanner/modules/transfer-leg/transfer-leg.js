@@ -148,6 +148,10 @@ export default {
 	accepts: ["ship-state"],
 	emits: ["ship-state"],
 	rendersIn: ["helio"],
+	// No title/status header on the sidebar card (Kim, 2026-07-13): the
+	// Coast sidebar shows just the waypoint cards + add button (see init).
+	// Warnings/diagnostics still render in the card via the generic boxes.
+	plainCard: true,
 
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
@@ -175,6 +179,18 @@ export default {
 	},
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
+
+	// Sidebar card, reshaped per Kim (2026-07-13) for the frozen-mission
+	// flow: ONLY the waypoint burns live here — one small card per existing
+	// waypoint plus the add button (capped at 2). The old departure-burn /
+	// leg-duration / destination fields and the readout rows are gone: since
+	// E2's post-burn hand-off those are the frozen plan's business (the
+	// injection is the departure tech's job, the duration and destination
+	// are the plan's commitment), not knobs to twiddle on the coast — the
+	// plan's figures render in the phase bar instead. The stage also opts
+	// out of the generic title/status header (`plainCard` below); the leg's
+	// warnings and diagnostics still render underneath via the generic diag
+	// boxes.
 
 	init: function (ctx) {
 		var host = ctx.panelHost;
@@ -206,41 +222,12 @@ export default {
 			return inp;
 		}
 
-		var p0 = stageParams();
-
-		// Departure burn (km/s in the UI, m/s in params).
-		["pro", "rad", "nrm"].forEach(function (axis) {
-			numRow(host, "burn " + axis, "km/s", (p0.burn[axis] || 0) / 1000, 0.1, function (v) {
-				var burn = stageParams().burn;
-				burn[axis] = v * 1000;
-				setParam("burn", burn);
-			});
-		});
-
-		numRow(host, "leg duration", "days", p0.legDays, 10,
-			function (v) { setParam("legDays", v); });
-
-		// Destination.
-		var row = document.createElement("div"); row.className = "mp-inrow";
-		var lab = document.createElement("label"); lab.textContent = "destination"; row.appendChild(lab);
-		var sel = document.createElement("select");
-		["(none)"].concat(DESTINATIONS).forEach(function (name) {
-			var opt = document.createElement("option");
-			opt.value = name === "(none)" ? "" : name;
-			opt.textContent = name;
-			if (opt.value === p0.destination) { opt.selected = true; }
-			sel.appendChild(opt);
-		});
-		row.appendChild(sel); host.appendChild(row);
-		sel.addEventListener("change", function () { setParam("destination", sel.value); });
-
-		// Up to two waypoint burns, plain rows (the draggable gizmos stay in
-		// the plotters until the marker/targeting port).
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
 			wps.forEach(function (wp, i) {
+				var card = document.createElement("div"); card.className = "mp-card";
 				var head = document.createElement("div"); head.className = "mp-wp-head";
 				head.textContent = "waypoint " + (i + 1);
 				var del = document.createElement("button"); del.className = "mp-btn"; del.textContent = "remove";
@@ -250,21 +237,22 @@ export default {
 					setParam("waypoints", list);
 					rebuildWaypointRows();
 				});
-				head.appendChild(del); wpHost.appendChild(head);
-				numRow(wpHost, "at day", "", wp.days, 5, function (v) {
+				head.appendChild(del); card.appendChild(head);
+				numRow(card, "at day", "", wp.days, 5, function (v) {
 					var list = stageParams().waypoints.slice(); list[i].days = v;
 					setParam("waypoints", list);
 				});
 				["pro", "rad", "nrm"].forEach(function (axis) {
-					numRow(wpHost, axis, "km/s", (wp.burn[axis] || 0) / 1000, 0.05, function (v) {
+					numRow(card, axis, "km/s", (wp.burn[axis] || 0) / 1000, 0.05, function (v) {
 						var list = stageParams().waypoints.slice(); list[i].burn[axis] = v * 1000;
 						setParam("waypoints", list);
 					});
 				});
+				wpHost.appendChild(card);
 			});
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
-				add.textContent = "+ add waypoint burn";
+				add.textContent = "+ add waypoint";
 				add.addEventListener("click", function () {
 					var list = stageParams().waypoints.slice();
 					var half = Math.round(stageParams().legDays / 2);
@@ -277,31 +265,6 @@ export default {
 			}
 		}
 		rebuildWaypointRows();
-
-		var out = document.createElement("div"); out.className = "mp-readouts";
-		host.appendChild(out);
-
-		ctx.onResult(function (result) {
-			out.innerHTML = "";
-			var leg = legFor(ctx.world, ctx.stageId);
-			if (result.status !== "ok" || !leg || !leg.ok) { return; }
-			var rows = [
-				["total leg Δv", (leg.totalDv / 1000).toFixed(2) + " km/s"],
-				["arrives", isoOf(leg.end.jd)]
-			];
-			if (leg.miss !== null) {
-				rows.push(["miss distance", leg.miss.toFixed(4) + " AU"]);
-			}
-			if (result.output && result.output.data.dvUsed !== undefined) {
-				rows.push(["mission Δv so far", (result.output.data.dvUsed / 1000).toFixed(2) + " km/s"]);
-			}
-			rows.forEach(function (pair) {
-				var r = document.createElement("div"); r.className = "mp-row";
-				var k = document.createElement("span"); k.className = "mp-k"; k.textContent = pair[0];
-				var v = document.createElement("span"); v.className = "mp-v"; v.textContent = pair[1];
-				r.appendChild(k); r.appendChild(v); out.appendChild(r);
-			});
-		});
 	},
 
 	// Trajectory polyline in the heliocentric frame. snap = { world, stageId,

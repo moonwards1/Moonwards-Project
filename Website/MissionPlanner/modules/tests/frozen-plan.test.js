@@ -13,7 +13,7 @@ import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import skyhook, { computeRelease, defaultParams as skyhookDefaults } from "../lunar-skyhook/lunar-skyhook.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
-import frozenPlan, { computeCompliance, complianceWarnings, planDv,
+import frozenPlan, { computeCompliance, complianceWarnings, planSummary,
 	VINF_TOL, EPOCH_TOL_DAYS, AIM_TOL_DEG } from "../frozen-plan/frozen-plan.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -150,13 +150,30 @@ test("compliance: unknown origin / arrival bodies and inverted epochs are bad-pa
 		{ arrival: { body: "Ceres", jd: JD - 1, vInf: 0 } }), null).diagnostic.code, "bad-params");
 });
 
-test("planDv sums the departure and waypoint burns", function () {
-	var dv = planDv({
-		burn: { pro: 1070, rad: 490, nrm: 280 },
-		waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }]
-	});
-	assert.ok(Math.abs(dv - (Math.hypot(1070, 490, 280) + Math.hypot(2140, 1180, 2730))) < 1e-9);
-	assert.ok(dv > 4800 && dv < 4950, "the worked example's ~4.87 km/s, got " + dv);
+test("planSummary: v∞ in/out, epoch, flight time, and Kim's plan Δv formula", function () {
+	// Kim (2026-07-13): plan Δv = v∞ in (leaving the origin's SOI) + v∞ out
+	// (reaching the destination's) + the waypoint burns. The frozen leg burn
+	// no longer exists (E2's post-burn hand-off), so it's not a term.
+	var p = planParams(3420);
+	p.waypoints = [{ days: 100, burn: { pro: 300, rad: 0, nrm: -400 } }];   // 500 m/s
+	var s = planSummary(p);
+	assert.ok(Math.abs(s.vInfIn - 3420) < 1e-6, "v∞ in should be 3420, got " + s.vInfIn);
+	assert.equal(s.vInfOut, 3776);
+	assert.equal(s.epochJd, JD);
+	assert.equal(s.arrivalJd, JD + 750);
+	assert.equal(s.flightDays, 750);
+	assert.ok(Math.abs(s.waypointDv - 500) < 1e-9);
+	assert.ok(Math.abs(s.dv - (s.vInfIn + 3776 + 500)) < 1e-9);
+});
+
+test("planSummary: a damaged plan degrades to nulls, not a throw", function () {
+	var s = planSummary({ origin: "Earth" });   // no departure state, no arrival
+	assert.equal(s.vInfIn, null);
+	assert.equal(s.vInfOut, null);
+	assert.equal(s.epochJd, null);
+	assert.equal(s.arrivalJd, null);
+	assert.equal(s.flightDays, null);
+	assert.equal(s.dv, 0);
 });
 
 // ---- the comply rule through the real engine --------------------------------

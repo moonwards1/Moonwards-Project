@@ -402,13 +402,19 @@ export function createMissionView(opts) {
 		var card = document.createElement("div");
 		card.className = "mp-card";
 
-		var h = document.createElement("h3");
-		var titleSpan = document.createElement("span");
-		titleSpan.textContent = stageTitle(stage);
-		var chip = document.createElement("span");
-		chip.className = "mp-chip";
-		h.appendChild(titleSpan); h.appendChild(chip);
-		card.appendChild(h);
+		// `plainCard` (e.g. transfer-leg since 2026-07-13): no title/status
+		// header — the module's own content IS the card. Diagnostics still
+		// render below it; there's just no chip to update.
+		var chip = null;
+		if (!desc || !desc.plainCard) {
+			var h = document.createElement("h3");
+			var titleSpan = document.createElement("span");
+			titleSpan.textContent = stageTitle(stage);
+			chip = document.createElement("span");
+			chip.className = "mp-chip";
+			h.appendChild(titleSpan); h.appendChild(chip);
+			card.appendChild(h);
+		}
 
 		var host = document.createElement("div");
 		card.appendChild(host);
@@ -452,7 +458,9 @@ export function createMissionView(opts) {
 		var chip = entry.chipEl, diag = entry.diagEl;
 		diag.innerHTML = "";
 
-		if (res.status === "ok" && res.warnings.length === 0) {
+		if (!chip) {
+			// plainCard stage: no status chip — diagnostics below still render
+		} else if (res.status === "ok" && res.warnings.length === 0) {
 			chip.className = "mp-chip ok"; chip.textContent = "ok";
 		} else if (res.status === "ok") {
 			chip.className = "mp-chip warn";
@@ -492,17 +500,24 @@ export function createMissionView(opts) {
 	// blocked statuses the generic card used to render, plus the plan's own
 	// facts (flight time, v∞ in, plan Δv — planSummary) that used to sit in
 	// that card's rows.
+	// Reshaped per Kim (2026-07-13, re-reshaped 2026-07-14): [compliance
+	// met/unmet chip] then the plan's figures in a fixed order — v∞ out,
+	// v∞ in, plan Δv, departure, flight time, arrival. v∞ in/out are named
+	// from the SHIP's point of view: "out" is the ship departing (leaving
+	// the origin's SOI — the required departure v∞), "in" is the ship
+	// arriving (reaching the destination's SOI — the arrival commitment);
+	// see planSummary. The demand figures (v∞ out, v∞ in, plan Δv) are
+	// amber while compliance is unmet — they are what no technology is
+	// delivering yet — and green once met; departure/flight time/arrival
+	// are plain facts already fixed by the chosen timing, never colored.
+	// The aim readout was dropped from the bar (Kim: it may move to the
+	// marker card later, if at all); its warning still flows through the
+	// envelope.
 	function cbarDate(jd) {
 		var d = O.dateFromJulian(jd);
-		return String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0") + " " +
-			String(d.h).padStart(2, "0") + ":" + String(d.m).padStart(2, "0");
+		return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
 	}
-	var CBAR_LABEL = { vinf: "v∞", epoch: "epoch", aim: "aim" };
-	var CBAR_FMT = {
-		vinf: function (v) { return (v / 1000).toFixed(2) + " km/s"; },
-		epoch: cbarDate,
-		aim: function (v) { return v.toFixed(1) + "°"; }
-	};
+	function cbarKms(v) { return (v / 1000).toFixed(2) + " km/s"; }
 	function appendCbarChip(cls, text, title) {
 		var chip = document.createElement("span");
 		chip.className = "mp-chip " + cls;
@@ -510,28 +525,13 @@ export function createMissionView(opts) {
 		if (title) { chip.title = title; }
 		complianceBarEl.appendChild(chip);
 	}
-
-	function appendPlanSummary(summary) {
-		if (!summary) { return; }
-		if (summary.flightDays != null) {
-			var ft = document.createElement("span");
-			ft.className = "mp-cbar-metric";
-			var b1 = document.createElement("b"); b1.textContent = "flight time"; ft.appendChild(b1);
-			ft.appendChild(document.createTextNode(Math.round(summary.flightDays) + " d"));
-			complianceBarEl.appendChild(ft);
-		}
-		if (summary.arrivalVInf != null) {
-			var vi = document.createElement("span");
-			vi.className = "mp-cbar-metric";
-			var b2 = document.createElement("b"); b2.textContent = "v∞ in"; vi.appendChild(b2);
-			vi.appendChild(document.createTextNode((summary.arrivalVInf / 1000).toFixed(2) + " km/s"));
-			complianceBarEl.appendChild(vi);
-		}
-		var dv = document.createElement("span");
-		dv.className = "mp-cbar-metric";
-		var b3 = document.createElement("b"); b3.textContent = "plan Δv"; dv.appendChild(b3);
-		dv.appendChild(document.createTextNode((summary.dv / 1000).toFixed(2) + " km/s"));
-		complianceBarEl.appendChild(dv);
+	function appendCbarMetric(label, text, cls, title) {
+		var m = document.createElement("span");
+		m.className = "mp-cbar-metric" + (cls ? " " + cls : "");
+		var b = document.createElement("b"); b.textContent = label; m.appendChild(b);
+		m.appendChild(document.createTextNode(text));
+		if (title) { m.title = title; }
+		complianceBarEl.appendChild(m);
 	}
 
 	function renderComplianceBar(results) {
@@ -561,27 +561,45 @@ export function createMissionView(opts) {
 		var stage = world.getStage(planRes.stageId);
 		var summary = desc && typeof desc.planSummary === "function" && stage ? desc.planSummary(stage.params) : null;
 
-		if (!comp.delivered) {
-			appendCbarChip("blocked", "compliance: no departure tech");
-			appendPlanSummary(summary);
-			return;
+		// Unmet covers both "no tech is delivering anything" and "a tech is
+		// delivering the wrong thing" — either way the demands stand open.
+		var rowsByKey = {};
+		(comp.rows || []).forEach(function (r) { rowsByKey[r.key] = r; });
+		var met = !!comp.delivered && comp.rows.every(function (r) { return r.ok; });
+		var demandCls = met ? "ok" : "warn";
+		appendCbarChip(met ? "ok" : "warn", "compliance " + (met ? "met" : "unmet"));
+
+		function fixTitleFor(key) {
+			var w = (planRes.warnings || []).filter(function (x) { return x.code === key + "-mismatch"; })[0];
+			return w && w.fix ? w.fix : null;
 		}
 
-		var allOk = comp.rows.every(function (r) { return r.ok; });
-		appendCbarChip(allOk ? "ok" : "warn", "compliance: " + (allOk ? "met" : "not met"));
+		// The plan's own figure, with "required → delivered" when a tech is
+		// delivering something off (the warning's fix text as hover title).
+		var rV = rowsByKey.vinf;
+		appendCbarMetric("v∞ out",
+			(rV && !rV.ok) ? cbarKms(rV.required) + " → " + cbarKms(rV.delivered) : cbarKms(comp.required.vInf),
+			demandCls, (rV && !rV.ok) ? fixTitleFor("vinf") : null);
 
-		comp.rows.forEach(function (row) {
-			var fmt = CBAR_FMT[row.key];
-			var m = document.createElement("span");
-			m.className = "mp-cbar-metric " + (row.ok ? "ok" : "warn");
-			var b = document.createElement("b"); b.textContent = CBAR_LABEL[row.key] || row.key; m.appendChild(b);
-			m.appendChild(document.createTextNode(row.ok ? fmt(row.delivered) : fmt(row.required) + " → " + fmt(row.delivered)));
-			var w = (planRes.warnings || []).filter(function (x) { return x.code === row.key + "-mismatch"; })[0];
-			if (w && w.fix) { m.title = w.fix; }
-			complianceBarEl.appendChild(m);
-		});
+		if (summary && summary.vInfOut != null) {
+			appendCbarMetric("v∞ in", cbarKms(summary.vInfOut), demandCls, null);
+		}
+		if (summary) {
+			appendCbarMetric("plan Δv", cbarKms(summary.dv), demandCls,
+				"v∞ in + v∞ out + waypoint burns");
+		}
 
-		appendPlanSummary(summary);
+		var rE = rowsByKey.epoch;
+		appendCbarMetric("departure",
+			(rE && !rE.ok) ? cbarDate(rE.required) + " → " + cbarDate(rE.delivered) : cbarDate(comp.required.jd),
+			null, (rE && !rE.ok) ? fixTitleFor("epoch") : null);
+
+		if (summary && summary.flightDays != null) {
+			appendCbarMetric("flight time", Math.round(summary.flightDays) + " d", null, null);
+		}
+		if (summary && summary.arrivalJd != null) {
+			appendCbarMetric("arrival", cbarDate(summary.arrivalJd), null, null);
+		}
 	}
 
 	// Phase-button dots (task B1): the worst status among a phase's stages
@@ -719,12 +737,33 @@ export function createMissionView(opts) {
 		return null;
 	}
 
+	// The frozen plan's own departure numbers (C1) — its required v∞ out and
+	// fixed on-course deadline — known the instant a mission is created, well
+	// before any departure tech resolves real flight events. null when this
+	// mission has no frozen-plan stage (a pre-comply save) or it hasn't
+	// resolved yet.
+	function plannedDeparture(results) {
+		var planRes = null;
+		for (var i = 0; i < results.length; i++) {
+			if (results[i].moduleId === "frozen-plan") { planRes = results[i]; break; }
+		}
+		if (!planRes) { return null; }
+		var desc = registry.get("frozen-plan");
+		var comp = desc && typeof desc.complianceFor === "function" ? desc.complianceFor(world, planRes.stageId) : null;
+		return (comp && comp.ok) ? { vInf: comp.required.vInf, jd: comp.required.jd } : null;
+	}
+
 	// The departure span for the slider. The RIGHT edge is the compliance time
 	// (when the ship must be on course); the LEFT edge (launch) floats to fit
 	// the departure duration. Today the flight events give both edges directly
-	// (release .. Earth-SOI exit); the Hohmann heuristic is the fallback length
-	// when only a single point resolves. When C1 lands, the right edge becomes
-	// the frozen plan's fixed deadline and this is where that swaps in.
+	// (release .. Earth-SOI exit) once a departure tech resolves them; before
+	// that — including the moment a mission is first created, with no
+	// departure tech configured at all — the frozen plan's own required v∞
+	// out and fixed deadline (imported with the mission at creation, C1)
+	// default both edges: RIGHT anchored at the deadline, LEFT floated back by
+	// departureDefaultSpanSeconds(). A lone resolved release event (tech
+	// partly configured) anchors LEFT instead, floating RIGHT forward by the
+	// same default, since the deadline isn't the binding edge in that case.
 	function departureSpan(results) {
 		var evs = departureEvents(results);
 		var jds = evs.map(function (e) { return e.jd; });
@@ -733,26 +772,37 @@ export function createMissionView(opts) {
 			         marks: evs, defaulted: false };
 		}
 		if (jds.length === 1) {
-			// only the release resolved: anchor there and use the Hohmann
-			// estimate for the (unknown) time to cross the origin SOI.
-			var def = departureDefaultSpanSeconds();
+			// only the release resolved: anchor there and use the default SOI-
+			// crossing estimate for the (unknown) time to on-course.
+			var def = departureDefaultSpanSeconds(results);
 			if (!(def > 0)) { return null; }
 			return { start: jds[0], end: jds[0] + def / 86400, marks: evs, defaulted: true };
 		}
-		return null;
+		// No flight events at all: the mission was just created (or its
+		// departure tech is unconfigured/blocked). The frozen plan already
+		// fixes the on-course deadline and required v∞ out, so anchor the
+		// slider there instead of showing an empty track.
+		var plan = plannedDeparture(results);
+		var def0 = departureDefaultSpanSeconds(results);
+		if (!plan || !(def0 > 0)) { return null; }
+		return { start: plan.jd - def0 / 86400, end: plan.jd, marks: [], defaulted: true };
 	}
 
-	// Kim's default length: SOI_radius / injection-Δv for a Hohmann transfer
-	// to the destination. Origin body is Earth (the departure system), so its
-	// heliocentric SOI and the Earth->dest Hohmann dv1. Seconds, or null.
-	function departureDefaultSpanSeconds() {
+	// Kim's default length: SOI_radius / v∞ — the time to cross the origin
+	// body's SOI at the plan's required departure v∞ out, the same figure
+	// imported with the mission from the frozen plan (C1). Falls back to a
+	// Hohmann-transfer dv1 estimate to the chosen destination when no frozen
+	// plan has resolved yet (a pre-comply save). Origin body is Earth (the
+	// departure system) either way, so its heliocentric SOI. Seconds, or null.
+	function departureDefaultSpanSeconds(results) {
+		var soi = O.sphereOfInfluence(EARTH.orbit.a, EARTH.GM, GM_SUN);   // m
+		var plan = plannedDeparture(results);
+		if (plan && plan.vInf > 0) { return soi / plan.vInf; }
 		var dest = coastDestination();
 		if (!dest) { return null; }
-		var rEarth = EARTH.orbit.a, rDest = systems.get(dest).orbit.a;
-		var dv1 = O.hohmann(GM_SUN, rEarth, rDest).dv1;   // m/s injection burn
-		if (!(dv1 > 0)) { return null; }
-		var soi = O.sphereOfInfluence(rEarth, EARTH.GM, GM_SUN);   // m
-		return soi / dv1;
+		var rDest = systems.get(dest).orbit.a;
+		var dv1 = O.hohmann(GM_SUN, EARTH.orbit.a, rDest).dv1;   // m/s injection burn
+		return (dv1 > 0) ? soi / dv1 : null;
 	}
 
 	// ---- wiring: World changes place bodies; engine passes redraw the rest --

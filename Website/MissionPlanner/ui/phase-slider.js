@@ -53,19 +53,47 @@ export function createSegmentedSlider(container, opts) {
 		return r.width > 0 ? clamp01((clientX - r.left) / r.width) : 0;
 	}
 
-	var dragging = false;
+	// A plain click/drag jumps to the cursor and tracks it 1:1, same as
+	// before. Holding Shift instead fine-tunes RELATIVELY from wherever the
+	// playhead already is, at 10x-slower sensitivity, without jumping —
+	// matching Shared/sim/date-bar.js's Shift-drag. Rolling the mouse wheel
+	// over the track is a second way to reach that same 10x-slower scrub,
+	// in place of dragging: each wheel notch moves the playhead as if the
+	// mouse had dragged that many pixels, at the same 0.1 sensitivity.
+	var currentFraction = 0;
+	var dragging = false, lastX = 0;
 	function onDown(e) {
 		dragging = true;
-		onScrub(fractionAt(e.clientX));
+		lastX = e.clientX;
+		if (!e.shiftKey) {
+			currentFraction = fractionAt(e.clientX);
+			onScrub(currentFraction);
+		}
 		e.preventDefault();
 	}
 	function onMove(e) {
-		if (dragging) { onScrub(fractionAt(e.clientX)); }
+		if (!dragging) { return; }
+		if (e.shiftKey) {
+			var width = track.getBoundingClientRect().width || 1;
+			var dx = e.clientX - lastX;
+			currentFraction = clamp01(currentFraction + (dx / width) * 0.1);
+		} else {
+			currentFraction = fractionAt(e.clientX);
+		}
+		lastX = e.clientX;
+		onScrub(currentFraction);
 	}
 	function onUp() { dragging = false; }
+	function onWheel(e) {
+		e.preventDefault();
+		var width = track.getBoundingClientRect().width || 1;
+		currentFraction = clamp01(currentFraction - (e.deltaY / width) * 0.1);
+		onScrub(currentFraction);
+	}
 	track.addEventListener("mousedown", onDown);
 	window.addEventListener("mousemove", onMove);
 	window.addEventListener("mouseup", onUp);
+	track.addEventListener("wheel", onWheel, { passive: false });
 
 	function clearSegments() {
 		Array.prototype.slice.call(track.children).forEach(function (el) {
@@ -101,7 +129,8 @@ export function createSegmentedSlider(container, opts) {
 			playhead.style.display = "none";
 		},
 		setPlayhead: function (fraction, pinned) {
-			playhead.style.left = (clamp01(fraction) * 100) + "%";
+			currentFraction = clamp01(fraction);
+			playhead.style.left = (currentFraction * 100) + "%";
 			playhead.classList.toggle("mp-pinned", !!pinned);
 		},
 		// Overlay ticks at arbitrary fractions (event marks on a linear axis),
@@ -193,11 +222,15 @@ export function createCoastSlider(container, opts) {
 //     short departure; a release plus Earth- and Moon-flyby burns takes far
 //     longer; an L1 elevator is different again. So the span grows or shrinks
 //     with the departure tech stack, always anchored at the right.
-//   - Default length, before a real trajectory exists, is a Hohmann estimate:
-//     SOI_radius / injection-Δv (computed by the caller — see mission-view's
-//     departureSpan). Once an actual trajectory resolves, its real duration
-//     replaces the estimate. The duration can come from two-body coast today
-//     or CR3BP later — this widget only wants the two edge times.
+//   - Default length, before a real trajectory exists — including the moment
+//     a mission is first created, with no departure tech configured yet —
+//     is SOI_radius / v∞: the time to cross the origin body's SOI at the
+//     required departure v∞ out imported with the mission from the frozen
+//     plan (computed by the caller — see mission-view's departureSpan and
+//     departureDefaultSpanSeconds). Once an actual trajectory resolves, its
+//     real duration replaces the estimate. The duration can come from
+//     two-body coast today or CR3BP later — this widget only wants the two
+//     edge times.
 //
 // So the caller hands over the two edge jds (already computed however it
 // likes) plus event marks; the widget is a plain linear scrubber over them,

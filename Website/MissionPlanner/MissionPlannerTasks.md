@@ -262,14 +262,27 @@ All within one mission view; the mockup is the spec throughout.
   green** (one prior `events.length` assertion updated 1→3). **Arrival's slider
   is deferred with H2** — the widget is arrival-ready, it just has nothing to
   feed it yet.
+  **Fixed (2026-07-14):** the swap this entry called out above ("when C1
+  lands, the right edge becomes the frozen plan's fixed deadline") had never
+  landed — `departureSpan` only looked at live departure-tech flight events,
+  so a freshly-created mission with no departure tech configured (zero
+  events) fell straight to `return null` and the slider sat empty instead of
+  showing anything. `departureSpan` now has a third tier below the two- and
+  one-event cases: when no flight events resolve at all, it reads the frozen
+  plan's own required v∞ out and fixed deadline (`plannedDeparture`, C1) and
+  defaults the slider from those — RIGHT edge at the deadline, LEFT edge
+  floated back by `departureDefaultSpanSeconds()`. That function itself now
+  sources v∞ from the frozen plan (SOI_radius / plan v∞, the real figure
+  imported with the mission) rather than a fresh Hohmann-dv1 guess, falling
+  back to the old Hohmann estimate only for pre-comply saves with no frozen
+  plan. The one-event (release-only) case keeps its existing LEFT-anchored
+  shape, just fed by the same updated default-length function.
   Mockup: mock-a-phases.html:229–240 (departure). Depends on B2.
-- [ ] **B4. Core-data readout in the phase bar.** ★
-  Frozen-plan summary (dates, flight time, v∞ out/in) + the shared clock,
-  top-right of the phase bar. Pure DOM; data comes from the frozen plan (C1).
-  Mockup: mock-a-phases.html:221–224.
-- [ ] **B5. Events bar → per-phase filtering.** ★
+- [x] **B4. Core-data readout in the phase bar.** ★
+   (Kim - I am redesigning this to instead be a floating readout of the time just below the handle on the timeline slider.) Frozen-plan summary (dates, flight time, v∞ out/in) + the shared clock, top-right of the phase bar. Pure DOM; data comes from the frozen plan (C1). Mockup: mock-a-phases.html:221–224.
+- [x] **B5. Events bar → per-phase filtering.** ★
   The flat events bar (planner.js:550–574) filters to the active phase's span
-  and stays as the "click to set clock" affordance. Small once B1 exists.
+  and stays as the "click to set clock" affordance. Small once B1 exists. (Kim: I chose to change this bar to linear time. This task is obsolete, these matters will be handled differently.)
 
 ### WP-C — Comply mode: the frozen plan in core and UI
 
@@ -357,6 +370,32 @@ what's missing is the frozen-plan stage itself and its card.
   ("Set tip speed 2.61") are still explicitly **not** built here — that's
   C3, and it now targets the sidebar's diagnostic boxes (which carry the
   fix text) rather than the compact bar. Depends on C1.
+  **Reshaped again (2026-07-13, Kim — first step of a staged redesign, more
+  to come):** the bar now reads `[compliance met/unmet chip] · v∞ in ·
+  epoch · flight time · v∞ out · plan Δv`, where v∞ IN/OUT are named from
+  the FLIGHT PLAN's point of view (in = leaving the origin's SOI, i.e. the
+  required departure v∞; out = reaching the destination's SOI, the arrival
+  commitment), epoch is the flight-start date, and **plan Δv = v∞ in +
+  v∞ out + waypoint burns** (planSummary reworked accordingly; the old
+  planDv, departure-burn + waypoints, removed — frozen legs carry a zero
+  departure burn since E2). The `aim` readout is dropped from the bar
+  (maybe the marker card later; its warning still flows through the
+  envelope, and computeCompliance still measures it). "No departure tech"
+  now reads as plain `compliance unmet` too; the demand figures (all but
+  flight time, which is a fact and stays neutral) render AMBER while unmet,
+  green when met. Same commit: the **Coast sidebar** is stripped to just
+  the waypoint burns — one small card per waypoint plus "+ add waypoint"
+  (transfer-leg's burn/duration/destination fields and readout rows
+  removed; those are the frozen plan's business now, shown in the bar) —
+  via a new `plainCard` descriptor flag (no title/status header;
+  diagnostics still render). Verified in-browser both ways: the preset
+  shows `compliance met` green with v∞ in 5.50 / epoch 2031-12-20 / flight
+  time 750 d / v∞ out 3.78 / plan Δv 12.94 (= 5.50+3.78+3.66 ✓) and its
+  day-475 waypoint card + add button; a spawned tech-less mission shows
+  `compliance unmet` amber with amber demands, neutral flight time, plan
+  Δv 6.09 (= 2.94+2.65+0.50 ✓), waypoint remove → button-only sidebar →
+  re-add all working through world.set; console clean. Node suites: 141
+  green (planSummary tests replace planDv's).
 - [ ] **C3. Assist actions ("Set tip speed 2.61" buttons).** ★★
   Diagnostics already carry an optional `fix`; extend the convention so a fix
   can be machine-applicable (`{ label, params-patch }`) and render it as a
@@ -816,7 +855,6 @@ World. Source file throughout:
   paste-back arrived with its real title; test tabs closed clean; console
   clean throughout, including a final reload after removing the hook.
   Depends on C1, D3/D4, E1.
-- [ ] E2A. Fix freeze and spawn
 - [ ] **E3. Ephemeris tab reset.** ★
   "Delete marker and start fresh" on the Ephemeris tab after a mission is
   spawned (the design doc's flow). Mostly calls D3's `removeMarker`.
