@@ -108,7 +108,7 @@ body {
 /* ---------- phase sliders (task B2 — ui/phase-slider.js) ---------- */
 .mp-sliderzone {
 	flex: none; background: #0e1220; border-bottom: 1px solid var(--line);
-	padding: 8px 14px 22px;
+	padding: 8px 14px 40px;
 }
 .mp-timeline { position: relative; }
 .mp-track { display: flex; gap: 3px; position: relative; height: 26px; cursor: pointer; }
@@ -139,6 +139,16 @@ body {
 }
 .mp-playhead.mp-pinned { background: #3d4c6b; }
 .mp-playhead.mp-pinned::after { border-top-color: #3d4c6b; }
+/* Floating time readout just below the handle (B4's redesign — was going to
+   be a phase-bar core-data readout, Kim retargeted it here instead). Sits
+   below the tick-label row so it never collides with them. */
+.mp-playhead-label {
+	position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
+	font-size: 11px; font-weight: 600; color: var(--bright); white-space: nowrap;
+	background: #1a2036; border: 1px solid var(--acc); border-radius: 4px;
+	padding: 1px 6px; pointer-events: none;
+}
+.mp-playhead.mp-pinned .mp-playhead-label { border-color: #3d4c6b; color: #9aa3b8; }
 /* Event marks overlaid on a linear axis (Departure slider, B3): thin ticks at
    a milestone's true time fraction, independent of the tick cells. */
 .mp-mark {

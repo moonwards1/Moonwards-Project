@@ -280,9 +280,64 @@ All within one mission view; the mockup is the spec throughout.
   Mockup: mock-a-phases.html:229–240 (departure). Depends on B2.
 - [x] **B4. Core-data readout in the phase bar.** ★
    (Kim - I am redesigning this to instead be a floating readout of the time just below the handle on the timeline slider.) Frozen-plan summary (dates, flight time, v∞ out/in) + the shared clock, top-right of the phase bar. Pure DOM; data comes from the frozen plan (C1). Mockup: mock-a-phases.html:221–224.
+  **Redesign delivered as B7 below.**
 - [x] **B5. Events bar → per-phase filtering.** ★
   The flat events bar (planner.js:550–574) filters to the active phase's span
   and stays as the "click to set clock" affordance. Small once B1 exists. (Kim: I chose to change this bar to linear time. This task is obsolete, these matters will be handled differently.)
+- [x] **B6. Shift/wheel fine-scrub on the date sliders.** ★★
+  **Done 2026-07-14.** Every date-scrubbing slider in the chrome now supports
+  two ways to fine-tune: holding Shift while dragging fine-tunes RELATIVELY
+  from wherever the handle already is (no jump on the initial press), at
+  10x-slower sensitivity; rolling the mouse wheel over the slider reaches the
+  same 10x-slower rate without needing to hold Shift or drag at all — each
+  wheel notch is treated as if the mouse had dragged that many pixels, scaled
+  by the same 0.1 factor. Plain click/drag is unchanged (jumps to the cursor,
+  tracks it 1:1).
+  Landed in two places: `Shared/sim/date-bar.js`'s `enableShiftDrag` (the
+  coarse/fine sliders behind every plotter's clock) already had a Shift-drag,
+  just at 4x-slower — tightened to 10x and given the new wheel listener.
+  Because this module is shared, the Solar-System/Moon-Skyhook/Mars-Phobos
+  standalone plotters pick up the same improvement automatically, not just
+  the Mission Planner chrome. `ui/phase-slider.js`'s `createSegmentedSlider`
+  (the Coast/Departure playhead tracks, B2/B3) had no fine-scrub at all
+  before this — ported the same relative-drag-plus-wheel model onto its
+  custom div-based track (no native `<input>` to lean on), tracking the
+  handle's own fraction internally (`currentFraction`, kept in sync with
+  externally-driven `setPlayhead` calls — e.g. events-bar clicks — so a
+  later Shift-drag or wheel-scrub starts from the true position, not a stale
+  one). Verified in-browser (JS-dispatched pointer/wheel events against the
+  live local server, both the Ephemeris date bar's coarse slider and the
+  Departure phase slider): plain click still jumps 1:1; a Shift-press does
+  not jump; a 500px Shift-drag and a 100-unit wheel tick both land on the
+  exact expected 0.1x-scaled delta; wheel-scrub is proven to drive the real
+  mission clock, not just the visual handle, via the events bar's `past`
+  styling (which only changes off `world.jd`) updating correctly as the
+  wheel moves the Departure slider through its event marks. Node suites
+  (125, untouched — DOM-only) still green.
+- [x] **B7. Floating playhead time readout (B4's redesign).** ★★
+  **Done 2026-07-14.** `coastSliderState`/`departureSliderState` gained an
+  optional `stampPlayhead(jd)` formatter (defaults to the existing tick
+  formatter when omitted) and now return a `playheadLabel` string computed
+  from the TRUE clock jd — unclamped, so the readout stays honest even when
+  the handle itself is visually pinned at an edge because the clock has
+  wandered outside the slider's span. `createSegmentedSlider`'s
+  `setPlayhead(fraction, pinned, label)` grew the third argument and renders
+  it in a new `.mp-playhead-label` child of the playhead div (so it inherits
+  the handle's x-position for free), positioned below the tick-caption row
+  (`.mp-sliderzone`'s bottom padding grown 22→40px to fit) with the same
+  muted/pinned coloring the handle itself already gets. `mission-view.js`
+  supplies a new `fullStamp(jd)` (month, day, year, HH:MM) to both
+  `createCoastSlider` and `createDepartureSlider` — deliberately finer than
+  either slider's own tick captions (Coast's ticks are month/year only;
+  Departure's are day+time but no year), so the readout always shows exactly
+  where the handle is regardless of what the ticks themselves can resolve.
+  Verified in-browser: the readout updates live under a wheel-scrub, stays
+  horizontally centered on the handle, sits clear of the tick-caption row
+  with no overlap; on the Coast slider specifically, confirmed the readout
+  shows full day/time precision ("Dec 21, 2031 02:27") even though Coast's
+  own ticks only resolve to month/year ("Dec 2031"). Node suites (125)
+  green — the pure functions gained a field; no existing assertion depended
+  on the old exact shape.
 
 ### WP-C — Comply mode: the frozen plan in core and UI
 

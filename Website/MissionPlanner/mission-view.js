@@ -654,6 +654,14 @@ export function createMissionView(opts) {
 		var d = O.dateFromJulian(jd);
 		return MONTHS[d.Mo - 1] + " " + d.D + " " + pad2(d.h) + ":" + pad2(d.m);
 	}
+	// The phase sliders' floating playhead readout (B4's redesign): full
+	// precision (day + year + time) regardless of the slider's own tick
+	// granularity — Coast's ticks only show month/year, but the handle can
+	// sit anywhere within that month.
+	function fullStamp(jd) {
+		var d = O.dateFromJulian(jd);
+		return MONTHS[d.Mo - 1] + " " + d.D + ", " + d.Y + " " + pad2(d.h) + ":" + pad2(d.m);
+	}
 
 	var dateState = { jd: world.jd, baseDays: 0 };
 	var dateBar = createDateBar(dateState, {
@@ -676,7 +684,7 @@ export function createMissionView(opts) {
 
 	// ---- the Coast slider (task B2): date-scaled, spanning the departure
 	// and coast phases' own events (coastSpan) — see ui/phase-slider.js.
-	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate });
+	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate, stampPlayhead: fullStamp });
 
 	// The coast span. Comply mode (task C1): when a frozen-plan stage is
 	// emitting, the coast phase IS the plan's committed dates (its departure/
@@ -708,7 +716,7 @@ export function createMissionView(opts) {
 	// departure flight — launch (left, floats) to on-course/SOI-exit (right,
 	// the anchor). See ui/phase-slider.js and departureSpan() below.
 	var depSlider = createDepartureSlider(depSliderEl, {
-		onSetJd: setClock, stamp: shortStamp
+		onSetJd: setClock, stamp: shortStamp, stampPlayhead: fullStamp
 	});
 
 	// The departure phase's flight events (release, Moon-SOI exit, Earth-SOI
