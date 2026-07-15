@@ -18,21 +18,26 @@
  * trajectory itself. So the plan's required v-infinity is exactly the
  * speed the authored departure burn demanded (the injection), which is the
  * thing a departure technology exists to deliver, and the aim-direction
- * comparison points along a real asymptote. The transfer-leg stage's
- * departure burn is zeroed to match — the injection is the TECH's job in
- * the frozen mission, not the ship's; the ship's own commitments are the
- * waypoint burns. (The first cut froze the pre-burn body state instead,
- * which made the requirement a degenerate "arrive co-moving with the
- * origin, v∞ 0"; Kim redirected same day.) A plan authored with NO
- * departure burn — waypoints only — still legitimately freezes to a
- * required v∞ of 0.
+ * comparison points along a real asymptote. (The first cut froze the
+ * pre-burn body state instead, which made the requirement a degenerate
+ * "arrive co-moving with the origin, v∞ 0"; Kim redirected same day.) A
+ * plan authored with NO departure burn — waypoints only — still
+ * legitimately freezes to a required v∞ of 0.
+ *
+ * Neither output stage carries a `burn` field at all (removed 2026-07-14):
+ * the frozen departure state above already IS the coast's starting point,
+ * full stop — there is no burn left to record at that seam, only the
+ * ship's own waypoint burns during Coast. (A zeroed reference-copy `burn`
+ * used to live on both stages here; it invited exactly the bug this
+ * removal fixes — see transfer-leg.js's and frozen-plan.js's headers.)
  *
  * spec: {
  *   origin,                       // "Earth" — HELIO_BODIES name
  *   destination,                  // "Ceres" — the marker's rendezvous body
  *   jd,                           // departure epoch (the tab's clock)
  *   departure: { r, v },          // origin body's helio state at jd (m, m/s),
- *                                 //   PRE-burn — the burn is applied here
+ *                                 //   PRE-burn — spec.burn is applied here to
+ *                                 //   get the frozen POST-burn hand-off state
  *   burn: { pro, rad, nrm },      // the authored departure burn (m/s)
  *   waypoints: [{ days, burn }],  // resolved days (snaps already concrete)
  *   arrivalJd,                    // the marker's rendezvous epoch
@@ -53,8 +58,6 @@ function copyBurn(b) {
 	b = b || {};
 	return { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 };
 }
-
-var ZERO_BURN = { pro: 0, rad: 0, nrm: 0 };
 
 export function freezeMissionWorld(spec) {
 	var legDays = spec.arrivalJd - spec.jd;
@@ -86,7 +89,6 @@ export function freezeMissionWorld(spec) {
 						jd: spec.jd
 					},
 					arrival: { body: spec.destination, jd: spec.arrivalJd, vInf: spec.arrivalVInf },
-					burn: copyBurn(ZERO_BURN),   // reference copy of the leg's (zeroed) burn
 					waypoints: waypoints.map(function (wp) {
 						return { days: wp.days, burn: copyBurn(wp.burn) };
 					})
@@ -96,7 +98,6 @@ export function freezeMissionWorld(spec) {
 				id: "stg-2",
 				moduleId: "transfer-leg",
 				params: {
-					burn: copyBurn(ZERO_BURN),   // injection lives in the hand-off state now
 					waypoints: waypoints,
 					legDays: legDays,
 					destination: spec.destination

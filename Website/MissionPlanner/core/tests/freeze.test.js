@@ -53,13 +53,14 @@ test("frozen-plan and transfer-leg carry matching waypoint copies, not shared re
 	assert.equal(plan.arrival.vInf, 2650);
 });
 
-test("the hand-off is POST-burn: leg burn zeroed, injection lives in the frozen state", () => {
+test("the hand-off is POST-burn: neither stage carries a burn field, injection lives in the frozen state", () => {
 	var spec = makeSpec();
 	var data = freezeMissionWorld(spec);
 	var plan = data.stages[0].params, leg = data.stages[1].params;
-	// both burn copies are zero — the injection is the tech's job now
-	assert.deepEqual(leg.burn, { pro: 0, rad: 0, nrm: 0 });
-	assert.deepEqual(plan.burn, { pro: 0, rad: 0, nrm: 0 });
+	// no burn field at all — the injection is baked into departure.v itself,
+	// not recorded separately anywhere in the chain (removed 2026-07-14)
+	assert.equal("burn" in leg, false);
+	assert.equal("burn" in plan, false);
 	// the frozen departure velocity is the origin state + the authored burn
 	var expected = O.applyBurn(spec.departure.r, spec.departure.v,
 		spec.burn.pro, spec.burn.nrm, spec.burn.rad);

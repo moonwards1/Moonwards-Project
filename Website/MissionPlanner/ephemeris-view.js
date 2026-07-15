@@ -1008,20 +1008,26 @@ export function createEphemerisView(opts) {
 	// stage (a departure tech, once WP-F lands) is ignored — this tab only
 	// ever edits the plan, never a tech's configuration.
 	//
-	// The departure burn itself isn't stored directly: core/freeze.js zeroes
-	// it and bakes the injection into the frozen departure state (see that
-	// file's header on why the hand-off is post-burn). It's recovered here
-	// by subtracting the origin body's own natural velocity at the
-	// departure epoch from the frozen post-burn velocity and decomposing the
-	// difference with O.burnComponents — the exact inverse of the applyBurn
-	// call freezeMissionWorld made, so it round-trips to the same pro/rad/nrm
-	// components a fresh authoring session would have produced.
+	// departure.{r,v} IS the coast's starting state, full stop (2026-07-14,
+	// Kim: the Departure→Coast hand-off is a given heading and speed, not a
+	// burn formula — see transfer-leg.js's header, and ARCHITECTURE.md's
+	// "Phases are chains" for the general principle). Whatever composed to
+	// produce it — one burn, a chain of many — is upstream's business, opaque
+	// from here; there is nothing left over to account for. (The first cut
+	// of this function got that wrong: it read a since-removed transfer-leg
+	// `burn` field as a SECOND thing needing comparison against departure.v,
+	// when it was really just an event living on the wrong side of the
+	// boundary — see ARCHITECTURE.md.) This tab still has only one editable
+	// burn slot for describing "the ship's velocity above the origin's own
+	// motion," applied to the origin body's own natural state each refresh()
+	// — so departure.v is decomposed relative to THAT reference, the exact
+	// inverse of how refresh() re-applies it.
 	//
 	// Waypoint snap-to intent doesn't survive a freeze (resolveWaypoints
 	// already turned it into a concrete day before core/freeze.js ever saw
 	// it), so restored waypoints land unsnapped at their frozen day — still
 	// revisable, just not re-snappable to the same feature without
-	// re-checking the box.
+	// re-checking the box. Waypoint burns themselves copy straight across.
 	function loadFrozenPlanIntoState(world) {
 		var stages = world.stages();
 		var fpStage = stages.filter(function (s) { return s.moduleId === "frozen-plan"; })[0];
@@ -1041,12 +1047,10 @@ export function createEphemerisView(opts) {
 		dateBar.setJd(p.departure.jd);
 		frame.place(dateState.jd);
 
-		// Recover the authored burn: the frozen departure velocity is the
-		// origin's own natural velocity plus the applied burn (see header).
 		var natural = O.bodyStateAtJD(GM_SUN, originSys.orbit, dateState.jd);
 		var dv = O.vSub(p.departure.v, natural.v);
 		var burn = O.vMag(dv) > 1e-6
-			? O.burnComponents(p.departure.r, natural.v, dv)
+			? O.burnComponents(natural.r, natural.v, dv)
 			: { pro: 0, rad: 0, nrm: 0 };
 
 		state.leg.destination = p.arrival.body || "";

@@ -1,18 +1,37 @@
 /* MissionPlanner/modules/transfer-leg — the canonical transfer-leg module.
  *
- * A coast + burns arc between two ship states: the compute core of the
- * Solar-System-Trajectory-Plotter's `computeTrajectory()` (departure burn →
- * up to two waypoint burns → final coast, all analytic two-body work),
- * re-hosted behind the module contract. The plotter's snap-to and Lambert
- * targeting are NOT here yet — they come across when the marker/targeting UI
- * ports (migration-path step 4.5); this is the manual-burns chain.
+ * The Coast phase: a ballistic arc between two ship states, with up to two
+ * waypoint burns along the way — the compute core of the
+ * Solar-System-Trajectory-Plotter's `computeTrajectory()`, re-hosted behind
+ * the module contract. "Two" is this phase's current UI choice (how many
+ * waypoint cards fit the sidebar today), not an architectural ceiling — see
+ * ARCHITECTURE.md's "Phases are chains; compliance is a boundary check, not
+ * a reconciliation": a phase is any length of ordinary stage chain, and
+ * Departure/Arrival could each grow their own multi-stage chains (WP-F, H2)
+ * the same way. The plotter's snap-to and Lambert targeting are NOT here
+ * yet — they come across when the marker/targeting UI ports (migration-path
+ * step 4.5).
  *
  * Consumes a ship-state packet (any frame — converted to "helio" via
- * Shared/frames.js), applies its burns, and emits the ship-state at the end
- * of the leg. If a destination body is set, the miss distance at arrival is
- * reported through the envelope's WARNINGS channel — non-blocking, per the
- * core's comply-mode refinement: a leg that misses Ceres is a diagnosed
- * mission, not a blank screen.
+ * Shared/frames.js) AS THE COAST'S STARTING STATE, unmodified — no burn of
+ * its own happens at that seam (removed 2026-07-14, Kim: "only a minority
+ * of the delta-v needed to get somewhere comes from engine burns," so the
+ * Departure→Coast handoff is a given heading and speed, not a burn formula
+ * applied to some baseline. Whatever put the ship there — a departure
+ * tech's release physics, a chain of burns upstream, anything — is that
+ * upstream stage's business; transfer-leg just coasts from where it's
+ * handed off). The two WAYPOINT burns are real, though — genuine mid-course
+ * corrections during Coast — and stay. By the same reasoning the ship's
+ * heading and speed at the END of Coast is likewise just the resultant of
+ * that starting state plus whatever waypoint burns happened along the way —
+ * nothing at the Coast→Arrival seam needs a burn concept either; a future
+ * Arrival module would simply consume `leg.end` as its own input, the same
+ * way this module consumes its own upstream packet.
+ *
+ * If a destination body is set, the miss distance at arrival is reported
+ * through the envelope's WARNINGS channel — non-blocking, per the core's
+ * comply-mode refinement: a leg that misses Ceres is a diagnosed mission,
+ * not a blank screen.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; `init` (sidebar
  * card) and `draw` (trajectory polyline in the "helio" frame) are the
@@ -44,7 +63,6 @@ export var DESTINATIONS = ["Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
 export var MISS_WARN_AU = 0.02;
 
 export var defaultParams = {
-	burn: { pro: 0, rad: 0, nrm: 0 },   // m/s, departure burn on the incoming state
 	waypoints: [],                       // up to 2: { days, burn: {pro,rad,nrm} }
 	legDays: 480,                        // duration from leg start to the emitted state
 	destination: ""                      // body name, or "" for none
@@ -79,16 +97,14 @@ export function computeLeg(params, data) {
 
 	var jd0 = data.jd;
 	var r = data.r.slice();
-	var v = O.applyBurn(data.r, data.v, p.burn.pro || 0, p.burn.nrm || 0, p.burn.rad || 0);
-	var totalDv = burnMag(p.burn);
+	var v = data.v.slice();   // the coast's own starting state — no burn at this seam (see header)
+	var totalDv = 0;
 	var events = [];
-	if (totalDv >= 1) {
-		events.push({ jd: jd0, label: "Departure burn — " + (totalDv / 1000).toFixed(2) + " km/s" });
-	}
 
 	// Walk the chain: each segment ends at the next waypoint (burn applied
 	// there), the last at legDays. Samples accumulate for the drawn polyline;
-	// segs keeps each segment's own starting state (r0/v0, post-burn) and
+	// segs keeps each segment's own starting state (r0/v0 — the coast's own
+	// start for the first segment, post-waypoint-burn for the rest) and
 	// [tStart, tStart+dur) window so stateAtElapsed() below can re-propagate
 	// the EXACT state (with velocity, which the polyline samples don't carry)
 	// at any point along the leg — the ship-marker chevron's position source.
@@ -199,7 +215,7 @@ export default {
 				"The leg ends " + leg.miss.toFixed(3) + " AU from " + params.destination +
 				" (within " + MISS_WARN_AU + " AU counts as arrival).",
 				{ values: { missAU: leg.miss, destination: params.destination },
-				  fix: "Adjust the departure or waypoint burns, the leg duration, or the release date." }));
+				  fix: "Adjust the waypoint burns, the leg duration, or whatever delivers the coast's starting state." }));
 		}
 
 		return { packet: packet, warnings: warnings, events: leg.events };
@@ -224,9 +240,7 @@ export default {
 
 		function stageParams() {
 			var stage = ctx.world.getStage(ctx.stageId);
-			var p = Object.assign({}, defaultParams, stage ? stage.params : {});
-			p.burn = Object.assign({ pro: 0, rad: 0, nrm: 0 }, p.burn);
-			return p;
+			return Object.assign({}, defaultParams, stage ? stage.params : {});
 		}
 		function setParam(name, value) {
 			var patch = {}; patch[name] = value;

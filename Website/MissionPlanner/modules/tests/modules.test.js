@@ -117,24 +117,33 @@ var HELIO_START = (function () {
 	return { r: e.r, v: O.vAdd(e.v, O.vScale(O.vUnit(e.v), 1200)), jd: JD_RELEASE, frame: "helio", dvUsed: 0 };
 })();
 
-test("computeLeg: propagates, applies burns, accumulates dv, reports miss", function () {
+// transfer-leg no longer applies a burn of its own at the coast's start
+// (removed 2026-07-14 — the Departure→Coast hand-off is a given heading and
+// speed, not a burn formula; see the module's header). Tests that used to
+// author "a departure burn" as a computeLeg param instead fold the same
+// prograde boost directly into the incoming ship-state — physically
+// identical to the old `burn: {pro, rad:0, nrm:0}` param, since burnFrame's
+// own prograde axis IS the velocity's own unit vector.
+function boosted(start, proMps) {
+	return Object.assign({}, start, { v: O.vAdd(start.v, O.vScale(O.vUnit(start.v), proMps)) });
+}
+
+test("computeLeg: propagates from its given start, applies waypoint burns, accumulates dv, reports miss", function () {
 	var leg = computeLeg({
-		burn: { pro: 3000, rad: 0, nrm: 0 },
 		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
 		legDays: 480, destination: "Ceres"
-	}, HELIO_START);
+	}, boosted(HELIO_START, 3000));
 	assert.equal(leg.ok, true);
-	assert.equal(leg.totalDv, 3500);
+	assert.equal(leg.totalDv, 500);   // only the waypoint burn now — none at the coast's own start
 	assert.equal(leg.end.jd, JD_RELEASE + 480);
 	assert.ok(leg.samples.length > 200);
 	assert.ok(typeof leg.miss === "number" && leg.miss >= 0);
-	// events: departure burn + waypoint burn + leg end
-	assert.equal(leg.events.length, 3);
+	// events: waypoint burn + leg end (no "departure burn" event any more)
+	assert.equal(leg.events.length, 2);
 });
 
 test("computeLeg: waypoint outside the leg is a diagnostic", function () {
 	var leg = computeLeg({
-		burn: { pro: 0, rad: 0, nrm: 0 },
 		waypoints: [{ days: 500, burn: { pro: 0, rad: 0, nrm: 0 } }],
 		legDays: 480, destination: ""
 	}, HELIO_START);
@@ -144,12 +153,11 @@ test("computeLeg: waypoint outside the leg is a diagnostic", function () {
 
 // ---- stateAtElapsed (the ship-marker chevron's position source) -----------
 
-test("stateAtElapsed: t=0 matches the post-departure-burn start state", function () {
+test("stateAtElapsed: t=0 matches the coast's own given start state", function () {
 	var leg = computeLeg({
-		burn: { pro: 3000, rad: 0, nrm: 0 },
 		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
 		legDays: 480, destination: ""
-	}, HELIO_START);
+	}, boosted(HELIO_START, 3000));
 	var s = stateAtElapsed(leg, 0);
 	assert.ok(O.vMag(O.vSub(s.r, leg.segs[0].r0)) < 1);
 	assert.ok(O.vMag(O.vSub(s.v, leg.segs[0].v0)) < 1e-6);
@@ -157,10 +165,9 @@ test("stateAtElapsed: t=0 matches the post-departure-burn start state", function
 
 test("stateAtElapsed: at the leg's full duration matches leg.end exactly", function () {
 	var leg = computeLeg({
-		burn: { pro: 3000, rad: 0, nrm: 0 },
 		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
 		legDays: 480, destination: ""
-	}, HELIO_START);
+	}, boosted(HELIO_START, 3000));
 	var s = stateAtElapsed(leg, 480 * 86400);
 	assert.ok(O.vMag(O.vSub(s.r, leg.end.r)) < 1);
 	assert.ok(O.vMag(O.vSub(s.v, leg.end.v)) < 1e-6);
@@ -168,10 +175,9 @@ test("stateAtElapsed: at the leg's full duration matches leg.end exactly", funct
 
 test("stateAtElapsed: mid-segment agrees with a drawn polyline sample at the same t", function () {
 	var leg = computeLeg({
-		burn: { pro: 3000, rad: 0, nrm: 0 },
 		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
 		legDays: 480, destination: ""
-	}, HELIO_START);
+	}, boosted(HELIO_START, 3000));
 	var sample = leg.samples[50];   // well inside the first segment
 	var s = stateAtElapsed(leg, sample.t);
 	assert.ok(O.vMag(O.vSub(s.r, sample.r)) < 1);   // both exact two-body solutions at the same t
@@ -179,8 +185,8 @@ test("stateAtElapsed: mid-segment agrees with a drawn polyline sample at the sam
 
 test("stateAtElapsed: clamps outside the leg's span to its nearest end", function () {
 	var leg = computeLeg({
-		burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: ""
-	}, HELIO_START);
+		waypoints: [], legDays: 480, destination: ""
+	}, boosted(HELIO_START, 3000));
 	var before = stateAtElapsed(leg, -1e6);
 	assert.ok(O.vMag(O.vSub(before.r, leg.segs[0].r0)) < 1);
 	var after = stateAtElapsed(leg, 480 * 86400 + 1e6);
@@ -197,7 +203,7 @@ test("stateAtElapsed: a leg with no segments (malformed) returns null", function
 test("chain: skyhook release feeds the transfer leg; both ok", function () {
 	var c = makeChain(
 		{ releaseJd: JD_RELEASE },
-		{ burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: "" });
+		{ waypoints: [], legDays: 480, destination: "" });
 	var r1 = c.engine.resultFor(c.ids.skyhook);
 	var r2 = c.engine.resultFor(c.ids.leg);
 	assert.equal(r1.status, "ok");
@@ -207,13 +213,13 @@ test("chain: skyhook release feeds the transfer leg; both ok", function () {
 	assert.equal(r1.events.length, 3);
 	assert.equal(r2.status, "ok");
 	assert.equal(r2.output.data.jd, JD_RELEASE + 480);
-	assert.equal(r2.output.data.dvUsed, 3000);
+	assert.equal(r2.output.data.dvUsed, 0);   // no burn at the coast's own start any more
 });
 
 test("chain: a bound-at-moon skyhook blocks the leg, params intact", function () {
 	var c = makeChain(
 		{ relAlt: 100e3, releaseJd: JD_RELEASE },
-		{ burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: "" });
+		{ waypoints: [], legDays: 480, destination: "" });
 	var r1 = c.engine.resultFor(c.ids.skyhook);
 	var r2 = c.engine.resultFor(c.ids.leg);
 	assert.equal(r1.status, "diagnostic");
@@ -229,7 +235,7 @@ test("chain: a bound-at-moon skyhook blocks the leg, params intact", function ()
 test("chain: missing a destination by a lot is a WARNING, not a block", function () {
 	var c = makeChain(
 		{ releaseJd: JD_RELEASE },
-		{ burn: { pro: 1000, rad: 0, nrm: 0 }, waypoints: [], legDays: 200, destination: "Ceres" });
+		{ waypoints: [], legDays: 200, destination: "Ceres" });
 	var r2 = c.engine.resultFor(c.ids.leg);
 	assert.equal(r2.status, "ok");
 	assert.equal(r2.warnings.length, 1);
@@ -250,7 +256,7 @@ test("chain: a transfer leg with nothing upstream is missing-input", function ()
 test("chain: moving the clock recomputes but does not change the mission", function () {
 	var c = makeChain(
 		{ releaseJd: JD_RELEASE },
-		{ burn: { pro: 3000, rad: 0, nrm: 0 }, waypoints: [], legDays: 480, destination: "" });
+		{ waypoints: [], legDays: 480, destination: "" });
 	var before = c.engine.resultFor(c.ids.leg).output.data.r.slice();
 	c.world.set({ jd: JD_RELEASE + 100 });   // the viewing clock, not the release epoch
 	var after = c.engine.resultFor(c.ids.leg).output.data.r;
@@ -259,20 +265,32 @@ test("chain: moving the clock recomputes but does not change the mission", funct
 
 // ---- the shipped worked-example preset (step 4.4) ---------------------------
 
-test("preset: deserializes and genuinely rendezvouses (no warnings)", function () {
+test("preset: deserializes; the coast genuinely rendezvouses even though the skyhook alone falls short", function () {
+	// The 2026-07-14 migration folded the preset's old separate leg-side
+	// burn into departure.v (presets/default-mission.js's header), so the
+	// skyhook's own unchanged release physics no longer covers the whole
+	// committed departure alone — an honest gap (no departure-phase tech
+	// models that extra burn yet), not a defect. The coast still flies the
+	// FROZEN plan's state regardless, so it still arrives clean.
 	var res = deserializeWorld(defaultMission);
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();
 	assert.equal(stages.length, 3);   // skyhook → frozen-plan (C1) → transfer-leg
-	stages.forEach(function (s) {
-		var r = engine.resultFor(s.id);
-		assert.equal(r.status, "ok", s.moduleId);
-		assert.equal(r.warnings.length, 0, s.moduleId + " must comply and arrive: " +
-			JSON.stringify(r.warnings.map(function (w) { return w.message; })));
-	});
+
+	var rSky = engine.resultFor(stages[0].id);
+	var rPlan = engine.resultFor(stages[1].id);
+	var rLeg = engine.resultFor(stages[2].id);
+	assert.equal(rSky.status, "ok");
+	assert.deepEqual(rSky.warnings, []);
+	assert.equal(rPlan.status, "ok");
+	assert.deepEqual(rPlan.warnings.map(function (w) { return w.code; }).sort(),
+		["aim-mismatch", "vinf-mismatch"]);
+	assert.equal(rLeg.status, "ok");
+	assert.deepEqual(rLeg.warnings, []);
+
 	// arrival: release + 750 days = 2034-01-08
-	var arr = O.dateFromJulian(engine.resultFor(stages[2].id).output.data.jd);
+	var arr = O.dateFromJulian(rLeg.output.data.jd);
 	assert.deepEqual([arr.Y, arr.Mo, arr.D], [2034, 1, 8]);
 });
 
@@ -292,7 +310,7 @@ test("transfer-leg update: converts a body-frame input to helio", function () {
 	var local = { r: [3.844e8, 0, 0], v: [0, 1500, 0], jd: JD_RELEASE, frame: "body:Earth" };
 	var input = { kind: "moonwards-packet", type: "ship-state", version: 1, source: {}, data: local };
 	var out = reg.get("transfer-leg").update(
-		{ world: null, jd: JD_RELEASE, stageId: "stg-t", params: { burn: { pro: 0, rad: 0, nrm: 0 }, waypoints: [], legDays: 10, destination: "" } },
+		{ world: null, jd: JD_RELEASE, stageId: "stg-t", params: { waypoints: [], legDays: 10, destination: "" } },
 		input);
 	assert.equal(out.packet.data.frame, "helio");
 	// The starting point of the propagation was ~Earth's position + 3.844e8 m.

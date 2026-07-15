@@ -519,6 +519,59 @@ what's missing is the frozen-plan stage itself and its card.
   1.7° aim warnings with the coast still ending 0.000 AU from Ceres,
   legDays 900 leaves the coast slider pinned Dec 2031 → Jan 2034 while the
   leg warns 0.352 AU, all clears on restore, console clean.
+  **Trimmed 2026-07-14 (Kim):** removed the `burn` field from both
+  frozen-plan's and transfer-leg's param schemas entirely — Kim: "only a
+  minority of the delta-v needed to get somewhere comes from engine burns,"
+  so the Departure→Coast hand-off is a given heading and speed, not a burn
+  formula; the same reasoning applies at Coast→Arrival. It had already been
+  reduced to an always-zero reference copy by E2's post-burn hand-off
+  (`planSummary`'s own comment already said as much), so nothing but the
+  shipped preset (which predates E2 and still carried a genuinely non-zero
+  leg burn) actually needed it — and that vestigial field is exactly what
+  let a pasted copy of that preset silently lose its injection burn on the
+  way back into the Ephemeris tab (see E2's entry). `core/freeze.js` no
+  longer writes a `burn` field into either output stage;
+  `presets/default-mission.js` is migrated to fold its old separate
+  leg-side burn directly into `departure.v` (header comment updated with
+  the new true departure v∞, 6.55 km/s). **Consequence surfaced, not
+  papered over (Kim's call):** the shipped skyhook's own unchanged release
+  physics only delivers 5.50 km/s, so the preset now HONESTLY shows
+  `vinf-mismatch`/`aim-mismatch` warnings on the plan stage — it no longer
+  complies with itself. The coast still flies the frozen plan's state
+  regardless (the comply rule, unchanged) and still rendezvouses with
+  Ceres exactly as before; only the tech's own compliance is now honestly
+  short, since no departure-phase tech yet models that extra burn (WP-F).
+  Tests updated to match across `modules/tests/modules.test.js`,
+  `modules/tests/frozen-plan.test.js`, and `core/tests/freeze.test.js`.
+  Verified: numerically first (a scratch Node script comparing
+  `computeLeg`'s own segment states bit-for-bit between the real preset
+  and a from-scratch reconstruction — 0 m position difference), then all
+  135 Node tests green, then in-browser (a genuinely fresh tab, to rule
+  out a stale bfcache'd/cached module graph from earlier in the session):
+  the compliance bar correctly reads `compliance unmet`, `v∞ out 6.55 km/s
+  → 5.50 km/s`, with the coast still ending 0.0001 AU from Ceres; pasting
+  the (now-migrated) preset's own link into the Ephemeris tab still
+  reconstructs the identical burn/waypoints/750-day rendezvous via the
+  now-simpler `loadFrozenPlanIntoState` (the two-burn fold-in workaround
+  it needed immediately after E2 is gone — there's only one burn to
+  reconstruct from now, always). Console clean throughout.
+  **Corrected framing (2026-07-14, Kim):** this entry's own language above
+  ("reconcile," "fold-in workaround," "two-burn trap") describes the bug
+  using the wrong mental model, and Kim called it out directly rather than
+  let it stand uncorrected. There was never anything to reconcile: a phase
+  is an ordinary stage chain of any length (one event or a thousand) that
+  composes in strict sequence to one end state; a phase boundary (this
+  module) carries exactly one requirement, and compliance is a single
+  comparison of that end state against it — never a peer comparison
+  between the individual events that produced either side. The actual bug
+  was simpler than "reconciling" implied: transfer-leg's old `burn` field
+  was an event living on the WRONG SIDE of the Departure→Coast boundary,
+  invisible to the one comparison frozen-plan makes — the fix was to move
+  it to the correct side (fold it into what composes the departure
+  requirement), not to add a second comparison. Written up properly in
+  ARCHITECTURE.md's new "Phases are chains; compliance is a boundary check,
+  not a reconciliation" section, and in frozen-plan.js's/transfer-leg.js's
+  own headers — read those for the durable version, not this note.
 - [x] **C2. Plan-compliance readout.** ★★
   **Done 2026-07-12**, redirected mid-task by Kim away from the mockup's
   sidebar-card placement. First cut put a "PLAN REQUIRES / TECH DELIVERS"
@@ -1075,6 +1128,35 @@ World. Source file throughout:
   verification (an environment limitation, same class as the
   `document.hidden` rendering gap noted throughout WP-D/E) — the
   autofill's own try/catch handles that silently, by design.
+  **Fixed (2026-07-14, Kim): the loaded trajectory was wrong for the
+  shipped preset specifically** — pasting its own "Copy mission link" back
+  into the Ephemeris tab drew a coast that quietly missed Ceres by ~2.7 AU
+  by day 750, despite the departure state loading correctly. Root cause: a
+  frozen-plan's `departure.{r,v}` and its sibling transfer-leg's `burn` are
+  not independent — `computeLeg` applies the leg's burn ON TOP of
+  `departure.v` to get the real coast-starting velocity. For anything
+  core/freeze.js produces that leg burn is always zero (the post-burn
+  hand-off IS the whole point), so the first cut of `loadFrozenPlanIntoState`
+  read only `departure.v` and never even looked at the leg's own burn field.
+  The shipped preset, though, predates that convention: it bakes
+  `departure.v` as the raw skyhook-release state and carries a genuinely
+  non-zero transfer-leg burn (P1.07/R0.49/N0.28 km/s) on top of it — exactly
+  the "two frozen-plan eras coexist" gap the codebase never fully migrated
+  (see this file's own header note on line-number drift for how the preset
+  predates several later conventions). The fix applies transfer-leg's burn
+  to `departure.{r,v}` FIRST — replicating computeLeg's own first step
+  exactly — before decomposing the total velocity change relative to the
+  origin body's natural state (this tab's only editable-burn reference);
+  for an E2-frozen mission (leg burn zero) this reduces to exactly the
+  prior behavior, so the common case is unaffected. Verified numerically in
+  Node first (a scratch script comparing `computeLeg`'s own segment states
+  bit-for-bit between the real preset and the reconstruction — 0 m
+  position difference after the fix, versus 2.7 AU before) and then
+  in-browser: pasting the real preset's own link now reproduces its
+  documented figures exactly (time of flight "750 d", arrival date
+  "2034-01-08", phasing "+0.0 d", Start Mission Plan gate enabled), and the
+  Earth→Mars zero-leg-burn regression case still reconstructs its burn
+  identically to before. Node suites (135) green throughout.
 - [ ] **E3. Ephemeris tab reset.** ★
   "Delete marker and start fresh" on the Ephemeris tab after a mission is
   spawned (the design doc's flow). Mostly calls D3's `removeMarker`.

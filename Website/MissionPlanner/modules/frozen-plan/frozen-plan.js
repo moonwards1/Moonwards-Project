@@ -2,8 +2,10 @@
  *
  * A mission tab's backbone (task C1): its params ARE the flight plan captured
  * when the mission was created from the Ephemeris tab (task E2 does the
- * capturing). The module sits between the departure technology and the coast
- * leg, and enforces the design doc's comply rule:
+ * capturing). The module sits AT THE DEPARTURE→COAST BOUNDARY — see
+ * ARCHITECTURE.md's "Phases are chains; compliance is a boundary check, not
+ * a reconciliation" for the general shape this is one instance of — and
+ * enforces the design doc's comply rule:
  *
  *   THE PLAN IS AUTHORITATIVE. update() always emits the plan's own frozen
  *   departure ship-state downstream — never the tech's — so the coast
@@ -14,24 +16,46 @@
  *   can render its PLAN REQUIRES / TECH DELIVERS grid. The plan never
  *   re-solves to follow the tech.
  *
+ * `computeCompliance`'s `data` argument is a SINGLE, OPAQUE end result —
+ * whatever the departure phase's own stage chain (one stage today, lunar-
+ * skyhook; possibly several once WP-F lands, each transforming the ship-
+ * state the last one produced) composed to. This module never looks inside
+ * that composition and never needs to; it makes exactly one comparison,
+ * delivered-vs-required, at this one boundary. A gap is a warning naming the
+ * boundary mismatch itself, never a reconciliation of whatever steps
+ * produced either side.
+ *
  * The param schema (decided against what E2 will export — Kim reviews):
  *
  *   origin:    "Earth"       — the departure system's primary; the required
  *                              v-infinity is measured against its heliocentric
  *                              velocity at the departure epoch
  *   departure: { r, v, jd }  — the frozen heliocentric hand-off state the
- *                              departure tech must deliver (m, m/s, jd); this
- *                              is PRE-departure-burn — the leg's burns follow
+ *                              departure tech must deliver (m, m/s, jd) —
+ *                              THE COAST'S OWN STARTING STATE, full stop; no
+ *                              burn happens at this seam (2026-07-14, Kim —
+ *                              see transfer-leg.js's header for the reasoning
+ *                              this and that module now share)
  *   arrival:   { body, jd, vInf } — the plan's arrival commitment: body name,
  *                              epoch, and approach v-infinity (m/s) the
  *                              arrival tech must be able to catch
- *   burn:      { pro, rad, nrm } — the plan's departure burn (m/s), a frozen
- *                              reference copy of what E2 wrote into the leg
- *   waypoints: [{ days, burn }]  — likewise the plan's waypoint burns
+ *   waypoints: [{ days, burn }]  — reference copy of the plan's waypoint
+ *                              burns, for readouts and later comparison (the
+ *                              WORKING copy lives on the transfer-leg stage,
+ *                              where the user edits them); the plan does not
+ *                              recompute the coast from them.
  *
- * `burn`/`waypoints` are reference copies for readouts and later comparison
- * (the WORKING copies live on the transfer-leg stage, where the user edits
- * them); the plan does not recompute the coast from them.
+ * (A `burn` field — a frozen reference copy of a "departure burn" — lived
+ * here and on transfer-leg until 2026-07-14. It was always zero for
+ * anything this plan's own freeze contract produced (the departure state
+ * above already IS the coast's start), but the shipped preset predated that
+ * contract and carried a genuinely non-zero one on transfer-leg — a second
+ * injection sitting on the WRONG SIDE of this exact boundary, uncounted by
+ * the one comparison above. The fix was never to reconcile it against
+ * departure.v; it was to recognize it belonged to whatever composed the
+ * departure requirement, and fold it there (presets/default-mission.js).
+ * Removed rather than fixed in place: this module has no business
+ * describing HOW a departure state was reached, only WHAT it is.)
  *
  * The module declares `inputOptional: true` (a comply-mode carve-out in
  * recompute.js): a mission spawned with an empty tech slot still shows its
@@ -69,7 +93,6 @@ export var defaultParams = {
 	origin: "Earth",
 	departure: { r: null, v: null, jd: null },
 	arrival: { body: "", jd: null, vInf: null },
-	burn: { pro: 0, rad: 0, nrm: 0 },
 	waypoints: []
 };
 

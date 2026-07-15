@@ -38,7 +38,6 @@ function planParams(vInf) {
 		origin: "Earth",
 		departure: { r: e.r.slice(), v: O.vAdd(e.v, [vInf, 0, 0]), jd: JD },
 		arrival: { body: "Ceres", jd: JD + 750, vInf: 3776 },
-		burn: { pro: 0, rad: 0, nrm: 0 },
 		waypoints: []
 	};
 }
@@ -190,17 +189,31 @@ function presetChain() {
 	         sky: stages[0].id, plan: stages[1].id, leg: stages[2].id };
 }
 
-test("comply: the shipped preset complies with its own frozen plan", function () {
+test("comply: the shipped preset's skyhook alone falls short of the full departure requirement", function () {
+	// Since the 2026-07-14 migration folded the preset's old separate
+	// leg-side burn into departure.v (presets/default-mission.js's header),
+	// the skyhook's own unchanged release physics no longer covers the
+	// whole committed departure by itself — an honest, expected gap (Kim:
+	// show the real warning rather than retune the skyhook to paper over
+	// it — no departure-phase tech models that extra burn yet). The plan
+	// itself still reports its own facts regardless of the tech's shortfall.
 	var c = presetChain();
 	var rPlan = c.engine.resultFor(c.plan);
 	assert.equal(rPlan.status, "ok");
-	assert.deepEqual(rPlan.warnings, []);
+	assert.deepEqual(rPlan.warnings.map(function (w) { return w.code; }).sort(),
+		["aim-mismatch", "vinf-mismatch"]);
 	assert.equal(rPlan.output.data.jd, JD);
 	// plan endpoints on the events channel (the coast slider's future span)
 	assert.equal(rPlan.events.length, 2);
 	assert.match(rPlan.events[0].label, /Plan departure/);
 	assert.match(rPlan.events[1].label, /Plan arrival — Ceres/);
 	assert.equal(rPlan.events[1].jd, JD + 750);
+
+	// The coast still flies the FROZEN plan's state, not the tech's
+	// shortfall — so it still rendezvouses clean, the comply rule's whole point.
+	var rLeg = c.engine.resultFor(c.leg);
+	assert.equal(rLeg.status, "ok");
+	assert.deepEqual(rLeg.warnings, []);
 });
 
 test("comply: detuning the tech warns on the plan but does NOT move the coast", function () {
@@ -237,12 +250,21 @@ test("comply: a mission with NO departure tech still shows its whole plan", func
 	assert.deepEqual(rLeg.warnings, []);             // and still arrives
 });
 
-test("comply: fixing the tech clears the warnings on the same recompute rules", function () {
+test("comply: reverting the tech to its shipped params reproduces the same (still-short) warnings", function () {
+	// "Fixing" no longer means "clears every warning" (the shipped skyhook
+	// alone was never sufficient post-migration, see the test above) — this
+	// tests the recompute is deterministic and reversible: a detune changes
+	// the shortfall, and undoing it lands back on the exact baseline, not a
+	// fresh solve.
 	var c = presetChain();
-	c.world.set({ stage: c.sky, params: { relAlt: 5000e3 } });
-	assert.ok(c.engine.resultFor(c.plan).warnings.length >= 1);
-	c.world.set({ stage: c.sky, params: { relAlt: 6000e3 } });
-	assert.deepEqual(c.engine.resultFor(c.plan).warnings, []);
+	var baseline = c.engine.resultFor(c.plan).warnings;
+	assert.ok(baseline.length >= 1);
+
+	c.world.set({ stage: c.sky, params: { relAlt: 5000e3 } });   // detune further
+	assert.notDeepEqual(c.engine.resultFor(c.plan).warnings, baseline);
+
+	c.world.set({ stage: c.sky, params: { relAlt: 6000e3 } });   // back to the shipped default
+	assert.deepEqual(c.engine.resultFor(c.plan).warnings, baseline);
 });
 
 test("update: dvUsed passes through from the tech; zero when there is none", function () {
@@ -264,15 +286,21 @@ test("update: a damaged plan fails hard (diagnostic), not as a warning", functio
 	assert.equal(out.code, "bad-params");
 });
 
-test("the baked preset plan matches the skyhook's own release physics", function () {
+test("the baked preset plan matches the skyhook's own release physics plus its folded-in injection", function () {
 	// Guards the preset's frozen numbers against drift in computeRelease: if
 	// the release model changes, this test says "re-bake the plan", not just
-	// "warnings appeared somewhere".
+	// "warnings appeared somewhere". departure.v is the release velocity
+	// with the preset's own P1.07/R0.49/N0.28 km/s injection folded directly
+	// in (migrated 2026-07-14 — presets/default-mission.js's header explains
+	// why departure.v is no longer the raw release state), so it's compared
+	// against computeRelease's state with that same burn applied, not the
+	// raw release state directly.
 	var phys = computeRelease(skyhookDefaults);
+	var expectedV = O.applyBurn(phys.r, phys.v, 1070, 280, 490);   // pro, nrm, rad
 	var planStage = defaultMission.stages[1];
 	assert.equal(planStage.moduleId, "frozen-plan");
 	var dep = planStage.params.departure;
 	assert.ok(O.vMag(O.vSub(phys.r, dep.r)) < 1, "baked r matches computeRelease");
-	assert.ok(O.vMag(O.vSub(phys.v, dep.v)) < 1e-3, "baked v matches computeRelease");
+	assert.ok(O.vMag(O.vSub(expectedV, dep.v)) < 1e-3, "baked v matches computeRelease + the folded injection");
 	assert.equal(dep.jd, phys.releaseJd);
 });

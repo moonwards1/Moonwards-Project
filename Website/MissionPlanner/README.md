@@ -163,14 +163,22 @@ page does nothing until reload (fragments are read once, at load).
 The shipped preset is Kim's **Moon → Ceres 2031** design (release
 2031-12-20 06:00, skyhook CoM 275 km / release from the 6000 km top /
 phase 92°, waypoint at day 475), Lambert-tuned to a genuine rendezvous:
-arrival 2034-01-08 (750 days), miss 0.0001 AU, 3.78 km/s relative to Ceres,
-4.87 km/s total burns. Since task C1 the preset is the full comply-mode
-chain — skyhook → frozen-plan → transfer-leg — with the plan's numbers
-baked from this same design, so the shipped mission complies with itself.
-Re-curating the example (or its pane arrangement, via
-`defaultWorkspaceMain`) is editing that one file. (Missions saved before C1
-simply have no frozen-plan stage — they load and run as before; the plan
-arrives with a fresh preset load or, later, task E2's freeze flow.)
+arrival 2034-01-08 (750 days), miss 0.0001 AU, 3.78 km/s relative to Ceres.
+Since task C1 the preset is the full comply-mode chain — skyhook →
+frozen-plan → transfer-leg — with the plan's numbers baked from this same
+design. **Migrated 2026-07-14** (the departure hand-off is a given heading
+and speed, not a burn formula — see `modules/transfer-leg/`, below): the
+frozen departure state now folds in what used to be a separate leg-side
+injection burn, so the plan's required departure v∞ is a single true
+figure (6.55 km/s) — which the shipped skyhook's own unchanged release
+physics (still 5.50 km/s) now honestly falls short of; the shipped mission
+no longer complies with itself, by design (no departure-phase tech yet
+models that extra burn — the coast still flies the frozen plan's state
+regardless, so it still arrives clean). Re-curating the example (or its
+pane arrangement, via `defaultWorkspaceMain`) is editing that one file.
+(Missions saved before C1 simply have no frozen-plan stage — they load and
+run as before; the plan arrives with a fresh preset load or, later, task
+E2's freeze flow.)
 
 ### modules/ — the first three mission modules
 
@@ -191,10 +199,12 @@ Each module is a folder whose script default-exports its descriptor
   clock.
 - **`modules/frozen-plan/`** — the frozen flight plan (task C1, comply mode).
   Its params ARE the plan captured at mission creation: origin body, the
-  frozen heliocentric departure state/epoch the tech must deliver, the
-  arrival commitment (body, epoch, approach v∞), and reference copies of the
-  plan's burns. `update()` **always emits the plan's own departure state**
-  downstream — the coast everyone sees is the commitment, never a re-solve —
+  frozen heliocentric departure state/epoch the tech must deliver (this IS
+  the coast's own starting state, full stop — no burn field of its own,
+  removed 2026-07-14), the arrival commitment (body, epoch, approach v∞),
+  and a reference copy of the plan's waypoint burns. `update()` **always
+  emits the plan's own departure state** downstream — the coast everyone
+  sees is the commitment, never a re-solve —
   and reports the tech's deviations (v∞ / epoch / aim, tolerances exported)
   through the warnings channel; an empty tech slot is itself a warning, not
   a block (`inputOptional`, below). `computeCompliance`/`complianceFor`
@@ -204,12 +214,17 @@ Each module is a folder whose script default-exports its descriptor
   The mission-view's coast slider reads this stage's departure/arrival
   events as its span, so the slider stays pinned to the frozen dates while
   live edits show up as deviations.
-- **`modules/transfer-leg/`** — the canonical transfer-leg module: the SST
-  `computeTrajectory()` segment chain (departure burn → up to two waypoint
-  burns → final coast), input converted to `"helio"` via `Shared/frames.js`.
-  A configured destination reports its arrival miss distance through the
-  **warnings** channel (non-blocking). Snap-to and Lambert
-  targeting stay in the plotter until the marker/targeting port (step 4.5).
+- **`modules/transfer-leg/`** — the canonical transfer-leg module, the Coast
+  phase: the SST `computeTrajectory()` segment chain, minus its own
+  departure-burn step (removed 2026-07-14 — Kim: "only a minority of the
+  delta-v needed to get somewhere comes from engine burns," so the
+  Departure→Coast hand-off is a given heading and speed, not a burn formula;
+  see the module's own header). It just coasts from whatever ship-state it's
+  handed, applying up to two waypoint burns along the way, then a final
+  coast, input converted to `"helio"` via `Shared/frames.js`. A configured
+  destination reports its arrival miss distance through the **warnings**
+  channel (non-blocking). Snap-to and Lambert targeting stay in the plotter
+  until the marker/targeting port (step 4.5).
 
 ### Module-contract refinements the scaffold added
 

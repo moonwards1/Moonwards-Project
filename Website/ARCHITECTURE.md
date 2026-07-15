@@ -226,6 +226,50 @@ Comparisons ("elevator with vs. without spin launcher", "from Earth vs. from
 Mars") are two serialized profiles differing in one entry, both rendered; a
 comparison table reads each chain's `transfer-summary` packets.
 
+### Phases are chains; compliance is a boundary check, not a reconciliation
+
+The Mission Planner's Departure / Coast / Arrival phases
+(`MissionPlanner/MissionPlannerDesign.md`) are not a second mechanism sitting
+above the chain — a phase is just a labeled sub-range of the one ordered
+stage list above. Within a phase, however many stages exist — one burn, two,
+five, a thousand — they compose in strict sequence exactly as described
+above: each stage's `update()` takes the previous stage's output as its own
+input and hands the next stage the result. **There is nothing to reconcile
+inside that composition, ever, regardless of length.** A departure phase with
+five real burns (release, a plane change, an Oberth pass, whatever) is just
+five ordinary stages in a row, each transforming the ship-state the last one
+produced; the recompute engine never sees "a phase," only stages, and never
+needs to — composition, not comparison, is what a chain does internally.
+
+What a phase *boundary* carries is a different thing: exactly one
+requirement — a target ship-state the next phase is committed to starting
+from. `MissionPlanner/modules/frozen-plan/` is this requirement for the
+Departure→Coast boundary: its `departure` field is not a stage in anyone's
+chain, it's the spec the chain upstream of it is measured against.
+**Compliance is a single comparison at that one seam.** Whatever the upstream
+chain actually composed to is an opaque end result — `computeCompliance`
+never looks inside it, and doesn't care whether one stage produced it or a
+thousand — compared once to the one frozen target. Match, and downstream
+flies the target unmodified (the comply rule); miss, and that is one warning
+naming the gap, not a reconciliation of individual upstream events against
+each other or against anything else. The same shape recurs at Coast→Arrival
+once an arrival module exists: Coast's own chain (today, up to two waypoint
+burns — a UI choice about how much complexity to expose right now, not an
+architectural ceiling) composes to an end state, checked against whatever
+Arrival's own frozen entry requirement turns out to be.
+
+**The tell that this model has been lost:** if two numbers describing the
+same seam start needing "reconciling" against each other, that is never a
+peer-comparison problem to solve — it means an event has been attached to
+the wrong side of a boundary, and the fix is to move it, not to compare it.
+(2026-07-14: `transfer-leg.js` used to carry its own `burn` field, applied on
+top of `frozen-plan`'s already-frozen departure state — a second, uncounted
+injection sitting on the Coast side of a boundary defined as "no burn
+happens here." The fix was never to compare the two burns; it was to notice
+the leg's burn belonged to whatever composed the departure requirement, and
+fold it there instead. See `frozen-plan.js`'s and `transfer-leg.js`'s
+headers, and WP-A/C1's history in `MissionPlanner/MissionPlannerTasks.md`.)
+
 ## Module interface
 
 Each module is a folder with the usual `name.js` / `name.css` pair whose
