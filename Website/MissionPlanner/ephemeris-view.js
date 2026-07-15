@@ -1309,7 +1309,7 @@ export function createEphemerisView(opts) {
 		state.leg.legDays = legDays;   // last-computed length, e.g. as a new waypoint's default-day bound
 
 		var params = Object.assign({}, state.leg, { waypoints: rw.entries, legDays: legDays });
-		var leg = computeLeg(params, { r: dep.r, v: dep.v, jd: dateState.jd });
+		var leg = computeLeg(params, { r: dep.r, v: vDep, jd: dateState.jd });
 
 		clearDrawn();
 
