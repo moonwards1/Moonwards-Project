@@ -313,6 +313,8 @@ function makeCardDraggable(card, handle) {
 //                                // ".km" sub-line appended right after it
 //                                // (both tools show "0.xxx AU" + "N,NNN km")
 //   getAngle,                    // () -> current precise angle (for the drag binder)
+//   removeLabel, removeTitle,    // optional text/tooltip for the head-bar
+//                                // remove button (default "✕" / "remove marker")
 //   onSliderChange(angleDeg), onRemove(), onModeClick(mode),
 //   onBudgetChange(dvBudgetSI)   // called with the parsed budget in m/s
 // }
@@ -328,7 +330,7 @@ export function buildMarkerCard(opts) {
 	var title = document.createElement("span"); title.className = cls + "-marker-title";
 	title.textContent = "Marker";
 	var rm = document.createElement("button"); rm.type = "button"; rm.className = cls + "-marker-x";
-	rm.textContent = "✕"; rm.title = "remove marker";
+	rm.textContent = opts.removeLabel || "✕"; rm.title = opts.removeTitle || "remove marker";
 	rm.addEventListener("click", function () { opts.onRemove(); });
 	head.appendChild(title); head.appendChild(rm);
 	card.appendChild(head);

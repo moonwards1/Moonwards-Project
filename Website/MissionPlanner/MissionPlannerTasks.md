@@ -1157,9 +1157,26 @@ World. Source file throughout:
   "2034-01-08", phasing "+0.0 d", Start Mission Plan gate enabled), and the
   Earth→Mars zero-leg-burn regression case still reconstructs its burn
   identically to before. Node suites (135) green throughout.
-- [ ] **E3. Ephemeris tab reset.** ★
+- [x] **E3. Ephemeris tab reset.** ★
   "Delete marker and start fresh" on the Ephemeris tab after a mission is
   spawned (the design doc's flow). Mostly calls D3's `removeMarker`.
+  **Interface (2026-07-15):** the marker card's corner "✕" is now a "Reset"
+  text button beside the "Marker" title — `Shared/sim/marker-card.js`'s
+  `buildMarkerCard` gained optional `removeLabel`/`removeTitle` opts
+  (default unchanged: "✕" / "remove marker"), so the Solar-System and
+  Mars-Phobos plotters' own corner "✕" is untouched; only
+  `ephemeris-view.js`'s `buildCard()` passes `removeLabel: "Reset"`,
+  `removeTitle: "Delete marker and start fresh"`. `planner.css`'s
+  `.mp-marker-x` was restyled from a small square icon button into a
+  bordered text button (still hidden by the existing `.mp-empty` rule until
+  a marker is placed). Verified in-browser: pasted a mission link into the
+  Ephemeris tab to place a marker (clipboard read/write blocked in the
+  sandboxed preview, same limitation noted elsewhere in WP-D/E — worked
+  around by intercepting `navigator.clipboard.writeText` to capture the
+  "Copy mission link" output, then feeding it to the paste dialog), the
+  card showed the "Reset" button with the new tooltip, and clicking it
+  cleared `state.marker`, restored the `.mp-empty` state, and showed the
+  "Marker removed — click the drawn trajectory to place a new one." hint.
 
 ### WP-F — Tech cards: load, configure, exchange
 
@@ -1198,7 +1215,7 @@ World. Source file throughout:
   Design: adjust a waypoint by dragging it along the leg. Needs pane raycast →
   nearest-path-point (D5's picker) → transient `world.set` during the gesture
   (the World API already supports transient sets for undo-coalescing) →
-  commit on release. First real gizmo-drag in the shell; do after D5.
+  commit on release. First real gizmo-drag in the shell; do after D5. (Comment from Kim: Dragging waypoints must keep arrival point intact, so app must autocompute burn, or restrict manipulation so it doesn't move arrival - restricting it to one axis at a time, perhaps, and it autocomputes the other two? And dragging along the trajectory causes recompute of all three axes?)
 - [ ] **G2. Marker on the departure trajectory.** ★★
   Design: once a departure trajectory exists, click it to place a marker with
   a card "designed to help with meeting speed and trajectory requirements".

@@ -874,6 +874,8 @@ export function createEphemerisView(opts) {
 				{ key: "phase", label: "phasing" }
 			],
 			getAngle: function () { return state.marker ? state.marker.angle : 0; },
+			removeLabel: "Reset",
+			removeTitle: "Delete marker and start fresh",
 			onSliderChange: function (a) { if (state.marker) { state.marker.angle = a; updateMarker(); } },
 			onRemove: function () { removeMarker(); },
 			onModeClick: function (mode) { setMarkerMode(mode); },

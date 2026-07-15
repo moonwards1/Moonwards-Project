@@ -331,11 +331,10 @@ body {
 .mp-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .mp-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
 .mp-marker-x {
-	padding: 0; width: 20px; height: 20px; line-height: 18px; text-align: center;
-	font-size: 12px; border-radius: 4px; color: var(--dim);
-	background: transparent; border: 1px solid transparent; cursor: pointer;
+	padding: 3px 10px; font-size: 11px; border-radius: 4px; color: var(--dim);
+	background: #141a28; border: 1px solid var(--line2); cursor: pointer;
 }
-.mp-marker-x:hover { color: var(--err); background: rgba(224, 106, 90, 0.15); }
+.mp-marker-x:hover { color: var(--err); border-color: var(--err); background: rgba(224, 106, 90, 0.15); }
 .mp-marker-slider {
 	width: 100%; display: block; margin: 2px 0 9px;
 	cursor: ew-resize; touch-action: none; accent-color: var(--acc);
