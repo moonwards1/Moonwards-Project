@@ -48,7 +48,7 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 		var box = document.createElement("div");
 		box.className = cls + "-readout";
 		box.innerHTML =
-			'<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">burn Δv</span>'
+			'<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse Δv</span>'
 			+ '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
 			+ '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + planeChangeLabel + '</span>'
 			+ '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'

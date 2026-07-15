@@ -568,7 +568,7 @@ export function createMissionView(opts) {
 		(comp.rows || []).forEach(function (r) { rowsByKey[r.key] = r; });
 		var met = !!comp.delivered && comp.rows.every(function (r) { return r.ok; });
 		var demandCls = met ? "ok" : "warn";
-		appendCbarChip(met ? "ok" : "warn", "compliance " + (met ? "met" : "unmet"));
+		appendCbarChip(met ? "ok" : "warn", met ? "on course" : "off course");
 
 		function fixTitleFor(key) {
 			var w = (planRes.warnings || []).filter(function (x) { return x.code === key + "-mismatch"; })[0];
@@ -587,7 +587,7 @@ export function createMissionView(opts) {
 		}
 		if (summary) {
 			appendCbarMetric("plan Δv", cbarKms(summary.dv), demandCls,
-				"v∞ in + v∞ out + waypoint burns");
+				"v∞ in + v∞ out + waypoint impulses");
 		}
 
 		var rE = rowsByKey.epoch;

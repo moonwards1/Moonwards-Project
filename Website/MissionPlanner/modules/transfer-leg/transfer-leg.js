@@ -127,7 +127,7 @@ export function computeLeg(params, data) {
 			var mag = burnMag(wb);
 			totalDv += mag;
 			events.push({ jd: jd0 + wps[seg].days,
-			              label: "Waypoint burn — " + (mag / 1000).toFixed(2) + " km/s" });
+			              label: "Waypoint impulse — " + (mag / 1000).toFixed(2) + " km/s" });
 			v = O.applyBurn(r, v, wb.pro || 0, wb.nrm || 0, wb.rad || 0);
 		}
 	}
@@ -215,7 +215,7 @@ export default {
 				"The leg ends " + leg.miss.toFixed(3) + " AU from " + params.destination +
 				" (within " + MISS_WARN_AU + " AU counts as arrival).",
 				{ values: { missAU: leg.miss, destination: params.destination },
-				  fix: "Adjust the waypoint burns, the leg duration, or whatever delivers the coast's starting state." }));
+				  fix: "Adjust the waypoint impulses, the leg duration, or whatever delivers the coast's starting state." }));
 		}
 
 		return { packet: packet, warnings: warnings, events: leg.events };

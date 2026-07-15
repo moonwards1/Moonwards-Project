@@ -290,7 +290,7 @@ export function createEphemerisView(opts) {
 
 	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
 	["pro", "rad", "nrm"].forEach(function (axis) {
-		depBurnInputs[axis] = numRow(depBurnHost, "burn " + axis, "km/s", state.leg.burn[axis] / 1000, 0.1, function (v) {
+		depBurnInputs[axis] = numRow(depBurnHost, "impulse " + axis, "km/s", state.leg.burn[axis] / 1000, 0.1, function (v) {
 			state.leg.burn[axis] = v * 1000; refresh();
 		});
 	});
@@ -482,7 +482,7 @@ export function createEphemerisView(opts) {
 		ab.txt.textContent = e.apsisLabel;
 		ab.cb.disabled = !e.apsisAvailable;
 		ab.lab.style.opacity = e.apsisAvailable ? "" : "0.4";
-		ab.lab.title = e.apsisAvailable ? "" : "needs a prograde or retrograde burn on this leg";
+		ab.lab.title = e.apsisAvailable ? "" : "needs a prograde or retrograde impulse on this leg";
 		row.snapBoxes.asc.txt.textContent = e.nodeLabel.ascLabel;
 		row.snapBoxes.desc.txt.textContent = e.nodeLabel.descLabel;
 		["apsis", "asc", "desc"].forEach(function (k) {
