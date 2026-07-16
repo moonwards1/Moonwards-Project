@@ -585,6 +585,34 @@ export const OrbitalMath = {
 			return dt >= 0 ? dt : null;
 		},
 
+		// ---- SOI-exit duration estimates (Mission Planner task D7) -------------
+		// How long a departure takes to leave a primary's sphere of influence,
+		// knowing only the hyperbolic excess speed — no course, no release
+		// geometry. Two archetypal course profiles, both exact two-body times
+		// built on coastTimeToRadius; which one applies is the caller's call
+		// (the Mission Planner switches on Moon-quarter geometry).
+
+		// DIRECT-OUT: released near radius r0 moving tangentially (speed from
+		// vis-viva for this vInf), heading straight out. Time (s) from r0 to
+		// rSoi, or null if the geometry yields no outbound crossing.
+		soiExitTimeDirect: function (GM, vInf, r0, rSoi) {
+			if (!(vInf >= 0) || !(r0 > 0)) { return null; }
+			var v0 = Math.sqrt(vInf * vInf + 2 * GM / r0);
+			return OrbitalMath.coastTimeToRadius(GM, [r0, 0, 0], [0, v0, 0], rSoi);
+		},
+
+		// DIVE-IN: the course first drops from r0 to a low perigee rp (an
+		// Oberth-style pass), then exits. Time (s) = inbound (r0 -> perigee) +
+		// outbound (perigee -> rSoi), both halves computed OUTBOUND from the
+		// perigee state via two-body time symmetry.
+		soiExitTimeDive: function (GM, vInf, rp, r0, rSoi) {
+			if (!(vInf >= 0) || !(rp > 0) || !(r0 > rp)) { return null; }
+			var vp = Math.sqrt(vInf * vInf + 2 * GM / rp);
+			var tIn = OrbitalMath.coastTimeToRadius(GM, [rp, 0, 0], [0, vp, 0], r0);
+			var tOut = OrbitalMath.coastTimeToRadius(GM, [rp, 0, 0], [0, vp, 0], rSoi);
+			return (tIn == null || tOut == null) ? null : tIn + tOut;
+		},
+
 		// ---- waypoint "snap to" helpers ----------------------------------------
 		// Promoted from the Solar-System-Trajectory-Plotter (2026-07, Mission
 		// Planner task D2) so the Ephemeris tab's waypoint list can share the

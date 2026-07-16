@@ -107,3 +107,37 @@ test("defaultMissionTitle names origin → destination + departure year", () => 
 	var jd = O.julianDate(2031, 12, 20, 6, 0, 0);
 	assert.equal(defaultMissionTitle("Earth", "Ceres", jd), "Earth → Ceres 2031");
 });
+
+// ---- timing fields (task D7: the hand-off window + release anchor) ---------
+
+test("freeze bakes a hand-off window (default ±1 d) and a release anchor ahead of the hand-off", async () => {
+	var spec = makeSpec();
+	var plan = freezeMissionWorld(spec).stages[0].params;
+	assert.equal(plan.handoffWindowDays, 1);
+	// the anchor leads departure.jd by the departure-estimate module's own
+	// figure for this spec — same source, so they must agree exactly
+	var DE = await import("../departure-estimate.js");
+	var est = DE.estimateDeparture({
+		origin: spec.origin,
+		vInfVec: O.vSub(plan.departure.v, spec.departure.v),
+		jdHandoff: spec.jd
+	});
+	assert.ok(est.ok);
+	assert.ok(Math.abs(plan.releaseAnchorJd - est.jdLaunch) < 1e-9);
+	assert.ok(plan.releaseAnchorJd < spec.jd);
+	// a 2.94 km/s injection is day-scale, not hour- or month-scale
+	var leadDays = spec.jd - plan.releaseAnchorJd;
+	assert.ok(leadDays > 1 && leadDays < 10, "lead " + leadDays.toFixed(2) + " d");
+});
+
+test("a custom windowDays is honoured; a waypoint-only plan anchors at the hand-off itself", () => {
+	var spec = makeSpec();
+	spec.windowDays = 2.5;
+	assert.equal(freezeMissionWorld(spec).stages[0].params.handoffWindowDays, 2.5);
+
+	var spec2 = makeSpec();
+	spec2.burn = { pro: 0, rad: 0, nrm: 0 };       // no injection: v∞ ~ 0, nothing to time
+	var plan2 = freezeMissionWorld(spec2).stages[0].params;
+	assert.equal(plan2.releaseAnchorJd, spec2.jd);
+	assert.equal(plan2.handoffWindowDays, 1);
+});

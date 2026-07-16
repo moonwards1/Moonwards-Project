@@ -108,6 +108,9 @@ import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier
 import { buildHelioFrame, HELIO_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
 import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
+import {
+	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed
+} from "./core/departure-estimate.js";
 import { deserializeWorld } from "./core/world.js";
 import { decodeFragment } from "../Shared/exchange.js";
 import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
@@ -274,6 +277,107 @@ export function createEphemerisView(opts) {
 		return el;
 	}
 
+	// ==== "Moon phase at launch" widget (task D7) -----------------------------
+	// Kim's sketch (2026-07-16): an animated phase glyph + two pill bars —
+	// the Moon's speed along EARTH'S OWN heliocentric prograde (the waypoint
+	// gizmo's prograde axis, so its sign visibly adds to or subtracts from a
+	// launch), and the estimated days for the departure leg to leave Earth's
+	// SOI (core/departure-estimate.js — quarter-switched dive-in/direct-out).
+	// One instance mounts under the origin's info line, a mirrored one under
+	// the destination's; each shows only while that body is Earth.
+	function buildMoonWidget(parent, title) {
+		var box = document.createElement("div"); box.className = "mp-moonwidget";
+		box.style.display = "none";
+		var head = document.createElement("div"); head.className = "mp-moonwidget-title";
+		head.textContent = title; box.appendChild(head);
+		var body = document.createElement("div"); body.className = "mp-moonwidget-body";
+		box.appendChild(body);
+
+		var NS = "http://www.w3.org/2000/svg";
+		var svg = document.createElementNS(NS, "svg");
+		svg.setAttribute("viewBox", "0 0 40 40");
+		svg.setAttribute("class", "mp-moonglyph");
+		var shadow = document.createElementNS(NS, "circle");
+		shadow.setAttribute("cx", "20"); shadow.setAttribute("cy", "20"); shadow.setAttribute("r", "17");
+		shadow.setAttribute("class", "mp-moonglyph-shadow");
+		var lit = document.createElementNS(NS, "path");
+		lit.setAttribute("class", "mp-moonglyph-lit");
+		var rim = document.createElementNS(NS, "circle");
+		rim.setAttribute("cx", "20"); rim.setAttribute("cy", "20"); rim.setAttribute("r", "17");
+		rim.setAttribute("class", "mp-moonglyph-rim");
+		svg.appendChild(shadow); svg.appendChild(lit); svg.appendChild(rim);
+		body.appendChild(svg);
+
+		var bars = document.createElement("div"); bars.className = "mp-moonbars";
+		body.appendChild(bars);
+		function bar(label, ticks) {
+			var g = document.createElement("div"); g.className = "mp-moonbar-group";
+			var lab = document.createElement("div"); lab.className = "mp-moonbar-label";
+			lab.textContent = label; g.appendChild(lab);
+			var pill = document.createElement("div"); pill.className = "mp-moonbar";
+			var fill = document.createElement("div"); fill.className = "mp-moonbar-fill";
+			pill.appendChild(fill);
+			ticks.forEach(function (t) {
+				var s = document.createElement("span"); s.className = "mp-moonbar-tick";
+				s.style.left = (t.at * 100) + "%"; s.textContent = t.text;
+				pill.appendChild(s);
+			});
+			g.appendChild(pill); bars.appendChild(g);
+			return { fill: fill, pill: pill };
+		}
+		var relBar = bar("Relative speed, km/s",
+			[{ at: 0.10, text: "-1" }, { at: 0.50, text: "0" }, { at: 0.90, text: "1" }]);
+		var DAY_SCALE = 7;
+		var dayBar = bar(title.indexOf("arrival") >= 0 ? "Days to cross system" : "Days to leave system",
+			[1, 2, 3, 4, 5, 6, 7].map(function (n) { return { at: (n - 0.5) / DAY_SCALE, text: String(n) }; }));
+
+		parent.appendChild(box);
+
+		// The lit shape: bounded by the outer limb on the lit side and the
+		// terminator — a half-ellipse whose semi-axis is R|cos e| — so the
+		// glyph sweeps full -> gibbous -> half -> crescent -> new continuously.
+		// Waxing (sin e > 0) lights the right side. SVG sweep flags: on the
+		// bottom->top return leg, 0 bulges right, 1 bulges left.
+		function glyphPath(elongDeg) {
+			var R = 17, cx = 20, top = 3, bot = 37;
+			var e = ((elongDeg % 360) + 360) % 360;
+			if (e < 1 || e > 359) { return ""; }               // new moon — nothing lit
+			var c = Math.cos(e * Math.PI / 180);
+			var rx = Math.max(0.4, R * Math.abs(c));           // 0 collapses the arc; keep a hairline
+			var right = Math.sin(e * Math.PI / 180) >= 0;
+			var limbSweep = right ? 1 : 0;
+			var termSweep = right ? (c > 0 ? 0 : 1) : (c > 0 ? 1 : 0);
+			return "M " + cx + " " + top +
+				" A " + R + " " + R + " 0 0 " + limbSweep + " " + cx + " " + bot +
+				" A " + rx.toFixed(2) + " " + R + " 0 0 " + termSweep + " " + cx + " " + top + " Z";
+		}
+
+		return {
+			hide: function () { box.style.display = "none"; },
+			// info = { elong (deg), rel (m/s), days (d, or null when there is
+			//          no impulse to time), note (days-bar tooltip suffix) }
+			show: function (info) {
+				box.style.display = "";
+				lit.setAttribute("d", glyphPath(info.elong));
+				var v = Math.max(-1, Math.min(1, (info.rel || 0) / 1000));
+				var half = Math.abs(v) * 40;                    // ±1 km/s maps to the 10%/90% ticks
+				relBar.fill.style.left = (v < 0 ? 50 - half : 50) + "%";
+				relBar.fill.style.width = half + "%";
+				relBar.pill.title = ((info.rel || 0) / 1000).toFixed(2) +
+					" km/s along Earth's own heliocentric prograde";
+				if (info.days == null) {
+					dayBar.fill.style.width = "0";
+					dayBar.pill.title = "No impulse authored yet — nothing to time.";
+				} else {
+					dayBar.fill.style.width = (Math.max(0, Math.min(1, info.days / DAY_SCALE)) * 100) + "%";
+					dayBar.pill.title = info.days.toFixed(2) + " days" +
+						(info.days > DAY_SCALE ? " — beyond the bar's " + DAY_SCALE + "-day scale" : "") +
+						(info.note ? " (" + info.note + ")" : "");
+				}
+			}
+		};
+	}
+
 	// ==== Departure card: origin, burn, destination (no duration field — the
 	// drawn arc's length is physics-derived, see finalCoastDays) --------------
 	var originRow = document.createElement("div"); originRow.className = "mp-inrow";
@@ -286,6 +390,7 @@ export function createEphemerisView(opts) {
 	});
 	originRow.appendChild(originSel); depHost.appendChild(originRow);
 	var originInfo = muted(depHost, "");
+	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
 	originSel.addEventListener("change", function () { state.origin = originSel.value; refresh(); });
 
 	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
@@ -308,6 +413,7 @@ export function createEphemerisView(opts) {
 	});
 	destRow.appendChild(destSel); depHost.appendChild(destRow);
 	var destInfo = muted(depHost, "");
+	var arrMoon = buildMoonWidget(depHost, "Moon phase at arrival");
 	destSel.addEventListener("change", function () { state.leg.destination = destSel.value; refresh(); });
 
 	// ==== Waypoints card: up to MAX_WAYPOINTS, each with snap-to + burn -------
@@ -978,7 +1084,8 @@ export function createEphemerisView(opts) {
 		if (!dn) { return { ok: false, reason: "No destination selected." }; }
 
 		var dep = O.bodyStateAtJD(GM_SUN, systems.get(state.origin).orbit, dateState.jd);
-		var rw = resolveWaypoints(dep.r, dep.v, state.leg);
+		var aBurn = assistedBurn(dep);
+		var rw = resolveWaypoints(dep.r, dep.v, Object.assign({}, state.leg, { burn: aBurn }));
 		var tof = mcMarkerFraction(state.marker.f0, state.marker.angle) * trajTotalT;
 		var s = stateAtGlobalTime(tof);
 		if (!s) { return { ok: false, reason: "The marker isn't on a valid trajectory." }; }
@@ -993,7 +1100,7 @@ export function createEphemerisView(opts) {
 				destination: dn,
 				jd: dateState.jd,
 				departure: { r: dep.r, v: dep.v },
-				burn: state.leg.burn,
+				burn: aBurn,
 				waypoints: rw.entries.map(function (e) { return { days: e.days, burn: e.burn }; }),
 				arrivalJd: arrJd,
 				arrivalVInf: O.vMag(O.vSub(s.v, b.v))
@@ -1293,7 +1400,8 @@ export function createEphemerisView(opts) {
 			destInfo.textContent = "No destination selected.";
 		}
 
-		var vDep = O.applyBurn(dep.r, dep.v, state.leg.burn.pro || 0, state.leg.burn.nrm || 0, state.leg.burn.rad || 0);
+		var aBurn = assistedBurn(dep);
+		var vDep = O.applyBurn(dep.r, dep.v, aBurn.pro, aBurn.nrm, aBurn.rad);
 		var elDep = O.elementsFromState(GM_SUN, dep.r, vDep);
 		var depKind = elDep.e < 1 ? ("ellipse, a = " + (elDep.a / AU).toFixed(2) + " AU")
 		                          : ("hyperbola, e = " + elDep.e.toFixed(2));
@@ -1301,7 +1409,12 @@ export function createEphemerisView(opts) {
 		depReadout.textContent = "Resulting arc: " + depKind + ", speed " + fmtKmS(O.vMag(vDep)) +
 			" km/s. Δv = " + fmtKmS(depDv) + " km/s.";
 
-		var rw = resolveWaypoints(dep.r, dep.v, state.leg);
+		// The waypoint chain (apsis/node availability, snap resolution) has to
+		// propagate from the SAME post-departure state the trajectory draws
+		// from — aBurn, not the raw authored burn — so a waypoint's "snap to
+		// apoapsis" option, say, matches what's actually on screen.
+		var effLeg = Object.assign({}, state.leg, { burn: aBurn });
+		var rw = resolveWaypoints(dep.r, dep.v, effLeg);
 		rw.entries.forEach(function (e) { updateWaypointRowUI(wpRows[e.originalIndex], e, e.originalIndex); });
 
 		// legDays carries no mission condition — it's just long enough to draw
@@ -1310,7 +1423,7 @@ export function createEphemerisView(opts) {
 		var legDays = rw.tPrev + finalCoastDays(rw.finalR, rw.finalV);
 		state.leg.legDays = legDays;   // last-computed length, e.g. as a new waypoint's default-day bound
 
-		var params = Object.assign({}, state.leg, { waypoints: rw.entries, legDays: legDays });
+		var params = Object.assign({}, effLeg, { waypoints: rw.entries, legDays: legDays });
 		var leg = computeLeg(params, { r: dep.r, v: vDep, jd: dateState.jd });
 
 		clearDrawn();
@@ -1373,6 +1486,75 @@ export function createEphemerisView(opts) {
 
 		// keep the marker on the (possibly reshaped) path + refresh its card
 		updateMarker();
+
+		updateMoonWidgets(dep, vDep);
+	}
+
+	// The authored departure burn, plus whatever the Moon supplies for free
+	// (Kim, 2026-07-17): the Moon's own prograde-axis speed at the estimated
+	// launch date, folded into the burn's "pro" component. This is what
+	// actually propagates — the drawn trajectory, its periapsis/apoapsis,
+	// the waypoints, and (via buildFreezeSpec) the frozen requirement all
+	// use it. The burn INPUT FIELDS and the Δv readout keep showing exactly
+	// what was typed; only the physics downstream of it changes. Two bounded
+	// passes, never an iteration (same shape as the profile switch above): a
+	// tentative estimate off the RAW burn locates the Moon at the tentative
+	// launch date, that reading is added in once, and it is not re-solved.
+	// Non-Earth origins have no Moon model, so the raw burn passes through.
+	function assistedBurn(dep) {
+		var raw = state.leg.burn;
+		if (state.origin !== "Earth") { return raw; }
+		var vDepRaw = O.applyBurn(dep.r, dep.v, raw.pro || 0, raw.nrm || 0, raw.rad || 0);
+		var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, dep.v), jdHandoff: dateState.jd });
+		if (!est.ok) { return raw; }
+		var rel = moonProgradeSpeed(est.jdLaunch, dep.v);
+		return { pro: (raw.pro || 0) + rel, rad: raw.rad || 0, nrm: raw.nrm || 0 };
+	}
+
+	// Feed the D7 Moon widgets from the CURRENT refresh's numbers. Departure
+	// side: the plan's v∞ is the authored injection (vDep − the origin body's
+	// own velocity); everything is evaluated at the ESTIMATED LAUNCH date the
+	// hand-off implies, not the tab's clock — that is the widget's whole
+	// point. With no meaningful injection yet, the glyph/speed read at the
+	// clock and the days bar idles. Arrival side mirrors it at the marker's
+	// rendezvous (the catch date), when the destination is Earth and a
+	// rendezvous exists to read. vDep is already Moon-assisted (assistedBurn
+	// above), so this reads as the ship's REAL remaining trip once the free
+	// speed is counted.
+	function updateMoonWidgets(dep, vDep) {
+		if (state.origin === "Earth") {
+			var est = estimateDeparture({
+				origin: "Earth",
+				vInfVec: O.vSub(vDep, dep.v),
+				jdHandoff: dateState.jd
+			});
+			var jdAt = est.ok ? est.jdLaunch : dateState.jd;
+			depMoon.show({
+				elong: moonElongationDeg(jdAt),
+				rel: moonProgradeSpeed(jdAt, dep.v),
+				days: est.ok ? est.days : null,
+				note: est.ok ? est.profile + " course assumed" : null
+			});
+		} else { depMoon.hide(); }
+
+		var showArr = false;
+		if (state.leg.destination === "Earth" && state.marker && trajTotalT > 0) {
+			var tof = mcMarkerFraction(state.marker.f0, state.marker.angle) * trajTotalT;
+			var s = stateAtGlobalTime(tof);
+			if (s) {
+				var arrJd = dateState.jd + tof / DAY;
+				var bE = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, arrJd);
+				var arr = estimateArrival(O.vSub(s.v, bE.v), arrJd);
+				arrMoon.show({
+					elong: moonElongationDeg(arrJd),
+					rel: moonProgradeSpeed(arrJd, bE.v),
+					days: arr.ok ? arr.days : null,
+					note: arr.ok ? "SOI entry to the catch" : null
+				});
+				showArr = true;
+			}
+		}
+		if (!showArr) { arrMoon.hide(); }
 	}
 
 	// =======================================================================

@@ -169,3 +169,45 @@ test("lambert: an unreachable time of flight returns null, never a wrong-dt arc"
 		assert.equal(sol, null);
 	}
 });
+
+// ---- SOI-exit duration estimates (Mission Planner task D7) -----------------
+// Constants match Shared/orbit.js's Earth record; expected day-figures were
+// pinned by the D7 design experiment (2026-07-16) and cross-checked against
+// the lunar-skyhook chain's own release->Earth-SOI milestone (2.56 d at
+// v-inf 5.50 km/s, a genuinely diving release).
+var GM_E = 3.986004418e14;
+var A_EARTH = (152100000e3 + 147095000e3) / 2;
+var R_SOI_E = O.sphereOfInfluence(A_EARTH, GM_E, GM_SUN);
+var D_MOON = 3.844e8;
+var RP = 6371e3 + 200e3;
+
+test("soiExitTimeDirect: tangential from lunar distance, ~1.75 d at 5.5 km/s", () => {
+	var t = O.soiExitTimeDirect(GM_E, 5500, D_MOON, R_SOI_E);
+	assert.ok(t != null);
+	assert.ok(Math.abs(t / DAY - 1.75) < 0.03, "got " + (t / DAY).toFixed(3) + " d");
+});
+
+test("soiExitTimeDive: low-perigee Oberth profile, ~2.58 d at 5.5 km/s", () => {
+	var t = O.soiExitTimeDive(GM_E, 5500, RP, D_MOON, R_SOI_E);
+	assert.ok(t != null);
+	assert.ok(Math.abs(t / DAY - 2.58) < 0.03, "got " + (t / DAY).toFixed(3) + " d");
+});
+
+test("soiExitTime: dive-in always exceeds direct-out at the same energy", () => {
+	[1000, 2000, 3000, 5500, 8000].forEach(function (vinf) {
+		var direct = O.soiExitTimeDirect(GM_E, vinf, D_MOON, R_SOI_E);
+		var dive = O.soiExitTimeDive(GM_E, vinf, RP, D_MOON, R_SOI_E);
+		assert.ok(direct != null && dive != null, "v-inf " + vinf);
+		assert.ok(dive > direct, "v-inf " + vinf);
+	});
+});
+
+test("soiExitTime: degenerate geometry returns null, not a wrong number", () => {
+	// target radius inside the start radius: no outbound crossing
+	assert.equal(O.soiExitTimeDirect(GM_E, 5500, D_MOON, D_MOON / 2), null);
+	// dive perigee at/above the start radius: not a dive
+	assert.equal(O.soiExitTimeDive(GM_E, 5500, D_MOON, D_MOON, R_SOI_E), null);
+	// nonsense inputs
+	assert.equal(O.soiExitTimeDirect(GM_E, -1, D_MOON, R_SOI_E), null);
+	assert.equal(O.soiExitTimeDirect(GM_E, NaN, D_MOON, R_SOI_E), null);
+});

@@ -395,3 +395,27 @@ body {
 .mp-dialog-err:empty { display: none; }
 .mp-dialog-btnrow { display: flex; gap: 8px; justify-content: flex-end; }
 .mp-dialog-btnrow .mp-btn.mp-big { display: inline-block; width: auto; margin-top: 0; }
+
+/* ---------- "Moon phase at launch" widget (Ephemeris tab, task D7) ----------
+   Kim's sketch: phase glyph left, two tan-outlined pill bars right (teal
+   fill) — the Moon's speed along Earth's prograde and the estimated days to
+   leave (or, arrival mirror, cross) the Earth system. */
+.mp-moonwidget { margin: 8px 0 10px; }
+.mp-moonwidget-title { color: var(--bright); font-size: 13px; margin-bottom: 6px; }
+.mp-moonwidget-body { display: flex; align-items: center; gap: 12px; }
+.mp-moonglyph { width: 40px; height: 40px; flex: none; }
+.mp-moonglyph-shadow { fill: #0f1424; }
+.mp-moonglyph-lit { fill: #b08c58; }
+.mp-moonglyph-rim { fill: none; stroke: #b08c58; stroke-width: 1.6px; }
+.mp-moonbars { display: flex; gap: 14px; flex: 1; min-width: 0; }
+.mp-moonbar-group { flex: 1; min-width: 0; }
+.mp-moonbar-label { color: var(--dim); font-size: 11px; margin-bottom: 3px; white-space: nowrap; }
+.mp-moonbar {
+	position: relative; height: 20px; border: 1.5px solid #b08c58;
+	border-radius: 999px; overflow: hidden; background: rgba(0, 0, 0, 0.25);
+}
+.mp-moonbar-fill { position: absolute; top: 0; bottom: 0; background: #2a7f80; }
+.mp-moonbar-tick {
+	position: absolute; top: 50%; transform: translate(-50%, -50%);
+	color: var(--bright); font-size: 11px; line-height: 1; pointer-events: none;
+}

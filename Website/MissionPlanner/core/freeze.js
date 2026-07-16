@@ -41,18 +41,36 @@
  *   burn: { pro, rad, nrm },      // the authored departure burn (m/s)
  *   waypoints: [{ days, burn }],  // resolved days (snaps already concrete)
  *   arrivalJd,                    // the marker's rendezvous epoch
- *   arrivalVInf                   // |ship v − destination v| there (m/s)
+ *   arrivalVInf,                  // |ship v − destination v| there (m/s)
+ *   windowDays                    // optional — hand-off window half-width
  * }
  *
  * Waypoints are sorted chronologically and any at/after the rendezvous are
  * dropped — they never shaped the flight up to arrival, and a frozen leg
  * whose duration is the rendezvous would flag them as past its end.
+ *
+ * TIMING FIELDS (task D7, 2026-07-16 — WP-I's window + anchor model): the
+ * frozen-plan stage additionally carries
+ *   handoffWindowDays — half-width (d) of the hand-off WINDOW around
+ *     departure.jd (default ±1); the course check's epoch row becomes
+ *     "inside the window" once the integrated departure leg exists (I3).
+ *   releaseAnchorJd — the READ-ONLY release epoch: departure.jd minus the
+ *     departure-duration estimate (core/departure-estimate.js — the same
+ *     figure the Ephemeris tab's Moon widget presented while planning), so
+ *     the Moon a user planned around is the Moon the mission shows. A plan
+ *     with no meaningful v∞ (waypoints-only) anchors at departure.jd
+ *     itself — there is no flight to lead it.
+ * Pre-D7 saves simply lack both fields; consumers default them (window 1,
+ * anchor departure.jd).
  */
 
 import { WORLD_KIND, WORLD_VERSION } from "./world.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
+import { estimateDeparture } from "./departure-estimate.js";
 
 var O = OrbitalMath;
+
+export var DEFAULT_WINDOW_DAYS = 1;
 
 function copyBurn(b) {
 	b = b || {};
@@ -72,6 +90,18 @@ export function freezeMissionWorld(spec) {
 	var b = copyBurn(spec.burn);
 	var vHandoff = O.applyBurn(spec.departure.r, spec.departure.v, b.pro, b.nrm, b.rad);
 
+	// Timing fields (task D7 — see header): the release anchor leads the
+	// hand-off by the departure-duration estimate; the window half-width
+	// defaults to ±1 d.
+	var est = estimateDeparture({
+		origin: spec.origin,
+		vInfVec: O.vSub(vHandoff, spec.departure.v),
+		jdHandoff: spec.jd
+	});
+	var windowDays = (isFinite(spec.windowDays) && spec.windowDays > 0)
+		? spec.windowDays : DEFAULT_WINDOW_DAYS;
+	var releaseAnchorJd = est.ok ? est.jdLaunch : spec.jd;
+
 	return {
 		kind: WORLD_KIND,
 		version: WORLD_VERSION,
@@ -89,6 +119,8 @@ export function freezeMissionWorld(spec) {
 						jd: spec.jd
 					},
 					arrival: { body: spec.destination, jd: spec.arrivalJd, vInf: spec.arrivalVInf },
+					handoffWindowDays: windowDays,
+					releaseAnchorJd: releaseAnchorJd,
 					waypoints: waypoints.map(function (wp) {
 						return { days: wp.days, burn: copyBurn(wp.burn) };
 					})

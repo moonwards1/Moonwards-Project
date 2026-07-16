@@ -978,28 +978,121 @@ World. Source file throughout:
   slides a different chain shape — see marker-card.js's header). Recommend
   shipping the solar-system Ephemeris tab first and treating this as its own
   later package. Decision for Kim.
-- [ ] **D7. Moon indicators in the Ephemeris tab + the freeze-time release
+- [x] **D7. Moon indicators in the Ephemeris tab + the freeze-time release
   anchor.** ★★★ — **now load-bearing; design with Kim, then build BEFORE
   WP-I** (Kim, 2026-07-15 — upgraded same day from an advisory indicator to
   the thing that AUTHORS departure timing; see WP-I's timing-model bullet).
+  **Done 2026-07-16** (same session as the design conversation). What
+  landed, in dependency order: (1) `OrbitalMath.soiExitTimeDirect` /
+  `soiExitTimeDive` in Shared/math-utils.js — the two course-profile
+  crossing times, thin exact compositions over `coastTimeToRadius` (4 new
+  Node tests pin 1.75 d / 2.58 d at v∞ 5.50 km/s and the null cases).
+  (2) New pure `core/departure-estimate.js` — `estimateDeparture` (the
+  quarter-switched Earth estimate + naive non-Earth fallback; the dive
+  criterion is the geometric sign test, evaluated in the two bounded
+  passes), `estimateArrival` (the direct-profile inbound mirror),
+  `moonElongationDeg`, `moonProgradeSpeed`, with its own suite
+  (`core/tests/departure-estimate.test.js`, 10 tests — the quarter-rule
+  cases scan the REAL ephemeris for quarter dates and use Earth's real
+  prograde, no mocked Moon; one genuine bug caught here: orbit.js resolves
+  `orbit.system` to the parent System INSTANCE, so the "heliocentric
+  origin" check is an identity comparison, not a string). (3) freeze.js
+  bakes `handoffWindowDays` (default ±1, spec-overridable) and
+  `releaseAnchorJd` (hand-off − the estimate; = hand-off itself for a
+  waypoint-only plan) into the frozen-plan params — pre-D7 saves simply
+  lack the fields and consumers will default them (+2 freeze tests, one
+  cross-checking the anchor against the estimator module itself).
+  (4) The widget in ephemeris-view.js (`buildMoonWidget` + per-refresh
+  `updateMoonWidgets`) + `.mp-moonwidget*` CSS: SVG glyph (limb +
+  half-ellipse terminator, rx = R|cos e|, waxing lights the right side),
+  relative-speed pill (±1 km/s ticks at the 10/50/90% marks,
+  center-anchored teal fill, exact value in the tooltip), days pill (1–5
+  scale, estimate + assumed profile in the tooltip, >5 d clamps with a
+  note); mounted under the origin's info line and mirrored under the
+  destination's ("Moon phase at arrival", readouts at the CATCH date,
+  "days to cross system"), each shown only while that body is Earth. With
+  no impulse authored yet the glyph/speed read at the tab's clock and the
+  days bar idles with an explanatory tooltip.
+  **Verified:** 167 Node tests green (all suites). In-browser on the local
+  server via DOM/JS introspection with hand-checked numbers (pixel
+  screenshots unavailable — the sandboxed preview's `document.hidden`
+  condition documented throughout WP-D/E): idle state at 2030-01-01 reads
+  elongation 318°/−0.80 km/s, matching a Node ground-truth run exactly; a
+  5.5 km/s prograde impulse → "1.75 days (direct-out course assumed)",
+  readouts shifted to the ESTIMATED LAUNCH date, not the clock; clock
+  moved so launch lands on a first-quarter Moon → "2.58 days (dive-in
+  course assumed)" with the relative-speed bar reading ~0.10 km/s — the
+  predicted bar≈0-at-the-dive-quarter coherence, observed live; origin
+  Mars hides the widget; the arrival mirror verified through the REAL
+  paste-mission-link path (a hand-frozen Mars→Earth world fed to the paste
+  dialog placed the marker and lit "Moon phase at arrival" with sane
+  figures); computed styles confirm the sketch's tan/teal pill rendering
+  with both fills geometrically contained; console clean throughout.
   Since the Moon card is frozen inside a mission, the Ephemeris tab is where
-  a user plans AROUND the Moon. Scope: (1) indicators of the Moon's phase
-  and of its heading/impulse contribution around the intended departure,
-  presented WITH the time-offset for the departure leg's estimated duration
-  (the `departureDefaultSpanSeconds()`-style estimate from the plan's own
-  v∞ — B3's existing machinery) — the Moon is shown where it will actually
-  be at the estimated RELEASE (~30° / ~2 d earlier in its orbit than at the
-  hand-off epoch), not at the tab's clock. Calibration datum: the generic
-  estimate gives ~1.70 d for the Ceres mission vs the skyhook chain's real
-  ~2.56 d flight — a ~0.9 d gap, inside the agreed ±1 d window. (2) The
-  freeze contract gains two fields (decision 5's review applies): the
-  hand-off WINDOW (default ±1 d, agreed 2026-07-15) and the read-only
-  RELEASE ANCHOR (hand-off − the same estimate the indicator presented).
+  a user plans AROUND the Moon.
+  **Widget (Kim's sketch, 2026-07-16):** a "Moon Phase at launch" block that
+  appears under the body's heliocentric-speed text whenever EARTH is the
+  chosen origin (or destination — the arrival mirror). Three elements:
+  (1) an animated Moon-phase GLYPH showing the net phase at the estimated
+  launch (= hand-off clock − the SOI-exit estimate below), cycling as the
+  date/plan changes — no three.js needed: an SVG disc whose terminator is a
+  half-ellipse with rx = R·|cos(elongation)| renders the FULL cycle
+  including gibbous and crescent (confirmed 2026-07-16), driven by the
+  Moon–Sun elongation (`eclipticLon(moonVector) − eclipticLon(sunVector)`,
+  both already in `Shared/lunar-ephemeris.js`) — crisp, cheap, and avoids
+  spending a second WebGL context; (2) a **"Relative speed, km/s"** bar
+  (−1 … +1): the component of the Moon's geocentric velocity along EARTH'S
+  OWN HELIOCENTRIC PROGRADE at the estimated launch (Kim, 2026-07-16 —
+  educational framing, NOT the plan-heading projection: it shares the
+  waypoint gizmo's prograde axis, which this setting also uses for the
+  departure impulse, so a prograde launch with the Moon reading negative
+  visibly subtracts from the total, and a retrograde launch sees the same
+  sign convention along its negative axis); (3) a **"Days to leave
+  system"** bar showing the SOI-exit estimate (sketch scale 1–5 d; note
+  low-energy plans exceed it — dive-in at v∞ 1 km/s is ~7.9 d — so the
+  scale should clamp or adapt; implementer's discretion).
+  **The SOI-exit estimate (settled by Node experiment, 2026-07-16):** a
+  two-body hyperbolic coast needing only the plan's v∞ + constants,
+  replacing the naive `departureDefaultSpanSeconds()` (RSOI/v∞). Two
+  course-profile variants, both built from `O.coastTimeToRadius` on a
+  perigee state (two-body time symmetry): DIRECT-OUT (tangential from mean
+  lunar distance) and DIVE-IN (drop to a ~200 km perigee Oberth pass, then
+  out = t(perigee→dMoon) + t(perigee→RSOI)). Measured at the preset's v∞
+  5.50 km/s: naive 1.95 d, direct 1.75 d, dive-in 2.58 d vs the chain's
+  real 2.56 d — and the default skyhook release genuinely dives (geocentric
+  perigee 24,200 km vs the Moon's 372,800 km).
+  **Profile selection (Kim, 2026-07-16): switch by Moon quarter** — dive-in
+  is NOT the usual best move; it depends on whether the user wants the
+  Moon's speed boost, an Oberth plane change, or neither (a fixed launcher
+  supplying all the needed v∞ favours a lighter ship over a Moon boost).
+  The rule: DIVE-IN when the Moon is near FIRST quarter for a prograde
+  launch, or near LAST quarter for a retrograde launch; DIRECT-OUT near
+  full/new and at the opposite quarter (a launch there immediately moves
+  away from Earth; a user who dives anyway is left to the ±1 d window —
+  "hope for the best"). Geometric verification + implementation note:
+  first quarter puts the Moon at Earth's anti-apex (trailing its orbital
+  motion), so a prograde exit from there must cross Earth's vicinity — a
+  flyby — which is why it's the dive-in quarter; the general criterion is
+  the SIGN of dot(Moon position, exit heading) — Moon on the far side of
+  Earth from the exit ⇒ dive-in. That reproduces Kim's quarter rule
+  exactly for pro/retrograde launches and generalizes to arbitrary
+  headings; the widget still SPEAKS in quarters (educational), the
+  criterion just decides. Pleasing coherence: the relative-speed bar reads
+  ~0 at precisely the dive-in quarters and ±max at full/new — the two
+  indicators tell one story. Evaluation is TWO bounded passes, not
+  iteration: tentative direct-out date → quarter/geometry check → profile
+  → final estimate (the ~0.8 d profile spread moves the Moon ~10°, which
+  rarely flips the classification). Scratch script:
+  scratchpad/soi-time-estimators.mjs (session 2026-07-16), to be reborn as
+  the Node tests when this builds.
+  **Freeze-contract additions** (decision 5's review applies): the hand-off
+  WINDOW (default ±1 d, agreed 2026-07-15) and the read-only RELEASE ANCHOR
+  (hand-off − the same estimate the widget presented).
   Re-planning around a different Moon stays the copy-link → paste-into-
   Ephemeris → tweak → new-plan flow — never a release-date knob inside a
   mission. Possible design ingredient: the Moon-Skyhook plotter's "lock
   Moon phase" scrub behaviour (MSK:1590–1656 — the year slider snaps to
-  equal-elongation dates). Sketch the UI with Kim before building.
+  equal-elongation dates).
 
 ### WP-E — "Start Mission Plan" flow (stitches A+C+D together)
 
@@ -1339,9 +1432,10 @@ inside the Mission tabs," and absorbs F5's departure half. The agreed shape:
   which would have made the Moon's position at release depend on which card
   the user happens to add, undermining Ephemeris-tab planning): D7's
   indicators present the time-offset for the departure leg's estimated
-  duration at planning time (the `departureDefaultSpanSeconds()`-style
-  estimate from the plan's own v∞ — B3's existing machinery), and freeze
-  bakes release anchor = hand-off − that same estimate, alongside the
+  duration at planning time (the two-body SOI-exit estimate settled in D7 —
+  dive-in profile via `O.coastTimeToRadius`, superseding the naive
+  `departureDefaultSpanSeconds()` guess), and freeze bakes
+  release anchor = hand-off − that same estimate, alongside the
   window (±1 d default, agreed 2026-07-15). Tech-add neither sets nor moves
   the anchor; nothing ever re-derives it — the Moon card shows one
   unchanging state: exactly the Moon the user planned around in the
@@ -1521,8 +1615,13 @@ scaffold; new UI should reach for them before writing anything fresh.
    D7's Ephemeris-tab indicators (Kim's call — an anchor set at tech-add
    would make the Moon's release position depend on which card gets added).
    Kim also set the 10 m/s floor as C5's Δv-gap logging cutoff.
-7. ● **D7 indicator design** — the next conversation before any WP-I code
-   Kim hasn't approved otherwise: what the Moon-phase/heading/impulse
-   indicator looks like, where it lives in the Ephemeris tab, and how the
-   departure-duration offset is presented. D7 builds only after this is
-   sketched with Kim.
+7. **D7 indicator design — settled 2026-07-16, and built the same session**
+   (see D7's done-entry). Kim supplied the widget sketch (phase glyph +
+   relative-speed bar + days-to-leave bar, under Earth's heliocentric-speed
+   text, origin OR destination); the SOI-exit estimator was settled by Node
+   experiment and Kim's quarter-switching rule chose between its two
+   profiles; the relative-speed bar is the Moon's velocity component along
+   EARTH'S heliocentric prograde (the waypoint gizmo's own prograde axis —
+   educational consistency); the glyph is SVG with a half-ellipse
+   terminator (gibbous/crescent capable). WP-I (I1 onward) is now
+   unblocked.
