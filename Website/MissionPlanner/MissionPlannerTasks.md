@@ -55,7 +55,12 @@ Build order: **A → B → C → D → E**, then F/G/H iteratively. A is the
 foundation everything hangs on. B and C only touch a mission tab's innards and
 can run in parallel with D (different files — keep one thread per file, per
 CLAUDE.md's concurrency note). E stitches A+C+D together. F, G, H are
-independent improvements after E.
+independent improvements after E. **WP-I** (added 2026-07-15) is the
+departure-system package — the Moon-Skyhook plotter port — and runs
+I1 → I5 in order; it absorbs F5's departure half and pulls F1's departure
+slot forward (as I5). **D7 precedes WP-I** (Kim, 2026-07-15): it authors the
+freeze-time release anchor that I3 reads. I1/I2 are pure Shared work,
+independent of that semantic, and may run in parallel with D7 if convenient.
 
 ### WP-A — Multi-mission shell (tabs over multiple Worlds)
 
@@ -647,6 +652,18 @@ what's missing is the frozen-plan stage itself and its card.
   the three.js pane" to help meet requirements, but doesn't say what they look
   like. Sketch options with Kim (e.g. a required-v∞ ghost arrow vs the actual
   release arrow) before building. Park until then.
+- [ ] **C5. Hand-off Δv gap: log it; later, correct it in coast.** ★★ —
+  **future refinement (Kim, 2026-07-15).** When the departure leg's delivered
+  hand-off differs from the frozen plan's — in exactly WHEN and HOW the
+  hand-off happened (epoch inside the window, v∞ vector inside tolerance,
+  but not exact) — that difference implies a small Δv cost somewhere
+  downstream. Two steps, both deferred: (1) LOG the implied Δv gap whenever
+  it exceeds a 10 m/s floor (the existing v∞ tolerance doubles as the
+  cutoff — below it, ignore); (2) once the app is more polished, let the gap
+  be "made up somewhere": an explicit course-correction impulse in the COAST
+  phase, rolled into the existing coast-waypoint mechanism (not new
+  machinery), informed/sized by the logged gap. Depends on I3 (needs a real
+  integrated hand-off to measure).
 
 ### WP-D — The Ephemeris tab (the SST port)
 
@@ -961,6 +978,28 @@ World. Source file throughout:
   slides a different chain shape — see marker-card.js's header). Recommend
   shipping the solar-system Ephemeris tab first and treating this as its own
   later package. Decision for Kim.
+- [ ] **D7. Moon indicators in the Ephemeris tab + the freeze-time release
+  anchor.** ★★★ — **now load-bearing; design with Kim, then build BEFORE
+  WP-I** (Kim, 2026-07-15 — upgraded same day from an advisory indicator to
+  the thing that AUTHORS departure timing; see WP-I's timing-model bullet).
+  Since the Moon card is frozen inside a mission, the Ephemeris tab is where
+  a user plans AROUND the Moon. Scope: (1) indicators of the Moon's phase
+  and of its heading/impulse contribution around the intended departure,
+  presented WITH the time-offset for the departure leg's estimated duration
+  (the `departureDefaultSpanSeconds()`-style estimate from the plan's own
+  v∞ — B3's existing machinery) — the Moon is shown where it will actually
+  be at the estimated RELEASE (~30° / ~2 d earlier in its orbit than at the
+  hand-off epoch), not at the tab's clock. Calibration datum: the generic
+  estimate gives ~1.70 d for the Ceres mission vs the skyhook chain's real
+  ~2.56 d flight — a ~0.9 d gap, inside the agreed ±1 d window. (2) The
+  freeze contract gains two fields (decision 5's review applies): the
+  hand-off WINDOW (default ±1 d, agreed 2026-07-15) and the read-only
+  RELEASE ANCHOR (hand-off − the same estimate the indicator presented).
+  Re-planning around a different Moon stays the copy-link → paste-into-
+  Ephemeris → tweak → new-plan flow — never a release-date knob inside a
+  mission. Possible design ingredient: the Moon-Skyhook plotter's "lock
+  Moon phase" scrub behaviour (MSK:1590–1656 — the year slider snaps to
+  equal-elongation dates). Sketch the UI with Kim before building.
 
 ### WP-E — "Start Mission Plan" flow (stitches A+C+D together)
 
@@ -1208,6 +1247,9 @@ World. Source file throughout:
   contract (params on the skyhook/arrival stage, pure update, draw hook) is
   real work. Needs the lunar-skyhook module to grow a geocentric leg — the
   module's header already flags this gap (the perigee-Oberth limitation).
+  **Departure half absorbed into WP-I (2026-07-15)** — I1 ports the physics,
+  I3 gives the departure phase its integrated leg, I4 builds the waypoint
+  UI. What remains of F5 is the ARRIVAL-system half, which waits on H2.
 
 ### WP-G — In-scene interaction in mission tabs
 
@@ -1233,6 +1275,11 @@ World. Source file throughout:
   `buildBodyFrame("Ceres")` etc. (hero sphere, label, lighting, ring as
   applicable), so Arrival can show the destination system. Prerequisite for
   H2 and for the design's "destination body in the main pane".
+  **Deferred (Kim, 2026-07-15)** — not needed for WP-I (the Earth–Moon frame
+  already exists); revisit when H2 gets picked up. Scene-fidelity upgrades to
+  the Earth–Moon frame (textures, SOI shells, node-split orbit arcs,
+  double-click focus — all present in the Moon-Skyhook plotter) are likewise
+  deferred and are NOT part of WP-I.
 - [ ] **H2. A first arrival module.** ★★★ — **decision for Kim.**
   The Arrival button stays disabled until an arrival-capable module exists.
   Options: (a) a minimal "chemical capture burn / intercept check" module now
@@ -1240,6 +1287,154 @@ World. Source file throughout:
   slider, F1's dropdown), then (b) the real Ceres-elevator catch port as
   planned in migration step 4.5. Recommend (a) then (b). 
   - Comment from Kim: How about using the Mars-Phobos skyhook as the first model where catch planning can be structured?
+
+### WP-I — Departure system: carrier chain + integrated geocentric leg (the Moon-Skyhook port)
+
+Added 2026-07-15 from a design conversation with Kim. This package delivers
+"work with the full Earth–Moon system as modelled in the Moon-Skyhook plotter
+inside the Mission tabs," and absorbs F5's departure half. The agreed shape:
+
+- **Carriers vs trajectory.** The departure tech stack is a chain of CARRIER
+  stages — moving platforms that each contribute heading and impulse without
+  yet producing a trajectory. The Moon itself is the top card (~1.02 km/s of
+  geocentric velocity plus position — today invisible, buried inside the
+  skyhook's math), then up to 2 further carriers: the skyhook, and later a
+  tip spin-launcher riding the tether tip (Tip-Spin-Launcher-Calculator's
+  model). A trajectory exists only once something is released.
+- **Kinematic chain.** One serializable data shape — a base body plus a list
+  of rotating elements (pivot on the parent, plane/axis, radius, rotation
+  rate, phase at an epoch) — with one pure Shared evaluator returning
+  position + velocity at any jd by composition. `update()` evaluates it at
+  the release epoch; `draw()` at the live clock, so the physics and the
+  rendered hardware can never disagree. The second-rotor (tip launcher) case
+  is designed in from day one even though its card comes later (I6).
+- **The Moon card is frozen.** Kim considered and discarded a
+  release-date-tweaking knob for putting the Moon somewhere convenient — it
+  would force recomputing the entire downstream trajectory ("messy and slow
+  fast"). Moon-position planning happens in the Ephemeris tab instead (D7's
+  indicators); to re-plan around the Moon, copy the mission link, paste it
+  into the Ephemeris tab, tweak there, and start a new mission plan. The
+  Moon card exists in the stack for clarity and workflow, read-only.
+- **Release is not a card.** It comes into being as soon as the carrier
+  chain can release: adding a skyhook card immediately drafts a trajectory
+  polyline from the default values, live-updating as parameters change; a
+  small tooltip readout at the release point (impulse, plane change,
+  prograde — the waypoint-readout style) appears with it.
+- **Timing model: a hand-off WINDOW plus a fixed release anchor.**
+  (Settled 2026-07-15 — see decision 6; only D7's indicator design remains
+  open, tracked as decision 7. Revised that day in a second pass — replaces a back-solve idea Kim caught
+  as unsound: when the Moon's position significantly shapes the trajectory,
+  a continuously-derived release date is a feedback loop — tuning changes
+  flight time, which slides the release date, which moves the Moon, which
+  changes the trajectory just tuned. Better duration estimates don't fix
+  that, and Oberth-loop / flyby departures blow past any estimate anyway.)
+  The model: (1) the frozen plan carries a hand-off WINDOW — a span around
+  the nominal coast-start epoch, sized at freeze (default to calibrate with
+  a worked example; ±1 d suggested) — and the course check's epoch row
+  becomes "inside the window" (this promotes the existing ±0.25 d point
+  tolerance to a visible plan field; a new frozen-plan field → decision 5's
+  freeze-contract review applies). (2) The release epoch is a READ-ONLY
+  ANCHOR FROZEN INTO THE PLAN at mission creation (third pass, 2026-07-15,
+  Kim — replaces "initialized at tech-add from the tech's default draft,"
+  which would have made the Moon's position at release depend on which card
+  the user happens to add, undermining Ephemeris-tab planning): D7's
+  indicators present the time-offset for the departure leg's estimated
+  duration at planning time (the `departureDefaultSpanSeconds()`-style
+  estimate from the plan's own v∞ — B3's existing machinery), and freeze
+  bakes release anchor = hand-off − that same estimate, alongside the
+  window (±1 d default, agreed 2026-07-15). Tech-add neither sets nor moves
+  the anchor; nothing ever re-derives it — the Moon card shows one
+  unchanging state: exactly the Moon the user planned around in the
+  Ephemeris tab. (3) Every recompute is a single FORWARD
+  pass (release → integrate → compare at the boundary; no fixed-point
+  iteration, no hidden solving). (4) The USER closes the timing loop, same
+  as the spatial loop in coast: the course check reports "hand-off early/
+  late by X," and the user adjusts the setup or goes back to the Ephemeris
+  tab for a different plan. The departure slider's right edge becomes the
+  window (a shaded band) rather than a point. Known accepted limit: an
+  anchor sized by the freeze-time estimate (~days) cannot host a multi-week
+  flyby departure built afterwards in the mission tab — that setup needs a
+  plan made for it (Ephemeris tab), which is correct behaviour. The arrival side
+  gets the mirror shape later (a catch window — relevant to H2's
+  Mars-Phobos-style catch planning).
+- **departure-leg is headless** — no card of its own ("the departure leg
+  includes everything that leads up to the hand-off, so there is no point in
+  having that be a card" — Kim). Its visible output is the drawn polyline,
+  the release tooltip, its events (release, waypoint impulses, SOI exit —
+  the departure slider's real marks at last), and up to 2 waypoint-impulse
+  cards mirroring the coast sidebar's per-waypoint cards.
+- **Aiming lives in the cards.** Each rotating carrier's card carries its
+  own phase slider (the plotter's third slider, relocated in-card); a future
+  tip launcher gets its own, giving two stacked aiming controls. **No assist
+  buttons** — Kim is dubious of assists generally: a good UX should let the
+  user handle trajectories themselves to the point where assists are
+  superfluous. (The plotter's two "lock" toggles are date-scrub conveniences
+  and have no job here with the release date frozen; the equal-phase snap is
+  noted on D7 as a possible indicator ingredient.)
+- **Not in this package:** H1 and any Earth–Moon scene-fidelity work
+  (deferred — see H1's note); the isometric burn-vector editor (still the
+  optional upgrade the inventory lists); a marker on the departure
+  trajectory (still G2).
+
+Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
+
+- [ ] **I1. Pure physics port → Shared.** ★★★
+  The plotter's restricted N-body machinery into a new pure ES module
+  (suggest `Shared/geo-leg.js`; final name at implementer's discretion):
+  `shipAccel`/`addThirdBody`/`integrateTrajectory` (RK4 with the adaptive
+  turn-angle/cislunar step caps — MSK:533–704), `localFrameAt`/
+  `bodyLabelForGM`/`burnEffect` (MSK:743–787), `stateAtLegTime`/
+  `buildMoonEllipseLeg`/`buildIntegratedLeg` + leg helpers (MSK:788–1012).
+  THREE-free: samples stay plain `{r, v, t}` arrays (the plotter's parallel
+  `THREE.Vector3` trail becomes caller-side). The standalone plotter is NOT
+  modified. Node tests pin the port against numbers the plotter's own code
+  produces today (same release state in → same branch/v∞/duration/samples
+  out, for the default scenario and a waypoint-burn scenario).
+- [ ] **I2. Kinematic-chain evaluator → Shared.** ★★
+  The chain data shape and its pure evaluator (see preamble). Node tests:
+  a Moon+skyhook chain reproduces the current `computeRelease` release
+  state exactly; a synthetic two-rotor chain composes position and velocity
+  correctly (tip contribution = vector sum in the tilted plane).
+- [ ] **I3. Module reshape: moon-platform, carrier skyhook, departure-leg.** ★★★
+  The heart of the package. New `modules/moon-platform/` (read-only card:
+  the Moon's heading/impulse readouts at the release epoch; emits the chain
+  base). `lunar-skyhook` becomes a carrier: appends its rotor element; keeps
+  comAlt/topAlt/relAlt; gains the in-card phase slider; DROPS `releaseJd`
+  (the plan's frozen anchor replaces it — see preamble) and its whole
+  patched-conic release chain
+  (replaced by the real integration). New headless `modules/departure-leg/`:
+  accepts the chain packet, reads the release-epoch ANCHOR from the frozen
+  plan (D7's baked field — see the timing-model bullet; read-only, never
+  re-derived), integrates FORWARD with waypoint impulses
+  (cache per (World, stageId) WeakMap as usual; verify interactive
+  responsiveness), emits the hand-off ship-state + events. The course check
+  (frozen-plan) now measures the INTEGRATED hand-off against the plan's
+  window — the shipped preset can finally close its honest v∞ gap with a
+  perigee (Oberth) impulse, or keep showing the true shortfall. Old saves
+  (a lunar-skyhook with releaseJd and no leg stage) must still load. New
+  chain: moon-platform → lunar-skyhook → departure-leg → frozen-plan →
+  transfer-leg. Depends on I1 + I2 + D7 (the anchor it reads is D7's frozen
+  field). Worth Kim's review before merging (this
+  reshapes the mission save format).
+- [ ] **I4. Departure waypoint-impulse UI.** ★★
+  Up to 2 waypoint cards in the departure sidebar (the coast sidebar's
+  stripped per-waypoint pattern), gizmos/arrows/readout boxes in the
+  Earth–Moon frame (the Ephemeris tab's Shared/sim wiring: burn-widget,
+  readout-panes), plus the release-point tooltip readout. Burn axes come
+  from I1's local dynamical frames (prograde means prograde around the
+  leg's own primary — Moon, Earth, or Sun, gated on the leg, not
+  proximity). Depends on I3.
+- [ ] **I5. Carrier add/remove dropdown.** ★★
+  F1's departure slot, pulled forward: an "add technology" affordance in
+  the departure sidebar (the Moon card is fixed; up to 2 carrier cards;
+  removing one re-drafts the trajectory from what remains). Greyed
+  "(future)" options for unbuilt carriers. Depends on I3.
+- [ ] **I6. Tip spin-launcher carrier card.** ★★★ — **later; design first.**
+  The second rotor: arm length, spin rate, plane tilt, its own in-card
+  phase slider; drawn riding the tether tip; exchange receive from
+  Tip-Spin-Launcher-Calculator (F2's pattern). I2's chain shape already
+  carries the rotor — this is the card + draw + exchange work. Depends on
+  I3–I5.
 
 ---
 
@@ -1278,14 +1473,16 @@ scaffold; new UI should reach for them before writing anything fresh.
 
 **From `Calculators/Moon-Skyhook-Trajectory-Plotter/moonSkyhookTrajectory.js` (2318 lines):**
 
-| Section                     | Lines                  | What it is                                                                                        | Task                                            |
-| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Sidebar card structure      | throughout its HTML/JS | the design doc's cited "good example" of a tech card (skyhook geometry + release params)          | F1/F4 reference                                 |
-| Released-ship trajectory    | ~533–704               | restricted N-body geocentric propagation of the released ship                                     | F5 (the physics the lunar-skyhook module lacks) |
-| Waypoint burns (geocentric) | ~705–1201              | in-system waypoint-burn chain — exactly the design's "up to 2 waypoint burns within this system"  | **F5**                                          |
-| Gizmos + arrows + readouts  | ~1202–1277             | waypoint gizmo/arrow wiring in the local frame                                                    | F5                                              |
-| Burn-vector editor          | ~1754–1922             | the isometric 3-axis draggable-arrow burn editor — a strong in-card alternative to numeric fields | F5, G1 (optional upgrade)                       |
-| Waypoint list cards         | ~1923–1961             | its `buildWaypointList` variant                                                                   | F5                                              |
+| Section                     | Lines                  | What it is                                                                                        | Task                                    |
+| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Sidebar card structure      | throughout its HTML/JS | the design doc's cited "good example" of a tech card (skyhook geometry + release params)          | F1/F4 reference, I3                     |
+| Release-state kinematics    | ~398–432, 548–556      | `hookBasis`/`hookDir`/`releaseState` — the tether rotor's geometry (basis, phase, tip velocity)   | I2                                      |
+| Released-ship trajectory    | ~533–704               | restricted N-body geocentric propagation of the released ship                                     | **I1** (was F5's physics half)          |
+| Waypoint burns (geocentric) | ~705–1201              | in-system waypoint-burn chain — exactly the design's "up to 2 waypoint burns within this system"  | **I1** (frames/burnEffect), **I4** (UI) |
+| Gizmos + arrows + readouts  | ~1202–1277             | waypoint gizmo/arrow wiring in the local frame                                                    | I4                                      |
+| Moon-phase / skyhook locks  | ~1590–1656             | date-scrub conveniences: equal-elongation snap; tether phase slaved to the Moon's velocity        | D7 background only                      |
+| Burn-vector editor          | ~1754–1922             | the isometric 3-axis draggable-arrow burn editor — a strong in-card alternative to numeric fields | G1 (optional upgrade)                   |
+| Waypoint list cards         | ~1923–1961             | its `buildWaypointList` variant                                                                   | I4                                      |
 
 **From the scaffold and mockup (patterns to extend or copy):**
 
@@ -1299,6 +1496,7 @@ scaffold; new UI should reach for them before writing anything fresh.
 | `mockups/mock-a-phases.html`                               | tab bar 134–140 · Ephemeris marker card 184–209 · phase bar 217–225 · three sliders 227–266 · departure sidebar 382–427 · coast sidebar 430–463 · arrival sidebar 466–506 · dialog 513–523 · switching JS 525–548 | the agreed look and interaction for every WP; lift its CSS wholesale where it fits   | all UI tasks |
 | `Calculators/Skyhook-Spin-Launcher/skyhookSpinLauncher.js` | receive-banner + Apply mapping                                                                                                                                                                                    | the proven exchange-receive pattern (incl. the `checked`-from-script display gotcha) | F2           |
 | `Calculators/Gravity-gradient-skyhooks/`                   | send-button side                                                                                                                                                                                                  | producer pattern: `calc()` first, then read authoritative fields                     | F3           |
+| `Calculators/Tip-Spin-Launcher-Calculator/`                | README + spinLauncherCalc.js                                                                                                                                                                                      | the tip-rotor model (arm sizing, spin rate, plane tilt) for the second carrier       | I6           |
 | `modules/transfer-leg/transfer-leg.js`                     | whole file (332 lines)                                                                                                                                                                                            | the module template: pure compute + descriptor + card-building `init` + `draw`       | C1, F5, H2   |
 
 ---
@@ -1317,3 +1515,14 @@ scaffold; new UI should reach for them before writing anything fresh.
 5. **E2 freeze contract** — review the frozen-plan param schema when C1/E2
    propose it (it becomes a versioned save format, so it's worth a careful
    look).
+6. **I3 timing model — settled 2026-07-15** (three passes, see WP-I's
+   timing-model bullet): hand-off WINDOW (default ±1 d, agreed) + READ-ONLY
+   release anchor (agreed) FROZEN INTO THE PLAN at creation, authored via
+   D7's Ephemeris-tab indicators (Kim's call — an anchor set at tech-add
+   would make the Moon's release position depend on which card gets added).
+   Kim also set the 10 m/s floor as C5's Δv-gap logging cutoff.
+7. ● **D7 indicator design** — the next conversation before any WP-I code
+   Kim hasn't approved otherwise: what the Moon-phase/heading/impulse
+   indicator looks like, where it lives in the Ephemeris tab, and how the
+   departure-duration offset is presented. D7 builds only after this is
+   sketched with Kim.
