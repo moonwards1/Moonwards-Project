@@ -1,95 +1,84 @@
-/* MissionPlanner/modules/lunar-skyhook — the first technology module.
+/* MissionPlanner/modules/lunar-skyhook — the lunar-skyhook CARRIER module.
  *
- * A gravity-gradient (radial) lunar skyhook: a tether whose centre of mass
- * rides a circular lunar orbit, rotating at that orbit's rate, releasing a
- * payload from a point along the tether. The release physics is the
- * Moon-Skyhook-Trajectory-Plotter's `releaseState()`/`computeReadouts()`
- * math, reduced to the patched-conic chain the mission profile needs:
+ * Reshaped by task I3 (WP-I): the departure tech stack is a chain of CARRIER
+ * stages — moving platforms that each contribute heading and impulse without
+ * yet producing a trajectory — and this module is the first rotating carrier
+ * in it. A gravity-gradient (radial) lunar skyhook: a tether whose centre of
+ * mass rides a circular lunar orbit, rotating at that orbit's rate. What it
+ * does now is purely kinematic:
  *
- *   1. Tether kinematics: the CoM's circular rate omega = sqrt(GM_M/rCom^3);
- *      the release point at radius rRel moves at vRel = omega * rRel.
- *   2. Moon escape: v-infinity leaving the Moon's SOI is the hyperbolic
- *      excess of vRel at rRel (a diagnostic if bound). Its DIRECTION is the
- *      tether-tangential direction at the release phase — the plotter's
- *      hookDir/prograde convention, phase 0 pointing the tether at ecliptic
- *      longitude 0, release velocity 90 deg ahead of it — with the Moon's
- *      ~1.5 deg equatorial tilt and the hyperbola's asymptote deflection
- *      both ignored. The phase is therefore the AIMING control: it chooses
- *      where the lunar v-infinity points in the ecliptic plane, exactly as
- *      it does (with more fidelity) in the Moon-Skyhook plotter.
- *   3. Earth escape: the geocentric velocity is the vector sum of the
- *      Moon's geocentric velocity and the lunar v-infinity; the Earth-escape
- *      v-infinity is the hyperbolic excess of its magnitude at the Moon's
- *      distance (a diagnostic if bound), along the geocentric velocity
- *      direction (asymptote deflection again ignored).
- *   4. The emitted ship-state is the standard "v-infinity at the planet"
- *      idealization the transfer-leg compute core itself uses: Earth's
- *      heliocentric state at the release date, plus the Earth-escape
- *      v-infinity along that direction.
+ *   consume the upstream carrier-chain packet (moon-platform emits the
+ *   base), APPEND ITS OWN ROTOR ELEMENT (Shared/kinematic-chain.js shape:
+ *   ecliptic plane, radius = the release point's lunar-orbit radius, rate =
+ *   the CoM orbit's angular velocity, phase pinned at the mission's release
+ *   anchor), and emit the extended chain.
  *
- * What this still cannot capture from the real plotter: the geocentric leg
- * itself — in particular an Oberth burn at a low-Earth perigee, which is how
- * a plotted mission cheaply amplifies v-infinity. A departure burn here
- * applies at the patched heliocentric state, with no Oberth gain, so burn
- * numbers tuned in the plotters land near, but not on, this model.
+ * Everything that used to be here about ESCAPING — the patched-conic release
+ * chain (lunar v∞ → vector-sum geocentric velocity → Earth-escape v∞ →
+ * idealized heliocentric hand-off), its SOI coast milestones, and the
+ * releaseJd param that dated it — is GONE, replaced by the real thing: the
+ * headless departure-leg module downstream evaluates the chain at the
+ * release anchor and integrates the released ship with restricted N-body
+ * gravity (Shared/geo-leg.js). The release EPOCH is no longer a knob on this
+ * card at all: it is the plan's read-only release anchor, frozen at mission
+ * creation (frozen-plan.js's releaseAnchorFor — WP-I's timing model), which
+ * this module reads only to pin its rotor's phase (and to draw the tether at
+ * the right angle).
+ *
+ * The AIMING control stays here, though, as WP-I prescribes: the release
+ * phase is this card's own in-card slider (the plotter's third slider,
+ * relocated). Phase 0 points the tether at ecliptic longitude 0; the tip
+ * velocity leads it by 90°; the Moon's ~1.5° equatorial tilt is still
+ * ignored (rotor plane = ecliptic).
  *
  * update() is pure (no DOM, no THREE) so the whole chain is Node-testable;
  * the view layer lives in the optional hooks below it (`init` builds the
  * sidebar card, `draw` renders the tether in the "body:Earth-Moon" frame),
  * which only the browser shell calls.
  *
- * Imports from ../../../Shared/ and ../../core/ — this folder breaks if
- * moved without them coming along.
+ * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this
+ * folder breaks if moved without them coming along.
  */
 /* global THREE */
 
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
-import { LunarEphemeris } from "../../../Shared/lunar-ephemeris.js";
 import { PacketTypes } from "../../../Shared/exchange-types.js";
-import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
+import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
-var LE = LunarEphemeris;
 var MOON = systems.get("Moon");
-var EARTH = systems.get("Earth");
-var SUN = systems.get("Sun");
 var GM_M = MOON.GM, R_M = MOON.radius;
-var GM_E = EARTH.GM;
-var GM_SUN = SUN.GM;
 var DAY = 86400;
 
 // Defaults are the worked-example mission's values (Kim's Moon->Ceres 2031
-// design): release from the tether top, phase aimed so the lunar v-infinity
-// leaves near Earth's heliocentric prograde on the release date.
+// design): release from the tether top, phase aimed so the released ship
+// leaves near Earth's heliocentric prograde. (releaseJd is gone — the plan's
+// frozen release anchor dates the release now; old saves that still carry it
+// are ignored here except as releaseAnchorFor's legacy fallback.)
 export var defaultParams = {
 	comAlt: 275e3,       // m — centre-of-mass altitude (sets the orbit + rotation rate)
 	topAlt: 6000e3,      // m — tether top altitude
 	relAlt: 6000e3,      // m — release-point altitude along the tether
-	releasePhaseDeg: 92, // deg — tether phase at release (the aiming control; see header)
-	releaseJd: 2463220.75   // 2031-12-20 06:00 UT
+	releasePhaseDeg: 92  // deg — tether phase at release (the aiming control; see header)
 };
 
-function isoOf(jd) {
-	var d = O.dateFromJulian(jd);
-	return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
-}
-
-// The full release chain for one set of params. Pure; returns
-// { ok: true, ...figures } or { ok: false, diagnostic }. Exported for Node
-// tests and for the sidebar card's readouts.
-export function computeRelease(params) {
+// The tether's own kinematics for one set of params — geometry validation,
+// rotation rate, release speed and the local lunar-escape margin (the card's
+// readouts; the real escape/hand-off physics lives in departure-leg). Pure;
+// returns { ok: true, ...figures } or { ok: false, diagnostic }. Exported
+// for Node tests and the sidebar card.
+export function tetherKinematics(params) {
 	var p = params || {};
-	var comAlt = p.comAlt, topAlt = p.topAlt, relAlt = p.relAlt, releaseJd = p.releaseJd;
+	var comAlt = p.comAlt, topAlt = p.topAlt, relAlt = p.relAlt;
 	var phaseDeg = (p.releasePhaseDeg === undefined || p.releasePhaseDeg === null) ? 0 : p.releasePhaseDeg;
 
-	if (!(isFinite(comAlt) && comAlt > 0 && isFinite(topAlt) && isFinite(relAlt) &&
-	      isFinite(releaseJd) && isFinite(phaseDeg))) {
+	if (!(isFinite(comAlt) && comAlt > 0 && isFinite(topAlt) && isFinite(relAlt) && isFinite(phaseDeg))) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The skyhook needs finite CoM / top / release altitudes, a release phase, and a release date.",
+			"The skyhook needs finite CoM / top / release altitudes and a release phase.",
 			{ values: { comAlt: comAlt, topAlt: topAlt, relAlt: relAlt,
-			            releasePhaseDeg: p.releasePhaseDeg, releaseJd: releaseJd } }) };
+			            releasePhaseDeg: p.releasePhaseDeg } }) };
 	}
 	if (topAlt <= comAlt) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
@@ -120,75 +109,35 @@ export function computeRelease(params) {
 			       " km (or lower the CoM to spin the tether faster)." }) };
 	}
 
-	// Moon's geocentric state at release (LunarEphemeris works in km, km/s).
-	var ms = LE.moonState(releaseJd);
-	var rMoon = O.vScale(ms.r, 1e3), vMoon = O.vScale(ms.v, 1e3);
-	var moonDist = O.vMag(rMoon);
-
-	// The lunar v-infinity leaves along the tether-tangential direction at
-	// the release phase (the plotter's hookDir prograde convention, tilt
-	// ignored): tether points at (cos phi, sin phi, 0), tip moves 90 deg
-	// ahead at (-sin phi, cos phi, 0). The geocentric velocity is the
-	// VECTOR sum — this is the aiming that phase controls.
-	var phi = phaseDeg * Math.PI / 180;
-	var rHat = [Math.cos(phi), Math.sin(phi), 0];
-	var tHat = [-Math.sin(phi), Math.cos(phi), 0];
-	var vGeoVec = O.vAdd(vMoon, O.vScale(tHat, vInfMoon));
-	var vGeo = O.vMag(vGeoVec);
-	var vEscEarth = O.escapeVelocity(GM_E, moonDist);
-	var vInfEarth = O.hyperbolicExcess(vGeo, GM_E, moonDist);
-
-	if (vInfEarth <= 0) {
-		return { ok: false, diagnostic: makeDiagnostic("bound-at-earth",
-			"Geocentric speed at the Moon's distance is " + Math.round(vGeo) +
-			" m/s, below Earth escape there (" + Math.round(vEscEarth) +
-			" m/s) — the payload stays bound to Earth.",
-			{ values: { vGeo: vGeo, vEscEarth: vEscEarth, vInfMoon: vInfMoon,
-			            releasePhaseDeg: phaseDeg },
-			  fix: "Aim closer to the Moon's own direction of motion (release phase), " +
-			       "raise the release altitude, or lower the CoM to spin the tether faster." }) };
-	}
-
-	// Heliocentric departure state: Earth's state plus the escape v-infinity
-	// along the geocentric velocity direction (asymptote deflection ignored
-	// — see the header comment).
-	var earth = Frames.bodyHelioState("Earth", releaseJd);
-	var vHelio = O.vAdd(earth.v, O.vScale(O.vUnit(vGeoVec), vInfEarth));
-
-	// Timeline milestones for the departure slider (task B3): the ship's
-	// flight from release out to the heliocentric hand-off, as two-body coast
-	// times along the SAME patched conics this release physics already uses —
-	// so they add no fidelity the header doesn't already claim, they only date
-	// the leg. (1) Moon-SOI exit: coast on the lunar escape hyperbola (the
-	// release point is its periapsis: velocity is purely tangential) out to
-	// the Moon's Laplace SOI. (2) Earth-SOI exit → heliocentric: coast on the
-	// geocentric escape hyperbola from the Moon's distance out to Earth's SOI.
-	// Either is null (and simply omitted downstream) if the geometry doesn't
-	// yield an outbound crossing.
-	var soiMoon = O.sphereOfInfluence(moonDist, GM_M, GM_E);
-	var dtMoonSoi = O.coastTimeToRadius(GM_M, O.vScale(rHat, rRel), O.vScale(tHat, vRel), soiMoon);
-	var soiEarth = O.sphereOfInfluence(O.vMag(earth.r), GM_E, GM_SUN);
-	var dtEarthSoi = O.coastTimeToRadius(GM_E, rMoon, vGeoVec, soiEarth);
-	var moonSoiJd = (dtMoonSoi != null && isFinite(dtMoonSoi)) ? releaseJd + dtMoonSoi / DAY : null;
-	var earthSoiJd = (dtEarthSoi != null && isFinite(dtEarthSoi)) ? releaseJd + dtEarthSoi / DAY : null;
-
 	return {
 		ok: true,
 		omega: omega, period: 2 * Math.PI / omega,
 		rCom: rCom, rRel: rRel, rTop: rTop,
 		vRel: vRel, vEscMoon: vEscMoon, vInfMoon: vInfMoon,
-		vGeo: vGeo, vInfEarth: vInfEarth,
-		releasePhaseDeg: phaseDeg, releaseJd: releaseJd,
-		moonSoiJd: moonSoiJd, earthSoiJd: earthSoiJd,
-		r: earth.r.slice(), v: vHelio
+		releasePhaseDeg: phaseDeg
 	};
 }
 
-// Last computed figures per (World, stage), for the sidebar card (populated
-// by update(); plain data, so Node sees it too). Keyed by World first because
-// N missions coexist (task A1) and their Worlds reuse stage ids like "stg-1"
-// — a stageId-only cache would let one mission's recompute clobber another's
-// readouts. WeakMap, so a closed mission's entries go with its World.
+// This carrier's rotor element (Shared/kinematic-chain.js shape) for the
+// given kinematics and release anchor: ecliptic plane (normal +z, phase 0
+// along +x — the plotter's hookDir convention), phase pinned at the anchor
+// so evaluating the chain there lands exactly on releasePhaseDeg. Exported
+// for Node tests.
+export function rotorFor(kin, anchorJd) {
+	return {
+		normal: [0, 0, 1], ref: [1, 0, 0],
+		radius: kin.rRel, rate: kin.omega,
+		phase0: kin.releasePhaseDeg * Math.PI / 180,
+		epoch: anchorJd
+	};
+}
+
+// Last computed kinematics per (World, stage), for the sidebar card
+// (populated by update(); plain data, so Node sees it too). Keyed by World
+// first because N missions coexist (task A1) and their Worlds reuse stage
+// ids like "stg-1" — a stageId-only cache would let one mission's recompute
+// clobber another's readouts. WeakMap, so a closed mission's entries go with
+// its World.
 var lastByWorld = new WeakMap();
 export function physicsFor(world, stageId) {
 	var m = lastByWorld.get(world);
@@ -228,29 +177,35 @@ export default {
 	id: "lunar-skyhook",
 	title: "Lunar skyhook",
 	attachesTo: "Moon",
-	accepts: [],
-	emits: ["ship-state"],
+	accepts: ["carrier-chain"],
+	emits: ["carrier-chain"],
 	rendersIn: ["body:Earth-Moon"],
 
-	update: function (ctx) {
+	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
-		var phys = computeRelease(params);
+		var phys = tetherKinematics(params);
 		rememberPhysics(ctx.world, ctx.stageId, phys);
 		if (!phys.ok) { return phys.diagnostic; }
 
-		var packet = PacketTypes.make("ship-state",
-			{ r: phys.r, v: phys.v, jd: phys.releaseJd, frame: "helio", dvUsed: 0 },
-			{ tool: "mission-planner/lunar-skyhook", label: "skyhook release", iso: isoOf(phys.releaseJd) });
+		// The rotor's phase is pinned at the mission's release anchor —
+		// moon-platform upstream already diagnosed a missing anchor, but this
+		// module may also be exercised bare (tests, future profiles), so it
+		// carries the same check rather than assuming.
+		var anchorJd = releaseAnchorFor(ctx.world);
+		if (anchorJd === null) {
+			return makeDiagnostic("no-release-anchor",
+				"This mission has no release anchor — no frozen flight plan (or legacy " +
+				"release date) fixes when the carrier chain releases.",
+				{ fix: "Start missions from the Ephemeris tab (Start Mission Plan bakes the anchor)." });
+		}
 
-		// release + the flight milestones (task B3): the ship's flight, which
-		// is what the departure slider scales. Nothing before release (still on
-		// the tether) or after the heliocentric hand-off belongs on it.
-		var events = [{ jd: phys.releaseJd,
-		                label: "Skyhook release — v∞ " + (phys.vInfEarth / 1000).toFixed(2) + " km/s" }];
-		if (phys.moonSoiJd) { events.push({ jd: phys.moonSoiJd, label: "Moon SOI exit" }); }
-		if (phys.earthSoiJd) { events.push({ jd: phys.earthSoiJd, label: "Earth SOI exit → heliocentric" }); }
-
-		return { packet: packet, events: events };
+		var chain = {
+			base: input.data.base,
+			rotors: (input.data.rotors || []).concat([rotorFor(phys, anchorJd)])
+		};
+		var packet = PacketTypes.make("carrier-chain", chain,
+			{ tool: "mission-planner/lunar-skyhook", label: "carrier chain + skyhook rotor" });
+		return { packet: packet };
 	},
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
@@ -258,7 +213,16 @@ export default {
 	// Sidebar card. ctx = { world, stageId, panelHost, onResult, exchange }.
 	init: function (ctx) {
 		var host = ctx.panelHost;
-		var self = this;
+
+		function param(name) {
+			var stage = ctx.world.getStage(ctx.stageId);
+			var merged = Object.assign({}, defaultParams, stage ? stage.params : {});
+			return merged[name];
+		}
+		function setParam(name, value, setOpts) {
+			var patch = {}; patch[name] = value;
+			ctx.world.set({ stage: ctx.stageId, params: patch }, setOpts);
+		}
 
 		function numRow(label, unit, value, step, commit) {
 			var row = document.createElement("div"); row.className = "mp-inrow";
@@ -276,37 +240,36 @@ export default {
 			return inp;
 		}
 
-		function param(name) {
-			var stage = ctx.world.getStage(ctx.stageId);
-			var merged = Object.assign({}, defaultParams, stage ? stage.params : {});
-			return merged[name];
-		}
-		function setParam(name, value) {
-			var patch = {}; patch[name] = value;
-			ctx.world.set({ stage: ctx.stageId, params: patch });
-		}
-
 		numRow("CoM altitude", "km", param("comAlt") / 1e3, 25,
 			function (v) { setParam("comAlt", v * 1e3); });
 		numRow("top altitude", "km", param("topAlt") / 1e3, 100,
 			function (v) { setParam("topAlt", v * 1e3); });
 		numRow("release altitude", "km", param("relAlt") / 1e3, 25,
 			function (v) { setParam("relAlt", v * 1e3); });
-		numRow("release phase", "deg", param("releasePhaseDeg"), 1,
-			function (v) { setParam("releasePhaseDeg", v); });
 
-		// Release date (whole days; finer timing waits for comply mode).
+		// The in-card release-phase slider (WP-I: "aiming lives in the cards" —
+		// the plotter's third slider, relocated). Drag = transient sets (live
+		// trajectory redraft, undo-coalescible); release commits.
 		var row = document.createElement("div"); row.className = "mp-inrow";
-		var lab = document.createElement("label"); lab.textContent = "release date"; row.appendChild(lab);
-		var dateInp = document.createElement("input"); dateInp.type = "date";
-		var d0 = O.dateFromJulian(param("releaseJd"));
-		dateInp.value = d0.Y + "-" + String(d0.Mo).padStart(2, "0") + "-" + String(d0.D).padStart(2, "0");
-		row.appendChild(dateInp); host.appendChild(row);
-		dateInp.addEventListener("change", function () {
-			var parts = dateInp.value.split("-");
-			if (parts.length === 3) {
-				setParam("releaseJd", O.julianDate(+parts[0], +parts[1], +parts[2], 6, 0, 0));
-			}
+		var lab = document.createElement("label"); lab.textContent = "release phase"; row.appendChild(lab);
+		var wrap = document.createElement("span"); wrap.className = "mp-phase-wrap";
+		var slider = document.createElement("input");
+		slider.type = "range"; slider.min = 0; slider.max = 360; slider.step = 1;
+		slider.value = param("releasePhaseDeg");
+		wrap.appendChild(slider);
+		var readout = document.createElement("span"); readout.className = "mp-unit";
+		readout.textContent = Math.round(param("releasePhaseDeg")) + "°";
+		wrap.appendChild(readout);
+		row.appendChild(wrap); host.appendChild(row);
+		slider.addEventListener("input", function () {
+			var v = parseFloat(slider.value);
+			if (!isFinite(v)) { return; }
+			readout.textContent = Math.round(v) + "°";
+			setParam("releasePhaseDeg", v, { transient: true });
+		});
+		slider.addEventListener("change", function () {
+			var v = parseFloat(slider.value);
+			if (isFinite(v)) { setParam("releasePhaseDeg", v); }
 		});
 
 		var out = document.createElement("div"); out.className = "mp-readouts";
@@ -318,8 +281,7 @@ export default {
 			out.innerHTML = "";
 			[["release speed", Math.round(phys.vRel) + " m/s"],
 			 ["rotation period", (phys.period / 3600).toFixed(2) + " h"],
-			 ["v∞ at Moon SOI", Math.round(phys.vInfMoon) + " m/s"],
-			 ["v∞ at Earth SOI", (phys.vInfEarth / 1000).toFixed(2) + " km/s"]
+			 ["v∞ at Moon SOI", Math.round(phys.vInfMoon) + " m/s"]
 			].forEach(function (pair) {
 				var r = document.createElement("div"); r.className = "mp-row";
 				var k = document.createElement("span"); k.className = "mp-k"; k.textContent = pair[0];
@@ -345,11 +307,13 @@ export default {
 		view.group.add(circleLine(rCom, 0xffd24a, 0.8));
 
 		// Tether orientation: rotating at omega, at the release phase on the
-		// release date. Drawn in the ecliptic plane — the Moon's ~1.5 deg
+		// plan's release anchor (drawn static at the phase itself if no anchor
+		// resolves). Drawn in the ecliptic plane — the Moon's ~1.5 deg
 		// equatorial tilt is a visual nicety the scaffold skips.
 		var omega = O.angularVelocity(GM_M, R_M + params.comAlt);
+		var anchorJd = releaseAnchorFor(snap.world);
 		var phase = (params.releasePhaseDeg * Math.PI / 180) +
-			omega * (snap.world.jd - params.releaseJd) * DAY;
+			(anchorJd !== null ? omega * (snap.world.jd - anchorJd) * DAY : 0);
 		var dir = new THREE.Vector3(Math.cos(phase), Math.sin(phase), 0);
 		view.group.add(new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints(

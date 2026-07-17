@@ -1472,7 +1472,7 @@ inside the Mission tabs," and absorbs F5's departure half. The agreed shape:
 
 Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
 
-- [ ] **I1. Pure physics port → Shared.** ★★★
+- [x] **I1. Pure physics port → Shared.** ★★★
   The plotter's restricted N-body machinery into a new pure ES module
   (suggest `Shared/geo-leg.js`; final name at implementer's discretion):
   `shipAccel`/`addThirdBody`/`integrateTrajectory` (RK4 with the adaptive
@@ -1484,12 +1484,86 @@ Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
   modified. Node tests pin the port against numbers the plotter's own code
   produces today (same release state in → same branch/v∞/duration/samples
   out, for the default scenario and a waypoint-burn scenario).
-- [ ] **I2. Kinematic-chain evaluator → Shared.** ★★
-  The chain data shape and its pure evaluator (see preamble). Node tests:
-  a Moon+skyhook chain reproduces the current `computeRelease` release
-  state exactly; a synthetic two-rotor chain composes position and velocity
-  correctly (tip contribution = vector sum in the tilted plane).
-- [ ] **I3. Module reshape: moon-platform, carrier skyhook, departure-leg.** ★★★
+  **Done 2026-07-16.** `Shared/geo-leg.js` (~430 lines), ported as close to
+  verbatim as purity allows. Deliberate differences, each documented in its
+  header: THREE-free (no `pts` polyline / `moonRelPoints` — callers rebuild
+  render points from samples + the exported `moonGeoPos`;
+  `legRenderPointAtDistance`, pure render interpolation for the drag gizmo,
+  stayed behind with its THREE points, while its pure siblings
+  `distanceAlongLegToTime`/`timeToDistanceAlongLeg` came across), and
+  `lunarInclination`'s reference plane became a PARAMETER
+  (`opts.moonPlaneNormal`, default the ecliptic pole) since the plotter
+  measures against its own skyhook's plane — tool state a shared module
+  can't know; I2's kinematic chain will supply the tech's real normal.
+  Also exports the constants (`SOI_MOON`/`SOI_EARTH`, computed from masses
+  with the plotter's exact expressions), the ephemeris plumbing
+  (`earthHelio`, `moonGeoPos/Vel`, `sunGeoPos`), `conicPeriod`,
+  `firstApsisTime`/`defaultWaypointTime`/`WP_DEFAULT_DIST_M`.
+  **Port proven BIT-EXACT against the plotter's own code**: the relevant
+  functions were sliced verbatim from a verified-complete snapshot of
+  moonSkyhookTrajectory.js into a scratch harness (THREE.Vector3 stubbed
+  data-only; `hookPlaneNormal` stubbed to the ecliptic pole to match the
+  port's default) and both implementations run side by side on four
+  trajectory scenarios — the preset-like escape release (orange, dives past
+  Earth, v∞ 5.483 km/s, 296 samples, 31.855 d to the 0.1 AU cutoff), a
+  bound-to-Earth start (green, closes to 165 km after one 100,000 km
+  orbit), a Moon impact, and a Moon-bound lunar orbit (moon branch,
+  1.02 periods, apsides 3261.4/3266.8 km) — plus `buildIntegratedLeg`/
+  `buildMoonEllipseLeg` wrappers, `stateAtLegTime` at edges/samples/
+  mid-times, `burnEffect` in all three local frames, `localFrameAt`
+  gating, the distance/time helpers, apsis/waypoint defaults, and the SOI
+  constants: identical to the last bit everywhere (branch, impact,
+  duration, v∞, inclinations, every sample's r AND v; max drift 0.0).
+  The committed suite (`Shared/tests/geo-leg.test.js`, 13 tests) pins that
+  comparison run's figures — its header explains the provenance and what a
+  future drift means — plus invariants: the ≤~2°-turn-per-step sampling
+  rule across the whole escape, the deliberate 1.02-period green overshoot
+  (first cut of the closure test measured leg-END closure and failed
+  honestly against that overshoot; fixed to measure closure AT one period,
+  165 km on a 100,000 km orbit), impact naming both ways, plane-change/
+  prograde burn readouts, and distance↔time round-trips. All 180 Node
+  tests green (every suite in the repo). No browser surface until I3
+  wires a module to it — nothing to verify in-page yet.
+- [x] **I2. Kinematic-chain evaluator → Shared.** ★★
+  **Done 2026-07-16.** `Shared/kinematic-chain.js`: a chain is plain,
+  serializable data — `{ base: "Moon"|"Earth", rotors: [{ normal, ref,
+  radius, rate, phase0, epoch }, ...] }` — and `evaluateChain(chain, jd)` is
+  the one pure evaluator, composing the base body's own geocentric ephemeris
+  state with each rotor's uniform circular motion in turn (each pivoting on
+  whatever the chain has accumulated so far). Composition is a plain vector
+  sum, not a rotating-frame transform: every rotor's plane is fixed in the
+  same non-rotating, ecliptic-aligned axes the rest of `Shared/` already uses
+  (geo-leg.js's frames), so nothing here needs Coriolis/centrifugal terms —
+  exactly the assumption lunar-skyhook.js's inline tether kinematics and the
+  plotter's `hookBasis` already made. `planeBasis(normal, ref)` builds each
+  rotor's orthonormal in-plane basis (e1 = `ref` projected orthogonal to
+  `normal`, normalized; e2 = `normal x e1`), so phase 0 points along `ref`'s
+  in-plane component and phase advances toward e2. `baseState(name, jd)` is
+  the small base-body resolver (Moon via `LunarEphemeris`, Earth as the
+  geocentric origin — the only two the departure system needs today; add
+  more as chains need them). Evaluating at `jd === rotor.epoch` reduces
+  exactly to `phase0` with no drift term, so a rotor whose phase is pinned
+  at a specific date never needs the caller to fold one in.
+  **Node-tested** (`Shared/tests/kinematic-chain.test.js`, 6 tests): a
+  Moon+skyhook chain — built from `lunar-skyhook.js`'s own `computeRelease`
+  output (`rRel`, `omega`, `releasePhaseDeg`, `releaseJd`), same ecliptic-
+  plane convention (`normal:[0,0,1]`, `ref:[1,0,0]`) — reproduces the release
+  kinematics `computeRelease` computes inline (Moon's geocentric state plus
+  the tether-tangential `rRel`/`vRel` kick) to within floating-point
+  tolerance; a synthetic two-rotor chain (an ecliptic-plane rotor plus a
+  TILTED-plane "tip launcher" rotor riding its tip) confirms the composition
+  is the vector sum of both rotors' independently-hand-computed
+  contributions (caught one test-authoring bug along the way: asserting
+  position/velocity to 1e-9 m tolerance after a `jd = JD + dt/86400` round
+  trip is tighter than a Julian date near 2.46e6 can represent — double
+  precision loses ~1e-6 s of a 37 s offset, a sub-micrometre wobble at this
+  problem's scales; loosened to 1e-3 m / 1e-6 m/s, still far tighter than
+  anything a real bug would hide within); plus `planeBasis`/`baseState`
+  sanity checks (an unknown base body throws) and the zero-rotor identity
+  case. All 185 Node tests green (5 new here, one incidental `README.md`
+  fix: added the missing `geo-leg.js` entry alongside this one). No browser
+  surface yet — nothing wires this into a module until I3.
+- [x] **I3. Module reshape: moon-platform, carrier skyhook, departure-leg.** ★★★
   The heart of the package. New `modules/moon-platform/` (read-only card:
   the Moon's heading/impulse readouts at the release epoch; emits the chain
   base). `lunar-skyhook` becomes a carrier: appends its rotor element; keeps
@@ -1510,6 +1584,61 @@ Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
   transfer-leg. Depends on I1 + I2 + D7 (the anchor it reads is D7's frozen
   field). Worth Kim's review before merging (this
   reshapes the mission save format).
+  **Done 2026-07-16.** All three modules landed, plus the plumbing the
+  preamble prescribes — **awaiting Kim's review of the save-format reshape**:
+  - **Packet + anchor + window.** New `carrier-chain` packet type
+    (`{ base, rotors }`, exchange-types.js) carries I2's chain between
+    stages. The read-only anchor lives behind ONE lookup,
+    frozen-plan.js's exported `releaseAnchorFor(world)` (plan's
+    `releaseAnchorJd` → plan's `departure.jd` (pre-D7 saves) → any stage's
+    legacy `releaseJd` (pre-I3 saves) → null, diagnosed at the top of the
+    stack); nothing ever writes it outside freeze. The course check's epoch
+    row now tests against the plan's `handoffWindowDays` (±1 d default —
+    the old fixed EPOCH_TOL_DAYS 0.25 is gone; the row carries `window` for
+    C2's future band rendering) and the epoch warning names the window.
+  - **moon-platform**: read-only top card (anchor date, geocentric
+    distance/speed, speed along Earth's heliocentric prograde — D7's
+    framing); emits the chain base. **lunar-skyhook**: pure carrier —
+    validates geometry (`tetherKinematics`; bound-at-moon still diagnosed
+    early with its computed fix), appends its rotor (`rotorFor`: ecliptic
+    plane, phase pinned at the anchor), in-card phase slider (transient
+    sets while dragging), releaseJd param + the whole patched-conic chain
+    deleted. **departure-leg**: headless (`plainCard`, diagnostics only) —
+    evaluates the chain at the anchor, integrates forward (geo-leg RK4,
+    5.6 ms/leg so slider-drag recompute is effortless), waypoint impulses
+    in each leg's own local frame (the Oberth pattern now expressible),
+    flight TRUNCATED at Earth-SOI exit = the hand-off (samples beyond
+    belong to the coast), emits the helio hand-off ship-state
+    (Frames.bodyHelioState lift — the same Earth model the compliance
+    comparison uses) + events (release, impulses, Moon SOI exit, hand-off —
+    the departure slider's real marks); diagnostics: impact,
+    bound-no-handoff, no-carrier (rotor-less chain, I5's
+    removed-last-carrier state), waypoint-outside-leg, no-release-anchor.
+  - **Save format v2 + migration.** WORLD_VERSION bumped to 2;
+    deserializeWorld migrates v1 in place (inserts moon-platform before /
+    departure-leg after each lunar-skyhook, fresh ids, params — including
+    the legacy releaseJd — untouched), so every load path (localStorage,
+    share links, preset) migrates through the one choke point. Verified
+    end-to-end in Node AND live in the browser: a v1 save loads, anchors at
+    its plan's departure.jd, integrates, and honestly reports its hand-off
+    2.6 d late (outside the window) while the frozen coast still arrives.
+  - **Preset rebaked** (5 stages, v2): anchor 2463218.5467 = hand-off −
+    the D7 estimate for the committed 6.55 km/s (dive-in, 2.2033 d), window
+    ±1 d, clock opens at the anchor. Phase 92 kept: the real integration
+    delivers v∞ 5.02 km/s, 9.6° off-aim, hand-off +0.51 d — INSIDE the
+    window — so the shipped warnings are vinf-mismatch + aim-mismatch only,
+    and closing the gap (a perigee Oberth impulse, I4's UI) is the teaching
+    exercise. Old reference release (at the old epoch, phase 92) reproduces
+    I1's pinned scenario exactly (v∞ 5.483, SOI exit +2.59 d).
+  - Tests 185 → **192 green** (modules.test.js rewritten around the chain +
+    migration; frozen-plan.test.js gains window + releaseAnchorFor
+    coverage; kinematic-chain.test.js's reference construction inlined,
+    dropping its backwards import of the module). Browser-verified via the
+    preview pane: cards render, the phase slider live-recomputes the whole
+    chain (6.55 → 4.72 km/s at phase 120, matching the Node scan), the
+    flight polyline draws truncated at the hand-off, events/slider marks
+    populate, console clean. (Pane screenshots timed out — a capture-tool
+    quirk; geometry verified structurally by instrumenting THREE.Line.)
 - [ ] **I4. Departure waypoint-impulse UI.** ★★
   Up to 2 waypoint cards in the departure sidebar (the coast sidebar's
   stripped per-waypoint pattern), gizmos/arrows/readout boxes in the

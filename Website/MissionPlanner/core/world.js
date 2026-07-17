@@ -51,7 +51,51 @@
 // from inside update()" is enforced rather than merely documented.
 
 export const WORLD_KIND = "moonwards-world";
-export const WORLD_VERSION = 1;
+export const WORLD_VERSION = 2;
+
+// ---- saved-mission migrations ----------------------------------------------
+// Version 2 (task I3, WP-I): the departure system became a CARRIER CHAIN —
+// profiles that used to read [lunar-skyhook → …] now read [moon-platform →
+// lunar-skyhook → departure-leg → …] (the skyhook stopped emitting a
+// ship-state and emits a carrier-chain rotor instead; the new headless
+// departure-leg integrates the released flight and emits the hand-off). A v1
+// save's profile therefore no longer type-checks stage-to-stage without the
+// two new stages, so migration inserts them around each lunar-skyhook:
+// moon-platform immediately before, departure-leg immediately after, with
+// fresh never-used ids. Everything else — including the skyhook's legacy
+// releaseJd param, which the release-anchor lookup keeps honouring as a
+// last-resort fallback (frozen-plan.js's releaseAnchorFor) — passes through
+// untouched, per the always-storable rule.
+//
+// This is the one place core code knows module ids by name; it is DATA
+// migration (a save-format fact), not registry validation — deserializeWorld
+// still never checks moduleIds for existence.
+function migrateV1toV2(saved) {
+	var out = structuredClone(saved);
+	out.version = 2;
+	if (!Array.isArray(out.stages)) { return out; }   // malformed; validation below rejects it
+
+	var maxNum = 0;
+	out.stages.forEach(function (s) {
+		var m = s && typeof s.id === "string" ? /^stg-(\d+)$/.exec(s.id) : null;
+		if (m) { maxNum = Math.max(maxNum, parseInt(m[1], 10)); }
+	});
+	var next = Math.max(maxNum + 1, typeof out.nextStage === "number" ? out.nextStage : 1);
+
+	var stages = [];
+	out.stages.forEach(function (s) {
+		if (s && s.moduleId === "lunar-skyhook") {
+			stages.push({ id: "stg-" + (next++), moduleId: "moon-platform", params: {} });
+			stages.push(s);
+			stages.push({ id: "stg-" + (next++), moduleId: "departure-leg", params: { waypoints: [] } });
+		} else {
+			stages.push(s);
+		}
+	});
+	out.stages = stages;
+	out.nextStage = next;
+	return out;
+}
 
 export function createWorld(opts) {
 	var o = opts || {};
@@ -243,6 +287,7 @@ export function deserializeWorld(saved) {
 		return { ok: false, reason: "saved mission is v" + saved.version +
 			", newer than this page understands (v" + WORLD_VERSION + ")" };
 	}
+	if (saved.version === 1) { saved = migrateV1toV2(saved); }
 	if (typeof saved.jd !== "number" || !isFinite(saved.jd)) {
 		return { ok: false, reason: "missing or bad jd" };
 	}

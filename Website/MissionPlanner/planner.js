@@ -40,7 +40,9 @@ import { createEphemerisView } from "./ephemeris-view.js";
 // ---- modules (dynamic import per the architecture: a technology's code is
 // fetched when activated; the scaffold's default mission activates both) ----
 var MODULE_URLS = [
+	"./modules/moon-platform/moon-platform.js",
 	"./modules/lunar-skyhook/lunar-skyhook.js",
+	"./modules/departure-leg/departure-leg.js",
 	"./modules/frozen-plan/frozen-plan.js",
 	"./modules/transfer-leg/transfer-leg.js"
 ];

@@ -3,81 +3,98 @@
 // waypoint burn against the vector-patched skyhook release model) so it
 // genuinely rendezvouses instead of demonstrating a miss warning.
 //
-//   release   2031-12-20 06:00 UT — lunar skyhook, CoM 275 km, release from
-//             the tether top at 6000 km, phase 92 deg (aimed so the lunar
-//             v-infinity of 5.90 km/s leaves near Earth's heliocentric
-//             prograde; Earth-escape v-infinity 5.50 km/s), followed by a
-//             P 1.07 / R 0.49 / N 0.28 km/s (net 1.21) injection completing
-//             the departure — folded into one hand-off state below (see
-//             "migrated" note)
-//   waypoint  day 475, at 2.97 AU moving 12.25 km/s —
+//   release   2031-12-17 ~19:07 UT (jd 2463218.5467 — the plan's frozen
+//             release ANCHOR; see below) — lunar skyhook, CoM 275 km,
+//             release from the tether top at 6000 km, phase 92 deg
+//   hand-off  2031-12-20 06:00 UT (jd 2463220.75) — the plan's committed
+//             Departure→Coast hand-off, required departure v∞ 6.55 km/s,
+//             hand-off window ±1 d
+//   waypoint  day 475 of the coast, at 2.97 AU moving 12.25 km/s —
 //             P 2.14 / R -1.18 / N -2.73 km/s  (net 3.66)
-//   arrival   2034-01-08 (750 days), miss 0.0001 AU,
-//             3.78 km/s relative to Ceres; required departure v∞ 6.55 km/s
+//   arrival   2034-01-08 (750 days after hand-off), miss 0.0001 AU,
+//             3.78 km/s relative to Ceres
 //
-// (Kim's original numbers carried a 2.85 km/s burn at a low-Earth perigee;
-// the scaffold's patched-conic release has no geocentric leg and therefore
-// no Oberth gain, so the tuned burns differ from the plotted ones — see the
-// lunar-skyhook module header.)
+// RESHAPED BY TASK I3 (WP-I, 2026-07-16): the departure is a CARRIER CHAIN
+// with a real integrated flight, not a patched-conic formula —
 //
-// MIGRATED 2026-07-14 (Kim): the departure hand-off is a given heading and
-// speed, not a burn formula — "only a minority of the delta-v needed to get
-// somewhere comes from engine burns" — so frozen-plan/transfer-leg no longer
-// carry a departure-burn field at all (see transfer-leg.js's header). This
-// preset originally baked departure.v as the raw skyhook-release state and
-// carried the 1.07/0.49/0.28 km/s injection above as a SEPARATE, still-live
-// transfer-leg burn — the one place in the codebase where that old
-// convention survived, and exactly what let a pasted copy of this mission
-// silently lose that injection on the way back into the Ephemeris tab.
-// departure.v below now folds that injection directly into the hand-off
-// state (computeRelease's release state, then that same burn applied to it
-// via O.applyBurn — one-time migration, not a live computation), so the
-// required departure v∞ is now the single true figure (6.55 km/s) a
-// departure technology must deliver, matching how every other mission's
-// frozen plan already works.
+//   moon-platform → lunar-skyhook → departure-leg → frozen-plan → transfer-leg
 //
-// The profile is the full comply-mode chain (task C1): skyhook (the tech) →
-// frozen-plan (the commitment, baked from this same design, so the shipped
-// mission complies with itself) → transfer-leg (the working coast). Detuning
-// the skyhook shows plan-deviation warnings while the coast keeps showing
-// the frozen plan's trajectory.
+// moon-platform emits the chain base (the Moon's own ~1 km/s), the skyhook
+// appends its rotor, and the headless departure-leg evaluates the chain at
+// the plan's frozen release anchor and integrates the released ship with
+// restricted N-body gravity (Shared/geo-leg.js) out to Earth-SOI exit — the
+// delivered hand-off the course check measures against the window.
 //
-// This is a SERIALIZED WORLD (core/world.js `serialize()` shape), loaded
-// through the same deserializeWorld path a share link uses — the whole point
-// of the step. The curation half of 4.4 (which pane arrangement teaches
-// best) waits for the fuller interface; re-curating is editing this file.
+// TIMING (WP-I's window + anchor model): releaseAnchorJd below is baked the
+// way core/freeze.js bakes it — hand-off epoch minus the D7 departure
+// estimate for the plan's own required v∞ (6.55 km/s → dive-in profile,
+// 2.2033 d) = 2463220.75 − 2.2033 = 2463218.546734214. The skyhook's old
+// releaseJd param is gone; the anchor is read-only plan data.
 //
-// Pure data + one pure export, so Node tests can verify the shipped preset
-// actually loads and arrives.
+// THE HONEST GAP, quantified with the real integration (2026-07-16 numbers,
+// from the I3 experiment run): released at the anchor with phase 92, the
+// chain delivers v∞ ≈ 5.02 km/s against the committed 6.55 (the skyhook
+// alone never covered the folded-in injection — see the 2026-07-14 note
+// below), aimed ≈ 9.6° off, hand-off ≈ 0.51 d late but INSIDE the ±1 d
+// window. So the shipped mission shows vinf-mismatch + aim-mismatch
+// warnings and a compliant epoch — deliberately: closing the gap (e.g. a
+// low-perigee Oberth impulse on the departure leg, task I4's UI) is the
+// mission-planning exercise the preset teaches. The coast still flies the
+// FROZEN plan's state regardless, so it still rendezvouses clean.
+//
+// (2026-07-14, Kim: the departure hand-off is a given heading and speed, not
+// a burn formula — the old preset's separate 1.21 km/s injection burn was
+// folded directly into the plan's departure.v, making the required v∞ the
+// single true figure 6.55 km/s a departure technology must deliver. Those
+// baked departure numbers are unchanged here: the commitment is the same,
+// only the tech side got real physics.)
+//
+// This is a SERIALIZED WORLD (core/world.js `serialize()` shape, version 2),
+// loaded through the same deserializeWorld path a share link uses — the
+// whole point of the step. The curation half of 4.4 (which pane arrangement
+// teaches best) waits for the fuller interface; re-curating is editing this
+// file.
+//
+// Pure data, so Node tests can verify the shipped preset actually loads,
+// integrates, and arrives.
 
 export var defaultMission = {
 	kind: "moonwards-world",
-	version: 1,
-	jd: 2463220.75,        // the clock opens at the release epoch
-	nextStage: 4,
+	version: 2,
+	jd: 2463218.546734214,   // the clock opens at the release anchor
+	nextStage: 6,
 	stages: [
 		{
+			// The Moon card: read-only top of the departure stack (task I3).
 			id: "stg-1",
+			moduleId: "moon-platform",
+			params: {}
+		},
+		{
+			id: "stg-2",
 			moduleId: "lunar-skyhook",
 			params: {
 				comAlt: 275e3,
 				topAlt: 6000e3,
 				relAlt: 6000e3,
-				releasePhaseDeg: 92,
-				releaseJd: 2463220.75
+				releasePhaseDeg: 92
 			}
+		},
+		{
+			// The headless integrated departure flight (task I3).
+			id: "stg-3",
+			moduleId: "departure-leg",
+			params: { waypoints: [] }
 		},
 		{
 			// The frozen flight plan (task C1): the mission's commitment,
 			// captured as if E2 had spawned this tab from the Ephemeris tab.
-			// departure.r is the skyhook release position baked at full
-			// precision from computeRelease(defaults) (2026-07-11); departure.v
-			// is that release velocity with the P1.07/R0.49/N0.28 km/s
-			// injection folded in (migrated 2026-07-14 — see this file's header)
-			// — so this IS the coast's true starting state, no burn left
-			// hiding on transfer-leg. arrival vInf is the leg's speed relative
-			// to Ceres at release + 750 d.
-			id: "stg-3",
+			// departure.r/v are the 2026-07-14 baked hand-off state (release
+			// physics + folded injection — see this file's header); arrival
+			// vInf is the leg's speed relative to Ceres at hand-off + 750 d.
+			// releaseAnchorJd/handoffWindowDays are WP-I's timing fields
+			// (bake recorded in the header).
+			id: "stg-4",
 			moduleId: "frozen-plan",
 			params: {
 				origin: "Earth",
@@ -87,11 +104,13 @@ export var defaultMission = {
 					jd: 2463220.75
 				},
 				arrival: { body: "Ceres", jd: 2463970.75, vInf: 3776.34 },
+				handoffWindowDays: 1,
+				releaseAnchorJd: 2463218.546734214,
 				waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }]
 			}
 		},
 		{
-			id: "stg-2",
+			id: "stg-5",
 			moduleId: "transfer-leg",
 			params: {
 				waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }],

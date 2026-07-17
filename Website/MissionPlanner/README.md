@@ -12,8 +12,10 @@ tab bar with persistence across reloads (build-out tasks A1–A3) + real
 phase-driven mission tabs with a date-scaled Coast slider (tasks B1–B2).**
 `core/` is pure logic with Node tests, so the recompute/blocked
 semantics were verified before any UI existed; `planner.html/css/js` is the
-deliberately-plain, disposable shell over it; `modules/` holds the first two
-mission modules; `mockups/` holds the disposable step-4.2 layout mockups (see
+deliberately-plain, disposable shell over it; `modules/` holds the five
+mission modules (the departure carrier chain — moon-platform, lunar-skyhook,
+departure-leg, task I3 — plus frozen-plan and transfer-leg); `mockups/`
+holds the disposable step-4.2 layout mockups (see
 its README; `mockups/chain-strip/` is an earlier, superseded round).
 
 ## core/ — the headless mission core
@@ -160,43 +162,61 @@ serializes the current World into the same fragment, so the round trip is
 one code path, as the architecture doc wanted. Editing the hash of an open
 page does nothing until reload (fragments are read once, at load).
 
-The shipped preset is Kim's **Moon → Ceres 2031** design (release
-2031-12-20 06:00, skyhook CoM 275 km / release from the 6000 km top /
-phase 92°, waypoint at day 475), Lambert-tuned to a genuine rendezvous:
-arrival 2034-01-08 (750 days), miss 0.0001 AU, 3.78 km/s relative to Ceres.
-Since task C1 the preset is the full comply-mode chain — skyhook →
-frozen-plan → transfer-leg — with the plan's numbers baked from this same
-design. **Migrated 2026-07-14** (the departure hand-off is a given heading
-and speed, not a burn formula — see `modules/transfer-leg/`, below): the
-frozen departure state now folds in what used to be a separate leg-side
-injection burn, so the plan's required departure v∞ is a single true
-figure (6.55 km/s) — which the shipped skyhook's own unchanged release
-physics (still 5.50 km/s) now honestly falls short of; the shipped mission
-no longer complies with itself, by design (no departure-phase tech yet
-models that extra burn — the coast still flies the frozen plan's state
-regardless, so it still arrives clean). Re-curating the example (or its
-pane arrangement, via `defaultWorkspaceMain`) is editing that one file.
-(Missions saved before C1 simply have no frozen-plan stage — they load and
-run as before; the plan arrives with a fresh preset load or, later, task
-E2's freeze flow.)
+The shipped preset is Kim's **Moon → Ceres 2031** design (committed
+hand-off 2031-12-20 06:00, skyhook CoM 275 km / release from the 6000 km
+top / phase 92°, waypoint at day 475), Lambert-tuned to a genuine
+rendezvous: arrival 2034-01-08 (750 days after hand-off), miss 0.0001 AU,
+3.78 km/s relative to Ceres. **Reshaped by task I3 (2026-07-16)** into the
+carrier-chain profile — moon-platform → lunar-skyhook → departure-leg →
+frozen-plan → transfer-leg (a serialized World **version 2**; v1 saves are
+migrated on load, see `core/world.js`) — with the plan's frozen release
+anchor and ±1 d hand-off window baked per WP-I's timing model. The plan's
+required departure v∞ is a single true figure (6.55 km/s, folded 2026-07-14
+from what used to be a separate leg-side injection burn), which the real
+integrated departure honestly under-delivers (≈5.0 km/s, ≈9.6° off-aim;
+the hand-off itself lands inside the window) — the shipped mission does not
+comply with itself, by design: closing the gap (e.g. a low-perigee Oberth
+impulse on the departure leg, task I4's UI) is the exercise the preset
+teaches, and the coast still flies the frozen plan's state regardless, so
+it still arrives clean. Re-curating the example (or its pane arrangement,
+via `defaultWorkspaceMain`) is editing that one file.
 
-### modules/ — the first three mission modules
+### modules/ — the five mission modules
 
 Each module is a folder whose script default-exports its descriptor
-(dynamic-`import()`ed by the shell), per ARCHITECTURE.md "Module interface":
+(dynamic-`import()`ed by the shell), per ARCHITECTURE.md "Module interface".
+Since task I3 (WP-I) the departure system is a CARRIER CHAIN: carrier stages
+compose a serializable kinematic chain (`Shared/kinematic-chain.js`, carried
+in `carrier-chain` packets), and a headless leg stage integrates the
+released flight with restricted N-body gravity (`Shared/geo-leg.js`). The
+release EPOCH is not a stage param anywhere: it is the plan's read-only
+release anchor (`frozen-plan.js`'s `releaseAnchorFor` — frozen at mission
+creation, never re-derived).
 
-- **`modules/lunar-skyhook/`** — the first technology module. Gravity-gradient
-  lunar skyhook; `update()` runs the patched-conic release chain (tether
-  kinematics → lunar v∞ **along the tether-tangential direction at the
-  release phase**, vector-summed with the Moon's geocentric velocity →
-  Earth-escape v∞ → heliocentric ship-state at Earth) lifted from the
-  Moon-Skyhook plotter's `releaseState()`/`computeReadouts()` math, with real
-  module-authored diagnostics (`bound-at-moon`, `bound-at-earth`, each with a
-  cheap computed fix). The release phase is the *aiming* control, as in the
-  plotter; what the model still can't express is the geocentric leg itself
-  (notably a perigee Oberth burn — see the module header). Emits
-  `ship-state`; release epoch and phase are stage params, not the shared
-  clock.
+- **`modules/moon-platform/`** — the Moon as the departure stack's read-only
+  top card (task I3): emits the chain base (`{ base: "Moon", rotors: [] }`)
+  and shows the Moon's heading/impulse contribution at the release anchor
+  (geocentric distance/speed, component along Earth's heliocentric
+  prograde). No knobs — plan around the Moon in the Ephemeris tab. A mission
+  with no anchor at all is diagnosed here, at the top of the chain.
+- **`modules/lunar-skyhook/`** — the first rotating CARRIER (reshaped by
+  I3). Gravity-gradient lunar skyhook: validates its geometry
+  (`bound-at-moon` still diagnosed early, with a computed fix), then appends
+  its rotor element (ecliptic plane, radius = release-point radius, rate =
+  the CoM orbit's angular velocity, phase pinned at the anchor) to the
+  incoming chain. The release phase is the *aiming* control, now an in-card
+  slider. The old patched-conic release chain and its `releaseJd` param are
+  gone — replaced by departure-leg's real integration.
+- **`modules/departure-leg/`** — HEADLESS (task I3): no card of its own
+  (`plainCard`, diagnostics only). Evaluates the carrier chain at the
+  anchor, integrates forward (Earth+Moon+Sun, real ephemerides, no SOI
+  kink) with up to 2 waypoint impulses applied in each leg's own local
+  dynamical frame — the low-perigee Oberth pattern the patched model
+  couldn't express — and emits the hand-off `ship-state` at Earth-SOI exit,
+  plus the flight events (release, impulses, Moon/Earth SOI exits — the
+  departure slider's real marks). A flight that stays bound or impacts is a
+  hard diagnostic; nothing ever solves backwards (WP-I: every recompute is
+  one forward pass; the USER closes the loop).
 - **`modules/frozen-plan/`** — the frozen flight plan (task C1, comply mode).
   Its params ARE the plan captured at mission creation: origin body, the
   frozen heliocentric departure state/epoch the tech must deliver (this IS
@@ -253,24 +273,28 @@ Recorded here because they extend the "headless part" contract above:
   reports the empty slot as a warning. When input does arrive it is
   type-checked against `accepts` as usual.
 
-`core/tests/*.test.js` — `node:test` suites, 65 tests covering World
-mutations/serialization, registry validation, the
-recompute/diagnostic/blocked semantics (including `inputOptional`), and the
-warnings/events envelope
-(`warnings-events.test.js`, including a comply-mode-shaped chain).
-`modules/tests/modules.test.js` — 14 more exercising the skyhook and
-transfer-leg modules'
-pure sides, chained through the actual World + registry + engine (release
-physics and phase aiming, blocked-then-fixed recovery, the non-blocking miss
-warning, frame conversion, and the shipped preset itself: it deserializes,
-rendezvouses warning-free, and survives the share-fragment round trip).
-`modules/tests/frozen-plan.test.js` — 16 more on the comply semantics: the
-compliance rows and their tolerances, the warning texts' numbers, and —
-through the real engine on the shipped preset — that detuning the tech warns
-on the plan while the coast's output does not move, that a mission with no
-tech still shows its whole plan, and that the baked preset plan matches the
-skyhook's own release physics (so model drift says "re-bake", not just
-"warnings appeared").
+`core/tests/*.test.js` — `node:test` suites, 84 tests covering World
+mutations/serialization (including the v1→v2 profile migration's plumbing),
+registry validation, the recompute/diagnostic/blocked semantics (including
+`inputOptional`), the warnings/events envelope
+(`warnings-events.test.js`, including a comply-mode-shaped chain), the
+departure-duration estimate (D7) and the freeze contract (E2 + its timing
+fields).
+`modules/tests/modules.test.js` — 27 more exercising the carrier chain and
+transfer-leg modules' pure sides, chained through the actual World +
+registry + engine (tether kinematics and the rotor element, the integrated
+departure flight with waypoint impulses and its truncation at the hand-off,
+bound/no-carrier/blocked-then-fixed cases, frame conversion, the v1-save
+migration end-to-end, and the shipped preset itself: it deserializes,
+rendezvouses, and survives the share-fragment round trip).
+`modules/tests/frozen-plan.test.js` — 19 more on the comply semantics: the
+compliance rows and their tolerances (the epoch row's hand-off WINDOW since
+I3), the warning texts' numbers, `releaseAnchorFor`'s resolution order, and
+— through the real engine on the shipped preset — that detuning the tech
+warns on the plan while the coast's output does not move, that a mission
+with no departure system still shows its whole plan, and that the baked
+preset plan is internally consistent (anchor = hand-off − the freeze-time
+estimate, so drift says "re-bake", not just "warnings appeared").
 `ui/tests/phase-slider.test.js` — 14 more covering the pure halves of the
 phase-slider widgets (tasks B2/B3): tick generation, playhead
 fraction, and pinning at either end of the span. Run from the repo root:

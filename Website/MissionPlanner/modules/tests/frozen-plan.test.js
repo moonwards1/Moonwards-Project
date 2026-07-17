@@ -11,19 +11,25 @@ import assert from "node:assert/strict";
 import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
-import skyhook, { computeRelease, defaultParams as skyhookDefaults } from "../lunar-skyhook/lunar-skyhook.js";
+import moonPlatform from "../moon-platform/moon-platform.js";
+import skyhook from "../lunar-skyhook/lunar-skyhook.js";
+import departureLeg from "../departure-leg/departure-leg.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import frozenPlan, { computeCompliance, complianceWarnings, planSummary,
-	VINF_TOL, EPOCH_TOL_DAYS, AIM_TOL_DEG } from "../frozen-plan/frozen-plan.js";
+	releaseAnchorFor, windowDaysOf,
+	VINF_TOL, AIM_TOL_DEG, DEFAULT_WINDOW_DAYS } from "../frozen-plan/frozen-plan.js";
 import { defaultMission } from "../../presets/default-mission.js";
+import { estimateDeparture } from "../../core/departure-estimate.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";
 
-var JD = O.julianDate(2031, 12, 20, 6, 0, 0);   // the worked example's epoch
+var JD = O.julianDate(2031, 12, 20, 6, 0, 0);   // the worked example's hand-off epoch
 
 function makeRegistry() {
 	var reg = createRegistry();
+	reg.register(moonPlatform);
 	reg.register(skyhook);
+	reg.register(departureLeg);
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
 	return reg;
@@ -62,7 +68,7 @@ test("compliance: an exactly-matching tech passes every row", function () {
 
 test("compliance: deviations inside the tolerances stay green", function () {
 	var comp = computeCompliance(planParams(3420),
-		delivered([3420 + VINF_TOL * 0.5, 0, 0], JD + EPOCH_TOL_DAYS * 0.5));
+		delivered([3420 + VINF_TOL * 0.5, 0, 0], JD + DEFAULT_WINDOW_DAYS * 0.5));
 	// the epoch shift also shifts Earth's velocity a little; only assert the
 	// explicitly-dialled rows
 	var byKey = {};
@@ -89,13 +95,27 @@ test("compliance: an under-delivering tech warns 'short by', with the numbers", 
 	assert.match(warnings[0].fix, /Raise .*0\.24 km\/s/);
 });
 
-test("compliance: a late hand-off warns on epoch only (v∞ re-measured at its own epoch)", function () {
-	var comp = computeCompliance(planParams(3420), delivered([3420, 0, 0], JD + 0.5));
+test("compliance: the epoch row is the plan's hand-off WINDOW, not a point (task I3)", function () {
+	// Inside the default ±1 d window: no epoch warning at all.
+	var inside = computeCompliance(planParams(3420), delivered([3420, 0, 0], JD + 0.5));
+	assert.equal(complianceWarnings(inside).filter(function (w) { return w.code === "epoch-mismatch"; }).length, 0);
+
+	// Outside it: warned, and the warning names the window.
+	var comp = computeCompliance(planParams(3420), delivered([3420, 0, 0], JD + 1.5));
 	var warnings = complianceWarnings(comp);
 	assert.equal(warnings.length, 1);
 	assert.equal(warnings[0].code, "epoch-mismatch");
 	assert.match(warnings[0].message, /late/);
-	assert.ok(Math.abs(warnings[0].values.deltaDays - 0.5) < 1e-9);
+	assert.match(warnings[0].message, /window/);
+	assert.ok(Math.abs(warnings[0].values.deltaDays - 1.5) < 1e-9);
+	assert.equal(warnings[0].values.windowDays, DEFAULT_WINDOW_DAYS);
+
+	// A plan's own wider window is honoured (the baked field, not a constant).
+	var wide = computeCompliance(Object.assign({}, planParams(3420), { handoffWindowDays: 2 }),
+		delivered([3420, 0, 0], JD + 1.5));
+	assert.equal(complianceWarnings(wide).length, 0);
+	assert.equal(windowDaysOf({ handoffWindowDays: 2 }), 2);
+	assert.equal(windowDaysOf({}), DEFAULT_WINDOW_DAYS);
 });
 
 test("compliance: an off-aim asymptote of the same speed warns on aim only", function () {
@@ -184,9 +204,11 @@ function presetChain() {
 	var res = deserializeWorld(defaultMission);
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
-	var stages = res.world.stages();
+	var stages = res.world.stages();   // moon-platform, lunar-skyhook, departure-leg,
+	                                   // frozen-plan, transfer-leg (task I3's chain)
 	return { world: res.world, engine: engine,
-	         sky: stages[0].id, plan: stages[1].id, leg: stages[2].id };
+	         moon: stages[0].id, sky: stages[1].id, dep: stages[2].id,
+	         plan: stages[3].id, leg: stages[4].id };
 }
 
 test("comply: the shipped preset's skyhook alone falls short of the full departure requirement", function () {
@@ -237,9 +259,14 @@ test("comply: detuning the tech warns on the plan but does NOT move the coast", 
 	assert.deepEqual(rLeg.warnings, []);             // still rendezvouses
 });
 
-test("comply: a mission with NO departure tech still shows its whole plan", function () {
+test("comply: a mission with NO departure system still shows its whole plan", function () {
+	// E2's "empty tech slot" is the whole departure STACK absent (a freeze-
+	// spawned mission is [frozen-plan, transfer-leg] until WP-I's I5 adds
+	// carriers), so drop all three departure stages, not just the skyhook.
 	var c = presetChain();
-	c.world.set({ removeStage: c.sky });             // E2's "empty tech slot"
+	c.world.set({ removeStage: c.dep });
+	c.world.set({ removeStage: c.sky });
+	c.world.set({ removeStage: c.moon });
 	var rPlan = c.engine.resultFor(c.plan);
 	var rLeg = c.engine.resultFor(c.leg);
 
@@ -286,21 +313,53 @@ test("update: a damaged plan fails hard (diagnostic), not as a warning", functio
 	assert.equal(out.code, "bad-params");
 });
 
-test("the baked preset plan matches the skyhook's own release physics plus its folded-in injection", function () {
-	// Guards the preset's frozen numbers against drift in computeRelease: if
-	// the release model changes, this test says "re-bake the plan", not just
-	// "warnings appeared somewhere". departure.v is the release velocity
-	// with the preset's own P1.07/R0.49/N0.28 km/s injection folded directly
-	// in (migrated 2026-07-14 — presets/default-mission.js's header explains
-	// why departure.v is no longer the raw release state), so it's compared
-	// against computeRelease's state with that same burn applied, not the
-	// raw release state directly.
-	var phys = computeRelease(skyhookDefaults);
-	var expectedV = O.applyBurn(phys.r, phys.v, 1070, 280, 490);   // pro, nrm, rad
-	var planStage = defaultMission.stages[1];
+test("the baked preset plan is internally consistent: v∞, anchor, window", function () {
+	// Guards the preset's frozen numbers. The committed departure state is
+	// historical data now (baked 2026-07-14 from the then-current release
+	// model plus the folded injection — the preset header tells the story;
+	// the old computeRelease that produced it is gone since I3), so what's
+	// checkable is its own consistency: the required v∞ it encodes, and that
+	// the timing fields were baked exactly the way core/freeze.js bakes them
+	// (anchor = hand-off − the D7 departure estimate for that same v∞).
+	var planStage = defaultMission.stages[3];
 	assert.equal(planStage.moduleId, "frozen-plan");
-	var dep = planStage.params.departure;
-	assert.ok(O.vMag(O.vSub(phys.r, dep.r)) < 1, "baked r matches computeRelease");
-	assert.ok(O.vMag(O.vSub(expectedV, dep.v)) < 1e-3, "baked v matches computeRelease + the folded injection");
-	assert.equal(dep.jd, phys.releaseJd);
+	var p = planStage.params;
+	var vInfVec = O.vSub(p.departure.v, Frames.bodyHelioState("Earth", p.departure.jd).v);
+	assert.ok(Math.abs(O.vMag(vInfVec) - 6548.4) < 1, "required v∞ ~6.55 km/s, got " + O.vMag(vInfVec));
+
+	assert.equal(p.handoffWindowDays, 1);
+	var est = estimateDeparture({ origin: "Earth", vInfVec: vInfVec, jdHandoff: p.departure.jd });
+	assert.equal(est.ok, true);
+	assert.ok(Math.abs(p.releaseAnchorJd - (p.departure.jd - est.days)) < 1e-6,
+		"anchor = hand-off − the freeze-time estimate (" + est.profile + ", " +
+		est.days.toFixed(4) + " d)");
+});
+
+// ---- releaseAnchorFor (the read-only anchor's one lookup, task I3) ----------
+
+test("releaseAnchorFor: plan anchor → plan departure.jd → legacy releaseJd → null", function () {
+	function worldWith(stages) {
+		var w = createWorld({ jd: JD });
+		stages.forEach(function (s) { w.set({ addStage: s }); });
+		return w;
+	}
+	// 1. a post-D7 plan: its baked anchor wins
+	var w1 = worldWith([{ moduleId: "frozen-plan",
+		params: { departure: { jd: JD }, releaseAnchorJd: JD - 2.2 } }]);
+	assert.equal(releaseAnchorFor(w1), JD - 2.2);
+	// 2. a pre-D7 plan: no anchor recorded — the hand-off epoch stands in
+	var w2 = worldWith([{ moduleId: "frozen-plan", params: { departure: { jd: JD } } }]);
+	assert.equal(releaseAnchorFor(w2), JD);
+	// 3. no plan at all: a legacy releaseJd on any stage (pre-I3 saves kept
+	// it on the skyhook) still anchors the chain
+	var w3 = worldWith([{ moduleId: "lunar-skyhook", params: { releaseJd: JD - 1 } }]);
+	assert.equal(releaseAnchorFor(w3), JD - 1);
+	// 3b. the plan outranks a legacy releaseJd when both exist
+	var w4 = worldWith([
+		{ moduleId: "lunar-skyhook", params: { releaseJd: JD - 1 } },
+		{ moduleId: "frozen-plan", params: { departure: { jd: JD }, releaseAnchorJd: JD - 2.2 } }]);
+	assert.equal(releaseAnchorFor(w4), JD - 2.2);
+	// 4. nothing anywhere → null (and a null/bare world is null too)
+	assert.equal(releaseAnchorFor(worldWith([{ moduleId: "transfer-leg", params: {} }])), null);
+	assert.equal(releaseAnchorFor(null), null);
 });

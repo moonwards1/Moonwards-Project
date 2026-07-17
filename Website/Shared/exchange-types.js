@@ -35,6 +35,19 @@ export const PacketTypes = {
 			optional: ["mass", "dvUsed"]
 		},
 
+		// A departure carrier chain (Mission Planner WP-I): the kinematic-chain
+		// shape Shared/kinematic-chain.js evaluates — base body name plus an
+		// ordered list of rotor elements, each { normal, ref, radius, rate,
+		// phase0, epoch } (see that module's header for units/conventions).
+		// Emitted by the moon-platform module, extended rotor-by-rotor by each
+		// carrier stage (lunar-skyhook, a future tip launcher), consumed by
+		// departure-leg, which evaluates it at the release anchor.
+		"carrier-chain": {
+			version: 1,
+			required: ["base", "rotors"],
+			optional: []
+		},
+
 		// Geometry + material of one vertical (gravity-gradient) or spun tether.
 		// footAlt/centreAlt/topAlt are altitudes above the body's surface (m);
 		// centreAlt is the centre-of-mass point that sets the orbit. material is

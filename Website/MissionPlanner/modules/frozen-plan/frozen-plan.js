@@ -39,6 +39,12 @@
  *   arrival:   { body, jd, vInf } — the plan's arrival commitment: body name,
  *                              epoch, and approach v-infinity (m/s) the
  *                              arrival tech must be able to catch
+ *   handoffWindowDays:        — half-width (d) of the hand-off WINDOW around
+ *                              departure.jd (WP-I's timing model, task D7);
+ *                              the epoch compliance row checks against it
+ *   releaseAnchorJd:          — the READ-ONLY release anchor: the epoch the
+ *                              departure chain releases at, baked at freeze
+ *                              and never re-derived (see releaseAnchorFor)
  *   waypoints: [{ days, burn }]  — reference copy of the plan's waypoint
  *                              burns, for readouts and later comparison (the
  *                              WORKING copy lives on the transfer-leg stage,
@@ -85,16 +91,61 @@ var O = OrbitalMath;
 
 // Compliance tolerances: how far the tech may deviate from the plan before a
 // warning is raised. Exported so C2's card and C3's assists share them.
-export var VINF_TOL = 10;          // m/s   — |v∞| mismatch
-export var EPOCH_TOL_DAYS = 0.25;  // days  — hand-off epoch mismatch (6 h)
-export var AIM_TOL_DEG = 1.0;      // deg   — v∞ direction (asymptote) mismatch
+// The epoch tolerance is NOT a constant any more (task I3, WP-I's timing
+// model): the hand-off epoch is checked against the plan's own hand-off
+// WINDOW — params.handoffWindowDays, the half-width core/freeze.js bakes at
+// mission creation (±1 d default) — which promoted the old fixed ±0.25 d
+// point tolerance to a visible plan field. Pre-D7 saves lack the field and
+// default to DEFAULT_WINDOW_DAYS below (kept equal to freeze.js's own
+// DEFAULT_WINDOW_DAYS — the consumer-side copy of the same agreement).
+export var VINF_TOL = 10;             // m/s   — |v∞| mismatch
+export var AIM_TOL_DEG = 1.0;         // deg   — v∞ direction (asymptote) mismatch
+export var DEFAULT_WINDOW_DAYS = 1;   // days  — hand-off window half-width fallback
 
 export var defaultParams = {
 	origin: "Earth",
 	departure: { r: null, v: null, jd: null },
 	arrival: { body: "", jd: null, vInf: null },
+	handoffWindowDays: null,   // half-width (d); null → DEFAULT_WINDOW_DAYS
+	releaseAnchorJd: null,     // read-only release epoch; null → departure.jd
 	waypoints: []
 };
+
+// The half-width (days) of a plan's hand-off window, with the pre-D7 default.
+export function windowDaysOf(params) {
+	var w = params ? params.handoffWindowDays : null;
+	return (isFinite(w) && w > 0) ? w : DEFAULT_WINDOW_DAYS;
+}
+
+// The mission's READ-ONLY release anchor (WP-I's timing model): the epoch the
+// departure chain releases at, frozen into the plan when the mission was
+// created (core/freeze.js bakes it from D7's departure-duration estimate) and
+// never re-derived — the Moon card shows exactly the Moon the user planned
+// around in the Ephemeris tab. Resolution order:
+//   1. the frozen-plan stage's releaseAnchorJd (post-D7 saves),
+//   2. its departure.jd (pre-D7 saves: no flight-time lead recorded),
+//   3. any stage's legacy releaseJd param (pre-I3 saves kept the release
+//      epoch on the lunar-skyhook stage itself; migration preserves it so
+//      a plan-less old save still anchors),
+//   4. null — no anchor; the departure chain reports it as a diagnostic.
+// Lives here because the plan owns the anchor; moon-platform, lunar-skyhook
+// and departure-leg all read it through this one function.
+export function releaseAnchorFor(world) {
+	if (!world || typeof world.stages !== "function") { return null; }
+	var stages = world.stages();
+	var i, p;
+	for (i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId !== "frozen-plan") { continue; }
+		p = stages[i].params || {};
+		if (isFinite(p.releaseAnchorJd)) { return p.releaseAnchorJd; }
+		if (p.departure && isFinite(p.departure.jd)) { return p.departure.jd; }
+	}
+	for (i = 0; i < stages.length; i++) {
+		p = stages[i].params || {};
+		if (isFinite(p.releaseJd)) { return p.releaseJd; }
+	}
+	return null;
+}
 
 function isoOf(jd) {
 	var d = O.dateFromJulian(jd);
@@ -207,13 +258,17 @@ export function computeCompliance(params, data) {
 		aimDeg = Math.acos(Math.max(-1, Math.min(1, cosA))) * 180 / Math.PI;
 	}
 
+	// The epoch row is "inside the hand-off window" (task I3 — see the
+	// tolerance comment up top); the row carries the window so C2's card can
+	// render the band, not just the verdict.
+	var windowDays = windowDaysOf(p);
 	var rows = [
 		{ key: "vinf", required: required.vInf, delivered: delivered.vInf,
 		  delta: delivered.vInf - required.vInf,
 		  ok: Math.abs(delivered.vInf - required.vInf) <= VINF_TOL },
 		{ key: "epoch", required: required.jd, delivered: delivered.jd,
-		  delta: delivered.jd - required.jd,
-		  ok: Math.abs(delivered.jd - required.jd) <= EPOCH_TOL_DAYS },
+		  delta: delivered.jd - required.jd, window: windowDays,
+		  ok: Math.abs(delivered.jd - required.jd) <= windowDays },
 		{ key: "aim", required: 0, delivered: aimDeg, delta: aimDeg,
 		  ok: aimDeg <= AIM_TOL_DEG }
 	];
@@ -249,12 +304,14 @@ export function complianceWarnings(comp) {
 				       (Math.abs(row.delta) / 1000).toFixed(2) + " km/s." }));
 		} else if (row.key === "epoch") {
 			warnings.push(makeDiagnostic("epoch-mismatch",
-				"Tech hands off on " + isoOf(row.delivered) + ", " +
+				"Hand-off lands on " + isoOf(row.delivered) + ", " +
 				Math.abs(row.delta).toFixed(1) + " day" + (Math.abs(row.delta) >= 1.95 ? "s" : "") +
-				(row.delta > 0 ? " late" : " early") + " against the plan's " + isoOf(row.required) + ".",
-				{ values: { required: row.required, delivered: row.delivered, deltaDays: row.delta },
-				  fix: "Move the release date " + (row.delta > 0 ? "earlier" : "later") + " by ≈" +
-				       Math.abs(row.delta).toFixed(1) + " days." }));
+				(row.delta > 0 ? " late" : " early") + " — outside the plan's ±" + row.window +
+				" d window around " + isoOf(row.required) + ".",
+				{ values: { required: row.required, delivered: row.delivered,
+				            deltaDays: row.delta, windowDays: row.window },
+				  fix: "Shorten or lengthen the departure flight (waypoint impulses, carrier " +
+				       "aiming), or re-plan from the Ephemeris tab for a different hand-off date." }));
 		} else if (row.key === "aim") {
 			warnings.push(makeDiagnostic("aim-mismatch",
 				"Tech's departure asymptote points " + row.delivered.toFixed(1) +
@@ -333,11 +390,12 @@ export default {
 	},
 
 	// No view layer: no init (see sidebarCard above) and no draw hook (the
-	// plan owns no hardware). complianceFor/planSummary are exposed on the
-	// descriptor (not just the named export) so the shell can reach them via
-	// `registry.get("frozen-plan")` without a static import — modules stay
-	// dynamically loaded (planner.js's MODULE_URLS), only the registry is a
-	// shared/known handle.
+	// plan owns no hardware). complianceFor/planSummary/releaseAnchorFor are
+	// exposed on the descriptor (not just the named export) so the shell can
+	// reach them via `registry.get("frozen-plan")` without a static import —
+	// modules stay dynamically loaded (planner.js's MODULE_URLS), only the
+	// registry is a shared/known handle.
 	complianceFor: complianceFor,
-	planSummary: planSummary
+	planSummary: planSummary,
+	releaseAnchorFor: releaseAnchorFor
 };
