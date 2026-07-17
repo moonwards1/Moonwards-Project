@@ -1639,7 +1639,16 @@ Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
     flight polyline draws truncated at the hand-off, events/slider marks
     populate, console clean. (Pane screenshots timed out — a capture-tool
     quirk; geometry verified structurally by instrumenting THREE.Line.)
-- [ ] **I4. Departure waypoint-impulse UI.** ★★
+  - **Follow-up (Kim's catch, 2026-07-17):** on load the trajectory didn't
+    start at the tether tip — mission-view's init snapped the opening clock
+    to the date bar's whole-day grid, ~67 min before the anchor ≈ HALF a
+    tether rotation, so the drawn tip sat opposite the release point and
+    the phase slider could never close the gap (both ends rotate together;
+    only a timeline scrub — the exact-jd path — healed it). Fixed: the init
+    now opens at the world's exact jd via dateBar.setJd (the same precise
+    path event clicks use). Verified in-browser: at load the tether-tip dot
+    and the polyline's start coincide to ~8 m (float32 geometry precision).
+- [x] **I4. Departure waypoint-impulse UI.** ★★
   Up to 2 waypoint cards in the departure sidebar (the coast sidebar's
   stripped per-waypoint pattern), gizmos/arrows/readout boxes in the
   Earth–Moon frame (the Ephemeris tab's Shared/sim wiring: burn-widget,
@@ -1647,6 +1656,81 @@ Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
   from I1's local dynamical frames (prograde means prograde around the
   leg's own primary — Moon, Earth, or Sun, gated on the leg, not
   proximity). Depends on I3.
+  **Done 2026-07-17.** `departure-leg.js` gained the `init` its own header
+  had anticipated: up to 2 waypoint cards (transfer-leg's own stripped
+  pattern — a `mp-card` per waypoint with a remove button, `+ add waypoint`
+  capped at 2 — but the time field reads/writes **hours** after release,
+  not days, matching the flight's own hours-to-days scale; `t` stays SECONDS
+  internally, the module's existing convention). `computeDepartureLeg` now
+  also returns `wpVisuals` (indexed by each waypoint's position in
+  `params.waypoints`, not the chronological order the impulse-chain walk
+  uses internally — an `originalIndex` tag carried through the sort, same
+  trick `ephemeris-view.js`'s `resolveWaypoints` already uses): for each
+  waypoint, the render position plus `rLocal`/`vLocal` and the full
+  `burnEffect` output, ALL already evaluated in that waypoint's own local
+  dynamical frame (geo-leg's `localFrameAt`/`burnEffect`, gated on
+  `leg.primary` — the integrated segment's actual primary — never on mere
+  proximity, per I3's own framing). Since `burnEffect` already returns
+  exactly the `{burnDv, planeChange, progradeDv}` shape
+  `Shared/sim/readout-panes.js`'s `renderReadoutBoxes` expects, the
+  per-waypoint readout boxes need no separate readout-data function the way
+  the Ephemeris tab's own `burnReadoutData` does — `wpVisuals[i].eff` feeds
+  the shared renderer directly. `draw()` now also builds each waypoint's
+  prograde/radial/normal gizmo (`Shared/sim/burn-widget.js`'s
+  `createWaypointGizmo`, given `rLocal`/`vLocal` for orientation and the
+  drawn position separately — the exact render-position-vs-burn-frame split
+  its own header documents) plus its dV/prograde-speed-change arrows
+  (`makeBurnArrow`, same 8-scene-units-per-km/s scale and colours as the
+  Moon-Skyhook/Mars-Phobos local views, which share this file's 1000-km
+  scene unit).
+  **Shell additions (mission-view.js), both generalized for any future
+  module, not special-cased to this one:** (1) `view.pxScaled` — a plain
+  `[{obj, px}]` list a module's `draw()` can populate, rescaled every
+  render frame by the existing `updateChevrons` hook (renamed in spirit,
+  not in name) via `worldSizeAtPointForPx`, the same constant-on-screen-size
+  treatment the ship-marker chevron already got, generalized past that one
+  sprite. (2) a `readoutLayer` overlay (`Shared/sim/readout-panes.js`'s
+  straddling-box mechanism, previously only wired into the Ephemeris tab)
+  now lives at the mission-view level too, with `mainEl`/`panelEl`/
+  `readoutLayer` all passed through `ctx` to every card's `init` — so
+  departure-leg's own `init` builds and positions its boxes with the exact
+  same imported functions the Ephemeris tab uses, no shell-specific
+  wrapper needed.
+  **Release-point readout:** a small straddling box (same mechanism as the
+  per-waypoint burn readouts, just hand-built rather than going through
+  `renderReadoutBoxes` since its fields don't fit that shape) anchored to a
+  "release" row at the top of the card, showing the flight's headline
+  figures — release date, hand-off v∞, flight time to hand-off — near
+  where the release dot actually sits in the pane, without requiring a
+  scroll up to moon-platform's card for the same numbers.
+  **Bug caught and fixed during in-browser verification:** the add/remove
+  handlers called `setParam` (which recomputes SYNCHRONOUSLY, firing
+  `ctx.onResult`) and only rebuilt the waypoint-card DOM rows *afterward* —
+  so a just-added waypoint's recompute landed against the stale (still
+  empty, or still N-1) `wpRows` array and its readout box silently never
+  appeared until some unrelated later recompute. Fixed by rebuilding the
+  rows against the new list FIRST (`rebuildWaypointRowsFor`, a
+  temporary-`stageParams`-override variant of the normal rebuild) and only
+  then calling `setParam`, with an explicit `updateReadouts()` call right
+  after (factored out of the `ctx.onResult` callback, which now just calls
+  it) so the fresh rows aren't left showing stale data for even one tick.
+  Verified in-browser (local server, a genuinely fresh load of the shipped
+  preset): the card renders "release" + "+ add waypoint" with no waypoints;
+  adding one shows its card AND its readout box together, immediately (no
+  stale-tick gap); setting a 1.5 km/s prograde impulse raised the hand-off
+  v∞ from 4.93 → 6.47 km/s live (compliance bar's own `v∞ out` gap visibly
+  closing, 6.55→6.54 vs. the unboosted 6.55→5.02 — I3's own "teaching
+  exercise" framing playing out), with the readout box showing the matching
+  `impulse Δv 1.50 km/s` / `prograde Δv +1.50 km/s`; adding a second
+  waypoint produced its own card + readout box (3 total: release + 2
+  waypoints) and correctly hid the add button at the 2-cap; instrumenting
+  `THREE.Group.prototype.add` confirmed 2 gizmo groups (tagged via
+  `userData.axes`) and 2 `ArrowHelper`s were actually added to the scene
+  graph on a burn-field edit. Console clean throughout. Node suites
+  unaffected structurally (still 154 green) — the `computeDepartureLeg`
+  tests only check `ok`/`handoff`/`vinfEarth`, not the new `wpVisuals`
+  field, so no test changes were needed; the field is exercised by the
+  in-browser check above instead.
 - [ ] **I5. Carrier add/remove dropdown.** ★★
   F1's departure slot, pulled forward: an "add technology" affordance in
   the departure sidebar (the Moon card is fixed; up to 2 carrier cards;

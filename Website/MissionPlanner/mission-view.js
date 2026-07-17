@@ -154,10 +154,19 @@ export function createMissionView(opts) {
 	opts.container.appendChild(root);
 	function q(sel) { return root.querySelector(sel); }
 
+	var mainEl = q(".mp-main");
 	var sceneEl = q(".mp-scene");
 	var paneMainEl = q(".mp-pane-main");
 	var floatsEl = q(".mp-floats");
 	var panelEl = q(".mp-panel");
+
+	// Straddling readout-box overlay (Shared/sim/readout-panes.js) — the same
+	// mechanism the Ephemeris tab uses for its burn readouts (task D2), now
+	// also available to any sidebar card via ctx.readoutLayer/mainEl/panelEl
+	// (task I4: departure-leg's waypoint burn readouts + release tooltip).
+	var readoutLayer = document.createElement("div");
+	readoutLayer.className = "mp-readout-layer";
+	mainEl.appendChild(readoutLayer);
 	var complianceBarEl = q(".mp-compliance-bar");
 	var eventsBarEl = q(".mp-eventsbar");
 	var dateBarEl = q(".mp-datebar");
@@ -432,7 +441,10 @@ export function createMissionView(opts) {
 				stageId: stage.id,
 				panelHost: host,
 				exchange: Exchange,
-				onResult: function (cb) { entry.callbacks.push(cb); }
+				onResult: function (cb) { entry.callbacks.push(cb); },
+				mainEl: mainEl,
+				panelEl: panelEl,
+				readoutLayer: readoutLayer
 			});
 		}
 	});
@@ -873,15 +885,29 @@ export function createMissionView(opts) {
 	// height, matching how the rest of this view treats "main" as the
 	// reference pane.
 	var CHEVRON_PX = 26;   // matches the Ephemeris marker's own on-screen size
+	// view.pxScaled (task I4): the same constant-on-screen-size treatment,
+	// generalized for anything a module's draw() wants held at a fixed pixel
+	// size regardless of zoom — departure-leg's waypoint gizmos, in
+	// particular (the Ephemeris tab's own updateGizmos/updateWaypointGizmos
+	// pattern). Unlike the chevron, these don't need re-orienting, only
+	// re-scaling, so it's a plain [{ obj, px }] list rebuilt fresh each draw().
 	function updateChevrons() {
 		Object.keys(stageViews).forEach(function (stageId) {
 			stageViews[stageId].forEach(function (view) {
-				var chevron = view.chevron;
 				var frame = frames[view.frame];
-				if (!chevron || !frame) { return; }
-				chevron.sprite.scale.setScalar(
-					worldSizeAtPointForPx(frame.camera, paneMainEl, chevron.sprite.position, CHEVRON_PX));
-				orientMarkerSprite(frame.camera, chevron.sprite, chevron.velDir);
+				if (!frame) { return; }
+				var chevron = view.chevron;
+				if (chevron) {
+					chevron.sprite.scale.setScalar(
+						worldSizeAtPointForPx(frame.camera, paneMainEl, chevron.sprite.position, CHEVRON_PX));
+					orientMarkerSprite(frame.camera, chevron.sprite, chevron.velDir);
+				}
+				if (view.pxScaled) {
+					view.pxScaled.forEach(function (g) {
+						g.obj.scale.setScalar(
+							worldSizeAtPointForPx(frame.camera, paneMainEl, g.obj.position, g.px || 42));
+					});
+				}
 			});
 		});
 	}
@@ -933,9 +959,16 @@ export function createMissionView(opts) {
 		root.remove();
 	}
 
-	// ---- go: one initial set aligns the clock to the slider's day grid and
-	// fires the first recompute/draw pass through normal wiring. --------------
-	dateBar.setBaseDays(world.jd - JD0);
+	// ---- go: one initial set opens the clock at the world's EXACT jd (the
+	// precise setJd path, not setBaseDays's whole-day snap) and fires the
+	// first recompute/draw pass through normal wiring. Exactness matters
+	// since task I3: a fresh mission opens at the plan's release anchor, and
+	// the skyhook tether turns every ~2.25 h — the old day-grid snap opened
+	// ~67 min early, half a rotation, drawing the tether tip on the OPPOSITE
+	// side of the Moon from the departure trajectory's start (and the in-card
+	// phase slider could never close that gap, since both ends rotate
+	// together; only a timeline scrub — the same exact-jd path — healed it).
+	dateBar.setJd(world.jd);
 	world.set({ jd: dateState.jd });
 	placeAll(world.jd);
 
