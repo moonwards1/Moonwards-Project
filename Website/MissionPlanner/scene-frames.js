@@ -128,6 +128,71 @@ export function buildHelioFrame() {
 	};
 }
 
+// Generic body-local frame: one hero sphere for `name` (a HELIO_BODIES
+// entry) at the scene origin, lit by a directional light pointed at the true
+// Sun direction for that body/date. Task J1 (= H1): serves WP-H's arrival
+// system and WP-J's "departure from any body" package alike. Deliberately
+// thinner than buildEarthMoonFrame — there is no real satellite to place
+// (Phobos etc. are orbit-radius sources only, never true ephemeris bodies,
+// per WP-J's own framing), so no orbit ring is built here. A carrier module
+// (J2) draws its own skyhook orbit ring standing in for the "moon" ring the
+// Earth-Moon frame draws itself.
+export function buildBodyFrame(name) {
+	var sys = systems.get(name);
+	var scene = new THREE.Scene();
+	scene.background = new THREE.Color(0x0d111c);
+	var camera = new THREE.PerspectiveCamera(45, 1, 0.05, 400000);
+	scene.add(new THREE.AmbientLight(0x556070, 0.55));
+	var sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+	scene.add(sunLight);
+	scene.add(makeStars(120000, 900));
+
+	var scaleList = [], labelList = [];
+	var labelLayer = makeLabelLayer();
+
+	var radiusU = sys.radius / U;
+	var heroGroup = new THREE.Group();
+	var col = new THREE.Color(sys.color || "#9aa3b5");
+	var heroCore = new THREE.Mesh(
+		new THREE.SphereGeometry(radiusU, 32, 24),
+		new THREE.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(0.3), roughness: 0.85 }));
+	var heroPoint = makePoint(col.clone().lerp(new THREE.Color(0xffffff), 0.45).getHex(), 2.5);
+	heroGroup.add(heroCore); heroGroup.add(heroPoint);
+	scene.add(heroGroup);
+	brAddLabel(labelLayer, labelList, name, heroGroup, "mp-label");
+	scaleList.push({ name: name, group: heroGroup, core: heroCore, soi: null,
+	                 point: heroPoint, radiusAU: radiusU, soiAU: 0 });
+
+	// Scaled off the body's own radius, not hardcoded, since HELIO_BODIES
+	// spans Ceres (radiusU ~0.5) to Jupiter (radiusU ~70) — the same ratios
+	// Earth-Moon (radiusU 6.4, cam 60, zoomMin 2, zoomMax 30000) and the
+	// Mars-Phobos plotter (radiusU 3.4, cam 35) already use, generalized.
+	var camDist = Math.max(20, radiusU * 15);
+	var zoomMin = Math.max(0.5, radiusU * 0.3);
+	var zoomMax = Math.max(20000, radiusU * 3000);
+
+	return {
+		id: "body:" + name,
+		caption: name.toUpperCase() + " SYSTEM · " + name + "-centric ecliptic",
+		scene: scene, camera: camera,
+		cam: createCam(camDist, 0.7, 1.05, new THREE.Vector3(0, 0, 0)),
+		zoomMin: zoomMin, zoomMax: zoomMax,
+		metresPerUnit: U,
+		scaleList: scaleList, labelList: labelList, labelLayer: labelLayer,
+		wantSOI: false,
+		focusBody: name,
+		pickMeshes: [heroCore],
+		pickSoiSpheres: [],
+		bodyNode: function (bodyName) { return bodyName === name ? heroGroup : null; },
+		place: function (jd) {
+			var s = O.bodyStateAtJD(GM_SUN, sys.orbit, jd);
+			var mag = Math.sqrt(s.r[0] * s.r[0] + s.r[1] * s.r[1] + s.r[2] * s.r[2]) || 1;
+			sunLight.position.set(-s.r[0] / mag * 50000, -s.r[1] / mag * 50000, -s.r[2] / mag * 50000);
+			if (this.focusBody === name) { this.cam.target.set(0, 0, 0); }
+		}
+	};
+}
+
 export function buildEarthMoonFrame() {
 	var scene = new THREE.Scene();
 	scene.background = new THREE.Color(0x0d111c);

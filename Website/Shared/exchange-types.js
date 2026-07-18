@@ -16,6 +16,23 @@
 //
 // This file is pure (no DOM, no storage) so it imports directly in Node for
 // unit testing, same as math-utils.js / format-utils.js.
+//
+// The "body" convention (Kim, 2026-07-17): several calculators already work
+// across more than one body from a single page (the Gravity-gradient-skyhooks
+// tool has a body selector; Skyhook-Spin-Launcher follows it) rather than
+// being one hardcoded tool per body the way the Moon-Skyhook-Trajectory-
+// Plotter and Mars-Phobos-Skyhook-Trajectory-Plotter are today. As the
+// Mission Planner's departure/arrival tech dropdowns (WP-I tasks I5/I6) and
+// the standalone calculators generalize further, ANY packet type describing
+// body-specific physical inputs (surface, GM, atmosphere...) MUST carry an
+// explicit `body` field (tether-spec, entry-state and launch-spec below
+// already do; carrier-chain's `base` is the same idea under a different
+// name) — never let a receiver infer the body from which tool/module sent
+// it. Symmetrically, a MODULE that only makes sense for one body (e.g.
+// lunar-skyhook.js) must check an incoming body/base field against its own
+// assumption and fail with a diagnostic on mismatch, rather than silently
+// applying its own body's constants to someone else's numbers — see
+// lunar-skyhook.js's update() for the pattern.
 
 export const PacketTypes = {
 

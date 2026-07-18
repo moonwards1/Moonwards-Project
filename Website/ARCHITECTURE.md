@@ -162,6 +162,18 @@ New types are added to the registry file (`Shared/exchange-types.js`) with a
 version number; receivers ignore fields they don't know and refuse (politely,
 with a banner) versions they can't read.
 
+**The `body` convention.** Note that `tether-spec`, `entry-state` and
+`launch-spec` all carry `body` explicitly, and `carrier-chain`'s `base` is the
+same idea under a different name — no type here lets a receiver infer which
+body it's about from which tool sent it. As calculators generalize to cover
+more than one body from a single page (`Gravity-gradient-skyhooks` already
+does, via a body selector) and the Mission Planner's departure/arrival tech
+dropdowns grow past the Moon, this stays a hard rule for any new
+body-specific type, and consuming modules must check the field against their
+own assumption (diagnostic on mismatch) rather than trust it. See
+`Shared/exchange-types.js`'s header and `MissionPlanner/modules/lunar-skyhook/
+lunar-skyhook.js`'s `update()` for the convention and its enforcement pattern.
+
 ### Frames
 
 `frame` is either `"helio"` (Sun-centred J2000 ecliptic — the Solar System

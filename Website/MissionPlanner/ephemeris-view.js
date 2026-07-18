@@ -904,6 +904,19 @@ export function createEphemerisView(opts) {
 		if (dvMag > (m.dvBudget || 0)) { restoreBase(); m._encT = null; m._released = true; return; }   // over budget
 
 		var c = O.burnComponents(r1, v1, dv);
+
+		// The departure burn gets the Moon's prograde speed folded in for free
+		// afterwards (assistedBurn, below) — Lambert here has no idea that's
+		// coming, so solving straight for sol.v1 overshoots it by that same
+		// amount once assistedBurn adds it back on refresh. Net it out up
+		// front, one pass (not iterated), the same way assistedBurn itself
+		// estimates the Moon's contribution off a tentative raw burn.
+		if (term.isDeparture && state.origin === "Earth") {
+			var vDepRaw = O.applyBurn(r1, v1, c.pro, c.nrm, c.rad);
+			var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, v1), jdHandoff: dateState.jd });
+			if (est.ok) { c.pro -= moonProgradeSpeed(est.jdLaunch, v1); }
+		}
+
 		term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
 		m._encT = t1g + tof; m._released = false;
 	}

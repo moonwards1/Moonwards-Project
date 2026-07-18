@@ -20,7 +20,7 @@
  * position/velocity into geo-leg.js's integrator).
  *
  * Chain shape (plain, serializable data):
- *   { base: "Moon" | "Earth",
+ *   { base: "Moon" | "Earth" | <any origin body>,
  *     rotors: [ { normal: [x,y,z], ref: [x,y,z], radius, rate, phase0, epoch }, ... ] }
  * All vectors plain [x,y,z]; metres, seconds, radians throughout. `normal`
  * is the rotor's plane normal (need not be pre-normalized); `ref` is any
@@ -39,6 +39,7 @@
  * and math-utils.js.
  */
 
+import { systems } from "./orbit.js";
 import { OrbitalMath } from "./math-utils.js";
 import { LunarEphemeris } from "./lunar-ephemeris.js";
 
@@ -46,23 +47,29 @@ var O = OrbitalMath;
 var LE = LunarEphemeris;
 var DAY = 86400;
 
-// Geocentric state (m, m/s) of a chain's base body at Julian date jd. Only
-// the bodies the departure system's chain actually starts from are known
-// here; add more as chains need them.
+// State (m, m/s) of a chain's base body in the integration frame it anchors,
+// at Julian date jd. The base body is the ORIGIN of its own integration
+// frame, so it sits at rest at [0,0,0] — true of Earth (the Earth–Moon
+// system's geocentric frame, task I2) and of any generic departure origin
+// (Mars, Ceres, … in its own body-centred frame, task J2/WP-J: the skyhook
+// orbits the body directly, no satellite modelled). The Moon is the one
+// exception: a lunar departure rides the Moon AROUND Earth, so base "Moon"
+// carries the Moon's real geocentric ephemeris state onto which the skyhook
+// rotor adds.
 var BASE_STATES = {
 	Moon: function (jd) {
 		var ms = LE.moonState(jd);
 		return { r: O.vScale(ms.r, 1e3), v: O.vScale(ms.v, 1e3) };
-	},
-	Earth: function () {
-		return { r: [0, 0, 0], v: [0, 0, 0] };
 	}
 };
 
 export function baseState(name, jd) {
 	var fn = BASE_STATES[name];
-	if (!fn) { throw new Error("kinematic-chain: unknown base body '" + name + "'"); }
-	return fn(jd);
+	if (fn) { return fn(jd); }
+	// Any other known body is the origin of its own frame (Earth for the
+	// geocentric system; a generic origin body for its body-centred one).
+	if (systems.get(name)) { return { r: [0, 0, 0], v: [0, 0, 0] }; }
+	throw new Error("kinematic-chain: unknown base body '" + name + "'");
 }
 
 // Orthonormal in-plane basis for a rotor: e1 is `ref` projected orthogonal

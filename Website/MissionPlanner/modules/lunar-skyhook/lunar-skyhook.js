@@ -187,6 +187,22 @@ export default {
 		rememberPhysics(ctx.world, ctx.stageId, phys);
 		if (!phys.ok) { return phys.diagnostic; }
 
+		// This carrier's physics (GM_M, R_M above) IS the Moon's — the same
+		// body its own attachesTo declares. The upstream chain's base is data
+		// (I5 will let users build chains from other bodies' platforms), so
+		// check it explicitly rather than assume: a lunar skyhook silently
+		// bolted onto a non-Moon base would apply the wrong GM/radius to the
+		// wrong body's numbers with no error at all — exactly the mismatch
+		// the calculator/module "body" convention (exchange-types.js header)
+		// exists to catch.
+		if (input.data.base !== "Moon") {
+			return makeDiagnostic("wrong-body",
+				"The lunar skyhook only works from the Moon, but this chain's base is " +
+				input.data.base + ".",
+				{ values: { base: input.data.base },
+				  fix: "Remove this carrier, or start the chain from the Moon platform." });
+		}
+
 		// The rotor's phase is pinned at the mission's release anchor —
 		// moon-platform upstream already diagnosed a missing anchor, but this
 		// module may also be exercised bare (tests, future profiles), so it

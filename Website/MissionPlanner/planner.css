@@ -252,6 +252,14 @@ body {
 	width: 110px; color-scheme: dark;
 }
 .mp-inrow select { width: 150px; }
+/* Departure technology dropdown (task F1) — full-width, not paired with a
+   label the way .mp-inrow's controls are. */
+.mp-tech-select {
+	display: block; width: 100%; background: #0f1424; border: 1px solid var(--line2);
+	color: var(--text); border-radius: 6px; padding: 5px 8px; font: inherit;
+	font-size: 12.5px; color-scheme: dark;
+}
+.mp-tech-select option:disabled { color: #5f6a82; }
 /* In-card aiming slider (the skyhook's release phase, task I3). */
 .mp-phase-wrap { display: inline-flex; align-items: center; gap: 6px; }
 .mp-phase-wrap input[type=range] { width: 96px; accent-color: var(--acc); }

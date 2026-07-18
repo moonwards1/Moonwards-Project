@@ -61,6 +61,9 @@ I1 → I5 in order; it absorbs F5's departure half and pulls F1's departure
 slot forward (as I5). **D7 precedes WP-I** (Kim, 2026-07-15): it authors the
 freeze-time release anchor that I3 reads. I1/I2 are pure Shared work,
 independent of that semantic, and may run in parallel with D7 if convenient.
+**WP-J** (added 2026-07-17) lets a mission's departure system originate from
+any body on the HELIO_BODIES list via a skyhook orbiting that body — no
+satellite modelling needed. Follows WP-I; un-defers H1.
 
 ### WP-A — Multi-mission shell (tabs over multiple Worlds)
 
@@ -1312,12 +1315,47 @@ World. Source file throughout:
 
 ### WP-F — Tech cards: load, configure, exchange
 
-- [ ] **F1. Tech dropdown per endpoint slot.** ★★
+- [x] **F1. Tech dropdown per endpoint slot.** ★★
   A "Departure technology" / "Arrival technology" card with a dropdown
   (mockup:383–392, 467–476); choosing one dynamic-imports the module and
   `world.set({swapStage, moduleId, params})`. The registry and dynamic-import
   pattern already exist (planner.js:62–68). Greyed "(future)" options for
   unbuilt tech.
+  **Done 2026-07-17, departure only** — Arrival has no frame/phase yet
+  (`PHASE_FRAME` in mission-view.js omits "arrival" until H1+H2), so an
+  "Arrival technology" dropdown has nothing real to select; only the
+  Departure slot was built. New `MissionPlanner/ui/tech-options.js`:
+  `DEPARTURE_TECH_OPTIONS` (id, label, `bodies`, `moduleId`+`moduleUrl` if
+  built else `future: true`) and `techOptionsFor(body)` — follows the "body"
+  convention decided the same day ([[project_body_convention]]): entries are
+  body-tagged, not hardcoded to the Moon, though today only Lunar skyhook is
+  built and everything else (Moon-L1 elevator, lunar mass driver, chemical
+  direct) is a disabled "(future)" option. mission-view.js: the "tech" stage
+  is identified structurally (accepts AND emits `carrier-chain` — today just
+  lunar-skyhook) rather than by name, and the dropdown's body filter reads
+  the base-platform stage's already-computed `carrier-chain.base` (accepts
+  nothing, emits `carrier-chain` — moon-platform) rather than assuming
+  "Moon". The mount-time stageViews/card-building loops were factored into
+  `buildStageViews`/`disposeStageViews`/`buildCard`/`disposeCard` so the
+  dropdown's `swapDepartureTech` can tear down and rebuild ONE stage's view +
+  card in place (disposing the outgoing module's views before `world.set`,
+  so its `viewRemoved` still runs against what it built; building the
+  incoming module's views/card against the freshly-committed params after,
+  then replaying the engine's already-computed result onto them by hand —
+  see the function's own header comment for the full ordering rationale).
+  `lunar-skyhook.js`'s incoming-base check (added the same day) means a
+  future non-Moon carrier swapped in here would fail with a diagnostic
+  rather than silently misapplying Moon's GM/radius. Verified live via the
+  preview pane: the card renders between "Moon (platform)" and "Lunar
+  skyhook" exactly as the mockup lays it out, shows the one built option
+  selected plus three correctly-disabled "(future)" options, re-selecting
+  the active option is a no-op, and the rest of the departure card/trajectory
+  is unaffected — no console errors. Node suite still 154 green (this touches
+  no pure-logic files besides the new tech-options.js). **Not yet verified
+  live: swapping to an actually different built module** — there is only one
+  real departure tech today, so the dispose/rebuild path's cross-module
+  behavior will get its first live exercise whenever a second one (e.g. a
+  Moon-L1 elevator or a placeholder chemical-direct module) is built.
 - [ ] **F2. Exchange receive banner.** ★★
   "Load configuration from a calculator…": accept matching packet types via
   `Exchange.accept`, show the banner (source, label, date), Apply maps payload
@@ -1373,6 +1411,12 @@ World. Source file throughout:
   the Earth–Moon frame (textures, SOI shells, node-split orbit arcs,
   double-click focus — all present in the Moon-Skyhook plotter) are likewise
   deferred and are NOT part of WP-I.
+  **Un-deferred 2026-07-17 (Kim)** — needed for WP-J (generic departure
+  origin) as well as Arrival: a departure from any HELIO_BODIES body needs
+  its own hero-body frame, with the skyhook's own drawn orbit ring standing
+  in for the "moon" ring (no real satellite ephemeris involved). WP-J's J1
+  IS this task, cross-referenced there, not duplicated. Still unbuilt as of
+  this note; the scene-fidelity deferral above still holds.
 - [ ] **H2. A first arrival module.** ★★★ — **decision for Kim.**
   The Arrival button stays disabled until an arrival-capable module exists.
   Options: (a) a minimal "chemical capture burn / intercept check" module now
@@ -1736,14 +1780,124 @@ Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
   the departure sidebar (the Moon card is fixed; up to 2 carrier cards;
   removing one re-drafts the trajectory from what remains). Greyed
   "(future)" options for unbuilt carriers. Depends on I3.
+  **Body scope (Kim, 2026-07-17):** the dropdown is NOT Earth-Moon-only —
+  any body on the departure list can offer tech (skyhook, space elevator,
+  mass driver, ...), restricted case-by-case by plausibility (a Venus
+  skyhook is a legitimate stretch goal; a Jupiter space elevator is not),
+  not by a hardcoded body allowlist. Registry entries are `{ id, label,
+  bodies: [...] }` drawn from `Shared/orbit.js`'s `systems` map (already the
+  project's one master body list — no new one needed). Follow the `body`
+  convention (`Shared/exchange-types.js` header, `ARCHITECTURE.md`'s
+  "Packets — the data contract") for any packet/config a dropdown-selected
+  or calculator-loaded card produces or accepts, and extend
+  `lunar-skyhook.js`'s incoming-base check (added 2026-07-17) to any new
+  body-scoped carrier module.
 - [ ] **I6. Tip spin-launcher carrier card.** ★★★ — **later; design first.**
   The second rotor: arm length, spin rate, plane tilt, its own in-card
   phase slider; drawn riding the tether tip; exchange receive from
   Tip-Spin-Launcher-Calculator (F2's pattern). I2's chain shape already
   carries the rotor — this is the card + draw + exchange work. Depends on
-  I3–I5.
+  I3–I5. Same body convention as I5 applies to its exchange packet.
 
----
+### WP-J — Departure origin: skyhook at any body
+
+Lets a mission's departure system originate from any body on the
+HELIO_BODIES list, not just Earth/Moon. The only departure tech this needs
+is a skyhook orbiting the origin body directly — no satellite ephemeris, no
+other per-body modelling. Phobos (Mars's anchor moon) is the one special
+case, and it's already covered: `Mars-Phobos-Skyhook-Trajectory-Plotter/
+marsPhobosSkyhookTrajectory.js` already models a skyhook orbiting Mars this
+way (Phobos supplies only a radius, never a real position) and is the direct
+port source for this package.
+
+- [x] **J1 (= H1). Generic body-local frame factory.** ★★
+  Un-defer H1 (see its own entry under WP-H): add `buildBodyFrame(name)` to
+  `scene-frames.js`, generalizing `buildEarthMoonFrame` — hero sphere, label,
+  lighting, and the skyhook's own orbit ring standing in for the "moon"
+  ring. Serves both H2 (Arrival) and this package (Departure).
+  **Done 2026-07-17.** `scene-frames.js` gains `buildBodyFrame(name)`,
+  thinner than `buildEarthMoonFrame`: one hero sphere for `name` (any
+  `HELIO_BODIES` entry) at the scene origin — no satellite is placed or
+  orbit ring built here, since a departure origin's "moon" (Phobos, etc.) is
+  never a real ephemeris body, only an orbit-radius source (WP-J's own
+  framing); a carrier module (J2) draws its own skyhook ring in its place.
+  Hero sphere styling (color/emissive/point) follows `createBody`'s Kepler
+  pattern rather than `buildEarthMoonFrame`'s hand-picked Earth/Moon colors,
+  since a generic body has no hand-tuned look to match. Camera distance and
+  zoom bounds scale off the body's own radius (`radiusU`) rather than
+  hardcoded constants, generalizing the ratios `buildEarthMoonFrame`
+  (radiusU 6.4, cam 60, zoomMin 2, zoomMax 30000) and the Mars-Phobos
+  plotter (radiusU 3.4, cam 35) already use, so Ceres (radiusU ~0.5) and
+  Jupiter (radiusU ~70) both get sane default framing. `place(jd)` points
+  the directional light at the true Sun direction for that body via
+  `O.bodyStateAtJD`, no ring rebuild needed since none is built. Not yet
+  wired into any view (`PHASE_FRAME`/mission-view.js) — that's J3.
+  Verified: `node --check` clean; in-browser regression on the existing
+  planner (helio + Earth-Moon frames, `buildBodyFrame` unused by any current
+  caller) — no console errors, unaffected. No Node suite: this file is
+  THREE.js/browser-only, same as its siblings.
+- [x] **J2. Generic orbital-skyhook carrier + release module.** ★★★
+  Port `marsPhobosSkyhookTrajectory.js`'s escape integrator and release/
+  waypoint kinematics into a module usable for any origin body, parametrized
+  by that body's own GM/radius instead of Mars's hardcoded constants. Orbit
+  radius defaults to a candidate satellite's `orbit.semiMajor` when the
+  origin has one (e.g. Mars → Phobos), else a manual default. Depends on J1.
+  **Done 2026-07-17 — awaiting Kim's review (parallels the lunar departure
+  trio; no save-format change beyond two new module ids).** Three pieces,
+  each the generic sibling of an Earth–Moon one:
+  - **`Shared/body-leg.js`** — the Mars-Phobos plotter's body+Sun escape
+    integrator (`bodyAccel`/`integrateTrajectory`/`buildIntegratedLeg`/
+    `localFrameAt`, branches entry/body/sun), generalized off Mars onto any
+    HELIO_BODIES body via `bodyConstants(name)` (GM/radius/mass/SOI/cutoff
+    from `systems`; airless bodies get `entryR` = bare surface). The
+    body-agnostic helpers geo-leg already had (`stateAtLegTime`,
+    `burnEffect`, the distance/time helpers) are imported and re-exported,
+    not re-typed. **Proven BIT-EXACT** against the plotter's own sliced code
+    (0.0 m/(m/s) sample drift, identical branch/duration/SOI) on escape,
+    bound, and impact scenarios — `Shared/tests/body-leg.test.js` (11 tests)
+    pins that run.
+  - **`modules/orbital-skyhook/`** — the carrier. SELF-CONTAINED (accepts
+    `[]`, emits the whole `{ base: <body>, rotors: [its rotor] }` — no
+    separate platform, since a generic skyhook orbits its body directly, in
+    that body's own centred frame where the body is the origin at rest;
+    `kinematic-chain.js`'s `baseState` now returns `[0,0,0]` for any such
+    origin body). Body-parametrized (`body` a required param, the "body"
+    convention); GM/radius from `systems`; `defaultGeometryFor` puts the CoM
+    at a candidate satellite's orbit (Mars → Phobos) or a low fallback, and
+    the release above the escape radius so the default drafts an escaping
+    trajectory. In-card phase slider; diagnoses a missing release anchor (the
+    role moon-platform plays for the lunar chain).
+  - **`modules/body-departure-leg/`** — the release/integration leg
+    (headless, `plainCard`). Generic sibling of departure-leg: reads the
+    anchor, evaluates the chain there (body-centric release), integrates
+    body+Sun forward with up to 2 waypoint impulses (each in its leg's own
+    Body/Sun local frame), truncates at ORIGIN-BODY-SOI exit = the hand-off,
+    lifts to helio via `Frames.localToHelio(body, …)`. Its I4-style waypoint
+    UI (cards + vector editor + readout boxes) and draw are a close copy of
+    departure-leg's, kept separate to leave the working lunar leg untouched
+    (a future refactor could share them).
+  Both modules read the release frame via the symbolic `rendersIn:
+  ["body:origin"]` token — **J3** aliases it to the mission's own origin
+  frame (buildBodyFrame, J1) and sets `PHASE_FRAME`; until then a generic
+  mission has no origin frame and they draw nothing (harmless). Registered in
+  planner.js's `MODULE_URLS`. Verified: full Node suite **216 green** (+24:
+  11 body-leg, 13 orbital-skyhook/body-departure-leg — carrier geometry,
+  release kinematics, escape-to-hand-off, waypoint impulse, and the
+  no-carrier/bad-origin/bound/impact diagnostics, plus an engine-integration
+  pass skyhook→leg→frozen-plan); `node --check` + eslint (`no-undef`) clean on
+  the two browser modules; in-browser (local server) the planner still boots
+  with the two new modules registered and the shipped lunar mission intact
+  (clean console), and a direct harness against a real `buildBodyFrame("Mars")`
+  drove both `draw` hooks (skyhook → 2 orbit rings + tether + release dot; leg
+  → a 144-point body-centric polyline + release/hand-off dots) and both
+  `update` paths (chain base=Mars, ship-state helio hand-off + 2 events) with
+  no THREE errors. **No in-planner end-to-end yet** — a generic-origin
+  mission can't be displayed until J3 wires the origin frame (mirrors I1
+  awaiting I3).
+- [ ] **J3. Departure phase frame follows the mission's origin.** ★★
+  `mission-view.js`'s `PHASE_FRAME.departure` stops being a fixed
+  Earth-Moon constant; each mission view builds/looks up the frame for its
+  own frozen plan's `origin` body. Depends on J1 + J2.
 
 ## Inventory: existing code to adapt
 

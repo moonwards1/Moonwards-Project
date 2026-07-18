@@ -114,7 +114,13 @@ test("baseState: Moon matches LunarEphemeris directly; Earth is the geocentric o
 	assert.deepEqual(earth.r, [0, 0, 0]);
 	assert.deepEqual(earth.v, [0, 0, 0]);
 
-	assert.throws(() => baseState("Mars", jd), /unknown base body/);
+	// Any other known body is the origin of its own body-centred frame — a
+	// generic departure origin (task J2/WP-J), e.g. Mars. Only a truly unknown
+	// body throws.
+	var mars = baseState("Mars", jd);
+	assert.deepEqual(mars.r, [0, 0, 0]);
+	assert.deepEqual(mars.v, [0, 0, 0]);
+	assert.throws(() => baseState("Nowhere", jd), /unknown base body/);
 });
 
 test("a chain with no rotors is just the base body's own state", () => {

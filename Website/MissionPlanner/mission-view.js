@@ -48,6 +48,7 @@ import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
+import { techOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, disposeScene } from "./scene-frames.js";
 
 var O = OrbitalMath;
@@ -348,9 +349,12 @@ export function createMissionView(opts) {
 	// parented at the attachesTo body's node when the frame has it. ------------
 	var stageViews = {};   // stageId -> [{ frame, group, stageId, metresPerUnit }]
 
-	world.stages().forEach(function (stage) {
+	// Factored out of the mount-time loop (task F1) so the departure
+	// technology dropdown's swap path can rebuild a single stage's views
+	// without touching the rest — see swapDepartureTech below.
+	function buildStageViews(stage) {
 		var desc = registry.get(stage.moduleId);
-		if (!desc || !Array.isArray(desc.rendersIn)) { return; }
+		if (!desc || !Array.isArray(desc.rendersIn)) { stageViews[stage.id] = []; return; }
 		stageViews[stage.id] = [];
 		desc.rendersIn.forEach(function (frameId) {
 			var frame = frames[frameId];
@@ -362,7 +366,29 @@ export function createMissionView(opts) {
 			if (typeof desc.viewAdded === "function") { desc.viewAdded(view); }
 			stageViews[stage.id].push(view);
 		});
-	});
+	}
+
+	function disposeDeepObject3D(o) {
+		if (o.children) { o.children.slice().forEach(disposeDeepObject3D); }
+		if (o.geometry) { o.geometry.dispose(); }
+		if (o.material) { o.material.dispose(); }
+	}
+
+	// The counterpart: tear down one stage's views (F1's swap path — a
+	// module being replaced must not leave its old THREE objects parented in
+	// the frame it drew into). `oldDesc` is the OUTGOING module (looked up
+	// before the World's moduleId changes), so its own viewRemoved hook (if
+	// any) still runs against the views it created.
+	function disposeStageViews(stageId, oldDesc) {
+		(stageViews[stageId] || []).forEach(function (view) {
+			if (oldDesc && typeof oldDesc.viewRemoved === "function") { oldDesc.viewRemoved(view); }
+			if (view.group.parent) { view.group.parent.remove(view.group); }
+			disposeDeepObject3D(view.group);
+		});
+		delete stageViews[stageId];
+	}
+
+	world.stages().forEach(buildStageViews);
 
 	function drawStage(res) {
 		var desc = registry.get(res.moduleId);
@@ -406,7 +432,13 @@ export function createMissionView(opts) {
 		});
 	}
 
-	world.stages().forEach(function (stage) {
+	// Factored out of the mount-time loop (task F1) so the departure
+	// technology dropdown's swap path can rebuild a single stage's card
+	// without touching the rest. `insertBeforeEl` places the card at a given
+	// position (null = append at the end, the mount-time loop's behaviour);
+	// the swap path passes the outgoing card's old position so the new card
+	// lands exactly where it was, not at the bottom of the sidebar.
+	function buildCard(stage, insertBeforeEl) {
 		var desc = registry.get(stage.moduleId);
 		if (desc && desc.sidebarCard === false) { return; }   // e.g. frozen-plan: its readouts live in the phase bar instead
 		var card = document.createElement("div");
@@ -430,7 +462,7 @@ export function createMissionView(opts) {
 		card.appendChild(host);
 		var diag = document.createElement("div");
 		card.appendChild(diag);
-		panelEl.appendChild(card);
+		panelEl.insertBefore(card, insertBeforeEl || null);
 
 		var entry = { cardEl: card, chipEl: chip, diagEl: diag, phase: stagePhaseOf(stage), callbacks: [] };
 		cards[stage.id] = entry;
@@ -447,8 +479,130 @@ export function createMissionView(opts) {
 				readoutLayer: readoutLayer
 			});
 		}
-	});
+	}
+
+	// The swap path's counterpart: drop one stage's card DOM + bookkeeping.
+	// Returns the removed card's next sibling (or null), so the caller can
+	// re-insert the replacement at the same position.
+	function disposeCard(stageId) {
+		var entry = cards[stageId];
+		if (!entry) { return null; }
+		var next = entry.cardEl.nextSibling;
+		entry.cardEl.remove();
+		delete cards[stageId];
+		return next;
+	}
+
+	world.stages().forEach(function (stage) { buildCard(stage, null); });
 	applyPhaseToCards();
+
+	// ---- departure technology dropdown (task F1) -----------------------------
+	// A shell-level control, not a module's own card: it swaps whichever ONE
+	// stage in the departure stack is shaped like a carrier (accepts AND
+	// emits carrier-chain — today just lunar-skyhook; a rotor-less/no-carrier
+	// profile has none, so the card just doesn't appear, which is I5's
+	// add/remove problem, not this task's). "Base platform" is the same shape
+	// rule the other way (emits carrier-chain, accepts nothing — moon-platform
+	// today) — its own already-computed output tells us which body the chain
+	// actually starts from, so the dropdown's options are filtered by that
+	// body via ui/tech-options.js's techOptionsFor rather than hardcoded to
+	// the Moon (the "body" convention: Shared/exchange-types.js's header,
+	// MissionPlannerTasks.md's I5/I6 notes, Kim 2026-07-17).
+	function isBasePlatformStage(stage) {
+		var desc = registry.get(stage.moduleId);
+		return !!desc && desc.accepts.length === 0 && desc.emits.indexOf("carrier-chain") !== -1;
+	}
+	function isCarrierTechStage(stage) {
+		var desc = registry.get(stage.moduleId);
+		return !!desc && desc.accepts.indexOf("carrier-chain") !== -1 && desc.emits.indexOf("carrier-chain") !== -1;
+	}
+	function departureTechStage() {
+		var stages = world.stages();
+		for (var i = 0; i < stages.length; i++) { if (isCarrierTechStage(stages[i])) { return stages[i]; } }
+		return null;
+	}
+	function departureChainBody() {
+		var stages = world.stages();
+		for (var i = 0; i < stages.length; i++) {
+			if (!isBasePlatformStage(stages[i])) { continue; }
+			var res = engine.resultFor(stages[i].id);
+			if (res && res.output && res.output.data && typeof res.output.data.base === "string") {
+				return res.output.data.base;
+			}
+		}
+		return null;
+	}
+
+	var DEP_TECH_KEY = "__departure-tech__";
+
+	function buildDepartureTechCard() {
+		var techStage = departureTechStage();
+		if (!techStage) { return; }   // no swappable carrier stage in this profile
+
+		var card = document.createElement("div"); card.className = "mp-card";
+		var h = document.createElement("h3"); h.textContent = "Departure technology"; card.appendChild(h);
+		var select = document.createElement("select");
+		select.className = "mp-tech-select";
+		card.appendChild(select);
+		panelEl.insertBefore(card, cards[techStage.id] ? cards[techStage.id].cardEl : null);
+		cards[DEP_TECH_KEY] = { cardEl: card, phase: "departure", callbacks: [] };
+
+		function refreshOptions() {
+			var body = departureChainBody();
+			var stage = world.getStage(techStage.id);
+			select.innerHTML = "";
+			techOptionsFor(body).forEach(function (opt) {
+				var o = document.createElement("option");
+				o.value = opt.id;
+				o.textContent = opt.label + (opt.future ? " (future)" : "");
+				o.disabled = !!opt.future;
+				if (opt.moduleId === stage.moduleId) { o.selected = true; }
+				select.appendChild(o);
+			});
+		}
+		refreshOptions();
+
+		select.addEventListener("change", function () {
+			var body = departureChainBody();
+			var opt = techOptionsFor(body).filter(function (o) { return o.id === select.value; })[0];
+			if (!opt || opt.future || !opt.moduleId) { refreshOptions(); return; }   // disabled options shouldn't fire; defensive
+			swapDepartureTech(techStage.id, opt).then(refreshOptions);
+		});
+	}
+
+	// Swaps the departure tech stage's module (the dropdown's change handler).
+	// Disposes the outgoing module's card/views BEFORE world.set (so its
+	// viewRemoved runs against the descriptor that actually built them),
+	// commits the change (this recomputes synchronously — recompute.js — with
+	// no card/view yet registered for this stage, so that pass's
+	// updateCard/drawStage safely no-op), then builds the incoming module's
+	// card/views against the now-committed fresh params and replays the
+	// engine's already-computed result onto them by hand. Nothing here
+	// re-derives physics — recompute already ran; this only catches the view
+	// layer up to what the engine already decided.
+	async function swapDepartureTech(stageId, opt) {
+		var stage = world.getStage(stageId);
+		if (!stage || stage.moduleId === opt.moduleId) { return; }
+		if (!registry.has(opt.moduleId)) {
+			var mod = await import(opt.moduleUrl);
+			registry.register(mod.default);
+		}
+		var oldDesc = registry.get(stage.moduleId);
+		var insertBefore = disposeCard(stageId);
+		disposeStageViews(stageId, oldDesc);
+
+		world.set({ swapStage: stageId, moduleId: opt.moduleId, params: {} });
+
+		var newStage = world.getStage(stageId);
+		buildStageViews(newStage);
+		buildCard(newStage, insertBefore);
+		applyPhaseToCards();
+
+		var res = engine.resultFor(stageId);
+		if (res) { drawStage(res); updateCard(res); }
+	}
+
+	buildDepartureTechCard();
 
 	function renderDiagBox(parent, d, cssClass) {
 		var box = document.createElement("div");
