@@ -49,7 +49,7 @@ import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
 import { techOptionsFor } from "./ui/tech-options.js";
-import { buildHelioFrame, buildEarthMoonFrame, disposeScene } from "./scene-frames.js";
+import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 
 var O = OrbitalMath;
 var EARTH = systems.get("Earth");
@@ -59,17 +59,45 @@ var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 var SPAN_DAYS = 36525;
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// ---- phase <-> frame mapping (task B1). "departure" is the Earth-Moon
-// system, where the departure tech lives; "coast" is the heliocentric leg.
-// "arrival" has no frame yet — that's H1 (a generic body-frame factory) +
-// H2 (a first arrival module) — so it's absent from PHASE_FRAME and its
-// phase button stays disabled until then; PHASES still lists it so the
-// rest of the phase machinery (dots, card filtering, workspace save/load)
-// is already correct the day H2 lands.
+// ---- phase <-> frame mapping (task B1, generalized by J3). "coast" is
+// always the heliocentric leg. "departure" used to be a fixed "body:Earth-Moon"
+// constant; now each mission view builds PHASE_FRAME.departure itself from its
+// own frozen plan's `origin` body (missionOriginBody/departureFrameFor below)
+// — "body:Earth-Moon" for the original Earth/Moon chain, or a generic
+// buildBodyFrame(origin) for any other HELIO_BODIES origin (WP-J). Departure
+// modules that render body-centrically declare the symbolic "body:origin"
+// rendersIn token (orbital-skyhook.js, body-departure-leg.js) rather than a
+// literal frame id, since they don't know the mission's origin themselves;
+// resolveFrameId() below aliases that token to the real frame id wherever a
+// module's rendersIn is consulted. "arrival" has no frame yet — that's H2 (a
+// first arrival module) — so it's absent from PHASE_FRAME and its phase
+// button stays disabled until then; PHASES still lists it so the rest of the
+// phase machinery (dots, card filtering, workspace save/load) is already
+// correct the day H2 lands.
 var PHASES = ["departure", "coast", "arrival"];
-var PHASE_FRAME = { departure: "body:Earth-Moon", coast: "helio" };
-var FRAME_PHASE = { "body:Earth-Moon": "departure", "helio": "coast" };
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
+
+// The mission's departure-origin body (task J3): read from its frozen-plan
+// stage's `origin` param (the frozen plan's own schema, C1) — "Earth" for
+// pre-comply saves or any mission without a frozen-plan stage, matching
+// frozen-plan.js's own default.
+function missionOriginBody(world) {
+	var stages = world.stages();
+	for (var i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId === "frozen-plan") {
+			var o = stages[i].params && stages[i].params.origin;
+			return (typeof o === "string" && systems.has(o)) ? o : "Earth";
+		}
+	}
+	return "Earth";
+}
+
+// The departure phase's real frame id for a given origin body: the original
+// Earth-Moon frame for Earth, else "body:<origin>" (built by buildBodyFrame,
+// task J1).
+function departureFrameFor(origin) {
+	return origin === "Earth" ? "body:Earth-Moon" : "body:" + origin;
+}
 
 function dotClassFor(res) {
 	return res.status === "ok"
@@ -186,16 +214,35 @@ export function createMissionView(opts) {
 
 	var engine = createEngine(world, registry);
 
+	// ---- departure frame (task J3): this mission's own origin body picks
+	// which frame PHASE_FRAME.departure points at — the Earth-Moon frame for
+	// the original chain, or a generic buildBodyFrame(origin) for any other
+	// WP-J origin. resolveFrameId() aliases a module's symbolic "body:origin"
+	// rendersIn token to the real frame id wherever rendersIn is consulted.
+	var originBody = missionOriginBody(world);
+	var departureFrameId = departureFrameFor(originBody);
+	var PHASE_FRAME = { departure: departureFrameId, coast: "helio" };
+	var FRAME_PHASE = {};
+	FRAME_PHASE[departureFrameId] = "departure";
+	FRAME_PHASE.helio = "coast";
+	function resolveFrameId(id) { return id === "body:origin" ? departureFrameId : id; }
+
 	var frames = {};   // frameId -> frame record
 	frames["helio"] = buildHelioFrame();
-	frames["body:Earth-Moon"] = buildEarthMoonFrame();
+	frames[departureFrameId] = departureFrameId === "body:Earth-Moon"
+		? buildEarthMoonFrame() : buildBodyFrame(originBody);
 
 	// ---- workspace: which frame is main, which phase is active (task B1),
 	// camera poses. This mission's slot of the shared localStorage store,
 	// never World. phase and main are kept in lockstep (see setPhase) — main
 	// is just "the frame the active phase points at" via PHASE_FRAME, except
-	// for "arrival", which has no frame yet. -----------------------------------
-	var workspace = { main: opts.defaultMain, phase: FRAME_PHASE[opts.defaultMain] || "departure", cams: {} };
+	// for "arrival", which has no frame yet. A saved/passed-in default main
+	// naming a frame this mission doesn't have (e.g. a duplicated non-Earth
+	// mission falling back to the shell's Earth-Moon default) falls back to
+	// "helio" rather than pointing the main pane at a frame that was never
+	// built. -----------------------------------
+	var initialMain = frames[opts.defaultMain] ? opts.defaultMain : "helio";
+	var workspace = { main: initialMain, phase: FRAME_PHASE[initialMain] || "departure", cams: {} };
 	(function loadWorkspace() {
 		var saved = loadWorkspaceSlot(missionId);
 		if (!saved) { return; }
@@ -356,7 +403,8 @@ export function createMissionView(opts) {
 		var desc = registry.get(stage.moduleId);
 		if (!desc || !Array.isArray(desc.rendersIn)) { stageViews[stage.id] = []; return; }
 		stageViews[stage.id] = [];
-		desc.rendersIn.forEach(function (frameId) {
+		desc.rendersIn.forEach(function (declaredFrameId) {
+			var frameId = resolveFrameId(declaredFrameId);
 			var frame = frames[frameId];
 			if (!frame) { return; }
 			var group = new THREE.Group();
@@ -418,7 +466,7 @@ export function createMissionView(opts) {
 		var desc = registry.get(stage.moduleId);
 		if (!desc || !Array.isArray(desc.rendersIn)) { return null; }
 		for (var i = 0; i < desc.rendersIn.length; i++) {
-			var p = FRAME_PHASE[desc.rendersIn[i]];
+			var p = FRAME_PHASE[resolveFrameId(desc.rendersIn[i])];
 			if (p) { return p; }
 		}
 		return null;

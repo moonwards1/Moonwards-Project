@@ -1894,10 +1894,53 @@ port source for this package.
   no THREE errors. **No in-planner end-to-end yet** — a generic-origin
   mission can't be displayed until J3 wires the origin frame (mirrors I1
   awaiting I3).
-- [ ] **J3. Departure phase frame follows the mission's origin.** ★★
+- [x] **J3. Departure phase frame follows the mission's origin.** ★★
   `mission-view.js`'s `PHASE_FRAME.departure` stops being a fixed
   Earth-Moon constant; each mission view builds/looks up the frame for its
   own frozen plan's `origin` body. Depends on J1 + J2.
+  **Done 2026-07-17.** `mission-view.js` gains `missionOriginBody(world)`
+  (reads the mission's frozen-plan stage's `origin` param, "Earth" default
+  for pre-comply saves or missions without one — frozen-plan.js's own
+  default) and `departureFrameFor(origin)` ("body:Earth-Moon" for Earth,
+  else "body:" + origin). `PHASE_FRAME`/`FRAME_PHASE` are no longer
+  module-scope constants — each `createMissionView` call builds its own from
+  `departureFrameId = departureFrameFor(missionOriginBody(world))`, computed
+  once up front. The `frames` dict now only builds what a given mission
+  needs: `helio` always, plus either `buildEarthMoonFrame()` (Earth origin,
+  unchanged) or `buildBodyFrame(origin)` (any other WP-J origin, task J1) —
+  no wasted Earth-Moon frame for a Mars/Ceres/etc. mission. A new
+  `resolveFrameId(id)` aliases the symbolic `"body:origin"` token
+  `orbital-skyhook.js`/`body-departure-leg.js` declare in `rendersIn` to the
+  mission's real `departureFrameId`, called at both consultation points
+  (`buildStageViews`'s frame lookup, `stagePhaseOf`'s phase lookup) — the two
+  modules stay written against the symbolic token with no knowledge of any
+  particular mission's origin. Defensive fallback: `initialMain` falls back
+  to `"helio"` when `opts.defaultMain`/a saved workspace slot's `main` names
+  a frame this mission never built (e.g. a non-Earth mission duplicated
+  before J3, or the shell's hardcoded `defaultWorkspaceMain =
+  "body:Earth-Moon"` landing on a Mars mission) — same defensive pattern the
+  saved-workspace path already used, extended to the constructor default.
+  **Known limitation, out of scope here:** the departure slider's own default
+  span/Hohmann fallback (`departureDefaultSpanSeconds`/`departureSpan`) still
+  hardcodes Earth's SOI/orbit for its estimate — cosmetic only (the slider
+  still shows real flight events once a generic departure tech resolves any),
+  not part of "the frame follows the origin."
+  Verified: full Node suite unaffected (216 green — this is browser-only
+  rendering/wiring, no pure-logic change) plus `node --check` clean. In
+  browser (local server): the shipped Earth-Moon preset renders identically
+  after the refactor (Departure caption "EARTH–MOON SYSTEM · geocentric
+  ecliptic", all cards/compliance bar/events intact, console clean,
+  survives reload). A synthetic Mars-origin mission (orbital-skyhook →
+  body-departure-leg → frozen-plan with `origin: "Mars"`, built the same way
+  `modules/tests/body-departure.test.js`'s engine-integration test does, but
+  driven through the real `createMissionView` in-page) switched to Departure
+  and showed the main pane caption "MARS SYSTEM · Mars-centric ecliptic"
+  with the Orbital skyhook card reading "ok", no diagnostics, only the two
+  frames actually built (Mars + helio, no stray Earth-Moon frame), and a
+  clean `render()`/`resize()` pass — confirming both the frame construction
+  and the `"body:origin"` token aliasing work for a real non-Earth origin,
+  not just Earth. Console clean throughout; harness view disposed and its
+  workspace-store slot removed after verification.
 
 ## Inventory: existing code to adapt
 
