@@ -36,8 +36,13 @@ test("freeze output deserializes into a working World with the E2 profile", () =
 	var res = deserializeWorld(data);
 	assert.equal(res.ok, true, res.reason);
 	var stages = res.world.serialize().stages;
-	assert.deepEqual(stages.map(s => s.moduleId), ["frozen-plan", "transfer-leg"]);
-	assert.equal(data.nextStage, 3);
+	assert.deepEqual(stages.map(s => s.moduleId),
+		["frozen-plan", "transfer-leg", "arrival-leg", "capture-burn"]);
+	assert.equal(data.nextStage, 5);
+	// The arrival stages (tasks H3, H2) carry the destination explicitly
+	// (the body convention); capture altitudes are module defaults.
+	assert.deepEqual(stages[2].params, { body: "Mars", waypoints: [] });
+	assert.deepEqual(stages[3].params, { body: "Mars" });
 });
 
 test("frozen-plan and transfer-leg carry matching waypoint copies, not shared refs", () => {

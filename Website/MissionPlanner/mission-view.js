@@ -48,7 +48,7 @@ import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
-import { techOptionsFor } from "./ui/tech-options.js";
+import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 
 var O = OrbitalMath;
@@ -69,11 +69,13 @@ var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oc
 // rendersIn token (orbital-skyhook.js, body-departure-leg.js) rather than a
 // literal frame id, since they don't know the mission's origin themselves;
 // resolveFrameId() below aliases that token to the real frame id wherever a
-// module's rendersIn is consulted. "arrival" has no frame yet — that's H2 (a
-// first arrival module) — so it's absent from PHASE_FRAME and its phase
-// button stays disabled until then; PHASES still lists it so the rest of the
-// phase machinery (dots, card filtering, workspace save/load) is already
-// correct the day H2 lands.
+// module's rendersIn is consulted. "arrival" (task H2) works the same way in
+// mirror image: when the mission's frozen plan commits to an arrival body,
+// the view builds buildBodyFrame(destination), PHASE_FRAME.arrival points at
+// it, the phase button un-disables, and arrival modules' symbolic
+// "body:destination" rendersIn token (capture-burn.js, arrival-skyhook.js)
+// aliases to it. A mission with no arrival commitment (an old save, or a
+// destination-less plan) keeps the button disabled, exactly as before H2.
 var PHASES = ["departure", "coast", "arrival"];
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
 
@@ -97,6 +99,21 @@ function missionOriginBody(world) {
 // task J1).
 function departureFrameFor(origin) {
 	return origin === "Earth" ? "body:Earth-Moon" : "body:" + origin;
+}
+
+// The mission's arrival body (task H2): the frozen plan's own arrival
+// commitment, read directly from its stage params (the same direct-read
+// pattern as missionOriginBody — the view builds before any module resolves).
+// null when the mission has no frozen plan, no committed body, or names a
+// body the master list doesn't know.
+function missionArrivalBody(world) {
+	var stages = world.stages();
+	for (var i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId !== "frozen-plan") { continue; }
+		var arr = (stages[i].params && stages[i].params.arrival) || {};
+		if (typeof arr.body === "string" && systems.has(arr.body)) { return arr.body; }
+	}
+	return null;
 }
 
 function dotClassFor(res) {
@@ -221,22 +238,50 @@ export function createMissionView(opts) {
 	// rendersIn token to the real frame id wherever rendersIn is consulted.
 	var originBody = missionOriginBody(world);
 	var departureFrameId = departureFrameFor(originBody);
+	// ---- arrival frame (task H2): the frozen plan's arrival body gets its
+	// own buildBodyFrame, and the "body:destination" rendersIn token
+	// (capture-burn, arrival-skyhook) aliases to it. In the degenerate case
+	// where destination and origin share a frame id (a Mars→Mars mission),
+	// the one frame serves both phases and departure keeps the FRAME_PHASE
+	// claim (a float click reads as departure; the phase buttons still reach
+	// arrival directly).
+	var arrivalBody = missionArrivalBody(world);
+	var arrivalFrameId = arrivalBody ? "body:" + arrivalBody : null;
 	var PHASE_FRAME = { departure: departureFrameId, coast: "helio" };
 	var FRAME_PHASE = {};
 	FRAME_PHASE[departureFrameId] = "departure";
 	FRAME_PHASE.helio = "coast";
-	function resolveFrameId(id) { return id === "body:origin" ? departureFrameId : id; }
+	if (arrivalFrameId) {
+		PHASE_FRAME.arrival = arrivalFrameId;
+		if (!FRAME_PHASE[arrivalFrameId]) { FRAME_PHASE[arrivalFrameId] = "arrival"; }
+	}
+	function resolveFrameId(id) {
+		if (id === "body:origin") { return departureFrameId; }
+		if (id === "body:destination") { return arrivalFrameId || id; }
+		return id;
+	}
 
 	var frames = {};   // frameId -> frame record
 	frames["helio"] = buildHelioFrame();
 	frames[departureFrameId] = departureFrameId === "body:Earth-Moon"
 		? buildEarthMoonFrame() : buildBodyFrame(originBody);
+	if (arrivalFrameId && !frames[arrivalFrameId]) {
+		frames[arrivalFrameId] = buildBodyFrame(arrivalBody);
+	}
+
+	// The Arrival phase is reachable exactly when its frame exists (task H2);
+	// the button ships disabled in planner.html for the no-commitment case.
+	if (arrivalFrameId) {
+		phaseBtns.arrival.disabled = false;
+		phaseBtns.arrival.title = "Arrival at " + arrivalBody;
+	}
 
 	// ---- workspace: which frame is main, which phase is active (task B1),
 	// camera poses. This mission's slot of the shared localStorage store,
 	// never World. phase and main are kept in lockstep (see setPhase) — main
 	// is just "the frame the active phase points at" via PHASE_FRAME, except
-	// for "arrival", which has no frame yet. A saved/passed-in default main
+	// for "arrival" on a mission with no arrival commitment (no frame then —
+	// task H2). A saved/passed-in default main
 	// naming a frame this mission doesn't have (e.g. a duplicated non-Earth
 	// mission falling back to the shell's Earth-Moon default) falls back to
 	// "helio" rather than pointing the main pane at a frame that was never
@@ -319,7 +364,8 @@ export function createMissionView(opts) {
 	// Which slider shows: Coast gets the date-scaled coast slider (B2),
 	// Departure gets the event-scaled flight slider (B3); each phase's slider
 	// IS its clock control, so the raw Ephemeris date bar only shows for
-	// Arrival, which has no slider yet (until H2).
+	// Arrival, which has no slider of its own yet (B3's arrival half — H2
+	// enabled the phase, not its scrubber).
 	function syncSliderVisibility() {
 		var phase = workspace.phase;
 		depSliderEl.style.display = phase === "departure" ? "" : "none";
@@ -328,7 +374,8 @@ export function createMissionView(opts) {
 	}
 
 	// The phase selectors (task B1): drives the main-pane frame (via
-	// PHASE_FRAME — "arrival" has none yet, so it's a no-op there until H2),
+	// PHASE_FRAME — "arrival" has one only when the plan commits to an
+	// arrival body, else its button stays disabled — task H2),
 	// which sidebar cards show (applyPhaseToCards), which slider shows
 	// (syncSliderVisibility, task B2), and the active highlight.
 	function setPhase(phase) {
@@ -614,21 +661,24 @@ export function createMissionView(opts) {
 			var body = departureChainBody();
 			var opt = techOptionsFor(body).filter(function (o) { return o.id === select.value; })[0];
 			if (!opt || opt.future || !opt.moduleId) { refreshOptions(); return; }   // disabled options shouldn't fire; defensive
-			swapDepartureTech(techStage.id, opt).then(refreshOptions);
+			swapTechStage(techStage.id, opt, {}).then(refreshOptions);
 		});
 	}
 
-	// Swaps the departure tech stage's module (the dropdown's change handler).
-	// Disposes the outgoing module's card/views BEFORE world.set (so its
-	// viewRemoved runs against the descriptor that actually built them),
-	// commits the change (this recomputes synchronously — recompute.js — with
-	// no card/view yet registered for this stage, so that pass's
-	// updateCard/drawStage safely no-op), then builds the incoming module's
-	// card/views against the now-committed fresh params and replays the
-	// engine's already-computed result onto them by hand. Nothing here
+	// Swaps a tech stage's module (both dropdowns' change handler — departure
+	// F1, arrival H2). Disposes the outgoing module's card/views BEFORE
+	// world.set (so its viewRemoved runs against the descriptor that actually
+	// built them), commits the change (this recomputes synchronously —
+	// recompute.js — with no card/view yet registered for this stage, so that
+	// pass's updateCard/drawStage safely no-op), then builds the incoming
+	// module's card/views against the now-committed fresh params and replays
+	// the engine's already-computed result onto them by hand. Nothing here
 	// re-derives physics — recompute already ran; this only catches the view
-	// layer up to what the engine already decided.
-	async function swapDepartureTech(stageId, opt) {
+	// layer up to what the engine already decided. `seedParams` is what the
+	// incoming module starts with — {} for departure (the lunar defaults
+	// fill), { body } for arrival (the body convention: every arrival tech
+	// carries its destination explicitly).
+	async function swapTechStage(stageId, opt, seedParams) {
 		var stage = world.getStage(stageId);
 		if (!stage || stage.moduleId === opt.moduleId) { return; }
 		if (!registry.has(opt.moduleId)) {
@@ -639,7 +689,7 @@ export function createMissionView(opts) {
 		var insertBefore = disposeCard(stageId);
 		disposeStageViews(stageId, oldDesc);
 
-		world.set({ swapStage: stageId, moduleId: opt.moduleId, params: {} });
+		world.set({ swapStage: stageId, moduleId: opt.moduleId, params: seedParams || {} });
 
 		var newStage = world.getStage(stageId);
 		buildStageViews(newStage);
@@ -651,6 +701,66 @@ export function createMissionView(opts) {
 	}
 
 	buildDepartureTechCard();
+
+	// ---- arrival technology dropdown (task H2) -------------------------------
+	// The departure dropdown's mirror: swaps whichever ONE stage is shaped
+	// like an arrival tech — consumes a ship-state and emits nothing (the
+	// chain's terminal catch: capture-burn, arrival-skyhook). Options are
+	// filtered by the frozen plan's arrival body (arrivalTechOptionsFor), and
+	// the swap seeds the incoming module with that body explicitly. A mission
+	// with no such stage (an old save) just doesn't get the card — the same
+	// add/remove gap I5 tracks for the departure side.
+	function isArrivalTechStage(stage) {
+		var desc = registry.get(stage.moduleId);
+		return !!desc && desc.accepts.indexOf("ship-state") !== -1 && desc.emits.length === 0;
+	}
+	function arrivalTechStage() {
+		var stages = world.stages();
+		for (var i = 0; i < stages.length; i++) { if (isArrivalTechStage(stages[i])) { return stages[i]; } }
+		return null;
+	}
+
+	var ARR_TECH_KEY = "__arrival-tech__";
+
+	function buildArrivalTechCard() {
+		var techStage = arrivalTechStage();
+		if (!techStage || !arrivalBody) { return; }
+
+		var card = document.createElement("div"); card.className = "mp-card";
+		var h = document.createElement("h3"); h.textContent = "Arrival technology"; card.appendChild(h);
+		var select = document.createElement("select");
+		select.className = "mp-tech-select";
+		card.appendChild(select);
+		panelEl.insertBefore(card, cards[techStage.id] ? cards[techStage.id].cardEl : null);
+		cards[ARR_TECH_KEY] = { cardEl: card, phase: "arrival", callbacks: [] };
+
+		function refreshOptions() {
+			var stage = world.getStage(techStage.id);
+			select.innerHTML = "";
+			arrivalTechOptionsFor(arrivalBody).forEach(function (opt) {
+				var o = document.createElement("option");
+				o.value = opt.id;
+				o.textContent = opt.label + (opt.future ? " (future)" : "");
+				o.disabled = !!opt.future;
+				if (opt.moduleId === stage.moduleId) { o.selected = true; }
+				select.appendChild(o);
+			});
+		}
+		refreshOptions();
+
+		select.addEventListener("change", function () {
+			var opt = arrivalTechOptionsFor(arrivalBody).filter(function (o) { return o.id === select.value; })[0];
+			if (!opt || opt.future || !opt.moduleId) { refreshOptions(); return; }
+			swapTechStage(techStage.id, opt, { body: arrivalBody }).then(refreshOptions);
+		});
+	}
+
+	buildArrivalTechCard();
+	// Re-filter now that the tech cards exist: they are built AFTER the
+	// mount-time applyPhaseToCards() above, so without this a workspace
+	// restored in a non-departure phase would show the departure dropdown
+	// (and vice versa) until the first phase switch.
+	applyPhaseToCards();
 
 	function renderDiagBox(parent, d, cssClass) {
 		var box = document.createElement("div");

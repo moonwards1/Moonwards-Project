@@ -125,11 +125,15 @@ export function resolveParams(params) {
 	return Object.assign({}, defaultParams, geo, params || {});
 }
 
-// The tether's kinematics for one param set — geometry validation, rotation
-// rate, release speed, and the local body-escape margin (the card's readouts;
-// the real escape physics lives in body-departure-leg). Pure; returns
-// { ok: true, ...figures } or { ok: false, diagnostic }.
-export function tetherKinematics(params) {
+// The tether's geometry + rotation figures for one param set — validation,
+// rotation rate, tip speed, and the local body-escape margin — WITHOUT the
+// "must escape" gate. Pure; returns { ok: true, ...figures } (vInfBody is 0
+// for a sub-escape tip) or { ok: false, diagnostic }. Split out of
+// tetherKinematics (task H2) because the ARRIVAL side reuses the identical
+// tether — a skyhook CATCHING an incoming ship (arrival-skyhook.js) is
+// perfectly legitimate with a tip below escape speed; only a RELEASE demands
+// escape, so that gate stays in tetherKinematics below.
+export function tetherGeometry(params) {
 	var p = resolveParams(params);
 	var phys = bodyPhysics(p.body);
 	if (!phys) {
@@ -164,25 +168,32 @@ export function tetherKinematics(params) {
 	var vEscBody = O.escapeVelocity(GM, rRel);
 	var vInfBody = O.hyperbolicExcess(vRel, GM, rRel); // 0 if bound
 
-	if (vInfBody <= 0) {
-		// omega^2 r^2 = 2 GM/r  =>  r = cbrt(2 GM / omega^2) is where the tip
-		// reaches escape.
-		var rEsc = Math.cbrt(2 * GM / (omega * omega));
-		return { ok: false, diagnostic: makeDiagnostic("bound-at-body",
-			"Release speed " + Math.round(vRel) + " m/s is below " + p.body + " escape (" +
-			Math.round(vEscBody) + " m/s at that altitude) — the payload stays bound to " + p.body + ".",
-			{ values: { vRel: vRel, vEscBody: vEscBody, relAlt_km: relAlt / 1e3 },
-			  fix: "Raise the release altitude to at least ~" + Math.round((rEsc - R) / 1e3) +
-			       " km (or lower the CoM to spin the tether faster)." }) };
-	}
-
 	return {
-		ok: true, body: p.body,
+		ok: true, body: p.body, GM: GM, R: R,
 		omega: omega, period: 2 * Math.PI / omega,
 		rCom: rCom, rRel: rRel, rTop: rTop,
 		vRel: vRel, vEscBody: vEscBody, vInfBody: vInfBody,
 		releasePhaseDeg: phaseDeg
 	};
+}
+
+// tetherGeometry plus the RELEASE gate: a departure skyhook whose tip never
+// reaches escape speed has no interplanetary release to offer, so a bound tip
+// is a hard diagnostic here (the arrival catch has no such requirement — see
+// tetherGeometry's comment). Same signature and returns as before the split.
+export function tetherKinematics(params) {
+	var geo = tetherGeometry(params);
+	if (!geo.ok || geo.vInfBody > 0) { return geo; }
+
+	// omega^2 r^2 = 2 GM/r  =>  r = cbrt(2 GM / omega^2) is where the tip
+	// reaches escape.
+	var rEsc = Math.cbrt(2 * geo.GM / (geo.omega * geo.omega));
+	return { ok: false, diagnostic: makeDiagnostic("bound-at-body",
+		"Release speed " + Math.round(geo.vRel) + " m/s is below " + geo.body + " escape (" +
+		Math.round(geo.vEscBody) + " m/s at that altitude) — the payload stays bound to " + geo.body + ".",
+		{ values: { vRel: geo.vRel, vEscBody: geo.vEscBody, relAlt_km: (geo.rRel - geo.R) / 1e3 },
+		  fix: "Raise the release altitude to at least ~" + Math.round((rEsc - geo.R) / 1e3) +
+		       " km (or lower the CoM to spin the tether faster)." }) };
 }
 
 // This carrier's rotor element (Shared/kinematic-chain.js shape) for the given

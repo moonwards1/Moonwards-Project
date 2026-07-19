@@ -1321,10 +1321,12 @@ World. Source file throughout:
   `world.set({swapStage, moduleId, params})`. The registry and dynamic-import
   pattern already exist (planner.js:62–68). Greyed "(future)" options for
   unbuilt tech.
-  **Done 2026-07-17, departure only** — Arrival has no frame/phase yet
-  (`PHASE_FRAME` in mission-view.js omits "arrival" until H1+H2), so an
-  "Arrival technology" dropdown has nothing real to select; only the
-  Departure slot was built. New `MissionPlanner/ui/tech-options.js`:
+  **Done 2026-07-17, departure only** — Arrival had no frame/phase yet
+  (`PHASE_FRAME` in mission-view.js omitted "arrival" until H1+H2), so an
+  "Arrival technology" dropdown had nothing real to select; only the
+  Departure slot was built then. **The Arrival slot followed with H2
+  (2026-07-18)** — see H2's done-record for `ARRIVAL_TECH_OPTIONS` /
+  `arrivalTechOptionsFor` and the arrival-shaped stage rule. New `MissionPlanner/ui/tech-options.js`:
   `DEPARTURE_TECH_OPTIONS` (id, label, `bodies`, `moduleId`+`moduleUrl` if
   built else `future: true`) and `techOptionsFor(body)` — follows the "body"
   convention decided the same day ([[project_body_convention]]): entries are
@@ -1417,13 +1419,115 @@ World. Source file throughout:
   in for the "moon" ring (no real satellite ephemeris involved). WP-J's J1
   IS this task, cross-referenced there, not duplicated. Still unbuilt as of
   this note; the scene-fidelity deferral above still holds.
-- [ ] **H2. A first arrival module.** ★★★ — **decision for Kim.**
+- [x] **H2. A first arrival module.** ★★★
   The Arrival button stays disabled until an arrival-capable module exists.
   Options: (a) a minimal "chemical capture burn / intercept check" module now
   (small, unblocks all Arrival UI work: C2's arrival card, B3's arrival
   slider, F1's dropdown), then (b) the real Ceres-elevator catch port as
   planned in migration step 4.5. Recommend (a) then (b). 
   - Comment from Kim: How about using the Mars-Phobos skyhook as the first model where catch planning can be structured?
+    **Done 2026-07-18 (Kim: (a) plus a generic skyhook catch; the elevator
+    port stays step 4.5) — awaiting Kim's review.** Two arrival technologies,
+    both TERMINAL stages (accept `ship-state`, emit nothing — the mission ends
+    captured), both `rendersIn: ["body:destination"]` and carrying `body`
+    explicitly ([[project_body_convention]]):
+  - **`modules/capture-burn/`** — the minimal chemical arrival: measures the
+    delivered coast against the destination (miss distance + v∞ via the
+    shared `approachAt`/`interceptWarning` helpers, same `MISS_WARN_AU` as
+    transfer-leg's own miss warning) and prices an impulsive capture at
+    periapsis of the approach hyperbola into a user-sized parking orbit
+    (periapsis/apoapsis altitude rows; defaults scale with the body — ½ R,
+    circular). A miss is a warning on honestly-computed figures, not a
+    block. Draws the parking ellipse + burn dot in the destination frame
+    (size/shape only; approach-plane orientation isn't modelled yet).
+  - **`modules/arrival-skyhook/`** — WP-J's generic tether run in reverse: a
+    skyhook orbiting the DESTINATION catches the ship at the tip; trim Δv =
+    hyperbolic periapsis speed at the catch radius − tip speed. Reuses
+    orbital-skyhook's own code via a small split: `tetherGeometry` (all
+    validation + figures, sub-escape tip allowed — the point of a catch) vs
+    `tetherKinematics` (adds the escape gate, releases only). Catch
+    WINDOW/phasing geometry (tip timing, approach plane, unload) is NOT
+    modelled — that's the Mars-Phobos-style catch planning Kim's comment
+    points at, deferred along with realism advisories (in-context tips).
+    **Shell (mission-view.js):** when the frozen plan commits to an arrival
+    body, the view builds `buildBodyFrame(destination)` (J1's factory), maps
+    PHASE_FRAME.arrival to it, un-disables the Arrival button, and aliases the
+    `"body:destination"` rendersIn token in resolveFrameId — the exact mirror
+    of J3's `"body:origin"`. An **Arrival technology dropdown** (tech-options'
+    new `ARRIVAL_TECH_OPTIONS`/`arrivalTechOptionsFor`; entries may declare
+    `bodies: "*"` for any-destination techs, plus the future Ceres elevator
+    catch port at Ceres only) swaps whichever stage is arrival-shaped
+    (consumes ship-state, emits nothing), seeding `{ body }` on swap
+    (`swapDepartureTech` generalized to `swapTechStage`). `frozen-plan.js`
+    gains `arrivalCommitmentFor(world)` (the arrival endpoint's one lookup,
+    mirroring `releaseAnchorFor`). **Spawn shape:** freeze.js and the shipped
+    preset append a capture-burn stage seeded with the plan's destination —
+    asymmetric with the empty departure slot on purpose: chemical capture is
+    the baseline every ship carries, and the dropdown needs a stage to swap
+    (I5's add/remove gap, same as departure). No world-version bump: old saves
+    load unchanged, they just have no arrival stage/card and (if planless) a
+    still-disabled Arrival button. Arrival still scrubs on the raw date bar —
+    its own slider remains B3's arrival half; C2's arrival card enrichment and
+    F5's arrival-system half are now unblocked. Verified: Node suites **228
+    green** (+12: capture maths by hand, elliptical < circular, sub-escape
+    catch legitimacy, intercept warnings, catalog filtering, engine passes
+    incl. the tech swap); in-browser (local server) the preset opens with
+    Arrival enabled ("Arrival at Ceres"), all three phases cycle to the right
+    main-pane frames, the capture card reads v∞ 3.78 km/s / Δv 3.50 km/s with
+    its event on the events bar, the dropdown swaps to the skyhook catch (trim
+    Δv 3.47 km/s on Ceres's fallback geometry) and back, console clean.
+- [x] **H3. Arrival flyby leg + waypoints.** ★★★
+  Added 2026-07-18 (Kim): terminate the coast at a VISIBLE hand-off point and
+  give the arrival phase its own leg with waypoint burns. The agreed (frankly
+  arbitrary, deliberately so) reference geometry: the incoming trajectory
+  passes the destination at HALF ITS SOI RADIUS, starts ONE DAY OUT along
+  the coast's delivered heading, and ends ONE DAY AFTER the pass. No burn →
+  it just passes by; waypoints (≤2, the standard vector-editor interface)
+  put burns on it. Tweaking the COAST so the drawn trajectories are
+  continuous across the hand-off is explicitly deferred ("we can come back
+  to that"), as are per-body window tweaks (for a giant like Jupiter, ±1 day
+  at approach speed sits deep inside the SOI).
+  **Done 2026-07-18 — awaiting Kim's review.** New
+  **`modules/arrival-leg/`**, the arrival mirror of the departure legs:
+  headless (`plainCard`), accepts/emits `ship-state`, `rendersIn:
+  ["body:destination"]`, `body` explicit. update() builds a REFERENCE flyby,
+  not a patched continuation: the delivered coast end supplies the v∞
+  heading/magnitude/epoch (`approachAt`), and `referencePeriapsis()`
+  constructs the two-body hyperbola around the destination with that
+  asymptote and periapsis SOI/2, in the plane through the asymptote closest
+  to the ecliptic (which side it passes is thereby arbitrary; the delivered
+  position's own miss stays the COAST's warning — the leg never re-judges
+  it, so capture-burn downstream of the leg sees the reference approach and
+  stays quiet). Segments are exact Kepler conics (transfer-leg's own chain
+  pattern with the body's GM — `propagateState`/`sampleArc` handle the
+  hyperbola, incl. the backward step to the start), burns in the standard
+  ecliptic-anchored pro/nrm/rad frame via geo-leg's `burnEffect`. Waypoint
+  times are hours after the hand-off; the first added waypoint defaults to
+  the pass itself (t = 1 d). Card: waypoint cards + a "pass-by" readout box
+  (hand-off date, approach v∞, closest approach); draw: polyline +
+  hand-off/pass/end dots + gizmos/burn arrows. Emits the leg-end state (one
+  day past the body, lifted to helio) so the arrival tech keeps its
+  ship-state input; its capture date follows to +1 d. freeze.js and the
+  preset insert it between transfer-leg and capture-burn (`{ body,
+  waypoints: [] }`); old saves without it still type-check (capture directly
+  after the coast, as in H2). **Extracted `Shared/sim/vector-editor.js`**
+  (`buildVectorEditor`) rather than inline a FOURTH copy of the SVG burn
+  editor; transfer-leg / departure-leg / body-departure-leg still carry
+  their inlined triplicates — migrating them onto the shared one is a
+  pending cleanup. **Also fixed in passing (mission-view.js):** the tech
+  dropdown cards are built after the mount-time `applyPhaseToCards()`, so a
+  workspace restored in a non-departure phase showed the departure dropdown
+  until the first phase switch; a re-filter after the tech cards build
+  closes it. Verified: Node suites **232 green** (+4: periapsis/asymptote
+  construction round-trip, the unburned pass-by's geometry and symmetry,
+  waypoint burn effects + window diagnostics, the engine chain with the
+  miss-stays-on-the-coast semantics); in-browser (local server) the preset's
+  arrival phase shows the pass-by box (closest approach 38,478 km = Ceres
+  SOI/2), the flyby events thread the events bar (hand-off Jan 7 → pass
+  Jan 8 → leg end Jan 9 → capture Jan 9), a workspace restored directly
+  into Arrival filters cards correctly, and a −1.5 km/s retro burn added at
+  the pass through the card UI events itself, gets its readout box, and
+  drops the downstream capture Δv 3.50 → 2.02 km/s; console clean.
 
 ### WP-I — Departure system: carrier chain + integrated geocentric leg (the Moon-Skyhook port)
 
@@ -1876,71 +1980,28 @@ port source for this package.
     UI (cards + vector editor + readout boxes) and draw are a close copy of
     departure-leg's, kept separate to leave the working lunar leg untouched
     (a future refactor could share them).
-  Both modules read the release frame via the symbolic `rendersIn:
-  ["body:origin"]` token — **J3** aliases it to the mission's own origin
-  frame (buildBodyFrame, J1) and sets `PHASE_FRAME`; until then a generic
-  mission has no origin frame and they draw nothing (harmless). Registered in
-  planner.js's `MODULE_URLS`. Verified: full Node suite **216 green** (+24:
-  11 body-leg, 13 orbital-skyhook/body-departure-leg — carrier geometry,
-  release kinematics, escape-to-hand-off, waypoint impulse, and the
-  no-carrier/bad-origin/bound/impact diagnostics, plus an engine-integration
-  pass skyhook→leg→frozen-plan); `node --check` + eslint (`no-undef`) clean on
-  the two browser modules; in-browser (local server) the planner still boots
-  with the two new modules registered and the shipped lunar mission intact
-  (clean console), and a direct harness against a real `buildBodyFrame("Mars")`
-  drove both `draw` hooks (skyhook → 2 orbit rings + tether + release dot; leg
-  → a 144-point body-centric polyline + release/hand-off dots) and both
-  `update` paths (chain base=Mars, ship-state helio hand-off + 2 events) with
-  no THREE errors. **No in-planner end-to-end yet** — a generic-origin
-  mission can't be displayed until J3 wires the origin frame (mirrors I1
-  awaiting I3).
-- [x] **J3. Departure phase frame follows the mission's origin.** ★★
+    Both modules read the release frame via the symbolic `rendersIn:
+    ["body:origin"]` token — **J3** aliases it to the mission's own origin
+    frame (buildBodyFrame, J1) and sets `PHASE_FRAME`; until then a generic
+    mission has no origin frame and they draw nothing (harmless). Registered in
+    planner.js's `MODULE_URLS`. Verified: full Node suite **216 green** (+24:
+    11 body-leg, 13 orbital-skyhook/body-departure-leg — carrier geometry,
+    release kinematics, escape-to-hand-off, waypoint impulse, and the
+    no-carrier/bad-origin/bound/impact diagnostics, plus an engine-integration
+    pass skyhook→leg→frozen-plan); `node --check` + eslint (`no-undef`) clean on
+    the two browser modules; in-browser (local server) the planner still boots
+    with the two new modules registered and the shipped lunar mission intact
+    (clean console), and a direct harness against a real `buildBodyFrame("Mars")`
+    drove both `draw` hooks (skyhook → 2 orbit rings + tether + release dot; leg
+    → a 144-point body-centric polyline + release/hand-off dots) and both
+    `update` paths (chain base=Mars, ship-state helio hand-off + 2 events) with
+    no THREE errors. **No in-planner end-to-end yet** — a generic-origin
+    mission can't be displayed until J3 wires the origin frame (mirrors I1
+    awaiting I3).
+- [ ] **J3. Departure phase frame follows the mission's origin.** ★★
   `mission-view.js`'s `PHASE_FRAME.departure` stops being a fixed
   Earth-Moon constant; each mission view builds/looks up the frame for its
   own frozen plan's `origin` body. Depends on J1 + J2.
-  **Done 2026-07-17.** `mission-view.js` gains `missionOriginBody(world)`
-  (reads the mission's frozen-plan stage's `origin` param, "Earth" default
-  for pre-comply saves or missions without one — frozen-plan.js's own
-  default) and `departureFrameFor(origin)` ("body:Earth-Moon" for Earth,
-  else "body:" + origin). `PHASE_FRAME`/`FRAME_PHASE` are no longer
-  module-scope constants — each `createMissionView` call builds its own from
-  `departureFrameId = departureFrameFor(missionOriginBody(world))`, computed
-  once up front. The `frames` dict now only builds what a given mission
-  needs: `helio` always, plus either `buildEarthMoonFrame()` (Earth origin,
-  unchanged) or `buildBodyFrame(origin)` (any other WP-J origin, task J1) —
-  no wasted Earth-Moon frame for a Mars/Ceres/etc. mission. A new
-  `resolveFrameId(id)` aliases the symbolic `"body:origin"` token
-  `orbital-skyhook.js`/`body-departure-leg.js` declare in `rendersIn` to the
-  mission's real `departureFrameId`, called at both consultation points
-  (`buildStageViews`'s frame lookup, `stagePhaseOf`'s phase lookup) — the two
-  modules stay written against the symbolic token with no knowledge of any
-  particular mission's origin. Defensive fallback: `initialMain` falls back
-  to `"helio"` when `opts.defaultMain`/a saved workspace slot's `main` names
-  a frame this mission never built (e.g. a non-Earth mission duplicated
-  before J3, or the shell's hardcoded `defaultWorkspaceMain =
-  "body:Earth-Moon"` landing on a Mars mission) — same defensive pattern the
-  saved-workspace path already used, extended to the constructor default.
-  **Known limitation, out of scope here:** the departure slider's own default
-  span/Hohmann fallback (`departureDefaultSpanSeconds`/`departureSpan`) still
-  hardcodes Earth's SOI/orbit for its estimate — cosmetic only (the slider
-  still shows real flight events once a generic departure tech resolves any),
-  not part of "the frame follows the origin."
-  Verified: full Node suite unaffected (216 green — this is browser-only
-  rendering/wiring, no pure-logic change) plus `node --check` clean. In
-  browser (local server): the shipped Earth-Moon preset renders identically
-  after the refactor (Departure caption "EARTH–MOON SYSTEM · geocentric
-  ecliptic", all cards/compliance bar/events intact, console clean,
-  survives reload). A synthetic Mars-origin mission (orbital-skyhook →
-  body-departure-leg → frozen-plan with `origin: "Mars"`, built the same way
-  `modules/tests/body-departure.test.js`'s engine-integration test does, but
-  driven through the real `createMissionView` in-page) switched to Departure
-  and showed the main pane caption "MARS SYSTEM · Mars-centric ecliptic"
-  with the Orbital skyhook card reading "ok", no diagnostics, only the two
-  frames actually built (Mars + helio, no stray Earth-Moon frame), and a
-  clean `render()`/`resize()` pass — confirming both the frame construction
-  and the `"body:origin"` token aliasing work for a real non-Earth origin,
-  not just Earth. Console clean throughout; harness view disposed and its
-  workspace-store slot removed after verification.
 
 ## Inventory: existing code to adapt
 
@@ -2009,9 +2070,9 @@ scaffold; new UI should reach for them before writing anything fresh.
 
 1. ● **A3 persistence scope** — persist missions across reloads now
    (recommended), or in-session only as the README's "later steps" implies?
-2. ● **H2 arrival module** — build a minimal capture-burn module now to
-   unblock the Arrival phase UI, or hold everything Arrival until the real
-   Ceres-elevator port (step 4.5)?
+2. **H2 arrival module** — resolved 2026-07-18 (Kim): the minimal
+   capture-burn module now, plus the generic skyhook catch; the real
+   Ceres-elevator port stays step 4.5. Built — see H2's done-record.
 3. **C4 comply indicators in the 3D pane** — needs a design conversation
    before any code.
 4. **D6 system switcher** — confirm deferral of Earth–Moon / Mars–Phobos

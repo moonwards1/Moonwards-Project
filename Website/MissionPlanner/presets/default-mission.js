@@ -18,6 +18,8 @@
 // with a real integrated flight, not a patched-conic formula —
 //
 //   moon-platform → lunar-skyhook → departure-leg → frozen-plan → transfer-leg
+//   → arrival-leg (task H3: the flyby hand-off around Ceres)
+//   → capture-burn (task H2: the baseline chemical arrival at Ceres)
 //
 // moon-platform emits the chain base (the Moon's own ~1 km/s), the skyhook
 // appends its rotor, and the headless departure-leg evaluates the chain at
@@ -62,7 +64,7 @@ export var defaultMission = {
 	kind: "moonwards-world",
 	version: 2,
 	jd: 2463218.546734214,   // the clock opens at the release anchor
-	nextStage: 6,
+	nextStage: 8,
 	stages: [
 		{
 			// The Moon card: read-only top of the departure stack (task I3).
@@ -117,6 +119,25 @@ export var defaultMission = {
 				legDays: 750,
 				destination: "Ceres"
 			}
+		},
+		{
+			// The arrival flyby leg (task H3): the visible Coast→Arrival
+			// hand-off — starts a day out along the delivered heading, passes
+			// Ceres at SOI/2, ends a day past. No burns programmed: the
+			// unburned pass-by is the shipped state; capturing is the user's
+			// exercise.
+			id: "stg-6",
+			moduleId: "arrival-leg",
+			params: { body: "Ceres", waypoints: [] }
+		},
+		{
+			// The arrival technology (task H2): the baseline chemical capture
+			// burn at Ceres — the terminal stage every mission spawns with
+			// (swappable via the Arrival technology dropdown). Altitudes left
+			// to the module's body-scaled defaults.
+			id: "stg-7",
+			moduleId: "capture-burn",
+			params: { body: "Ceres" }
 		}
 	]
 };

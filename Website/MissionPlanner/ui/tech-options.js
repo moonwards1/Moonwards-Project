@@ -1,5 +1,5 @@
-// MissionPlanner/ui/tech-options.js — the departure "technology" dropdown's
-// own small registry (task F1), distinct from core/registry.js (the module
+// MissionPlanner/ui/tech-options.js — the departure and arrival "technology"
+// dropdowns' own small registry (tasks F1, H2), distinct from core/registry.js (the module
 // registry: what's LOADED and how the recompute chain calls it). This one is
 // about what's OFFERABLE in the dropdown and to which body it applies —
 // UI/catalog data, not a module descriptor.
@@ -38,5 +38,30 @@ export var DEPARTURE_TECH_OPTIONS = [
 export function techOptionsFor(body) {
 	return DEPARTURE_TECH_OPTIONS.filter(function (opt) {
 		return opt.bodies.indexOf(body) !== -1;
+	});
+}
+
+// The ARRIVAL technologies (task H2) — same catalog shape, filtered against
+// the frozen plan's arrival body instead of the chain's base. The two built
+// entries are generic (`bodies: "*"` — any destination the plan can commit
+// to): a chemical capture burn is the baseline every ship carries, and the
+// orbital-skyhook catch is WP-J's generic tether run in reverse
+// (arrival-skyhook.js). Body-specific entries keep explicit lists, like the
+// departure side; the Ceres elevator catch port is migration step 4.5's real
+// arrival system, listed as future until it's built.
+export var ARRIVAL_TECH_OPTIONS = [
+	{ id: "capture-burn", label: "Chemical capture burn", bodies: "*",
+	  moduleId: "capture-burn", moduleUrl: "../modules/capture-burn/capture-burn.js" },
+	{ id: "arrival-skyhook", label: "Orbital skyhook catch", bodies: "*",
+	  moduleId: "arrival-skyhook", moduleUrl: "../modules/arrival-skyhook/arrival-skyhook.js" },
+	{ id: "ceres-elevator-catch", label: "Ceres elevator catch port", bodies: ["Ceres"], future: true }
+];
+
+// Arrival entries applicable to `body`: the generic "*" entries for any known
+// body, plus any entry naming it explicitly. Pure; exported for Node tests.
+export function arrivalTechOptionsFor(body) {
+	if (typeof body !== "string" || body === "") { return []; }
+	return ARRIVAL_TECH_OPTIONS.filter(function (opt) {
+		return opt.bodies === "*" || opt.bodies.indexOf(body) !== -1;
 	});
 }

@@ -8,9 +8,18 @@
  * file only assembles the profile the design doc prescribes:
  *
  *   [ frozen-plan (the commitment, task C1) ] -> [ transfer-leg (the working
- *   coast) ] — and NO tech stage: a spawned mission starts with an empty
+ *   coast) ] -> [ arrival-leg (the flyby hand-off, task H3) ] ->
+ *   [ capture-burn (the baseline arrival, task H2) ] — and NO
+ *   DEPARTURE tech stage: a spawned mission starts with an empty
  *   departure-tech slot (frozen-plan declares inputOptional, so that's a
- *   "no-departure-tech" warning, not a block; loading a tech is WP-F).
+ *   "no-departure-tech" warning, not a block; loading a tech is WP-F). The
+ *   ARRIVAL slot is NOT empty, asymmetrically and on purpose (task H2): a
+ *   chemical capture burn is the baseline every ship carries — unlike
+ *   departure infrastructure it needs no build-out to exist — and the
+ *   Arrival technology dropdown needs a stage to swap (the same reason the
+ *   departure dropdown needs a carrier stage, I5's add/remove gap). Seeded
+ *   with the plan's destination as its explicit `body` (the body
+ *   convention).
  *
  * THE HAND-OFF IS POST-BURN (Kim, 2026-07-13 — the freeze contract's one
  * real decision): the frozen departure state is the origin body's position
@@ -106,7 +115,7 @@ export function freezeMissionWorld(spec) {
 		kind: WORLD_KIND,
 		version: WORLD_VERSION,
 		jd: spec.jd,                       // the clock opens at departure, like the shipped preset
-		nextStage: 3,
+		nextStage: 5,
 		stages: [
 			{
 				id: "stg-1",
@@ -134,6 +143,20 @@ export function freezeMissionWorld(spec) {
 					legDays: legDays,
 					destination: spec.destination
 				}
+			},
+			{
+				// The arrival flyby leg (task H3): the visible Coast→Arrival
+				// hand-off, no burns programmed yet.
+				id: "stg-3",
+				moduleId: "arrival-leg",
+				params: { body: spec.destination, waypoints: [] }
+			},
+			{
+				// The baseline arrival technology (task H2 — see header):
+				// altitudes left to the module's body-scaled defaults.
+				id: "stg-4",
+				moduleId: "capture-burn",
+				params: { body: spec.destination }
 			}
 		]
 	};

@@ -147,6 +147,25 @@ export function releaseAnchorFor(world) {
 	return null;
 }
 
+// The mission's ARRIVAL COMMITMENT (task H2): the plan's { body, jd, vInf },
+// read the same way releaseAnchorFor reads the release anchor — the plan owns
+// both mission endpoints, and the arrival technologies (capture-burn,
+// arrival-skyhook) read the catch epoch through this one function rather than
+// each groping through the stages themselves. Returns null when the mission
+// has no frozen plan or the plan commits to no arrival body.
+export function arrivalCommitmentFor(world) {
+	if (!world || typeof world.stages !== "function") { return null; }
+	var stages = world.stages();
+	for (var i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId !== "frozen-plan") { continue; }
+		var arr = (stages[i].params && stages[i].params.arrival) || {};
+		if (typeof arr.body === "string" && arr.body !== "" && isFinite(arr.jd)) {
+			return { body: arr.body, jd: arr.jd, vInf: isFinite(arr.vInf) ? arr.vInf : null };
+		}
+	}
+	return null;
+}
+
 function isoOf(jd) {
 	var d = O.dateFromJulian(jd);
 	return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
@@ -397,5 +416,6 @@ export default {
 	// registry is a shared/known handle.
 	complianceFor: complianceFor,
 	planSummary: planSummary,
-	releaseAnchorFor: releaseAnchorFor
+	releaseAnchorFor: releaseAnchorFor,
+	arrivalCommitmentFor: arrivalCommitmentFor
 };
