@@ -1875,7 +1875,12 @@ port source for this package.
     lifts to helio via `Frames.localToHelio(body, …)`. Its I4-style waypoint
     UI (cards + vector editor + readout boxes) and draw are a close copy of
     departure-leg's, kept separate to leave the working lunar leg untouched
-    (a future refactor could share them).
+    (a future refactor could share them). **Partly done 2026-07-18:** the
+    SVG burn-vector editor (the widest of those copies, 144 lines ×4) is now
+    `Shared/sim/vector-editor.js` (`buildVectorEditor`), imported by
+    ephemeris-view.js and the transfer-leg / departure-leg /
+    body-departure-leg modules; the rest of the waypoint-card UI is still
+    per-module.
   Both modules read the release frame via the symbolic `rendersIn:
   ["body:origin"]` token — **J3** aliases it to the mission's own origin
   frame (buildBodyFrame, J1) and sets `PHASE_FRAME`; until then a generic
@@ -1985,7 +1990,7 @@ scaffold; new UI should reach for them before writing anything fresh.
 | Waypoint burns (geocentric) | ~705–1201              | in-system waypoint-burn chain — exactly the design's "up to 2 waypoint burns within this system"  | **I1** (frames/burnEffect), **I4** (UI) |
 | Gizmos + arrows + readouts  | ~1202–1277             | waypoint gizmo/arrow wiring in the local frame                                                    | I4                                      |
 | Moon-phase / skyhook locks  | ~1590–1656             | date-scrub conveniences: equal-elongation snap; tether phase slaved to the Moon's velocity        | D7 background only                      |
-| Burn-vector editor          | ~1754–1922             | the isometric 3-axis draggable-arrow burn editor — a strong in-card alternative to numeric fields | G1 (optional upgrade)                   |
+| Burn-vector editor          | ~1754–1922             | the isometric 3-axis draggable-arrow burn editor — now `Shared/sim/vector-editor.js`, used by the planner's ephemeris view and all three leg modules | done (shared)                           |
 | Waypoint list cards         | ~1923–1961             | its `buildWaypointList` variant                                                                   | I4                                      |
 
 **From the scaffold and mockup (patterns to extend or copy):**
