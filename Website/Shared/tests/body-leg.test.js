@@ -150,3 +150,57 @@ test("burnEffect (re-exported): a prograde impulse raises speed along prograde",
 	assert.ok(Math.abs(eff.burnDv - 0.1) < 1e-6);
 	assert.ok(Math.abs(eff.planeChange) < 1e-6, "in-plane burn, no plane change");
 });
+
+// ---- integrateEncounter (the arrival-side mirror: a coast through an SOI) --
+
+import { integrateEncounter } from "../body-leg.js";
+import { Frames } from "../frames.js";
+
+function marsEncounterStart(relR, relV, jd) {
+	var b = Frames.bodyHelioState("Mars", jd);
+	return { r: O.vAdd(b.r, relR), v: O.vAdd(b.v, relV), jd: jd };
+}
+
+test("integrateEncounter: a hyperbolic Mars pass exits deflected, v-inf conserved", () => {
+	var c = bodyConstants("Mars");
+	// Enter just inside the SOI moving 4 km/s Mars-relative, aimed to pass
+	// ~0.15 SOI beside the planet.
+	var s = marsEncounterStart([c.SOI * 0.98, c.SOI * 0.15, 0], [-4000, 0, 0], JD0);
+	var res = integrateEncounter("Mars", s.r, s.v, JD0, 60 * DAY);
+	assert.equal(res.branch, "exit");
+	assert.ok(res.rmin < c.SOI * 0.2, "came well inside: rmin " + res.rmin);
+	assert.ok(res.rmin > c.R, "did not hit the surface");
+	// Deflection: the Mars-relative velocity turned by a clearly nonzero angle.
+	var bEnd = Frames.bodyHelioState("Mars", JD0 + res.duration / DAY);
+	var vOut = O.vSub(res.end.v, bEnd.v);
+	var cosT = O.vDot(O.vUnit([-4000, 0, 0]), O.vUnit(vOut));
+	var deg = Math.acos(Math.max(-1, Math.min(1, cosT))) * 180 / Math.PI;
+	assert.ok(deg > 1, "deflection " + deg.toFixed(2) + " deg");
+	// Hyperbolic-excess speed in ~= out (the Sun term shifts it only slightly).
+	assert.ok(res.vinf != null && Math.abs(O.vMag(vOut) - res.vinf) / res.vinf < 0.1,
+		"v-inf in " + res.vinf + " out " + O.vMag(vOut));
+});
+
+test("integrateEncounter: aimed dead at the body it reports an entry (impact)", () => {
+	var c = bodyConstants("Mars");
+	var s = marsEncounterStart([c.SOI * 0.5, 0, 0], [-4000, 0, 0], JD0);
+	var res = integrateEncounter("Mars", s.r, s.v, JD0, 60 * DAY);
+	assert.equal(res.branch, "entry");
+	assert.ok(res.entry && res.entry.v > 4000, "entry speed gained fall energy: " + (res.entry && res.entry.v));
+});
+
+test("integrateEncounter: maxDur elapsing inside the SOI reports branch 'time'", () => {
+	var c = bodyConstants("Mars");
+	var s = marsEncounterStart([c.SOI * 0.98, c.SOI * 0.15, 0], [-4000, 0, 0], JD0);
+	var res = integrateEncounter("Mars", s.r, s.v, JD0, 3600);
+	assert.equal(res.branch, "time");
+	assert.ok(Math.abs(res.duration - 3600) < 1, "stopped at the boundary: " + res.duration);
+});
+
+test("integrateEncounter: a state already at the surface reports entry without integrating", () => {
+	var c = bodyConstants("Mars");
+	var s = marsEncounterStart([c.R * 0.5, 0, 0], [-1000, 0, 0], JD0);
+	var res = integrateEncounter("Mars", s.r, s.v, JD0, DAY);
+	assert.equal(res.branch, "entry");
+	assert.equal(res.duration, 0);
+});

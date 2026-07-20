@@ -275,3 +275,71 @@ export function buildIntegratedLeg(name, R0, V0, jde0) {
 	};
 	return leg;
 }
+
+// ---- SOI encounters on a heliocentric coast --------------------------------
+
+// Integrate a ship THROUGH a body's sphere of influence: the arrival-side
+// mirror of integrateTrajectory (which flies outbound from a release). A
+// heliocentric coast (transfer-leg) that dips inside a body's SOI hands its
+// state here; the flight continues in the BODY-centred frame under body + Sun
+// gravity (bodyAccel — same indirect term, no patched-conic kink) until it
+// leaves the SOI again, hits the surface/atmosphere interface, or `maxDurS`
+// runs out (the leg's own boundary — a leg may END mid-encounter, and the
+// caller keeps the honest inside-SOI state).
+//
+// rHelio/vHelio: heliocentric state (m, m/s) at jde0 — normally at (or just
+// inside) the SOI boundary. Returns:
+//   samples  body-centred { r, v, t } trail (stateAtLegTime-compatible with
+//            { samples, jde0 }), turn-angle-capped like integrateTrajectory
+//   branch   "exit" (left the SOI), "entry" (surface/atmosphere impact),
+//            or "time" (maxDurS elapsed still inside)
+//   rmin     closest approach to the body centre (m)
+//   vinf     hyperbolic excess speed vs the body (m/s) at the start state,
+//            or null if the state is bound to the body
+//   duration integrated time (s)
+//   end      heliocentric { r, v } lifted at jde0 + duration/86400
+//   entry    entry conditions record when branch === "entry" (else null)
+export function integrateEncounter(name, rHelio, vHelio, jde0, maxDurS) {
+	var c = bodyConstants(name);
+	var dropped = Frames.helioToLocal(name, jde0, rHelio, vHelio);
+	var r = dropped.r.slice(), v = dropped.v.slice(), t = 0;
+	var samples = [{ r: r.slice(), v: v.slice(), t: 0 }];
+	var rmin = Math.hypot(r[0], r[1], r[2]);
+	if (rmin <= c.entryR) {
+		// Handed a state already at/inside the surface interface — report it
+		// as an immediate entry rather than integrating from a singularity.
+		return { samples: samples, branch: "entry", rmin: rmin, vinf: null,
+		         duration: 0, end: { r: rHelio.slice(), v: vHelio.slice() },
+		         entry: entryConditionsFromState(r, v) };
+	}
+	var v0mag = Math.hypot(v[0], v[1], v[2]);
+	var E0 = v0mag * v0mag / 2 - c.GM / rmin;
+	var vinf = E0 > 0 ? Math.sqrt(2 * E0) : null;
+	var branch = "time", entry = null;
+
+	for (var step = 0; step < 8000 && t < maxDurS; step++) {
+		var jde = jde0 + t / 86400;
+		var a1 = bodyAccel(name, r, jde);
+		var amag = Math.max(1e-12, Math.hypot(a1[0], a1[1], a1[2]));
+		var vmag = Math.max(1, Math.hypot(v[0], v[1], v[2]));
+		var dt = Math.max(0.05, Math.min(2160, 0.02 * vmag / amag));   // ~1 deg of turn; SOI-interior cap
+		dt = Math.min(dt, maxDurS - t);
+		var hd = dt / 2 / 86400;
+		var r2 = O.vAdd(r, O.vScale(v, dt / 2)), v2 = O.vAdd(v, O.vScale(a1, dt / 2)), a2 = bodyAccel(name, r2, jde + hd);
+		var r3 = O.vAdd(r, O.vScale(v2, dt / 2)), v3 = O.vAdd(v, O.vScale(a2, dt / 2)), a3 = bodyAccel(name, r3, jde + hd);
+		var r4 = O.vAdd(r, O.vScale(v3, dt)), v4 = O.vAdd(v, O.vScale(a3, dt)), a4 = bodyAccel(name, r4, jde + dt / 86400);
+		r = O.vAdd(r, O.vScale(O.vAdd(O.vAdd(v, O.vScale(v2, 2)), O.vAdd(O.vScale(v3, 2), v4)), dt / 6));
+		v = O.vAdd(v, O.vScale(O.vAdd(O.vAdd(a1, O.vScale(a2, 2)), O.vAdd(O.vScale(a3, 2), a4)), dt / 6));
+		t += dt;
+		samples.push({ r: r.slice(), v: v.slice(), t: t });
+		var rmag = Math.hypot(r[0], r[1], r[2]);
+		if (rmag < rmin) { rmin = rmag; }
+		if (rmag <= c.entryR) { entry = entryConditionsFromState(r, v); branch = "entry"; break; }
+		if (rmag > c.SOI) { branch = "exit"; break; }
+	}
+
+	var jdeEnd = jde0 + t / 86400;
+	var lifted = Frames.localToHelio(name, jdeEnd, r, v);
+	return { samples: samples, branch: branch, rmin: rmin, vinf: vinf,
+	         duration: t, end: { r: lifted.r, v: lifted.v }, entry: entry };
+}

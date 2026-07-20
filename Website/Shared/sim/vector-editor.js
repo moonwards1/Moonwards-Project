@@ -1,30 +1,37 @@
-// Shared/sim/vector-editor.js — the draggable 3-axis burn vector editor
-// (prograde / radial / normal, km/s), the SVG widget every waypoint card
-// uses. Extracted verbatim from the copy in
-// MissionPlanner/modules/body-departure-leg/body-departure-leg.js (itself a
-// copy of departure-leg's, itself of transfer-leg's SST port) when a FOURTH
-// copy was about to appear (the arrival leg, task H3) — three duplicates was
-// already past the line. The three older modules still carry their own
-// inlined copies; migrating them onto this one is a pending cleanup, noted in
-// MissionPlannerTasks.md.
-//
-// buildVectorEditor(host, values, onChange):
-//   host     — element the widget mounts into (cleared first). Also gets a
-//              `_sstRedraw` handle so callers can refresh after external
-//              changes to `values`.
-//   values   — { pro, rad, nrm } in m/s, MUTATED live as the user drags/types
-//   onChange — (axisKey, mps) fired on every change
-//
-// Browser-only (DOM + SVG), no THREE. ES module with named exports.
+/* Shared/sim/vector-editor.js
+ *
+ * The isometric SVG burn-vector editor: three draggable prograde / radial /
+ * normal arrows (same axis colours as Shared/sim/burn-widget.js's 3D gizmo —
+ * prograde #6fd49a green, radial #ffb45a orange, normal #8ab4ff blue) around
+ * a little isometric arrow glyph, plus a numeric-input row underneath. Values
+ * are m/s in and out; the widget displays and edits in km/s (±15 km/s range,
+ * shift-drag for fine control).
+ *
+ * Ported from the Solar-System-Trajectory-Plotter and then inlined
+ * byte-identically in three MissionPlanner modules (transfer-leg,
+ * departure-leg, body-departure-leg) before being extracted here verbatim
+ * from body-departure-leg's copy.
+ *
+ * buildVectorEditor(host, values, onChange):
+ * - host: a container element; its content is replaced with the SVG + the
+ *   numeric row. The widget stores its redraw on `host._sstRedraw` so a
+ *   caller that mutates `values` externally can refresh the arrows.
+ * - values: a { pro, rad, nrm } object in m/s — MUTATED IN PLACE as the user
+ *   drags or types (callers rely on this; it's the live burn object).
+ * - onChange(axisKey, mps): called after each user edit with the axis
+ *   ("pro" | "rad" | "nrm") and its new value in m/s.
+ *
+ * Styling comes from the page's own CSS (.sst-vecwidget, .sst-vec-nums,
+ * .sst-vec-num — MissionPlanner/planner.css and the SST's stylesheet both
+ * carry them).
+ */
 
 var SVGNS = "http://www.w3.org/2000/svg";
-
 function svgEl(tag, attrs) {
 	var e = document.createElementNS(SVGNS, tag);
 	for (var k in attrs) { e.setAttribute(k, attrs[k]); }
 	return e;
 }
-
 export function buildVectorEditor(host, values, onChange) {
 	host.innerHTML = "";
 	var W = 278, H = 300, OX = 139, OY = 150, SCALE = 7.5, MAXV = 15, LEN = MAXV * SCALE;
