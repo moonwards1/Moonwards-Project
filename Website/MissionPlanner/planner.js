@@ -41,13 +41,12 @@ import { createEphemerisView } from "./ephemeris-view.js";
 // fetched when activated; the scaffold's default mission activates both) ----
 var MODULE_URLS = [
 	"./modules/moon-platform/moon-platform.js",
-	"./modules/lunar-skyhook/lunar-skyhook.js",
-	"./modules/departure-leg/departure-leg.js",
-	// Generic-origin departure system (task J2, WP-J): a self-contained skyhook
-	// carrier + its escape/hand-off leg, for a departure from any HELIO_BODIES
-	// body. Registered here so the registry knows them; a generic mission wires
-	// them into its own origin-body frame (task J3).
+	// The ONE skyhook carrier (unified 2026-07-20): serves the Moon (riding
+	// moon-platform, escaping Earth via departure-leg) and any HELIO_BODIES
+	// origin (self-originating, escaping that body via body-departure-leg). The
+	// retired Moon-specific lunar-skyhook is gone.
 	"./modules/orbital-skyhook/orbital-skyhook.js",
+	"./modules/departure-leg/departure-leg.js",
 	"./modules/body-departure-leg/body-departure-leg.js",
 	"./modules/frozen-plan/frozen-plan.js",
 	"./modules/transfer-leg/transfer-leg.js",

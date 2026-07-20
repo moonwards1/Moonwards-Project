@@ -252,8 +252,8 @@ body {
 	width: 110px; color-scheme: dark;
 }
 .mp-inrow select { width: 150px; }
-/* Departure technology dropdown (task F1) — full-width, not paired with a
-   label the way .mp-inrow's controls are. */
+/* Technology dropdown (the Arrival technology selector, task H2) — full-width,
+   not paired with a label the way .mp-inrow's controls are. */
 .mp-tech-select {
 	display: block; width: 100%; background: #0f1424; border: 1px solid var(--line2);
 	color: var(--text); border-radius: 6px; padding: 5px 8px; font: inherit;

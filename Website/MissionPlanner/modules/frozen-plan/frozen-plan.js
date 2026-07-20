@@ -301,11 +301,16 @@ export function complianceWarnings(comp) {
 	if (!comp.ok) { return warnings; }
 
 	if (!comp.delivered) {
+		// Covers both "no tech yet" and "a tech is present but its flight
+		// fails to deliver a hand-off" (a bound skyhook, a no-carrier chain,
+		// an impact) — the boundary keeps the plan flowing in either case; the
+		// specific failure shows on the failing stage's own card.
 		warnings.push(makeDiagnostic("no-departure-tech",
-			"No departure technology is delivering the plan's departure state yet — " +
-			"downstream shows the frozen plan itself.",
+			"No departure state is reaching the plan — the departure technology is " +
+			"absent, or its flight doesn't deliver a hand-off — so the coast shows the " +
+			"frozen plan itself.",
 			{ values: { requiredVInf: comp.required.vInf },
-			  fix: "Add a departure technology and configure it to deliver v∞ " +
+			  fix: "Add or fix a departure technology so it delivers v∞ " +
 			       (comp.required.vInf / 1000).toFixed(2) + " km/s on " + isoOf(comp.required.jd) + "." }));
 		return warnings;
 	}
@@ -368,6 +373,14 @@ export default {
 	accepts: ["ship-state"],
 	emits: ["ship-state"],
 	inputOptional: true,
+	// The Departure→Coast compliance boundary (recompute.js's `boundary`): the
+	// plan is authoritative and the departure tech is measured against it, so
+	// an upstream departure that is absent, half-built, or failing (a bound
+	// skyhook, a no-carrier chain, an impacting flight) must never blank the
+	// committed plan or the coast beyond it. The block chain terminates here;
+	// the shortfall becomes a compliance warning, not a block. (The Coast→
+	// Arrival boundary will set the same flag once its stage exists.)
+	boundary: true,
 	rendersIn: ["helio"],
 	// No sidebar card (Kim, 2026-07-12): this stage's readouts and diagnostics
 	// all render in the phase bar instead — see renderComplianceBar and its

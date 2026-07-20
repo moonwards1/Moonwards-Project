@@ -48,7 +48,7 @@ import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
-import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
+import { arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 
 var O = OrbitalMath;
@@ -455,7 +455,13 @@ export function createMissionView(opts) {
 			var frame = frames[frameId];
 			if (!frame) { return; }
 			var group = new THREE.Group();
-			var parent = (desc.attachesTo && frame.bodyNode(desc.attachesTo)) || frame.scene;
+			// attachesTo may be a static body name, or a function(stage) → body
+			// name resolved per stage: the one skyhook module attaches to
+			// whatever body its own `body` param names — the Moon's moving node
+			// in the Earth-Moon frame, or a planet at its own frame's centre.
+			// null / unknown body → the frame root (body-centric modules).
+			var attachBody = typeof desc.attachesTo === "function" ? desc.attachesTo(stage) : desc.attachesTo;
+			var parent = (attachBody && frame.bodyNode(attachBody)) || frame.scene;
 			parent.add(group);
 			var view = { frame: frameId, group: group, stageId: stage.id, metresPerUnit: frame.metresPerUnit };
 			if (typeof desc.viewAdded === "function") { desc.viewAdded(view); }
@@ -591,93 +597,19 @@ export function createMissionView(opts) {
 	world.stages().forEach(function (stage) { buildCard(stage, null); });
 	applyPhaseToCards();
 
-	// ---- departure technology dropdown (task F1) -----------------------------
-	// A shell-level control, not a module's own card: it swaps whichever ONE
-	// stage in the departure stack is shaped like a carrier (accepts AND
-	// emits carrier-chain — today just lunar-skyhook; a rotor-less/no-carrier
-	// profile has none, so the card just doesn't appear, which is I5's
-	// add/remove problem, not this task's). "Base platform" is the same shape
-	// rule the other way (emits carrier-chain, accepts nothing — moon-platform
-	// today) — its own already-computed output tells us which body the chain
-	// actually starts from, so the dropdown's options are filtered by that
-	// body via ui/tech-options.js's techOptionsFor rather than hardcoded to
-	// the Moon (the "body" convention: Shared/exchange-types.js's header,
-	// MissionPlannerTasks.md's I5/I6 notes, Kim 2026-07-17).
-	function isBasePlatformStage(stage) {
-		var desc = registry.get(stage.moduleId);
-		return !!desc && desc.accepts.length === 0 && desc.emits.indexOf("carrier-chain") !== -1;
-	}
-	function isCarrierTechStage(stage) {
-		var desc = registry.get(stage.moduleId);
-		return !!desc && desc.accepts.indexOf("carrier-chain") !== -1 && desc.emits.indexOf("carrier-chain") !== -1;
-	}
-	function departureTechStage() {
-		var stages = world.stages();
-		for (var i = 0; i < stages.length; i++) { if (isCarrierTechStage(stages[i])) { return stages[i]; } }
-		return null;
-	}
-	function departureChainBody() {
-		var stages = world.stages();
-		for (var i = 0; i < stages.length; i++) {
-			if (!isBasePlatformStage(stages[i])) { continue; }
-			var res = engine.resultFor(stages[i].id);
-			if (res && res.output && res.output.data && typeof res.output.data.base === "string") {
-				return res.output.data.base;
-			}
-		}
-		return null;
-	}
-
-	var DEP_TECH_KEY = "__departure-tech__";
-
-	function buildDepartureTechCard() {
-		var techStage = departureTechStage();
-		if (!techStage) { return; }   // no swappable carrier stage in this profile
-
-		var card = document.createElement("div"); card.className = "mp-card";
-		var h = document.createElement("h3"); h.textContent = "Departure technology"; card.appendChild(h);
-		var select = document.createElement("select");
-		select.className = "mp-tech-select";
-		card.appendChild(select);
-		panelEl.insertBefore(card, cards[techStage.id] ? cards[techStage.id].cardEl : null);
-		cards[DEP_TECH_KEY] = { cardEl: card, phase: "departure", callbacks: [] };
-
-		function refreshOptions() {
-			var body = departureChainBody();
-			var stage = world.getStage(techStage.id);
-			select.innerHTML = "";
-			techOptionsFor(body).forEach(function (opt) {
-				var o = document.createElement("option");
-				o.value = opt.id;
-				o.textContent = opt.label + (opt.future ? " (future)" : "");
-				o.disabled = !!opt.future;
-				if (opt.moduleId === stage.moduleId) { o.selected = true; }
-				select.appendChild(o);
-			});
-		}
-		refreshOptions();
-
-		select.addEventListener("change", function () {
-			var body = departureChainBody();
-			var opt = techOptionsFor(body).filter(function (o) { return o.id === select.value; })[0];
-			if (!opt || opt.future || !opt.moduleId) { refreshOptions(); return; }   // disabled options shouldn't fire; defensive
-			swapTechStage(techStage.id, opt, {}).then(refreshOptions);
-		});
-	}
-
-	// Swaps a tech stage's module (both dropdowns' change handler — departure
-	// F1, arrival H2). Disposes the outgoing module's card/views BEFORE
-	// world.set (so its viewRemoved runs against the descriptor that actually
-	// built them), commits the change (this recomputes synchronously —
-	// recompute.js — with no card/view yet registered for this stage, so that
-	// pass's updateCard/drawStage safely no-op), then builds the incoming
-	// module's card/views against the now-committed fresh params and replays
-	// the engine's already-computed result onto them by hand. Nothing here
-	// re-derives physics — recompute already ran; this only catches the view
-	// layer up to what the engine already decided. `seedParams` is what the
-	// incoming module starts with — {} for departure (the lunar defaults
-	// fill), { body } for arrival (the body convention: every arrival tech
-	// carries its destination explicitly).
+	// Swaps a tech stage's module (the arrival technology dropdown's change
+	// handler — task H2; the departure side's swap card was removed and is
+	// replaced by I5's add/remove carrier affordance). Disposes the outgoing
+	// module's card/views BEFORE world.set (so its viewRemoved runs against the
+	// descriptor that actually built them), commits the change (this recomputes
+	// synchronously — recompute.js — with no card/view yet registered for this
+	// stage, so that pass's updateCard/drawStage safely no-op), then builds the
+	// incoming module's card/views against the now-committed fresh params and
+	// replays the engine's already-computed result onto them by hand. Nothing
+	// here re-derives physics — recompute already ran; this only catches the
+	// view layer up to what the engine already decided. `seedParams` is the
+	// incoming module's starting params — { body } for an arrival tech (the
+	// body convention: every arrival tech carries its destination explicitly).
 	async function swapTechStage(stageId, opt, seedParams) {
 		var stage = world.getStage(stageId);
 		if (!stage || stage.moduleId === opt.moduleId) { return; }
@@ -700,16 +632,14 @@ export function createMissionView(opts) {
 		if (res) { drawStage(res); updateCard(res); }
 	}
 
-	buildDepartureTechCard();
-
 	// ---- arrival technology dropdown (task H2) -------------------------------
-	// The departure dropdown's mirror: swaps whichever ONE stage is shaped
-	// like an arrival tech — consumes a ship-state and emits nothing (the
-	// chain's terminal catch: capture-burn, arrival-skyhook). Options are
-	// filtered by the frozen plan's arrival body (arrivalTechOptionsFor), and
-	// the swap seeds the incoming module with that body explicitly. A mission
-	// with no such stage (an old save) just doesn't get the card — the same
-	// add/remove gap I5 tracks for the departure side.
+	// Swaps whichever ONE stage is shaped like an arrival tech — consumes a
+	// ship-state and emits nothing (the chain's terminal catch: capture-burn,
+	// arrival-skyhook). Options are filtered by the frozen plan's arrival body
+	// (arrivalTechOptionsFor), and the swap seeds the incoming module with that
+	// body explicitly. A mission with no such stage (an old save) just doesn't
+	// get the card — an add/remove gap on the arrival side, mirroring the one
+	// I5 closes for departure.
 	function isArrivalTechStage(stage) {
 		var desc = registry.get(stage.moduleId);
 		return !!desc && desc.accepts.indexOf("ship-state") !== -1 && desc.emits.length === 0;
@@ -756,10 +686,10 @@ export function createMissionView(opts) {
 	}
 
 	buildArrivalTechCard();
-	// Re-filter now that the tech cards exist: they are built AFTER the
+	// Re-filter now that the arrival card exists: it is built AFTER the
 	// mount-time applyPhaseToCards() above, so without this a workspace
-	// restored in a non-departure phase would show the departure dropdown
-	// (and vice versa) until the first phase switch.
+	// restored outside the arrival phase would show the arrival dropdown until
+	// the first phase switch.
 	applyPhaseToCards();
 
 	function renderDiagBox(parent, d, cssClass) {

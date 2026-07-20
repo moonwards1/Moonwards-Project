@@ -17,7 +17,7 @@
 // RESHAPED BY TASK I3 (WP-I, 2026-07-16): the departure is a CARRIER CHAIN
 // with a real integrated flight, not a patched-conic formula —
 //
-//   moon-platform → lunar-skyhook → departure-leg → frozen-plan → transfer-leg
+//   moon-platform → orbital-skyhook → departure-leg → frozen-plan → transfer-leg
 //   → arrival-leg (task H3: the flyby hand-off around Ceres)
 //   → capture-burn (task H2: the baseline chemical arrival at Ceres)
 //
@@ -62,7 +62,7 @@
 
 export var defaultMission = {
 	kind: "moonwards-world",
-	version: 2,
+	version: 3,
 	jd: 2463218.546734214,   // the clock opens at the release anchor
 	nextStage: 8,
 	stages: [
@@ -74,8 +74,9 @@ export var defaultMission = {
 		},
 		{
 			id: "stg-2",
-			moduleId: "lunar-skyhook",
+			moduleId: "orbital-skyhook",
 			params: {
+				body: "Moon",
 				comAlt: 275e3,
 				topAlt: 6000e3,
 				relAlt: 6000e3,

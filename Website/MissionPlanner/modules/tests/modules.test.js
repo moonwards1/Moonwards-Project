@@ -12,7 +12,7 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import moonPlatform, { moonFigures } from "../moon-platform/moon-platform.js";
-import skyhook, { tetherKinematics, rotorFor, defaultParams as skyhookDefaults } from "../lunar-skyhook/lunar-skyhook.js";
+import skyhook, { tetherKinematics, rotorFor } from "../orbital-skyhook/orbital-skyhook.js";
 import departureLeg, { computeDepartureLeg } from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
 import transferLeg, { computeLeg, stateAtElapsed, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
@@ -30,6 +30,10 @@ import { SOI_EARTH } from "../../../Shared/geo-leg.js";
 var JD_ANCHOR = 2463218.546734214;
 var JD_HANDOFF = 2463220.75;
 var DAY = 86400;
+
+// The worked-example lunar skyhook geometry (the shipped preset's own values),
+// now carried on the unified orbital-skyhook with its `body` named explicitly.
+var MOON_SKYHOOK = { body: "Moon", comAlt: 275e3, topAlt: 6000e3, relAlt: 6000e3, releasePhaseDeg: 92 };
 
 function makeRegistry() {
 	var reg = createRegistry();
@@ -50,7 +54,8 @@ function makeChain(skyhookParams, legParams) {
 	var world = createWorld({ jd: JD_ANCHOR });
 	var ids = {};
 	ids.moon = world.set({ addStage: { moduleId: "moon-platform", params: {} } });
-	ids.skyhook = world.set({ addStage: { moduleId: "lunar-skyhook", params: skyhookParams } });
+	ids.skyhook = world.set({ addStage: { moduleId: "orbital-skyhook",
+		params: Object.assign({ body: "Moon" }, skyhookParams) } });
 	ids.dep = world.set({ addStage: { moduleId: "departure-leg", params: {} } });
 	ids.leg = world.set({ addStage: { moduleId: "transfer-leg", params: legParams } });
 	var engine = createEngine(world, makeRegistry());
@@ -60,29 +65,29 @@ function makeChain(skyhookParams, legParams) {
 // ---- tetherKinematics + rotorFor (pure carrier geometry) --------------------
 
 test("tetherKinematics: the worked-example geometry spins clear of lunar escape", function () {
-	var kin = tetherKinematics(skyhookDefaults);   // defaults ARE the example
+	var kin = tetherKinematics(MOON_SKYHOOK);   // the worked-example geometry
 	assert.equal(kin.ok, true);
 	// omega * rRel with CoM at 275 km, release from the top at 6000 km
 	assert.ok(kin.vRel > 5900 && kin.vRel < 6100, "release speed ~6.0 km/s, got " + kin.vRel);
-	assert.ok(kin.vInfMoon > 5700 && kin.vInfMoon < 6100, "lunar v-inf ~5.9 km/s, got " + kin.vInfMoon);
+	assert.ok(kin.vInfBody > 5700 && kin.vInfBody < 6100, "lunar v-inf ~5.9 km/s, got " + kin.vInfBody);
 	assert.ok(kin.period > 0 && kin.period < 24 * 3600, "rotation period under a day");
 });
 
 test("tetherKinematics: a low release point is bound at the Moon, with a fix", function () {
-	var kin = tetherKinematics(Object.assign({}, skyhookDefaults, { relAlt: 300e3 }));
+	var kin = tetherKinematics(Object.assign({}, MOON_SKYHOOK, { relAlt: 300e3 }));
 	assert.equal(kin.ok, false);
-	assert.equal(kin.diagnostic.code, "bound-at-moon");
+	assert.equal(kin.diagnostic.code, "bound-at-body");
 	assert.ok(kin.diagnostic.fix.indexOf("km") !== -1);
 });
 
 test("tetherKinematics: rejects a release point beyond the tether top", function () {
-	var kin = tetherKinematics(Object.assign({}, skyhookDefaults, { relAlt: 7000e3 }));
+	var kin = tetherKinematics(Object.assign({}, MOON_SKYHOOK, { relAlt: 7000e3 }));
 	assert.equal(kin.ok, false);
 	assert.equal(kin.diagnostic.code, "bad-params");
 });
 
 test("rotorFor: the kinematic-chain rotor pins the release phase at the anchor", function () {
-	var kin = tetherKinematics(skyhookDefaults);
+	var kin = tetherKinematics(MOON_SKYHOOK);
 	var rotor = rotorFor(kin, JD_ANCHOR);
 	assert.deepEqual(rotor.normal, [0, 0, 1]);   // ecliptic plane, plotter convention
 	assert.deepEqual(rotor.ref, [1, 0, 0]);
@@ -105,7 +110,7 @@ test("moonFigures: the Moon's heading/impulse contribution at the anchor", funct
 
 // The preset's own carrier chain, hand-built.
 function presetChainData() {
-	var kin = tetherKinematics(skyhookDefaults);
+	var kin = tetherKinematics(MOON_SKYHOOK);
 	return { base: "Moon", rotors: [rotorFor(kin, JD_ANCHOR)] };
 }
 
@@ -157,7 +162,7 @@ test("departure flight: a Moon-bound release has no hand-off", function () {
 	// the integrated flight stays a lunar orbit — bound, no hand-off. (The
 	// skyhook module itself diagnoses this earlier via tetherKinematics; this
 	// exercises departure-leg's own honesty for chains that slip past that.)
-	var kin = tetherKinematics(skyhookDefaults);
+	var kin = tetherKinematics(MOON_SKYHOOK);
 	var slow = { base: "Moon", rotors: [Object.assign({}, rotorFor(kin, JD_ANCHOR),
 		{ rate: 900 / kin.rRel })] };
 	var leg = computeDepartureLeg({ waypoints: [] }, slow, JD_ANCHOR);
@@ -260,7 +265,7 @@ test("stateAtElapsed: a leg with no segments (malformed) returns null", function
 
 test("chain: Moon base → skyhook rotor → integrated flight → transfer leg; all ok", function () {
 	var c = makeChain(
-		Object.assign({}, skyhookDefaults, { releaseJd: JD_ANCHOR }),   // legacy-fallback anchor
+		Object.assign({}, MOON_SKYHOOK, { releaseJd: JD_ANCHOR }),   // legacy-fallback anchor
 		{ waypoints: [], legDays: 480, destination: "" });
 	var rMoon = c.engine.resultFor(c.ids.moon);
 	var rSky = c.engine.resultFor(c.ids.skyhook);
@@ -297,7 +302,7 @@ test("chain: a bound-at-moon skyhook blocks the flight, params intact", function
 	var rSky = c.engine.resultFor(c.ids.skyhook);
 	var rDep = c.engine.resultFor(c.ids.dep);
 	assert.equal(rSky.status, "diagnostic");
-	assert.equal(rSky.diagnostic.code, "bound-at-moon");
+	assert.equal(rSky.diagnostic.code, "bound-at-body");
 	assert.equal(rDep.status, "blocked");
 	assert.equal(rDep.blockedOn, c.ids.skyhook);
 	assert.equal(c.world.getStage(c.ids.leg).params.legDays, 480);
@@ -328,7 +333,7 @@ test("chain: a transfer leg with nothing upstream is missing-input", function ()
 
 test("chain: moving the clock recomputes but does not change the mission", function () {
 	var c = makeChain(
-		Object.assign({}, skyhookDefaults, { releaseJd: JD_ANCHOR }),
+		Object.assign({}, MOON_SKYHOOK, { releaseJd: JD_ANCHOR }),
 		{ waypoints: [], legDays: 480, destination: "" });
 	var before = c.engine.resultFor(c.ids.leg).output.data.r.slice();
 	c.world.set({ jd: JD_ANCHOR + 100 });   // the viewing clock, not the release epoch
@@ -350,7 +355,7 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	var stages = res.world.stages();
 	assert.equal(stages.length, 7);
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["moon-platform", "lunar-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
+		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
 		 "arrival-leg", "capture-burn"]);
 
 	var rMoon = engine.resultFor(stages[0].id);
@@ -438,15 +443,17 @@ test("migration: a v1 save gains moon-platform + departure-leg around its skyhoo
 	assert.equal(res.ok, true, res.reason);
 	var stages = res.world.stages();
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["moon-platform", "lunar-skyhook", "departure-leg", "frozen-plan", "transfer-leg"]);
+		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg"]);
 	// original ids survive; inserted ids are fresh, beyond the old counter
 	assert.equal(stages[1].id, "stg-1");
 	assert.equal(stages[3].id, "stg-3");
 	assert.notEqual(stages[0].id, stages[2].id);
-	// the skyhook's params — including the legacy releaseJd — pass through
+	// the skyhook's params — including the legacy releaseJd — pass through, and
+	// the v3 migration adds the explicit body the unified skyhook needs
 	assert.equal(stages[1].params.releaseJd, 2463220.75);
-	// a re-serialize is version 2 (no double migration on the next load)
-	assert.equal(res.world.serialize().version, 2);
+	assert.equal(stages[1].params.body, "Moon");
+	// a re-serialize is version 3 (no double migration on the next load)
+	assert.equal(res.world.serialize().version, 3);
 
 	// The migrated mission RUNS: the anchor falls back to the plan's
 	// departure.jd (pre-D7 plans have no releaseAnchorJd), so the integrated

@@ -1,55 +1,57 @@
-/* MissionPlanner/modules/orbital-skyhook — the GENERIC orbital-skyhook
- * carrier (task J2, WP-J: departure from any body on the HELIO_BODIES list).
+/* MissionPlanner/modules/orbital-skyhook — the ONE skyhook carrier module.
  *
- * A gravity-gradient (radial) skyhook orbiting the mission's ORIGIN body
- * directly — the Mars-Phobos-Skyhook-Trajectory-Plotter's skyhook, generalized
- * off Mars onto any body via its own GM/radius. It is the generic sibling of
- * lunar-skyhook.js, with two structural differences that follow from WP-J's
- * "no satellite ephemeris, no other per-body modelling":
+ * Unified 2026-07-20 (Kim): there is a single skyhook, and the Moon uses it
+ * like any other body — the Moon-specific `lunar-skyhook` module it grew out
+ * of was retired. A gravity-gradient (radial) skyhook whose centre of mass
+ * rides a circular orbit around its `body`, rotating at that orbit's rate;
+ * ported from the Mars-Phobos-Skyhook-Trajectory-Plotter's skyhook and
+ * generalized off Mars onto any body via its own GM/radius.
  *
- *   - It is SELF-CONTAINED: it accepts no upstream carrier chain and emits the
- *     whole chain — { base: <origin body>, rotors: [ its own rotor ] } — itself.
- *     The lunar case needs a separate moon-platform base because a lunar
- *     departure rides the Moon around Earth (the Moon has real geocentric
- *     velocity); a generic skyhook orbits its body directly in that body's own
- *     centred frame, where the body is simply the origin at rest, so there is
- *     no separate platform state to carry. (kinematic-chain.js's baseState
- *     returns [0,0,0] for any such origin body — task J2.)
+ * Two properties let one module serve both the Moon (a satellite of Earth) and
+ * a planet at rest:
+ *
  *   - It is body-PARAMETRIZED: `body` is a required param (the "body"
  *     convention — Shared/exchange-types.js header; every carrier packet names
  *     its body explicitly, never implied). GM/radius come from
- *     Shared/orbit.js's `systems`; the downstream release leg
- *     (body-departure-leg) re-checks that the chain's base matches its own body
- *     the way lunar-skyhook checks its incoming base.
+ *     Shared/orbit.js's `systems`, and it RENDERS parented at that body's node
+ *     — the Moon's moving node in the Earth-Moon frame, or a planet at its own
+ *     frame's centre (the shell resolves attachesTo per stage from `body`).
+ *   - It OPTIONALLY RIDES an upstream base platform (accepts a carrier-chain,
+ *     inputOptional). For the Moon it rides moon-platform, so the Moon keeps
+ *     its fixed read-only platform card AND its real geocentric base state (the
+ *     Moon's ~1 km/s around Earth, which kinematic-chain.js's baseState
+ *     supplies for base "Moon"); the released ship then escapes EARTH, via the
+ *     geocentric departure-leg (Earth+Moon+Sun). For a planet there is no
+ *     separate platform — the body is simply the origin at rest (baseState
+ *     returns [0,0,0]) — so the skyhook self-originates the chain and the ship
+ *     escapes that body, via body-departure-leg (body+Sun). Either way it
+ *     APPENDS ITS ROTOR ELEMENT (Shared/kinematic-chain.js shape: ecliptic
+ *     plane, radius = the release point's orbit radius, rate = the CoM orbit's
+ *     angular velocity, phase pinned at the plan's read-only release anchor).
+ *     Riding a platform, it checks the platform's base names its own body (the
+ *     body convention's mismatch guard, as lunar-skyhook did); self-originating,
+ *     it is the TOP of the chain and diagnoses a missing release anchor
+ *     (moon-platform's role for the lunar chain).
  *
- * Like lunar-skyhook, what it does is purely kinematic: it validates the
- * tether geometry, then APPENDS ITS ROTOR ELEMENT (Shared/kinematic-chain.js
- * shape: ecliptic plane, radius = the release point's orbit radius, rate = the
- * CoM orbit's angular velocity, phase pinned at the mission's read-only release
- * anchor) and emits the chain. The ESCAPE physics — integrating the released
- * ship under body + Sun gravity to the body-SOI-exit hand-off — lives
- * downstream in the headless body-departure-leg module (Shared/body-leg.js),
- * not here. The AIMING control (release phase) is this card's own slider, as
- * WP-I prescribes for carriers.
- *
- * As the TOP of the generic departure chain it diagnoses a missing release
- * anchor (the role moon-platform plays for the lunar chain).
+ * The ESCAPE physics lives downstream in the headless departure legs, never
+ * here. The AIMING control (release phase) is this card's own slider, as WP-I
+ * prescribes for carriers.
  *
  * DEFAULT GEOMETRY (defaultGeometryFor): the CoM orbit radius defaults to a
- * candidate satellite's orbit.semiMajor when the origin has one (Mars →
- * Phobos), else a fallback low orbit; the release point defaults above the
- * escape radius so a freshly-added skyhook drafts an escaping trajectory
- * straight away. A dropdown/exchange that adds this card seeds `body` + these
- * defaults (task I5); the mission then persists them explicitly.
+ * candidate satellite's orbit.semiMajor when the body has one (Mars → Phobos),
+ * else a fallback low orbit; the release point defaults above the escape radius
+ * so a freshly-added skyhook drafts an escaping trajectory straight away. The
+ * departure-technology dropdown/exchange that adds this card seeds `body` +
+ * these defaults (task I5); the mission then persists them explicitly.
  *
  * update() is pure (no DOM, no THREE) so the chain is Node-testable; the view
- * hooks (`init` the card, `draw` the tether ring in the origin-body frame)
- * only the browser shell calls.
+ * hooks (`init` the card, `draw` the tether ring in the body's frame) only the
+ * browser shell calls.
  *
- * RENDER FRAME: rendersIn declares the symbolic "body:origin" token; task J3
- * builds the mission's own origin-body frame (scene-frames.js's buildBodyFrame,
- * task J1) and aliases "body:origin" to it (and FRAME_PHASE). Until J3 wires
- * that, a generic mission has no origin frame and this draws nothing (harmless).
+ * RENDER FRAME: rendersIn declares the symbolic "body:origin" token, which the
+ * mission view aliases to its own origin-body frame (buildBodyFrame / the
+ * Earth-Moon frame). Combined with the per-stage attachesTo above, the tether
+ * draws at the Moon in an Earth departure and at the planet's centre otherwise.
  *
  * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this folder
  * breaks if moved without them coming along.
@@ -247,13 +249,17 @@ function circleLine(radiusU, colorHex, opacity) {
 
 export default {
 	id: "orbital-skyhook",
-	title: "Orbital skyhook",
-	attachesTo: null,             // rendered body-centric (the origin body is the frame origin)
-	accepts: [],                  // self-contained: it originates the chain (see header)
+	title: "Skyhook",
+	// The body it orbits (its own `body` param), resolved per stage by the
+	// shell: the Moon's moving node in the Earth-Moon frame, or a planet at its
+	// own frame's centre.
+	attachesTo: function (stage) { return (stage && stage.params && stage.params.body) || null; },
+	accepts: ["carrier-chain"],   // rides an upstream base platform when present...
+	inputOptional: true,          // ...or self-originates (a planet at rest) when not
 	emits: ["carrier-chain"],
-	rendersIn: ["body:origin"],   // resolved to the mission's origin frame by task J3
+	rendersIn: ["body:origin"],   // aliased to the mission's origin frame (task J3)
 
-	update: function (ctx) {
+	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
 		if (!params.body) {
 			rememberPhysics(ctx.world, ctx.stageId, null);
@@ -262,13 +268,26 @@ export default {
 				{ fix: "Set the departure body (the mission's origin)." });
 		}
 
+		// Riding a platform (moon-platform, or a future body-platform): the
+		// upstream base must name THIS skyhook's body, or the tether's GM/radius
+		// would apply to the wrong body's numbers with no error (the body
+		// convention's mismatch guard — exchange-types.js's header).
+		if (input && input.data && input.data.base !== params.body) {
+			rememberPhysics(ctx.world, ctx.stageId, null);
+			return makeDiagnostic("wrong-body",
+				"This skyhook orbits " + params.body + ", but the chain it rides is based at " +
+				input.data.base + ".",
+				{ values: { body: params.body, base: input.data.base },
+				  fix: "Remove this carrier, or start the chain from a " + params.body + " platform." });
+		}
+
 		var phys = tetherKinematics(params);
 		rememberPhysics(ctx.world, ctx.stageId, phys);
 		if (!phys.ok) { return phys.diagnostic; }
 
-		// The release epoch is the plan's read-only anchor. As the top of the
-		// generic chain, this module diagnoses a missing one (moon-platform's
-		// role for the lunar chain).
+		// The release epoch is the plan's read-only anchor. An upstream platform
+		// (moon-platform) already diagnoses a missing one; a self-originating
+		// skyhook is the top of the chain and carries the same check.
 		var anchorJd = releaseAnchorFor(ctx.world);
 		if (anchorJd === null) {
 			return makeDiagnostic("no-release-anchor",
@@ -277,7 +296,11 @@ export default {
 				{ fix: "Start missions from the Ephemeris tab (Start Mission Plan bakes the anchor)." });
 		}
 
-		var chain = { base: params.body, rotors: [rotorFor(phys, anchorJd)] };
+		// Append this rotor to the base it rides (moon-platform's [base, no
+		// rotors]) or start a fresh chain (self-originated). The chain's base is
+		// this skyhook's own body either way.
+		var upstreamRotors = (input && input.data && input.data.rotors) || [];
+		var chain = { base: params.body, rotors: upstreamRotors.concat([rotorFor(phys, anchorJd)]) };
 		var packet = PacketTypes.make("carrier-chain", chain,
 			{ tool: "mission-planner/orbital-skyhook",
 			  label: params.body + " skyhook carrier chain" });

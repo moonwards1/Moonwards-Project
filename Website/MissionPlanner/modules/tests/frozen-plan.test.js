@@ -12,7 +12,7 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import moonPlatform from "../moon-platform/moon-platform.js";
-import skyhook from "../lunar-skyhook/lunar-skyhook.js";
+import skyhook from "../orbital-skyhook/orbital-skyhook.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import captureBurn from "../capture-burn/capture-burn.js";
@@ -208,7 +208,7 @@ function presetChain() {
 	var res = deserializeWorld(defaultMission);
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
-	var stages = res.world.stages();   // moon-platform, lunar-skyhook, departure-leg,
+	var stages = res.world.stages();   // moon-platform, orbital-skyhook, departure-leg,
 	                                   // frozen-plan, transfer-leg (task I3's chain)
 	return { world: res.world, engine: engine,
 	         moon: stages[0].id, sky: stages[1].id, dep: stages[2].id,
@@ -279,6 +279,46 @@ test("comply: a mission with NO departure system still shows its whole plan", fu
 	assert.equal(rPlan.warnings[0].code, "no-departure-tech");
 	assert.equal(rLeg.status, "ok");                 // the coast still draws
 	assert.deepEqual(rLeg.warnings, []);             // and still arrives
+});
+
+// ---- the boundary fix (2026-07-20): a present-but-FAILING departure (not
+// just an absent one) must still leave the committed plan and coast flying.
+// Before frozen-plan became a `boundary` stage, a departure diagnostic blocked
+// the plan and blanked the whole coast — breaking the comply rule's promise
+// that the frozen plan is always shown.
+
+test("boundary: a bound-at-moon skyhook does NOT blank the plan or coast", function () {
+	var c = presetChain();
+	c.world.set({ stage: c.sky, params: { relAlt: 100e3 } });   // tip below escape → bound-at-moon
+	var rSky = c.engine.resultFor(c.sky);
+	var rDep = c.engine.resultFor(c.dep);
+	var rPlan = c.engine.resultFor(c.plan);
+	var rLeg = c.engine.resultFor(c.leg);
+
+	assert.equal(rSky.status, "diagnostic");          // the tech shows its own failure...
+	assert.equal(rSky.diagnostic.code, "bound-at-body");
+	assert.equal(rDep.status, "blocked");             // ...its leg is blocked on it...
+	assert.equal(rDep.blockedOn, c.sky);
+	assert.equal(rPlan.status, "ok");                 // ...but the boundary is NOT blocked
+	assert.equal(rPlan.warnings.length, 1);
+	assert.equal(rPlan.warnings[0].code, "no-departure-tech");
+	assert.equal(rLeg.status, "ok");                  // the committed coast still flies
+	assert.deepEqual(rLeg.warnings, []);
+});
+
+test("boundary: removing the last carrier (no-carrier) still leaves the coast flying", function () {
+	var c = presetChain();
+	c.world.set({ removeStage: c.sky });              // moon-platform → departure-leg, no rotor
+	var rDep = c.engine.resultFor(c.dep);
+	var rPlan = c.engine.resultFor(c.plan);
+	var rLeg = c.engine.resultFor(c.leg);
+
+	assert.equal(rDep.status, "diagnostic");
+	assert.equal(rDep.diagnostic.code, "no-carrier");
+	assert.equal(rPlan.status, "ok");
+	assert.equal(rPlan.warnings[0].code, "no-departure-tech");
+	assert.equal(rLeg.status, "ok");                  // still draws and arrives
+	assert.deepEqual(rLeg.warnings, []);
 });
 
 test("comply: reverting the tech to its shipped params reproduces the same (still-short) warnings", function () {

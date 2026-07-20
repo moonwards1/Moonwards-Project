@@ -51,7 +51,7 @@
 // from inside update()" is enforced rather than merely documented.
 
 export const WORLD_KIND = "moonwards-world";
-export const WORLD_VERSION = 2;
+export const WORLD_VERSION = 3;
 
 // ---- saved-mission migrations ----------------------------------------------
 // Version 2 (task I3, WP-I): the departure system became a CARRIER CHAIN —
@@ -94,6 +94,28 @@ function migrateV1toV2(saved) {
 	});
 	out.stages = stages;
 	out.nextStage = next;
+	return out;
+}
+
+// Version 3 (2026-07-20): the two skyhook modules were unified into ONE generic
+// `orbital-skyhook` that carries its `body` explicitly (the body convention),
+// and the Moon-specific `lunar-skyhook` was retired. A v2 save's `lunar-skyhook`
+// stage becomes an `orbital-skyhook` stage with body "Moon" added; its
+// altitudes / release phase / legacy releaseJd pass through untouched. Same
+// place-in-the-list, same stage id — a pure module swap, no stages added or
+// removed (contrast the v1→v2 reshape above). Data migration, not registry
+// validation: an unknown moduleId still round-trips per the always-storable rule.
+function migrateV2toV3(saved) {
+	var out = structuredClone(saved);
+	out.version = 3;
+	if (!Array.isArray(out.stages)) { return out; }
+	out.stages.forEach(function (s) {
+		if (s && s.moduleId === "lunar-skyhook") {
+			s.moduleId = "orbital-skyhook";
+			if (!s.params || typeof s.params !== "object") { s.params = {}; }
+			if (s.params.body === undefined || s.params.body === null) { s.params.body = "Moon"; }
+		}
+	});
 	return out;
 }
 
@@ -288,6 +310,7 @@ export function deserializeWorld(saved) {
 			", newer than this page understands (v" + WORLD_VERSION + ")" };
 	}
 	if (saved.version === 1) { saved = migrateV1toV2(saved); }
+	if (saved.version === 2) { saved = migrateV2toV3(saved); }
 	if (typeof saved.jd !== "number" || !isFinite(saved.jd)) {
 		return { ok: false, reason: "missing or bad jd" };
 	}

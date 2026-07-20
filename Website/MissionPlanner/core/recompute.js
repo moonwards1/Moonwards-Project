@@ -82,6 +82,25 @@
 //                            null, nor a diagnostic, nor a valid envelope
 //                            (malformed `warnings` or `events` land here too)
 //
+// COMPLIANCE BOUNDARIES (a descriptor may set `boundary: true`). Comply mode
+// (MissionPlannerDesign.md; ARCHITECTURE.md's "Phases are chains; compliance
+// is a boundary check, not a reconciliation") says a phase boundary is a
+// thing MEASURED against, never a prerequisite: the frozen plan is
+// authoritative and the departure technology is diagnosed against it. So a
+// broken, half-built, or absent departure must NOT blank the committed plan
+// or the coast beyond it — the tech's failure is the tech's problem, reported
+// where the tech lives, while the plan keeps flowing. A `boundary` stage
+// therefore TERMINATES the block chain: when everything upstream of it has
+// failed (diagnostic/blocked), the boundary is still computed — called with
+// input null, the same tolerance `inputOptional` grants — and it surfaces the
+// shortfall through its own warnings channel instead of going "blocked". The
+// stages that produced the upstream failure keep their own diagnostic/blocked
+// status (rendered on their own cards); only propagation PAST the boundary is
+// cut. A boundary's OWN failure (its params are damaged) still blocks
+// downstream normally. Today only frozen-plan (the Departure→Coast seam) is a
+// boundary; the Coast→Arrival seam reuses this identical flag once its own
+// boundary stage exists, so departure and arrival share one mechanism.
+//
 // DEVIATION from the ARCHITECTURE.md sketch (`update(world, input)`): the
 // engine calls `update(ctx, input)` with ctx = { world, jd, stageId,
 // params }. A module can appear at more than one stage of the same profile
@@ -164,16 +183,24 @@ export function createEngine(world, registry) {
 			next.push(results[k]);
 		}
 
-		// Who, if anyone, is already blocking at the boundary.
+		// Who, if anyone, is already blocking at the carry boundary. Walk the
+		// whole carried region (not just to the first failure): a `boundary`
+		// stage among the carried results TERMINATES an upstream block chain
+		// exactly as it does in the live loop below, so a diagnostic carried
+		// from before a boundary must not leak past it. A boundary's own
+		// failure still blocks on (its status is "diagnostic").
 		var blockedOn = null;
 		for (var b = 0; b < next.length; b++) {
-			if (next[b].status === "diagnostic") { blockedOn = next[b].stageId; break; }
+			var carriedDesc = registry.get(next[b].moduleId);
+			if (carriedDesc && carriedDesc.boundary === true) { blockedOn = null; }
+			if (next[b].status === "diagnostic") { blockedOn = next[b].stageId; }
 		}
 
 		world.lock("recompute in progress");
 		try {
 			for (var i = d; i < stages.length; i++) {
 				var stage = stages[i];
+				var desc = registry.get(stage.moduleId);
 				var res = {
 					stageId: stage.id,
 					moduleId: stage.moduleId,
@@ -185,6 +212,14 @@ export function createEngine(world, registry) {
 					events: []
 				};
 
+				// A compliance boundary terminates the block chain (see header):
+				// an upstream failure must not blank the plan or the phase past
+				// it. Reset before the blocked check so the boundary is computed
+				// (with input null) rather than marked blocked.
+				if (blockedOn !== null && desc && desc.boundary === true) {
+					blockedOn = null;
+				}
+
 				if (blockedOn !== null) {
 					res.status = "blocked";
 					res.blockedOn = blockedOn;
@@ -193,14 +228,14 @@ export function createEngine(world, registry) {
 				}
 
 				var input = (i === 0) ? null : next[i - 1].output;
-				var desc = registry.get(stage.moduleId);
 				var diag = null;
 
 				if (!desc) {
 					diag = engineDiag(stage.id, "unknown-module",
 						"No module '" + stage.moduleId + "' is registered.",
 						{ moduleId: stage.moduleId });
-				} else if (desc.accepts.length > 0 && input === null && desc.inputOptional !== true) {
+				} else if (desc.accepts.length > 0 && input === null &&
+				           desc.inputOptional !== true && desc.boundary !== true) {
 					diag = engineDiag(stage.id, "missing-input",
 						"'" + desc.title + "' needs a " + desc.accepts.join(" / ") +
 						" packet from upstream, but nothing arrived.",

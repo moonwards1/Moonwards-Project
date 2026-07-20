@@ -201,6 +201,84 @@ test("blocked stages carry empty warnings/events", function () {
 	assert.deepEqual(r.events, []);
 });
 
+// ---- compliance boundaries: `boundary: true` terminates the block chain -----
+// The departure-flaw fix (2026-07-20): a broken/absent departure must not
+// blank the committed plan or the coast past it. A `boundary` stage is
+// computed with input null instead of being blocked, and reports the shortfall
+// as its own warning.
+
+test("boundary: a failing upstream does NOT block a `boundary` stage or anything past it", function () {
+	var reg = createRegistry();
+	var calls = { fail: 0, plan: 0, sink: 0 };
+
+	// A departure that fails to produce a hand-off (bound skyhook, no carrier…).
+	reg.register({
+		id: "fail", title: "Broken departure", attachesTo: null,
+		accepts: [], emits: ["ship-state"],
+		update: function () { calls.fail++; return makeDiagnostic("bust", "no hand-off"); }
+	});
+	// The compliance boundary: authoritative, tolerates a null (failed) input,
+	// always emits its own frozen state, reports the shortfall as a warning.
+	reg.register({
+		id: "bnd", title: "Frozen boundary",
+		accepts: ["ship-state"], emits: ["ship-state"], boundary: true,
+		update: function (ctx, input) {
+			calls.plan++;
+			var out = { packet: ship(4050, ctx.jd) };
+			if (!input) { out.warnings = [makeDiagnostic("nothing-delivered", "no departure reached the plan")]; }
+			return out;
+		}
+	});
+	reg.register({
+		id: "sink", title: "Coast", accepts: ["ship-state"], emits: [],
+		update: function () { calls.sink++; return null; }
+	});
+
+	var w = createWorld({ jd: JD });
+	var f = w.set({ addStage: { moduleId: "fail" } });
+	var b = w.set({ addStage: { moduleId: "bnd" } });
+	var s = w.set({ addStage: { moduleId: "sink", params: { tick: 0 } } });
+	var engine = createEngine(w, reg);
+
+	assert.equal(engine.resultFor(f).status, "diagnostic");   // the tech still shows its own failure
+	assert.equal(engine.resultFor(b).status, "ok");           // the plan is NOT blocked
+	assert.equal(engine.resultFor(b).warnings[0].code, "nothing-delivered");
+	assert.equal(engine.resultFor(b).output.data.v[0], 4050); // its frozen state flows
+	assert.equal(engine.resultFor(s).status, "ok");           // the coast beyond flies
+	assert.deepEqual(calls, { fail: 1, plan: 1, sink: 1 });    // boundary + sink ran despite the failure
+
+	// A partial recompute STARTING past the boundary must not re-leak the block
+	// across it (the carry-over scan's boundary reset): touch the sink alone.
+	w.set({ stage: s, params: { tick: 1 } });
+	assert.equal(engine.resultFor(s).status, "ok");
+	assert.equal(engine.resultFor(b).status, "ok");
+});
+
+test("boundary: the boundary's OWN failure still blocks downstream", function () {
+	var reg = createRegistry();
+	reg.register({
+		id: "src", title: "Tech", accepts: [], emits: ["ship-state"],
+		update: function (ctx) { return ship(3000, ctx.jd); }
+	});
+	reg.register({
+		id: "bnd", title: "Frozen boundary",
+		accepts: ["ship-state"], emits: ["ship-state"], boundary: true,
+		update: function () { return makeDiagnostic("plan-damaged", "the plan itself is unusable"); }
+	});
+	reg.register({
+		id: "sink", title: "Coast", accepts: ["ship-state"], emits: [],
+		update: function () { return null; }
+	});
+	var w = createWorld({ jd: JD });
+	w.set({ addStage: { moduleId: "src" } });
+	var b = w.set({ addStage: { moduleId: "bnd" } });
+	var s = w.set({ addStage: { moduleId: "sink" } });
+	var engine = createEngine(w, reg);
+	assert.equal(engine.resultFor(b).status, "diagnostic");
+	assert.equal(engine.resultFor(s).status, "blocked");
+	assert.equal(engine.resultFor(s).blockedOn, b);
+});
+
 test("malformed warnings become bad-output and DO block (authoring error)", function () {
 	var t = fixture();
 	t.reg.register({
