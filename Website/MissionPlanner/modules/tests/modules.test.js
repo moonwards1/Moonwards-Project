@@ -171,6 +171,10 @@ test("departure flight: a chain with no releasing carrier is a diagnostic", func
 // ---- computeLeg (pure chain) — unchanged by I3 ------------------------------
 
 var HELIO_START = (function () {
+	// At Earth's own position with v∞ folded in — the patched-conic departure
+	// state frozen-plan really emits. The coast's SOI-encounter pass (2026-07-18)
+	// deliberately ignores a body the arc STARTS inside of until it first
+	// leaves that SOI, so this stays a legal coast start.
 	var e = O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Earth").orbit, JD_HANDOFF);
 	return { r: e.r, v: O.vAdd(e.v, O.vScale(O.vUnit(e.v), 1200)), jd: JD_HANDOFF, frame: "helio", dvUsed: 0 };
 })();
@@ -460,4 +464,69 @@ test("transfer-leg update: converts a body-frame input to helio", function () {
 	// The starting point of the propagation was ~Earth's position + 3.844e8 m.
 	var startR = out.packet.data.r;   // after 10 days it has moved, but stays near 1 AU
 	assert.ok(Math.abs(O.vMag(startR) - O.vMag(earth.r)) < 0.2 * O.vMag(earth.r));
+});
+
+// ---- computeLeg: SOI encounters (2026-07-18 — the coast feels every body) --
+
+import { bodyConstants } from "../../../Shared/body-leg.js";
+import { Frames as Fr } from "../../../Shared/frames.js";
+
+test("computeLeg: a pass inside Mars's SOI bends the leg and logs the encounter", function () {
+	var c = bodyConstants("Mars");
+	var jd = 2463000;
+	var b = Fr.bodyHelioState("Mars", jd);
+	// Start just outside Mars's SOI, aimed to pass ~0.15 SOI beside it.
+	var start = { r: O.vAdd(b.r, [c.SOI * 1.05, c.SOI * 0.15, 0]),
+	              v: O.vAdd(b.v, [-4000, 0, 0]), jd: jd, frame: "helio", dvUsed: 0 };
+	var leg = computeLeg({ waypoints: [], legDays: 30, destination: "" }, start);
+	assert.equal(leg.ok, true);
+	var labels = leg.events.map(function (e) { return e.label; }).join(" | ");
+	assert.match(labels, /Mars SOI entry/);
+	assert.match(labels, /Mars closest approach/);
+	assert.match(labels, /Mars SOI exit/);
+	// The flyby genuinely bent the path: the end state differs from the pure
+	// Sun-only Kepler coast by far more than integration noise.
+	var kepler = O.propagateState(systems.get("Sun").GM, start.r, start.v, 30 * 86400);
+	assert.ok(O.vMag(O.vSub(leg.end.r, kepler.r)) > 1e7,
+		"flyby moved the endpoint " + O.vMag(O.vSub(leg.end.r, kepler.r)) + " m");
+	// And the seg chain stays consistent: stateAtElapsed still lands on leg.end.
+	var s = stateAtElapsed(leg, 30 * 86400);
+	assert.ok(O.vMag(O.vSub(s.r, leg.end.r)) < 1e4);
+});
+
+test("computeLeg: a wide miss stays pure Kepler to the metre", function () {
+	var c = bodyConstants("Mars");
+	var jd = 2463000;
+	var b = Fr.bodyHelioState("Mars", jd);
+	var start = { r: O.vAdd(b.r, [c.SOI * 1.05, c.SOI * 8, 0]),
+	              v: O.vAdd(b.v, [-4000, 0, 0]), jd: jd, frame: "helio", dvUsed: 0 };
+	var leg = computeLeg({ waypoints: [], legDays: 30, destination: "" }, start);
+	assert.equal(leg.ok, true);
+	assert.ok(!leg.events.some(function (e) { return /SOI/.test(e.label); }));
+	var kepler = O.propagateState(systems.get("Sun").GM, start.r, start.v, 30 * 86400);
+	assert.ok(O.vMag(O.vSub(leg.end.r, kepler.r)) < 1, "no encounter, no deviation");
+});
+
+test("computeLeg: aimed dead at Mars the coast reports an impact and truncates", function () {
+	var c = bodyConstants("Mars");
+	var jd = 2463000;
+	var b = Fr.bodyHelioState("Mars", jd);
+	var start = { r: O.vAdd(b.r, [c.SOI * 1.05, 0, 0]),
+	              v: O.vAdd(b.v, [-4000, 0, 0]), jd: jd, frame: "helio", dvUsed: 0 };
+	var leg = computeLeg({ waypoints: [], legDays: 30, destination: "" }, start);
+	assert.equal(leg.ok, true);
+	assert.ok(leg.impact && leg.impact.body === "Mars");
+	assert.ok(leg.end.jd < jd + 30, "leg ends at the impact, not the full duration");
+	assert.match(leg.events.map(function (e) { return e.label; }).join(" | "), /Impacts Mars/);
+	assert.equal(leg.overrun.length, 0, "nothing coasts past an impact");
+});
+
+test("computeLeg: the drawn overrun continues past the leg end (display only)", function () {
+	var leg = computeLeg({ waypoints: [], legDays: 480, destination: "" }, boosted(HELIO_START, 3000));
+	assert.ok(leg.overrun.length > 10, "overrun sampled: " + leg.overrun.length);
+	assert.ok(Math.abs(leg.overrun[0].t - 480 * 86400) < 86400, "starts at the leg end");
+	assert.ok(leg.overrun[leg.overrun.length - 1].t > 480 * 86400 + 40 * 86400,
+		"long enough to read the pass (48 d for a 480 d leg)");
+	// The emitted end state is untouched by the overrun.
+	assert.equal(leg.end.jd, HELIO_START.jd + 480);
 });

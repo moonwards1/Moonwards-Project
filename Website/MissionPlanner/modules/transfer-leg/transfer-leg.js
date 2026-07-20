@@ -3,7 +3,11 @@
  * The Coast phase: a ballistic arc between two ship states, with up to two
  * waypoint burns along the way — the compute core of the
  * Solar-System-Trajectory-Plotter's `computeTrajectory()`, re-hosted behind
- * the module contract. "Two" is this phase's current UI choice (how many
+ * the module contract, EXTENDED (2026-07-18) with real SOI encounters: where
+ * the arc dips inside any body's sphere of influence the flight switches to
+ * Shared/body-leg.js's body+Sun integration and resumes Kepler at exit, so a
+ * close pass genuinely bends and a rendezvous can be set up against the
+ * body's own gravity (see the encounter block below). "Two" is this phase's current UI choice (how many
  * waypoint cards fit the sidebar today), not an architectural ceiling — see
  * ARCHITECTURE.md's "Phases are chains; compliance is a boundary check, not
  * a reconciliation": a phase is any length of ordinary stage chain, and
@@ -49,6 +53,7 @@ import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
+import { bodyConstants, integrateEncounter, stateAtLegTime } from "../../../Shared/body-leg.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -76,6 +81,185 @@ function isoOf(jd) {
 
 function burnMag(b) { return Math.hypot(b.pro || 0, b.rad || 0, b.nrm || 0); }
 
+// ---- SOI encounters (2026-07-18, Kim: "the gravity of the body is
+// absolutely critical, it isn't possible to set up rendezvous without it.
+// Revise the code to include it for all bodies") -----------------------------
+//
+// The coast is Sun-only Kepler EXCEPT where it dips inside a body's sphere
+// of influence: there the flight switches to Shared/body-leg.js's real
+// body + Sun integration (integrateEncounter — same RK4 and indirect term
+// the departure legs use, so a close approach genuinely bends) and resumes
+// Kepler at SOI exit. "All bodies" is literal: every `systems` entry with a
+// heliocentric orbit and a mass, no per-body special cases (the project's
+// body convention).
+
+// Every body the coast can feel: built once from `systems`, not hardcoded.
+var GRAVITY_BODIES = [];
+systems.forEach(function (sys, name) {
+	if (name !== "Sun" && sys.orbit && sys.orbit.system === SUN &&
+	    isFinite(sys.mass) && sys.GM) { GRAVITY_BODIES.push(name); }
+});
+
+function bodyPosAt(name, jd) { return O.bodyStateAtJD(GM_SUN, systems.get(name).orbit, jd).r; }
+
+// Find the FIRST SOI entry along the Kepler arc from (r, v) at absolute
+// Julian date jdAbs over the next `durS` seconds, against every gravity
+// body. Returns { body, tEnter } (seconds from the arc start; 0 for "starts
+// inside") or null. Coarse grid scan (the approach to any SOI rides a
+// weeks-wide distance dip, so grid-scale local minima can't miss it) with
+// ternary-search refinement of each candidate minimum and a bisected
+// SOI-crossing time.
+//
+// `insideBody`: the body whose SOI the walk is CURRENTLY inside because the
+// previous stretch ended mid-encounter (a waypoint burn inside the SOI, or
+// the overrun continuing a leg that ends there) — that encounter resumes
+// immediately. Any OTHER body the arc merely STARTS inside of is the
+// patched-conic departure case (the plan's frozen hand-off states live at
+// the origin body's own position with v∞ folded in — see frozen-plan) and
+// its gravity belongs to the departure stage, not the coast: that body is
+// ignored until the arc has first LEFT its SOI.
+function findFirstEncounter(r, v, jdAbs, durS, insideBody) {
+	if (insideBody) {
+		var ci = bodyConstants(insideBody);
+		var di = O.vMag(O.vSub(r, bodyPosAt(insideBody, jdAbs)));
+		if (di < ci.SOI) { return { body: insideBody, tEnter: 0 }; }
+	}
+	// Radial-band prefilter: a body whose orbit (± SOI) never overlaps the
+	// arc's own radial range can't be met. The osculating q/Q overstate the
+	// windowed arc's range — that only admits extra candidates, never drops
+	// a real one.
+	var el = O.elementsFromState(GM_SUN, r, v);
+	var qs = el.a * (1 - el.e), Qs = el.e < 1 ? el.a * (1 + el.e) : Infinity;
+	var candidates = GRAVITY_BODIES.filter(function (name) {
+		var c = bodyConstants(name), orb = systems.get(name).orbit;
+		var qb = (orb.periapsis || c.aHelio) - c.SOI, Qb = (orb.apoapsis || c.aHelio) + c.SOI;
+		return qs <= Qb && Qs >= qb;
+	});
+	if (!candidates.length) { return null; }
+
+	function distTo(name, t) {
+		var s = O.propagateState(GM_SUN, r, v, t);
+		return O.vMag(O.vSub(s.r, bodyPosAt(name, jdAbs + t / DAY)));
+	}
+
+	// Coarse grid: >= 1-day spacing floor, ~3-day spacing on a long leg.
+	var N = Math.max(8, Math.min(240, Math.round(durS / DAY)));
+	var best = null;   // earliest { body, tEnter }
+	candidates.forEach(function (name) {
+		var c = bodyConstants(name);
+		var d = new Array(N + 1);
+		for (var i = 0; i <= N; i++) { d[i] = distTo(name, durS * i / N); }
+		var spacing = durS / N;
+		var refineBound = c.SOI + spacing * 6e4;   // grid offset at <= 60 km/s relative speed
+		// Patched-conic start (see header): scan only after first leaving
+		// this body's SOI if the arc begins inside it.
+		var iFirst = 1;
+		if (d[0] < c.SOI) {
+			while (iFirst <= N && d[iFirst] < c.SOI) { iFirst++; }
+			iFirst++;   // the exit sample itself can't be an entry minimum
+		}
+		for (var i = iFirst; i <= N; i++) {
+			var isMin = (i < N) ? (d[i] <= d[i - 1] && d[i] <= d[i + 1])
+			                    : (d[i] < d[i - 1] && d[i] < c.SOI);   // dip still falling at the window end
+			if (!isMin || d[i] > refineBound) { continue; }
+			var lo = spacing * (i - 1), hi = Math.min(durS, spacing * (i + 1));
+			for (var k = 0; k < 60; k++) {   // ternary search for the true minimum
+				var m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+				if (distTo(name, m1) <= distTo(name, m2)) { hi = m2; } else { lo = m1; }
+			}
+			var tMin = (lo + hi) / 2;
+			if (distTo(name, tMin) >= c.SOI) { continue; }
+			// Bisect the SOI crossing on [last grid point outside, tMin].
+			var a = spacing * (i - 1), b = tMin;
+			if (distTo(name, a) <= c.SOI) { a = 0; }
+			for (var k2 = 0; k2 < 60; k2++) {
+				var mid = (a + b) / 2;
+				if (distTo(name, mid) > c.SOI) { a = mid; } else { b = mid; }
+			}
+			if (!best || b < best.tEnter) { best = { body: name, tEnter: b }; }
+		}
+	});
+	return best;
+}
+
+// One burn-free coast stretch of `durS` seconds from (r, v) at jdAbs:
+// Kepler arcs stitched with integrated SOI encounters. Appends samples
+// ({ r (helio, m), t (s since leg start) }), typed segs, and events to
+// `out`; returns { r, v, tEnd, impact, insideBody } — `insideBody` names
+// the body whose SOI the stretch ENDS inside (mid-encounter at a waypoint
+// or the leg boundary), for the next stretch to resume. `tStart` is
+// seconds since leg start. When `out.quiet` is set (the display-only
+// overrun) no segs or events are recorded.
+function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
+	var remaining = durS, t0 = tStart;
+	for (var guard = 0; guard < 12 && remaining > 1; guard++) {
+		var enc = findFirstEncounter(r, v, jdAbs, remaining, insideBody);
+		insideBody = null;   // only ever applies to the stretch's own start
+		var kepDur = enc ? enc.tEnter : remaining;
+		if (kepDur > 1) {
+			if (!out.quiet) { out.segs.push({ type: "kepler", r0: r, v0: v, tStart: t0, dur: kepDur }); }
+			var n = Math.max(60, Math.min(240, Math.round(kepDur / DAY * 0.5)));
+			var arc = O.sampleArc(GM_SUN, r, v, kepDur, n);
+			for (var k = (out.samples.length ? 1 : 0); k < arc.length; k++) {
+				out.samples.push({ r: arc[k].r, t: t0 + arc[k].t });
+			}
+			var st = O.propagateState(GM_SUN, r, v, kepDur);
+			r = st.r; v = st.v;
+			t0 += kepDur; jdAbs += kepDur / DAY; remaining -= kepDur;
+		}
+		if (!enc) { break; }
+
+		var res = integrateEncounter(enc.body, r, v, jdAbs, remaining);
+		var c = bodyConstants(enc.body);
+		if (!out.quiet) {
+			out.segs.push({ type: "enc", body: enc.body,
+			                leg: { samples: res.samples, jde0: jdAbs },
+			                tStart: t0, dur: res.duration });
+			if (enc.tEnter > 0) {   // a resumed encounter already announced itself
+				out.events.push({ jd: jdAbs, label: enc.body + " SOI entry — " +
+					(res.vinf != null ? "v∞ " + (res.vinf / 1000).toFixed(2) + " km/s" : "bound") });
+			}
+			// Closest approach, from the integrated trail (surface altitude).
+			var iMin = 0;
+			for (var si = 1; si < res.samples.length; si++) {
+				if (O.vMag(res.samples[si].r) < O.vMag(res.samples[iMin].r)) { iMin = si; }
+			}
+			out.events.push({ jd: jdAbs + res.samples[iMin].t / DAY,
+				label: enc.body + " closest approach — " + Fmt3(res.rmin - c.R) + " km" });
+		}
+		// Lift the body-centred trail to helio samples (decimated to keep the
+		// polyline light; the seg keeps the full trail for stateAtElapsed).
+		var stride = Math.max(1, Math.floor(res.samples.length / 400));
+		var lastIdx = res.samples.length - 1;
+		for (var si2 = 1; si2 <= lastIdx; si2 += stride) {
+			var idx = (si2 + stride > lastIdx) ? lastIdx : si2;   // never skip the exit point
+			var s = res.samples[idx];
+			out.samples.push({ r: O.vAdd(s.r, bodyPosAt(enc.body, jdAbs + s.t / DAY)),
+			                   t: t0 + s.t });
+			if (idx === lastIdx) { break; }
+		}
+		r = res.end.r; v = res.end.v;
+		t0 += res.duration; jdAbs += res.duration / DAY; remaining -= res.duration;
+		if (res.branch === "entry") {
+			if (!out.quiet) {
+				out.events.push({ jd: jdAbs, label: "Impacts " + enc.body + " — " +
+					(res.entry.v / 1000).toFixed(2) + " km/s" });
+			}
+			return { r: r, v: v, tEnd: t0, impact: { body: enc.body, jd: jdAbs, entry: res.entry },
+			         insideBody: null };
+		}
+		if (res.branch === "time") {   // stretch boundary reached still inside the SOI
+			return { r: r, v: v, tEnd: t0, impact: null, insideBody: enc.body };
+		}
+		if (!out.quiet) { out.events.push({ jd: jdAbs, label: enc.body + " SOI exit" }); }
+	}
+	return { r: r, v: v, tEnd: t0, impact: null, insideBody: null };
+}
+
+function Fmt3(m) {   // metres -> "12,345" km
+	return Math.round(m / 1000).toLocaleString("en-US");
+}
+
 // The segment chain, pure. `data` is a helio-frame ship-state payload.
 // Returns { ok: true, samples, end, events, totalDv, miss } or
 // { ok: false, diagnostic }. Exported for Node tests and the card readouts.
@@ -100,51 +284,64 @@ export function computeLeg(params, data) {
 	var r = data.r.slice();
 	var v = data.v.slice();   // the coast's own starting state — no burn at this seam (see header)
 	var totalDv = 0;
-	var events = [];
 
-	// Walk the chain: each segment ends at the next waypoint (burn applied
-	// there), the last at legDays. Samples accumulate for the drawn polyline;
-	// segs keeps each segment's own starting state (r0/v0 — the coast's own
-	// start for the first segment, post-waypoint-burn for the rest) and
-	// [tStart, tStart+dur) window so stateAtElapsed() below can re-propagate
-	// the EXACT state (with velocity, which the polyline samples don't carry)
-	// at any point along the leg — the ship-marker chevron's position source.
-	var samples = [];
-	var segs = [];
+	// Walk the chain: one coast stretch to each waypoint (burn applied
+	// there), the last to legDays. Each stretch is Kepler EXCEPT inside a
+	// body's SOI, where coastStretch switches to the real body+Sun
+	// integration (see the encounter block above). `samples` accumulate for
+	// the drawn polyline; `segs` (typed "kepler" | "enc") let
+	// stateAtElapsed() below recover the EXACT state — with velocity, which
+	// the polyline samples don't carry — at any point along the leg: the
+	// ship-marker chevron's position source.
+	var out = { samples: [], segs: [], events: [] };
 	var tPrev = 0;   // days since jd0
+	var impact = null, inside = null;
 	var bounds = wps.map(function (wp) { return wp.days; }).concat([p.legDays]);
-	for (var seg = 0; seg < bounds.length; seg++) {
-		var durS = (bounds[seg] - tPrev) * DAY;
-		segs.push({ r0: r, v0: v, tStart: tPrev * DAY, dur: durS });
-		var arc = O.sampleArc(GM_SUN, r, v, durS, seg === bounds.length - 1 ? 200 : 120);
-		for (var k = (seg > 0 ? 1 : 0); k < arc.length; k++) {
-			samples.push({ r: arc[k].r, t: tPrev * DAY + arc[k].t });
-		}
-		var endState = O.propagateState(GM_SUN, r, v, durS);
-		r = endState.r; v = endState.v;
+	for (var seg = 0; seg < bounds.length && !impact; seg++) {
+		var res = coastStretch(r, v, jd0 + tPrev, tPrev * DAY, (bounds[seg] - tPrev) * DAY, out, inside);
+		r = res.r; v = res.v;
+		impact = res.impact;
+		inside = res.insideBody;
 		tPrev = bounds[seg];
-		if (seg < wps.length) {
+		if (!impact && seg < wps.length) {
 			var wb = wps[seg].burn || { pro: 0, rad: 0, nrm: 0 };
 			var mag = burnMag(wb);
 			totalDv += mag;
-			events.push({ jd: jd0 + wps[seg].days,
-			              label: "Waypoint impulse — " + (mag / 1000).toFixed(2) + " km/s" });
+			out.events.push({ jd: jd0 + wps[seg].days,
+			                  label: "Waypoint impulse — " + (mag / 1000).toFixed(2) + " km/s" });
 			v = O.applyBurn(r, v, wb.pro || 0, wb.nrm || 0, wb.rad || 0);
 		}
 	}
 
-	var jdEnd = jd0 + p.legDays;
+	var jdEnd = impact ? impact.jd : jd0 + p.legDays;
 	var miss = null;
-	if (p.destination && systems.get(p.destination)) {
+	if (impact) {
+		// The walk stopped at the surface; the leg has no coast state past it.
+	} else if (p.destination && systems.get(p.destination)) {
 		var dest = O.bodyStateAtJD(GM_SUN, systems.get(p.destination).orbit, jdEnd);
 		miss = O.vMag(O.vSub(r, dest.r)) / AU;
-		events.push({ jd: jdEnd, label: "Leg ends — " + miss.toFixed(3) + " AU from " + p.destination });
+		out.events.push({ jd: jdEnd, label: "Leg ends — " + miss.toFixed(3) + " AU from " + p.destination });
 	} else {
-		events.push({ jd: jdEnd, label: "Leg ends" });
+		out.events.push({ jd: jdEnd, label: "Leg ends" });
 	}
 
-	return { ok: true, jd0: jd0, samples: samples, segs: segs, end: { r: r, v: v, jd: jdEnd },
-	         events: events, totalDv: totalDv, miss: miss };
+	// Display-only OVERRUN (2026-07-18, Kim): the drawn path continues dimmer
+	// past the leg's own end, long enough to convey the trajectory PAST the
+	// destination — the leg is a section snipped from a longer flight, and the
+	// snip shouldn't hide the pass. Runs through the same coastStretch (so a
+	// rendezvous encounter in progress at leg end completes on screen); the
+	// EMITTED end state is untouched — phases stay chains, the hand-off stays
+	// at legDays.
+	var overrun = [];
+	if (!impact) {
+		var overrunDays = Math.min(60, Math.max(15, Math.round(p.legDays * 0.1)));
+		var over = { samples: overrun, segs: [], events: [], quiet: true };
+		coastStretch(r, v, jd0 + p.legDays, p.legDays * DAY, overrunDays * DAY, over, inside);
+	}
+
+	return { ok: true, jd0: jd0, samples: out.samples, segs: out.segs,
+	         end: { r: r, v: v, jd: jdEnd }, impact: impact, overrun: overrun,
+	         events: out.events, totalDv: totalDv, miss: miss };
 }
 
 // Heliocentric state (r, v in m, m/s) at elapsed time t (s) since the leg's
@@ -164,6 +361,13 @@ export function stateAtElapsed(leg, t) {
 		if (t <= segs[i].tStart + segs[i].dur + 1e-6) { seg = segs[i]; break; }
 	}
 	var dt = Math.max(0, Math.min(seg.dur, t - seg.tStart));
+	if (seg.type === "enc") {
+		// Inside an SOI encounter: interpolate the integrated body-centred
+		// trail (geo-leg's stateAtLegTime) and lift to helio at that instant.
+		var s = stateAtLegTime(seg.leg, dt);
+		var b = O.bodyStateAtJD(GM_SUN, systems.get(seg.body).orbit, s.jde);
+		return { r: O.vAdd(s.r, b.r), v: O.vAdd(s.v, b.v) };
+	}
 	return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
 }
 
@@ -211,6 +415,13 @@ export default {
 			{ tool: "mission-planner/transfer-leg", label: "leg end", iso: isoOf(leg.end.jd) });
 
 		var warnings = [];
+		if (leg.impact) {
+			warnings.push(makeDiagnostic("impacts-body",
+				"The coast impacts " + leg.impact.body + " on " + isoOf(leg.impact.jd) +
+				" at " + (leg.impact.entry.v / 1000).toFixed(2) + " km/s.",
+				{ values: { body: leg.impact.body, jd: leg.impact.jd },
+				  fix: "Adjust the waypoint impulses or the upstream hand-off to raise the pass." }));
+		}
 		if (leg.miss !== null && leg.miss > MISS_WARN_AU) {
 			warnings.push(makeDiagnostic("misses-destination",
 				"The leg ends " + leg.miss.toFixed(3) + " AU from " + params.destination +
@@ -328,6 +539,18 @@ export default {
 		view.group.add(new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints(pts),
 			new THREE.LineBasicMaterial({ color: 0x66f0ff })));
+
+		// The display-only overrun: the path continued dimmer past the leg's
+		// own end, so the pass by the destination reads as a pass (see
+		// computeLeg's overrun block).
+		if (leg.overrun && leg.overrun.length > 1) {
+			var opts = leg.overrun.map(function (s) {
+				return new THREE.Vector3(s.r[0] / U, s.r[1] / U, s.r[2] / U);
+			});
+			view.group.add(new THREE.Line(
+				new THREE.BufferGeometry().setFromPoints(opts),
+				new THREE.LineBasicMaterial({ color: 0x66f0ff, transparent: true, opacity: 0.3 })));
+		}
 
 		// Constant-pixel dots: leg start (release) and leg end.
 		function dot(rM, colorHex, sizePx) {

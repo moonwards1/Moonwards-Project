@@ -1401,6 +1401,47 @@ World. Source file throughout:
 
 ### WP-H — Arrival phase enablement
 
+- [x] **H0. Coast feels every body's gravity; panes carry orientation
+  context.** ★★★ **Done 2026-07-18** (Kim: "the gravity of the body is
+  absolutely critical, it isn't possible to set up rendezvous without it.
+  Revise the code to include it for all bodies, and to show the orbits of
+  the bodies").
+  **Physics:** `transfer-leg`'s `computeLeg` is Kepler EXCEPT inside a
+  body's SOI: a coarse-grid + refined closest-approach scan over every
+  `systems` body with a heliocentric orbit finds SOI entries; the flight
+  switches to `Shared/body-leg.js`'s new `integrateEncounter` (the
+  arrival-side mirror of `integrateTrajectory` — body+Sun RK4 with the
+  indirect term, helio in/out via `frames.js`) and resumes Kepler at exit.
+  Branches: exit (flyby, deflection events), surface entry (the coast
+  truncates with an `impacts-body` warning), time (a leg may END
+  mid-encounter; the honest inside-SOI state is emitted). PATCHED-CONIC
+  ORIGIN RULE: a body the arc STARTS inside of is ignored until first SOI
+  exit — the plan's frozen departure states live at the origin body's own
+  position with v∞ folded in (frozen-plan), so the origin's gravity is the
+  departure stage's business, never re-applied by the coast; a stretch that
+  starts inside an SOI because the PREVIOUS stretch ended mid-encounter
+  (waypoint burn inside, or the overrun) resumes that encounter
+  (`insideBody` threading). Timeline gains "X SOI entry — v∞", "X closest
+  approach — <alt> km", "X SOI exit" / "Impacts X" events; the shipped
+  Ceres mission now shows its real encounter (entry at v∞ 3.78 km/s,
+  closest approach 17,198 km). `stateAtElapsed` handles the typed segs
+  (Kepler re-propagation | integrated-trail interpolation).
+  **Overrun:** the drawn polyline continues DIMMER past the leg end
+  (min(60, 10% of legDays, ≥15) days, through any in-progress encounter) so
+  the path past the destination reads as a pass — display only; the emitted
+  hand-off state stays at legDays (phases stay chains). The Ephemeris tab
+  already extends its arc via `finalCoastDays` and inherits the encounter
+  physics through `computeLeg` unchanged.
+  **Scene:** `buildBodyFrame` gains a labelled Sun marker along the true
+  Sun direction and the local stretch of the body's own heliocentric orbit
+  drawn through the origin (rebuilt as the clock moves — the Earth-Moon
+  frame's Moon-ring pattern); `buildEarthMoonFrame` gains the same Sun
+  marker. (The helio pane has drawn every body's orbit ring since D1.)
+  Verified: suite 224 green (+12: integrateEncounter flyby-deflection /
+  impact / time-limit / at-surface, computeLeg bent-vs-Kepler, wide-miss
+  Kepler-to-the-metre, impact truncation, overrun span); in-browser the
+  preset boots clean, waypoint drags recompute in ~17 ms/tick, and
+  off-target drags drop the encounter events honestly.
 - [ ] **H1. Generic body-local frame factory.** ★★
   `buildEarthMoonFrame` (planner.js:193–273) generalized to
   `buildBodyFrame("Ceres")` etc. (hero sphere, label, lighting, ring as

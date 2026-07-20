@@ -134,9 +134,17 @@ export function buildHelioFrame() {
 // system and WP-J's "departure from any body" package alike. Deliberately
 // thinner than buildEarthMoonFrame — there is no real satellite to place
 // (Phobos etc. are orbit-radius sources only, never true ephemeris bodies,
-// per WP-J's own framing), so no orbit ring is built here. A carrier module
-// (J2) draws its own skyhook orbit ring standing in for the "moon" ring the
-// Earth-Moon frame draws itself.
+// per WP-J's own framing). A carrier module (J2) draws its own skyhook
+// orbit ring standing in for the "moon" ring the Earth-Moon frame draws
+// itself.
+//
+// Orientation context (2026-07-18, Kim — "done up the way they are in
+// Moon-Skyhook": the body must not sit isolated in space): a visible Sun
+// marker + label along the true Sun direction, and the local stretch of the
+// body's OWN heliocentric orbit drawn through the origin (its position at
+// nearby dates relative to its position now, rebuilt as the clock moves) —
+// so the pane always shows which way the Sun lies and which way the body is
+// travelling.
 export function buildBodyFrame(name) {
 	var sys = systems.get(name);
 	var scene = new THREE.Scene();
@@ -163,6 +171,41 @@ export function buildBodyFrame(name) {
 	scaleList.push({ name: name, group: heroGroup, core: heroCore, soi: null,
 	                 point: heroPoint, radiusAU: radiusU, soiAU: 0 });
 
+	// Sun marker: a bright labelled point along the true Sun direction, at a
+	// fixed scene distance (direction is the orientation cue; the real Sun is
+	// far outside any body pane's box).
+	var SUN_DIST = 60000;
+	var sunMark = new THREE.Group();
+	sunMark.add(makePoint(0xffd27a, 5));
+	scene.add(sunMark);
+	brAddLabel(labelLayer, labelList, "Sun", sunMark, "mp-label");
+
+	// The local stretch of the body's own heliocentric orbit, drawn relative
+	// to its position at the current date (so it passes through the origin);
+	// rebuilt when the clock has moved more than half a day — the same
+	// pattern as the Earth-Moon frame's Moon ring.
+	var aHelio = isFinite(sys.orbit.semiMajor) ? sys.orbit.semiMajor
+		: (sys.orbit.apoapsis + sys.orbit.periapsis) / 2;
+	var periodDays = 2 * Math.PI * Math.sqrt(Math.pow(aHelio, 3) / GM_SUN) / 86400;
+	var spanDays = periodDays * 0.08;   // ±4% of the orbit, plenty to read curvature
+	var arcLine = null, arcJd = null;
+	function rebuildOrbitArc(jd) {
+		if (arcLine !== null && Math.abs(jd - arcJd) < 0.5) { return; }
+		if (arcLine) {
+			scene.remove(arcLine);
+			arcLine.geometry.dispose(); arcLine.material.dispose();
+		}
+		var here = O.bodyStateAtJD(GM_SUN, sys.orbit, jd).r;
+		var pts = [], N = 96;
+		for (var k = 0; k <= N; k++) {
+			var r = O.bodyStateAtJD(GM_SUN, sys.orbit, jd - spanDays / 2 + spanDays * k / N).r;
+			pts.push(new THREE.Vector3((r[0] - here[0]) / U, (r[1] - here[1]) / U, (r[2] - here[2]) / U));
+		}
+		arcLine = makeArcLine(pts, 0x3a4763, 0.55);
+		scene.add(arcLine);
+		arcJd = jd;
+	}
+
 	// Scaled off the body's own radius, not hardcoded, since HELIO_BODIES
 	// spans Ceres (radiusU ~0.5) to Jupiter (radiusU ~70) — the same ratios
 	// Earth-Moon (radiusU 6.4, cam 60, zoomMin 2, zoomMax 30000) and the
@@ -188,6 +231,8 @@ export function buildBodyFrame(name) {
 			var s = O.bodyStateAtJD(GM_SUN, sys.orbit, jd);
 			var mag = Math.sqrt(s.r[0] * s.r[0] + s.r[1] * s.r[1] + s.r[2] * s.r[2]) || 1;
 			sunLight.position.set(-s.r[0] / mag * 50000, -s.r[1] / mag * 50000, -s.r[2] / mag * 50000);
+			sunMark.position.set(-s.r[0] / mag * SUN_DIST, -s.r[1] / mag * SUN_DIST, -s.r[2] / mag * SUN_DIST);
+			rebuildOrbitArc(jd);
 			if (this.focusBody === name) { this.cam.target.set(0, 0, 0); }
 		}
 	};
@@ -217,6 +262,14 @@ export function buildEarthMoonFrame() {
 	brAddLabel(labelLayer, labelList, "Earth", earthGroup, "mp-label");
 	scaleList.push({ name: "Earth", group: earthGroup, core: earthCore, soi: null,
 	                 point: earthPoint, radiusAU: EARTH.radius / U, soiAU: 0 });
+
+	// Sun marker (same cue as buildBodyFrame's): a bright labelled point
+	// along the true Sun direction.
+	var SUN_DIST = 60000;
+	var sunMark = new THREE.Group();
+	sunMark.add(makePoint(0xffd27a, 5));
+	scene.add(sunMark);
+	brAddLabel(labelLayer, labelList, "Sun", sunMark, "mp-label");
 
 	var moonNode = new THREE.Group();
 	var moonCore = new THREE.Mesh(
@@ -268,6 +321,7 @@ export function buildEarthMoonFrame() {
 			moonNode.position.set(r[0] * 1e3 / U, r[1] * 1e3 / U, r[2] * 1e3 / U);
 			var s = LE.sunDirection(jd);
 			sunLight.position.set(s[0] * 50000, s[1] * 50000, s[2] * 50000);
+			sunMark.position.set(s[0] * SUN_DIST, s[1] * SUN_DIST, s[2] * SUN_DIST);
 			rebuildRing(jd);
 			if (this.focusBody === "Moon") { this.cam.target.copy(moonNode.position); }
 			else if (this.focusBody === "Earth") { this.cam.target.set(0, 0, 0); }
