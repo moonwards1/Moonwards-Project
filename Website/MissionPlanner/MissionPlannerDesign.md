@@ -10,7 +10,7 @@ There are three main panes to the layout, and two floating panes within the thre
 
 The process begins with the Solar-System-Trajectory-Plotter almost as it is now. (The one difference is that it is possible to change the system shown in the three.js pane, switching it out for another multi-body system. Currently the options that could make sense are the Earth-moon system, and the Mars-Phobos system. This would be for missions that occur entirely within that system, for example cargo missions from the moon's surface to the Earth's surface.) This allows the user to determine the timing and trajectory of a mission, by playing with the existing tools to establish a feasible flight plan. 
 
-Once they have created a realistic flight plan by dropping a marker and setting up a rendezvous with a destination body, they can click on a 'Start Mission Plan' button at the bottom of the Marker card. The button is not clickable unless the marker is within the closest approach rings for both space and time. If Waypoint(s) have been created before they click that button, they are included in the exported data.
+Once they have created a realistic flight plan by choosing an origin and destination, playing with impulse controls, dropping a marker and setting up a rendezvous with the destination body, they can click on a 'Start Mission Plan' button at the bottom of the Marker card. The button is not clickable unless the marker is within the closest approach rings for both space and time. If Waypoint(s) have been created before they click that button, they are included in the exported data.
 
 Once clicked, they choose a name for their mission, and a new tab is created, with a new interface that allows them to choose the technology they want to use to complete the flight. The starting layout remain accessible in an 'Ephemeris' tab to the left of the mission tab. If they return to that tab, they can choose to delete the marker card and start fresh, creating a new flight plan. The mission plan tab they just made remains intact with the previous flight plan. If they set up a new one and click 'Start Mission Plan' again, a new tab is spawned with the data from that, and now there are three tabs across the top of the app window. 
 
@@ -39,9 +39,3 @@ When active, the main system displayed in the three.js pane is (usually) the sol
 ### Arrival
 
 When active, the destination body is in the main three.js pane. Like with the Departure configuration, tech cards can be loaded into the sidebar by dropdown menu or loaded from their calculator in the calculator section. Most other aspects of the Departure configuration are also mirrored here, except that in this case, the tech must be set up to catch or intercept the approaching ship, and waypoints are about slowing down in preparation for that. 
-
-
-
-
-
-
