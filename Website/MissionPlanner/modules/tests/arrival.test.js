@@ -1,8 +1,10 @@
-// Node tests for the arrival technologies (task H2): the chemical
-// capture-burn module (intercept check + capture Δv at the destination) and
-// the arrival-skyhook catch (WP-J's generic tether run in reverse), plus the
-// arrival-tech catalog and the frozen plan's arrival-commitment lookup. Run
-// from the repo root:
+// Node tests for the arrival phase (tasks H2/H3): the arrival flyby leg
+// (arrival-leg), the arrival-skyhook catch (WP-J's generic tether run in
+// reverse), the arrival-tech catalog, and the frozen plan's arrival-commitment
+// lookup. The chemical capture-burn was retired 2026-07-20 (arrival is empty by
+// default now); its own tests go with its redo. The shared arrival-approach
+// helpers (approachAt / interceptWarning) are tested in arrival-approach.test.js.
+// Run from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/arrival.test.js
 // The view hooks (init/draw) are browser-only and not exercised here.
 
@@ -15,8 +17,6 @@ import { createEngine } from "../../core/recompute.js";
 import { freezeMissionWorld } from "../../core/freeze.js";
 import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
-import captureBurn, { computeCapture, resolveCaptureParams, approachAt,
-	interceptWarning } from "../capture-burn/capture-burn.js";
 import arrivalSkyhook, { computeCatch } from "../arrival-skyhook/arrival-skyhook.js";
 import arrivalLeg, { computeArrivalLeg, referencePeriapsis,
 	LEAD_S, TAIL_S, PERI_SOI_FRACTION } from "../arrival-leg/arrival-leg.js";
@@ -29,7 +29,6 @@ import { Frames } from "../../../Shared/frames.js";
 import { systems } from "../../../Shared/orbit.js";
 
 var GM_SUN = systems.get("Sun").GM;
-var AU = 149597870700;
 var JD = O.julianDate(2034, 1, 8, 0, 0, 0);
 
 // A helio ship-state payload arriving AT `body` with exactly `vInf` m/s of
@@ -40,66 +39,6 @@ function arrivingAt(body, vInf, missM) {
 	if (missM) { r[0] += missM; }
 	return { r: r, v: O.vAdd(bs.v, [vInf, 0, 0]), jd: JD, frame: "helio", dvUsed: 0 };
 }
-
-// ---- capture-burn: params + pure capture maths ------------------------------
-
-test("resolveCaptureParams: periapsis defaults to half the body radius, apoapsis to circular", function () {
-	var R = bodyPhysics("Ceres").R;
-	var p = resolveCaptureParams({ body: "Ceres" });
-	assert.equal(p.periapsisAlt, 0.5 * R);
-	assert.equal(p.apoapsisAlt, p.periapsisAlt);
-	// explicit values pass through untouched
-	var q = resolveCaptureParams({ body: "Ceres", periapsisAlt: 200e3 });
-	assert.equal(q.periapsisAlt, 200e3);
-	assert.equal(q.apoapsisAlt, 200e3);
-});
-
-test("computeCapture: circular capture Δv is the periapsis-speed gap, by hand", function () {
-	var phys = bodyPhysics("Ceres");
-	var vInf = 3776;
-	var cap = computeCapture({ body: "Ceres", periapsisAlt: 300e3 }, arrivingAt("Ceres", vInf, 0));
-	assert.equal(cap.ok, true, cap.ok ? "" : cap.diagnostic.message);
-	var rp = phys.R + 300e3;
-	var vPeriHyp = Math.sqrt(vInf * vInf + 2 * phys.GM / rp);
-	var vCirc = Math.sqrt(phys.GM / rp);
-	assert.ok(Math.abs(cap.approach.vInf - vInf) < 1e-6, "v∞ round-trips, got " + cap.approach.vInf);
-	assert.ok(Math.abs(cap.vPeriHyp - vPeriHyp) < 1e-9);
-	assert.ok(Math.abs(cap.dv - (vPeriHyp - vCirc)) < 1e-6, "Δv by hand, got " + cap.dv);
-	assert.ok(cap.approach.missAU < 1e-9);
-	assert.deepEqual(cap.warnings, []);
-	assert.ok(cap.period > 0);
-});
-
-test("computeCapture: an elliptical capture (raised apoapsis) costs less than circular", function () {
-	var circ = computeCapture({ body: "Ceres", periapsisAlt: 300e3 }, arrivingAt("Ceres", 3776, 0));
-	var ell = computeCapture({ body: "Ceres", periapsisAlt: 300e3, apoapsisAlt: 5000e3 },
-		arrivingAt("Ceres", 3776, 0));
-	assert.equal(ell.ok, true);
-	assert.ok(ell.dv < circ.dv, "elliptical " + ell.dv + " < circular " + circ.dv);
-});
-
-test("computeCapture: diagnostics — no body, unknown body, apoapsis below periapsis", function () {
-	var data = arrivingAt("Ceres", 3776, 0);
-	assert.equal(computeCapture({}, data).ok, false);
-	assert.equal(computeCapture({}, data).diagnostic.code, "no-body");
-	assert.equal(computeCapture({ body: "Xyzzy" }, data).diagnostic.code, "bad-params");
-	var d = computeCapture({ body: "Ceres", periapsisAlt: 500e3, apoapsisAlt: 100e3 }, data);
-	assert.equal(d.ok, false);
-	assert.equal(d.diagnostic.code, "bad-params");
-});
-
-test("computeCapture: a delivered miss raises the intercept warning but still prices the burn", function () {
-	var cap = computeCapture({ body: "Ceres" }, arrivingAt("Ceres", 3776, 0.05 * AU));
-	assert.equal(cap.ok, true);
-	assert.equal(cap.warnings.length, 1);
-	assert.equal(cap.warnings[0].code, "intercept-miss");
-	assert.ok(cap.dv > 0 && isFinite(cap.dv));
-	// and the shared helper agrees with itself
-	var app = approachAt("Ceres", arrivingAt("Ceres", 3776, 0.05 * AU));
-	assert.ok(Math.abs(app.missAU - 0.05) < 1e-6);
-	assert.ok(interceptWarning(app) !== null);
-	assert.equal(interceptWarning(approachAt("Ceres", arrivingAt("Ceres", 3776, 0))), null);
-});
 
 // ---- arrival-skyhook: the catch ---------------------------------------------
 
@@ -250,45 +189,36 @@ function makeFrozenMission() {
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
 	reg.register(arrivalLeg);
-	reg.register(captureBurn);
 	reg.register(arrivalSkyhook);
 	return { world: res.world, engine: createEngine(res.world, reg) };
 }
 
-test("engine: a frozen mission flies coast → flyby leg → capture; the delivered miss stays the COAST's warning", function () {
+test("engine: a frozen mission flies coast → flyby leg; arrival tech is empty by default", function () {
 	var m = makeFrozenMission();
 	var stages = m.world.stages();
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["frozen-plan", "transfer-leg", "arrival-leg", "capture-burn"]);
+		["frozen-plan", "transfer-leg", "arrival-leg"]);
 
 	// this synthetic prograde-only shot doesn't actually reach Mars — the
 	// coast's own miss warning reports that
 	var rLeg = m.engine.resultFor(stages[1].id);
 	assert.deepEqual(rLeg.warnings.map(function (w) { return w.code; }), ["misses-destination"]);
 
-	// the flyby leg builds the REFERENCE pass regardless (pinned at the
-	// body, the delivered state supplying heading/speed/epoch) …
+	// the flyby leg builds the REFERENCE pass regardless (pinned at the body,
+	// the delivered state supplying heading/speed/epoch), and it is the
+	// terminal stage now — nothing flows downstream until a tech is loaded.
 	var rArr = m.engine.resultFor(stages[2].id);
 	assert.equal(rArr.status, "ok");
 	assert.equal(rArr.events.length, 3);
-
-	// … so the capture stage downstream sees the reference approach — no
-	// second intercept warning; the coast already carries the honest miss.
-	var r = m.engine.resultFor(stages[3].id);
-	assert.equal(r.status, "ok");
-	assert.equal(r.output, null);   // terminal stage: nothing flows downstream
-	assert.equal(r.events.length, 1);
-	assert.match(r.events[0].label, /Capture burn at Mars/);
-	assert.deepEqual(r.warnings, []);
 });
 
-test("engine: swapping the arrival tech to the skyhook catch recomputes clean", function () {
+test("engine: an arrival skyhook appended after the flyby leg computes clean", function () {
 	var m = makeFrozenMission();
-	var capId = m.world.stages()[3].id;
-	m.world.set({ swapStage: capId, moduleId: "arrival-skyhook", params: { body: "Mars" } });
-	var r = m.engine.resultFor(capId);
+	var catchId = m.world.set({ addStage: { moduleId: "arrival-skyhook",
+		params: { body: "Mars" } }, before: null });   // append after the flyby leg
+	var r = m.engine.resultFor(catchId);
 	assert.equal(r.status, "ok");
-	assert.equal(r.output, null);
+	assert.equal(r.output, null);   // terminal: nothing flows downstream
 	assert.equal(r.events.length, 1);
 	assert.match(r.events[0].label, /Skyhook catch at Mars/);
 	assert.deepEqual(r.warnings, []);

@@ -58,7 +58,7 @@ import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../../../Shared/sim/readout-panes.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { approachAt } from "../capture-burn/capture-burn.js";
+import { approachAt } from "../arrival-approach.js";
 import { bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
 
 var O = OrbitalMath;

@@ -45,8 +45,11 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
 import { bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
+// approachAt / interceptWarning moved to the shared arrival-approach helper
+// (2026-07-20). capture-burn is retired; this import keeps it functional until
+// its folder is deleted.
+import { approachAt, interceptWarning } from "../arrival-approach.js";
 
 var O = OrbitalMath;
 var AU = 149597870700;   // m
@@ -74,38 +77,6 @@ export function resolveCaptureParams(params) {
 	if (phys && !Number.isFinite(p.periapsisAlt)) { p.periapsisAlt = 0.5 * phys.R; }
 	if (!Number.isFinite(p.apoapsisAlt)) { p.apoapsisAlt = p.periapsisAlt; }
 	return p;
-}
-
-// The delivered approach at `body`: miss distance (AU) and v∞ (m/s, with
-// vector) measured against the body's own heliocentric state at the ship's
-// epoch. `data` is a helio-frame ship-state payload. Shared by both arrival
-// technologies (arrival-skyhook imports it), so the intercept check is one
-// measurement, not two. Returns null for an unknown body.
-export function approachAt(body, data) {
-	var sys = systems.get(body);
-	if (!sys || !sys.orbit) { return null; }
-	var bs = Frames.bodyHelioState(body, data.jd);
-	var vInfVec = O.vSub(data.v, bs.v);
-	return {
-		body: body,
-		missAU: O.vMag(O.vSub(data.r, bs.r)) / AU,
-		vInf: O.vMag(vInfVec),
-		vInfVec: vInfVec,
-		jd: data.jd
-	};
-}
-
-// The intercept-check warning both arrival technologies raise — same
-// threshold as transfer-leg's own miss warning, phrased for the arrival end.
-export function interceptWarning(approach) {
-	if (!(approach.missAU > MISS_WARN_AU)) { return null; }
-	return makeDiagnostic("intercept-miss",
-		"The delivered coast ends " + approach.missAU.toFixed(3) + " AU from " + approach.body +
-		" (within " + MISS_WARN_AU + " AU counts as an encounter) — the capture figures assume " +
-		"an approach that isn't being delivered yet.",
-		{ values: { missAU: approach.missAU, body: approach.body },
-		  fix: "Adjust the coast's waypoint impulses (or the departure) until the leg actually reaches " +
-		       approach.body + "." });
 }
 
 // The whole capture, pure. `data` is a helio-frame ship-state payload.

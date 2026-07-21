@@ -42,16 +42,16 @@ export function techOptionsFor(body) {
 }
 
 // The ARRIVAL technologies (task H2) — same catalog shape, filtered against
-// the frozen plan's arrival body instead of the chain's base. The two built
-// entries are generic (`bodies: "*"` — any destination the plan can commit
-// to): a chemical capture burn is the baseline every ship carries, and the
-// orbital-skyhook catch is WP-J's generic tether run in reverse
-// (arrival-skyhook.js). Body-specific entries keep explicit lists, like the
-// departure side; the Ceres elevator catch port is migration step 4.5's real
-// arrival system, listed as future until it's built.
+// the frozen plan's arrival body instead of the chain's base. The one built
+// entry is generic (`bodies: "*"` — any destination the plan can commit to):
+// the orbital-skyhook catch, WP-J's generic tether run in reverse
+// (arrival-skyhook.js). The chemical capture burn is a "(future)" entry: the
+// original capture-burn module was retired 2026-07-20 for a rethink, so it's
+// listed but greyed until rebuilt. Body-specific entries keep explicit lists,
+// like the departure side; the Ceres elevator catch port is migration step
+// 4.5's real arrival system, also future until built.
 export var ARRIVAL_TECH_OPTIONS = [
-	{ id: "capture-burn", label: "Chemical capture burn", bodies: "*",
-	  moduleId: "capture-burn", moduleUrl: "../modules/capture-burn/capture-burn.js" },
+	{ id: "capture-burn", label: "Chemical capture burn", bodies: "*", future: true },
 	{ id: "arrival-skyhook", label: "Orbital skyhook catch", bodies: "*",
 	  moduleId: "arrival-skyhook", moduleUrl: "../modules/arrival-skyhook/arrival-skyhook.js" },
 	{ id: "ceres-elevator-catch", label: "Ceres elevator catch port", bodies: ["Ceres"], future: true }

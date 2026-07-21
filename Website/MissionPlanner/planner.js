@@ -54,10 +54,10 @@ var MODULE_URLS = [
 	// one day out, past the body at SOI/2, one day beyond — with waypoint
 	// burns on the approach.
 	"./modules/arrival-leg/arrival-leg.js",
-	// Arrival technologies (task H2): the minimal chemical capture burn (the
-	// baseline every mission spawns with) and the generic skyhook catch at
-	// the destination (WP-J's tether, run in reverse).
-	"./modules/capture-burn/capture-burn.js",
+	// Arrival technology (task H2): the generic skyhook catch at the
+	// destination (WP-J's tether, run in reverse). The chemical capture-burn
+	// was retired 2026-07-20 for a rethink; arrival is empty by default until
+	// its add/remove dropdown (the arrival sibling of I5) is built.
 	"./modules/arrival-skyhook/arrival-skyhook.js"
 ];
 var registry = createRegistry();

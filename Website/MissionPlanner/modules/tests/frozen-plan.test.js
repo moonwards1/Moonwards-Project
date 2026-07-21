@@ -15,7 +15,6 @@ import moonPlatform from "../moon-platform/moon-platform.js";
 import skyhook from "../orbital-skyhook/orbital-skyhook.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
-import captureBurn from "../capture-burn/capture-burn.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";
 import frozenPlan, { computeCompliance, complianceWarnings, planSummary,
 	releaseAnchorFor, windowDaysOf,
@@ -34,8 +33,8 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalLeg);    // the preset's arrival flyby leg (task H3)
-	reg.register(captureBurn);   // the preset's terminal arrival stage (task H2)
+	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
+	                             // flyby leg (task H3); arrival tech is empty by default
 	return reg;
 }
 

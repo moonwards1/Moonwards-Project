@@ -46,7 +46,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { tetherGeometry, resolveParams, bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
-import { approachAt, interceptWarning } from "../capture-burn/capture-burn.js";
+import { approachAt, interceptWarning } from "../arrival-approach.js";
 import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;

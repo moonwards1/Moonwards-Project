@@ -8,18 +8,18 @@
  * file only assembles the profile the design doc prescribes:
  *
  *   [ frozen-plan (the commitment, task C1) ] -> [ transfer-leg (the working
- *   coast) ] -> [ arrival-leg (the flyby hand-off, task H3) ] ->
- *   [ capture-burn (the baseline arrival, task H2) ] — and NO
- *   DEPARTURE tech stage: a spawned mission starts with an empty
- *   departure-tech slot (frozen-plan declares inputOptional, so that's a
- *   "no-departure-tech" warning, not a block; loading a tech is WP-F). The
- *   ARRIVAL slot is NOT empty, asymmetrically and on purpose (task H2): a
- *   chemical capture burn is the baseline every ship carries — unlike
- *   departure infrastructure it needs no build-out to exist — and the
- *   Arrival technology dropdown needs a stage to swap (the same reason the
- *   departure dropdown needs a carrier stage, I5's add/remove gap). Seeded
- *   with the plan's destination as its explicit `body` (the body
- *   convention).
+ *   coast) ] -> [ arrival-leg (the flyby hand-off, task H3) ] — and NO
+ *   endpoint TECH stage on either side: a spawned mission starts with an empty
+ *   departure-tech slot AND an empty arrival-tech slot. frozen-plan declares
+ *   inputOptional (the departure side is a "no-departure-tech" warning, not a
+ *   block), and arrival-leg is simply the terminal stage until an arrival
+ *   technology is loaded. Both slots are filled through their own add/remove
+ *   dropdowns (departure: I5; arrival: its sibling, still to build).
+ *
+ *   (Until 2026-07-20 the arrival slot was seeded with a chemical capture-burn
+ *   as an asymmetric "baseline every ship carries." That module was retired —
+ *   its arrival code needed rethinking — so arrival is now empty by default,
+ *   symmetric with departure.)
  *
  * THE HAND-OFF IS POST-BURN (Kim, 2026-07-13 — the freeze contract's one
  * real decision): the frozen departure state is the origin body's position
@@ -115,7 +115,7 @@ export function freezeMissionWorld(spec) {
 		kind: WORLD_KIND,
 		version: WORLD_VERSION,
 		jd: spec.jd,                       // the clock opens at departure, like the shipped preset
-		nextStage: 5,
+		nextStage: 4,
 		stages: [
 			{
 				id: "stg-1",
@@ -146,17 +146,12 @@ export function freezeMissionWorld(spec) {
 			},
 			{
 				// The arrival flyby leg (task H3): the visible Coast→Arrival
-				// hand-off, no burns programmed yet.
+				// hand-off, no burns programmed yet. The mission ends here until
+				// an arrival technology is loaded — the arrival slot is empty by
+				// default (symmetric with departure; see header).
 				id: "stg-3",
 				moduleId: "arrival-leg",
 				params: { body: spec.destination, waypoints: [] }
-			},
-			{
-				// The baseline arrival technology (task H2 — see header):
-				// altitudes left to the module's body-scaled defaults.
-				id: "stg-4",
-				moduleId: "capture-burn",
-				params: { body: spec.destination }
 			}
 		]
 	};

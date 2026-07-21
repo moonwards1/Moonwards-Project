@@ -16,7 +16,6 @@ import skyhook, { tetherKinematics, rotorFor } from "../orbital-skyhook/orbital-
 import departureLeg, { computeDepartureLeg } from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
 import transferLeg, { computeLeg, stateAtElapsed, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
-import captureBurn from "../capture-burn/capture-burn.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
@@ -42,8 +41,8 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalLeg);    // the preset's arrival flyby leg (task H3)
-	reg.register(captureBurn);   // the preset's terminal arrival stage (task H2)
+	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
+	                             // flyby leg (task H3); arrival tech is empty by default
 	return reg;
 }
 
@@ -353,10 +352,10 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();
-	assert.equal(stages.length, 7);
+	assert.equal(stages.length, 6);
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
-		 "arrival-leg", "capture-burn"]);
+		 "arrival-leg"]);   // arrival tech empty by default — the mission ends at the flyby
 
 	var rMoon = engine.resultFor(stages[0].id);
 	var rSky = engine.resultFor(stages[1].id);
@@ -380,23 +379,15 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	// the arrival flyby leg (task H3): the pass pinned at the delivered
 	// arrival epoch, hand-off a day before, end a day after; closest
 	// approach at half Ceres's SOI (the reference construction).
+	// the terminal stage now: the arrival flyby leg (task H3), pinned at the
+	// delivered arrival epoch, hand-off a day before, end a day after; closest
+	// approach at half Ceres's SOI (the reference construction).
 	var rArr = engine.resultFor(stages[5].id);
 	assert.equal(rArr.status, "ok");
 	assert.ok(Math.abs(rArr.output.data.jd - (rLeg.output.data.jd + 1)) < 1e-9);
 	assert.equal(rArr.events.length, 3);   // hand-off, closest approach, leg end
 	assert.match(rArr.events[0].label, /Arrival hand-off/);
 	assert.match(rArr.events[1].label, /Closest approach/);
-
-	// the terminal capture stage (task H2): fed by the flyby leg's end state
-	// (a day past Ceres — inside the intercept threshold, v∞ preserved), so
-	// the capture computes clean with one event at the leg's end epoch.
-	var rCap = engine.resultFor(stages[6].id);
-	assert.equal(rCap.status, "ok");
-	assert.deepEqual(rCap.warnings, []);
-	assert.equal(rCap.output, null);   // terminal: nothing flows downstream
-	assert.equal(rCap.events.length, 1);
-	assert.match(rCap.events[0].label, /Capture burn at Ceres/);
-	assert.ok(Math.abs(rCap.events[0].jd - rArr.output.data.jd) < 1e-9);
 });
 
 test("preset: survives the share-link fragment round trip", function () {
