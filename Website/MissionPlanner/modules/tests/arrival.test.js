@@ -15,6 +15,8 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import { freezeMissionWorld } from "../../core/freeze.js";
+import moonPlatform from "../moon-platform/moon-platform.js";
+import departureLeg from "../departure-leg/departure-leg.js";
 import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import arrivalSkyhook, { computeCatch } from "../arrival-skyhook/arrival-skyhook.js";
@@ -186,6 +188,8 @@ function makeFrozenMission() {
 	var res = deserializeWorld(data);
 	assert.equal(res.ok, true, res.reason);
 	var reg = createRegistry();
+	reg.register(moonPlatform);   // the Earth-origin departure scaffold (empty
+	reg.register(departureLeg);   // carrier slot) freeze now prepends
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
 	reg.register(arrivalLeg);
@@ -193,21 +197,29 @@ function makeFrozenMission() {
 	return { world: res.world, engine: createEngine(res.world, reg) };
 }
 
-test("engine: a frozen mission flies coast → flyby leg; arrival tech is empty by default", function () {
-	var m = makeFrozenMission();
+test("engine: a frozen mission flies its scaffold → coast → flyby leg; both tech slots empty", function () {
+	var m = makeFrozenMission();   // origin Earth
 	var stages = m.world.stages();
+	// Earth scaffold (moon-platform + departure-leg, empty carrier) up front;
+	// the flyby leg is terminal (empty arrival-tech slot).
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["frozen-plan", "transfer-leg", "arrival-leg"]);
+		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
+	function stageId(m2) { return stages.find(function (s) { return s.moduleId === m2; }).id; }
+
+	// the empty carrier slot: departure-leg has no releasing carrier, but the
+	// frozen-plan boundary keeps the coast flying regardless.
+	assert.equal(m.engine.resultFor(stageId("departure-leg")).diagnostic.code, "no-carrier");
+	assert.equal(m.engine.resultFor(stageId("frozen-plan")).status, "ok");
 
 	// this synthetic prograde-only shot doesn't actually reach Mars — the
 	// coast's own miss warning reports that
-	var rLeg = m.engine.resultFor(stages[1].id);
+	var rLeg = m.engine.resultFor(stageId("transfer-leg"));
 	assert.deepEqual(rLeg.warnings.map(function (w) { return w.code; }), ["misses-destination"]);
 
 	// the flyby leg builds the REFERENCE pass regardless (pinned at the body,
-	// the delivered state supplying heading/speed/epoch), and it is the
-	// terminal stage now — nothing flows downstream until a tech is loaded.
-	var rArr = m.engine.resultFor(stages[2].id);
+	// the delivered state supplying heading/speed/epoch), and is the terminal
+	// stage now — nothing flows downstream until a tech is loaded.
+	var rArr = m.engine.resultFor(stageId("arrival-leg"));
 	assert.equal(rArr.status, "ok");
 	assert.equal(rArr.events.length, 3);
 });

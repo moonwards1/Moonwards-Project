@@ -48,7 +48,7 @@ import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
-import { arrivalTechOptionsFor } from "./ui/tech-options.js";
+import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 
 var O = OrbitalMath;
@@ -596,6 +596,147 @@ export function createMissionView(opts) {
 
 	world.stages().forEach(function (stage) { buildCard(stage, null); });
 	applyPhaseToCards();
+
+	// ---- departure technology: add/remove carriers (task I5) ----------------
+	// The departure stack is [ base platform (moon-platform) ] → [ 0..2 carrier
+	// cards ] → [ departure leg ]. The base platform is fixed; carriers are
+	// added and removed here. A stage is identified by its packet SHAPE, never
+	// by name: a base platform accepts nothing and emits a carrier-chain; a
+	// carrier both accepts AND emits one (the unified skyhook, a future tip
+	// launcher); the departure leg accepts a carrier-chain and emits a
+	// ship-state (the insertion boundary — carriers go before it). Options come
+	// from ui/tech-options.js, filtered by the body the chain is actually based
+	// at (departureChainBody), so this is not Moon-only. Removing the last
+	// carrier is fine — departure-leg reports "no-carrier" and, because
+	// frozen-plan is a compliance boundary, the coast still flies (never blanks).
+	var DEP_TECH_KEY = "__departure-tech__";
+	var MAX_CARRIERS = 2;
+
+	function isBasePlatformStage(stage) {
+		var d = registry.get(stage.moduleId);
+		return !!d && d.accepts.length === 0 && d.emits.indexOf("carrier-chain") !== -1;
+	}
+	function isCarrierStage(stage) {
+		var d = registry.get(stage.moduleId);
+		return !!d && d.accepts.indexOf("carrier-chain") !== -1 && d.emits.indexOf("carrier-chain") !== -1;
+	}
+	function isDepartureLegStage(stage) {
+		var d = registry.get(stage.moduleId);
+		return !!d && d.accepts.indexOf("carrier-chain") !== -1 && d.emits.indexOf("ship-state") !== -1;
+	}
+	function basePlatformStage() { return world.stages().filter(isBasePlatformStage)[0] || null; }
+	function carrierStages() { return world.stages().filter(isCarrierStage); }
+	function departureLegStage() { return world.stages().filter(isDepartureLegStage)[0] || null; }
+
+	// The body the departure chain is based at: the base platform's own computed
+	// base (moon-platform emits "Moon"), else the mission's origin body (a
+	// generic planet skyhook orbits the origin directly, with no platform).
+	function departureChainBody() {
+		var base = basePlatformStage();
+		if (base) {
+			var res = engine.resultFor(base.id);
+			if (res && res.output && res.output.data && typeof res.output.data.base === "string") {
+				return res.output.data.base;
+			}
+		}
+		return originBody;
+	}
+
+	// Inserts a carrier stage just before the departure leg, seeded with the
+	// chain's body explicitly (the body convention; the module fills geometry
+	// defaults from defaultGeometryFor(body)). Builds its card/views and replays
+	// the engine's already-computed result, like swapTechStage does.
+	async function addCarrier(opt) {
+		var legStage = departureLegStage();
+		if (!legStage || carrierStages().length >= MAX_CARRIERS) { return; }
+		if (!registry.has(opt.moduleId)) {
+			var mod = await import(opt.moduleUrl);
+			registry.register(mod.default);
+		}
+		var newId = world.set({ addStage: { moduleId: opt.moduleId, params: { body: departureChainBody() } },
+			before: legStage.id });
+		var newStage = world.getStage(newId);
+		buildStageViews(newStage);
+		buildCard(newStage, cards[legStage.id] ? cards[legStage.id].cardEl : null);
+		applyPhaseToCards();
+		var res = engine.resultFor(newId);
+		if (res) { drawStage(res); updateCard(res); }
+		refreshDepartureTechControl();
+	}
+
+	// Drops a carrier stage (disposing its card/views before world.set, so its
+	// viewRemoved runs against the descriptor that built them). The recompute
+	// world.set triggers redraws the remaining stages — departure-leg re-drafts
+	// from what's left (or reports no-carrier).
+	function removeCarrier(stageId) {
+		var stage = world.getStage(stageId);
+		if (!stage || !isCarrierStage(stage)) { return; }
+		disposeStageViews(stageId, registry.get(stage.moduleId));
+		disposeCard(stageId);
+		world.set({ removeStage: stageId });
+		refreshDepartureTechControl();
+	}
+
+	// The control card: current carriers (each removable) + an "add technology"
+	// dropdown while under the cap. Rebuilt wholesale on any add/remove. Sits
+	// between the fixed base card and the first carrier (or the departure leg
+	// when empty). Absent entirely when the mission has no departure scaffold.
+	function refreshDepartureTechControl() {
+		if (cards[DEP_TECH_KEY]) { cards[DEP_TECH_KEY].cardEl.remove(); delete cards[DEP_TECH_KEY]; }
+		var legStage = departureLegStage();
+		if (!legStage) { return; }
+
+		var carriers = carrierStages();
+		var card = document.createElement("div"); card.className = "mp-card";
+		var h = document.createElement("h3");
+		var t = document.createElement("span"); t.textContent = "Departure technology";
+		h.appendChild(t); card.appendChild(h);
+
+		if (carriers.length === 0) {
+			var hint = document.createElement("div"); hint.className = "mp-muted";
+			hint.textContent = "None yet — add a technology to draft the departure flight.";
+			card.appendChild(hint);
+		} else {
+			carriers.forEach(function (stage) {
+				var row = document.createElement("div"); row.className = "mp-inrow";
+				var lab = document.createElement("label"); lab.textContent = stageTitle(stage); row.appendChild(lab);
+				var rm = document.createElement("button"); rm.className = "mp-btn"; rm.textContent = "remove";
+				rm.addEventListener("click", function () { removeCarrier(stage.id); });
+				row.appendChild(rm); card.appendChild(row);
+			});
+		}
+
+		if (carriers.length < MAX_CARRIERS) {
+			var body = departureChainBody();
+			var select = document.createElement("select"); select.className = "mp-tech-select";
+			var ph = document.createElement("option");
+			ph.value = ""; ph.disabled = true; ph.selected = true;
+			ph.textContent = carriers.length ? "+ Add another technology…" : "+ Add technology…";
+			select.appendChild(ph);
+			techOptionsFor(body).forEach(function (opt) {
+				// don't re-offer a built carrier already in the chain
+				if (!opt.future && carriers.some(function (s) { return s.moduleId === opt.moduleId; })) { return; }
+				var o = document.createElement("option");
+				o.value = opt.id;
+				o.textContent = opt.label + (opt.future ? " (future)" : "");
+				o.disabled = !!opt.future;
+				select.appendChild(o);
+			});
+			select.addEventListener("change", function () {
+				var opt = techOptionsFor(departureChainBody()).filter(function (o) { return o.id === select.value; })[0];
+				select.value = "";
+				if (opt && !opt.future && opt.moduleId) { addCarrier(opt); }
+			});
+			card.appendChild(select);
+		}
+
+		var anchor = carriers[0] || legStage;
+		panelEl.insertBefore(card, cards[anchor.id] ? cards[anchor.id].cardEl : null);
+		cards[DEP_TECH_KEY] = { cardEl: card, phase: "departure", callbacks: [] };
+		applyPhaseToCards();
+	}
+
+	refreshDepartureTechControl();
 
 	// Swaps a tech stage's module (the arrival technology dropdown's change
 	// handler — task H2; the departure side's swap card was removed and is

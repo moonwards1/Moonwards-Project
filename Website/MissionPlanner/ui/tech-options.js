@@ -17,27 +17,30 @@
 // `bodies` follows the project's "body" convention (see
 // Shared/exchange-types.js's header, MissionPlannerTasks.md's I5/I6 notes,
 // Kim 2026-07-17): a body-scoped catalog entry, not a hardcoded "the Moon is
-// the only place with tech" assumption. `Shared/orbit.js`'s `systems` map is
-// the one master body list this should ever draw body names from — no
-// second list. Today every entry is Moon-only because the only real base
-// carrier (moon-platform.js) only ever emits `base: "Moon"`; the dropdown
-// filters against whichever body the current chain's base actually is, so a
-// future Earth or Venus base platform makes the matching entries appear
-// without any code here changing.
+// the only place with tech" assumption. `bodies: "*"` means any body the
+// departure chain can be based at; a body-specific entry keeps an explicit
+// list. The four categories below are the generic departure technologies (Kim,
+// 2026-07-20): the skyhook is built (the unified orbital-skyhook, which orbits
+// any body), the rest are "(future)". Per-body plausibility limits (a Venus
+// skyhook is a stretch goal, a Jupiter space elevator is not) are a future
+// refinement — for now the generic entries offer against every body, and the
+// dropdown filters by whichever body the chain's base actually is.
 
 export var DEPARTURE_TECH_OPTIONS = [
-	{ id: "lunar-skyhook", label: "Lunar skyhook", bodies: ["Moon"],
-	  moduleId: "lunar-skyhook", moduleUrl: "../modules/lunar-skyhook/lunar-skyhook.js" },
-	{ id: "moon-l1-elevator", label: "Moon-L1 space elevator", bodies: ["Moon"], future: true },
-	{ id: "lunar-mass-driver", label: "Lunar mass driver", bodies: ["Moon"], future: true },
-	{ id: "chemical-direct", label: "Chemical rocket, direct", bodies: ["Moon"], future: true }
+	{ id: "skyhook", label: "Skyhook", bodies: "*",
+	  moduleId: "orbital-skyhook", moduleUrl: "../modules/orbital-skyhook/orbital-skyhook.js" },
+	{ id: "space-elevator", label: "Space elevator", bodies: "*", future: true },
+	{ id: "mass-driver", label: "Mass driver", bodies: "*", future: true },
+	{ id: "chemical-rocket", label: "Chemical rocket", bodies: "*", future: true }
 ];
 
-// Entries whose `bodies` includes `body` — what the dropdown actually shows
-// for the chain's current base. Pure; exported for Node tests.
+// Entries applicable to `body` — the generic "*" entries for any known body,
+// plus any entry naming it explicitly (same shape as arrivalTechOptionsFor).
+// Pure; exported for Node tests.
 export function techOptionsFor(body) {
+	if (typeof body !== "string" || body === "") { return []; }
 	return DEPARTURE_TECH_OPTIONS.filter(function (opt) {
-		return opt.bodies.indexOf(body) !== -1;
+		return opt.bodies === "*" || opt.bodies.indexOf(body) !== -1;
 	});
 }
 

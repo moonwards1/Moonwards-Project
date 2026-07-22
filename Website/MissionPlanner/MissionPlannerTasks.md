@@ -1816,7 +1816,7 @@ Tasks (build order I1 → I2 → I3 → I4 → I5; I6 later):
   tests only check `ok`/`handoff`/`vinfEarth`, not the new `wpVisuals`
   field, so no test changes were needed; the field is exercised by the
   in-browser check above instead.
-- [ ] **I5. Carrier add/remove dropdown.** ★★
+- [x] **I5. Carrier add/remove dropdown.** ★★
   F1's departure slot, pulled forward: an "add technology" affordance in
   the departure sidebar (the Moon card is fixed; up to 2 carrier cards;
   removing one re-drafts the trajectory from what remains). Greyed
@@ -1922,24 +1922,24 @@ port source for this package.
     ephemeris-view.js and the transfer-leg / departure-leg /
     body-departure-leg modules; the rest of the waypoint-card UI is still
     per-module.
-  Both modules read the release frame via the symbolic `rendersIn:
-  ["body:origin"]` token — **J3** aliases it to the mission's own origin
-  frame (buildBodyFrame, J1) and sets `PHASE_FRAME`; until then a generic
-  mission has no origin frame and they draw nothing (harmless). Registered in
-  planner.js's `MODULE_URLS`. Verified: full Node suite **216 green** (+24:
-  11 body-leg, 13 orbital-skyhook/body-departure-leg — carrier geometry,
-  release kinematics, escape-to-hand-off, waypoint impulse, and the
-  no-carrier/bad-origin/bound/impact diagnostics, plus an engine-integration
-  pass skyhook→leg→frozen-plan); `node --check` + eslint (`no-undef`) clean on
-  the two browser modules; in-browser (local server) the planner still boots
-  with the two new modules registered and the shipped lunar mission intact
-  (clean console), and a direct harness against a real `buildBodyFrame("Mars")`
-  drove both `draw` hooks (skyhook → 2 orbit rings + tether + release dot; leg
-  → a 144-point body-centric polyline + release/hand-off dots) and both
-  `update` paths (chain base=Mars, ship-state helio hand-off + 2 events) with
-  no THREE errors. **No in-planner end-to-end yet** — a generic-origin
-  mission can't be displayed until J3 wires the origin frame (mirrors I1
-  awaiting I3).
+    Both modules read the release frame via the symbolic `rendersIn:
+    ["body:origin"]` token — **J3** aliases it to the mission's own origin
+    frame (buildBodyFrame, J1) and sets `PHASE_FRAME`; until then a generic
+    mission has no origin frame and they draw nothing (harmless). Registered in
+    planner.js's `MODULE_URLS`. Verified: full Node suite **216 green** (+24:
+    11 body-leg, 13 orbital-skyhook/body-departure-leg — carrier geometry,
+    release kinematics, escape-to-hand-off, waypoint impulse, and the
+    no-carrier/bad-origin/bound/impact diagnostics, plus an engine-integration
+    pass skyhook→leg→frozen-plan); `node --check` + eslint (`no-undef`) clean on
+    the two browser modules; in-browser (local server) the planner still boots
+    with the two new modules registered and the shipped lunar mission intact
+    (clean console), and a direct harness against a real `buildBodyFrame("Mars")`
+    drove both `draw` hooks (skyhook → 2 orbit rings + tether + release dot; leg
+    → a 144-point body-centric polyline + release/hand-off dots) and both
+    `update` paths (chain base=Mars, ship-state helio hand-off + 2 events) with
+    no THREE errors. **No in-planner end-to-end yet** — a generic-origin
+    mission can't be displayed until J3 wires the origin frame (mirrors I1
+    awaiting I3).
 - [x] **J3. Departure phase frame follows the mission's origin.** ★★
   `mission-view.js`'s `PHASE_FRAME.departure` stops being a fixed
   Earth-Moon constant; each mission view builds/looks up the frame for its
@@ -2023,16 +2023,16 @@ scaffold; new UI should reach for them before writing anything fresh.
 
 **From `Calculators/Moon-Skyhook-Trajectory-Plotter/moonSkyhookTrajectory.js` (2318 lines):**
 
-| Section                     | Lines                  | What it is                                                                                        | Task                                    |
-| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| Sidebar card structure      | throughout its HTML/JS | the design doc's cited "good example" of a tech card (skyhook geometry + release params)          | F1/F4 reference, I3                     |
-| Release-state kinematics    | ~398–432, 548–556      | `hookBasis`/`hookDir`/`releaseState` — the tether rotor's geometry (basis, phase, tip velocity)   | I2                                      |
-| Released-ship trajectory    | ~533–704               | restricted N-body geocentric propagation of the released ship                                     | **I1** (was F5's physics half)          |
-| Waypoint burns (geocentric) | ~705–1201              | in-system waypoint-burn chain — exactly the design's "up to 2 waypoint burns within this system"  | **I1** (frames/burnEffect), **I4** (UI) |
-| Gizmos + arrows + readouts  | ~1202–1277             | waypoint gizmo/arrow wiring in the local frame                                                    | I4                                      |
-| Moon-phase / skyhook locks  | ~1590–1656             | date-scrub conveniences: equal-elongation snap; tether phase slaved to the Moon's velocity        | D7 background only                      |
+| Section                     | Lines                  | What it is                                                                                                                                           | Task                                    |
+| --------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Sidebar card structure      | throughout its HTML/JS | the design doc's cited "good example" of a tech card (skyhook geometry + release params)                                                             | F1/F4 reference, I3                     |
+| Release-state kinematics    | ~398–432, 548–556      | `hookBasis`/`hookDir`/`releaseState` — the tether rotor's geometry (basis, phase, tip velocity)                                                      | I2                                      |
+| Released-ship trajectory    | ~533–704               | restricted N-body geocentric propagation of the released ship                                                                                        | **I1** (was F5's physics half)          |
+| Waypoint burns (geocentric) | ~705–1201              | in-system waypoint-burn chain — exactly the design's "up to 2 waypoint burns within this system"                                                     | **I1** (frames/burnEffect), **I4** (UI) |
+| Gizmos + arrows + readouts  | ~1202–1277             | waypoint gizmo/arrow wiring in the local frame                                                                                                       | I4                                      |
+| Moon-phase / skyhook locks  | ~1590–1656             | date-scrub conveniences: equal-elongation snap; tether phase slaved to the Moon's velocity                                                           | D7 background only                      |
 | Burn-vector editor          | ~1754–1922             | the isometric 3-axis draggable-arrow burn editor — now `Shared/sim/vector-editor.js`, used by the planner's ephemeris view and all three leg modules | done (shared)                           |
-| Waypoint list cards         | ~1923–1961             | its `buildWaypointList` variant                                                                   | I4                                      |
+| Waypoint list cards         | ~1923–1961             | its `buildWaypointList` variant                                                                                                                      | I4                                      |
 
 **From the scaffold and mockup (patterns to extend or copy):**
 

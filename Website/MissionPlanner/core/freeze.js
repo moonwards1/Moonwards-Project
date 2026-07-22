@@ -7,19 +7,27 @@
  * rendezvous time, the arrival v-infinity — and hands plain numbers in; this
  * file only assembles the profile the design doc prescribes:
  *
- *   [ frozen-plan (the commitment, task C1) ] -> [ transfer-leg (the working
- *   coast) ] -> [ arrival-leg (the flyby hand-off, task H3) ] — and NO
- *   endpoint TECH stage on either side: a spawned mission starts with an empty
- *   departure-tech slot AND an empty arrival-tech slot. frozen-plan declares
- *   inputOptional (the departure side is a "no-departure-tech" warning, not a
- *   block), and arrival-leg is simply the terminal stage until an arrival
- *   technology is loaded. Both slots are filled through their own add/remove
- *   dropdowns (departure: I5; arrival: its sibling, still to build).
+ *   [ departure scaffold ] -> [ frozen-plan (the commitment, task C1) ] ->
+ *   [ transfer-leg (the working coast) ] -> [ arrival-leg (the flyby hand-off,
+ *   task H3) ].
  *
- *   (Until 2026-07-20 the arrival slot was seeded with a chemical capture-burn
- *   as an asymmetric "baseline every ship carries." That module was retired —
- *   its arrival code needed rethinking — so arrival is now empty by default,
- *   symmetric with departure.)
+ *   THE DEPARTURE SCAFFOLD is a base + an integrated leg with an EMPTY carrier
+ *   slot (task I5's add-technology card fills it): moon-platform + departure-leg
+ *   for an Earth origin — the Moon is always the lunar-departure platform — or
+ *   just body-departure-leg for any other origin, where the skyhook
+ *   self-originates and there is no separate platform. Empty, the leg reports
+ *   "no carrier".
+ *
+ *   THE ARRIVAL-TECH SLOT is empty too: arrival-leg is simply the terminal
+ *   stage until an arrival technology is loaded (its own add/remove card, still
+ *   to build). frozen-plan is a compliance BOUNDARY (recompute.js), so an empty
+ *   or half-built departure never blanks the committed coast — the mission
+ *   still flies and arrives while its endpoint slots are filled in.
+ *
+ *   (Until 2026-07-20 the departure slot was omitted entirely and the arrival
+ *   slot was seeded with a chemical capture-burn "baseline every ship carries";
+ *   both were reworked — the departure now scaffolds an empty carrier slot, the
+ *   arrival is empty by default — symmetric, and safe thanks to the boundary.)
  *
  * THE HAND-OFF IS POST-BURN (Kim, 2026-07-13 — the freeze contract's one
  * real decision): the frozen departure state is the origin body's position
@@ -111,49 +119,54 @@ export function freezeMissionWorld(spec) {
 		? spec.windowDays : DEFAULT_WINDOW_DAYS;
 	var releaseAnchorJd = est.ok ? est.jdLaunch : spec.jd;
 
+	// Assemble the profile with sequential stage ids. The DEPARTURE SCAFFOLD
+	// comes first, with an EMPTY carrier slot that task I5's add-technology card
+	// fills: Earth departs from the Moon, so its fixed base is moon-platform +
+	// the geocentric departure-leg; any other origin departs its body directly,
+	// so just the generic body-departure-leg (a skyhook there self-originates —
+	// no separate platform). Empty, the leg reports "no carrier"; frozen-plan is
+	// a compliance boundary (recompute.js), so that never blanks the coast.
+	var stages = [];
+	var n = 1;
+	function add(moduleId, params) { stages.push({ id: "stg-" + (n++), moduleId: moduleId, params: params }); }
+
+	if (spec.origin === "Earth") {
+		add("moon-platform", {});
+		add("departure-leg", { waypoints: [] });
+	} else {
+		add("body-departure-leg", { waypoints: [] });
+	}
+	add("frozen-plan", {
+		origin: spec.origin,
+		departure: { r: spec.departure.r.slice(), v: vHandoff.slice(), jd: spec.jd },
+		arrival: { body: spec.destination, jd: spec.arrivalJd, vInf: spec.arrivalVInf },
+		handoffWindowDays: windowDays,
+		releaseAnchorJd: releaseAnchorJd,
+		waypoints: waypoints.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; })
+	});
+	add("transfer-leg", { waypoints: waypoints, legDays: legDays, destination: spec.destination });
+	// The arrival flyby leg (task H3): the visible Coast→Arrival hand-off, no
+	// burns yet, and the terminal stage — the arrival-tech slot is empty by
+	// default too (its own add/remove card is still to build).
+	add("arrival-leg", { body: spec.destination, waypoints: [] });
+
 	return {
 		kind: WORLD_KIND,
 		version: WORLD_VERSION,
-		jd: spec.jd,                       // the clock opens at departure, like the shipped preset
-		nextStage: 4,
-		stages: [
-			{
-				id: "stg-1",
-				moduleId: "frozen-plan",
-				params: {
-					origin: spec.origin,
-					departure: {
-						r: spec.departure.r.slice(),
-						v: vHandoff.slice(),
-						jd: spec.jd
-					},
-					arrival: { body: spec.destination, jd: spec.arrivalJd, vInf: spec.arrivalVInf },
-					handoffWindowDays: windowDays,
-					releaseAnchorJd: releaseAnchorJd,
-					waypoints: waypoints.map(function (wp) {
-						return { days: wp.days, burn: copyBurn(wp.burn) };
-					})
-				}
-			},
-			{
-				id: "stg-2",
-				moduleId: "transfer-leg",
-				params: {
-					waypoints: waypoints,
-					legDays: legDays,
-					destination: spec.destination
-				}
-			},
-			{
-				// The arrival flyby leg (task H3): the visible Coast→Arrival
-				// hand-off, no burns programmed yet. The mission ends here until
-				// an arrival technology is loaded — the arrival slot is empty by
-				// default (symmetric with departure; see header).
-				id: "stg-3",
-				moduleId: "arrival-leg",
-				params: { body: spec.destination, waypoints: [] }
-			}
-		]
+		// The clock opens at the HAND-OFF — the coast's own start — because a
+		// spawned mission opens on the coast phase.
+		//
+		// PHASE CLOCKS ARE ONLY CONSISTENT WITHIN A PHASE (Kim, 2026-07-20).
+		// Departure and arrival span a user-designed series of events whose
+		// duration can only be ESTIMATED, so the clock jumps a little at each
+		// hand-off seam rather than lining up exactly with the plan's committed
+		// epoch. Being up to a day out is deliberately allowed: that tolerance
+		// is what makes estimating a departure's duration tractable at all, and
+		// a few hours is nothing on interplanetary timeframes. Arrival will need
+		// the same looseness.
+		jd: spec.jd,
+		nextStage: n,
+		stages: stages
 	};
 }
 
