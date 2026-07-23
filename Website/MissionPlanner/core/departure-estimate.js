@@ -13,19 +13,23 @@
  *
  * Earth departures (this project's carriers all start near the Moon) use an
  * exact two-body SOI-exit time from the Moon's mean distance, choosing
- * between two course profiles by Kim's Moon-quarter rule (2026-07-16):
- * DIVE-IN — the course first drops to a low-perigee Oberth pass — when the
- * Moon sits in the hemisphere OPPOSITE the exit heading (within ±45°, the
- * quarter that forces the ship to cross Earth's vicinity: first quarter for
- * a prograde launch, last quarter for retrograde); DIRECT-OUT otherwise
- * (full/new, and the near-side quarter). The check is the sign test
- * dot(moonHat, exitHat) < −cos 45°, evaluated in TWO bounded passes: a
- * tentative direct-out launch date locates the Moon, the profile is chosen,
- * the estimate is final — never an iteration (a derived release date that
- * keeps moving slides the Moon under the user; see WP-I's preamble).
- * Measured against the shipped skyhook chain (v∞ 5.50 km/s): direct-out
- * 1.75 d, dive-in 2.58 d vs the chain's real 2.56 d — and that release
- * genuinely dives (geocentric perigee 24,200 km).
+ * between two course profiles by Kim's Moon-wedge rule (2026-07-16 as a
+ * ±45° quarter; narrowed to a 75° wedge, ±37.5°, 2026-07-23): DIVE-IN — the
+ * course first drops to a low-perigee Oberth pass — when the Moon sits
+ * within ±37.5° of the direction OPPOSITE the exit heading (the geometry
+ * that forces the ship to cross Earth's vicinity: around first quarter for
+ * a prograde launch, last quarter for retrograde); DIRECT-OUT otherwise.
+ * Narrower than the geometric quarter because near its edges the dive's
+ * benefit diminishes: there the flyby only pays when a cheap plane change
+ * justifies its cost in departure prograde/retrograde speed (Kim) — and a
+ * planner who wants that can force the profile, see spec.profile below. The
+ * check is the sign test dot(moonHat, exitHat) < −cos 37.5°, evaluated in
+ * TWO bounded passes: a tentative direct-out launch date locates the Moon,
+ * the profile is chosen, the estimate is final — never an iteration (a
+ * derived release date that keeps moving slides the Moon under the user;
+ * see WP-I's preamble). Measured against the shipped skyhook chain (v∞
+ * 5.50 km/s): direct-out 1.75 d, dive-in 2.58 d vs the chain's real 2.56 d
+ * — and that release genuinely dives (geocentric perigee 24,200 km).
  *
  * Non-Earth origins have no Moon model and keep the naive pre-D7 estimate
  * (SOI radius / v∞) until their own departure systems exist (WP-I's mirror
@@ -57,6 +61,11 @@ var DAY = 86400;
 export var MOON_DIST = 3.844e8;                  // m — mean lunar distance (the carriers' start radius)
 export var DIVE_PERIGEE = EARTH.radius + 200e3;  // m — the dive-in profile's Oberth perigee
 export var MIN_VINF = 10;                        // m/s — below this there is no departure to time
+export var DIVE_WEDGE_DEG = 75;                  // full width of the auto rule's dive-in wedge (see header)
+
+// dot(moonHat, exitHat) below this dives: the Moon within ±(wedge/2) of the
+// anti-exit direction.
+var DIVE_DOT = -Math.cos((DIVE_WEDGE_DEG / 2) * Math.PI / 180);
 
 function semiMajor(orbit) { return (orbit.apoapsis + orbit.periapsis) / 2; }
 
@@ -89,12 +98,19 @@ export function moonProgradeSpeed(jd, earthHelioV) {
 // The estimate. spec = {
 //   origin,      // HELIO_BODIES name, e.g. "Earth"
 //   vInfVec,     // m/s — hand-off velocity minus the origin body's (helio)
-//   jdHandoff    // the plan's nominal Departure→Coast hand-off epoch
+//   jdHandoff,   // the plan's nominal Departure→Coast hand-off epoch
+//   profile      // optional Earth-course override: "dive-in" | "direct-out"
+//                //   pins the profile (near the wedge's edge both are
+//                //   genuinely viable — Kim, 2026-07-23, so the choice is
+//                //   the planner's); anything else (or absent) = the auto
+//                //   wedge rule. Ignored for non-Earth origins.
 // }
 // Returns { ok: true, seconds, days, jdLaunch, profile, vInf } with profile
 // one of "dive-in" | "direct-out" | "naive", or { ok: false, reason } when
 // there's no meaningful departure to time ("no-vinf") or the origin has no
-// heliocentric orbit record ("unknown-origin").
+// heliocentric orbit record ("unknown-origin"). A forced "dive-in" whose
+// geometry degenerates (soiExitTimeDive refuses) falls back to direct-out,
+// reported honestly in the returned profile.
 export function estimateDeparture(spec) {
 	var vInf = O.vMag(spec.vInfVec || [0, 0, 0]);
 	if (!(vInf >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
@@ -111,9 +127,15 @@ export function estimateDeparture(spec) {
 	var tDirect = O.soiExitTimeDirect(EARTH.GM, vInf, MOON_DIST, rSoi);
 	if (tDirect == null) { return done(rSoi / vInf, "naive"); }   // degenerate geometry — keep the old estimate
 
-	// Pass 2: locate the Moon at the tentative launch and pick the profile.
-	var m = LE.moonVector(spec.jdHandoff - tDirect / DAY);
-	var dive = O.vDot(O.vUnit(m), O.vUnit(spec.vInfVec)) < -Math.SQRT1_2;
+	// Pick the profile: honour a forced override; otherwise (pass 2 of the
+	// auto rule) locate the Moon at the tentative launch and apply the wedge.
+	var dive;
+	if (spec.profile === "dive-in") { dive = true; }
+	else if (spec.profile === "direct-out") { dive = false; }
+	else {
+		var m = LE.moonVector(spec.jdHandoff - tDirect / DAY);
+		dive = O.vDot(O.vUnit(m), O.vUnit(spec.vInfVec)) < DIVE_DOT;
+	}
 	if (dive) {
 		var tDive = O.soiExitTimeDive(EARTH.GM, vInf, DIVE_PERIGEE, MOON_DIST, rSoi);
 		if (tDive != null) { return done(tDive, "dive-in"); }

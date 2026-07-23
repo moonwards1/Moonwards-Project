@@ -1,7 +1,7 @@
 // Node tests for core/departure-estimate.js (task D7). Run from the repo
 // root:  node --test Website/MissionPlanner/core/tests/departure-estimate.test.js
 //
-// The quarter-rule cases construct real dates: quarter epochs are found by
+// The wedge-rule cases construct real dates: quarter epochs are found by
 // scanning the module's own moonElongationDeg (the same signal the widget's
 // glyph draws), and "prograde" means Earth's real heliocentric velocity
 // direction at that date — so these tests exercise the actual geometry, not
@@ -12,8 +12,9 @@ import assert from "node:assert/strict";
 
 import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
-	originSoiRadius, MIN_VINF, MOON_DIST
+	originSoiRadius, MIN_VINF, MOON_DIST, DIVE_WEDGE_DEG
 } from "../departure-estimate.js";
+import { LunarEphemeris as LE } from "../../../Shared/lunar-ephemeris.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 
@@ -52,7 +53,7 @@ function specFor(jdLaunchWanted, sign, vinf) {
 	return { origin: "Earth", vInfVec: vInfVec, jdHandoff: jdLaunchWanted + t0 / DAY };
 }
 
-test("quarter rule: first quarter + prograde launch -> dive-in", () => {
+test("wedge rule: first quarter + prograde launch -> dive-in", () => {
 	var jdQ1 = dateAtElongation(JD_BASE, 90);
 	var est = estimateDeparture(specFor(jdQ1, +1, 5500));
 	assert.ok(est.ok);
@@ -60,14 +61,14 @@ test("quarter rule: first quarter + prograde launch -> dive-in", () => {
 	assert.ok(Math.abs(est.days - 2.58) < 0.05, "got " + est.days.toFixed(3) + " d");
 });
 
-test("quarter rule: last quarter + retrograde launch -> dive-in", () => {
+test("wedge rule: last quarter + retrograde launch -> dive-in", () => {
 	var jdQ3 = dateAtElongation(JD_BASE, 270);
 	var est = estimateDeparture(specFor(jdQ3, -1, 5500));
 	assert.ok(est.ok);
 	assert.equal(est.profile, "dive-in");
 });
 
-test("quarter rule: full/new and the near-side quarter -> direct-out", () => {
+test("wedge rule: full/new and the near-side quarter -> direct-out", () => {
 	var jdFull = dateAtElongation(JD_BASE, 180);
 	var jdNew = dateAtElongation(JD_BASE, 0);
 	var jdQ3 = dateAtElongation(JD_BASE, 270);
@@ -79,6 +80,54 @@ test("quarter rule: full/new and the near-side quarter -> direct-out", () => {
 			"elong " + moonElongationDeg(c[0]).toFixed(0) + " sign " + c[1]);
 		assert.ok(Math.abs(est.days - 1.75) < 0.05, "got " + est.days.toFixed(3) + " d");
 	});
+});
+
+// A spec whose exit heading sits at a chosen angle from the ANTI-Moon
+// direction at the launch the estimate will resolve to: the hand-off epoch
+// is seeded so the module's pass-2 Moon lookup (jdHandoff − tDirect) lands
+// exactly on jdLaunch, making the wedge angle exact rather than approximate.
+function specAtWedgeAngle(jdLaunch, offDeg, vinf) {
+	var mHat = O.vUnit(LE.moonVector(jdLaunch));
+	var anti = O.vScale(mHat, -1);
+	// a unit vector perpendicular to mHat (cross with z, or x if degenerate)
+	var perp = O.vUnit(Math.hypot(mHat[0], mHat[1]) > 1e-6
+		? [ -mHat[1], mHat[0], 0 ] : [ 1, 0, 0 ]);
+	var a = offDeg * Math.PI / 180;
+	var dir = O.vUnit(O.vAdd(O.vScale(anti, Math.cos(a)), O.vScale(perp, Math.sin(a))));
+	var vInfVec = O.vScale(dir, vinf);
+	var tDirect = estimateDeparture({ origin: "Earth", vInfVec: vInfVec,
+		jdHandoff: jdLaunch, profile: "direct-out" }).seconds;
+	return { origin: "Earth", vInfVec: vInfVec, jdHandoff: jdLaunch + tDirect / DAY };
+}
+
+test("the dive wedge is 75° wide: 35° off the anti-Moon axis dives, 40° does not", () => {
+	assert.equal(DIVE_WEDGE_DEG, 75);
+	var jd = JD_BASE + 3;
+	var inside = estimateDeparture(specAtWedgeAngle(jd, 35, 5500));
+	var outside = estimateDeparture(specAtWedgeAngle(jd, 40, 5500));
+	assert.ok(inside.ok && outside.ok);
+	assert.equal(inside.profile, "dive-in");
+	assert.equal(outside.profile, "direct-out");   // dived under the old ±45° quarter rule
+});
+
+test("profile override pins the course regardless of the Moon's wedge", () => {
+	// dive geometry (Q1 + prograde), forced direct-out:
+	var qDive = specFor(dateAtElongation(JD_BASE, 90), +1, 5500);
+	var f1 = estimateDeparture(Object.assign({}, qDive, { profile: "direct-out" }));
+	assert.ok(f1.ok);
+	assert.equal(f1.profile, "direct-out");
+	assert.ok(Math.abs(f1.days - 1.75) < 0.05, "got " + f1.days.toFixed(3) + " d");
+	// direct geometry (full moon), forced dive-in:
+	var qDirect = specFor(dateAtElongation(JD_BASE, 180), +1, 5500);
+	var f2 = estimateDeparture(Object.assign({}, qDirect, { profile: "dive-in" }));
+	assert.ok(f2.ok);
+	assert.equal(f2.profile, "dive-in");
+	assert.ok(Math.abs(f2.days - 2.58) < 0.05, "got " + f2.days.toFixed(3) + " d");
+	// anything unrecognized falls back to the auto wedge rule:
+	var auto = estimateDeparture(qDive);
+	var junk = estimateDeparture(Object.assign({}, qDive, { profile: "banana" }));
+	assert.equal(junk.profile, auto.profile);
+	assert.equal(junk.seconds, auto.seconds);
 });
 
 test("jdLaunch sits estimate-days before the hand-off", () => {

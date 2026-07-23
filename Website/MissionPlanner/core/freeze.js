@@ -59,7 +59,13 @@
  *   waypoints: [{ days, burn }],  // resolved days (snaps already concrete)
  *   arrivalJd,                    // the marker's rendezvous epoch
  *   arrivalVInf,                  // |ship v − destination v| there (m/s)
- *   windowDays                    // optional — hand-off window half-width
+ *   windowDays,                   // optional — hand-off window half-width
+ *   depProfile                    // optional — the tab's Earth-course
+ *                                 //   override ("dive-in"/"direct-out";
+ *                                 //   absent/"auto" = the wedge rule), passed
+ *                                 //   through to estimateDeparture so the
+ *                                 //   baked release anchor matches the course
+ *                                 //   the planner was shown
  * }
  *
  * Waypoints are sorted chronologically and any at/after the rendezvous are
@@ -113,7 +119,8 @@ export function freezeMissionWorld(spec) {
 	var est = estimateDeparture({
 		origin: spec.origin,
 		vInfVec: O.vSub(vHandoff, spec.departure.v),
-		jdHandoff: spec.jd
+		jdHandoff: spec.jd,
+		profile: spec.depProfile
 	});
 	var windowDays = (isFinite(spec.windowDays) && spec.windowDays > 0)
 		? spec.windowDays : DEFAULT_WINDOW_DAYS;

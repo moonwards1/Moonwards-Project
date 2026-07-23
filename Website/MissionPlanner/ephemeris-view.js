@@ -211,6 +211,8 @@ export function createEphemerisView(opts) {
 	// the marker's resolved rendezvous, not this scratchpad.
 	var state = {
 		origin: "Earth",
+		depProfile: "auto",   // Earth-course override fed to every estimateDeparture call:
+		                      // "auto" (the wedge rule) | "dive-in" | "direct-out"
 		leg: {
 			burn: { pro: 0, rad: 0, nrm: 0 },
 			waypoints: [],
@@ -282,7 +284,7 @@ export function createEphemerisView(opts) {
 	// the Moon's speed along EARTH'S OWN heliocentric prograde (the waypoint
 	// gizmo's prograde axis, so its sign visibly adds to or subtracts from a
 	// launch), and the estimated days for the departure leg to leave Earth's
-	// SOI (core/departure-estimate.js — quarter-switched dive-in/direct-out).
+	// SOI (core/departure-estimate.js — wedge-switched dive-in/direct-out).
 	// One instance mounts under the origin's info line, a mirrored one under
 	// the destination's; each shows only while that body is Earth.
 	function buildMoonWidget(parent, title) {
@@ -391,6 +393,38 @@ export function createEphemerisView(opts) {
 	originRow.appendChild(originSel); depHost.appendChild(originRow);
 	var originInfo = muted(depHost, "");
 	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
+
+	// Departure-course override (Kim, 2026-07-23): near the edge of the dive
+	// wedge both courses are genuinely viable, and the auto rule's flip moves
+	// the estimated launch date ~a day — which visibly reshapes the drawn arc
+	// mid-keystroke via the Moon speed assistedBurn folds in. Pinning the
+	// profile makes that flip an informed choice instead. Earth-only, like
+	// the Moon widget it sits under; the "auto" option's label names the
+	// course the wedge rule is currently choosing.
+	var profileRow = document.createElement("div"); profileRow.className = "mp-inrow";
+	profileRow.style.display = "none";
+	var profileLab = document.createElement("label"); profileLab.textContent = "departure course";
+	profileRow.appendChild(profileLab);
+	var profileSel = document.createElement("select");
+	profileSel.title = "How the departure leg leaves Earth's system: dive-in drops to a low-perigee " +
+		"Oberth pass first, direct-out climbs straight out. Auto picks by where the Moon sits " +
+		"(dive when it's within the 75° wedge opposite the exit heading).";
+	[["auto", "auto"], ["dive-in", "dive-in"], ["direct-out", "direct-out"]].forEach(function (d) {
+		var opt = document.createElement("option"); opt.value = d[0]; opt.textContent = d[1];
+		profileSel.appendChild(opt);
+	});
+	profileRow.appendChild(profileSel); depHost.appendChild(profileRow);
+	profileSel.addEventListener("change", function () { state.depProfile = profileSel.value; refresh(); });
+	// Sync from the current refresh's estimate: show the row (Earth origin),
+	// and surface auto's current pick in its own option label.
+	function updateProfileRow(est) {
+		profileRow.style.display = "";
+		var autoOpt = profileSel.options[0];
+		autoOpt.textContent = (est.ok && state.depProfile === "auto")
+			? "auto (" + est.profile + ")" : "auto";
+		if (document.activeElement !== profileSel) { profileSel.value = state.depProfile; }
+	}
+
 	originSel.addEventListener("change", function () { state.origin = originSel.value; refresh(); });
 
 	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
@@ -764,12 +798,26 @@ export function createEphemerisView(opts) {
 		// afterwards (assistedBurn, below) — Lambert here has no idea that's
 		// coming, so solving straight for sol.v1 overshoots it by that same
 		// amount once assistedBurn adds it back on refresh. Net it out up
-		// front, one pass (not iterated), the same way assistedBurn itself
-		// estimates the Moon's contribution off a tentative raw burn.
+		// front, in TWO bounded passes (never an iteration): assistedBurn will
+		// estimate the launch date off the burn as CORRECTED here, whose
+		// smaller v∞ exits the system later than the raw solution's — netting
+		// the Moon read at the raw burn's launch date left a ~45 m/s prograde
+		// residual (2026-07-23) that pushed the drawn arc ~0.01 AU off the
+		// solved rendezvous. So: net at the raw estimate first, re-estimate at
+		// the burn that produced, and net THAT reading instead — the same
+		// figure assistedBurn will then add back, to within a few m/s.
 		if (term.isDeparture && state.origin === "Earth") {
+			var proL = c.pro;
 			var vDepRaw = O.applyBurn(r1, v1, c.pro, c.nrm, c.rad);
-			var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, v1), jdHandoff: dateState.jd });
-			if (est.ok) { c.pro -= moonProgradeSpeed(est.jdLaunch, v1); }
+			var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, v1),
+				jdHandoff: dateState.jd, profile: state.depProfile });
+			if (est.ok) {
+				c.pro = proL - moonProgradeSpeed(est.jdLaunch, v1);
+				var vDepCorr = O.applyBurn(r1, v1, c.pro, c.nrm, c.rad);
+				var est2 = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepCorr, v1),
+					jdHandoff: dateState.jd, profile: state.depProfile });
+				if (est2.ok) { c.pro = proL - moonProgradeSpeed(est2.jdLaunch, v1); }
+			}
 		}
 
 		term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
@@ -1111,7 +1159,8 @@ export function createEphemerisView(opts) {
 				burn: aBurn,
 				waypoints: rw.entries.map(function (e) { return { days: e.days, burn: e.burn }; }),
 				arrivalJd: arrJd,
-				arrivalVInf: O.vMag(O.vSub(s.v, b.v))
+				arrivalVInf: O.vMag(O.vSub(s.v, b.v)),
+				depProfile: state.depProfile
 			}
 		};
 	}
@@ -1504,7 +1553,8 @@ export function createEphemerisView(opts) {
 		var raw = state.leg.burn;
 		if (state.origin !== "Earth") { return raw; }
 		var vDepRaw = O.applyBurn(dep.r, dep.v, raw.pro || 0, raw.nrm || 0, raw.rad || 0);
-		var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, dep.v), jdHandoff: dateState.jd });
+		var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, dep.v),
+			jdHandoff: dateState.jd, profile: state.depProfile });
 		if (!est.ok) { return raw; }
 		var rel = moonProgradeSpeed(est.jdLaunch, dep.v);
 		return { pro: (raw.pro || 0) + rel, rad: raw.rad || 0, nrm: raw.nrm || 0 };
@@ -1525,7 +1575,8 @@ export function createEphemerisView(opts) {
 			var est = estimateDeparture({
 				origin: "Earth",
 				vInfVec: O.vSub(vDep, dep.v),
-				jdHandoff: dateState.jd
+				jdHandoff: dateState.jd,
+				profile: state.depProfile
 			});
 			var jdAt = est.ok ? est.jdLaunch : dateState.jd;
 			depMoon.show({
@@ -1534,7 +1585,8 @@ export function createEphemerisView(opts) {
 				days: est.ok ? est.days : null,
 				note: est.ok ? est.profile + " course assumed" : null
 			});
-		} else { depMoon.hide(); }
+			updateProfileRow(est);
+		} else { depMoon.hide(); profileRow.style.display = "none"; }
 
 		var showArr = false;
 		if (state.leg.destination === "Earth" && state.marker && trajTotalT > 0) {
