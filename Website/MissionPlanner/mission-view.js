@@ -39,6 +39,7 @@
 /* global THREE */
 
 import { createEngine } from "./core/recompute.js";
+import { computeArrivalSeam } from "./core/arrival-seam.js";
 import { systems } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Exchange, encodeFragment } from "../Shared/exchange.js";
@@ -387,6 +388,11 @@ export function createMissionView(opts) {
 		applyPhaseToCards();
 		syncSliderVisibility();
 		saveWorkspace();
+		// Redraw everything against the new phase immediately (task 1.2): the
+		// coast chevron's seam clamp only applies while Coast is active, and
+		// without this it would stay stale at its last-drawn position until
+		// the next unrelated recompute.
+		engine.results().forEach(drawStage);
 	}
 
 	// A float pane's click promotes it to main; per the mockup, that's also
@@ -497,7 +503,8 @@ export function createMissionView(opts) {
 		var stage = world.getStage(res.stageId);
 		if (!stage) { return; }
 		(stageViews[res.stageId] || []).forEach(function (view) {
-			desc.draw(view, { world: world, stageId: res.stageId, params: stage.params, result: res });
+			desc.draw(view, { world: world, stageId: res.stageId, params: stage.params, result: res,
+			                   phase: workspace.phase });
 		});
 	}
 
@@ -1074,6 +1081,37 @@ export function createMissionView(opts) {
 	// and coast phases' own events (coastSpan) — see ui/phase-slider.js.
 	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate });
 
+	// The Coast->Arrival seam (WP-1 task 1.1's core/arrival-seam.js), derived
+	// from transfer-leg's own emitted events: its destination's structured
+	// closest-approach event (kind/body/vInf/rmin — see transfer-leg.js's
+	// coastStretch) plus a fallback epoch for a coast that never actually
+	// encounters the destination. The fallback is the frozen plan's own
+	// committed arrival epoch when one exists (comply mode); absent that (a
+	// pre-comply save, or no destination), the leg's own latest event —
+	// mirroring coastSpan's pre-comply fallback below. null with no
+	// transfer-leg stage, no destination, or nothing to derive a fallback
+	// from either.
+	function coastSeam(results) {
+		var dest = coastDestination();
+		if (!dest) { return null; }
+		var legRes = null;
+		for (var i = 0; i < results.length; i++) {
+			if (results[i].moduleId === "transfer-leg") { legRes = results[i]; break; }
+		}
+		if (!legRes || legRes.status !== "ok") { return null; }
+
+		var desc = registry.get("frozen-plan");
+		var commit = desc && typeof desc.arrivalCommitmentFor === "function"
+			? desc.arrivalCommitmentFor(world) : null;
+		var fallbackJd = (commit && commit.body === dest) ? commit.jd : null;
+		if (fallbackJd == null) {
+			var jds = legRes.events.map(function (e) { return e.jd; });
+			if (!jds.length) { return null; }
+			fallbackJd = Math.max.apply(null, jds);
+		}
+		return computeArrivalSeam({ destination: dest, events: legRes.events, fallbackArrivalJd: fallbackJd });
+	}
+
 	// The coast span. Comply mode (task C1): when a frozen-plan stage is
 	// emitting, the coast phase IS the plan's committed dates (its departure/
 	// arrival events) — the design doc's "beginning to end of the dates set
@@ -1081,7 +1119,10 @@ export function createMissionView(opts) {
 	// waypoint) do NOT stretch the slider; they show up as deviations instead.
 	// Without a plan (or while it's blocked/broken), fall back to the
 	// pre-comply behaviour: the envelope of events emitted by departure/
-	// coast-phase stages this recompute pass.
+	// coast-phase stages this recompute pass. The RIGHT edge is the seam
+	// (task 1.2), not the raw committed arrival date: it moves with closest
+	// approach as the coast is tuned, ending the phase early enough to leave
+	// the Arrival phase its own window.
 	function coastSpan(results) {
 		var jds = [];
 		results.forEach(function (res) {
@@ -1097,7 +1138,11 @@ export function createMissionView(opts) {
 			});
 		}
 		if (!jds.length) { return null; }
-		return { start: Math.min.apply(null, jds), end: Math.max.apply(null, jds) };
+		var start = Math.min.apply(null, jds);
+		var end = Math.max.apply(null, jds);
+		var seam = coastSeam(results);
+		if (seam) { end = seam.start; }
+		return { start: start, end: end };
 	}
 
 	// ---- the Departure slider (task B3): LINEAR in time over the ship's

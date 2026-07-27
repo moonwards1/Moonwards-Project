@@ -165,11 +165,17 @@ or the savings evaporate.
   vInf, rmin }` — `start` is 1.2's Coast-slider end, `[start, end]` is 1.3's
   Arrival window. No encounter: the window collapses to a point at
   `fallbackArrivalJd`, no `Δt`.
-- [ ] **1.2 Coast slider ends at the seam; chevron clamped.** ★★
+- [x] **1.2 Coast slider ends at the seam; chevron clamped.** ★★
   `coastSpan` in `mission-view.js` currently runs to the frozen arrival event.
   Its right edge becomes the seam, and the chevron cannot be scrubbed past it
   while the Coast phase is active — the drawn line continues regardless. The
   edge moves as the encounter shifts.
+  `mission-view.js`'s `coastSeam()` calls `computeArrivalSeam` (1.1) against
+  the transfer-leg stage's own events + the frozen plan's arrival commitment
+  as fallback; `coastSpan`'s right edge is `seam.start`. `transfer-leg.js`'s
+  `draw()` re-derives the same seam from its own `leg.events` +
+  `params.destination` to clamp the chevron, gated on a new `snap.phase`
+  field so the clamp only holds while Coast is the active phase.
 - [ ] **1.3 Arrival timeline.** ★★★
   The Arrival phase's own clock control, and the third slider: a window
   `[closest approach − Δt, closest approach + ~1 day]` that slides bodily as

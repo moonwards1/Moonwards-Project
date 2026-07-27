@@ -51,6 +51,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
+import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime } from "../../../Shared/body-leg.js";
@@ -589,7 +590,23 @@ export default {
 		// re-reads every animation frame to keep the sprite screen-facing as
 		// the camera moves (orientMarkerSprite needs the live camera, which
 		// draw() itself is never called with).
+		//
+		// WHILE COAST IS THE ACTIVE PHASE (task 1.2), the chevron cannot be
+		// scrubbed past the Coast->Arrival seam (core/arrival-seam.js) — the
+		// drawn trajectory line above continues through closest approach and
+		// the overrun regardless, only the marker itself is held back, so a
+		// stray clock move past the seam (e.g. clicking the plan's own
+		// arrival event) can't show the ship somewhere the Coast phase has no
+		// business displaying. Once the phase changes the clamp lifts,
+		// letting the same marker (no Arrival-side chevron exists yet — see
+		// WP-2.5) continue on to the real encounter.
 		var t = (snap.world.jd - leg.jd0) * DAY;
+		if (snap.phase === "coast" && params.destination) {
+			var seam = computeArrivalSeam({ destination: params.destination, events: leg.events,
+			                                 fallbackArrivalJd: leg.end.jd });
+			var seamT = (seam.start - leg.jd0) * DAY;
+			if (t > seamT) { t = seamT; }
+		}
 		var s = stateAtElapsed(leg, t);
 		if (s) {
 			var chevron = makeShipSprite();
