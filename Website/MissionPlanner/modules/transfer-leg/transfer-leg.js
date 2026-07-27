@@ -220,11 +220,16 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 					(res.vinf != null ? "v∞ " + (res.vinf / 1000).toFixed(2) + " km/s" : "bound") });
 			}
 			// Closest approach, from the integrated trail (surface altitude).
+			// `kind`/`body`/`vInf`/`rmin` are structured fields alongside the
+			// label — WP-1's arrival-seam derivation (core/arrival-seam.js)
+			// reads these to find the destination's own encounter and its
+			// approach speed, rather than parsing the label string.
 			var iMin = 0;
 			for (var si = 1; si < res.samples.length; si++) {
 				if (O.vMag(res.samples[si].r) < O.vMag(res.samples[iMin].r)) { iMin = si; }
 			}
 			out.events.push({ jd: jdAbs + res.samples[iMin].t / DAY,
+				kind: "closest-approach", body: enc.body, vInf: res.vinf, rmin: res.rmin,
 				label: enc.body + " closest approach — " + Fmt3(res.rmin - c.R) + " km" });
 		}
 		// Lift the body-centred trail to helio samples (decimated to keep the
