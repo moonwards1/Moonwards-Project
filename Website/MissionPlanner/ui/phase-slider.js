@@ -1,7 +1,8 @@
 /* MissionPlanner/ui/phase-slider.js — the segmented-timeline widget behind
- * the phase bar's sliders (task B2: the Coast slider; B3 extends the same
- * primitive for the event-scaled Departure/Arrival sliders — see the
- * createSegmentedSlider() doc comment below).
+ * the phase bar's sliders. ONE PER PHASE, three in all, exactly one on screen
+ * at a time (mission-view's syncSliderVisibility): Departure, Coast, Arrival.
+ * Each phase's slider IS that phase's clock control; the raw Ephemeris date
+ * bar is only a fallback for when a phase has no resolvable span.
  *
  * Two layers:
  *
@@ -24,6 +25,11 @@
  *     date formatter) — no DOM, Node-testable (see ui/tests/).
  *     createCoastSlider is the thin wrapper that feeds it to the DOM
  *     primitive and turns track clicks/drags into jd values.
+ *     departureSliderState/createDepartureSlider (B3) and
+ *     arrivalSliderState/createArrivalSlider (task 1.3) are its two siblings,
+ *     same split, same shape — all three are linear in time over a span the
+ *     caller computes, and differ only in which edges are anchored and how
+ *     the playhead readout is stamped.
  */
 
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
@@ -45,6 +51,26 @@ export function elapsedStamp(jd, start) {
 	var totalMin = Math.round((elapsed - days) * 1440);
 	if (totalMin >= 1440) { totalMin -= 1440; days += 1; }
 	return { days: days + " d", time: pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60) };
+}
+
+// The Arrival slider's playhead readout (task 1.3). "T+ since the phase
+// started" is the wrong anchor for a window only 3-6 days wide whose BOTH
+// edges move: what the user is judging is how far the clock sits from the
+// encounter itself, so the readout is signed time relative to closest
+// approach ("-2 d 06:00" approaching, "+0 d 14:32" past it). Closest
+// approach is also the point both edges are derived from (core/arrival-seam.js),
+// so it is the one stable thing on the track to measure against. Same
+// two-line days/HH:MM shape as elapsedStamp, same carry handling. No DOM,
+// Node-testable.
+export function approachStamp(jd, ca) {
+	var delta = jd - ca;
+	var mag = Math.abs(delta);
+	var days = Math.floor(mag);
+	var totalMin = Math.round((mag - days) * 1440);
+	if (totalMin >= 1440) { totalMin -= 1440; days += 1; }
+	// exactly at closest approach reads "+0 d 00:00", not "-0 d"
+	var sign = (delta < 0 && (days > 0 || totalMin > 0)) ? "-" : "+";
+	return { days: sign + days + " d", time: pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60) };
 }
 
 // ---- the DOM primitive -----------------------------------------------------
@@ -354,4 +380,118 @@ export function createDepartureSlider(container, opts) {
 	}
 
 	return { update: update, dispose: slider.dispose };
+}
+
+// ---- task 1.3: the Arrival slider ------------------------------------------
+// The third and last of the per-phase scrubbers, and the only one whose span
+// is derived end to end rather than anchored: it IS the seam window from
+// core/arrival-seam.js —
+//
+//   [ closest approach - Delta-t, closest approach + ~1 day ]
+//
+// Coast anchors its left edge at the release epoch and Departure anchors one
+// edge at the compliance deadline (see each above); here BOTH edges are
+// recomputed from the live closest-approach event every recompute pass, so
+// the whole window slides bodily as the coast is tuned — typically by hours,
+// occasionally by days. Nothing in this widget needs to know that: the caller
+// hands over two fresh edge jds each update, exactly as the other two do.
+// What IS particular to this slider:
+//
+//   - Closest approach is marked on the track (mp-mark-ca), because it is the
+//     thing the window exists to bracket, and it is not either edge.
+//   - The playhead readout is signed time relative to that mark
+//     (approachStamp) rather than "T+" since the phase started.
+//   - With no encounter at all, the seam collapses to a single point at the
+//     plan's committed arrival epoch (1.1's fallback). A zero-length span is
+//     the empty state here, not an error — mission-view falls back to the raw
+//     date bar for the clock while that holds.
+//
+// Pure: no DOM, Node-testable. marks are the arrival phase's own flight
+// events, filtered to those actually inside the window (an event outside it
+// is simply not on this track — same rule departureSliderState uses).
+export function arrivalSliderState(opts) {
+	var start = opts.start, end = opts.end, jd = opts.jd, ca = opts.ca;
+	var ticks = opts.ticks || 5;
+	var stamp = opts.stamp;
+	if (!(isFinite(start) && isFinite(end) && end > start)) { return { empty: true }; }
+	var span = end - start;
+
+	var segments = [];
+	for (var i = 0; i < ticks; i++) {
+		var f0 = i / ticks;
+		segments.push({
+			frac0: f0, frac1: (i + 1) / ticks, tickOnly: true,
+			label: stamp(start + f0 * span)
+		});
+	}
+
+	var marks = [];
+	if (isFinite(ca)) {
+		var caFrac = (ca - start) / span;
+		if (caFrac > 0.001 && caFrac < 0.999) {
+			marks.push({ frac: caFrac, jd: ca, cls: "mp-mark-ca",
+			             title: "Closest approach - " + stamp(ca) });
+		}
+	}
+	(opts.marks || [])
+		.filter(function (m) { return m && isFinite(m.jd); })
+		.map(function (m) { return { frac: (m.jd - start) / span, title: m.label, jd: m.jd }; })
+		.filter(function (m) { return m.frac > 0.001 && m.frac < 0.999; })
+		.forEach(function (m) { marks.push(m); });
+
+	var pinnedAt = jd < start ? "start" : (jd > end ? "end" : null);
+	var playheadFrac = pinnedAt === "start" ? 0
+		: pinnedAt === "end" ? 1
+		: (jd - start) / span;
+	// Relative to the encounter, not to the window's start — see approachStamp.
+	// The readout always shows the TRUE clock offset even while the handle is
+	// pinned at an edge, matching the other two sliders. With no usable
+	// closest approach (shouldn't happen for a non-empty window, but the
+	// caller owns that invariant, not this function), fall back to elapsed
+	// time since the window opened.
+	var stampVal = isFinite(ca) ? approachStamp(jd, ca) : elapsedStamp(jd, start);
+	return { empty: false, segments: segments, marks: marks,
+	         playheadFrac: playheadFrac, pinnedAt: pinnedAt,
+	         playheadDays: stampVal.days, playheadTime: stampVal.time };
+}
+
+// opts: { onSetJd(jd), stamp(jd), ticks?, emptyMsg }. Returns { update({
+// start, end, jd, ca, marks }), dispose() }, plus an `empty` flag on the
+// widget so the caller can decide what provides the clock while there is no
+// window (mission-view's syncSliderVisibility). update() is cheap to call on
+// every recompute/clock change.
+export function createArrivalSlider(container, opts) {
+	var onSetJd = opts.onSetJd;
+	var stamp = opts.stamp;
+	var ticks = opts.ticks;
+	var emptyMsg = opts.emptyMsg ||
+		"No arrival window yet — the coast has to reach the destination before one exists.";
+	var span = null;   // { start, end } — null while empty
+
+	var slider = createSegmentedSlider(container, {
+		onScrub: function (fraction) {
+			if (span) { onSetJd(span.start + fraction * (span.end - span.start)); }
+		}
+	});
+
+	var api = {
+		empty: true,
+		update: function (state) {
+			var s = arrivalSliderState({ start: state.start, end: state.end, jd: state.jd,
+				ca: state.ca, ticks: ticks, stamp: stamp, marks: state.marks });
+			api.empty = !!s.empty;
+			if (s.empty) {
+				span = null;
+				slider.setMarks([]);
+				slider.setEmpty(emptyMsg);
+				return;
+			}
+			span = { start: state.start, end: state.end };
+			slider.setSegments(s.segments);
+			slider.setMarks(s.marks);
+			slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadDays, s.playheadTime);
+		},
+		dispose: slider.dispose
+	};
+	return api;
 }

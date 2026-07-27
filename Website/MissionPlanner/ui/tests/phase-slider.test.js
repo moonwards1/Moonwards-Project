@@ -7,7 +7,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { coastSliderState, departureSliderState, elapsedStamp } from "../phase-slider.js";
+import { coastSliderState, departureSliderState, arrivalSliderState,
+         elapsedStamp, approachStamp } from "../phase-slider.js";
 
 function shortDate(jd) { return "jd" + Math.round(jd); }
 function stamp(jd) { return "t" + jd; }
@@ -138,4 +139,103 @@ test("departureSliderState: the clock outside the span pins the playhead", () =>
 	// exactly on an edge is not pinned (inclusive span, matching Coast)
 	assert.equal(departureSliderState({ start: 0, end: 12, jd: 0, stamp }).pinnedAt, null);
 	assert.equal(departureSliderState({ start: 0, end: 12, jd: 12, stamp }).pinnedAt, null);
+});
+
+// ---- task 1.3: the Arrival slider ------------------------------------------
+// The seam window from core/arrival-seam.js: [ca - Δt, ca + 1 day]. The
+// canonical case below is a 3-day Δt, so ca sits at 3/4 of a 4-day span.
+var CA = 100, DT = 3, TAIL = 1;
+var AW = { start: CA - DT, end: CA + TAIL };   // 97 .. 101, ca at 0.75
+
+test("approachStamp: signed time relative to closest approach", () => {
+	assert.deepEqual(approachStamp(100, 100), { days: "+0 d", time: "00:00" });
+	assert.deepEqual(approachStamp(97.75, 100), { days: "-2 d", time: "06:00" });
+	assert.deepEqual(approachStamp(100.5, 100), { days: "+0 d", time: "12:00" });
+	// magnitude is split days + HH:MM, so the sign belongs to the pair, not
+	// to each line: -2 d / 06:00 means 2 days 6 hours BEFORE, not -2 d + 6 h.
+	assert.deepEqual(approachStamp(94.25, 100), { days: "-5 d", time: "18:00" });
+});
+
+test("approachStamp: minute rounding carries the same way elapsedStamp's does", () => {
+	assert.deepEqual(approachStamp(100.99999, 100), { days: "+1 d", time: "00:00" });
+	assert.deepEqual(approachStamp(99.00001, 100), { days: "-1 d", time: "00:00" });
+});
+
+test("approachStamp: just before closest approach is negative, never '-0 d 00:00'", () => {
+	// a sub-minute lead rounds to zero magnitude — that reads as +0, not -0
+	assert.deepEqual(approachStamp(100 - 1e-9, 100), { days: "+0 d", time: "00:00" });
+	assert.equal(approachStamp(99.999, 100).days, "-0 d");   // 1.44 min out: still before
+});
+
+test("arrivalSliderState: empty when the window collapses (the no-encounter case)", () => {
+	// 1.1's fallback puts start === end at the plan's committed arrival epoch
+	assert.equal(arrivalSliderState({ start: CA, end: CA, jd: CA, ca: CA, stamp }).empty, true);
+	assert.equal(arrivalSliderState({ start: NaN, end: 101, jd: 100, stamp }).empty, true);
+	assert.equal(arrivalSliderState({ start: 101, end: 97, jd: 100, stamp }).empty, true);   // inverted
+});
+
+test("arrivalSliderState: linear over the window, playhead at (jd-start)/span", () => {
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
+	assert.equal(s.empty, false);
+	assert.equal(s.playheadFrac, 0.75);            // closest approach, 3 of 4 days in
+	assert.equal(arrivalSliderState({ start: AW.start, end: AW.end, jd: 99, ca: CA, stamp }).playheadFrac, 0.5);
+});
+
+test("arrivalSliderState: closest approach is marked on the track", () => {
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
+	var ca = s.marks.filter(function (m) { return m.cls === "mp-mark-ca"; });
+	assert.equal(ca.length, 1);
+	assert.equal(ca[0].frac, 0.75);
+	assert.equal(ca[0].jd, CA);
+});
+
+test("arrivalSliderState: arrival events inside the window become marks, outside are dropped", () => {
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp,
+		marks: [{ jd: 98, label: "SOI entry" }, { jd: 120, label: "way past the window" },
+		        { jd: 50, label: "still in the coast" }] });
+	var evs = s.marks.filter(function (m) { return m.cls !== "mp-mark-ca"; });
+	assert.equal(evs.length, 1);
+	assert.equal(evs[0].title, "SOI entry");
+	assert.equal(evs[0].frac, 0.25);
+});
+
+test("arrivalSliderState: the playhead readout is relative to closest approach", () => {
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: 98, ca: CA, stamp });
+	assert.equal(s.playheadDays, "-2 d");
+	assert.equal(s.playheadTime, "00:00");
+	// and past it
+	assert.equal(arrivalSliderState({ start: AW.start, end: AW.end, jd: 100.5, ca: CA, stamp }).playheadDays, "+0 d");
+});
+
+test("arrivalSliderState: the clock outside the window pins the playhead, readout still true", () => {
+	// the common case on entering the phase: the clock is still back in the coast
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: 60, ca: CA, stamp });
+	assert.equal(s.pinnedAt, "start");
+	assert.equal(s.playheadFrac, 0);
+	assert.equal(s.playheadDays, "-40 d");   // the readout reports where the clock REALLY is
+	var e = arrivalSliderState({ start: AW.start, end: AW.end, jd: 200, ca: CA, stamp });
+	assert.equal(e.pinnedAt, "end");
+	assert.equal(e.playheadFrac, 1);
+});
+
+test("arrivalSliderState: BOTH edges move with the encounter, and the marks move with them", () => {
+	// the same window shifted 8 hours later, as tuning the coast would do: every
+	// fraction is unchanged, because both edges derive from ca (task 1.3's point).
+	var a = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
+	var d = 1 / 3;
+	var b = arrivalSliderState({ start: AW.start + d, end: AW.end + d, jd: CA + d, ca: CA + d, stamp });
+	assert.equal(b.playheadFrac, a.playheadFrac);
+	assert.equal(b.marks[0].frac, a.marks[0].frac);
+	assert.equal(b.marks[0].jd, CA + d);
+	// and a Δt that CHANGES (v∞ shifted) rescales the track: Δt 5 -> ca at 5/6
+	var wide = arrivalSliderState({ start: CA - 5, end: CA + 1, jd: CA, ca: CA, stamp });
+	assert.ok(Math.abs(wide.marks[0].frac - 5 / 6) < 1e-12);
+});
+
+test("arrivalSliderState: even time ticks across the window", () => {
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, ticks: 4, stamp });
+	assert.equal(s.segments.length, 4);
+	assert.equal(s.segments[0].frac0, 0);
+	assert.equal(s.segments[3].frac1, 1);
+	assert.equal(s.segments[1].label, stamp(98));   // 1/4 of a 4-day window past 97
 });

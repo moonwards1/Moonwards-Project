@@ -48,7 +48,7 @@ import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/si
 import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
-import { createCoastSlider, createDepartureSlider } from "./ui/phase-slider.js";
+import { createCoastSlider, createDepartureSlider, createArrivalSlider } from "./ui/phase-slider.js";
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 
@@ -219,6 +219,7 @@ export function createMissionView(opts) {
 	var dateBarEl = q(".mp-datebar");
 	var coastSliderEl = q(".mp-coast-slider");
 	var depSliderEl = q(".mp-dep-slider");
+	var arrSliderEl = q(".mp-arr-slider");
 	var phaseBtns = {
 		departure: q(".mp-phase-dep"),
 		coast: q(".mp-phase-coast"),
@@ -362,16 +363,26 @@ export function createMissionView(opts) {
 		if (from) { setPaneFrame(from, old); }
 	}
 
-	// Which slider shows: Coast gets the date-scaled coast slider (B2),
-	// Departure gets the event-scaled flight slider (B3); each phase's slider
-	// IS its clock control, so the raw Ephemeris date bar only shows for
-	// Arrival, which has no slider of its own yet (B3's arrival half — H2
-	// enabled the phase, not its scrubber).
+	// Which slider shows: one per phase, exactly one at a time — Departure
+	// gets the flight slider (B3), Coast the date-scaled one ending at the
+	// seam (B2), Arrival the seam window (task 1.3). Each phase's slider IS
+	// its clock control, so the raw Ephemeris date bar is now only a FALLBACK:
+	// it appears in the Arrival phase while there is no arrival window to
+	// scrub (no encounter — 1.1's collapsed-to-a-point case), because
+	// otherwise that phase would have no clock at all. Departure and Coast
+	// keep it hidden unconditionally; both always resolve a span in practice,
+	// and their empty states are transient.
 	function syncSliderVisibility() {
 		var phase = workspace.phase;
 		depSliderEl.style.display = phase === "departure" ? "" : "none";
 		coastSliderEl.style.display = phase === "coast" ? "" : "none";
-		dateBarEl.style.display = (phase === "departure" || phase === "coast") ? "none" : "";
+		arrSliderEl.style.display = phase === "arrival" ? "" : "none";
+		// arrSlider is built further down (it needs setClock and coastSeam), so
+		// this runs once before it exists — treat that as "no window yet",
+		// which is exactly the state that wants the date bar. Every arrival
+		// slider update re-runs this, so it corrects itself on the first
+		// recompute.
+		dateBarEl.style.display = (phase === "arrival" && (!arrSlider || arrSlider.empty)) ? "" : "none";
 	}
 
 	// The phase selectors (task B1): drives the main-pane frame (via
@@ -1246,6 +1257,44 @@ export function createMissionView(opts) {
 		return (dv1 > 0) ? soi / dv1 : null;
 	}
 
+	// ---- the Arrival slider (task 1.3): the seam window itself ---------------
+	// The third of the three per-phase scrubbers, and the one with no anchored
+	// edge at all: its span IS coastSeam()'s [start, end] — closest approach
+	// minus Δt, to closest approach plus a day. Both edges are recomputed from
+	// the live closest-approach event every pass, so the whole window slides
+	// bodily as the coast is tuned. Nothing is stored (the seam derivation is
+	// task 1.1's whole point); the slider is handed two fresh jds each update.
+	var arrSlider = createArrivalSlider(arrSliderEl, {
+		onSetJd: setClock, stamp: shortStamp
+	});
+
+	// The arrival phase's own flight events, as marks. Same flight-only rule
+	// the departure slider uses; arrivalSliderState drops any that fall outside
+	// the window, which today is most of them — modules/arrival-leg still
+	// builds a REFERENCE flyby discontinuous with the coast, and only task 7.1
+	// makes it the coast's true continuation. The marks become meaningful for
+	// free once it does.
+	function arrivalEvents(results) {
+		var evs = [];
+		results.forEach(function (res) {
+			var stage = world.getStage(res.stageId);
+			if (!stage || stagePhaseOf(stage) !== "arrival") { return; }
+			res.events.forEach(function (e) { if (e.flight !== false) { evs.push(e); } });
+		});
+		return evs;
+	}
+
+	// null when there is no window to scrub: no transfer-leg/destination at
+	// all, or a coast that never encounters the destination — 1.1's fallback
+	// collapses the seam to a single point at the plan's committed arrival
+	// epoch, which is not a span. The slider shows its empty state and
+	// syncSliderVisibility hands the clock back to the date bar.
+	function arrivalSpan(results) {
+		var seam = coastSeam(results);
+		if (!seam || !seam.hasEncounter) { return null; }
+		return { start: seam.start, end: seam.end, ca: seam.jd, marks: arrivalEvents(results) };
+	}
+
 	// ---- wiring: World changes place bodies; engine passes redraw the rest --
 	function placeAll(jd) {
 		Object.keys(frames).forEach(function (id) { frames[id].place(jd); });
@@ -1269,6 +1318,13 @@ export function createMissionView(opts) {
 		depSlider.update(dep
 			? { start: dep.start, end: dep.end, jd: world.jd, marks: dep.marks, defaulted: dep.defaulted }
 			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
+		var arr = arrivalSpan(results);
+		arrSlider.update(arr
+			? { start: arr.start, end: arr.end, ca: arr.ca, jd: world.jd, marks: arr.marks }
+			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
+		// the arrival slider's empty state decides whether the date bar has to
+		// stand in as the Arrival phase's clock — re-check it whenever it moves
+		syncSliderVisibility();
 	});
 
 	// ---- rendering: the shared renderer, scissored per pane, only while this

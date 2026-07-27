@@ -141,10 +141,13 @@
 
 			<!-- Per-phase clock sliders, built by ui/phase-slider.js; exactly
 			     one shows at a time (syncSliderVisibility). Departure (B3):
-			     event-scaled over the ship's flight. Coast (B2): date-scaled.
-			     Arrival still falls back to the date bar above until H2. -->
+			     linear over the ship's flight. Coast (B2): date-scaled, ending
+			     at the seam. Arrival (task 1.3): the seam window itself, both
+			     edges sliding with closest approach. The date bar above is now
+			     only a fallback for a phase with no resolvable span. -->
 			<div class="mp-sliderzone mp-dep-slider"></div>
 			<div class="mp-sliderzone mp-coast-slider"></div>
+			<div class="mp-sliderzone mp-arr-slider"></div>
 
 			<!-- Mission events, from the modules' envelope events -->
 			<div class="mp-eventsbar"></div>

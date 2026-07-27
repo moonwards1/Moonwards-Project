@@ -167,6 +167,14 @@ body {
 	background: #e0a84a; opacity: 0.85; pointer-events: auto; cursor: help;
 	border-radius: 1px;
 }
+/* Closest approach on the Arrival slider (task 1.3): not a milestone among
+   others but the point the whole window is built around, so it reads as a
+   brighter, wider mark than the flight events beside it. */
+.mp-mark-ca {
+	width: 3px; margin-left: -1.5px; top: -5px; bottom: -5px;
+	background: #cfe0ff; opacity: 1;
+	box-shadow: 0 0 5px rgba(120, 170, 255, 0.7);
+}
 
 /* ---------- events bar ---------- */
 .mp-eventsbar {

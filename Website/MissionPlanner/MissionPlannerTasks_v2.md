@@ -176,11 +176,23 @@ or the savings evaporate.
   `draw()` re-derives the same seam from its own `leg.events` +
   `params.destination` to clamp the chevron, gated on a new `snap.phase`
   field so the clamp only holds while Coast is the active phase.
-- [ ] **1.3 Arrival timeline.** ★★★
+- [x] **1.3 Arrival timeline.** ★★★
   The Arrival phase's own clock control, and the third slider: a window
   `[closest approach − Δt, closest approach + ~1 day]` that slides bodily as
   the coast is tuned. `ui/phase-slider.js` already has the primitives; what is
   new is a span where *both* edges recompute.
+  `ui/phase-slider.js` gains `arrivalSliderState`/`createArrivalSlider`, the
+  third sibling of the coast and departure pair, plus `approachStamp` — the
+  playhead reads **signed time relative to closest approach** (`-2 d 06:00`),
+  not "T+" since the phase began, since neither edge is a fixed anchor.
+  Closest approach is marked on the track (`.mp-mark-ca`). `mission-view.js`'s
+  `arrivalSpan()` feeds it `coastSeam()`'s `[start, end]` and `jd` every
+  recompute; arrival-phase flight events become marks, and those outside the
+  window are dropped (most of them, until 7.1 makes the arrival leg the
+  coast's true continuation). **The date bar is now a fallback, not the
+  Arrival phase's clock**: it appears only while the seam has no encounter to
+  bracket and the window collapses to a point (1.1's fallback), so the phase
+  is never left without a clock.
 - [ ] **1.4 Departure timeline: the Earth/Moon procedure, and two marks.** ★★
   Add the pinned-start / floating-end procedure alongside the existing
   anchored-end one, selected by whether the origin's departure depends on a
