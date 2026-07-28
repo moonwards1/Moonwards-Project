@@ -16,6 +16,7 @@ import skyhook, { tetherKinematics, rotorFor } from "../orbital-skyhook/orbital-
 import departureLeg, { computeDepartureLeg } from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
 import transferLeg, { computeLeg, stateAtElapsed, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
+import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
@@ -41,6 +42,7 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
+	reg.register(arrivalBoundary);   // the Coast→Arrival compliance boundary (task 1.5)
 	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
 	                             // flyby leg (task H3); arrival tech is empty by default
 	return reg;
@@ -352,10 +354,11 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();
-	assert.equal(stages.length, 6);
+	assert.equal(stages.length, 7);
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
-		 "arrival-leg"]);   // arrival tech empty by default — the mission ends at the flyby
+		 "arrival-boundary",   // the far seam's compliance check (task 1.5)
+		 "arrival-leg"]);      // arrival tech empty by default — the mission ends at the flyby
 
 	var rMoon = engine.resultFor(stages[0].id);
 	var rSky = engine.resultFor(stages[1].id);
@@ -382,7 +385,14 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	// the terminal stage now: the arrival flyby leg (task H3), pinned at the
 	// delivered arrival epoch, hand-off a day before, end a day after; closest
 	// approach at half Ceres's SOI (the reference construction).
-	var rArr = engine.resultFor(stages[5].id);
+	// the arrival boundary between them: the shipped coast flies the FROZEN
+	// plan, so it arrives exactly on the commitment — no deviation at all
+	var rBound = engine.resultFor(stages[5].id);
+	assert.equal(rBound.status, "ok");
+	assert.deepEqual(rBound.warnings, []);
+	assert.equal(rBound.output, rLeg.output);   // measured, never substituted
+
+	var rArr = engine.resultFor(stages[6].id);
 	assert.equal(rArr.status, "ok");
 	assert.ok(Math.abs(rArr.output.data.jd - (rLeg.output.data.jd + 1)) < 1e-9);
 	assert.equal(rArr.events.length, 3);   // hand-off, closest approach, leg end
@@ -433,18 +443,22 @@ test("migration: a v1 save gains moon-platform + departure-leg around its skyhoo
 	var res = deserializeWorld(structuredClone(V1_PRESET));
 	assert.equal(res.ok, true, res.reason);
 	var stages = res.world.stages();
+	// v1→v2 wraps the skyhook in the carrier chain; v3→v4 appends the arrival
+	// compliance boundary after the coast (task 1.5)
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg"]);
+		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
+		 "arrival-boundary"]);
 	// original ids survive; inserted ids are fresh, beyond the old counter
 	assert.equal(stages[1].id, "stg-1");
 	assert.equal(stages[3].id, "stg-3");
 	assert.notEqual(stages[0].id, stages[2].id);
+	assert.equal(stages.filter(function (s) { return s.id === stages[5].id; }).length, 1);
 	// the skyhook's params — including the legacy releaseJd — pass through, and
 	// the v3 migration adds the explicit body the unified skyhook needs
 	assert.equal(stages[1].params.releaseJd, 2463220.75);
 	assert.equal(stages[1].params.body, "Moon");
-	// a re-serialize is version 3 (no double migration on the next load)
-	assert.equal(res.world.serialize().version, 3);
+	// a re-serialize is the current version (no double migration on the next load)
+	assert.equal(res.world.serialize().version, 4);
 
 	// The migrated mission RUNS: the anchor falls back to the plan's
 	// departure.jd (pre-D7 plans have no releaseAnchorJd), so the integrated
@@ -470,8 +484,19 @@ test("migration: v1 saves without a skyhook (freeze-spawned shape) pass through 
 		] };
 	var res = deserializeWorld(v1);
 	assert.equal(res.ok, true);
+	// v1→v2 has nothing to wrap (no skyhook); v3→v4 still adds the arrival
+	// boundary, because there IS a coast whose delivery can be measured
 	assert.deepEqual(res.world.stages().map(function (s) { return s.moduleId; }),
-		["frozen-plan", "transfer-leg"]);
+		["frozen-plan", "transfer-leg", "arrival-boundary"]);
+});
+
+test("migration: a save with no coast gets no arrival boundary — nothing is delivered to measure", function () {
+	var v3 = { kind: "moonwards-world", version: 3, jd: JD_HANDOFF, nextStage: 2,
+		stages: [{ id: "stg-1", moduleId: "frozen-plan", params: V1_PRESET.stages[1].params }] };
+	var res = deserializeWorld(v3);
+	assert.equal(res.ok, true, res.reason);
+	assert.deepEqual(res.world.stages().map(function (s) { return s.moduleId; }), ["frozen-plan"]);
+	assert.equal(res.world.serialize().version, 4);
 });
 
 test("transfer-leg update: converts a body-frame input to helio", function () {

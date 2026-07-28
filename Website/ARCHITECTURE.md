@@ -264,11 +264,21 @@ never looks inside it, and doesn't care whether one stage produced it or a
 thousand — compared once to the one frozen target. Match, and downstream
 flies the target unmodified (the comply rule); miss, and that is one warning
 naming the gap, not a reconciliation of individual upstream events against
-each other or against anything else. The same shape recurs at Coast→Arrival
-once an arrival module exists: Coast's own chain (today, up to two waypoint
-burns — a UI choice about how much complexity to expose right now, not an
-architectural ceiling) composes to an end state, checked against whatever
-Arrival's own frozen entry requirement turns out to be.
+each other or against anything else. `MissionPlanner/modules/arrival-boundary/`
+is the same shape at Coast→Arrival: Coast's own chain (today, up to two
+waypoint burns — a UI choice about how much complexity to expose right now,
+not an architectural ceiling) composes to an end state, compared once against
+the plan's arrival commitment — body, epoch, approach v∞ — and every gap is a
+warning, never a block.
+
+The two seams differ in exactly one respect, and it is deliberate. The
+departure boundary is **authoritative**: it emits the plan's own frozen state
+downstream whatever the tech delivered, because the plan is the thing being
+flown toward and can stand in for a tech that isn't ready. The arrival
+boundary only **measures**: the ship is where the coast actually put it, the
+arrival phase exists to refine that approach, and the commitment fixes no
+approach direction to synthesize a substitute state from. Same mechanism, same
+one comparison, opposite answer to "does the requirement replace the delivery?"
 
 **The tell that this model has been lost:** if two numbers describing the
 same seam start needing "reconciling" against each other, that is never a

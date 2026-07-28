@@ -51,7 +51,7 @@
 // from inside update()" is enforced rather than merely documented.
 
 export const WORLD_KIND = "moonwards-world";
-export const WORLD_VERSION = 3;
+export const WORLD_VERSION = 4;
 
 // ---- saved-mission migrations ----------------------------------------------
 // Version 2 (task I3, WP-I): the departure system became a CARRIER CHAIN —
@@ -116,6 +116,42 @@ function migrateV2toV3(saved) {
 			if (s.params.body === undefined || s.params.body === null) { s.params.body = "Moon"; }
 		}
 	});
+	return out;
+}
+
+// Version 4 (WP-1 task 1.5): the Coast→Arrival seam got its own compliance
+// boundary stage (modules/arrival-boundary), the mirror of frozen-plan at the
+// other end of the mission. It is a pure insertion — one paramless stage
+// immediately after each transfer-leg, which is where the coast hands over —
+// with a fresh never-used id, in the v1→v2 shape. Everything else passes
+// through untouched.
+//
+// Anchored on transfer-leg rather than on arrival-leg because the boundary
+// belongs to the seam, not to the arrival hardware: a save with a coast but no
+// arrival leg (pre-H3) still gets its commitment checked, and the boundary
+// still lands ahead of any arrival stage that follows. A save with no coast at
+// all gets no boundary — there is no delivery to measure.
+function migrateV3toV4(saved) {
+	var out = structuredClone(saved);
+	out.version = 4;
+	if (!Array.isArray(out.stages)) { return out; }
+
+	var maxNum = 0;
+	out.stages.forEach(function (s) {
+		var m = s && typeof s.id === "string" ? /^stg-(\d+)$/.exec(s.id) : null;
+		if (m) { maxNum = Math.max(maxNum, parseInt(m[1], 10)); }
+	});
+	var next = Math.max(maxNum + 1, typeof out.nextStage === "number" ? out.nextStage : 1);
+
+	var stages = [];
+	out.stages.forEach(function (s) {
+		stages.push(s);
+		if (s && s.moduleId === "transfer-leg") {
+			stages.push({ id: "stg-" + (next++), moduleId: "arrival-boundary", params: {} });
+		}
+	});
+	out.stages = stages;
+	out.nextStage = next;
 	return out;
 }
 
@@ -311,6 +347,7 @@ export function deserializeWorld(saved) {
 	}
 	if (saved.version === 1) { saved = migrateV1toV2(saved); }
 	if (saved.version === 2) { saved = migrateV2toV3(saved); }
+	if (saved.version === 3) { saved = migrateV3toV4(saved); }
 	if (typeof saved.jd !== "number" || !isFinite(saved.jd)) {
 		return { ok: false, reason: "missing or bad jd" };
 	}

@@ -277,6 +277,9 @@ body {
 .mp-row { display: flex; justify-content: space-between; gap: 10px; padding: 2.5px 0; font-size: 13px; }
 .mp-row .mp-k { color: var(--dim); }
 .mp-row .mp-v { text-align: right; }
+/* A readout that is off its committed value (task 1.5's arrival-boundary card):
+   the warning below it says what and why; this just marks which row it is. */
+.mp-row .mp-v.mp-bad { color: var(--warn); }
 
 .mp-wp-head {
 	display: flex; justify-content: space-between; align-items: center;

@@ -152,6 +152,11 @@ export function freezeMissionWorld(spec) {
 		waypoints: waypoints.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; })
 	});
 	add("transfer-leg", { waypoints: waypoints, legDays: legDays, destination: spec.destination });
+	// The Coast→Arrival compliance boundary (task 1.5): the mirror of
+	// frozen-plan at the far seam — one comparison of what the coast delivers
+	// against the arrival commitment two lines up, non-blocking. Paramless: the
+	// commitment is the plan's.
+	add("arrival-boundary", {});
 	// The arrival flyby leg (task H3): the visible Coast→Arrival hand-off, no
 	// burns yet, and the terminal stage — the arrival-tech slot is empty by
 	// default too (its own add/remove card is still to build).

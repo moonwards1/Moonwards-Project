@@ -44,10 +44,15 @@ test("freeze output deserializes into a working World with the E2 profile (Earth
 	assert.equal(res.ok, true, res.reason);
 	var stages = res.world.serialize().stages;
 	// Earth: the fixed Moon platform + the geocentric leg (empty carrier slot),
-	// then the plan, coast and flyby leg (empty arrival-tech slot).
+	// then the plan, coast, the arrival compliance boundary at the far seam
+	// (task 1.5) and the flyby leg (empty arrival-tech slot).
 	assert.deepEqual(stages.map(s => s.moduleId),
-		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
-	assert.equal(data.nextStage, 6);
+		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg",
+		 "arrival-boundary", "arrival-leg"]);
+	assert.equal(data.nextStage, 7);
+	// the boundary is paramless — the commitment it measures against is the
+	// plan's, two stages up
+	assert.deepEqual(paramsOf(data, "arrival-boundary"), {});
 	// the departure leg starts with no waypoints; the flyby leg carries the
 	// destination explicitly (body convention) and is the terminal stage.
 	assert.deepEqual(paramsOf(data, "departure-leg"), { waypoints: [] });
@@ -72,10 +77,11 @@ test("freeze from a non-Earth origin scaffolds just the generic departure leg", 
 	var res = deserializeWorld(data);
 	assert.equal(res.ok, true, res.reason);
 	// no Moon platform for a non-Earth origin — just the generic leg (its
-	// skyhook, when added, self-originates), then the plan, coast and flyby.
+	// skyhook, when added, self-originates), then the plan, coast, the arrival
+	// boundary and the flyby.
 	assert.deepEqual(res.world.serialize().stages.map(s => s.moduleId),
-		["body-departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
-	assert.equal(data.nextStage, 5);
+		["body-departure-leg", "frozen-plan", "transfer-leg", "arrival-boundary", "arrival-leg"]);
+	assert.equal(data.nextStage, 6);
 	assert.equal(paramsOf(data, "frozen-plan").origin, "Mars");
 });
 

@@ -54,7 +54,9 @@
 // baked departure numbers are unchanged here: the commitment is the same,
 // only the tech side got real physics.)
 //
-// This is a SERIALIZED WORLD (core/world.js `serialize()` shape, version 2),
+// This is a SERIALIZED WORLD (core/world.js `serialize()` shape, current
+// WORLD_VERSION — kept up to date rather than migrated on load, so the shipped
+// file is also the canonical example of the chain's present shape),
 // loaded through the same deserializeWorld path a share link uses — the
 // whole point of the step. The curation half of 4.4 (which pane arrangement
 // teaches best) waits for the fuller interface; re-curating is editing this
@@ -65,9 +67,9 @@
 
 export var defaultMission = {
 	kind: "moonwards-world",
-	version: 3,
+	version: 4,
 	jd: 2463218.546734214,   // the clock opens at the release anchor
-	nextStage: 7,
+	nextStage: 8,
 	stages: [
 		{
 			// The Moon card: read-only top of the departure stack (task I3).
@@ -123,6 +125,19 @@ export var defaultMission = {
 				legDays: 750,
 				destination: "Ceres"
 			}
+		},
+		{
+			// The Coast→Arrival compliance boundary (task 1.5): measures what
+			// the coast above delivers at Ceres against the commitment in
+			// stg-4, and reports the gap as warnings. Paramless, and placed at
+			// the seam — exactly where core/world.js's v3→v4 migration inserts
+			// it into older saves. (Id stg-7 rather than stg-6 for the same
+			// reason the migration uses a fresh number: stage ids are stable
+			// handles, never positions, and renumbering stg-6 would rewrite an
+			// id that already exists in the wild.)
+			id: "stg-7",
+			moduleId: "arrival-boundary",
+			params: {}
 		},
 		{
 			// The arrival flyby leg (task H3): the visible Coast→Arrival

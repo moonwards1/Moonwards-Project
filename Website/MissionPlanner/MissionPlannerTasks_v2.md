@@ -198,10 +198,22 @@ or the savings evaporate.
   anchored-end one, selected by whether the origin's departure depends on a
   satellite. Both the committed hand-off and the predicted SOI exit render as
   marks on the track, whichever procedure frames the span.
-- [ ] **1.5 Arrival boundary stage.** ★★★
+- [x] **1.5 Arrival boundary stage.** ★★★
   The mirror of `frozen-plan` at the Coast→Arrival seam: one comparison of the
   delivered approach against the commitment, non-blocking, reported through
   the warnings channel. Reuses the boundary flag in `core/recompute.js`.
+  `modules/arrival-boundary/`, a paramless stage between `transfer-leg` and the
+  arrival phase, `boundary: true`, reading the commitment through
+  `frozen-plan`'s `arrivalCommitmentFor`. Three rows — **encounter** (did the
+  coast get there, at `transfer-leg`'s own `MISS_WARN_AU`), **v∞** (against the
+  committed approach speed, `ARRIVAL_VINF_TOL` 10 m/s) and **epoch** (against
+  the plan's `handoffWindowDays`, reached via the new `handoffWindowFor`) —
+  each deviation one warning, on the stage's own sidebar card in the Arrival
+  phase. **It measures but never substitutes**: the delivered ship-state passes
+  through untouched, unlike `frozen-plan`, because the arrival phase refines
+  the approach the coast actually flew, and the commitment fixes no approach
+  direction to synthesize a stand-in from. Chain change → save format **v4**;
+  `core/world.js`'s `migrateV3toV4` inserts the stage after each `transfer-leg`.
 - [x] **1.6 Design-doc edit: the seam's definition.** ★
   Restate the Coast section's formula as a window around closest approach:
   the destination's own SOI **radius** (Earth's own for an Earth arrival),

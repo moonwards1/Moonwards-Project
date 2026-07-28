@@ -166,6 +166,23 @@ export function arrivalCommitmentFor(world) {
 	return null;
 }
 
+// The mission's hand-off window half-width (days), read off the plan the same
+// way releaseAnchorFor and arrivalCommitmentFor read their fields. Added for
+// task 1.5's arrival boundary, which checks the DELIVERED arrival epoch
+// against the same window the departure seam uses — core/freeze.js's own note
+// that "arrival will need the same looseness". The arrival end gets a field of
+// its own the day it wants a different figure; until then there is one window
+// per mission and this is how both seams reach it. DEFAULT_WINDOW_DAYS when
+// the mission has no plan at all.
+export function handoffWindowFor(world) {
+	if (!world || typeof world.stages !== "function") { return DEFAULT_WINDOW_DAYS; }
+	var stages = world.stages();
+	for (var i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId === "frozen-plan") { return windowDaysOf(stages[i].params || {}); }
+	}
+	return DEFAULT_WINDOW_DAYS;
+}
+
 function isoOf(jd) {
 	var d = O.dateFromJulian(jd);
 	return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
@@ -379,7 +396,8 @@ export default {
 	// skyhook, a no-carrier chain, an impacting flight) must never blank the
 	// committed plan or the coast beyond it. The block chain terminates here;
 	// the shortfall becomes a compliance warning, not a block. (The Coast→
-	// Arrival boundary will set the same flag once its stage exists.)
+	// Arrival seam sets the same flag — modules/arrival-boundary, task 1.5 —
+	// so both ends of a mission share one mechanism, as intended.)
 	boundary: true,
 	rendersIn: ["helio"],
 	// No sidebar card (Kim, 2026-07-12): this stage's readouts and diagnostics
@@ -430,5 +448,6 @@ export default {
 	complianceFor: complianceFor,
 	planSummary: planSummary,
 	releaseAnchorFor: releaseAnchorFor,
-	arrivalCommitmentFor: arrivalCommitmentFor
+	arrivalCommitmentFor: arrivalCommitmentFor,
+	handoffWindowFor: handoffWindowFor
 };

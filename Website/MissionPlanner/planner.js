@@ -50,6 +50,10 @@ var MODULE_URLS = [
 	"./modules/body-departure-leg/body-departure-leg.js",
 	"./modules/frozen-plan/frozen-plan.js",
 	"./modules/transfer-leg/transfer-leg.js",
+	// The Coast→Arrival compliance boundary (task 1.5): frozen-plan's mirror at
+	// the far seam — one comparison of the coast's delivered approach against
+	// the plan's arrival commitment, non-blocking.
+	"./modules/arrival-boundary/arrival-boundary.js",
 	// The arrival flyby leg (task H3): the visible Coast→Arrival hand-off —
 	// one day out, past the body at SOI/2, one day beyond — with waypoint
 	// burns on the approach.
