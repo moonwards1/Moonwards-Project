@@ -53,7 +53,6 @@ import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 
 var O = OrbitalMath;
-var EARTH = systems.get("Earth");
 var GM_SUN = systems.get("Sun").GM;
 
 var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
@@ -1208,7 +1207,7 @@ export function createMissionView(opts) {
 	// The departure span for the slider. The RIGHT edge is the compliance time
 	// (when the ship must be on course); the LEFT edge (launch) floats to fit
 	// the departure duration. Today the flight events give both edges directly
-	// (release .. Earth-SOI exit) once a departure tech resolves them; before
+	// (release .. origin-SOI exit) once a departure tech resolves them; before
 	// that — including the moment a mission is first created, with no
 	// departure tech configured at all — the frozen plan's own required v∞
 	// out and fixed deadline (imported with the mission at creation, C1)
@@ -1216,6 +1215,21 @@ export function createMissionView(opts) {
 	// departureDefaultSpanSeconds(). A lone resolved release event (tech
 	// partly configured) anchors LEFT instead, floating RIGHT forward by the
 	// same default, since the deadline isn't the binding edge in that case.
+	// NOTE this "anchored-end" shape is only the PRE-resolution default. Once
+	// a departure tech resolves real flight events, the LEFT edge (the
+	// Release event) is actually already pinned — moon-platform.js,
+	// departure-leg.js and body-departure-leg.js all read the frozen plan's
+	// releaseAnchorJd through frozen-plan.js's releaseAnchorFor() and stamp
+	// their Release event at exactly that epoch, for every origin, not just
+	// Earth. So the real, common-case behavior is pinned-start/floating-end
+	// already, universally — task 1.4's remaining gap is narrower than "add
+	// pinned-start for satellites": this default-span fallback doesn't reuse
+	// that same anchor (it re-derives its own backward estimate instead), and
+	// the committed hand-off (frozen-plan's "Plan departure" event) never
+	// shows as a mark here at all — frozen-plan's stage phase is "coast" (its
+	// rendersIn is "helio"), so departureEvents() below, filtered to phase
+	// "departure", never sees it; it only surfaces in the unrelated flat
+	// all-phases events bar (renderEventsBar).
 	function departureSpan(results) {
 		var evs = departureEvents(results);
 		var jds = evs.map(function (e) { return e.jd; });
@@ -1244,16 +1258,18 @@ export function createMissionView(opts) {
 	// body's SOI at the plan's required departure v∞ out, the same figure
 	// imported with the mission from the frozen plan (C1). Falls back to a
 	// Hohmann-transfer dv1 estimate to the chosen destination when no frozen
-	// plan has resolved yet (a pre-comply save). Origin body is Earth (the
-	// departure system) either way, so its heliocentric SOI. Seconds, or null.
+	// plan has resolved yet (a pre-comply save). Origin is this mission's own
+	// origin body (missionOriginBody(), task J3) — not always Earth since
+	// WP-J generalized departures beyond Earth. Seconds, or null.
 	function departureDefaultSpanSeconds(results) {
-		var soi = O.sphereOfInfluence(EARTH.orbit.a, EARTH.GM, GM_SUN);   // m
+		var origin = systems.get(missionOriginBody(world));
+		var soi = O.sphereOfInfluence(origin.orbit.a, origin.GM, GM_SUN);   // m
 		var plan = plannedDeparture(results);
 		if (plan && plan.vInf > 0) { return soi / plan.vInf; }
 		var dest = coastDestination();
 		if (!dest) { return null; }
 		var rDest = systems.get(dest).orbit.a;
-		var dv1 = O.hohmann(GM_SUN, EARTH.orbit.a, rDest).dv1;   // m/s injection burn
+		var dv1 = O.hohmann(GM_SUN, origin.orbit.a, rDest).dv1;   // m/s injection burn
 		return (dv1 > 0) ? soi / dv1 : null;
 	}
 

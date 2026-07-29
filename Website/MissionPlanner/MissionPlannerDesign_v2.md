@@ -2,9 +2,9 @@
 
 This app assists users to plot out an entire mission based on real ephemeris data and trajectory plots. Users can then choose which technology to use to accomplish the mission, from a range of options that are realistic in a future setting. They can either feed in data from calculators (in a separate section) that set the parameters their chosen 'tech stack' would have, or find the parameters by playing around in the app, and instead send those to the relevant calculators to see what properties the launcher or vehicle would need. Once they have succeeded in setting parameters that result in a ship successfully travelling from origin to destination, indicators in different spots signal success. They can swap technologies and change the parameters on their tech, in the app or in the relevant calculator, and the mission profile updates as needed. They can set up several missions within the app that coexist, and compare different mission architectures by reviewing the information in each one. 
 
-The use case of the app is to teach users how different launch tech and rocket tech works, how orbital mechanics works, and the comparative strengths and weaknesses of different launch and rocket tech. Ease of use for a naive user is important, while also offering sophisticated users a quick, intuitive means of testing ideas. The level of accuracy is the best that is feasible within the requirements of providing mission design freedom with many tech choices. 
+The use case of the app is to teach users how different launch tech and rocket tech works, how orbital mechanics works, and the comparative strengths and weaknesses of different launch and rocket tech. Ease of use for a naive user is important, while also offering sophisticated users a quick, intuitive means of testing ideas. The level of accuracy is the best that is feasible within the requirements of providing mission design freedom with many tech choices, and maintaining ease of use.
 
-*Words in italics concern features not yet implemented*
+*Words in italics concern features not yet implemented. The distinction between implemented and not is sometimes fuzzy, as descriptions describe both for brevity, or to make a general reference. Italics are an effort to signal things that are future jobs when that aids planning.*
 
 <u>Underlined words are questions or open design decisions</u>
 
@@ -18,7 +18,7 @@ The top pane, spanning the width of the window, has three parts.
 
 #### The top part
 
-is for organizing open missions in tabs, and has a button for duplicating the currently displayed mission, and one for opening a mission from *a drop-down menu where users can choose from a small number of example missions*. It also has the Ephemeris tab, which is the starting point for creating any new mission.
+is for organizing open missions in tabs, and has a button for duplicating the currently displayed mission, and one for opening a mission from a drop-down menu where users can choose from a small number of example missions. It also has the Ephemeris tab, which is the starting point for creating any new mission.
 
 #### The middle part
 
@@ -64,7 +64,7 @@ If waypoints are added, they are shown by a gizmo that has axes for the prograde
 
 #### In Mission Departure mode
 
-the origin body is shown (so far only showing the primary body and omitting any satellites, except in the case of the Earth moon system, and *Mars, where Phobos and Deimos are shown*). The orbit of the body is shown, and the sun is visible in the distance. A small floating pane shows a view of the solar system and coast phase trajectory, and another small floating pane shows a view of the destination body. These small panes are draggable. As launch technology and waypoint burns are added in the tool pane, the trajectory that results is shown, cutting off at the time the departure timeline ends. Simple renderings of the launch tech are shown to indicate basically how they work, and where the ship would start from at launch. Any waypoints are indicated by gizmos on the trajectory that are like the ones in the Ephemeris mode. The gizmos (and their cards in the tool pane) are oriented in the heliocentric frame. *At the hand-off end of the trajectory is a yellow arrow, analogous to the prograde arrow of the ephemeris phase, except it shows the heading the trajectory needs to have at that point in order to be on course, ie, what the prograde direction there needs to be*.  A *chevron moves along the trajectory as the timeline is scrubbed, showing where the ship would be at that moment.*
+the origin body is shown (so far only showing the primary body and omitting any satellites, except in the case of the Earth moon system, and *Mars, where Phobos and Deimos are shown*). The orbit of the body is shown, and the sun is visible in the distance. A small floating pane shows a view of the solar system and coast phase trajectory, and another small floating pane shows a view of the destination body. These small panes are draggable. As launch technology and waypoint burns are added in the tool pane, the trajectory that results is shown, cutting off at the time the departure timeline ends. Simple renderings of the launch tech (currently only the skyhook) are shown to indicate basically how they work, and where the ship would start from at launch. Any waypoints are indicated by gizmos on the trajectory that are like the ones in the Ephemeris mode. The gizmos (and their cards in the tool pane) are oriented in the heliocentric frame. *At the hand-off end of the trajectory is a yellow arrow, analogous to the prograde arrow of the ephemeris phase, except it shows the heading the trajectory needs to have at that point in order to be on course, ie, what the prograde direction there needs to be*.  A *chevron moves along the trajectory as the timeline is scrubbed, showing where the ship would be at that moment.*
 
 ##### The ship card
 
@@ -150,7 +150,11 @@ There is also a button to click if the user wishes to paste in the data copied i
 
 ### Designing a Departure phase
 
-Once a departure technology is selected, a trajectory is shown, and a card to set its parameters appears, and the timeline starts live displaying the estimated time to leave the body's SOI. Scrubbing the timeline scrubs the chevron marking the ship along the trajectory. *Clicking 'add waypoint' creates a waypoint at the current location of the chevron.* 
+Once a departure technology is selected, an initial trajectory is shown, a card to set its parameters appears, and the timeline starts live displaying the estimated time to leave the body's SOI. As parameters are changed in a card, that is reflected in the simplified representation of it in the three.js pane, and the trajectory updates. In some cases, parameters can be changed within the three.js pane by dragging something. 
+
+For both departure and arrival technology, the phase (or other initial conditions) of the tech can be freely set by the user for the moment of launch or capture. The tech doesn't follow a clock to make its motion consistent across the ephemeris. Once set, it rotates and/or moves appropriately as the timeline is scrubbed, to give a sense of its behavior, but the user sets the clock by their choices. (This is so the task of setting up the best release/launch/capture dynamics isn't made far more demanding by the need to find that moment in the timeline, and compare it to other factors and work the tradeoffs. This freedom provides a quickness and open-endedness that lends itself to technology assessment.)
+
+Scrubbing the timeline scrubs the chevron marking the ship along the trajectory. *Clicking 'add waypoint' creates a waypoint at the current location of the chevron.* 
 
 The ship card is the key to setting up the proper heading at hand-off. Live updates of its heading and speed display inform the setting of parameters. Users can also use the view of the heading arrow at the end of the trajectory as guidance, if in view.
 

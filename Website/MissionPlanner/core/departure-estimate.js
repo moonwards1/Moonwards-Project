@@ -9,7 +9,23 @@
  * The estimate authors two things: the Ephemeris tab's "Moon phase at
  * launch" widget, and the read-only release anchor core/freeze.js bakes
  * into the plan (WP-I's timing model; the ±1 d hand-off window absorbs the
- * estimate's error).
+ * estimate's error) as frozen-plan's releaseAnchorJd.
+ *
+ * That anchor (frozen-plan's releaseAnchorJd) is read back through
+ * frozen-plan.js's releaseAnchorFor(), and consumed by: frozen-plan.js's own
+ * epoch-compliance row; arrival-boundary.js's mirror at the far seam; AND —
+ * for every origin, not just Earth — moon-platform.js, departure-leg.js and
+ * body-departure-leg.js, which stamp their Release flight event at exactly
+ * this epoch. So once a departure tech resolves a real flight, the mission
+ * tab's Departure slider (ui/phase-slider.js's createDepartureSlider /
+ * mission-view.js's departureSpan) already shows this anchor as the LEFT
+ * edge, pinned, via that Release event — not through any special-casing in
+ * the slider itself. What still ignores this anchor is departureSpan's
+ * PRE-resolution default (departureDefaultSpanSeconds), which re-derives its
+ * own backward-from-hand-off estimate instead of just reading
+ * releaseAnchorJd directly; reconciling that, plus getting the committed
+ * hand-off (frozen-plan's "Plan departure" event) to render as its own mark
+ * on this slider, is what remains of task 1.4.
  *
  * Earth departures (this project's carriers all start near the Moon) use an
  * exact two-body SOI-exit time from the Moon's mean distance, choosing

@@ -41,6 +41,11 @@ body {
 .mp-tab-plus:hover { color: var(--bright); border-color: var(--acc); }
 .mp-tab-plus.mp-disabled { cursor: default; }
 .mp-tab-plus.mp-disabled:hover { color: var(--dim); border-color: var(--line2); }
+.mp-example-select {
+	padding: 5px 8px; margin-bottom: 3px; border-radius: 6px; color: var(--dim); cursor: pointer;
+	border: 1px dashed var(--line2); font-size: 13px; background: #121728; font-family: inherit;
+}
+.mp-example-select:hover { color: var(--bright); border-color: var(--acc); }
 
 /* ---------- Ephemeris tab (task D1: shell — its own date bar + scene +
    sidebar, reusing the same classes a mission view's .mp-main uses) ---------- */

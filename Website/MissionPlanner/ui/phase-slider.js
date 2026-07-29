@@ -304,6 +304,23 @@ export function createCoastSlider(container, opts) {
 //     two-body coast today or CR3BP later — this widget only wants the two
 //     edge times.
 //
+// That 2026-07-11 design predates WP-I's release-anchor model (task D7) and
+// is now only the shape of the PRE-resolution default (no departure tech
+// configured yet, or only the release event resolved) — see mission-view's
+// departureSpan and departureDefaultSpanSeconds. Once a departure tech
+// actually resolves a real flight, the LEFT edge is already pinned instead:
+// moon-platform.js, departure-leg.js and body-departure-leg.js all read the
+// frozen plan's read-only release anchor (`releaseAnchorJd`, set by
+// core/freeze.js from core/departure-estimate.js's estimateDeparture(), read
+// back via frozen-plan.js's releaseAnchorFor()) and stamp their Release
+// event at exactly that epoch — for every origin, not only Earth. So the
+// common case is pinned-start/floating-end already, universally; task 1.4's
+// remaining gap is getting the pre-resolution default to match that (reuse
+// releaseAnchorJd instead of re-deriving its own estimate) and getting the
+// committed hand-off (frozen-plan's "Plan departure" event — currently only
+// in mission-view's flat all-phases events bar, since frozen-plan's own
+// stage phase is "coast", not "departure") to render as a mark here too.
+//
 // So the caller hands over the two edge jds (already computed however it
 // likes) plus event marks; the widget is a plain linear scrubber over them,
 // identical in feel to the Coast slider. Everything about which times mean

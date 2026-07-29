@@ -32,6 +32,7 @@
 import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
 import { defaultMission, defaultWorkspaceMain } from "./presets/default-mission.js";
+import { EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
 import { decodeFragment } from "../Shared/exchange.js";
 import { unpackMissionLink } from "./ui/share-link.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
@@ -298,6 +299,20 @@ function nextCopyTitle(title) {
 	return candidate;
 }
 
+// `title` as-is if free, else "<title> (2)", "(3)", … — unlike nextCopyTitle
+// (which always wants a "(copy)" suffix, since its source is a tab that's
+// definitely already open), the example dropdown's title is free the first
+// time any given example is opened.
+function nextUniqueTitle(title) {
+	if (!missions.some(function (x) { return x.title === title; })) { return title; }
+	var n = 2, candidate = title + " (" + n + ")";
+	while (missions.some(function (x) { return x.title === candidate; })) {
+		n++;
+		candidate = title + " (" + n + ")";
+	}
+	return candidate;
+}
+
 // Clones the active mission's World (a serialize/deserialize round-trip, so
 // the copy shares no live object with the original — editing either tab
 // never touches the other) into a new tab titled with a "(copy)" suffix.
@@ -310,6 +325,31 @@ function duplicateActiveMission() {
 	spawnMissionTab(res.world, nextCopyTitle(src.title));
 }
 tabPlusEl.addEventListener("click", duplicateActiveMission);
+
+// ---- example missions (design doc, Top pane / top part: "a drop-down menu
+// where users can choose from a small number of example missions") — a
+// second, independent front door next to "+" (duplicate): each pick
+// deserializes a FRESH World from the catalog's stateless data
+// (presets/examples-catalog.js) into its own new tab, titled from the
+// catalog label with the same "(copy)"-style de-duplication as duplicate
+// uses, so opening the same example twice doesn't collide.
+var exampleSelectEl = document.getElementById("mp-example-select");
+EXAMPLE_MISSIONS.forEach(function (ex) {
+	var opt = document.createElement("option");
+	opt.value = ex.id;
+	opt.textContent = ex.label;
+	if (ex.blurb) { opt.title = ex.blurb; }
+	exampleSelectEl.appendChild(opt);
+});
+exampleSelectEl.addEventListener("change", function () {
+	var id = exampleSelectEl.value;
+	exampleSelectEl.value = "";   // always snaps back to the placeholder
+	var ex = EXAMPLE_MISSIONS.find(function (x) { return x.id === id; });
+	if (!ex) { return; }
+	var res = deserializeWorld(ex.mission);
+	if (!res.ok) { return; }   // shouldn't happen: the catalog is shipped, tested data
+	spawnMissionTab(res.world, nextUniqueTitle(ex.label), ex.workspace);
+});
 
 // Closing asks for confirmation — missions persist (task A3), but there's
 // no undo yet, so closing is permanent. Disposing before removing the
