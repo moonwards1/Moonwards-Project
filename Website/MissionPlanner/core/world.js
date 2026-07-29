@@ -54,22 +54,21 @@ export const WORLD_KIND = "moonwards-world";
 export const WORLD_VERSION = 4;
 
 // ---- saved-mission migrations ----------------------------------------------
-// Version 2 (task I3, WP-I): the departure system became a CARRIER CHAIN —
-// profiles that used to read [lunar-skyhook → …] now read [moon-platform →
-// lunar-skyhook → departure-leg → …] (the skyhook stopped emitting a
-// ship-state and emits a carrier-chain rotor instead; the new headless
-// departure-leg integrates the released flight and emits the hand-off). A v1
-// save's profile therefore no longer type-checks stage-to-stage without the
-// two new stages, so migration inserts them around each lunar-skyhook:
-// moon-platform immediately before, departure-leg immediately after, with
-// fresh never-used ids. Everything else — including the skyhook's legacy
-// releaseJd param, which the release-anchor lookup keeps honouring as a
-// last-resort fallback (frozen-plan.js's releaseAnchorFor) — passes through
-// untouched, per the always-storable rule.
+// These are the one place core code knows module ids by name. They are DATA
+// migration (save-format facts), not registry validation — deserializeWorld
+// never checks moduleIds for existence.
 //
-// This is the one place core code knows module ids by name; it is DATA
-// migration (a save-format fact), not registry validation — deserializeWorld
-// still never checks moduleIds for existence.
+// Version 2: the departure system is a CARRIER CHAIN. A v1 profile names a
+// lunar-skyhook stage that emits a ship-state directly; v2 wraps it in
+// [moon-platform → skyhook → departure-leg], where the skyhook emits a
+// carrier-chain rotor and the headless departure-leg integrates the released
+// flight to the hand-off. A v1 profile therefore no longer type-checks
+// stage-to-stage, so migration inserts the two stages around each
+// lunar-skyhook — moon-platform immediately before, departure-leg immediately
+// after — with fresh never-used ids. Everything else passes through untouched,
+// including the skyhook's legacy releaseJd param, which frozen-plan.js's
+// releaseAnchorFor still honours as a last-resort anchor (the always-storable
+// rule).
 function migrateV1toV2(saved) {
 	var out = structuredClone(saved);
 	out.version = 2;
@@ -97,14 +96,12 @@ function migrateV1toV2(saved) {
 	return out;
 }
 
-// Version 3 (2026-07-20): the two skyhook modules were unified into ONE generic
-// `orbital-skyhook` that carries its `body` explicitly (the body convention),
-// and the Moon-specific `lunar-skyhook` was retired. A v2 save's `lunar-skyhook`
-// stage becomes an `orbital-skyhook` stage with body "Moon" added; its
-// altitudes / release phase / legacy releaseJd pass through untouched. Same
+// Version 3: there is ONE generic `orbital-skyhook` module, carrying its
+// `body` explicitly (the body convention). A v2 save's `lunar-skyhook` stage
+// becomes an `orbital-skyhook` stage with body "Moon" added; its altitudes /
+// release phase / legacy releaseJd pass through untouched. Same
 // place-in-the-list, same stage id — a pure module swap, no stages added or
-// removed (contrast the v1→v2 reshape above). Data migration, not registry
-// validation: an unknown moduleId still round-trips per the always-storable rule.
+// removed (contrast the v1→v2 reshape above).
 function migrateV2toV3(saved) {
 	var out = structuredClone(saved);
 	out.version = 3;
@@ -119,18 +116,17 @@ function migrateV2toV3(saved) {
 	return out;
 }
 
-// Version 4 (WP-1 task 1.5): the Coast→Arrival seam got its own compliance
-// boundary stage (modules/arrival-boundary), the mirror of frozen-plan at the
-// other end of the mission. It is a pure insertion — one paramless stage
-// immediately after each transfer-leg, which is where the coast hands over —
-// with a fresh never-used id, in the v1→v2 shape. Everything else passes
-// through untouched.
+// Version 4: the Coast→Arrival seam has its own compliance boundary stage
+// (modules/arrival-boundary), the mirror of frozen-plan at the other end of the
+// mission. A pure insertion — one paramless stage immediately after each
+// transfer-leg, which is where the coast hands over — with a fresh never-used
+// id. Everything else passes through untouched.
 //
 // Anchored on transfer-leg rather than on arrival-leg because the boundary
 // belongs to the seam, not to the arrival hardware: a save with a coast but no
-// arrival leg (pre-H3) still gets its commitment checked, and the boundary
-// still lands ahead of any arrival stage that follows. A save with no coast at
-// all gets no boundary — there is no delivery to measure.
+// arrival leg still gets its commitment checked, and the boundary still lands
+// ahead of any arrival stage that follows. A save with no coast at all gets no
+// boundary — there is no delivery to measure.
 function migrateV3toV4(saved) {
 	var out = structuredClone(saved);
 	out.version = 4;

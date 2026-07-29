@@ -1,4 +1,4 @@
-// The EXTREME-Δv example (Kim, 2026-07-28): pushes departure AND arrival
+// The EXTREME-Δv example: pushes departure AND arrival
 // delta-v up together, rather than either extreme in isolation — Mars
 // self-originates its skyhook (no platform stage), and the fall to Mercury,
 // deep in the Sun's well, delivers a genuinely large arrival v∞ on top of a

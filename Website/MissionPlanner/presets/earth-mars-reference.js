@@ -1,4 +1,4 @@
-// The COMPLIANT reference example (Kim, 2026-07-28): unlike the shipped
+// The COMPLIANT reference example: unlike the shipped
 // default (presets/default-mission.js), which deliberately ships a v∞/aim
 // gap as a teaching exercise, this mission's frozen-plan commitment is
 // EXACTLY what the configured technology actually delivers at both
@@ -8,7 +8,7 @@
 // the genuine result back into frozen-plan's departure/arrival fields, so
 // opening it shows a clean flight with no comply-boundary warnings — a
 // state nothing else in the example set demonstrates. Also the only example
-// carrying a configured arrival-skyhook CATCH (task H2's arrival-skyhook.js,
+// carrying a configured arrival-skyhook CATCH (modules/arrival-skyhook/arrival-skyhook.js,
 // real trim-Δv physics, not a stub), since the other examples leave arrival
 // tech empty like the default.
 //

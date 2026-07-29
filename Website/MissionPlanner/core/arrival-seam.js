@@ -1,26 +1,24 @@
-/* MissionPlanner/core/arrival-seam.js — the Coast->Arrival seam derivation
- * (WP-1 task 1.1).
+/* MissionPlanner/core/arrival-seam.js — the Coast->Arrival seam derivation.
  *
- * Settled rule (MissionPlannerTasks_v2.md, MissionPlannerDesign_v2.md's Coast
- * section): the Coast->Arrival hand-off is a WINDOW around closest approach,
- * not a fixed date —
+ * The Coast->Arrival hand-off is a WINDOW around closest approach, not a fixed
+ * date (MissionPlannerDesign_v2.md's Coast section) —
  *
  *   Δt = clamp( R_SOI(destination) / v∞ , 2 days , 5 days )
  *   window = [ closest approach − Δt, closest approach + ~1 day ]
  *
  * R_SOI is the destination body's own Laplace SOI radius (its own, against
  * the Sun — not a composite with any satellite); v∞ is the ship's speed
- * relative to the destination at that encounter. The Coast slider's own end
- * (task 1.2) is the window's LEFT edge (closest approach − Δt); the Arrival
- * phase (task 1.3) spans the whole window.
+ * relative to the destination at that encounter. The Coast slider ends at the
+ * window's LEFT edge (closest approach − Δt); the Arrival phase spans the whole
+ * window. Both are wired up in mission-view.js — see its coastSeam/coastSpan/
+ * arrivalSpan.
  *
- * NO STORED FIELD, NO SAVE-FORMAT CHANGE: this is recomputed live from
- * transfer-leg's own emitted events every time the coast recomputes, the same
- * way the seam's two edges "move with closest approach as the coast is
- * tuned" (design doc). The closest-approach event transfer-leg emits carries
- * structured `body`/`vInf`/`rmin` fields precisely so this file never has to
- * re-derive them or parse a label string (see transfer-leg.js's
- * coastStretch).
+ * NOTHING IS STORED: the seam is recomputed live from transfer-leg's own
+ * emitted events every time the coast recomputes, so its two edges move with
+ * closest approach as the coast is tuned. The closest-approach event
+ * transfer-leg emits carries structured `body`/`vInf`/`rmin` fields precisely
+ * so this file never has to re-derive them or parse a label string (see
+ * transfer-leg.js's coastStretch).
  *
  * With no encounter at all against the destination (a coast that misses, or
  * a destination this leg's arc never dips inside the SOI of), there is no
@@ -39,10 +37,10 @@ import { originSoiRadius } from "./departure-estimate.js";
 
 var DAY = 86400;
 
-export var SEAM_MIN_DAYS = 2;      // the lower clamp (Kim's own figure — small
-                                    // bodies, e.g. Ceres, still get a workable window)
-export var SEAM_MAX_DAYS = 5;      // the upper clamp — a presentation choice, not
-                                    // physics; keeps giant-SOI arrivals from running months
+export var SEAM_MIN_DAYS = 2;      // lower clamp — small bodies (Ceres, say) still
+                                    // get a workable window
+export var SEAM_MAX_DAYS = 5;      // upper clamp — a presentation choice, not physics;
+                                    // keeps giant-SOI arrivals from running months
 export var ARRIVAL_TAIL_DAYS = 1;  // the window's right edge past closest approach
 
 // Δt (days): the destination SOI-crossing time at the ship's approach speed,
@@ -80,8 +78,8 @@ export function findClosestApproach(events, destination) {
 // Returns { hasEncounter, jd, deltaDays, start, end, vInf, rmin }:
 //   jd          — closest approach epoch, or the fallback epoch
 //   deltaDays   — Δt, or null when there's no encounter
-//   start       — the Coast slider's own end (task 1.2): jd − Δt, or just jd
-//                 when there's no encounter (the window collapses to a point)
+//   start       — the Coast slider's own end: jd − Δt, or just jd when there's
+//                 no encounter (the window collapses to a point)
 //   end         — the Arrival window's right edge: jd + ARRIVAL_TAIL_DAYS, or
 //                 just jd with no encounter
 export function computeArrivalSeam(spec) {

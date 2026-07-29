@@ -1,4 +1,4 @@
-// Node tests for the pure half of ui/phase-slider.js (task B2). The DOM
+// Node tests for the pure half of ui/phase-slider.js. The DOM
 // wrapper (createSegmentedSlider/createCoastSlider) is browser-only and not
 // exercised here — see mission-view.js's in-browser verification instead.
 // Run from the repo root:
@@ -141,7 +141,7 @@ test("departureSliderState: the clock outside the span pins the playhead", () =>
 	assert.equal(departureSliderState({ start: 0, end: 12, jd: 12, stamp }).pinnedAt, null);
 });
 
-// ---- task 1.3: the Arrival slider ------------------------------------------
+// ---- the Arrival slider ----------------------------------------------------
 // The seam window from core/arrival-seam.js: [ca - Δt, ca + 1 day]. The
 // canonical case below is a 3-day Δt, so ca sits at 3/4 of a 4-day span.
 var CA = 100, DT = 3, TAIL = 1;
@@ -220,7 +220,7 @@ test("arrivalSliderState: the clock outside the window pins the playhead, readou
 
 test("arrivalSliderState: BOTH edges move with the encounter, and the marks move with them", () => {
 	// the same window shifted 8 hours later, as tuning the coast would do: every
-	// fraction is unchanged, because both edges derive from ca (task 1.3's point).
+	// fraction is unchanged, because both edges derive from ca.
 	var a = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
 	var d = 1 / 3;
 	var b = arrivalSliderState({ start: AW.start + d, end: AW.end + d, jd: CA + d, ca: CA + d, stamp });

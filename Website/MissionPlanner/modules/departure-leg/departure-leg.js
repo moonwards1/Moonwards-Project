@@ -1,20 +1,20 @@
 /* MissionPlanner/modules/departure-leg — the integrated geocentric flight
- * from carrier release to the Departure→Coast hand-off (task I3, WP-I's
- * heart; absorbs F5's departure half).
+ * from carrier release to the Departure→Coast hand-off, for missions
+ * departing from Earth. modules/body-departure-leg is its generic sibling for
+ * every other origin.
  *
- * HEADLESS in the sense Kim meant it ("the departure leg includes everything
- * that leads up to the hand-off, so there is no point in having that be a
- * [status] card") — `plainCard` still holds: no title/status header, since
- * this stage's own health is exactly the flight's (impact/bound/no-handoff
- * diagnostics). It does have an `init` now (task I4): up to 2 waypoint-impulse
- * cards + a release-point readout, alongside the shell's generic diagnostic
- * boxes. Its visible output is the drawn trajectory polyline in the
- * Earth–Moon frame, its flight events (release, waypoint impulses, SOI exits
- * — the departure slider's real marks at last), and (task I4) each
- * waypoint's gizmo/arrows and the release/waypoint readout boxes.
+ * HEADLESS: `plainCard` means no title/status header, because this stage's own
+ * health is exactly the flight's (impact/bound/no-handoff diagnostics) — the
+ * departure leg covers everything leading up to the hand-off, so a separate
+ * status chip would say nothing extra. Its `init` builds up to 2
+ * waypoint-impulse cards + a release-point readout, alongside the shell's
+ * generic diagnostic boxes. Its visible output is the drawn trajectory polyline
+ * in the Earth–Moon frame, its flight events (release, waypoint impulses, SOI
+ * exits — the Departure slider's marks), and each waypoint's gizmo/arrows and
+ * readout boxes.
  *
- * What update() does, per WP-I's timing model (every recompute one FORWARD
- * pass, no fixed-point iteration, no hidden solving):
+ * What update() does — every recompute is one FORWARD pass, no fixed-point
+ * iteration, no hidden solving:
  *
  *   1. Read the release-epoch ANCHOR from the frozen plan
  *      (frozen-plan.js's releaseAnchorFor) — READ-ONLY, never re-derived.
@@ -26,26 +26,25 @@
  *      its leg's own local dynamical frame (geo-leg's localFrameAt /
  *      burnEffect — prograde means prograde around the leg's actual
  *      primary). A waypoint impulse that leaves the ship diving to a low
- *      perigee before boosting is exactly how a plotted mission cheaply
- *      amplifies v∞ — the Oberth pattern the old patched-conic release
- *      chain could not model.
+ *      perigee before boosting is how a plotted mission cheaply amplifies
+ *      v∞ — the Oberth pattern.
  *   4. The flight ends at EARTH-SOI EXIT — the hand-off. Emit the ship's
  *      heliocentric state there (Frames.bodyHelioState lift, the same Earth
  *      model frozen-plan measures against, so the compliance comparison is
- *      apples-to-apples). The course check (frozen-plan, downstream)
- *      measures this INTEGRATED hand-off against the plan's window.
+ *      apples-to-apples). frozen-plan, downstream, measures this INTEGRATED
+ *      hand-off against the plan's window.
  *
  * A flight that never escapes (bound to the Moon or Earth) or that impacts
  * a body is a hard diagnostic: there is no hand-off to emit. The USER closes
- * the timing/energy loop — the course check reports the gap; fixing it means
- * adjusting the carriers, the waypoint impulses, or re-planning from the
+ * the timing/energy loop — the compliance check reports the gap; fixing it
+ * means adjusting the carriers, the waypoint impulses, or re-planning from the
  * Ephemeris tab. Nothing here ever solves backwards.
  *
  * Params:
  *   waypoints: [{ t, burn: { pro, rad, nrm } }] — up to 2 impulses, t in
- *     SECONDS after release (geo-leg's own leg-time convention; the I4 UI
- *     presents it however it likes), each strictly inside the flight as
- *     integrated so far. Burn axes are the local frame's at that point.
+ *     SECONDS after release (geo-leg's own leg-time convention; the card
+ *     presents it in hours), each strictly inside the flight as integrated so
+ *     far. Burn axes are the local frame's at that point.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; `init` (the sidebar
  * cards) and `draw` (the polyline + gizmos/arrows) are the view hooks.
@@ -112,12 +111,12 @@ function firstCrossing(samples, target, measure) {
 // vinfEarth } or { ok: false, diagnostic }. `samples` are geocentric
 // { r, v, t } — TRUNCATED AT THE HAND-OFF (everything after Earth-SOI exit
 // belongs to the coast); `segs` records each integrated piece's own leg
-// record + the global time (s) it starts at. `wpVisuals` (task I4) is
-// indexed by each waypoint's position in `params.waypoints` (NOT the
-// chronological order used internally) — { renderPos, rLocal, vLocal, eff }
-// per waypoint, the exact inputs the draw hook's gizmo/arrows/readout need,
-// already evaluated in that waypoint's own local dynamical frame (geo-leg's
-// localFrameAt/burnEffect). Exported for Node tests and the draw hook.
+// record + the global time (s) it starts at. `wpVisuals` is indexed by each
+// waypoint's position in `params.waypoints` (NOT the chronological order used
+// internally) — { renderPos, rLocal, vLocal, eff } per waypoint, the exact
+// inputs the draw hook's gizmo/arrows/readout need, already evaluated in that
+// waypoint's own local dynamical frame (geo-leg's localFrameAt/burnEffect).
+// Exported for Node tests and the draw hook.
 export function computeDepartureLeg(params, chainData, anchorJd) {
 	var wps = (params.waypoints || []).map(function (wp, i) {
 		return Object.assign({ originalIndex: i }, wp);
@@ -137,13 +136,13 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 
 	// A bare base with no rotors can't release anything — "released" would
 	// mean the base body's own state, which is degenerate for the integrator
-	// (zero body-relative radius) and meaningless as a mission. This is also
-	// I5's "removed the last carrier" state.
+	// (zero body-relative radius) and meaningless as a mission. This is the
+	// state a mission is in with its departure-technology slot empty.
 	var rotors = chainData.rotors || [];
 	if (rotors.length === 0) {
 		return { ok: false, diagnostic: makeDiagnostic("no-carrier",
 			"The carrier chain has no releasing carrier — nothing sets the payload moving.",
-			{ fix: "Add a carrier technology (e.g. the lunar skyhook) to the departure stack." }) };
+			{ fix: "Add a carrier technology (e.g. the skyhook) to the departure stack." }) };
 	}
 
 	// The released ship: the carrier chain composed at the anchor. The last
@@ -188,10 +187,10 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 
 		if (isLast) { break; }
 
-		// The impulse, in the leg's own local dynamical frame — the SAME
-		// frame the draw hook's gizmo orients to (task I4: "prograde" means
-		// prograde around the leg's own primary at this point, gated on the
-		// leg itself via leg.primary, not on proximity to a body).
+		// The impulse, in the leg's own local dynamical frame — the SAME frame
+		// the draw hook's gizmo orients to. "Prograde" means prograde around the
+		// leg's own primary at this point, gated on the leg itself via
+		// leg.primary, not on proximity to a body.
 		var at = stateAtLegTime(leg, tCut);
 		samples.push({ r: at.r, v: at.v, t: wps[i].t });
 		var frame = localFrameAt(at.r, at.jde, leg.primary);
@@ -273,9 +272,9 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 	};
 }
 
-// Last computed flight per (World, stage) — the draw hook's and I4's data
-// source (same WeakMap pattern as every module: N missions coexist, Worlds
-// reuse stage ids).
+// Last computed flight per (World, stage) — the data source for the draw hook
+// and the card's readouts. Same WeakMap pattern as every module here: N
+// missions coexist and their Worlds reuse stage ids.
 var lastByWorld = new WeakMap();
 export function legFor(world, stageId) {
 	var m = lastByWorld.get(world);
@@ -296,9 +295,9 @@ export default {
 	accepts: ["carrier-chain"],
 	emits: ["ship-state"],
 	rendersIn: ["body:Earth-Moon"],
-	// Still no title/status header (see header comment) — `init` (task I4)
-	// only ever adds the waypoint-impulse cards + release readout; the
-	// generic diagnostic boxes still render below whatever it builds.
+	// No title/status header (see header comment) — `init` only adds the
+	// waypoint-impulse cards + release readout; the shell's generic diagnostic
+	// boxes still render below whatever it builds.
 	plainCard: true,
 
 	update: function (ctx, input) {
@@ -331,16 +330,15 @@ export default {
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
 
-	// Task I4: up to 2 waypoint-impulse cards (the coast sidebar's stripped
-	// per-waypoint pattern, transfer-leg.js's own init — but `t` here is
-	// SECONDS after release, presented as hours since a departure flight
-	// runs hours-to-days, not the coast's hundreds of days) plus a
-	// release-point readout box. Burn Δv/plane-change/prograde-Δv readouts
-	// use the SAME straddling-box mechanism the Ephemeris tab's waypoints do
-	// (Shared/sim/readout-panes.js) — geo-leg's burnEffect (computeDepartureLeg,
-	// stored per-waypoint in leg.wpVisuals) already returns exactly the shape
-	// renderReadoutBoxes expects, so no separate readout-data function is
-	// needed here the way the Ephemeris tab's own burnReadoutData is.
+	// Up to 2 waypoint-impulse cards (the same per-waypoint pattern as
+	// transfer-leg.js's init — but `t` here is SECONDS after release, presented
+	// as hours, since a departure flight runs hours-to-days rather than the
+	// coast's hundreds of days) plus a release-point readout box. The burn
+	// Δv/plane-change/prograde-Δv readouts use the same straddling-box mechanism
+	// the Ephemeris tab's waypoints do (Shared/sim/readout-panes.js): geo-leg's
+	// burnEffect, stored per-waypoint in leg.wpVisuals by computeDepartureLeg,
+	// already returns exactly the shape renderReadoutBoxes expects, so no
+	// separate readout-data function is needed here.
 	init: function (ctx) {
 		var host = ctx.panelHost;
 
@@ -488,9 +486,9 @@ export default {
 	},
 
 	// The flight polyline in the Earth–Moon frame (geocentric — the frame's
-	// own coordinates), release and hand-off dots, plus (task I4) each
-	// waypoint's prograde/radial/normal gizmo and dV/prograde-speed-change
-	// arrows. snap = { world, stageId, params, result }.
+	// own coordinates), release and hand-off dots, plus each waypoint's
+	// prograde/radial/normal gizmo and dV/prograde-speed-change arrows.
+	// snap = { world, stageId, params, result, phase }.
 	draw: function (view, snap) {
 		function disposeDeep(o) {
 			if (o.children) { o.children.slice().forEach(disposeDeep); }
@@ -533,9 +531,10 @@ export default {
 		// arrows, each oriented from its OWN local dynamical frame (computed once
 		// in computeDepartureLeg, stored in leg.wpVisuals) rather than the plain
 		// ecliptic-anchored frame createWaypointGizmo would derive from renderPos
-		// alone — exactly the split its own header documents (render position vs.
+		// alone — the split its own header documents (render position vs.
 		// burn-frame position can differ). Held at a constant on-screen size via
-		// view.pxScaled, the shell's per-frame rescale hook (mission-view.js).
+		// view.pxScaled, the shell's per-frame rescale hook (mission-view.js's
+		// updateChevrons).
 		(leg.wpVisuals || []).forEach(function (wv) {
 			if (!wv) { return; }
 			var renderPos = new THREE.Vector3(wv.renderPos[0] / U, wv.renderPos[1] / U, wv.renderPos[2] / U);

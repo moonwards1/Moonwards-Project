@@ -1,7 +1,7 @@
 // Node tests for the shared arrival-approach helpers (modules/arrival-approach.js):
 // approachAt (the coast's delivered v∞ / miss distance at the destination) and
 // interceptWarning (the non-blocking "not arriving yet" warning). Relocated here
-// 2026-07-20 from the retired capture-burn module. Run from the repo root:
+// Run from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/arrival-approach.test.js
 
 import test from "node:test";

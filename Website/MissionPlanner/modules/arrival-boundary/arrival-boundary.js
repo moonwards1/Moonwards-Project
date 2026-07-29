@@ -1,65 +1,56 @@
 /* MissionPlanner/modules/arrival-boundary — the Coast→Arrival compliance
- * boundary (WP-1 task 1.5): the mirror of frozen-plan at the other end of the
- * mission.
+ * boundary: the mirror of frozen-plan at the other end of the mission.
  *
  * ONE COMPARISON, AT ONE SEAM. The frozen plan commits to an arrival — body,
  * epoch, approach v∞ — when the mission is created, and never moves after
- * that (MissionPlannerTasks_v2.md's settled rules: "the commitment is frozen
- * at mission creation, never moves, and is what the arrival boundary compares
- * against"). This stage sits between the coast and the arrival phase and makes
+ * that. This stage sits between the coast and the arrival phase and makes
  * exactly one comparison: what the coast actually delivers at the destination,
  * against what the plan committed to. See ARCHITECTURE.md's "Phases are
- * chains; compliance is a boundary check, not a reconciliation" — this is the
- * second instance of the shape frozen-plan was the first of, and deliberately
- * the same shape.
+ * chains; compliance is a boundary check, not a reconciliation" — the same
+ * shape modules/frozen-plan implements at the departure seam.
  *
  * WHAT IS AND ISN'T MIRRORED. frozen-plan is AUTHORITATIVE: it emits the
  * plan's own frozen departure state downstream whatever the departure tech
  * delivered, so the coast everyone sees is the committed plan. This boundary
- * emphatically does NOT do that, and the asymmetry is the design, not an
- * omission:
+ * emphatically does NOT do that, and the asymmetry is deliberate:
  *
  *   - At the departure seam the plan is the thing being flown TOWARD, so it
  *     can stand in for a tech that isn't delivering yet.
  *   - At the arrival seam the ship is simply where the coast put it. The
- *     arrival phase's whole job is refining THAT approach (task 7.1 makes the
- *     arrival leg the coast's true continuation), so substituting a committed
- *     state would defeat the phase. And the commitment could not stand in
- *     anyway: it fixes a body, an epoch and an approach SPEED, but no approach
- *     DIRECTION — there is no state to synthesize from it.
+ *     arrival phase's whole job is refining THAT approach, so substituting a
+ *     committed state would defeat the phase. And the commitment could not
+ *     stand in anyway: it fixes a body, an epoch and an approach SPEED, but no
+ *     approach DIRECTION — there is no state to synthesize from it.
  *
  * So the delivered ship-state passes through UNCHANGED and the mismatch goes
  * out on the warnings channel. This stage measures; it never alters.
  *
- * THE BOUNDARY FLAG (recompute.js's `boundary: true`, reused unchanged) means
- * a broken or half-built departure/coast upstream does not mark this stage
- * "blocked": it is computed with input null and reports the shortfall itself,
- * so the seam always states what the arrival phase is missing rather than the
- * whole phase greying out with no explanation. Note the consequence
- * downstream: with nothing delivered there is no packet to pass on, so the
- * arrival leg then reports its own missing-input diagnostic instead of
- * "blocked — waiting on the coast leg". That is honest — the arrival leg
- * genuinely has no state to build from — and it is the price of the boundary
- * reporting at all. A boundary never blocks; only its own damaged params
- * would.
+ * THE BOUNDARY FLAG (recompute.js's `boundary: true`) means a broken or
+ * half-built departure/coast upstream does not mark this stage "blocked": it is
+ * computed with input null and reports the shortfall itself, so the seam always
+ * states what the arrival phase is missing rather than the whole phase greying
+ * out with no explanation. Note the consequence downstream: with nothing
+ * delivered there is no packet to pass on, so arrival-leg then reports its own
+ * missing-input diagnostic instead of "blocked — waiting on the coast leg".
+ * That is honest — the arrival leg genuinely has no state to build from — and
+ * it is the price of the boundary reporting at all. A boundary never blocks;
+ * only its own damaged params would.
  *
  * NO PARAMS, NO SAVE-FORMAT DATA. The commitment belongs to the plan, and is
  * read through frozen-plan's own arrivalCommitmentFor(world) — the function
- * that exists precisely so arrival stages stop groping through the stage list
- * for it. The stage entry itself carries `{}`. (Adding the stage to the chain
- * IS a profile change; core/world.js's v3→v4 migration inserts it into saves
- * that predate it.)
+ * that exists precisely so arrival stages need not grope through the stage list
+ * for it. The stage entry itself carries `{}`. Its presence in the chain IS a
+ * profile fact, so core/world.js's v3→v4 migration inserts it into saves that
+ * predate it.
  *
  * THE EPOCH TOLERANCE is the plan's own hand-off window half-width
  * (handoffWindowDays, ±1 d by default) — the same field the departure seam
- * checks against, read through frozen-plan's handoffWindowFor. core/freeze.js
- * already anticipated this ("Arrival will need the same looseness"). When the
- * arrival end wants a figure of its own it gets its own field; reusing the one
- * that exists keeps 1.1's discipline of adding no save-format fields.
+ * checks against, read through frozen-plan's handoffWindowFor. One window
+ * serves both seams.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; `init` is the
- * browser-only card — a three-row PLAN COMMITS / COAST DELIVERS readout and
- * nothing else. No draw hook: the boundary owns no hardware.
+ * browser-only card — a PLAN COMMITS / COAST DELIVERS readout and nothing
+ * else. No draw hook: the boundary owns no hardware.
  *
  * Imports from ../../core/ and sibling modules — this folder breaks if moved
  * without them coming along.
@@ -76,17 +67,16 @@ var O = OrbitalMath;
 
 // How far the delivered approach speed may miss the committed one before a
 // warning is raised. Its own constant rather than frozen-plan's VINF_TOL,
-// though it starts at the same 10 m/s: the two ends of a mission are judged
-// by different hardware (an injection carrier vs a catch platform), and the
-// arrival figure is the one likeliest to move once a tug or aerobrake is
-// modelled — see the task doc's open question 6.
+// though it holds the same value: the two ends of a mission are judged by
+// different hardware (an injection carrier vs a catch platform), so the two
+// tolerances are free to diverge.
 export var ARRIVAL_VINF_TOL = 10;   // m/s
 
 export var defaultParams = {};      // the commitment lives on the plan
 
 // isFinite(null) is true (null coerces to 0), and arrivalCommitmentFor returns
-// a null vInf for pre-H2 plans — so "is there a committed speed at all?" needs
-// the type check, not just finiteness.
+// a null vInf for a plan that records no approach speed — so "is there a
+// committed speed at all?" needs the type check, not just finiteness.
 function isNum(x) { return typeof x === "number" && isFinite(x); }
 
 function isoOf(jd) {
@@ -108,17 +98,17 @@ function isoOf(jd) {
 //     delivered:  { body, jd, vInf, missAU, vInfVec } | null,
 //     rows: [{ key: "encounter"|"vinf"|"epoch", required, delivered, delta, ok }] }
 //
-// rows exist only when both sides do; a commitment with no vInf (a pre-H2
-// plan) simply omits the vinf row rather than inventing a requirement. Delta
-// units are AU, m/s and days respectively. Exported for Node tests and the card.
+// rows exist only when both sides do; a commitment with no vInf simply omits
+// the vinf row rather than inventing a requirement. Delta units are AU, m/s and
+// days respectively. Exported for Node tests and the card.
 export function computeArrivalCompliance(spec) {
 	var commitment = spec.commitment || null;
 	var data = spec.data || null;
 
 	if (!commitment) {
-		// Nothing was ever committed to (a pre-comply save, or a plan with no
-		// destination). There is no standard to measure against, so there is
-		// nothing to say — not even a warning.
+		// Nothing was ever committed to (a mission with no frozen plan, or a plan
+		// with no destination). There is no standard to measure against, so there
+		// is nothing to say — not even a warning.
 		return { ok: true, commitment: null, delivered: null, rows: [] };
 	}
 	if (!data) {
@@ -240,6 +230,7 @@ export default {
 	// this stage is still called, with input null.
 	boundary: true,
 	rendersIn: ["body:destination"],   // aliased to the mission's destination frame
+	                                    // by mission-view.js's resolveFrameId
 
 	update: function (ctx, input) {
 		var data = null;

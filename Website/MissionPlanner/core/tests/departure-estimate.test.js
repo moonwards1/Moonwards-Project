@@ -1,4 +1,4 @@
-// Node tests for core/departure-estimate.js (task D7). Run from the repo
+// Node tests for core/departure-estimate.js. Run from the repo
 // root:  node --test Website/MissionPlanner/core/tests/departure-estimate.test.js
 //
 // The wedge-rule cases construct real dates: quarter epochs are found by
@@ -107,7 +107,7 @@ test("the dive wedge is 75° wide: 35° off the anti-Moon axis dives, 40° does 
 	var outside = estimateDeparture(specAtWedgeAngle(jd, 40, 5500));
 	assert.ok(inside.ok && outside.ok);
 	assert.equal(inside.profile, "dive-in");
-	assert.equal(outside.profile, "direct-out");   // dived under the old ±45° quarter rule
+	assert.equal(outside.profile, "direct-out");   // outside the 75° dive wedge
 });
 
 test("profile override pins the course regardless of the Moon's wedge", () => {

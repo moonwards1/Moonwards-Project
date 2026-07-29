@@ -1,4 +1,4 @@
-// Node tests for the GENERIC departure system (task J2, WP-J): the
+// Node tests for the GENERIC (non-Earth) departure system: the
 // orbital-skyhook carrier + body-departure-leg release modules, on
 // Shared/body-leg.js. Run from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/body-departure.test.js

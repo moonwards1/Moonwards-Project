@@ -1,4 +1,4 @@
-// Node tests for core/arrival-seam.js (WP-1 task 1.1). Run from the repo
+// Node tests for core/arrival-seam.js. Run from the repo
 // root:  node --test Website/MissionPlanner/core/tests/arrival-seam.test.js
 
 import test from "node:test";

@@ -1,66 +1,62 @@
 /* MissionPlanner/core/departure-estimate.js — how long the departure leg
- * lasts, estimated from the plan alone (task D7).
+ * lasts, estimated from the plan alone.
  *
  * The frozen plan pins the Departure→Coast hand-off; the release happens
  * flight-time EARLIER. Nothing about the eventual tech or course is known
- * when the plan is frozen, so this estimate must come from the plan's own
+ * when the plan is frozen, so this estimate comes from the plan's own
  * numbers: the required hyperbolic excess (v∞ = hand-off velocity minus the
  * origin body's), the hand-off epoch, and — for Earth — where the Moon is.
- * The estimate authors two things: the Ephemeris tab's "Moon phase at
- * launch" widget, and the read-only release anchor core/freeze.js bakes
- * into the plan (WP-I's timing model; the ±1 d hand-off window absorbs the
- * estimate's error) as frozen-plan's releaseAnchorJd.
+ * The estimate feeds two things: the Ephemeris tab's "Moon phase at launch"
+ * widget (ephemeris-view.js's buildMoonWidget/updateMoonWidgets), and the
+ * read-only release anchor core/freeze.js bakes into the plan as
+ * frozen-plan's releaseAnchorJd. The ±1 d hand-off window absorbs the
+ * estimate's error.
  *
- * That anchor (frozen-plan's releaseAnchorJd) is read back through
- * frozen-plan.js's releaseAnchorFor(), and consumed by: frozen-plan.js's own
- * epoch-compliance row; arrival-boundary.js's mirror at the far seam; AND —
- * for every origin, not just Earth — moon-platform.js, departure-leg.js and
- * body-departure-leg.js, which stamp their Release flight event at exactly
- * this epoch. So once a departure tech resolves a real flight, the mission
- * tab's Departure slider (ui/phase-slider.js's createDepartureSlider /
- * mission-view.js's departureSpan) already shows this anchor as the LEFT
- * edge, pinned, via that Release event — not through any special-casing in
- * the slider itself. What still ignores this anchor is departureSpan's
- * PRE-resolution default (departureDefaultSpanSeconds), which re-derives its
- * own backward-from-hand-off estimate instead of just reading
- * releaseAnchorJd directly; reconciling that, plus getting the committed
- * hand-off (frozen-plan's "Plan departure" event) to render as its own mark
- * on this slider, is what remains of task 1.4.
+ * That anchor is read back through frozen-plan.js's releaseAnchorFor(), and
+ * consumed by frozen-plan.js's own epoch-compliance row, arrival-boundary.js's
+ * mirror at the far seam, and — for every origin, not just Earth —
+ * moon-platform.js, departure-leg.js and body-departure-leg.js, which stamp
+ * their Release flight event at exactly this epoch. mission-view.js's
+ * departureSpan reads it directly too: for a satellite-carrier origin
+ * (Earth/Moon), it is the Departure slider's pinned LEFT edge outright, even
+ * before any departure tech resolves a real flight; other origins anchor the
+ * RIGHT edge at the plan's committed hand-off instead and derive the LEFT edge
+ * from it, so this anchor there only sets the pre-resolution floating edge's
+ * starting guess (departureDefaultSpanSeconds re-derives its own estimate
+ * rather than reading it, so that edge can sit slightly away from where a
+ * resolved flight's own Release/SOI-exit events will land).
  *
  * Earth departures (this project's carriers all start near the Moon) use an
  * exact two-body SOI-exit time from the Moon's mean distance, choosing
- * between two course profiles by Kim's Moon-wedge rule (2026-07-16 as a
- * ±45° quarter; narrowed to a 75° wedge, ±37.5°, 2026-07-23): DIVE-IN — the
- * course first drops to a low-perigee Oberth pass — when the Moon sits
- * within ±37.5° of the direction OPPOSITE the exit heading (the geometry
- * that forces the ship to cross Earth's vicinity: around first quarter for
- * a prograde launch, last quarter for retrograde); DIRECT-OUT otherwise.
- * Narrower than the geometric quarter because near its edges the dive's
- * benefit diminishes: there the flyby only pays when a cheap plane change
- * justifies its cost in departure prograde/retrograde speed (Kim) — and a
- * planner who wants that can force the profile, see spec.profile below. The
- * check is the sign test dot(moonHat, exitHat) < −cos 37.5°, evaluated in
- * TWO bounded passes: a tentative direct-out launch date locates the Moon,
- * the profile is chosen, the estimate is final — never an iteration (a
- * derived release date that keeps moving slides the Moon under the user;
- * see WP-I's preamble). Measured against the shipped skyhook chain (v∞
- * 5.50 km/s): direct-out 1.75 d, dive-in 2.58 d vs the chain's real 2.56 d
- * — and that release genuinely dives (geocentric perigee 24,200 km).
+ * between two course profiles by the Moon-wedge rule: DIVE-IN — the course
+ * first drops to a low-perigee Oberth pass — when the Moon sits within ±37.5°
+ * of the direction OPPOSITE the exit heading (the geometry that forces the
+ * ship to cross Earth's vicinity: around first quarter for a prograde launch,
+ * last quarter for retrograde); DIRECT-OUT otherwise. The wedge is narrower
+ * than the geometric quarter because near its edges the dive's benefit
+ * diminishes — there the flyby only pays when a cheap plane change justifies
+ * its cost in departure prograde/retrograde speed, and a planner who wants
+ * that can force the profile (spec.profile below). The check is the sign test
+ * dot(moonHat, exitHat) < −cos 37.5°, evaluated in TWO bounded passes: a
+ * tentative direct-out launch date locates the Moon, the profile is chosen,
+ * the estimate is final. Never an iteration — a derived release date that
+ * keeps moving would slide the Moon under the user. Measured against the
+ * shipped skyhook chain (v∞ 5.50 km/s): direct-out 1.75 d, dive-in 2.58 d vs
+ * the chain's real 2.56 d, and that release genuinely dives (geocentric
+ * perigee 24,200 km).
  *
- * Non-Earth origins have no Moon model and keep the naive pre-D7 estimate
- * (SOI radius / v∞) until their own departure systems exist (WP-I's mirror
- * for Mars–Phobos etc.).
+ * Non-Earth origins have no Moon model and use the naive estimate
+ * (SOI radius / v∞).
  *
- * Also exports the Moon readouts the D7 widget shows beside the estimate:
+ * Also exports the Moon readouts the widget shows beside the estimate:
  * elongation (phase) and the Moon's speed along EARTH'S OWN heliocentric
- * prograde (Kim's educational framing — the same prograde axis the waypoint
- * gizmo uses, so the sign visibly adds to or subtracts from a launch).
+ * prograde — the same prograde axis the waypoint gizmo uses, so the sign
+ * visibly adds to or subtracts from a launch.
  *
  * Pure (no DOM, no THREE) — Node-testable. Frames note: LunarEphemeris
  * works geocentric ecliptic-of-date in km; the plan's vectors are ecliptic
  * J2000-ish from orbit.js elements. The ~0.4°/30 yr precession between the
- * two is far below this file's needs (a ±45° quadrant test and a phase
- * glyph).
+ * two is far below this file's needs (a wedge test and a phase glyph).
  */
 
 import { systems } from "../../Shared/orbit.js";
@@ -95,7 +91,7 @@ export function originSoiRadius(origin) {
 }
 
 // Moon–Sun elongation (deg, 0..360; 0 new, 90 first quarter, 180 full,
-// 270 last quarter) — the phase the D7 glyph draws.
+// 270 last quarter) — the phase the Ephemeris tab's Moon glyph draws.
 export function moonElongationDeg(jd) {
 	var m = LE.moonVector(jd);
 	var lonMoon = Math.atan2(m[1], m[0]) * 180 / Math.PI;
@@ -104,8 +100,9 @@ export function moonElongationDeg(jd) {
 }
 
 // The Moon's geocentric speed (m/s) along Earth's own heliocentric prograde
-// direction — the D7 widget's "Relative speed" bar. earthHelioV is Earth's
-// heliocentric velocity (m/s) at the same date.
+// direction — the Moon widget's "Relative speed" bar, and the free speed
+// ephemeris-view.js's assistedBurn folds into an authored departure burn.
+// earthHelioV is Earth's heliocentric velocity (m/s) at the same date.
 export function moonProgradeSpeed(jd, earthHelioV) {
 	var v = LE.moonState(jd).v;                      // km/s
 	return O.vDot([v[0] * 1e3, v[1] * 1e3, v[2] * 1e3], O.vUnit(earthHelioV));
@@ -117,9 +114,9 @@ export function moonProgradeSpeed(jd, earthHelioV) {
 //   jdHandoff,   // the plan's nominal Departure→Coast hand-off epoch
 //   profile      // optional Earth-course override: "dive-in" | "direct-out"
 //                //   pins the profile (near the wedge's edge both are
-//                //   genuinely viable — Kim, 2026-07-23, so the choice is
-//                //   the planner's); anything else (or absent) = the auto
-//                //   wedge rule. Ignored for non-Earth origins.
+//                //   genuinely viable, so the choice is the planner's);
+//                //   anything else (or absent) = the auto wedge rule.
+//                //   Ignored for non-Earth origins.
 // }
 // Returns { ok: true, seconds, days, jdLaunch, profile, vInf } with profile
 // one of "dive-in" | "direct-out" | "naive", or { ok: false, reason } when
@@ -141,7 +138,7 @@ export function estimateDeparture(spec) {
 	if (spec.origin !== "Earth") { return done(rSoi / vInf, "naive"); }
 
 	var tDirect = O.soiExitTimeDirect(EARTH.GM, vInf, MOON_DIST, rSoi);
-	if (tDirect == null) { return done(rSoi / vInf, "naive"); }   // degenerate geometry — keep the old estimate
+	if (tDirect == null) { return done(rSoi / vInf, "naive"); }   // degenerate geometry — fall back to the naive estimate
 
 	// Pick the profile: honour a forced override; otherwise (pass 2 of the
 	// auto rule) locate the Moon at the tentative launch and apply the wedge.

@@ -1,10 +1,8 @@
-// Node tests for the arrival phase (tasks H2/H3): the arrival flyby leg
-// (arrival-leg), the arrival-skyhook catch (WP-J's generic tether run in
-// reverse), the arrival-tech catalog, and the frozen plan's arrival-commitment
-// lookup. The chemical capture-burn was retired 2026-07-20 (arrival is empty by
-// default now); its own tests go with its redo. The shared arrival-approach
-// helpers (approachAt / interceptWarning) are tested in arrival-approach.test.js.
-// Run from the repo root:
+// Node tests for the arrival phase: the arrival flyby leg (arrival-leg), the
+// arrival-skyhook catch (the generic tether run in reverse), the arrival-tech
+// catalog, and the frozen plan's arrival-commitment lookup. The shared
+// arrival-approach helpers (approachAt / interceptWarning) are tested in
+// arrival-approach.test.js. Run from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/arrival.test.js
 // The view hooks (init/draw) are browser-only and not exercised here.
 
@@ -80,7 +78,7 @@ test("computeCatch: no body / bad geometry diagnose like the departure skyhook",
 	assert.equal(bad.diagnostic.code, "bad-params");
 });
 
-// ---- arrival-leg: the constructed flyby hand-off (task H3) ------------------
+// ---- arrival-leg: the constructed flyby hand-off ---------------------------
 
 test("referencePeriapsis: periapsis at the requested radius, incoming asymptote along the delivered heading", function () {
 	var GM = bodyPhysics("Ceres").GM;
@@ -193,7 +191,7 @@ function makeFrozenMission() {
 	reg.register(departureLeg);   // carrier slot) freeze now prepends
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalBoundary);   // the Coast→Arrival compliance boundary (task 1.5)
+	reg.register(arrivalBoundary);   // the Coast→Arrival compliance boundary
 	reg.register(arrivalLeg);
 	reg.register(arrivalSkyhook);
 	return { world: res.world, engine: createEngine(res.world, reg) };
@@ -220,7 +218,7 @@ test("engine: a frozen mission flies its scaffold → coast → flyby leg; both 
 	var rLeg = m.engine.resultFor(stageId("transfer-leg"));
 	assert.deepEqual(rLeg.warnings.map(function (w) { return w.code; }), ["misses-destination"]);
 
-	// the arrival boundary (task 1.5) reports the same miss from the OTHER side
+	// the arrival boundary reports the same miss from the OTHER side
 	// of the seam — its own comparison against the plan's commitment — and
 	// passes the delivered state straight through rather than substituting one
 	var rBound = m.engine.resultFor(stageId("arrival-boundary"));
@@ -237,7 +235,7 @@ test("engine: a frozen mission flies its scaffold → coast → flyby leg; both 
 });
 
 test("engine: a BROKEN coast doesn't blank the arrival seam — the boundary still reports", function () {
-	// This is the whole reason the stage carries `boundary: true` (task 1.5,
+	// This is the whole reason the stage carries `boundary: true` (recompute.js's boundary rule,
 	// reusing frozen-plan's mechanism): a coast that fails must not leave the
 	// arrival phase silently greyed out. Break the coast with a negative
 	// duration, the way a damaged save or a bad edit would.

@@ -1,23 +1,23 @@
 /* MissionPlanner/modules/body-departure-leg — the integrated escape flight
- * from a generic-origin skyhook release to the Departure→Coast hand-off
- * (task J2, WP-J: departure from any body on the HELIO_BODIES list).
+ * from a generic-origin skyhook release to the Departure→Coast hand-off, for
+ * departures from any body on scene-frames.js's HELIO_BODIES list.
  *
  * The GENERIC sibling of departure-leg.js: same headless role and same shape,
  * but the flight is BODY-centric (origin body + Sun, Shared/body-leg.js — the
  * Mars-Phobos plotter's escape integrator, generalized) instead of geocentric
  * (Earth + Moon + Sun, geo-leg.js). The origin body comes from the incoming
- * carrier chain's `base` (orbital-skyhook set it), so one module serves Mars,
- * Ceres, Vesta, … — the release physics only ever needs the body's own
+ * carrier chain's `base`, which orbital-skyhook sets, so one module serves
+ * Mars, Ceres, Vesta, … — the release physics only ever needs the body's own
  * GM/radius/SOI.
  *
  * HEADLESS (`plainCard`): no title/status header — this stage's health is
  * exactly the flight's (impact/bound/no-handoff diagnostics). Its `init` adds
- * up to 2 waypoint-impulse cards + a release readout (mirroring departure-leg's
- * task-I4 UI); its visible output is the trajectory polyline in the origin-body
- * frame, its flight events (release, waypoint impulses, body-SOI exit), and
- * each waypoint's gizmo/arrows/readout boxes.
+ * up to 2 waypoint-impulse cards + a release readout; its visible output is the
+ * trajectory polyline in the origin-body frame, its flight events (release,
+ * waypoint impulses, body-SOI exit), and each waypoint's gizmo/arrows/readout
+ * boxes.
  *
- * update() (every recompute one FORWARD pass, no fixed-point iteration):
+ * update() — every recompute is one FORWARD pass, no fixed-point iteration:
  *   1. Read the release-epoch ANCHOR from the frozen plan (releaseAnchorFor) —
  *      READ-ONLY, never re-derived.
  *   2. Evaluate the incoming carrier-chain packet there
@@ -26,26 +26,25 @@
  *      applying up to 2 waypoint impulses, each in its leg's own local
  *      dynamical frame (body-leg's localFrameAt / burnEffect).
  *   4. The flight ends at ORIGIN-BODY-SOI EXIT — the hand-off. Emit the ship's
- *      heliocentric state there (Frames.localToHelio(body, …)). The course
- *      check (frozen-plan, downstream) measures this integrated hand-off
- *      against the plan's window.
+ *      heliocentric state there (Frames.localToHelio(body, …)). frozen-plan,
+ *      downstream, measures this integrated hand-off against the plan's window.
  *
  * A flight that never escapes (bound to the body) or impacts it is a hard
  * diagnostic — there is no hand-off to emit. The USER closes the loop: the
- * course check reports the gap; fixing it means adjusting the carrier, the
+ * compliance check reports the gap; fixing it means adjusting the carrier, the
  * waypoint impulses, or re-planning from the Ephemeris tab.
  *
  * Params: waypoints: [{ t, burn: { pro, rad, nrm } }] — up to 2, t in SECONDS
  * after release, each strictly inside the flight as integrated so far.
  *
- * RENDER FRAME: rendersIn declares "body:origin" — task J3 aliases it to the
- * mission's own origin frame (buildBodyFrame, J1). See orbital-skyhook.js.
+ * RENDER FRAME: rendersIn declares "body:origin", which mission-view.js's
+ * resolveFrameId aliases to the mission's own origin frame
+ * (scene-frames.js's buildBodyFrame). See orbital-skyhook.js.
  *
- * This is a close structural copy of departure-leg.js's I4 view layer (the
- * waypoint cards, readout boxes, gizmo/arrow draw; the vector editor is
- * already shared — Shared/sim/vector-editor.js) — a future refactor could
- * share the rest; kept separate here to leave the working lunar leg
- * untouched. update() is pure and Node-testable.
+ * The view layer here is a close structural copy of departure-leg.js's (the
+ * waypoint cards, readout boxes, gizmo/arrow draw); only the vector editor is
+ * genuinely shared, via Shared/sim/vector-editor.js. update() is pure and
+ * Node-testable.
  *
  * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this folder
  * breaks if moved without them coming along.
@@ -140,7 +139,7 @@ export function computeBodyDepartureLeg(params, chainData, anchorJd) {
 	if (rotors.length === 0) {
 		return { ok: false, diagnostic: makeDiagnostic("no-carrier",
 			"The carrier chain has no releasing carrier — nothing sets the payload moving.",
-			{ fix: "Add a carrier technology (e.g. the orbital skyhook) to the departure stack." }) };
+			{ fix: "Add a carrier technology (e.g. the skyhook) to the departure stack." }) };
 	}
 
 	var SOI_BODY = bodySOI(body);
@@ -243,7 +242,8 @@ export function computeBodyDepartureLeg(params, chainData, anchorJd) {
 }
 
 // Last computed flight per (World, stage) — the draw hook's and init's data
-// source (same WeakMap pattern as every module).
+// source. Same WeakMap pattern as every module here: keyed by World first,
+// because N missions coexist and their Worlds reuse stage ids.
 var lastByWorld = new WeakMap();
 export function legFor(world, stageId) {
 	var m = lastByWorld.get(world);
@@ -262,7 +262,8 @@ export default {
 	attachesTo: null,
 	accepts: ["carrier-chain"],
 	emits: ["ship-state"],
-	rendersIn: ["body:origin"],   // resolved to the mission's origin frame by task J3
+	rendersIn: ["body:origin"],   // aliased to the mission's origin frame by
+	                               // mission-view.js's resolveFrameId
 	plainCard: true,
 
 	update: function (ctx, input) {

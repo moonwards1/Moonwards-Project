@@ -1,11 +1,11 @@
 /* Mission Planner — Three.js frame factories.
  *
- * Extracted from mission-view.js by task D1 so the Ephemeris tab (its own
- * view, ephemeris-view.js) can build the exact same heliocentric frame a
- * mission view uses, rather than forking the scene-building code. A "frame"
- * here is one Three.js scene + camera + body placement for a system the
- * shell can show in a pane — "helio" (the whole solar system) or
- * "body:Earth-Moon" (geocentric).
+ * A "frame" here is one Three.js scene + camera + body placement for a system
+ * the shell can show in a pane: "helio" (the whole solar system),
+ * "body:Earth-Moon" (geocentric), or a generic "body:<name>" for any
+ * HELIO_BODIES entry. Both mission-view.js and ephemeris-view.js build their
+ * frames from here, so the Ephemeris tab and a mission tab show the identical
+ * heliocentric scene rather than two forks of it.
  *
  * Not to be confused with Shared/frames.js, which is heliocentric <->
  * body-relative COORDINATE patching for ship-state packets — this file
@@ -33,9 +33,9 @@ var EARTH = systems.get("Earth");
 var MOON = systems.get("Moon");
 var GM_SUN = SUN.GM;
 
-// Exported so callers building an origin/destination select (task D2) offer
-// exactly the bodies buildHelioFrame() actually draws — a body missing from
-// the frame has no bodyNode()/gizmo home to hang a leg off of.
+// Exported so callers building an origin/destination select (ephemeris-view.js)
+// offer exactly the bodies buildHelioFrame() actually draws — a body missing
+// from the frame has no bodyNode()/gizmo home to hang a leg off of.
 export var HELIO_BODIES = ["Mercury", "Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
 	"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"];
 
@@ -128,22 +128,20 @@ export function buildHelioFrame() {
 	};
 }
 
-// Generic body-local frame: one hero sphere for `name` (a HELIO_BODIES
-// entry) at the scene origin, lit by a directional light pointed at the true
-// Sun direction for that body/date. Task J1 (= H1): serves WP-H's arrival
-// system and WP-J's "departure from any body" package alike. Deliberately
-// thinner than buildEarthMoonFrame — there is no real satellite to place
-// (Phobos etc. are orbit-radius sources only, never true ephemeris bodies,
-// per WP-J's own framing). A carrier module (J2) draws its own skyhook
-// orbit ring standing in for the "moon" ring the Earth-Moon frame draws
-// itself.
+// Generic body-local frame: one hero sphere for `name` (a HELIO_BODIES entry)
+// at the scene origin, lit by a directional light pointed at the true Sun
+// direction for that body/date. Serves both ends of a mission — the origin
+// frame for a non-Earth departure and the destination frame for any arrival.
+// Deliberately thinner than buildEarthMoonFrame: there is no real satellite to
+// place (Phobos and friends are orbit-radius sources only, never true ephemeris
+// bodies here). A skyhook module draws its own orbit ring, standing in for the
+// "moon" ring the Earth-Moon frame draws itself.
 //
-// Orientation context (2026-07-18, Kim — "done up the way they are in
-// Moon-Skyhook": the body must not sit isolated in space): a visible Sun
+// Orientation context, so the body never sits isolated in space: a visible Sun
 // marker + label along the true Sun direction, and the local stretch of the
 // body's OWN heliocentric orbit drawn through the origin (its position at
-// nearby dates relative to its position now, rebuilt as the clock moves) —
-// so the pane always shows which way the Sun lies and which way the body is
+// nearby dates relative to its position now, rebuilt as the clock moves) — so
+// the pane always shows which way the Sun lies and which way the body is
 // travelling.
 export function buildBodyFrame(name) {
 	var sys = systems.get(name);
@@ -250,8 +248,8 @@ export function buildEarthMoonFrame() {
 	var scaleList = [], labelList = [];
 	var labelLayer = makeLabelLayer();
 
-	// Hero bodies, untextured — the plotters' textured Earth/Moon stay
-	// calculator-specific; the scaffold only needs recognisable spheres.
+	// Hero bodies, untextured — the standalone plotters' textured Earth/Moon
+	// stay calculator-specific; the planner only needs recognisable spheres.
 	var earthGroup = new THREE.Group();
 	var earthCore = new THREE.Mesh(
 		new THREE.SphereGeometry(EARTH.radius / U, 32, 24),

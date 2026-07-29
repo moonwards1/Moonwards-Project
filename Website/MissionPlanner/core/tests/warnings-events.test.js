@@ -202,7 +202,7 @@ test("blocked stages carry empty warnings/events", function () {
 });
 
 // ---- compliance boundaries: `boundary: true` terminates the block chain -----
-// The departure-flaw fix (2026-07-20): a broken/absent departure must not
+// A broken or absent departure must not
 // blank the committed plan or the coast past it. A `boundary` stage is
 // computed with input null instead of being blocked, and reports the shortfall
 // as its own warning.

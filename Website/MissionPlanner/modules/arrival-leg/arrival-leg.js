@@ -1,9 +1,9 @@
 /* MissionPlanner/modules/arrival-leg — the arrival flyby leg: the visible
- * Coast→Arrival hand-off, and waypoint burns on the approach (task H3).
+ * Coast→Arrival hand-off, and waypoint burns on the approach.
  *
- * THE SHAPE (Kim, 2026-07-18): the coast phase needs to terminate at a
- * visible point where it hands off to the arrival phase. That point is a bit
- * arbitrary, but chosen sufficiently far out it's reasonable:
+ * THE SHAPE. The coast phase terminates at a visible point where it hands off
+ * to the arrival phase. That point is somewhat arbitrary, but chosen far
+ * enough out to be reasonable:
  *
  *   - the incoming trajectory PASSES the destination at HALF ITS SOI RADIUS
  *     (the reference flyby's periapsis),
@@ -15,18 +15,17 @@
  * Waypoints (up to 2, the standard vector-editor interface) put burns on it —
  * a retro burn near the pass drops/captures, a nudge earlier moves the pass.
  *
- * THE CONSTRUCTION is a REFERENCE flyby, not a patched continuation: the
- * delivered coast state supplies the v∞ heading, magnitude and epoch (the
- * pass is pinned at the delivered arrival epoch), and the leg builds the
- * two-body hyperbola around the destination with that asymptote and a
+ * THE CONSTRUCTION is a REFERENCE flyby, not a patched continuation of the
+ * coast: the delivered coast state supplies the v∞ heading, magnitude and
+ * epoch (the pass is pinned at the delivered arrival epoch), and the leg builds
+ * the two-body hyperbola around the destination with that asymptote and a
  * periapsis of SOI/2 — in the plane through the asymptote closest to the
- * ecliptic (which side of the body it passes is thereby arbitrary; the
- * delivered position's own miss is transfer-leg's and the capture card's
- * business, not re-judged here). Tweaking the COAST so the drawn trajectories
- * are continuous across the hand-off is deferred (Kim: "we can come back to
- * that"). Physics is two-body around the destination (Kepler segments, exact
- * conics — O.propagateState/sampleArc handle the hyperbola); at one day out
- * the arc is near its asymptote anyway, where a straight-ish line is honest.
+ * ecliptic, so which side of the body it passes is arbitrary. The delivered
+ * position's own miss is transfer-leg's and arrival-boundary's business, not
+ * re-judged here, and the drawn trajectories are consequently NOT continuous
+ * across the hand-off. Physics is two-body around the destination (Kepler
+ * segments, exact conics — O.propagateState/sampleArc handle the hyperbola);
+ * at one day out the arc is near its asymptote anyway.
  *
  * Waypoint times are SECONDS AFTER THE HAND-OFF (the leg start); the pass
  * itself sits at t = 1 day. Burns use the ecliptic-anchored prograde/normal/
@@ -37,12 +36,13 @@
  * cards + a pass-by readout box; its visible output is the polyline in the
  * destination frame (start/pass/end dots, waypoint gizmos + burn arrows).
  * Emits the leg-end ship-state (one day past the body, lifted to helio) so
- * the arrival technology downstream keeps its ship-state input.
+ * an arrival technology downstream (arrival-skyhook) keeps its ship-state
+ * input.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; init/draw are the
- * browser-only view hooks. rendersIn "body:destination" — aliased to the
- * mission's destination frame by mission-view (task H2). `body` is explicit,
- * never implied (the body convention).
+ * browser-only view hooks. rendersIn "body:destination" is aliased to the
+ * mission's destination frame by mission-view.js's resolveFrameId. `body` is
+ * explicit, never implied (the body convention).
  *
  * Imports from ../../../Shared/, ../../core/ and sibling modules — this
  * folder breaks if moved without them coming along.
@@ -88,8 +88,8 @@ function burnMag(b) { b = b || {}; return Math.hypot(b.pro || 0, b.rad || 0, b.n
 // The reference flyby's periapsis state (body-centric r, v arrays): the
 // hyperbola with incoming-asymptote MOTION direction s (unit), excess speed
 // vInf, and periapsis radius rp, in the plane through s closest to the
-// ecliptic. Which side of the body it passes is set by that plane choice —
-// arbitrary, per the header. Exported for Node tests.
+// ecliptic. That plane choice is what fixes which side of the body it passes
+// (see the header). Exported for Node tests.
 export function referencePeriapsis(GM, s, vInf, rp) {
 	var e = 1 + rp * vInf * vInf / GM;
 	var vp = Math.sqrt(vInf * vInf + 2 * GM / rp);
@@ -223,7 +223,8 @@ export function computeArrivalLeg(params, data) {
 	};
 }
 
-// Last computed leg per (World, stage) — the WeakMap pattern.
+// Last computed leg per (World, stage) — the WeakMap pattern every module here
+// uses: keyed by World first, since N missions coexist and reuse stage ids.
 var lastByWorld = new WeakMap();
 export function legFor(world, stageId) {
 	var m = lastByWorld.get(world);
@@ -242,7 +243,8 @@ export default {
 	attachesTo: null,             // rendered body-centric (the destination is the frame origin)
 	accepts: ["ship-state"],
 	emits: ["ship-state"],
-	rendersIn: ["body:destination"],   // aliased to the mission's destination frame (task H2)
+	rendersIn: ["body:destination"],   // aliased to the mission's destination frame
+	                                    // by mission-view.js's resolveFrameId
 	plainCard: true,
 
 	update: function (ctx, input) {

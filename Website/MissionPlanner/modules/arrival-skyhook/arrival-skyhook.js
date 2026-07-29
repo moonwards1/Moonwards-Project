@@ -1,6 +1,5 @@
 /* MissionPlanner/modules/arrival-skyhook — a skyhook CATCH at the destination
- * body (task H2, second arrival technology: WP-J's generic orbital skyhook,
- * run in reverse).
+ * body: the generic orbital skyhook, run in reverse.
  *
  * The same gravity-gradient tether orbital-skyhook.js models for departures —
  * literally the same geometry/kinematics code, imported (tetherGeometry) —
@@ -15,23 +14,21 @@
  *   v_tip         = ω_CoM · r_catch           — the tether tip, inertial
  *   trim Δv       = v_catch − v_tip           — chemistry closes the gap
  *
- * Unlike a RELEASE, a catch is legitimate with a sub-escape tip (that is the
+ * Unlike a RELEASE, a catch is legitimate with a sub-escape tip — that is the
  * whole attraction: the hook soaks up hyperbolic speed the ship never has to
- * burn off), which is why this imports tetherGeometry, not the escape-gated
- * tetherKinematics. What is NOT modelled yet — deliberately, per Kim's "just
- * set it up" scope for H2 — is the catch WINDOW/phasing geometry (the tether
- * tip being at the right place at the right time, the approach plane, the
- * post-catch unload down the tether). Those are the Mars-Phobos-style catch
- * planning the task doc points at for later; in-context advisories on the
- * realism are likewise deferred.
+ * burn off. Hence the import of tetherGeometry rather than the escape-gated
+ * tetherKinematics. NOT modelled: the catch WINDOW/phasing geometry (the
+ * tether tip being at the right place at the right time, the approach plane,
+ * the post-catch unload down the tether). The figures below assume the catch
+ * happens; they do not check that it can.
  *
- * Terminal stage, like capture-burn: consumes the coast's delivered
- * ship-state, emits nothing. The intercept check (miss distance at the
- * destination) is shared with capture-burn (approachAt / interceptWarning —
- * one measurement, not two). `body` is explicit per the body convention.
+ * Terminal stage: consumes the coast's delivered ship-state, emits nothing.
+ * The intercept check (miss distance at the destination) comes from the shared
+ * modules/arrival-approach.js — approachAt / interceptWarning, one measurement
+ * across every arrival stage. `body` is explicit per the body convention.
  *
- * RENDER FRAME: "body:destination", aliased by mission-view.js to the
- * mission's destination frame — same as capture-burn.
+ * RENDER FRAME: "body:destination", aliased to the mission's destination frame
+ * by mission-view.js's resolveFrameId.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; `init` and `draw`
  * (tether rings + catch point in the destination frame, phase pinned so the
@@ -98,7 +95,8 @@ export function computeCatch(params, data) {
 	};
 }
 
-// Last computed catch per (World, stage) — the WeakMap pattern.
+// Last computed catch per (World, stage) — the WeakMap pattern every module
+// here uses: keyed by World first, since N missions coexist and reuse stage ids.
 var lastByWorld = new WeakMap();
 export function catchFor(world, stageId) {
 	var m = lastByWorld.get(world);
@@ -117,7 +115,8 @@ export default {
 	attachesTo: null,             // rendered body-centric (the destination is the frame origin)
 	accepts: ["ship-state"],
 	emits: [],                    // terminal: the mission ends on the tether
-	rendersIn: ["body:destination"],   // aliased to the mission's destination frame (task H2)
+	rendersIn: ["body:destination"],   // aliased to the mission's destination frame
+	                                    // by mission-view.js's resolveFrameId
 
 	update: function (ctx, input) {
 		var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
@@ -197,12 +196,12 @@ export default {
 		});
 	},
 
-	// Tether hardware in the destination frame — orbital-skyhook's draw shape,
-	// with the phase pinned to the CATCH epoch: the tip is drawn at the catch
-	// point (+x) at the plan's arrival epoch and turns at ω away from it, so
-	// scrubbing the clock shows the hook winding toward its catch. Falls back
-	// to the delivered ship epoch (the cached catch's own jd) when the mission
-	// carries no frozen arrival commitment.
+	// Tether hardware in the destination frame — the same draw shape
+	// orbital-skyhook uses, with the phase pinned to the CATCH epoch: the tip is
+	// drawn at the catch point (+x) at the plan's arrival epoch and turns at ω
+	// away from it, so scrubbing the clock shows the hook winding toward its
+	// catch. Falls back to the delivered ship epoch (the cached catch's own jd)
+	// when the mission carries no frozen arrival commitment.
 	draw: function (view, snap) {
 		while (view.group.children.length) {
 			var c = view.group.children[0];

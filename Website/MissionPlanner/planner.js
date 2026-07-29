@@ -1,24 +1,25 @@
-/* Mission Planner — the shell (post-A1: the multi-mission host).
+/* Mission Planner — the shell: the multi-mission host.
  *
  * A deliberately plain UI over the headless core (core/world.js +
- * core/registry.js + core/recompute.js). Since task A1 the per-mission
- * pipeline — World + engine + frames + panes + cards + date bar — lives in
- * mission-view.js as createMissionView(); N instances can coexist, one per
- * future mission tab. What stays here is exactly what must be shared:
+ * core/registry.js + core/recompute.js). The per-mission pipeline — World +
+ * engine + frames + panes + cards + date bar — lives in mission-view.js as
+ * createMissionView(); N instances coexist, one per mission tab. What stays
+ * here is exactly what must be shared:
  *
  *   - the module registry (descriptors are stateless; one registry serves
  *     every mission),
  *   - the ONE renderer/canvas (browsers cap live WebGL contexts — that is
- *     why the views scissor panes instead of owning canvases). show() hands
- *     the canvas to a view; only the active view renders,
- *   - the initial mission load — persisted missions (task A3) if any exist,
- *     merged with a share-link fragment if the URL carries one, else the
- *     shipped preset — and the failure banner for a bad fragment or an
- *     unreadable saved mission,
- *   - the tab bar (task A2) — the Ephemeris tab (its own view since task D1,
- *     ephemeris-view.js's createEphemerisView()) + one tab per mission,
- *     active highlight, confirm-then-dispose close — and the render loop,
- *     which drives whichever tab is currently active.
+ *     why the views scissor panes instead of owning canvases). A view's
+ *     show() takes the canvas; only the active view renders,
+ *   - the initial mission load — persisted missions if any exist, merged with
+ *     a share-link fragment if the URL carries one, else the shipped preset —
+ *     and the failure banner for a bad fragment or an unreadable saved
+ *     mission,
+ *   - the tab bar: the Ephemeris tab (its own view, ephemeris-view.js's
+ *     createEphemerisView()) + one tab per mission, active highlight,
+ *     confirm-then-dispose close, a "+" duplicate button and the example-
+ *     mission dropdown (presets/examples-catalog.js),
+ *   - the render loop, which drives whichever tab is currently active.
  *
  * Layout/camera view state ("workspace") lives in the views and
  * localStorage, never in World; see mission-view.js for the per-mission
@@ -38,38 +39,40 @@ import { unpackMissionLink } from "./ui/share-link.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
 import { createEphemerisView } from "./ephemeris-view.js";
 
-// ---- modules (dynamic import per the architecture: a technology's code is
-// fetched when activated; the scaffold's default mission activates both) ----
+// ---- modules: dynamic-imported per the architecture (a technology's code is
+// fetched rather than bundled). Every built module is eager-loaded here, so
+// ui/tech-options.js's own moduleUrl fallback rarely fires. -------------------
 var MODULE_URLS = [
+	// The departure stack's fixed base for Earth-origin missions.
 	"./modules/moon-platform/moon-platform.js",
-	// The ONE skyhook carrier (unified 2026-07-20): serves the Moon (riding
-	// moon-platform, escaping Earth via departure-leg) and any HELIO_BODIES
-	// origin (self-originating, escaping that body via body-departure-leg). The
-	// retired Moon-specific lunar-skyhook is gone.
+	// The ONE skyhook carrier: serves the Moon (riding moon-platform, escaping
+	// Earth via departure-leg) and any HELIO_BODIES origin (self-originating,
+	// escaping that body via body-departure-leg).
 	"./modules/orbital-skyhook/orbital-skyhook.js",
+	// The two integrated departure flights: geocentric (Earth+Moon+Sun) and
+	// generic body-centric (body+Sun).
 	"./modules/departure-leg/departure-leg.js",
 	"./modules/body-departure-leg/body-departure-leg.js",
+	// The Departure→Coast compliance boundary, and the coast itself.
 	"./modules/frozen-plan/frozen-plan.js",
 	"./modules/transfer-leg/transfer-leg.js",
-	// The Coast→Arrival compliance boundary (task 1.5): frozen-plan's mirror at
-	// the far seam — one comparison of the coast's delivered approach against
-	// the plan's arrival commitment, non-blocking.
+	// The Coast→Arrival compliance boundary: frozen-plan's mirror at the far
+	// seam — one comparison of the coast's delivered approach against the
+	// plan's arrival commitment, non-blocking.
 	"./modules/arrival-boundary/arrival-boundary.js",
-	// The arrival flyby leg (task H3): the visible Coast→Arrival hand-off —
-	// one day out, past the body at SOI/2, one day beyond — with waypoint
-	// burns on the approach.
+	// The arrival flyby leg: the visible Coast→Arrival hand-off — one day out,
+	// past the body at SOI/2, one day beyond — with waypoint burns on the
+	// approach.
 	"./modules/arrival-leg/arrival-leg.js",
-	// Arrival technology (task H2): the generic skyhook catch at the
-	// destination (WP-J's tether, run in reverse). The chemical capture-burn
-	// was retired 2026-07-20 for a rethink; arrival is empty by default until
-	// its add/remove dropdown (the arrival sibling of I5) is built.
+	// Arrival technology: the skyhook catch at the destination (the same tether
+	// run in reverse). Missions ship with the arrival-tech slot empty.
 	"./modules/arrival-skyhook/arrival-skyhook.js"
 ];
 var registry = createRegistry();
 var loaded = await Promise.all(MODULE_URLS.map(function (u) { return import(u); }));
 loaded.forEach(function (m) { registry.register(m.default); });
 
-// ---- mission persistence (task A3): every mission (shell-level title +
+// ---- mission persistence: every mission (shell-level title +
 // World.serialize() — the World has no name field of its own) lives in one
 // versioned localStorage key, restored on load. Saved at pagehide (mirrors
 // mission-view.js's workspace-slot pattern) and immediately after any
@@ -117,12 +120,12 @@ function nextMissionId(existing) {
 	return "m" + n;
 }
 
-// ---- initial missions: persisted missions (if any) merged with a
-// share-link fragment (if the URL carries one — README: "a share link
-// opens in a new tab", so it's added alongside saved work, never replacing
-// it), else the shipped worked-example preset. A bad fragment or an
-// unreadable saved mission falls back gracefully WITH a banner, never a
-// blank page (missions are user data; refusals are polite).
+// ---- initial missions: persisted missions (if any) merged with a share-link
+// fragment (if the URL carries one — a share link opens in a new browser tab,
+// so its mission is added alongside saved work, never replacing it), else the
+// shipped worked-example preset. A bad fragment or an unreadable saved mission
+// falls back gracefully WITH a banner, never a blank page (missions are user
+// data; refusals are polite).
 var loadNotice = null;
 
 function initialMissions() {
@@ -182,11 +185,10 @@ renderer.setScissorTest(true);
 var viewsEl = document.getElementById("mp-views");
 var missionTemplate = document.getElementById("mp-mission-template");
 
-// ---- tab bar: Ephemeris tab (task D1 — its own helio-frame view, sharing
-// the one renderer like a mission view does) + one tab per mission (task
-// A2). Only one tab is shown at a time; missions[] tracks the mission tabs
-// (the Ephemeris tab isn't a mission and has no World, so it stays out of
-// this list). ---------------------------------------------------------------
+// ---- tab bar: the Ephemeris tab (its own helio-frame view, sharing the one
+// renderer like a mission view does) + one tab per mission. Only one tab is
+// shown at a time; missions[] tracks the mission tabs (the Ephemeris tab isn't
+// a mission and has no World, so it stays out of this list). ------------------
 var ephTabEl = document.getElementById("mp-tab-eph");
 var ephViewEl = document.getElementById("mp-eph-view");
 var missionTabsEl = document.getElementById("mp-mission-tabs");
@@ -220,10 +222,11 @@ function makeMissionView(world, missionId, defaultMainId) {
 	});
 }
 
-// Register a freshly built World as a new mission tab and switch to it —
-// the shared back half of task E2's two front doors ("Start Mission Plan"
-// freeze and "Paste mission link" import, both on the Ephemeris tab's
-// marker card). defaultMainId picks the pane/phase the tab opens on.
+// Register a freshly built World as a new mission tab and switch to it — the
+// shared back half of every way a mission tab comes into being ("Start Mission
+// Plan" on the Ephemeris tab's marker card, the "+" duplicate button, the
+// example-mission dropdown). defaultMainId picks the pane/phase the tab opens
+// on.
 function spawnMissionTab(world, title, defaultMainId) {
 	var id = nextMissionId(missions);
 	addMissionTab(makeMissionView(world, id, defaultMainId), title);
@@ -237,20 +240,19 @@ var ephView = createEphemerisView({
 	renderer: renderer,
 	root: ephViewEl,
 
-	// "Start Mission Plan" (E2 freeze): worldData is core/freeze.js's
-	// serialized World. Opens on the helio pane — a spawned mission has no
-	// departure tech yet, so the frozen coast is what there is to see.
+	// "Start Mission Plan": worldData is core/freeze.js's serialized World.
+	// Opens on the helio pane — a spawned mission has no departure tech yet, so
+	// the frozen coast is what there is to see.
+	//
+	// This is the tab's ONLY spawn callback. "Paste mission link…" is handled
+	// entirely inside ephemeris-view.js: it loads the plan's parameters back
+	// into that tab's own scratchpad for revision, rather than spawning a tab.
 	onStartMission: function (worldData, title) {
 		var res = deserializeWorld(worldData);
 		if (!res.ok) { return { ok: false, reason: res.reason }; }
 		spawnMissionTab(res.world, title, "helio");
 		return { ok: true };
 	}
-	// "Paste mission link…" no longer spawns a tab directly (revised
-	// 2026-07-14, Kim): it loads the plan's parameters back into the
-	// Ephemeris tab's own scratchpad instead, so it can be revised before
-	// Start Mission Plan is clicked again — decode/deserialize and the
-	// state reconstruction are entirely local to ephemeris-view.js now.
 });
 
 function selectTab(tabId) {
@@ -272,11 +274,9 @@ function selectTab(tabId) {
 	updatePlusTab();
 }
 
-// The "+" tab (task A2 stub, revised 2026-07-14 — Kim): duplicates the
-// ACTIVE mission tab rather than staying inert. Disabled-looking and
-// title-explained while the Ephemeris tab is active, since there's no
-// mission to copy there (the A2 tooltip's original point — new missions
-// start from the Ephemeris tab — still holds for that case).
+// The "+" tab duplicates the ACTIVE mission tab. Disabled-looking and
+// title-explained while the Ephemeris tab is active, since there is no mission
+// to copy there — that is where new missions are started instead.
 function updatePlusTab() {
 	var has = activeTabId !== "eph" && !!activeMission();
 	tabPlusEl.classList.toggle("mp-disabled", !has);
@@ -326,13 +326,11 @@ function duplicateActiveMission() {
 }
 tabPlusEl.addEventListener("click", duplicateActiveMission);
 
-// ---- example missions (design doc, Top pane / top part: "a drop-down menu
-// where users can choose from a small number of example missions") — a
-// second, independent front door next to "+" (duplicate): each pick
-// deserializes a FRESH World from the catalog's stateless data
-// (presets/examples-catalog.js) into its own new tab, titled from the
-// catalog label with the same "(copy)"-style de-duplication as duplicate
-// uses, so opening the same example twice doesn't collide.
+// ---- example missions: a second, independent front door next to "+"
+// (duplicate). Each pick deserializes a FRESH World from the catalog's
+// stateless data (presets/examples-catalog.js) into its own new tab, titled
+// from the catalog label with de-duplication, so opening the same example twice
+// doesn't collide.
 var exampleSelectEl = document.getElementById("mp-example-select");
 EXAMPLE_MISSIONS.forEach(function (ex) {
 	var opt = document.createElement("option");
@@ -351,8 +349,8 @@ exampleSelectEl.addEventListener("change", function () {
 	spawnMissionTab(res.world, nextUniqueTitle(ex.label), ex.workspace);
 });
 
-// Closing asks for confirmation — missions persist (task A3), but there's
-// no undo yet, so closing is permanent. Disposing before removing the
+// Closing asks for confirmation — missions persist, and there is no undo, so
+// closing is permanent. Disposing before removing the
 // workspace slot keeps saveWorkspace() (called by dispose) from re-writing
 // a slot deleteWorkspaceSlot is about to remove; saveMissionsStore() last so
 // the closed mission drops out of the persisted list immediately, not just

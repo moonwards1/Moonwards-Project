@@ -1,4 +1,4 @@
-// Node tests for ui/share-link.js (task E2): the mission-link envelope and
+// Node tests for ui/share-link.js: the mission-link envelope and
 // the paste-side fragment extractor. Run from the repo root:
 //   node --test Website/MissionPlanner/ui/tests/share-link.test.js
 
@@ -27,7 +27,7 @@ test("pack: blank/missing titles become null", () => {
 	assert.equal(packMissionLink("  Mission X ", worldData).title, "Mission X");
 });
 
-test("unpack: accepts a pre-E2 bare serialized World, title null", () => {
+test("unpack: accepts a bare serialized World (no envelope), title null", () => {
 	var u = unpackMissionLink(worldData);
 	assert.equal(u.ok, true);
 	assert.equal(u.title, null);

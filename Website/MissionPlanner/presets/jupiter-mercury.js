@@ -1,6 +1,6 @@
-// The OUTER → INNER example (Kim, 2026-07-28): the largest origin SOI in the
+// The OUTER → INNER example: the largest origin SOI in the
 // set and the longest transfer, falling almost the full width of the solar
-// system. Jupiter self-originates its skyhook (WP-J's body-departure-leg,
+// system. Jupiter self-originates its skyhook (via body-departure-leg,
 // no platform stage) — no arrival technology is configured, so the flight
 // ends as an unburned flyby past Mercury, same as the shipped default's own
 // empty arrival slot.

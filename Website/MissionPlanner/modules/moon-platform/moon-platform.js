@@ -1,27 +1,28 @@
 /* MissionPlanner/modules/moon-platform — the Moon as the departure stack's
- * top card (task I3, WP-I).
+ * top card, for missions that depart from Earth.
  *
  * The Moon itself is the first CARRIER: ~1 km/s of geocentric velocity plus
- * position that every lunar departure rides for free — until WP-I this was
- * invisible, buried inside the skyhook's vector sum. This module makes it a
+ * position that every lunar departure rides for free. This module makes that a
  * visible, READ-ONLY card at the top of the departure sidebar and emits the
  * carrier chain's base ({ base: "Moon", rotors: [] } — the
- * Shared/kinematic-chain.js shape) for the carrier stages downstream to
- * extend.
+ * Shared/kinematic-chain.js shape) for the carrier stages downstream to extend
+ * (orbital-skyhook appends its rotor; departure-leg integrates the result).
+ * Non-Earth origins have no platform stage at all — their skyhook
+ * self-originates; see core/freeze.js's scaffold.
  *
- * READ-ONLY by design (Kim, 2026-07-15): there is no release-date knob here.
- * The release epoch is the plan's frozen anchor (frozen-plan.js's
- * releaseAnchorFor — WP-I's timing model), baked at mission creation from
- * the Ephemeris tab's planning indicators (task D7) and never re-derived, so
- * this card always shows ONE unchanging state: exactly the Moon the user
- * planned around. Moon-position planning happens in the Ephemeris tab; to
- * re-plan around the Moon, copy the mission link there and start a new plan.
+ * READ-ONLY by design: there is no release-date knob here. The release epoch
+ * is the plan's frozen anchor (frozen-plan.js's releaseAnchorFor), baked at
+ * mission creation from core/departure-estimate.js's flight-time estimate and
+ * never re-derived, so this card always shows ONE unchanging state: exactly the
+ * Moon the user planned around. Moon-position planning happens in the Ephemeris
+ * tab; to re-plan around the Moon, copy the mission link there and start a new
+ * plan.
  *
  * The card's readouts are the Moon's own heading/impulse contribution at the
  * release anchor: geocentric distance and speed (the "impulse" every carrier
  * inherits), and the component of that velocity along EARTH'S heliocentric
- * prograde (D7's educational framing — the same prograde axis the waypoint
- * gizmo uses, so the sign visibly adds to or subtracts from a departure).
+ * prograde — the same prograde axis the waypoint gizmo uses, so the sign
+ * visibly adds to or subtracts from a departure.
  *
  * A missing anchor (no frozen plan and no legacy release date anywhere in
  * the profile) is diagnosed HERE, at the top of the chain, so the one clear
@@ -66,8 +67,9 @@ export function moonFigures(anchorJd) {
 	};
 }
 
-// Last computed figures per (World, stage), for the card (same WeakMap
-// pattern as every module: N missions coexist, Worlds reuse stage ids).
+// Last computed figures per (World, stage), for the card. Same WeakMap pattern
+// as every module here: N missions coexist and their Worlds reuse stage ids, so
+// the cache is keyed by World first and a closed mission's entries go with it.
 var lastByWorld = new WeakMap();
 export function figuresFor(world, stageId) {
 	var m = lastByWorld.get(world);

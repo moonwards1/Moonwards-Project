@@ -1,86 +1,72 @@
-/* Mission Planner — the Ephemeris tab (task D1: shell; task D2: destination
- * select, departure setup, trajectory drawing, waypoints).
+/* Mission Planner — the Ephemeris tab: where a trajectory is authored before
+ * any mission exists.
  *
- * The Ephemeris tab is the Solar-System-Trajectory-Plotter's authoring
- * experience, ported inside the planner (MissionPlannerTasks.md, WP-D). It
- * keeps its own plain state object — NOT a mission World — because it's a
- * scratchpad: only "Start Mission Plan" (task E2) turns a plan sketched here
- * into a World and a new mission tab. `state.leg` is deliberately shaped
- * exactly like modules/transfer-leg's own `params` (burn, waypoints,
- * legDays, destination), so that freeze is "hand these fields to a
+ * This tab is the Solar-System-Trajectory-Plotter's (SST's) authoring
+ * experience, hosted inside the planner. It keeps its own plain state object —
+ * NOT a mission World — because it is a scratchpad: only "Start Mission Plan"
+ * turns a plan sketched here into a World and a new mission tab. `state.leg` is
+ * deliberately shaped exactly like modules/transfer-leg's own `params` (burn,
+ * waypoints, legDays, destination), so freezing is "hand these fields to a
  * transfer-leg stage" rather than a translation step.
  *
- * Physics: the actual leg — burn application, sample polyline, events, miss
- * distance — goes through transfer-leg.js's exported `computeLeg`, the same
- * function the transfer-leg module uses once a plan is frozen (per the
- * task's own "don't fork the physics"). What's local to this file is
- * everything computeLeg doesn't own: resolving a waypoint's "snap to an
- * orbital feature" request into a concrete day offset (via the snap-to
- * helpers promoted to Shared/math-utils.js), and the view-only glue — the
- * drawn polyline, waypoint gizmos, burn arrows, and readout boxes — mirrored
- * from transfer-leg.js's own `draw()` and the SST's view code, since
- * `computeLeg`'s contract (a World+stageId-keyed cache) doesn't fit a
- * viewless scratchpad.
+ * PHYSICS IS NOT FORKED: the actual leg — burn application, sample polyline,
+ * events, miss distance — goes through transfer-leg.js's exported `computeLeg`,
+ * the same function the transfer-leg module uses once a plan is frozen. What is
+ * local to this file is everything computeLeg doesn't own: resolving a
+ * waypoint's "snap to an orbital feature" request into a concrete day offset
+ * (via the snap-to helpers in Shared/math-utils.js), and the view-only glue —
+ * the drawn polyline, waypoint gizmos, burn arrows, and readout boxes —
+ * mirrored from transfer-leg.js's own `draw()`, since computeLeg's view-side
+ * contract (a World+stageId-keyed cache) doesn't fit a viewless scratchpad.
  *
- * No mission conditions here (2026-07-12, Kim): this tab is where a user
- * plays with trajectories before any mission exists, so nothing here should
- * behave like one is already committed. Concretely, `legDays` carries no
- * user-set "arrival deadline" — every refresh() derives it fresh from
- * `finalCoastDays` (one full orbital period if the resulting arc is bound,
- * a long fixed escape coast if not), so a transfer visibly closes into a
- * loop instead of stopping wherever a duration field happened to be typed.
- * The same reasoning drops the "misses the destination by X AU" check that
- * used to ride on that duration — with no defined arrival time, "did you
- * arrive on time" isn't a coherent question yet (that judgment is the
- * marker's job once D3 lands, sliding along the whole drawn loop).
+ * NO MISSION CONDITIONS HERE. This tab is for playing with trajectories before
+ * any mission exists, so nothing here behaves as though one were committed.
+ * Concretely, `legDays` carries no user-set "arrival deadline": every refresh()
+ * derives it fresh from `finalCoastDays` (one full orbital period if the
+ * resulting arc is bound, a long fixed escape coast if not), so a transfer
+ * visibly closes into a loop instead of stopping wherever a duration field
+ * happened to be typed. For the same reason there is no "misses the destination
+ * by X AU" check — with no defined arrival time, "did you arrive on time" is not
+ * yet a coherent question. Judging an encounter is the ship marker's job.
  *
- * The ship marker (task D3) is the SST's marker orchestration ported onto
- * this file's own trajectory representation: a slidable probe on the drawn
- * path with Free / Track / Target modes, the destination-at-arrival "×",
- * and the temporal-proximity ring (which lives inside
- * updateDestinationMarker and so came across with it). The mechanical layer
- * (sprites, card skeleton, slider physics, the closest-approach search) is
- * Shared/sim/marker-card.js; the mode state machine stays local by design —
- * see that file's header comment. Placement is click-to-place on the drawn
- * path (task D5, see handlePick) — the SST has no placement button either.
- * One deliberate difference from the SST: Target mode decomposes its
- * Lambert Δv with O.burnComponents — the same ecliptic-anchored frame
- * O.applyBurn re-applies it in — where the SST used the osculating r×v
- * frame, which re-applies to a slightly different Δv on inclined arcs.
+ * THE SHIP MARKER is a slidable probe on the drawn path with Free / Track /
+ * Target modes, plus the destination-at-arrival "×" and the
+ * temporal-proximity ring (both inside updateDestinationMarker). The
+ * mechanical layer — sprites, card skeleton, slider physics, the
+ * closest-approach search — is Shared/sim/marker-card.js; the mode state
+ * machine stays local, per that file's header. Placement is click-to-place on
+ * the drawn path (handlePick). One deliberate difference from the SST: Target
+ * mode decomposes its Lambert Δv with O.burnComponents — the same
+ * ecliptic-anchored frame O.applyBurn re-applies it in — where the SST used the
+ * osculating r×v frame, which re-applies to a slightly different Δv on inclined
+ * arcs.
  *
- * "Start Mission Plan" (tasks E1/E2) lives on the marker card — which since
- * E2 ALWAYS exists as the floating overlay on the 3D pane (Kim, 2026-07-13):
- * with no marker placed it collapses to a hint line + the (disabled, with
- * its reason) Start button + "Paste mission link…", the marker-specific
- * controls CSS-hidden via the card's .mp-empty class (planner.css). Start
- * opens the name dialog (mockup:513–523), freezes the authored plan through
- * core/freeze.js — the freeze CONTRACT (what gets captured, and the
- * required-v∞-0 consequence of departing from the origin body's own state)
- * is that file's header — and hands the serialized World to planner.js's
- * onStartMission, which registers it as a new mission tab and switches to
- * it. Paste (revised 2026-07-14, Kim) no longer spawns a tab of its own: it
- * decodes a shared link (ui/share-link.js parses URL/fragment/blob) and
- * loads the frozen plan's origin/burn/waypoints/destination back into THIS
- * tab's own scratchpad state (loadFrozenPlanIntoState), placing the marker
- * at the original rendezvous — so a pasted mission can be revised here
- * before Start Mission Plan freezes it into a new tab, same as anything
- * authored from scratch.
+ * "START MISSION PLAN" lives on the marker card, which ALWAYS exists as a
+ * floating overlay on the 3D pane: with no marker placed it collapses to a hint
+ * line + the (disabled, with its reason) Start button + "Paste mission link…",
+ * the marker-specific controls CSS-hidden via the card's .mp-empty class
+ * (planner.css). Start opens the name dialog, freezes the authored plan through
+ * core/freeze.js — that file's header is the freeze CONTRACT — and hands the
+ * serialized World to planner.js's onStartMission, which registers it as a new
+ * mission tab and switches to it.
  *
- * The orbit-approach ring scan (task D4) rounds out the proximity markers:
- * hollow rings where the drawn path passes near a candidate body's orbit
- * (independent of whether the body is actually there then), refreshed
- * alongside the trajectory each recompute. Ring mechanics are shared
- * (Shared/sim/approach-markers.js, same module the temporal ring above
- * uses); the scan itself is the SST's own golden-section search, ported
- * almost verbatim onto this view's leg.samples/trajSegs.
+ * "PASTE MISSION LINK…" does NOT spawn a tab. It decodes a shared link
+ * (ui/share-link.js parses URL/fragment/blob) and loads the frozen plan's
+ * origin/burn/waypoints/destination back into THIS tab's own scratchpad state
+ * (loadFrozenPlanIntoState), placing the marker at the original rendezvous — so
+ * a pasted mission is revised here and then frozen into a new tab through the
+ * same path as anything authored from scratch.
  *
- * Deliberately NOT ported here (later WP-D/E tasks): in-scene waypoint
- * dragging (G1), and the isometric 3-axis vector-editor widget SST uses for
- * burns (kept as a documented future upgrade over plain numeric fields,
- * matching how the tasks doc frames it for F5/G1 — the numeric fields
- * already match transfer-leg's own card).
+ * THE ORBIT-APPROACH RING SCAN rounds out the proximity markers: hollow rings
+ * where the drawn path passes near a candidate body's orbit (independent of
+ * whether the body is actually there then), refreshed alongside the trajectory
+ * each recompute. Ring mechanics are shared (Shared/sim/approach-markers.js,
+ * the same module the temporal ring uses); the golden-section scan itself is
+ * local, over this view's leg.samples/trajSegs.
  *
- * There's exactly one Ephemeris tab for the page's life (unlike mission
+ * NOT PORTED from the SST: in-scene waypoint dragging.
+ *
+ * There is exactly one Ephemeris tab for the page's life (unlike mission
  * views, which N-instance via a <template>), so its DOM is addressed by
  * plain class queries already present in planner.html — no cloning needed.
  *
@@ -133,12 +119,12 @@ var BURN_VEC_SCALE = 0.03;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var dvHex = "#ff5fd0", spdHex = "#ffd24a";
 
-// Marker proximity thresholds (task D3). APPROACH_FAR doubles as Track
-// mode's "inside an encounter ring" engagement distance, and as the space
-// ring's own farthest tier (task D4, just below).
+// Marker proximity thresholds. APPROACH_FAR doubles as Track mode's "inside an
+// encounter ring" engagement distance, and as the space ring's own farthest
+// tier (just below).
 var APPROACH_FAR = 0.004 * AU;   // m
-// Orbit-approach ring tiers (task D4): distance from the drawn path to a
-// candidate body's orbit *ring*, independent of whether the body is there
+// Orbit-approach ring tiers: distance from the drawn path to a candidate body's
+// orbit *ring*, independent of whether the body is there
 // then (same table as the SST). Size/thickness DECREASE with proximity (the
 // far ring is the big, bold one); worldR (AU, scene units here) is the true
 // physical size each tier marks, so the ring grows once the camera is close
@@ -164,7 +150,7 @@ function fmtKmS(mps) { return (mps / 1000).toFixed(2); }
 //  opts: {
 //    renderer, root      — root is planner.html's #mp-eph-view, already in
 //                          the DOM
-//    onStartMission(worldData, title) — task E2: spawn a mission tab from a
+//    onStartMission(worldData, title) — spawn a mission tab from a
 //                          frozen serialized World; returns { ok } or
 //                          { ok: false, reason } (shown in the dialog)
 //  }
@@ -201,14 +187,13 @@ export function createEphemerisView(opts) {
 	var readoutBoxes = [];
 	panelEl.addEventListener("scroll", function () { positionReadoutBoxes(readoutBoxes, mainEl, panelEl); });
 
-	// ---- scratchpad state (task D2): NOT a World — origin body + a leg
-	// shaped exactly like transfer-leg's own params. legDays carries NO
-	// mission condition here — it's recomputed every refresh() from the
-	// physics alone (see finalCoastDays), never user-set, so the drawn arc
-	// just keeps going: closes into a loop if bound, coasts outward for a
-	// long while if not. A real duration only becomes meaningful once a
-	// plan is actually frozen (E2), at which point IT decides legDays from
-	// the marker's resolved rendezvous, not this scratchpad.
+	// ---- scratchpad state: NOT a World — origin body + a leg shaped exactly
+	// like transfer-leg's own params. legDays carries NO mission condition here:
+	// it is recomputed every refresh() from the physics alone (see
+	// finalCoastDays), never user-set, so the drawn arc just keeps going —
+	// closing into a loop if bound, coasting outward for a long while if not. A
+	// real duration only becomes meaningful at freeze, where core/freeze.js
+	// decides legDays from the marker's resolved rendezvous.
 	var state = {
 		origin: "Earth",
 		depProfile: "auto",   // Earth-course override fed to every estimateDeparture call:
@@ -227,15 +212,15 @@ export function createEphemerisView(opts) {
 	var depBurnHost = null;             // wraps the departure burn's vector editor (readout anchor)
 	var wpRows = [];                    // [{ card, dayInput, snapBoxes, slider, info, host }]
 
-	// ---- marker state (task D3): the drawn leg as per-segment start states,
-	// so the marker can be located at any global time along the whole path
-	// (rebuilt by refresh(); SST's trajSegs). ---------------------------------
+	// ---- marker state: the drawn leg as per-segment start states, so the
+	// marker can be located at any global time along the whole path (rebuilt by
+	// refresh()). -------------------------------------------------------------
 	var trajSegs = [];        // { r0, v0 (m, m/s), dur, tStart (s) }
 	var trajTotalT = 0;       // total drawn-leg duration (s)
 	var trajSampleCount = 0;  // polyline sample count (sets followCrossing's search window)
-	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input (task D4)
+	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input
 	var markerSprite = null, destSprite = null, tempRing = null;
-	var orbitApproachMarks = [];   // hollow-ring sprites where the path nears a body's orbit (task D4)
+	var orbitApproachMarks = [];   // hollow-ring sprites where the path nears a body's orbit
 	var markerVelDir = null;  // THREE.Vector3 — ship heading, for the sprite's per-frame orientation
 	var mk = null;            // the built marker card's refs (Shared/sim/marker-card.js)
 
@@ -256,8 +241,8 @@ export function createEphemerisView(opts) {
 	});
 	dateBar.bind(function () { frame.place(dateState.jd); refresh(); });
 
-	// ==== small DOM helpers (mirrors modules/transfer-leg.js's own numRow —
-	// each card in this project builds its own; see lunar-skyhook.js too) -----
+	// ==== small DOM helpers (the same numRow shape each module's own card
+	// builds — see modules/transfer-leg's init) --------------------------------
 	function numRow(parent, label, unit, value, step, commit) {
 		var row = document.createElement("div"); row.className = "mp-inrow";
 		var lab = document.createElement("label"); lab.textContent = label; row.appendChild(lab);
@@ -279,14 +264,14 @@ export function createEphemerisView(opts) {
 		return el;
 	}
 
-	// ==== "Moon phase at launch" widget (task D7) -----------------------------
-	// Kim's sketch (2026-07-16): an animated phase glyph + two pill bars —
-	// the Moon's speed along EARTH'S OWN heliocentric prograde (the waypoint
-	// gizmo's prograde axis, so its sign visibly adds to or subtracts from a
-	// launch), and the estimated days for the departure leg to leave Earth's
-	// SOI (core/departure-estimate.js — wedge-switched dive-in/direct-out).
-	// One instance mounts under the origin's info line, a mirrored one under
-	// the destination's; each shows only while that body is Earth.
+	// ==== "Moon phase at launch" widget ---------------------------------------
+	// An animated phase glyph + two pill bars: the Moon's speed along EARTH'S
+	// OWN heliocentric prograde (the waypoint gizmo's prograde axis, so its sign
+	// visibly adds to or subtracts from a launch), and the estimated days for
+	// the departure leg to leave Earth's SOI (core/departure-estimate.js —
+	// wedge-switched dive-in/direct-out). One instance mounts under the origin's
+	// info line, a mirrored one under the destination's; each shows only while
+	// that body is Earth.
 	function buildMoonWidget(parent, title) {
 		var box = document.createElement("div"); box.className = "mp-moonwidget";
 		box.style.display = "none";
@@ -380,8 +365,8 @@ export function createEphemerisView(opts) {
 		};
 	}
 
-	// ==== Departure card: origin, burn, destination (no duration field — the
-	// drawn arc's length is physics-derived, see finalCoastDays) --------------
+	// ==== Departure card: origin, burn, destination. No duration field — the
+	// drawn arc's length is physics-derived (finalCoastDays). ----------------
 	var originRow = document.createElement("div"); originRow.className = "mp-inrow";
 	var originLab = document.createElement("label"); originLab.textContent = "origin"; originRow.appendChild(originLab);
 	var originSel = document.createElement("select");
@@ -394,13 +379,13 @@ export function createEphemerisView(opts) {
 	var originInfo = muted(depHost, "");
 	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
 
-	// Departure-course override (Kim, 2026-07-23): near the edge of the dive
-	// wedge both courses are genuinely viable, and the auto rule's flip moves
-	// the estimated launch date ~a day — which visibly reshapes the drawn arc
-	// mid-keystroke via the Moon speed assistedBurn folds in. Pinning the
-	// profile makes that flip an informed choice instead. Earth-only, like
-	// the Moon widget it sits under; the "auto" option's label names the
-	// course the wedge rule is currently choosing.
+	// Departure-course override. Near the edge of the dive wedge both courses
+	// are genuinely viable, and the auto rule's flip moves the estimated launch
+	// date by about a day — which visibly reshapes the drawn arc mid-keystroke,
+	// via the Moon speed assistedBurn folds in. Pinning the profile makes that
+	// flip an informed choice instead. Earth-only, like the Moon widget it sits
+	// under; the "auto" option's label names the course the wedge rule is
+	// currently choosing.
 	var profileRow = document.createElement("div"); profileRow.className = "mp-inrow";
 	profileRow.style.display = "none";
 	var profileLab = document.createElement("label"); profileLab.textContent = "departure course";
@@ -578,20 +563,19 @@ export function createEphemerisView(opts) {
 	}
 
 	// How long to draw the leg's FINAL segment (after the last waypoint, or
-	// after the departure burn if there are none): one orbital period if
-	// bound (capped, so a near-parabolic orbit doesn't draw for millennia),
-	// else a fixed multi-year escape coast. No mission condition decides
-	// this — it's the same simplified-conic heuristic the SST used, so a
-	// bound transfer visibly closes into a loop and an escape trajectory
-	// just trails off. The cap was originally 60 years (the SST's own
-	// value); with Pluto now in HELIO_BODIES (scene-frames.js), a perfectly
-	// elliptical Earth-departure transfer reaching only its vicinity already
-	// has a ~75-125 year period (a ~ 18-25 AU via vis-viva), so 60 years cut
-	// genuinely bound loops off before they closed — looking identical to
-	// an escape trajectory even though e < 1. Raised to 500 years, which
-	// comfortably covers a full loop out past Pluto's aphelion (~49 AU)
-	// from any inner-system origin, while still bounding truly
-	// near-parabolic inputs from drawing for millennia. Returns days.
+	// after the departure burn if there are none): one orbital period if bound,
+	// capped so a near-parabolic orbit doesn't draw for millennia, else a fixed
+	// multi-year escape coast. No mission condition decides this — it's a
+	// simplified-conic heuristic, so a bound transfer visibly closes into a loop
+	// and an escape trajectory just trails off.
+	//
+	// The 500-year cap is sized for the farthest body the helio frame draws:
+	// HELIO_BODIES includes Pluto (scene-frames.js), and a perfectly elliptical
+	// Earth-departure transfer reaching only its vicinity already has a ~75-125
+	// year period (a ≈ 18-25 AU via vis-viva). 500 years comfortably covers a
+	// full loop out past Pluto's aphelion (~49 AU) from any inner-system origin,
+	// so genuinely bound loops close on screen instead of being cut off and
+	// looking like escapes; anything tighter cuts them. Returns days.
 	function finalCoastDays(r, v) {
 		var el = O.elementsFromState(GM_SUN, r, v);
 		if (el.e < 1 && el.a > 0) {
@@ -685,18 +669,16 @@ export function createEphemerisView(opts) {
 	}
 
 	// =======================================================================
-	//  Ship marker (task D3): a slidable probe on the drawn trajectory, with
-	//  Free / Track / Target modes — the SST's marker orchestration, ported
-	//  onto this view's trajSegs/trajTotalT representation. Mechanics
-	//  (sprites, card skeleton, slider physics, the closest-approach search)
-	//  come from Shared/sim/marker-card.js; placement is click-to-place on
-	//  the drawn path (task D5, see handlePick below) — the SST has no
-	//  placement button either, just this hint card.
+	//  Ship marker: a slidable probe on the drawn trajectory, with Free / Track
+	//  / Target modes, over this view's trajSegs/trajTotalT representation.
+	//  Mechanics (sprites, card skeleton, slider physics, the closest-approach
+	//  search) come from Shared/sim/marker-card.js; placement is click-to-place
+	//  on the drawn path (see handlePick below), with no placement button.
 	// =======================================================================
-	// The card ALWAYS exists (Kim, 2026-07-13 — task E2): buildCard() runs at
-	// init, and while no marker is placed the card shows only the hint, the
-	// gated "Start Mission Plan" button (with its why-note), and "Paste
-	// mission link…" — the marker controls are CSS-hidden via .mp-empty.
+	// The card ALWAYS exists: buildCard() runs at init, and while no marker is
+	// placed the card shows only the hint, the gated "Start Mission Plan" button
+	// (with its why-note), and "Paste mission link…" — the marker controls are
+	// CSS-hidden via .mp-empty.
 	var markerHost = q(".mp-eph-marker");
 	var markerHint = null;   // assigned by buildCard()
 	var HINT_DEFAULT = "Click the drawn trajectory to place a marker: probes radius, speed, " +
@@ -796,16 +778,16 @@ export function createEphemerisView(opts) {
 
 		// The departure burn gets the Moon's prograde speed folded in for free
 		// afterwards (assistedBurn, below) — Lambert here has no idea that's
-		// coming, so solving straight for sol.v1 overshoots it by that same
-		// amount once assistedBurn adds it back on refresh. Net it out up
-		// front, in TWO bounded passes (never an iteration): assistedBurn will
-		// estimate the launch date off the burn as CORRECTED here, whose
-		// smaller v∞ exits the system later than the raw solution's — netting
-		// the Moon read at the raw burn's launch date left a ~45 m/s prograde
-		// residual (2026-07-23) that pushed the drawn arc ~0.01 AU off the
-		// solved rendezvous. So: net at the raw estimate first, re-estimate at
-		// the burn that produced, and net THAT reading instead — the same
-		// figure assistedBurn will then add back, to within a few m/s.
+		// coming, so solving straight for sol.v1 would overshoot by that same
+		// amount once assistedBurn adds it back on refresh. Net it out up front,
+		// in TWO bounded passes, never an iteration. Two passes are needed
+		// because assistedBurn estimates the launch date off the burn as
+		// CORRECTED here, whose smaller v∞ exits the system later than the raw
+		// solution's: netting the Moon read at the raw burn's launch date leaves
+		// a ~45 m/s prograde residual, enough to push the drawn arc ~0.01 AU off
+		// the solved rendezvous. So net at the raw estimate first, re-estimate at
+		// the burn that produced, and net THAT reading instead — the same figure
+		// assistedBurn will then add back, to within a few m/s.
 		if (term.isDeparture && state.origin === "Earth") {
 			var proL = c.pro;
 			var vDepRaw = O.applyBurn(r1, v1, c.pro, c.nrm, c.rad);
@@ -863,15 +845,14 @@ export function createEphemerisView(opts) {
 	function makeTempRing() { return makeRingSprite({ lineWidth: 7, px: 30, renderOrder: 13 }); }
 
 	// =======================================================================
-	//  Orbit-approach rings (task D4): where the drawn path passes near a
-	//  candidate body's orbit *ring*, ported from the SST almost verbatim (its
-	//  own comment: "Scan the path for local minima of distance-to-each-orbit,
-	//  then refine each" via a golden-section search over the true Kepler
-	//  arc, not limited by polyline spacing). The ring-sprite mechanics are
-	//  shared (Shared/sim/approach-markers.js); the scan and tier tables stay
-	//  local, same split as the temporal ring above. Unlike the SST's
-	//  trajSamples (THREE.Vector3, pre-scaled to AU), this view's leg.samples
-	//  stay in metres throughout, so the scan skips the SST's AU round-trip.
+	//  Orbit-approach rings: where the drawn path passes near a candidate body's
+	//  orbit *ring*. Scans the path for local minima of distance-to-each-orbit,
+	//  then refines each with a golden-section search over the true Kepler arc,
+	//  so the result is not limited by polyline spacing. The ring-sprite
+	//  mechanics are shared (Shared/sim/approach-markers.js); the scan and tier
+	//  tables stay local, the same split as the temporal ring above. Unlike the
+	//  SST's own trajSamples (THREE.Vector3, pre-scaled to AU), this view's
+	//  leg.samples stay in metres throughout, so the scan needs no AU round-trip.
 	// =======================================================================
 	function makeApproachRing(tier) {
 		var st = SPACE_TIERS[tier] || SPACE_TIERS[0];
@@ -937,10 +918,10 @@ export function createEphemerisView(opts) {
 
 	// Position the destination "×" (body at arrival), the temporal ring and
 	// the phasing readout, given the meeting point markerR (m) and TOF (s).
-	// Also drives the "Start Mission Plan" gate (task E1): enabled only when
-	// the marker sits inside BOTH closest-approach rings, space (nearOrbit,
-	// same APPROACH_FAR threshold as the space-ring tiers, task D4) and time
-	// (the temporal ring's own tier >= 0) — see updateStartMissionButton.
+	// Also drives the "Start Mission Plan" gate: enabled only when the marker
+	// sits inside BOTH closest-approach rings — space (nearOrbit, the same
+	// APPROACH_FAR threshold as the space-ring tiers) and time (the temporal
+	// ring's own tier >= 0). See updateStartMissionButton.
 	function updateDestinationMarker(markerR, tofSec) {
 		var dn = state.leg.destination;
 		if (!dn) {
@@ -981,12 +962,11 @@ export function createEphemerisView(opts) {
 			distToOrbit: distToOrbit, dtDays: dtDays, destName: dn });
 	}
 
-	// Enable/disable the marker card's "Start Mission Plan" button and set
-	// its explanatory note — always says why, whether enabled or not (per
-	// the mockup's own framing). info: { noMarker } or { hasDest, spaceOk,
-	// timeOk, distToOrbit (m), dtDays, destName }. The no-marker case exists
-	// because the card is always visible now (E2) — the gate has to explain
-	// itself before anything is placed, too.
+	// Enable/disable the marker card's "Start Mission Plan" button and set its
+	// explanatory note — which always says why, whether enabled or not. info:
+	// { noMarker } or { hasDest, spaceOk, timeOk, distToOrbit (m), dtDays,
+	// destName }. The no-marker case exists because the card is always visible,
+	// so the gate has to explain itself before anything is placed too.
 	function updateStartMissionButton(info) {
 		if (!mk || !mk.startBtn) { return; }
 		var reason;
@@ -1010,10 +990,9 @@ export function createEphemerisView(opts) {
 		mk.startNote.textContent = reason;
 	}
 
-	// Build the floating marker card (once), via Shared/sim/marker-card.js —
-	// the SST's card skeleton, positioned over the 3D pane the same way the
-	// SST does (planner.css's .mp-eph-marker), rather than the sidebar card
-	// this used to be (reversed 2026-07-13, see planner.css's own comment).
+	// Build the floating marker card (once), via Shared/sim/marker-card.js's
+	// card skeleton, positioned over the 3D pane by planner.css's
+	// .mp-eph-marker.
 	function buildCard() {
 		mk = mcBuildMarkerCard({
 			classPrefix: "mp",
@@ -1045,20 +1024,17 @@ export function createEphemerisView(opts) {
 		});
 		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
 
-		// The no-marker hint (shown only in the .mp-empty state — this card
-		// is always present now, so it doubles as the old "place a marker"
-		// hint card).
+		// The no-marker hint, shown only in the .mp-empty state — the card is
+		// always present, so it also serves as the "place a marker" prompt.
 		markerHint = document.createElement("div");
 		markerHint.className = "mp-muted mp-marker-hint";
 		markerHint.textContent = HINT_DEFAULT;
 		mk.el.appendChild(markerHint);
 
-		// "Start Mission Plan" (task E1 gate + task E2 freeze): enabled only
-		// when the marker sits inside both closest-approach rings (space and
-		// time — see updateStartMissionButton, fed by
-		// updateDestinationMarker's nearOrbit/timing computation, task D4's
-		// tier data). Click: name dialog → core/freeze.js → planner.js
-		// spawns the tab.
+		// "Start Mission Plan": enabled only when the marker sits inside both
+		// closest-approach rings, space and time (see updateStartMissionButton,
+		// fed by updateDestinationMarker's nearOrbit/timing computation). Click:
+		// name dialog → core/freeze.js → planner.js spawns the tab.
 		mk.startBtn = document.createElement("button");
 		mk.startBtn.type = "button";
 		mk.startBtn.className = "mp-btn mp-big";
@@ -1081,16 +1057,14 @@ export function createEphemerisView(opts) {
 		mk.el.appendChild(mk.startBtn);
 		mk.startNote = muted(mk.el, "");
 
-		// "Paste mission link…" — revised 2026-07-14 (Kim): a link copied
-		// with a mission tab's "Copy mission link" now loads its frozen plan
-		// back into THIS tab's own scratchpad (loadFrozenPlanIntoState)
-		// rather than spawning a tab directly, so it can be revised before
-		// Start Mission Plan is clicked again — the same freeze/spawn path
-		// as anything authored from scratch. Decode/deserialize is entirely
-		// local now, no planner.js round-trip needed. The dialog's input
-		// auto-fills from the OS clipboard as soon as it opens (best-effort
-		// — silently stays blank if the browser withholds clipboard-read
-		// permission).
+		// "Paste mission link…": a link copied with a mission tab's "Copy mission
+		// link" loads its frozen plan back into THIS tab's own scratchpad
+		// (loadFrozenPlanIntoState) rather than spawning a tab, so it can be
+		// revised before Start Mission Plan is clicked — the same freeze/spawn
+		// path as anything authored from scratch. Decode/deserialize is entirely
+		// local; planner.js is not involved. The dialog's input auto-fills from
+		// the OS clipboard as soon as it opens (best-effort — silently stays
+		// blank if the browser withholds clipboard-read permission).
 		mk.pasteBtn = document.createElement("button");
 		mk.pasteBtn.type = "button";
 		mk.pasteBtn.className = "mp-btn mp-ghost mp-paste-btn";
@@ -1126,12 +1100,12 @@ export function createEphemerisView(opts) {
 	}
 
 	// Everything core/freeze.js's spec wants, read off the CURRENT authored
-	// state (task E2): the origin body's pre-burn helio state at the tab's
-	// clock, the resolved waypoint days (snaps made concrete — the same
-	// resolveWaypoints pass refresh() draws from), and the marker's
-	// rendezvous — its time along the path as the arrival epoch, its
-	// velocity against the destination body's as the arrival v∞. Returns
-	// { ok: false, reason } if the gate's preconditions somehow aren't met.
+	// state: the origin body's pre-burn helio state at the tab's clock, the
+	// resolved waypoint days (snaps made concrete — the same resolveWaypoints
+	// pass refresh() draws from), and the marker's rendezvous — its time along
+	// the path as the arrival epoch, its velocity against the destination body's
+	// as the arrival v∞. Returns { ok: false, reason } if the gate's
+	// preconditions somehow aren't met.
 	function buildFreezeSpec() {
 		var dn = state.leg.destination;
 		if (!state.marker || !trajSegs.length || !(trajTotalT > 0)) {
@@ -1165,29 +1139,23 @@ export function createEphemerisView(opts) {
 		};
 	}
 
-	// The inverse of buildFreezeSpec/core/freeze.js (task E2, revised
-	// 2026-07-14, Kim): reconstructs this tab's scratchpad from a mission
-	// World that was previously frozen — the back half of "Paste mission
-	// link…", so a shared mission loads here for revision instead of
-	// spawning a tab directly. Reads the frozen-plan/transfer-leg stages'
-	// own params (the SAME two stages core/freeze.js writes); any other
-	// stage (a departure tech, once WP-F lands) is ignored — this tab only
-	// ever edits the plan, never a tech's configuration.
+	// The inverse of buildFreezeSpec/core/freeze.js: reconstructs this tab's
+	// scratchpad from a mission World that was previously frozen — the back half
+	// of "Paste mission link…", so a shared mission loads here for revision
+	// instead of spawning a tab. Reads the frozen-plan and transfer-leg stages'
+	// own params (the same two stages core/freeze.js writes); every other stage
+	// — the departure and arrival techs and their legs — is ignored, because
+	// this tab only ever edits the plan, never a tech's configuration.
 	//
-	// departure.{r,v} IS the coast's starting state, full stop (2026-07-14,
-	// Kim: the Departure→Coast hand-off is a given heading and speed, not a
-	// burn formula — see transfer-leg.js's header, and ARCHITECTURE.md's
-	// "Phases are chains" for the general principle). Whatever composed to
-	// produce it — one burn, a chain of many — is upstream's business, opaque
-	// from here; there is nothing left over to account for. (The first cut
-	// of this function got that wrong: it read a since-removed transfer-leg
-	// `burn` field as a SECOND thing needing comparison against departure.v,
-	// when it was really just an event living on the wrong side of the
-	// boundary — see ARCHITECTURE.md.) This tab still has only one editable
-	// burn slot for describing "the ship's velocity above the origin's own
-	// motion," applied to the origin body's own natural state each refresh()
-	// — so departure.v is decomposed relative to THAT reference, the exact
-	// inverse of how refresh() re-applies it.
+	// departure.{r,v} IS the coast's starting state, full stop (the
+	// Departure→Coast hand-off is a given heading and speed, not a burn formula
+	// — see transfer-leg.js's header and ARCHITECTURE.md's "Phases are chains").
+	// Whatever composed to produce it — one burn, a chain of many — is
+	// upstream's business and opaque from here; there is nothing left over to
+	// account for. This tab has one editable burn slot, describing "the ship's
+	// velocity above the origin's own motion", applied to the origin body's
+	// natural state each refresh() — so departure.v is decomposed relative to
+	// THAT reference, the exact inverse of how refresh() re-applies it.
 	//
 	// Waypoint snap-to intent doesn't survive a freeze (resolveWaypoints
 	// already turned it into a concrete day before core/freeze.js ever saw
@@ -1243,8 +1211,8 @@ export function createEphemerisView(opts) {
 		return { ok: true };
 	}
 
-	// ---- the one modal dialog (name-your-mission + paste-a-link share it;
-	// mockup:513–523 is the visual spec). onOk(value) returns { ok } or
+	// ---- the one modal dialog, shared by name-your-mission and
+	// paste-a-link. onOk(value) returns { ok } or
 	// { ok: false, reason } — a failure keeps the dialog open with the
 	// reason shown, success closes it. Built once, appended to body so it
 	// overlays the whole app. ---------------------------------------------------
@@ -1305,9 +1273,9 @@ export function createEphemerisView(opts) {
 	function openDialog(o) { dlg.open(o); }
 
 	// Recompute the marker's world position and card readouts from its slider
-	// angle and the current trajectory. When unset, the card stays (task E2 —
-	// it's the permanent home of Start/Paste) but collapses to its empty
-	// state (.mp-empty hides the marker controls, shows the hint).
+	// angle and the current trajectory. When unset, the card stays — it is the
+	// permanent home of Start/Paste — but collapses to its empty state
+	// (.mp-empty hides the marker controls and shows the hint).
 	function updateMarker() {
 		if (!state.marker) {
 			if (markerSprite) { markerSprite.visible = false; }
@@ -1400,8 +1368,8 @@ export function createEphemerisView(opts) {
 
 	// Place (or move) the marker at a global time along the path; that point
 	// becomes 0° on the slider and the camera focus. Called from handlePick
-	// (task D5, below) whenever a click resolves to a nearest trajectory
-	// sample.
+	// below whenever a click resolves to a nearest trajectory sample, and by
+	// loadFrozenPlanIntoState to restore a pasted mission's rendezvous.
 	function placeMarkerAtGlobalTime(t) {
 		var f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, t / trajTotalT)) : 0;
 		var budget = (state.marker && state.marker.dvBudget != null) ? state.marker.dvBudget : 10000;
@@ -1434,7 +1402,7 @@ export function createEphemerisView(opts) {
 		var dep = O.bodyStateAtJD(GM_SUN, originSys.orbit, dateState.jd);
 
 		// Target mode re-solves the terminal burn before anything is drawn or
-		// read out (task D3); the burn fields then re-sync to what's in force.
+		// read out; the burn fields then re-sync to what's in force.
 		applyTargeting(dep);
 		syncBurnInputs();
 
@@ -1487,8 +1455,8 @@ export function createEphemerisView(opts) {
 			clearApproachMarks();
 			setStatus("err", leg.diagnostic.message);
 		} else {
-			// Marker support (task D3): per-segment start states over the whole
-			// drawn leg, so the marker can be located at any global time.
+			// Marker support: per-segment start states over the whole drawn leg,
+			// so the marker can be located at any global time.
 			trajSegs = [];
 			var chrono = rw.entries.slice().sort(function (a, b) { return (a.days || 0) - (b.days || 0); });
 			var segR = dep.r, segV = vDep, tStart = 0;
@@ -1538,14 +1506,13 @@ export function createEphemerisView(opts) {
 		updateMoonWidgets(dep, vDep);
 	}
 
-	// The authored departure burn, plus whatever the Moon supplies for free
-	// (Kim, 2026-07-17): the Moon's own prograde-axis speed at the estimated
-	// launch date, folded into the burn's "pro" component. This is what
-	// actually propagates — the drawn trajectory, its periapsis/apoapsis,
-	// the waypoints, and (via buildFreezeSpec) the frozen requirement all
-	// use it. The burn INPUT FIELDS and the Δv readout keep showing exactly
-	// what was typed; only the physics downstream of it changes. Two bounded
-	// passes, never an iteration (same shape as the profile switch above): a
+	// The authored departure burn, plus whatever the Moon supplies for free: the
+	// Moon's own prograde-axis speed at the estimated launch date, folded into
+	// the burn's "pro" component. This is what actually propagates — the drawn
+	// trajectory, its periapsis/apoapsis, the waypoints, and (via
+	// buildFreezeSpec) the frozen requirement all use it. The burn INPUT FIELDS
+	// and the Δv readout keep showing exactly what was typed; only the physics
+	// downstream of them changes. Two bounded passes, never an iteration: a
 	// tentative estimate off the RAW burn locates the Moon at the tentative
 	// launch date, that reading is added in once, and it is not re-solved.
 	// Non-Earth origins have no Moon model, so the raw burn passes through.
@@ -1560,7 +1527,7 @@ export function createEphemerisView(opts) {
 		return { pro: (raw.pro || 0) + rel, rad: raw.rad || 0, nrm: raw.nrm || 0 };
 	}
 
-	// Feed the D7 Moon widgets from the CURRENT refresh's numbers. Departure
+	// Feed the Moon widgets from the CURRENT refresh's numbers. Departure
 	// side: the plan's v∞ is the authored injection (vDep − the origin body's
 	// own velocity); everything is evaluated at the ESTIMATED LAUNCH date the
 	// hand-off implies, not the tab's clock — that is the widget's whole
@@ -1609,21 +1576,16 @@ export function createEphemerisView(opts) {
 	}
 
 	// =======================================================================
-	//  Click-to-place-marker picking (task D5): a plain click places/moves
-	//  the marker at the nearest trajectory sample in screen space; clicking
-	//  the marker's own sprite just refocuses the camera on it — the SST's
-	//  handlePick (SST:1037-1078) ported almost verbatim onto this view's
-	//  trajSamples. One real adaptation: the SST projects against its own
-	//  full-canvas `renderer.domElement` rect, since it never scissors a
-	//  pane; this shell CAN (a mission view's floating panes share one
-	//  canvas), so this reads `paneMainEl`'s own rect instead — the same
-	//  pane the existing wheel-zoom `pickPoint` below already uses for
-	//  exactly that reason. The Ephemeris tab happens to be single-pane
-	//  (task D1), so the two rects coincide today, but this stays correct if
-	//  that ever changes. `onPick` is the shared camera-controller's
-	//  deferred single-click hook (fires after mouseup only if the press
-	//  didn't move and wasn't the first half of a double-click), so it never
-	//  fights camera rotate-drag.
+	//  Click-to-place-marker picking: a plain click places/moves the marker at
+	//  the nearest trajectory sample in screen space; clicking the marker's own
+	//  sprite just refocuses the camera on it. Projection is against
+	//  `paneMainEl`'s own rect rather than the whole canvas — the same pane the
+	//  wheel-zoom `pickPoint` below uses — because this shell scissors panes and
+	//  the two rects need not coincide (the Ephemeris tab is single-pane, so
+	//  today they do). `onPick` is the shared camera-controller's deferred
+	//  single-click hook: it fires after mouseup only if the press didn't move
+	//  and wasn't the first half of a double-click, so it never fights camera
+	//  rotate-drag.
 	// =======================================================================
 	function handlePick(e) {
 		if (!trajSamples.length) { return; }
@@ -1640,8 +1602,8 @@ export function createEphemerisView(opts) {
 		}
 
 		// otherwise place/move the marker at the nearest trajectory sample
-		// (trajSamples is in metres, unlike the SST's pre-scaled AU Vector3s
-		// — same D4 distinction, so each candidate is converted before projecting)
+		// (trajSamples is in metres, so each candidate is converted to scene
+		// units before projecting)
 		var best = -1, bestD = 14;        // pixel threshold
 		for (var i = 0; i < trajSamples.length; i++) {
 			var s = trajSamples[i].r;
@@ -1732,9 +1694,9 @@ export function createEphemerisView(opts) {
 		active = false;
 	}
 
-	// ---- go: build the always-present marker card (task E2 — empty state
-	// until a marker is placed), place the frame, and compute the first leg
-	// before the first show().
+	// ---- go: build the always-present marker card (in its empty state until a
+	// marker is placed), place the frame, and compute the first leg before the
+	// first show().
 	buildCard();
 	dateBar.setBaseDays(0);
 	frame.place(dateState.jd);

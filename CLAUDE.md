@@ -48,6 +48,32 @@ To split or relocate a large file (e.g. pull an inline `<script>` into a sibling
 - A calculator that imports from `Shared/` references it as `../../Shared/...` and **breaks if its folder is moved without `Website/Shared/` coming along.** Each calculator's README states whether it has this dependency.
 - `Website/Shared/README.md` is the canonical description of the libraries and conventions. New calculators start by copying `Website/Calculators/_template/`.
 
+## Documentation: three tiers, one home each
+
+Task docs, READMEs, and code comments tend to re-fight for the same space as
+the project revises mid-stream — a comment or task item accretes "originally
+X, then we realized Y, so now Z" instead of just stating the current Z. Keep
+three tiers separate so nothing has to double as both a current description
+and a history of how it got that way:
+
+- **Current-state docs** — READMEs, design docs, and code comments. Always
+  describe things as they are today; rewritten in place when something
+  changes, never appended to with superseded alternatives or chronology.
+- **Decisions log** — `Notes-and-Obsolete/decisions.md`. Permanent, terse,
+  dated entries for settled architecture decisions that are load-bearing for
+  more than one file or task (a formula, a clamp, a structural rule). States
+  the decision and the one-line why; not a narrative of how it was debated.
+- **Changelog** — `Notes-and-Obsolete/changelog.md`. Transient, plain-language
+  notes for Kim after a natural chunk of work, ending in a suggested commit
+  message. Cleared once the change is committed — git log is the permanent
+  record after that.
+
+Code comments state the current invariant only — no chronology, no rejected
+alternatives, no narrating the conversation that produced them. If a comment
+is tempted to explain "why we changed this," that content belongs in the
+decisions log (if it's a lasting rule) or nowhere (if it was just
+deliberation) — not in the comment.
+
 ## Conventions for shared code
 
 - **ES modules throughout** (converted 2026-07) — `import`/`export` with **named exports**, one `<script type="module">` per page. `Shared/three.min.js` (global `THREE`) is the sole classic script left; pages that use Three.js load it with a plain tag before their module.
@@ -60,7 +86,7 @@ To split or relocate a large file (e.g. pull an inline `<script>` into a sibling
 
 - **Git cannot operate on the mounted project from the shell.** Every git write goes through lock files that must be renamed/unlinked, and the mount's no-delete guard blocks that. A `git init` attempt (2026-07-06) died on `.git/config.lock` and left a corrupt half-created `.git` that Kim had to delete by hand. Do not run `git init`/`add`/`commit`/`checkout` against the mount — and be wary of `git status`, which opportunistically rewrites the index.
 - **The repo is operated from Kim's side (GitHub Desktop):** Claude edits files with the file tools; Kim reviews the diff in Desktop, commits, and pushes. Read-only commands (`git log`, `git show`, `git diff`) from the shell are fine once `.git` exists.
-- The repo is `https://github.com/moonwards1/Moonwards-Project` (org `moonwards1`), default branch **`master`**. The published site is `Website/` via GitHub Pages (workflow: `.github/workflows/deploy-pages.yml`, deploys on push). `Notes/` is untracked by `.gitignore`.
+- The repo is `https://github.com/moonwards1/Moonwards-Project` (org `moonwards1`), default branch **`master`**. The published site is `Website/` via GitHub Pages (workflow: `.github/workflows/deploy-pages.yml`, deploys on push). `Notes-and-Obsolete/` is untracked by `.gitignore`.
 
 ## Concurrency: more than one job may touch a file
 

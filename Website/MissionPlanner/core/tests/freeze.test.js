@@ -1,4 +1,4 @@
-// Node tests for core/freeze.js (task E2): the Ephemeris-tab -> mission-tab
+// Node tests for core/freeze.js: the Ephemeris-tab -> mission-tab
 // freeze contract. Run from the repo root:
 //   node --test Website/MissionPlanner/core/tests/freeze.test.js
 
@@ -45,7 +45,7 @@ test("freeze output deserializes into a working World with the E2 profile (Earth
 	var stages = res.world.serialize().stages;
 	// Earth: the fixed Moon platform + the geocentric leg (empty carrier slot),
 	// then the plan, coast, the arrival compliance boundary at the far seam
-	// (task 1.5) and the flyby leg (empty arrival-tech slot).
+	// and the flyby leg (empty arrival-tech slot).
 	assert.deepEqual(stages.map(s => s.moduleId),
 		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg",
 		 "arrival-boundary", "arrival-leg"]);
@@ -103,7 +103,7 @@ test("the hand-off is POST-burn: neither stage carries a burn field, injection l
 	var data = freezeMissionWorld(spec);
 	var plan = paramsOf(data, "frozen-plan"), leg = paramsOf(data, "transfer-leg");
 	// no burn field at all — the injection is baked into departure.v itself,
-	// not recorded separately anywhere in the chain (removed 2026-07-14)
+	// not recorded separately anywhere in the chain
 	assert.equal("burn" in leg, false);
 	assert.equal("burn" in plan, false);
 	// the frozen departure velocity is the origin state + the authored burn
@@ -153,7 +153,7 @@ test("defaultMissionTitle names origin → destination + departure year", () => 
 	assert.equal(defaultMissionTitle("Earth", "Ceres", jd), "Earth → Ceres 2031");
 });
 
-// ---- timing fields (task D7: the hand-off window + release anchor) ---------
+// ---- timing fields: the hand-off window + release anchor ------------------
 
 test("freeze bakes a hand-off window (default ±1 d) and a release anchor ahead of the hand-off", async () => {
 	var spec = makeSpec();

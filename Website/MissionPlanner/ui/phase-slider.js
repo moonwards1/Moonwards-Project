@@ -1,50 +1,41 @@
 /* MissionPlanner/ui/phase-slider.js — the segmented-timeline widget behind
  * the phase bar's sliders. ONE PER PHASE, three in all, exactly one on screen
- * at a time (mission-view's syncSliderVisibility): Departure, Coast, Arrival.
- * Each phase's slider IS that phase's clock control; the raw Ephemeris date
- * bar is only a fallback for when a phase has no resolvable span.
+ * at a time (mission-view.js's syncSliderVisibility): Departure, Coast,
+ * Arrival. Each phase's slider IS that phase's clock control; the raw
+ * Ephemeris date bar is only a fallback for a phase with no resolvable span.
  *
  * Two layers:
  *
  *   - createSegmentedSlider(container, opts) — the DOM primitive. A track of
- *     flex-sized segments plus a playhead, matching mock-a-phases.html's
- *     .timeline/.track/.seg/.playhead markup (mirrored here with the mp-
- *     prefix the rest of the shell uses; the caption row above the track,
- *     also in that markup, was dropped 2026-07-12 — Kim reclaimed the space
- *     for the phase bar's now-bigger compliance readout). It knows nothing
- *     about dates or jd: callers hand it segments (fractions along a 0..1
- *     track) and a playhead fraction, and get a 0..1 fraction back whenever
- *     the user clicks or drags the track. B3's Departure slider
- *     (createDepartureSlider below) is a sibling of createCoastSlider, also
- *     linear in time but over a launch→on-course span the caller computes,
- *     with event marks overlaid (setMarks).
+ *     flex-sized segments plus a playhead, with the .mp- class names
+ *     planner.css styles. It knows nothing about dates or jd: callers hand it
+ *     segments (fractions along a 0..1 track) and a playhead fraction, and get
+ *     a 0..1 fraction back whenever the user clicks or drags the track.
+ *     setMarks overlays event ticks at arbitrary fractions.
  *
- *   - coastSliderState(opts) + createCoastSlider(container, opts) — B2's
- *     actual deliverable. coastSliderState is the pure part (segments +
- *     playhead fraction + pinned flag, given a span/jd/tick count and a
- *     date formatter) — no DOM, Node-testable (see ui/tests/).
- *     createCoastSlider is the thin wrapper that feeds it to the DOM
- *     primitive and turns track clicks/drags into jd values.
- *     departureSliderState/createDepartureSlider (B3) and
- *     arrivalSliderState/createArrivalSlider (task 1.3) are its two siblings,
- *     same split, same shape — all three are linear in time over a span the
- *     caller computes, and differ only in which edges are anchored and how
- *     the playhead readout is stamped.
+ *   - three PURE state functions — coastSliderState, departureSliderState,
+ *     arrivalSliderState — each computing segments + playhead fraction +
+ *     pinned flag + marks from a span, a jd, a tick count and a date
+ *     formatter. No DOM, Node-testable (ui/tests/phase-slider.test.js). Each
+ *     has a thin create* wrapper that feeds it to the DOM primitive and turns
+ *     track clicks/drags into jd values.
+ *
+ * All three sliders are linear in time over a span the CALLER computes
+ * (mission-view.js's departureSpan / coastSpan / arrivalSpan); they differ
+ * only in which edges are anchored and how the playhead readout is stamped.
  */
 
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 function pad2(n) { return String(n).padStart(2, "0"); }
 
-// "T+" mission-elapsed-time readout for the playhead label (Kim, 2026-07-14
-// — replaces the earlier absolute-date stamp with something briefer):
-// days elapsed since `start` (Coast's own span start IS the departure/
-// release epoch; Departure's own span start IS launch itself, so this needs
-// no separate "departure epoch" plumbing beyond the start each slider
-// already carries), split into a "167 d" line and a separate elapsed
-// HH:MM line — ELAPSED time-within-the-current-day, not calendar
-// wall-clock, so the two lines always agree ("167 d" + "14:32" means
-// exactly that many days+hours+minutes since departure, regardless of what
-// time of day departure itself started at). No DOM, Node-testable.
+// "T+" mission-elapsed-time readout for the playhead label: days elapsed since
+// `start`, split into a "167 d" line and a separate elapsed HH:MM line. The
+// time line is ELAPSED time within the current day, not calendar wall-clock, so
+// the two lines always agree — "167 d" + "14:32" means exactly that many
+// days+hours+minutes since the span began, whatever time of day it began at.
+// No separate "departure epoch" plumbing is needed: Coast's span start IS the
+// departure/release epoch and Departure's IS launch itself. No DOM,
+// Node-testable.
 export function elapsedStamp(jd, start) {
 	var elapsed = jd - start;
 	var days = Math.floor(elapsed);
@@ -53,15 +44,14 @@ export function elapsedStamp(jd, start) {
 	return { days: days + " d", time: pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60) };
 }
 
-// The Arrival slider's playhead readout (task 1.3). "T+ since the phase
-// started" is the wrong anchor for a window only 3-6 days wide whose BOTH
-// edges move: what the user is judging is how far the clock sits from the
-// encounter itself, so the readout is signed time relative to closest
-// approach ("-2 d 06:00" approaching, "+0 d 14:32" past it). Closest
-// approach is also the point both edges are derived from (core/arrival-seam.js),
-// so it is the one stable thing on the track to measure against. Same
-// two-line days/HH:MM shape as elapsedStamp, same carry handling. No DOM,
-// Node-testable.
+// The Arrival slider's playhead readout. "T+ since the phase started" is the
+// wrong anchor for a window only 3-6 days wide whose BOTH edges move: what the
+// user is judging is how far the clock sits from the encounter itself, so this
+// is signed time relative to closest approach ("-2 d 06:00" approaching,
+// "+0 d 14:32" past it). Closest approach is also the point both edges are
+// derived from (core/arrival-seam.js), so it is the one stable thing on the
+// track to measure against. Same two-line days/HH:MM shape as elapsedStamp,
+// same carry handling. No DOM, Node-testable.
 export function approachStamp(jd, ca) {
 	var delta = jd - ca;
 	var mag = Math.abs(delta);
@@ -110,13 +100,12 @@ export function createSegmentedSlider(container, opts) {
 		return r.width > 0 ? clamp01((clientX - r.left) / r.width) : 0;
 	}
 
-	// A plain click/drag jumps to the cursor and tracks it 1:1, same as
-	// before. Holding Shift instead fine-tunes RELATIVELY from wherever the
-	// playhead already is, at 10x-slower sensitivity, without jumping —
-	// matching Shared/sim/date-bar.js's Shift-drag. Rolling the mouse wheel
-	// over the track is a second way to reach that same 10x-slower scrub,
-	// in place of dragging: each wheel notch moves the playhead as if the
-	// mouse had dragged that many pixels, at the same 0.1 sensitivity.
+	// A plain click/drag jumps to the cursor and tracks it 1:1. Holding Shift
+	// instead fine-tunes RELATIVELY from wherever the playhead already is, at
+	// 10x-slower sensitivity, without jumping — matching Shared/sim/date-bar.js's
+	// Shift-drag. Rolling the mouse wheel over the track reaches that same
+	// 10x-slower scrub without dragging: each wheel notch moves the playhead as
+	// if the mouse had dragged that many pixels, at the same 0.1 sensitivity.
 	var currentFraction = 0;
 	var dragging = false, lastX = 0;
 	function onDown(e) {
@@ -217,10 +206,10 @@ export function createSegmentedSlider(container, opts) {
 	};
 }
 
-// ---- B2: the Coast slider --------------------------------------------------
-// Pure: given the coast span (start/end jd, from the departure and coast
-// phases' own events — see mission-view.js's coastSpan()), the shared
-// clock's jd, a tick count and a shortDate(jd) formatter for the tick
+// ---- the Coast slider ------------------------------------------------------
+// Pure: given the coast span (start/end jd, from the frozen plan's committed
+// dates ending at the arrival seam — see mission-view.js's coastSpan()), the
+// shared clock's jd, a tick count and a shortDate(jd) formatter for the tick
 // captions, compute what the widget should show. No DOM — Node-testable.
 export function coastSliderState(opts) {
 	var start = opts.start, end = opts.end, jd = opts.jd;
@@ -240,12 +229,11 @@ export function coastSliderState(opts) {
 	}
 	var pinnedAt = jd < start ? "start" : (jd > end ? "end" : null);
 	var playheadFrac = pinnedAt === "start" ? 0 : (pinnedAt === "end" ? 1 : (jd - start) / (end - start));
-	// The readout always shows the true clock time, even when the handle
-	// itself is pinned at an edge because the clock has wandered outside
-	// the span — that's the point of showing it. start IS the departure/
-	// release epoch here (coastSpan's own envelope minimum, or the frozen
-	// plan's departure date once C1 governs it), so elapsedStamp needs no
-	// separate epoch.
+	// The readout always shows the true clock time, even when the handle itself
+	// is pinned at an edge because the clock has wandered outside the span —
+	// that's the point of showing it. `start` IS the departure/release epoch
+	// here (the frozen plan's departure date, or the events' envelope minimum
+	// without a plan), so elapsedStamp needs no separate epoch.
 	var stamp = elapsedStamp(jd, start);
 	return { empty: false, segments: segments, playheadFrac: playheadFrac, pinnedAt: pinnedAt,
 	         playheadDays: stamp.days, playheadTime: stamp.time };
@@ -283,48 +271,27 @@ export function createCoastSlider(container, opts) {
 	return { update: update, dispose: slider.dispose };
 }
 
-// ---- B3: the Departure slider ---------------------------------------------
+// ---- the Departure slider --------------------------------------------------
 // LINEAR in time (like Coast), spanning the ship's departure flight: from
-// launch on the LEFT to the moment it must be on course for the coast phase
-// (origin-SOI exit) on the RIGHT. The design intent (Kim, 2026-07-11):
+// launch on the LEFT to the moment the ship must be on course for the coast
+// phase (origin-SOI exit) on the RIGHT.
 //
-//   - The RIGHT edge is the compliance deadline — the time the flight plan
-//     needs the ship on course. It is the fixed anchor.
-//   - The LEFT edge (launch) FLOATS: a well-timed single skyhook release is a
-//     short departure; a release plus Earth- and Moon-flyby burns takes far
-//     longer; an L1 elevator is different again. So the span grows or shrinks
-//     with the departure tech stack, always anchored at the right.
-//   - Default length, before a real trajectory exists — including the moment
-//     a mission is first created, with no departure tech configured yet —
-//     is SOI_radius / v∞: the time to cross the origin body's SOI at the
-//     required departure v∞ out imported with the mission from the frozen
-//     plan (computed by the caller — see mission-view's departureSpan and
-//     departureDefaultSpanSeconds). Once an actual trajectory resolves, its
-//     real duration replaces the estimate. The duration can come from
-//     two-body coast today or CR3BP later — this widget only wants the two
-//     edge times.
-//
-// That 2026-07-11 design predates WP-I's release-anchor model (task D7) and
-// is now only the shape of the PRE-resolution default (no departure tech
-// configured yet, or only the release event resolved) — see mission-view's
-// departureSpan and departureDefaultSpanSeconds. Once a departure tech
-// actually resolves a real flight, the LEFT edge is already pinned instead:
-// moon-platform.js, departure-leg.js and body-departure-leg.js all read the
-// frozen plan's read-only release anchor (`releaseAnchorJd`, set by
+// Which edge is the fixed one depends on mission-view.js's departureSpan,
+// which picks between two procedures by whether the origin's departure rides
+// a satellite carrier (Earth/Moon today): PINNED-START — the LEFT edge is the
+// frozen plan's read-only release anchor (`releaseAnchorJd`, baked by
 // core/freeze.js from core/departure-estimate.js's estimateDeparture(), read
-// back via frozen-plan.js's releaseAnchorFor()) and stamp their Release
-// event at exactly that epoch — for every origin, not only Earth. So the
-// common case is pinned-start/floating-end already, universally; task 1.4's
-// remaining gap is getting the pre-resolution default to match that (reuse
-// releaseAnchorJd instead of re-deriving its own estimate) and getting the
-// committed hand-off (frozen-plan's "Plan departure" event — currently only
-// in mission-view's flat all-phases events bar, since frozen-plan's own
-// stage phase is "coast", not "departure") to render as a mark here too.
+// back via frozen-plan.js's releaseAnchorFor()) — or ANCHORED-END — the RIGHT
+// edge is the plan's committed hand-off epoch. Either way the OTHER edge
+// floats: the live flight's own event once a departure tech resolves one, else
+// departureSpan's own default estimate (SOI_radius / required v∞). Both the
+// committed hand-off and the predicted SOI exit are handed over as marks
+// regardless of which one also frames an edge — see departureSpan's own
+// header for the full rule.
 //
-// So the caller hands over the two edge jds (already computed however it
-// likes) plus event marks; the widget is a plain linear scrubber over them,
-// identical in feel to the Coast slider. Everything about which times mean
-// what lives in mission-view; nothing event-scaled remains.
+// Either way the caller hands over two edge jds plus event marks; the widget is
+// a plain linear scrubber over them, identical in feel to the Coast slider.
+// Everything about which times mean what lives in mission-view.js.
 
 // Pure: even time ticks across [start, end] for the linear scale, plus the
 // interior event marks placed at their true time fractions, plus the playhead
@@ -356,8 +323,8 @@ export function departureSliderState(opts) {
 	var playheadFrac = pinnedAt === "start" ? 0
 		: pinnedAt === "end" ? 1
 		: (jd - start) / span;
-	// start IS launch/departure itself here, so elapsedStamp needs no
-	// separate epoch — "0 d" reads naturally as "same day as launch".
+	// `start` IS launch/departure itself here, so elapsedStamp needs no separate
+	// epoch — "0 d" reads naturally as "same day as launch".
 	var stampVal = elapsedStamp(jd, start);
 	return { empty: false, segments: segments, marks: marks,
 	         playheadFrac: playheadFrac, pinnedAt: pinnedAt,
@@ -399,10 +366,9 @@ export function createDepartureSlider(container, opts) {
 	return { update: update, dispose: slider.dispose };
 }
 
-// ---- task 1.3: the Arrival slider ------------------------------------------
-// The third and last of the per-phase scrubbers, and the only one whose span
-// is derived end to end rather than anchored: it IS the seam window from
-// core/arrival-seam.js —
+// ---- the Arrival slider ----------------------------------------------------
+// The only one of the three whose span is derived end to end rather than
+// anchored: it IS the seam window from core/arrival-seam.js —
 //
 //   [ closest approach - Delta-t, closest approach + ~1 day ]
 //
@@ -419,9 +385,10 @@ export function createDepartureSlider(container, opts) {
 //   - The playhead readout is signed time relative to that mark
 //     (approachStamp) rather than "T+" since the phase started.
 //   - With no encounter at all, the seam collapses to a single point at the
-//     plan's committed arrival epoch (1.1's fallback). A zero-length span is
-//     the empty state here, not an error — mission-view falls back to the raw
-//     date bar for the clock while that holds.
+//     plan's committed arrival epoch (core/arrival-seam.js's fallback). A
+//     zero-length span is the empty state here, not an error —
+//     mission-view.js falls back to the raw date bar for the clock while that
+//     holds.
 //
 // Pure: no DOM, Node-testable. marks are the arrival phase's own flight
 // events, filtered to those actually inside the window (an event outside it

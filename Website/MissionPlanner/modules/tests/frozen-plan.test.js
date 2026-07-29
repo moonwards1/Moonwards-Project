@@ -1,4 +1,4 @@
-// Node tests for the frozen-plan module (task C1) — the comply-mode
+// Node tests for the frozen-plan module — the comply-mode
 // semantics: the plan's frozen departure state always flows downstream;
 // tech deviations surface as warnings (v∞ / epoch / aim), never re-planning;
 // a missing tech is a warning too (inputOptional), not a block. Run from the
@@ -34,7 +34,7 @@ function makeRegistry() {
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
 	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
-	                             // flyby leg (task H3); arrival tech is empty by default
+	                             // flyby leg; arrival tech is empty by default
 	return reg;
 }
 
@@ -98,7 +98,7 @@ test("compliance: an under-delivering tech warns 'short by', with the numbers", 
 	assert.match(warnings[0].fix, /Raise .*0\.24 km\/s/);
 });
 
-test("compliance: the epoch row is the plan's hand-off WINDOW, not a point (task I3)", function () {
+test("compliance: the epoch row is the plan's hand-off WINDOW, not a point", function () {
 	// Inside the default ±1 d window: no epoch warning at all.
 	var inside = computeCompliance(planParams(3420), delivered([3420, 0, 0], JD + 0.5));
 	assert.equal(complianceWarnings(inside).filter(function (w) { return w.code === "epoch-mismatch"; }).length, 0);
@@ -172,10 +172,10 @@ test("compliance: unknown origin / arrival bodies and inverted epochs are bad-pa
 		{ arrival: { body: "Ceres", jd: JD - 1, vInf: 0 } }), null).diagnostic.code, "bad-params");
 });
 
-test("planSummary: v∞ in/out, epoch, flight time, and Kim's plan Δv formula", function () {
-	// Kim (2026-07-13): plan Δv = v∞ in (leaving the origin's SOI) + v∞ out
-	// (reaching the destination's) + the waypoint burns. The frozen leg burn
-	// no longer exists (E2's post-burn hand-off), so it's not a term.
+test("planSummary: v∞ in/out, epoch, flight time, and the plan Δv formula", function () {
+	// plan Δv = v∞ in (leaving the origin's SOI) + v∞ out (reaching the
+	// destination's) + the waypoint burns. A frozen leg carries no burn of its
+	// own — the hand-off is post-burn — so there is no leg-burn term.
 	var p = planParams(3420);
 	p.waypoints = [{ days: 100, burn: { pro: 300, rad: 0, nrm: -400 } }];   // 500 m/s
 	var s = planSummary(p);
@@ -208,20 +208,19 @@ function presetChain() {
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();   // moon-platform, orbital-skyhook, departure-leg,
-	                                   // frozen-plan, transfer-leg (task I3's chain)
+	                                   // frozen-plan, transfer-leg
 	return { world: res.world, engine: engine,
 	         moon: stages[0].id, sky: stages[1].id, dep: stages[2].id,
 	         plan: stages[3].id, leg: stages[4].id };
 }
 
 test("comply: the shipped preset's skyhook alone falls short of the full departure requirement", function () {
-	// Since the 2026-07-14 migration folded the preset's old separate
-	// leg-side burn into departure.v (presets/default-mission.js's header),
-	// the skyhook's own unchanged release physics no longer covers the
-	// whole committed departure by itself — an honest, expected gap (Kim:
-	// show the real warning rather than retune the skyhook to paper over
-	// it — no departure-phase tech models that extra burn yet). The plan
-	// itself still reports its own facts regardless of the tech's shortfall.
+	// The preset's departure.v folds the injection into the committed hand-off
+	// state (presets/default-mission.js's header), so the skyhook's own release
+	// physics does not cover the whole committed departure by itself. That gap
+	// is deliberate and shipped: the mission shows the real warning rather than
+	// having the skyhook retuned to paper over it. The plan still reports its
+	// own facts regardless of the tech's shortfall.
 	var c = presetChain();
 	var rPlan = c.engine.resultFor(c.plan);
 	assert.equal(rPlan.status, "ok");
@@ -264,7 +263,7 @@ test("comply: detuning the tech warns on the plan but does NOT move the coast", 
 
 test("comply: a mission with NO departure system still shows its whole plan", function () {
 	// E2's "empty tech slot" is the whole departure STACK absent (a freeze-
-	// spawned mission is [frozen-plan, transfer-leg] until WP-I's I5 adds
+	// spawned mission is [frozen-plan, transfer-leg] until the shell adds
 	// carriers), so drop all three departure stages, not just the skyhook.
 	var c = presetChain();
 	c.world.set({ removeStage: c.dep });
@@ -280,7 +279,7 @@ test("comply: a mission with NO departure system still shows its whole plan", fu
 	assert.deepEqual(rLeg.warnings, []);             // and still arrives
 });
 
-// ---- the boundary fix (2026-07-20): a present-but-FAILING departure (not
+// ---- the boundary rule: a present-but-FAILING departure (not
 // just an absent one) must still leave the committed plan and coast flying.
 // Before frozen-plan became a `boundary` stage, a departure diagnostic blocked
 // the plan and blanked the whole coast — breaking the comply rule's promise
@@ -321,11 +320,11 @@ test("boundary: removing the last carrier (no-carrier) still leaves the coast fl
 });
 
 test("comply: reverting the tech to its shipped params reproduces the same (still-short) warnings", function () {
-	// "Fixing" no longer means "clears every warning" (the shipped skyhook
-	// alone was never sufficient post-migration, see the test above) — this
-	// tests the recompute is deterministic and reversible: a detune changes
-	// the shortfall, and undoing it lands back on the exact baseline, not a
-	// fresh solve.
+	// "Fixing" does not mean "clears every warning" here — the shipped skyhook
+	// alone never covers the whole committed departure (see the test above).
+	// What this checks is that recompute is deterministic and reversible: a
+	// detune changes the shortfall, and undoing it lands back on the exact
+	// baseline rather than a fresh solve.
 	var c = presetChain();
 	var baseline = c.engine.resultFor(c.plan).warnings;
 	assert.ok(baseline.length >= 1);
@@ -357,13 +356,11 @@ test("update: a damaged plan fails hard (diagnostic), not as a warning", functio
 });
 
 test("the baked preset plan is internally consistent: v∞, anchor, window", function () {
-	// Guards the preset's frozen numbers. The committed departure state is
-	// historical data now (baked 2026-07-14 from the then-current release
-	// model plus the folded injection — the preset header tells the story;
-	// the old computeRelease that produced it is gone since I3), so what's
-	// checkable is its own consistency: the required v∞ it encodes, and that
-	// the timing fields were baked exactly the way core/freeze.js bakes them
-	// (anchor = hand-off − the D7 departure estimate for that same v∞).
+	// Guards the preset's frozen numbers. The committed departure state is baked
+	// data, not something any live code re-derives, so what is checkable is its
+	// own internal consistency: the required v∞ it encodes, and that the timing
+	// fields were baked exactly the way core/freeze.js bakes them — anchor =
+	// hand-off − core/departure-estimate.js's estimate for that same v∞.
 	var planStage = defaultMission.stages[3];
 	assert.equal(planStage.moduleId, "frozen-plan");
 	var p = planStage.params;
@@ -378,7 +375,7 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 		est.days.toFixed(4) + " d)");
 });
 
-// ---- releaseAnchorFor (the read-only anchor's one lookup, task I3) ----------
+// ---- releaseAnchorFor: the read-only anchor's one lookup -------------------
 
 test("releaseAnchorFor: plan anchor → plan departure.jd → legacy releaseJd → null", function () {
 	function worldWith(stages) {

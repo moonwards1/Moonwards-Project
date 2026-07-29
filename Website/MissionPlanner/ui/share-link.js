@@ -1,12 +1,15 @@
-/* MissionPlanner/ui/share-link.js — the mission-link envelope (task E2).
+/* MissionPlanner/ui/share-link.js — the mission-link envelope.
  *
- * Pure (no DOM), Node-testable. A "Copy mission link" URL carries a mission
- * in its #mission= fragment. Before E2 the fragment was a bare
- * World.serialize() object, which loses the mission's TITLE (titles live at
- * the shell level, not in the World — the A2 decision), so every import
- * arrived as "Imported mission". The envelope here wraps { title, world }
- * under its own kind stamp; unpackMissionLink still accepts the old bare
- * form, so pre-E2 links keep working.
+ * Pure (no DOM), Node-testable. A "Copy mission link" URL carries a mission in
+ * its #mission= fragment. The envelope wraps { title, world } under its own
+ * kind stamp, because a mission's TITLE lives at the shell level (planner.js's
+ * mission list), not in the World — a bare serialized World would lose it and
+ * every import would arrive as "Imported mission". unpackMissionLink also
+ * accepts a bare serialized World, so older links keep working.
+ *
+ * The writing side is mission-view.js's share button (packMissionLink +
+ * Shared/exchange.js's encodeFragment); the reading sides are planner.js's
+ * initialMissions and ephemeris-view.js's "Paste mission link…".
  *
  * missionFragmentFrom() is the paste-side helper: the user may paste the
  * whole URL, just the "#mission=..." tail, or the bare base64url blob —
@@ -30,14 +33,14 @@ export function packMissionLink(title, worldData) {
 }
 
 // Decoded fragment -> { ok: true, title: string|null, world } or
-// { ok: false, reason }. Accepts both the E2 envelope and the pre-E2 bare
-// serialized-World form (kind "moonwards-world"); world content itself is
-// NOT validated here — that stays deserializeWorld's job.
+// { ok: false, reason }. Accepts both the envelope and a bare serialized-World
+// (kind "moonwards-world"); world content itself is NOT validated here — that
+// stays core/world.js's deserializeWorld's job.
 export function unpackMissionLink(decoded) {
 	if (!decoded || typeof decoded !== "object") {
 		return { ok: false, reason: "not a mission link" };
 	}
-	if (decoded.kind === "moonwards-world") {           // pre-E2 bare world
+	if (decoded.kind === "moonwards-world") {           // a bare world, no envelope
 		return { ok: true, title: null, world: decoded };
 	}
 	if (decoded.kind !== MISSION_LINK_KIND) {

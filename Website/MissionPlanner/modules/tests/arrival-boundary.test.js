@@ -1,5 +1,5 @@
-// Node tests for the Coast→Arrival compliance boundary (WP-1 task 1.5,
-// modules/arrival-boundary/arrival-boundary.js): the pure comparison and its
+// Node tests for the Coast→Arrival compliance boundary
+// (modules/arrival-boundary/arrival-boundary.js): the pure comparison and its
 // warning mapping. The `boundary: true` behaviour itself — that an upstream
 // failure doesn't mark this stage blocked — belongs to the engine and is
 // tested in core/tests/recompute.test.js. Run from the repo root:

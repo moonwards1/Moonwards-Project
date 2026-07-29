@@ -1,5 +1,6 @@
-/* Mission Planner scaffold — deliberately plain (migration step 4.3).
- * Palette follows the chosen step-4.2 mockup (mock-a-phases.html). */
+/* Mission Planner — deliberately plain styling for the whole app: the tab bar,
+ * the Ephemeris tab, and the per-mission chrome cloned from planner.html's
+ * <template>. Palette follows mockups/mock-a-phases.html. */
 
 :root {
 	--bg: #0b0e14; --pane: #0d111c; --panel: #141a2a;
@@ -18,7 +19,7 @@ body {
 #mp-app { display: flex; flex-direction: column; height: 100vh; }
 .mp-muted { color: var(--dim); font-size: 12px; }
 
-/* ---------- tab bar: Ephemeris tab + one tab per mission (task A2) ---------- */
+/* ---------- tab bar: Ephemeris tab + one tab per mission ---------- */
 .mp-tabbar {
 	display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px 0;
 	background: #0e1220; border-bottom: 1px solid var(--line); flex: none;
@@ -47,8 +48,8 @@ body {
 }
 .mp-example-select:hover { color: var(--bright); border-color: var(--acc); }
 
-/* ---------- Ephemeris tab (task D1: shell — its own date bar + scene +
-   sidebar, reusing the same classes a mission view's .mp-main uses) ---------- */
+/* ---------- Ephemeris tab: its own date bar + scene + sidebar, reusing the
+   same classes a mission view's .mp-main uses ---------- */
 .mp-eph-view { display: none; flex-direction: column; flex: 1; min-height: 0; }
 .mp-eph-view.on { display: flex; }
 
@@ -71,12 +72,11 @@ body {
 .mp-phase.active { background: #22304e; border-color: #3c5788; color: var(--bright); }
 .mp-phase:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* task C2: the frozen-plan comparison, above the timeline — not phase-gated,
-   same as the shared clock below it. Replaces the old stage-strip. Also
-   frozen-plan's only view surface now (sidebarCard: false, 2026-07-12): it
-   carries flight time / v∞ in / plan Δv and the hard-diagnostic/blocked
-   states too, so it flexes to use the width freed by dropping the brand
-   text and the timeline caption row. */
+/* The frozen-plan comparison, above the timeline — not phase-gated, same as
+   the shared clock below it. This is frozen-plan's ONLY view surface
+   (sidebarCard: false), so it also carries flight time / v∞ in / plan Δv and
+   the hard-diagnostic/blocked states; it flexes to take whatever width the
+   phase buttons and the share button leave. */
 .mp-compliance-bar { display: flex; align-items: center; gap: 14px; margin-left: 18px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
 .mp-cbar-metric { font-size: 12.5px; color: var(--text); white-space: nowrap; }
 .mp-cbar-metric b { color: var(--dim); font-weight: 400; margin-right: 4px; }
@@ -113,7 +113,7 @@ body {
 .mp-slider-line input[type=range] { flex: 1; accent-color: var(--acc); }
 .mp-slider-end { font-size: 11px; color: var(--dim); min-width: 64px; text-align: center; }
 
-/* ---------- phase sliders (task B2 — ui/phase-slider.js) ---------- */
+/* ---------- phase sliders (ui/phase-slider.js) ---------- */
 .mp-sliderzone {
 	flex: none; background: #0e1220; border-bottom: 1px solid var(--line);
 	padding: 8px 14px 36px;
@@ -148,12 +148,11 @@ body {
 .mp-playhead.mp-pinned { background: #3d4c6b; }
 .mp-playhead.mp-pinned::after { border-top-color: #3d4c6b; }
 /* Floating "T+" elapsed-time readout, its border touching the bottom of the
-   handle (Kim, 2026-07-14 — briefer than the earlier absolute-date stamp,
-   and tighter to the handle so it doesn't cost the section below any extra
-   room). top:34px is relative to .mp-playhead's OWN box (which spans -4px
-   to 30px in track coordinates, per its top/bottom offsets above), so 34px
-   lands exactly on the handle's bottom edge. Two lines, stacked and
-   centered: "167 d" (bold) over the elapsed HH:MM (dim). */
+   handle so it costs the section below no extra room. top:34px is relative to
+   .mp-playhead's OWN box (which spans -4px to 30px in track coordinates, per
+   its top/bottom offsets above), so 34px lands exactly on the handle's bottom
+   edge. Two lines, stacked and centred: "167 d" (bold) over the elapsed HH:MM
+   (dim). */
 .mp-playhead-label {
 	position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
 	display: flex; flex-direction: column; align-items: center;
@@ -165,20 +164,28 @@ body {
 .mp-playhead-time { font-size: 9.5px; color: #9aa3b8; line-height: 1.2; }
 .mp-playhead.mp-pinned .mp-playhead-label { border-color: #3d4c6b; }
 .mp-playhead.mp-pinned .mp-playhead-days { color: #9aa3b8; }
-/* Event marks overlaid on a linear axis (Departure slider, B3): thin ticks at
-   a milestone's true time fraction, independent of the tick cells. */
+/* Event marks overlaid on a linear axis (the Departure and Arrival sliders):
+   thin ticks at a milestone's true time fraction, independent of the tick
+   cells. */
 .mp-mark {
 	position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px;
 	background: #e0a84a; opacity: 0.85; pointer-events: auto; cursor: help;
 	border-radius: 1px;
 }
-/* Closest approach on the Arrival slider (task 1.3): not a milestone among
-   others but the point the whole window is built around, so it reads as a
-   brighter, wider mark than the flight events beside it. */
+/* Closest approach on the Arrival slider: not a milestone among others but the
+   point the whole window is built around, so it reads as a brighter, wider
+   mark than the flight events beside it. */
 .mp-mark-ca {
 	width: 3px; margin-left: -1.5px; top: -5px; bottom: -5px;
 	background: #cfe0ff; opacity: 1;
 	box-shadow: 0 0 5px rgba(120, 170, 255, 0.7);
+}
+/* The Departure slider's committed hand-off — the plan's fixed requirement,
+   as distinct from the predicted SOI exit beside it (a plain .mp-mark). */
+.mp-mark-committed {
+	width: 3px; margin-left: -1.5px; top: -5px; bottom: -5px;
+	background: #9ee08a; opacity: 1;
+	box-shadow: 0 0 5px rgba(158, 224, 138, 0.7);
 }
 
 /* ---------- events bar ---------- */
@@ -265,15 +272,15 @@ body {
 	width: 110px; color-scheme: dark;
 }
 .mp-inrow select { width: 150px; }
-/* Technology dropdown (the Arrival technology selector, task H2) — full-width,
-   not paired with a label the way .mp-inrow's controls are. */
+/* Technology dropdowns (the departure and arrival technology selectors) —
+   full-width, not paired with a label the way .mp-inrow's controls are. */
 .mp-tech-select {
 	display: block; width: 100%; background: #0f1424; border: 1px solid var(--line2);
 	color: var(--text); border-radius: 6px; padding: 5px 8px; font: inherit;
 	font-size: 12.5px; color-scheme: dark;
 }
 .mp-tech-select option:disabled { color: #5f6a82; }
-/* In-card aiming slider (the skyhook's release phase, task I3). */
+/* In-card aiming slider (the skyhook's release phase). */
 .mp-phase-wrap { display: inline-flex; align-items: center; gap: 6px; }
 .mp-phase-wrap input[type=range] { width: 96px; accent-color: var(--acc); }
 .mp-unit { color: #5f6a82; font-size: 11.5px; margin-left: 4px; }
@@ -282,8 +289,8 @@ body {
 .mp-row { display: flex; justify-content: space-between; gap: 10px; padding: 2.5px 0; font-size: 13px; }
 .mp-row .mp-k { color: var(--dim); }
 .mp-row .mp-v { text-align: right; }
-/* A readout that is off its committed value (task 1.5's arrival-boundary card):
-   the warning below it says what and why; this just marks which row it is. */
+/* A readout that is off its committed value (the arrival-boundary card): the
+   warning below it says what and why; this just marks which row it is. */
 .mp-row .mp-v.mp-bad { color: var(--warn); }
 
 .mp-wp-head {
@@ -315,8 +322,9 @@ body {
 .mp-diag b { font-weight: 600; }
 .mp-diag .mp-fix { color: var(--dim); margin-top: 3px; }
 
-/* ---------- Ephemeris tab: straddling burn-readout panes (task D2),
-   Shared/sim/readout-panes.js with classPrefix "mp" ---------- */
+/* ---------- straddling burn-readout panes (Shared/sim/readout-panes.js with
+   classPrefix "mp"): used by the Ephemeris tab and by the mission views'
+   departure/arrival leg cards ---------- */
 .mp-readout-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
 .mp-readout {
 	position: absolute; box-sizing: border-box; min-width: 122px; padding: 7px 11px;
@@ -327,7 +335,7 @@ body {
 .mp-readout-label { color: var(--dim); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .mp-readout-val { font-size: 13px; font-weight: 600; line-height: 1.2; }
 
-/* ---------- Ephemeris tab: waypoint snap-to controls (task D2) ---------- */
+/* ---------- Ephemeris tab: waypoint snap-to controls ---------- */
 .mp-wp-snaps { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0; }
 .mp-wp-snap { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--dim); cursor: pointer; }
 .mp-wp-snap input { margin: 0; accent-color: var(--acc); }
@@ -349,17 +357,15 @@ body {
 .sst-vec-num span { color: var(--text); }
 .sst-vec-num input { width: 100%; min-width: 0; font-weight: 400; background: #0f1424; border: 1px solid var(--line2); color: var(--text); border-radius: 6px; padding: 4px 7px; font: inherit; font-size: 12.5px; color-scheme: dark; }
 
-/* ---------- Ephemeris tab: ship-marker card (task D3) ----------
-   Skeleton from Shared/sim/marker-card.js with classPrefix "mp", floating
-   atop the 3D pane like the SST's own (2026-07-13: moved off the sidebar,
-   reversing D3's original placement) — ephemeris-view.js adds .mp-card to
-   it for the same look the rest of the app's cards use. .mp-eph-marker
-   itself spans the whole pane (like .mp-readout-layer) and lets clicks
-   through everywhere except the card, so the card can be DRAGGED anywhere
-   in the pane by its title bar (marker-card.js's own makeCardDraggable) —
-   .mp-card is the actual positioned box, starting top-right, restyled here
-   as a floating overlay (same rgba/box-shadow treatment as the straddling
-   .mp-readout boxes) instead of a sidebar card. */
+/* ---------- Ephemeris tab: ship-marker card ----------
+   Skeleton from Shared/sim/marker-card.js with classPrefix "mp", floating atop
+   the 3D pane; ephemeris-view.js adds .mp-card to it for the same look the rest
+   of the app's cards use. .mp-eph-marker itself spans the whole pane (like
+   .mp-readout-layer) and lets clicks through everywhere except the card, so the
+   card can be DRAGGED anywhere in the pane by its title bar (marker-card.js's
+   makeCardDraggable). .mp-card is the actual positioned box, starting top-right,
+   styled here as a floating overlay — the same rgba/box-shadow treatment as the
+   straddling .mp-readout boxes. */
 .mp-eph-marker { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 .mp-eph-marker .mp-card {
 	position: absolute; top: 12px; right: 12px; width: 230px;
@@ -367,8 +373,8 @@ body {
 	background: rgba(20, 26, 42, 0.94);
 	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
 }
-/* "Start Mission Plan" (task E1): full-width call-to-action + its always-on
-   explanatory note, appended after the card's own rows. */
+/* "Start Mission Plan": full-width call-to-action + its always-on explanatory
+   note, appended after the card's own rows. */
 .mp-eph-marker .mp-card .mp-muted { margin-top: 6px; line-height: 1.4; }
 .mp-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .mp-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
@@ -401,11 +407,10 @@ body {
 .mp-marker-val { font-size: 13px; font-weight: 600; color: var(--bright); }
 .mp-marker-km { color: #6b7589; font-size: 10px; text-align: right; margin: -2px 0 2px; }
 
-/* The card's EMPTY state (task E2 — the card always exists now, as the
-   permanent home of "Start Mission Plan" and "Paste mission link…"): with
-   no marker placed, .mp-empty hides every marker-specific control and the
-   hint line shows instead; placing a marker flips it back
-   (ephemeris-view.js's setCardEmpty). */
+/* The card's EMPTY state. The card always exists, as the permanent home of
+   "Start Mission Plan" and "Paste mission link…", so with no marker placed
+   .mp-empty hides every marker-specific control and the hint line shows
+   instead; placing a marker flips it back (ephemeris-view.js's setCardEmpty). */
 #mp-marker-card.mp-empty .mp-marker-x,
 #mp-marker-card.mp-empty .mp-marker-slider,
 #mp-marker-card.mp-empty .mp-marker-mode,
@@ -415,9 +420,9 @@ body {
 #mp-marker-card:not(.mp-empty) .mp-marker-hint { display: none; }
 .mp-paste-btn { display: block; width: 100%; margin-top: 9px; }
 
-/* ---------- modal dialog (task E2: name-your-mission + paste-a-link) ----------
-   Lifted from mock-a-phases.html's .dialog-wrap/.dialog, mp- prefixed and
-   mapped onto the shell's palette vars. One instance, built by
+/* ---------- modal dialog: name-your-mission + paste-a-link ----------
+   Lifted from mockups/mock-a-phases.html's .dialog-wrap/.dialog, mp- prefixed
+   and mapped onto the shell's palette vars. One instance, built by
    ephemeris-view.js and appended to <body>. */
 .mp-dialog-wrap {
 	position: fixed; inset: 0; background: rgba(5, 8, 14, 0.6);
@@ -438,10 +443,10 @@ body {
 .mp-dialog-btnrow { display: flex; gap: 8px; justify-content: flex-end; }
 .mp-dialog-btnrow .mp-btn.mp-big { display: inline-block; width: auto; margin-top: 0; }
 
-/* ---------- "Moon phase at launch" widget (Ephemeris tab, task D7) ----------
-   Kim's sketch: phase glyph left, two tan-outlined pill bars right (teal
-   fill) — the Moon's speed along Earth's prograde and the estimated days to
-   leave (or, arrival mirror, cross) the Earth system. */
+/* ---------- "Moon phase at launch" widget (Ephemeris tab) ----------
+   Phase glyph left, two tan-outlined pill bars right (teal fill) — the Moon's
+   speed along Earth's prograde, and the estimated days to leave (or, in the
+   arrival mirror, cross) the Earth system. */
 .mp-moonwidget { margin: 8px 0 10px; }
 .mp-moonwidget-title { color: var(--bright); font-size: 13px; margin-bottom: 6px; }
 .mp-moonwidget-body { display: flex; align-items: center; gap: 12px; }

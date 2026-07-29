@@ -1,33 +1,41 @@
-# Website/MissionPlanner — the integrated simulator shell
+# Website/MissionPlanner — the integrated mission simulator
 
 This folder is where the standalone calculators compose into one mission
-simulator — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md), "Migration path"
-step 4, and `MissionPlannerDesign.md` in this folder, Kim's UI design the
-shell follows (phase-based mission tabs, comply mode). **Current status:
-headless core (step 4.1) + phase-layout mockups (step 4.2, direction chosen:
-mockup A, plain phase buttons) + the scaffold UI with the first two modules
-(step 4.3) + the worked-example preset and share-link load path (step 4.4's
-mechanism half; curation waits for the fuller interface) + the multi-mission
-tab bar with persistence across reloads (build-out tasks A1–A3) + real
-phase-driven mission tabs with a date-scaled Coast slider (tasks B1–B2).**
-`core/` is pure logic with Node tests, so the recompute/blocked
-semantics were verified before any UI existed; `planner.html/css/js` is the
-deliberately-plain, disposable shell over it; `modules/` holds the five
-mission modules (the departure carrier chain — moon-platform, lunar-skyhook,
-departure-leg, task I3 — plus frozen-plan and transfer-leg); `mockups/`
-holds the disposable step-4.2 layout mockups (see
-its README; `mockups/chain-strip/` is an earlier, superseded round).
+simulator — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for the general
+model (modules, packets, the recompute chain) and `MissionPlannerDesign_v2.md`
+in this folder for Kim's UI design (the current design doc — it supersedes
+`MissionPlannerDesign.md`). Settled architectural rules that cut across
+several files (phase seams, timelines, waypoint controls, the technology-
+platform shape) live in
+[`../../Notes-and-Obsolete/decisions.md`](../../Notes-and-Obsolete/decisions.md)
+under "Mission Planner", not here. `MissionPlannerTasks_v2.md` in this folder
+is the forward-looking task list.
+
+**Current status:** a mission runs end to end — Departure, Coast and Arrival
+are all real phases, each with its own timeline slider, and both phase seams
+(Departure→Coast, Coast→Arrival) are comply-mode boundaries that measure a
+delivered state against a frozen plan without ever silently re-planning it.
+`core/` is pure logic with Node tests, so the recompute/blocked/comply
+semantics are verified independent of any UI; `planner.js` + `mission-view.js`
++ `ephemeris-view.js` + `scene-frames.js` are the browser shell over it;
+`modules/` holds the mission-profile stages; `ui/` holds shell-local widgets;
+`presets/` holds the shipped mission and the example-mission catalog.
+`mockups/` is a leftover disposable artifact from before the real shell
+existed and describes neither the current UI nor the current design doc.
 
 ## core/ — the headless mission core
 
 Pure ES modules, named exports, no DOM. One responsibility per file:
 
-| File             | Named exports                                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `world.js`       | `createWorld`, `deserializeWorld`, `WORLD_KIND`, `WORLD_VERSION` | World — the single source of truth: `jd` (one clock) + the mission profile (ordered stages with stable, never-reused ids). Every mutation goes through the one choke point, `world.set(change)`; listeners get `{ change, index, id, transient }` where `index` is where "dirty" starts. Versioned serialization; a save is **always storable**, feasible or not, known modules or not.                                                                                      |
-| `diagnostics.js` | `makeDiagnostic`, `isDiagnostic`, `DIAGNOSTIC_KIND`              | The structured-diagnostic model: `{ kind, stageId, code, message, values, fix? }` — what a stage's `update()` returns instead of a packet when the mission is infeasible. Plain and JSON-able, distinguishable from a packet by `kind`.                                                                                                                                                                                                                                      |
-| `registry.js`    | `createRegistry`, `validateDescriptor`                           | The module registry. Validates a descriptor's `id`/`title`/`accepts`/`emits`/`update` at registration (packet types checked against `PacketTypes`, so typos fail loud and early); view-facing fields (`rendersIn`, `init`, …) are optional and unexamined here. An *unregistered* id in a profile is user data, not an error — the engine reports it as a diagnostic.                                                                                                        |
-| `recompute.js`   | `createEngine`                                                   | The chain-recompute engine. Subscribes to the World; on any change recomputes from the dirty index **downstream, in order, synchronously**. Per-stage results keyed by stage id: `ok` (with the output packet), `diagnostic`, or `blocked` (waiting on the failed stage, `update()` not called, params intact); results also carry `warnings` and `events` arrays (see the module contract below). Locks the World during a pass, so modules cannot `set()` from `update()`. |
+| File                     | Named exports                                                    | Purpose                                                                                                                                                                                                                                                    |
+| ------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `world.js`               | `createWorld`, `deserializeWorld`, `WORLD_KIND`, `WORLD_VERSION`  | World — the single source of truth: `jd` (one clock) + the mission profile (ordered stages with stable, never-reused ids). Every mutation goes through the one choke point, `world.set(change)`; listeners get `{ change, index, id, transient }` where `index` is where "dirty" starts. Versioned serialization (current version 4, with a v1→v2→v3→v4 migration chain); a save is **always storable**, feasible or not, known modules or not. |
+| `diagnostics.js`         | `makeDiagnostic`, `isDiagnostic`, `DIAGNOSTIC_KIND`               | The structured-diagnostic model: `{ kind, stageId, code, message, values, fix? }` — what a stage's `update()` returns instead of a packet when the mission is infeasible. Plain and JSON-able, distinguishable from a packet by `kind`.                    |
+| `registry.js`            | `createRegistry`, `validateDescriptor`                            | The module registry. Validates a descriptor's `id`/`title`/`accepts`/`emits`/`update` at registration (packet types checked against `PacketTypes`, so typos fail loud and early); view-facing fields (`rendersIn`, `init`, …) are optional and unexamined here. An *unregistered* id in a profile is user data, not an error — the engine reports it as a diagnostic. |
+| `recompute.js`           | `createEngine`                                                    | The chain-recompute engine. Subscribes to the World; on any change recomputes from the dirty index **downstream, in order, synchronously**. Per-stage results keyed by stage id: `ok` (with the output packet), `diagnostic`, or `blocked` (waiting on the failed stage, `update()` not called, params intact); results also carry `warnings` and `events` arrays (see the module contract below). Locks the World during a pass, so modules cannot `set()` from `update()`. |
+| `freeze.js`              | (see header — assembles a serialized World)                       | The "Start Mission Plan" contract: turns a plan authored on the Ephemeris tab into a fresh serialized World — `[ departure scaffold ] → [ frozen-plan ] → [ transfer-leg ] → [ arrival-boundary ] → [ arrival-leg ]` — with the departure carrier slot and the arrival-technology slot both left empty for the mission tab to fill in. Pure; the caller resolves every view-side number first and hands in plain data. |
+| `departure-estimate.js`  | (see header — estimates the departure leg's duration)              | How long the departure leg lasts, estimated from the frozen plan alone (before any departure tech is chosen): the required v∞, the hand-off epoch, and — for Earth — where the Moon is, via the dive-in/direct-out wedge rule. Feeds the read-only release anchor `freeze.js` bakes into the plan, the Ephemeris tab's Moon-phase widget, and the Departure slider's default span. |
+| `arrival-seam.js`        | `computeArrivalSeam`                                               | The Coast→Arrival seam derivation: a window `[closest approach − Δt, closest approach + ~1 day]` around the coast's own closest-approach event, `Δt = clamp(R_SOI/v∞, 2 d, 5 d)`. Nothing is stored — recomputed live from `transfer-leg`'s emitted events every recompute, so the window moves as the coast is tuned. No encounter at all: the window collapses to a point at the plan's committed arrival epoch. |
 
 Engine-generated diagnostic codes: `unknown-module`, `missing-input`,
 `input-type-mismatch`, `module-error` (an `update()` that threw),
@@ -39,265 +47,293 @@ A stage's module is called as `update(ctx, input)` where
 `ctx = { world, jd, stageId, params }` and `input` is the upstream stage's
 output packet (or `null`). It returns an output packet built with
 `PacketTypes.make` (of a type listed in its `emits`), or `null` (nothing to
-pass downstream), or a diagnostic built with `makeDiagnostic`. This is a
-deliberate refinement of the `update(world, input)` sketch in
-ARCHITECTURE.md: the same module can appear at more than one stage (two
-transfer legs), so each call carries *that stage's* params and id.
+pass downstream), or a diagnostic built with `makeDiagnostic`. The same
+module can appear at more than one stage (two transfer legs), so each call
+carries *that stage's* params and id.
 
-It may instead return an **envelope**, `{ packet, warnings, events }`
-(added 2026-07-09 for comply mode — see `MissionPlannerDesign.md`):
+It may instead return an **envelope**, `{ packet, warnings, events }` — comply
+mode's reporting channel:
 
-- `packet` — anything a bare return accepts (packet / `null` / diagnostic;
-  a diagnostic still fails the stage hard and drops the envelope's extras).
+- `packet` — anything a bare return accepts (packet / `null` / diagnostic; a
+  diagnostic still fails the stage hard and drops the envelope's extras).
 - `warnings` — diagnostic-shaped objects that do **not** block downstream.
-  This is comply mode's reporting channel: the frozen-plan stage keeps
-  emitting its own output while carrying "the tech misses the plan by X"
-  here. `stageId` is filled with the authoring stage's id when absent; set
-  it explicitly to aim a warning at another stage.
-- `events` — `[{ jd, label, ... }]` timeline entries (finite `jd`,
-  non-empty `label`, extra fields pass through) for the phase sliders and
-  the events bar.
+  A boundary stage (`frozen-plan`, `arrival-boundary`) uses this to report
+  "the tech misses the plan by X" while still emitting its own output.
+  `stageId` is filled with the authoring stage's id when absent; set it
+  explicitly to aim a warning at another stage.
+- `events` — `[{ jd, label, ... }]` timeline entries (finite `jd`, non-empty
+  `label`, extra fields pass through) for the phase sliders and the events
+  bar.
 
-Malformed `warnings`/`events` are authoring errors and fail the stage with
-a `bad-output` diagnostic. Hard-failure blocking semantics are unchanged
-throughout: diagnostics (module-authored or engine-generated) still block
-every downstream stage, params intact.
+Malformed `warnings`/`events` are authoring errors and fail the stage with a
+`bad-output` diagnostic. Diagnostics (module-authored or engine-generated)
+block every downstream stage, params intact — with two descriptor flags that
+refine that default:
 
-Imports from `../../Shared/` (`exchange-types.js`); this folder breaks if
-moved without `Website/Shared/` coming along.
+- **`boundary: true`** — the stage is called with `input === null` instead of
+  going `blocked` when its upstream failed, so a compliance seam always
+  reports what it's missing (a warning it authors itself) rather than the
+  whole downstream phase going grey with no explanation. `frozen-plan` and
+  `arrival-boundary` are the two boundary stages, one at each phase seam.
+- **`inputOptional: true`** — the stage is called with `input === null`
+  instead of failing with `missing-input` when nothing arrives; used where a
+  stage must keep flowing with an empty upstream slot (the frozen plan with no
+  departure tech yet).
 
-## The scaffold shell (step 4.3, refactored by task A1)
+Refinements the browser shell adds on top of the headless contract:
 
-`planner.html` + `planner.css` + `planner.js` + `mission-view.js` — view at
-`http://localhost:8000/MissionPlanner/planner.html` via `serve.bat` (or the
-deployed site). Since task A1 (the first step of the build-out plan in
-`MissionPlannerTasks.md`) the shell is split in two:
+- **`update()` stays pure; drawing is a separate `draw(view, snapshot)` hook.**
+  update() must run under Node, so the shell calls `draw` after every
+  recompute pass, once per attached view, with `snapshot = { world, stageId,
+  params, result }`. Modules cache what draw needs (samples, physics figures)
+  per stageId during update() — plain data, Node-safe.
+- **`ctx.onResult(cb)`** — init()'s ctx carries a subscription scoped to that
+  stage's engine result, so a card can refresh its readouts without reaching
+  into the engine.
+- **`view.metresPerUnit`** — each view carries its frame's scene scale (AU
+  for `"helio"`, 1000 km for `"body:Earth-Moon"`, and so on for other
+  `"body:<name>"` frames), so modules draw in scene units without hardcoding a
+  frame's convention.
+- **`attachesTo` parenting** — a module's view group is parented at its
+  `attachesTo` body's node when the frame has that body (a skyhook's group
+  rides its body's node), falling back to the scene root (transfer/arrival
+  legs).
+- **`plainCard`** — a descriptor flag for a stage with no title/status header
+  of its own, because its health is exactly its own flight's (the integrated
+  departure and arrival legs use this).
 
-- **`planner.js`** is the multi-mission host: the shared module registry, the
-  ONE renderer/canvas (browsers cap live WebGL contexts), the initial mission
-  load (task A3 — persisted missions merged with a share-link fragment, or
-  the shipped preset) with its failure banner, the tab bar (task A2 —
-  Ephemeris tab + one tab per mission, active highlight, confirm-then-close),
-  and the render loop, which only drives the active mission's view.
+Imports from `../../Shared/` (`exchange-types.js`, `math-utils.js`, …); this
+folder breaks if moved without `Website/Shared/` coming along.
+
+## The shell
+
+View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
+(or the deployed site).
+
+- **`planner.js`** — the multi-mission host: the shared module registry, the
+  ONE renderer/canvas (browsers cap live WebGL contexts, so only the active
+  mission's view renders), the initial mission load (persisted missions
+  merged with a share-link fragment, or the shipped preset) with its failure
+  banner, the tab bar (the Ephemeris tab + one tab per mission, active
+  highlight, confirm-then-close, a "+" duplicate button, and the
+  example-mission dropdown), and the render loop.
 - **`mission-view.js`** exports `createMissionView({ world, registry,
   renderer, container, template, missionId, defaultMain })` — everything that
   belongs to one mission: its World + engine, frames, panes, sidebar cards,
-  date bar, plan-compliance bar, events bar, share button, and its slice of
-  workspace persistence. Returns `{ world, engine, root, show, hide, render, resize,
-  dispose }`; N instances coexist, one per future mission tab. Its DOM is
-  cloned from `planner.html`'s `<template id="mp-mission-template">`, which
-  is addressed by class, never id (ids can't repeat across instances).
+  phase buttons and sliders, compliance bar, events bar, share button, and its
+  slice of workspace persistence. Returns `{ world, engine, root, show, hide,
+  render, resize, dispose }`; N instances coexist, one per mission tab. Its
+  DOM is cloned from `planner.html`'s `<template id="mp-mission-template">`,
+  addressed by class, never id (ids can't repeat across instances).
+- **`ephemeris-view.js`** — the Ephemeris tab: a scratchpad for authoring a
+  trajectory *before* any mission exists (its own plain state object, not a
+  World). Hosts the Solar-System-Trajectory-Plotter's marker/target machinery,
+  snap-to and Lambert targeting, and the Moon-phase-at-launch widget; "Start
+  Mission Plan" hands the authored leg to `core/freeze.js` to become a new
+  mission tab. Physics is not forked — the actual leg goes through
+  `transfer-leg.js`'s exported `computeLeg`, the same function the frozen
+  Coast phase uses.
+- **`scene-frames.js`** — Three.js frame factories shared by both
+  `mission-view.js` and `ephemeris-view.js`: `"helio"` (the whole solar
+  system), `"body:Earth-Moon"` (geocentric), and a generic `"body:<name>"` for
+  any other origin/destination, so the Ephemeris tab and a mission tab render
+  the identical scene rather than two forks of it. (Not to be confused with
+  `Shared/frames.js`, which converts ship-state *vectors* between frames —
+  this file builds the renderable *scene*.)
 
-Decisions recorded with A1: **frames are per-mission** (each view builds its
-own helio/Earth–Moon scenes and cameras — sharing scenes would mean swapping
-stage view groups and camera poses on every tab switch, and `viewAdded`/
-`draw` assume a persistent group); only the renderer/canvas is shared —
-`show()` re-parents the canvas into the active view's scene element, and
-only the active view renders. The modules' draw caches are keyed **by World
-first** (a `WeakMap`), because coexisting missions reuse stage ids like
-"stg-2"; `legFor`/`physicsFor` take `(world, stageId)`.
+Frames are per-mission (each view builds its own scenes/cameras from
+`scene-frames.js`; only the renderer/canvas is shared — `show()` re-parents
+the canvas into the active view's scene element). Modules' draw caches are
+keyed **by World first** (a `WeakMap`), because coexisting missions reuse
+stage ids like "stg-2"; `legFor`/`physicsFor`-style lookups take
+`(world, stageId)`.
 
-Per mission view: **scissored panes** (a main pane plus floating,
-click-to-swap panes, each rendering one frame — `"helio"` and
-`"body:Earth-Moon"` so far), a **date bar** (`Shared/sim/date-bar.js`)
-writing `world.set({jd})` — Departure/Arrival's clock control until B3 —
-plus the **Coast slider** (task B2, `ui/phase-slider.js`) that replaces it
-during the Coast phase: a date-scaled track spanning the departure/coast
-phases' own events (not a frozen plan — C1 doesn't exist yet), with a
-click/drag-scrubbable playhead that pins at either end when the clock falls
-outside the span, real **phase buttons** (task B1 — `workspace.phase ∈
-{departure, coast, arrival}`, driving the main-pane frame via `PHASE_FRAME`,
-which sidebar cards show, which slider shows, and the active highlight;
-Arrival stays disabled until an arrival module exists to give it a frame), a
-**plan-compliance bar** (task C2 — `.mp-compliance-bar`, replacing the
-scaffold's original stage strip, which was just buttons that scrolled to a
-sidebar card) showing the frozen-plan stage's live PLAN REQUIRES → TECH
-DELIVERS comparison (v∞, epoch, aim) as a chip plus compact per-row metrics,
-not phase-gated — reached via `registry.get("frozen-plan").complianceFor`
-so the module stays dynamically loaded rather than statically imported; the
-phase buttons' own status dots (`renderPhaseDots`, worst-status-wins per
-phase) are unrelated and unaffected. An **events bar** fed by the
-envelope's `events` channel (click an event to set the clock), and
-**sidebar cards** — one per stage, now filtered to the active phase via each
-stage's `rendersIn` frame (`stagePhaseOf`); the module builds its controls in the card
-body, the shell renders status chips and diagnostics/warnings uniformly
-(engine- and module-authored ones look identical, as the core intends).
+Layout/camera state ("workspace") lives in `localStorage`
+(`mw-missionplanner-workspace`, `{ missions: { id -> { main, phase, cams } } }`,
+one slot per mission, read-modify-write so slots survive each other), never in
+World — a **separate key** from mission-content persistence. Mission CONTENT
+(title + `world.serialize()`) lives under its own key
+(`mw-missionplanner-missions`), owned by `planner.js` and saved on `pagehide`
+and immediately after any structural change (a mission added or closed).
 
-The scaffold remains **disposable** (the World boundary is what makes
-rebuilding it safe): the tab bar (task A2) switches between the Ephemeris tab
-(a stub — its real content is WP-D) and mission tabs, and closing a mission
-tab confirms then disposes it — permanently now that missions persist (task
-A3), there's still no undo. There's no way to *create* a mission tab yet
-though (that's E2's "Start Mission Plan" flow); until then the mission count
-only ever goes down from whatever's restored (or the shipped preset, or a
-share-link import) at load. Layout/camera state ("workspace") lives in
-`localStorage` (`mw-missionplanner-workspace`, version 2: `{ missions: { id
--> { main, cams } } }`, one slot per mission, read-modify-write so slots
-survive each other; a version-1 save is adopted as mission `"m1"`'s slot),
-never in World — a **separate key** from mission-content persistence (see
-below); swapping a pane into the main window is layout-only.
-`Shared/sim/camera-controller.js`'s `bindCameraControls` now returns an
-**unbind** function so `dispose()` can detach its window-level listeners
-(the standalone plotters ignore it).
+### Mission tabs: phases, sliders, compliance
 
-### The worked-example preset + share links + mission persistence (step 4.4 + task A3)
+Each mission tab has three phases — **Departure**, **Coast**, **Arrival** —
+selected by the phase buttons, which drive the main-pane frame (via
+`PHASE_FRAME`), which sidebar cards show (each stage's `rendersIn` filters it
+to its phase), which slider shows, and the buttons' own worst-status-wins
+status dots.
 
-`planner.js`'s `initialMissions()` decides what's open at load, in order:
-persisted missions from `localStorage` (`mw-missionplanner-missions`, one
-versioned key holding every mission's shell-level title + `world.serialize()`
-— the World has no name field of its own), merged with a share-link fragment
-if the URL carries one (`#mission=<base64url JSON>`, decoded with
-`Shared/exchange.js`'s `encodeFragment`/`decodeFragment`, rebuilt with
-`deserializeWorld`), else `presets/default-mission.js` (a serialized World
-checked in as plain data) when there's nothing saved and no fragment. A
-fragment is added as a new **"Imported mission"** tab alongside whatever's
-already saved, never replacing it (a share link opens in a new tab, so it
-shouldn't erase existing work); a bad or too-new fragment, or an unreadable
-saved entry, drops just that one item with a dismissible banner, never a
-blank page. `saveMissionsStore()` persists the whole store back on
-`pagehide` and immediately after any structural change (a mission added or
-closed via the tab bar, task A2), so a reload never loses more than
-in-flight edits since the last save. The **"Copy mission link"** button
-serializes the current World into the same fragment, so the round trip is
-one code path, as the architecture doc wanted. Editing the hash of an open
-page does nothing until reload (fragments are read once, at load).
+Each phase has its own timeline slider (`ui/phase-slider.js`), one visible at
+a time — the raw Ephemeris date bar is only a fallback for a phase with no
+resolvable span:
 
-The shipped preset is Kim's **Moon → Ceres 2031** design (committed
-hand-off 2031-12-20 06:00, skyhook CoM 275 km / release from the 6000 km
-top / phase 92°, waypoint at day 475), Lambert-tuned to a genuine
-rendezvous: arrival 2034-01-08 (750 days after hand-off), miss 0.0001 AU,
-3.78 km/s relative to Ceres. **Reshaped by task I3 (2026-07-16)** into the
-carrier-chain profile — moon-platform → lunar-skyhook → departure-leg →
-frozen-plan → transfer-leg (a serialized World **version 2**; v1 saves are
-migrated on load, see `core/world.js`) — with the plan's frozen release
-anchor and ±1 d hand-off window baked per WP-I's timing model. The plan's
-required departure v∞ is a single true figure (6.55 km/s, folded 2026-07-14
-from what used to be a separate leg-side injection burn), which the real
-integrated departure honestly under-delivers (≈5.0 km/s, ≈9.6° off-aim;
-the hand-off itself lands inside the window) — the shipped mission does not
-comply with itself, by design: closing the gap (e.g. a low-perigee Oberth
-impulse on the departure leg, task I4's UI) is the exercise the preset
-teaches, and the coast still flies the frozen plan's state regardless, so
-it still arrives clean. Re-curating the example (or its pane arrangement,
-via `defaultWorkspaceMain`) is editing that one file.
+- **Departure** — spans from release to the Departure→Coast hand-off. For an
+  Earth origin (a satellite carries the departure impulse) the left edge is
+  pinned at the release anchor and the right edge floats at the predicted
+  SOI-exit; for any other origin the right edge is pinned at the plan's
+  committed hand-off and the left edge floats back by the flight's own
+  duration. The committed hand-off and the flight's actual events both mark
+  the track.
+- **Coast** — spans from the hand-off to the Coast→Arrival seam
+  (`core/arrival-seam.js`'s window), reading `transfer-leg`'s own events.
+- **Arrival** — the window around closest approach, sliding bodily as the
+  coast is tuned; the playhead reads signed time relative to closest approach.
 
-### modules/ — the five mission modules
+Both phase seams are **compliance boundaries**, reached via the registry so
+the shell stays dynamically loaded rather than statically importing a module:
+`frozen-plan`'s `complianceFor` (Departure→Coast: v∞, epoch, aim) and
+`arrival-boundary`'s equivalent (Coast→Arrival: encounter, v∞, epoch) both
+feed the same `.mp-compliance-bar` — a chip plus compact per-row PLAN
+REQUIRES → TECH DELIVERS metrics, not phase-gated. An events bar fed by the
+envelope's `events` channel lets a click set the clock. Sidebar cards render
+status chips and diagnostics/warnings uniformly, whether engine- or
+module-authored.
 
-Each module is a folder whose script default-exports its descriptor
-(dynamic-`import()`ed by the shell), per ARCHITECTURE.md "Module interface".
-Since task I3 (WP-I) the departure system is a CARRIER CHAIN: carrier stages
-compose a serializable kinematic chain (`Shared/kinematic-chain.js`, carried
-in `carrier-chain` packets), and a headless leg stage integrates the
-released flight with restricted N-body gravity (`Shared/geo-leg.js`). The
-release EPOCH is not a stage param anywhere: it is the plan's read-only
-release anchor (`frozen-plan.js`'s `releaseAnchorFor` — frozen at mission
-creation, never re-derived).
+## modules/ — the mission-profile stages
+
+Each module is a folder (or, for the one shared helper, a bare file) whose
+script default-exports its descriptor, dynamic-`import()`ed by the shell, per
+`ARCHITECTURE.md`'s "Module interface". Every carrier/leg packet names its
+origin or destination `body` explicitly — the project's "body" convention
+(`Shared/exchange-types.js` header) — never implying one.
+
+**Departure** — a carrier chain (`Shared/kinematic-chain.js`, carried in
+`carrier-chain` packets) composes at an origin, then a headless leg integrates
+the released flight with restricted N-body gravity. The release **epoch** is
+never a stage param: it is the plan's read-only release anchor
+(`frozen-plan.js`'s `releaseAnchorFor`, baked at mission creation, never
+re-derived).
 
 - **`modules/moon-platform/`** — the Moon as the departure stack's read-only
-  top card (task I3): emits the chain base (`{ base: "Moon", rotors: [] }`)
-  and shows the Moon's heading/impulse contribution at the release anchor
-  (geocentric distance/speed, component along Earth's heliocentric
-  prograde). No knobs — plan around the Moon in the Ephemeris tab. A mission
-  with no anchor at all is diagnosed here, at the top of the chain.
-- **`modules/lunar-skyhook/`** — the first rotating CARRIER (reshaped by
-  I3). Gravity-gradient lunar skyhook: validates its geometry
-  (`bound-at-moon` still diagnosed early, with a computed fix), then appends
-  its rotor element (ecliptic plane, radius = release-point radius, rate =
-  the CoM orbit's angular velocity, phase pinned at the anchor) to the
-  incoming chain. The release phase is the *aiming* control, now an in-card
-  slider. The old patched-conic release chain and its `releaseJd` param are
-  gone — replaced by departure-leg's real integration.
-- **`modules/departure-leg/`** — HEADLESS (task I3): no card of its own
-  (`plainCard`, diagnostics only). Evaluates the carrier chain at the
-  anchor, integrates forward (Earth+Moon+Sun, real ephemerides, no SOI
-  kink) with up to 2 waypoint impulses applied in each leg's own local
-  dynamical frame — the low-perigee Oberth pattern the patched model
-  couldn't express — and emits the hand-off `ship-state` at Earth-SOI exit,
-  plus the flight events (release, impulses, Moon/Earth SOI exits — the
-  departure slider's real marks). A flight that stays bound or impacts is a
-  hard diagnostic; nothing ever solves backwards (WP-I: every recompute is
-  one forward pass; the USER closes the loop).
-- **`modules/frozen-plan/`** — the frozen flight plan (task C1, comply mode).
-  Its params ARE the plan captured at mission creation: origin body, the
-  frozen heliocentric departure state/epoch the tech must deliver (this IS
-  the coast's own starting state, full stop — no burn field of its own,
-  removed 2026-07-14), the arrival commitment (body, epoch, approach v∞),
-  and a reference copy of the plan's waypoint burns. `update()` **always
-  emits the plan's own departure state** downstream — the coast everyone
-  sees is the commitment, never a re-solve —
-  and reports the tech's deviations (v∞ / epoch / aim, tolerances exported)
-  through the warnings channel; an empty tech slot is itself a warning, not
-  a block (`inputOptional`, below). `computeCompliance`/`complianceFor`
-  expose the full required-vs-delivered rows; `complianceFor` is also
-  attached to the module's registry descriptor so the shell can reach it
-  without a static import (task C2's plan-compliance bar).
-  The mission-view's coast slider reads this stage's departure/arrival
-  events as its span, so the slider stays pinned to the frozen dates while
-  live edits show up as deviations.
-- **`modules/transfer-leg/`** — the canonical transfer-leg module, the Coast
-  phase: the SST `computeTrajectory()` segment chain, minus its own
-  departure-burn step (removed 2026-07-14 — Kim: "only a minority of the
-  delta-v needed to get somewhere comes from engine burns," so the
-  Departure→Coast hand-off is a given heading and speed, not a burn formula;
-  see the module's own header). It just coasts from whatever ship-state it's
-  handed, applying up to two waypoint burns along the way, then a final
-  coast, input converted to `"helio"` via `Shared/frames.js`. A configured
-  destination reports its arrival miss distance through the **warnings**
-  channel (non-blocking). Snap-to and Lambert targeting stay in the plotter
-  until the marker/targeting port (step 4.5).
+  top card, for Earth-origin missions only. Emits the chain base (`{ base:
+  "Moon", rotors: [] }`) and shows the Moon's heading/impulse contribution at
+  the release anchor. No knobs — plan around the Moon in the Ephemeris tab. A
+  mission with no release anchor at all is diagnosed here, at the top of the
+  chain.
+- **`modules/orbital-skyhook/`** — the ONE skyhook carrier module, serving
+  every body: a gravity-gradient (radial) skyhook whose centre of mass rides
+  a circular orbit at its `body`'s rate. Optionally rides an upstream base
+  platform (`inputOptional`) — for the Moon, `moon-platform`; for any other
+  body, the skyhook self-originates (the body is simply at rest) and carries
+  the missing-anchor diagnostic itself. Appends its rotor element to the
+  incoming chain; release phase is the card's own aiming slider.
+- **`modules/departure-leg/`** — HEADLESS (`plainCard`): the integrated
+  geocentric flight (Earth + Moon + Sun, real ephemerides, RK4) from carrier
+  release to Earth-SOI exit, for Earth-origin missions. Applies up to 2
+  waypoint impulses in each leg's own local dynamical frame — the low-perigee
+  Oberth pattern a patched-conic model can't express — and emits the hand-off
+  `ship-state` plus flight events (release, impulses, Moon/Earth SOI exits).
+  A flight that stays bound or impacts is a hard diagnostic; every recompute
+  is one forward pass, nothing solves backwards.
+- **`modules/body-departure-leg/`** — the generic sibling of `departure-leg`
+  for every other origin body (`Shared/body-leg.js`'s body+Sun integrator):
+  same shape, same headless role, body-centric instead of geocentric. One
+  module serves Mars, Ceres, Vesta, … via the incoming chain's own `base`.
 
-### Module-contract refinements the scaffold added
+**The Departure→Coast boundary:**
 
-Recorded here because they extend the "headless part" contract above:
+- **`modules/frozen-plan/`** — the frozen flight plan (comply mode): its
+  params ARE the plan captured at mission creation (origin, the frozen
+  heliocentric departure state/epoch, the arrival commitment, a reference copy
+  of the plan's waypoint burns). `update()` **always emits the plan's own
+  departure state** downstream — the coast everyone sees is the commitment,
+  never a re-solve — and reports the tech's deviations (v∞ / epoch / aim)
+  through the warnings channel; an empty departure-tech slot is itself a
+  warning, not a block (`inputOptional`). `computeCompliance`/`complianceFor`
+  expose the full required-vs-delivered rows for the compliance bar.
 
-- **`update()` stays pure; drawing is a separate `draw(view, snapshot)` hook.**
-  ARCHITECTURE.md's sketch had update() also redrawing meshes, but update()
-  must run under Node; the shell instead calls `draw` after every recompute
-  pass, once per attached view, with `snapshot = { world, stageId, params,
-  result }`. Modules cache what draw needs (samples, physics figures) per
-  stageId during update() — plain data, Node-safe.
-- **`ctx.onResult(cb)`** — init()'s ctx gains a subscription scoped to that
-  stage's engine result, so a card can refresh its readouts without reaching
-  into the engine.
-- **`view.metresPerUnit`** — each view carries its frame's scene scale
-  (AU for `"helio"`, 1000 km for `"body:Earth-Moon"`), so modules draw in
-  scene units without hardcoding a frame's convention.
-- **`attachesTo` parenting** — a module's view group is parented at its
-  `attachesTo` body's node when the frame has that body (the skyhook's group
-  rides the Moon), falling back to the scene root (transfer legs).
-- **`inputOptional: true`** (added with task C1) — a descriptor flag telling
-  the engine that missing input is survivable: update() is called with
-  `input === null` instead of the stage failing with `missing-input`. Added
-  for the frozen-plan module, whose plan must keep flowing (and the coast
-  keep drawing) in a mission whose departure-tech slot is empty; the module
-  reports the empty slot as a warning. When input does arrive it is
-  type-checked against `accepts` as usual.
+**Coast:**
 
-`core/tests/*.test.js` — `node:test` suites, 84 tests covering World
-mutations/serialization (including the v1→v2 profile migration's plumbing),
-registry validation, the recompute/diagnostic/blocked semantics (including
-`inputOptional`), the warnings/events envelope
-(`warnings-events.test.js`, including a comply-mode-shaped chain), the
-departure-duration estimate (D7) and the freeze contract (E2 + its timing
-fields).
-`modules/tests/modules.test.js` — 27 more exercising the carrier chain and
-transfer-leg modules' pure sides, chained through the actual World +
-registry + engine (tether kinematics and the rotor element, the integrated
-departure flight with waypoint impulses and its truncation at the hand-off,
-bound/no-carrier/blocked-then-fixed cases, frame conversion, the v1-save
-migration end-to-end, and the shipped preset itself: it deserializes,
-rendezvouses, and survives the share-fragment round trip).
-`modules/tests/frozen-plan.test.js` — 19 more on the comply semantics: the
-compliance rows and their tolerances (the epoch row's hand-off WINDOW since
-I3), the warning texts' numbers, `releaseAnchorFor`'s resolution order, and
-— through the real engine on the shipped preset — that detuning the tech
-warns on the plan while the coast's output does not move, that a mission
-with no departure system still shows its whole plan, and that the baked
-preset plan is internally consistent (anchor = hand-off − the freeze-time
-estimate, so drift says "re-bake", not just "warnings appeared").
-`ui/tests/phase-slider.test.js` — 14 more covering the pure halves of the
-phase-slider widgets (tasks B2/B3): tick generation, playhead
-fraction, and pinning at either end of the span. Run from the repo root:
+- **`modules/transfer-leg/`** — the canonical transfer-leg module: a ballistic
+  arc between two ship states with up to two waypoint burns, extended with
+  real SOI encounters (where the arc dips inside a body's SOI the flight
+  switches to `Shared/body-leg.js`'s body+Sun integration and resumes Kepler
+  at exit). Consumes the hand-off ship-state unmodified — no burn happens at
+  that seam, since only a minority of a mission's delta-v comes from engine
+  burns; whatever put the ship there is upstream's business. A configured
+  destination reports its arrival miss distance through the warnings channel.
+  Snap-to and Lambert targeting stay on the Ephemeris tab.
+
+**The Coast→Arrival boundary:**
+
+- **`modules/arrival-boundary/`** — the mirror of `frozen-plan` at the far
+  seam (`boundary: true`, no params, no save-format data — the commitment is
+  read through `frozen-plan`'s `arrivalCommitmentFor`). Three rows: encounter,
+  v∞, epoch, each a warning against the plan's arrival commitment. Unlike
+  `frozen-plan` it **measures but never substitutes** — the delivered
+  ship-state passes through untouched, because the arrival phase's job is
+  refining the approach the coast actually flew, and the commitment fixes no
+  approach direction to synthesize a stand-in from.
+
+**Arrival:**
+
+- **`modules/arrival-leg/`** — the visible Coast→Arrival hand-off: a
+  *reference* flyby (not a patched continuation of the coast) built from the
+  delivered v∞ heading/magnitude/epoch — starts one day out, passes the
+  destination at half its SOI radius, ends one day after. Waypoints (up to 2)
+  put burns on it; a retro burn near the pass drops/captures. HEADLESS
+  (`plainCard`); two-body Kepler around the destination.
+- **`modules/arrival-skyhook/`** — a skyhook CATCH at the destination,
+  literally reusing `orbital-skyhook.js`'s tether geometry run in reverse: a
+  trim burn at the catch point closes the gap between the approach
+  hyperbola's periapsis speed and the tether tip's own speed. Terminal stage
+  (consumes the coast's delivered ship-state, emits nothing). Not modelled:
+  catch-window phasing, the post-catch unload down the tether.
+- **`modules/arrival-approach.js`** — not a stage module, a shared helper
+  (`approachAt`, `interceptWarning`) imported by every arrival-side stage
+  (`arrival-boundary`, `arrival-leg`, `arrival-skyhook`) so the "does the
+  coast actually reach the destination, and how fast" measurement is one
+  computation, not several.
+
+## ui/ — shell-local widgets
+
+| File               | Named exports (partial)                                                                        | Purpose                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `phase-slider.js`  | `createSegmentedSlider`, `coastSliderState`, `departureSliderState`, `arrivalSliderState`, …      | The segmented-timeline widget behind each phase's slider: a DOM primitive (a track of flex-sized segments plus a playhead, `.mp-` classes styled in `planner.css`) plus three pure state functions (segments + playhead fraction + pinned flag + marks from a span, a jd, a tick count and a formatter) that `mission-view.js`'s `departureSpan`/`coastSpan`/`arrivalSpan` feed. |
+| `share-link.js`    | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope wrapping `{ title, world }` under its own kind stamp (a bare serialized World has no title). Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button.                          |
+| `tech-options.js`  | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                 | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add/swap a stage; unbuilt entries show disabled with a "(future)" label.                                  |
+
+## presets/ — the shipped mission and example catalog
+
+`default-mission.js` is the mission a fresh visit opens with, a serialized
+World checked in as plain data: a Moon → Ceres flight through a lunar skyhook
+whose real integrated departure under-delivers against the plan's required
+v∞ — the mission does not comply with itself, by design, so closing the gap
+(a low-perigee Oberth impulse on the departure leg, say) is the exercise it
+teaches, while the coast still flies the frozen plan's state regardless and
+still arrives clean.
+
+`examples-catalog.js` drives the tab bar's example-mission dropdown; each
+other file in this folder (`earth-mars-reference.js`, `earth-venus-
+overshoot.js`, `jupiter-mercury.js`, `mars-mercury.js`, `venus-saturn.js`) is
+one catalog entry — a genuine integrated flight (real carrier geometry +
+waypoint burns run through the actual departure/coast/arrival modules,
+verified in Node) spanning a geometry the app has to render correctly, and,
+unlike the shipped default, compliant by construction: the frozen commitment
+is exactly what the configured technology delivers, so opening one shows a
+clean flight with no comply-boundary warnings. A catalog entry's `mission` is
+deserialized fresh on every pick, so stateless data is never shared live
+across tabs.
+
+## Save format
+
+`core/world.js`'s `WORLD_VERSION` is 4; `deserializeWorld` migrates v1→v2→v3→v4
+on load and refuses (politely, `{ ok:false, reason }`) a version newer than it
+understands. A save is always storable regardless of feasibility or whether
+its module ids are currently registered — feasibility is the recompute
+engine's diagnostic, not a data-layer validity condition.
+
+## Tests
+
+`core/tests/*.test.js`, `modules/tests/*.test.js`, `ui/tests/*.test.js` —
+`node:test` suites covering World mutations/serialization (including every
+migration step), registry validation, the recompute/diagnostic/blocked/
+boundary/comply semantics, the carrier chain and integrated legs (departure
+and arrival, Earth-origin and generic-origin), the frozen-plan and
+arrival-boundary compliance rows, the phase-slider state functions, and the
+shipped preset plus every catalog entry end to end (deserialize, recompute,
+survive the share-link round trip). Run from the repo root:
 
 ```
 node --test Website/MissionPlanner/core/tests/*.test.js
@@ -309,16 +345,12 @@ node --test Website/MissionPlanner/ui/tests/*.test.js
 `Website/Shared` relative layout and put a `{"type":"module"}` `package.json`
 at the copy's root.)
 
-## Not here yet
+## What's next
 
-The Ephemeris tab's real content and the "Start Mission Plan" freeze flow
-from `MissionPlannerDesign.md` (the frozen-plan module itself landed with
-task C1; what's missing is task E2's capture of a plan into it, and task
-C2's compliance-grid card), the curation half of step 4.4 (what a newcomer
-should see first, once the interface can show it off), the remaining
-endpoint modules (Ceres elevator, spin launcher, mass driver, aerobrake —
-step 4.5, along with the marker/targeting and snap-to ports), mission
-undo, and in-scene editing (waypoint gizmo drags) — see
-ARCHITECTURE.md for the ordering and reasoning, and
-`MissionPlannerTasks.md` in this folder for the task-by-task build-out plan
-(work packages, difficulty ratings, and the inventory of adaptable code).
+`MissionPlannerTasks_v2.md` in this folder is the current, forward-looking
+task list (the ship-card gizmo and per-phase context, pane/camera work, the
+Ephemeris tab's remaining fixes, the platform-library shape and
+calculator-linking, and further doc work), with its own open design questions
+section. `../../Notes-and-Obsolete/decisions.md` holds the settled rules those
+tasks build on. `../ARCHITECTURE.md` covers the general module/packet model
+this folder implements.

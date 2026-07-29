@@ -32,115 +32,11 @@ Node-testable, one responsibility per file), keeps the Node suites green
 
 ## Settled rules
 
-Decided with Kim 2026-07-25. Several packages depend on these; they are
-stated once here so they are not re-derived task by task.
-
-### Phase seams
-
-- **Departure→Coast hand-off** — the epoch frozen at mission creation, which
-  is also the coast's own start. Fixed for the life of the mission.
-
-- **Coast→Arrival hand-off (the seam)** — **a window around the encounter, not
-  a fixed date.** The Arrival phase runs from `closest approach − Δt` to
-  `closest approach + ~1 day`, where
-
-  `Δt = clamp( R_SOI(destination) / v∞ , 2 days , 5 days )`
-
-  `R_SOI` is the destination body's **own** Laplace SOI **radius** (for an
-  Earth arrival, Earth's own — not an Earth–Moon composite), and `v∞` is the
-  ship's speed relative to the destination on approach.
-  **Both edges move with closest approach** as the coast is tuned — typically
-  by hours. That is the point: the seam's job is to give the Arrival phase the
-  right stretch of arc for final approach refinement or a tug rendezvous, and
-  that stretch is defined relative to the encounter, not to the calendar.
-  `transfer-leg` already emits a closest-approach event for every encounter,
-  so the seam is **derived live at recompute** — no stored field, no
-  save-format change. With no encounter at all (a coast that misses), fall
-  back to the plan's arrival epoch.
-  **The lower clamp** keeps small bodies workable (Ceres' SOI takes only ~0.24 d
-  to cross). **The upper clamp is a presentation choice, not physics**: the
-  formula spreads nicely across the terrestrial range (Venus 2.4 d, Mars 2.7 d,
-  Earth 3.6 d) but the giants' spheres of influence are enormous — an uncapped
-  Jupiter arrival would run ~100 days, Neptune ~140, which is cruise, not
-  approach. 5 days at Jupiter is still ~34 Jupiter radii of runway.
-
-- **Do not confuse the seam with the committed arrival.** The commitment
-  (body, epoch, approach v∞) is frozen at mission creation, never moves, and is
-  what the arrival boundary compares against. The seam is an editing and
-  display division. At mission creation the two coincide, because the coast
-  flies the frozen plan; they separate only as tuning shifts the encounter.
-
-- Compliance at a seam is **one boundary comparison**, non-blocking — the
-  existing architecture, unchanged.
-
-### Timelines
-
-- **Departure.** The committed hand-off is always a fixed mark on the track;
-  the predicted SOI exit is a **separate, moving** mark. On course = the
-  predicted exit falls within **one day** of the committed hand-off. The two
-  procedures — Earth/Moon: start pinned at the release anchor, end floats;
-  bodies without satellites: end anchored, start floats — govern only which
-  edge frames the visible span, not what compliance means.
-- **Coast.** Ends at the seam; the chevron cannot be scrubbed past it, though
-  the trajectory continues to be drawn.
-- **The coast's measurement horizon extends past its own seam** to true
-  closest approach, and the trajectory is drawn ~10° farther still. **Closest
-  approach moves in both time and space** as the coast is tuned, and the seam
-  follows it. The ship's state at the seam is *not* constrained to move
-  "toward" the destination — aiming often moves it sideways or apparently
-  away. What is constrained is the **encounter outcome** downstream.
-- **Arrival.** Both edges derive from the live closest approach — left at
-  `− Δt`, right at `+ ~1 day` — so the whole window slides with the encounter
-  rather than either edge being pinned to a date.
-
-### Waypoint impulse controls (coast)
-
-Axes ±100 m/s; step **0.1 m/s on both waypoints**. The floor is not a thruster
-limit — real correction maneuvers reach mm/s routinely — it is that below
-~0.1 m/s the effect drops under the model's own fidelity. (0.1 m/s at 200 days
-out still moves arrival ~1,700 km.) 2,000 steps across an axis cannot be
-resolved by dragging, so the card needs the 10×-slower shift-drag fine mode
-already in `Shared/sim/date-bar.js` and `ui/phase-slider.js`, **plus** numeric
-entry with nudge arrows beside the field and keyboard arrow-key nudges, both
-stepping 1 m/s by default and 0.1 m/s with shift held.
-
-The ship card and other visual cues will convey what effect impulse changes have on the trajectory.
-
-### Coast edit commit
-
-**The unit of commit is the edit session, not the nudge.** Entering the coast
-waypoint editor snapshots the committed plan; the user may then move anything
-— both cards, positions, all axes — with live preview and a live timing-bar
-delta against the snapshot. **Update** compares the current working state to
-the snapshot and enables only when the outcome improved; **Revert** restores
-the snapshot. Intermediate states are never commits.
-
-This is what makes the design's "only improvements are stored" rule workable.
-Three cases motivate it: a single burn axis on one waypoint can always descend
-(a blocked Update there genuinely means "wrong direction"); the **position
-slider** always makes things worse until the burn is re-tuned, on *both*
-waypoints; and **redistributing** effort between two waypoints has no
-expression as a sequence of individually-improving single-card steps.
-
-The World's transient sets already support a working-vs-committed
-distinction; no new machinery is needed.
-
-### Technology platforms
-
-**One platform = one folder** holding the substance: geometry, parameters,
-kinematics, drawing, and its calculator exchange packet. **Two thin role
-adapters** sit on top — *departure* (a **carrier**: composes into the kinematic
-chain and produces a release) and *arrival* (a **terminal** stage: consumes the
-delivered ship-state and evaluates a catch). The roles cannot be one
-descriptor: the registry validates `accepts`/`emits` statically, and
-`mission-view.js` identifies tech stages structurally by those types.
-
-A platform with only one real role ships one adapter (an aerobrake is
-arrival-only; a surface mass driver is launch-only in practice). A platform
-whose catch physics genuinely differ overrides one function in its own folder.
-The `draw` hook takes a mode, so the same hardware renders in release or catch
-configuration — the design's "identical platforms, portrayed in the
-configuration that would capture ships".
+Phase seams, timelines, waypoint impulse controls, coast edit-commit
+semantics, and the technology-platform structure are decided and documented
+in [`Notes-and-Obsolete/decisions.md`](../../Notes-and-Obsolete/decisions.md)
+under "Mission Planner." Several packages below depend on those rules; they
+are not restated here.
 
 ---
 
@@ -193,11 +89,21 @@ or the savings evaporate.
   Arrival phase's clock**: it appears only while the seam has no encounter to
   bracket and the window collapses to a point (1.1's fallback), so the phase
   is never left without a clock.
-- [ ] **1.4 Departure timeline: the Earth/Moon procedure, and two marks.** ★★
+- [x] **1.4 Departure timeline: the Earth/Moon procedure, and two marks.** ★★
   Add the pinned-start / floating-end procedure alongside the existing
   anchored-end one, selected by whether the origin's departure depends on a
   satellite. Both the committed hand-off and the predicted SOI exit render as
   marks on the track, whichever procedure frames the span.
+  `mission-view.js`'s `departureSpan()` picks by `missionOriginBody() ===
+  "Earth"` (the same test `departureFrameFor()` uses): Earth/Moon pins the
+  left edge at `releaseAnchorFor()` and floats the right edge at the live
+  flight's predicted SOI exit (or the default estimate before one resolves);
+  other origins anchor the right edge at the plan's committed hand-off and
+  float the left edge back by the known or estimated flight duration. The
+  committed hand-off is added as its own mark (`mp-mark-committed` in
+  `planner.css`) alongside the flight's own events; a mark landing exactly on
+  an edge drops out via `departureSliderState`'s existing interior-only
+  filter, so it isn't drawn twice.
 - [x] **1.5 Arrival boundary stage.** ★★★
   The mirror of `frozen-plan` at the Coast→Arrival seam: one comparison of the
   delivered approach against the commitment, non-blocking, reported through

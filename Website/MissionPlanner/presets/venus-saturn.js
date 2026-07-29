@@ -1,4 +1,4 @@
-// The INNER → OUTER example (Kim, 2026-07-28): the mirror of
+// The INNER → OUTER example: the mirror of
 // presets/jupiter-mercury.js — a modest departure v∞ from Venus, followed
 // by the largest ARRIVAL SOI in the set (Saturn's) and a multi-year coast.
 // No arrival technology configured, same as the Jupiter example — this pair

@@ -31,13 +31,12 @@
 //     warnings             — non-blocking diagnostics (see envelope below);
 //                            always an array, empty unless status is "ok"
 //     events               — [{ jd, label, ... }] timeline entries for this
-//                            stage (the phase sliders and the stage strip
-//                            read these); always an array, empty unless
-//                            status is "ok"
+//                            stage (the phase sliders and the events bar read
+//                            these); always an array, empty unless status
+//                            is "ok"
 //
-// ENVELOPE RETURNS (added 2026-07-09 for the Mission Planner's comply mode —
-// see MissionPlannerDesign.md). Besides a bare packet / null / diagnostic,
-// update() may return an envelope:
+// ENVELOPE RETURNS (comply mode — see MissionPlannerDesign_v2.md). Besides a
+// bare packet / null / diagnostic, update() may return an envelope:
 //
 //   { packet, warnings, events }
 //     packet   — anything a bare return accepts: a packet, null, or a
@@ -83,10 +82,10 @@
 //                            (malformed `warnings` or `events` land here too)
 //
 // COMPLIANCE BOUNDARIES (a descriptor may set `boundary: true`). Comply mode
-// (MissionPlannerDesign.md; ARCHITECTURE.md's "Phases are chains; compliance
-// is a boundary check, not a reconciliation") says a phase boundary is a
-// thing MEASURED against, never a prerequisite: the frozen plan is
-// authoritative and the departure technology is diagnosed against it. So a
+// (MissionPlannerDesign_v2.md; ARCHITECTURE.md's "Phases are chains;
+// compliance is a boundary check, not a reconciliation") makes a phase
+// boundary a thing MEASURED against, never a prerequisite: the frozen plan is
+// authoritative and the departure technology is diagnosed against it. A
 // broken, half-built, or absent departure must NOT blank the committed plan
 // or the coast beyond it — the tech's failure is the tech's problem, reported
 // where the tech lives, while the plan keeps flowing. A `boundary` stage
@@ -97,19 +96,19 @@
 // stages that produced the upstream failure keep their own diagnostic/blocked
 // status (rendered on their own cards); only propagation PAST the boundary is
 // cut. A boundary's OWN failure (its params are damaged) still blocks
-// downstream normally. Today only frozen-plan (the Departure→Coast seam) is a
-// boundary; the Coast→Arrival seam reuses this identical flag once its own
-// boundary stage exists, so departure and arrival share one mechanism.
+// downstream normally. Two modules set the flag, one per mission seam:
+// modules/frozen-plan (Departure→Coast) and modules/arrival-boundary
+// (Coast→Arrival), so both ends of a mission share one mechanism.
 //
-// DEVIATION from the ARCHITECTURE.md sketch (`update(world, input)`): the
-// engine calls `update(ctx, input)` with ctx = { world, jd, stageId,
-// params }. A module can appear at more than one stage of the same profile
-// (two transfer legs), so update() must be told *which* stage it is
-// computing — its per-stage params and its stageId (the latter lets it
-// author diagnostics). `ctx.world` is the World itself, for reads; the
-// World is LOCKED for the duration of a recompute pass, so a module that
-// tries to world.set() from inside update() throws immediately — the
-// "modules never mutate World directly" rule, enforced.
+// The engine calls `update(ctx, input)` with ctx = { world, jd, stageId,
+// params } — not the `update(world, input)` of ARCHITECTURE.md's sketch. A
+// module can appear at more than one stage of the same profile (two transfer
+// legs), so update() must be told *which* stage it is computing: its per-stage
+// params and its stageId (the latter lets it author diagnostics).
+// `ctx.world` is the World itself, for reads; the World is LOCKED for the
+// duration of a recompute pass, so a module that tries to world.set() from
+// inside update() throws immediately — the "modules never mutate World
+// directly" rule, enforced.
 
 import { PacketTypes } from "../../Shared/exchange-types.js";
 import { isDiagnostic, makeDiagnostic } from "./diagnostics.js";

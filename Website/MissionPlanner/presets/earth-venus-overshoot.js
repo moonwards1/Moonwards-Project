@@ -1,4 +1,4 @@
-// The OVERSHOOT-AND-RETURN example (Kim, 2026-07-28): the most demanding
+// The OVERSHOOT-AND-RETURN example: the most demanding
 // waypoint-tuning case in the set. The coast swings out past 3.5 AU — past
 // Mars' own 1.52 AU orbit — before falling back to catch Venus at 0.72 AU,
 // exercising BOTH waypoint slots (the departure/coast UI's own limit) with

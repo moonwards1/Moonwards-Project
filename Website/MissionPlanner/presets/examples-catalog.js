@@ -14,7 +14,7 @@
  * by reference across however many tabs get spawned from them, so each
  * spawn must never hand out a live object two tabs could both mutate.
  *
- * Purpose (Kim, 2026-07-28): a small set of worked examples spanning the
+ * Purpose: a small set of worked examples spanning the
  * geometry extremes the app has to render correctly, so a future change can
  * be checked against a realistic mission in one click — open the tab, or
  * copy its mission link into the Ephemeris tab's "Paste mission link…" to

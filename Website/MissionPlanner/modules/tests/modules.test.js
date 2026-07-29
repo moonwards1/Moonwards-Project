@@ -1,7 +1,7 @@
 // Node tests for the mission modules' headless side: the departure carrier
-// chain (moon-platform → lunar-skyhook → departure-leg, task I3) and the
-// transfer-leg module, chained through the real World + registry + recompute
-// engine. Run from the repo root:
+// chain (moon-platform → orbital-skyhook → departure-leg) and the transfer-leg
+// module, chained through the real World + registry + recompute engine. Run
+// from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/modules.test.js
 // The view hooks (init/draw) are browser-only and not exercised here.
 
@@ -42,9 +42,9 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalBoundary);   // the Coast→Arrival compliance boundary (task 1.5)
+	reg.register(arrivalBoundary);   // the Coast→Arrival compliance boundary
 	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
-	                             // flyby leg (task H3); arrival tech is empty by default
+	                             // flyby leg; arrival tech is empty by default
 	return reg;
 }
 
@@ -118,7 +118,7 @@ function presetChainData() {
 test("departure flight: the preset chain escapes to a hand-off at Earth-SOI exit", function () {
 	var leg = computeDepartureLeg({ waypoints: [] }, presetChainData(), JD_ANCHOR);
 	assert.equal(leg.ok, true);
-	// The I3 experiment's figures (2026-07-16): v∞ ≈ 4.93 km/s asymptotic,
+	// The shipped chain's own figures: v∞ ≈ 4.93 km/s asymptotic,
 	// SOI exit ≈ 2.72 d after release — 0.51 d late against the committed
 	// hand-off, inside the ±1 d window.
 	assert.ok(leg.vinfEarth > 4500 && leg.vinfEarth < 5500, "v∞ ~4.9 km/s, got " + leg.vinfEarth);
@@ -182,7 +182,7 @@ test("departure flight: a chain with no releasing carrier is a diagnostic", func
 
 var HELIO_START = (function () {
 	// At Earth's own position with v∞ folded in — the patched-conic departure
-	// state frozen-plan really emits. The coast's SOI-encounter pass (2026-07-18)
+	// state frozen-plan really emits. The coast's SOI-encounter pass
 	// deliberately ignores a body the arc STARTS inside of until it first
 	// leaves that SOI, so this stays a legal coast start.
 	var e = O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Earth").orbit, JD_HANDOFF);
@@ -357,7 +357,7 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	assert.equal(stages.length, 7);
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
-		 "arrival-boundary",   // the far seam's compliance check (task 1.5)
+		 "arrival-boundary",   // the far seam's compliance check
 		 "arrival-leg"]);      // arrival tech empty by default — the mission ends at the flyby
 
 	var rMoon = engine.resultFor(stages[0].id);
@@ -379,10 +379,10 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	var arr = O.dateFromJulian(rLeg.output.data.jd);
 	assert.deepEqual([arr.Y, arr.Mo, arr.D], [2034, 1, 8]);
 
-	// the arrival flyby leg (task H3): the pass pinned at the delivered
+	// the arrival flyby leg: the pass pinned at the delivered
 	// arrival epoch, hand-off a day before, end a day after; closest
 	// approach at half Ceres's SOI (the reference construction).
-	// the terminal stage now: the arrival flyby leg (task H3), pinned at the
+	// the terminal stage: the arrival flyby leg, pinned at the
 	// delivered arrival epoch, hand-off a day before, end a day after; closest
 	// approach at half Ceres's SOI (the reference construction).
 	// the arrival boundary between them: the shipped coast flies the FROZEN
@@ -444,7 +444,7 @@ test("migration: a v1 save gains moon-platform + departure-leg around its skyhoo
 	assert.equal(res.ok, true, res.reason);
 	var stages = res.world.stages();
 	// v1→v2 wraps the skyhook in the carrier chain; v3→v4 appends the arrival
-	// compliance boundary after the coast (task 1.5)
+	// compliance boundary after the coast
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
 		 "arrival-boundary"]);
@@ -515,7 +515,7 @@ test("transfer-leg update: converts a body-frame input to helio", function () {
 	assert.ok(Math.abs(O.vMag(startR) - O.vMag(earth.r)) < 0.2 * O.vMag(earth.r));
 });
 
-// ---- computeLeg: SOI encounters (2026-07-18 — the coast feels every body) --
+// ---- computeLeg: SOI encounters — the coast feels every body --------------
 
 import { bodyConstants } from "../../../Shared/body-leg.js";
 import { Frames as Fr } from "../../../Shared/frames.js";

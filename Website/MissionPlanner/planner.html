@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en-US">
 <head>
-	<title>Mission Planner — scaffold</title>
+	<title>Mission Planner</title>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" href="planner.css">
@@ -12,7 +12,8 @@
 <body>
 	<div id="mp-app">
 
-		<!-- Tab bar: Ephemeris tab + one tab per mission (task A2) -->
+		<!-- Tab bar: Ephemeris tab + one tab per mission, plus the duplicate
+		     button and the example-mission dropdown (planner.js) -->
 		<div class="mp-tabbar" id="mp-tabbar">
 			<div class="mp-tab mp-tab-eph" id="mp-tab-eph">Ephemeris</div>
 			<div class="mp-tabs" id="mp-mission-tabs"></div>
@@ -25,18 +26,16 @@
 		<!-- shown only when a #mission= share link failed to load -->
 		<div id="mp-banner" hidden title="Click to dismiss"></div>
 
-		<!-- Ephemeris tab: the Solar-System Trajectory Plotter authoring
-		     experience, ported inside the planner (WP-D). Task D1 built the
-		     shell (helio frame, date bar); task D2 the Departure/Waypoints
-		     cards (origin, burn, leg duration, destination, up to two
-		     snap-to waypoints) — their CONTENT is built by ephemeris-view.js
-		     into the two host divs below. The marker card (D3) floats over
-		     the 3D pane and since task E2 always exists — it hosts "Start
-		     Mission Plan" (E1 gate, E2 freeze → new mission tab) and "Paste
-		     mission link…" (E2 import). One instance for the page's life,
-		     so addressed by id/class query like the rest of the shell-level
-		     chrome, not templated (contrast .mp-mission, cloned per
-		     mission). Toggled on/off by ephemeris-view.js's show/hide. -->
+		<!-- Ephemeris tab: the Solar-System Trajectory Plotter's authoring
+		     experience, hosted inside the planner. The helio frame and date
+		     bar live here; the Departure and Waypoints cards' CONTENT is built
+		     by ephemeris-view.js into the two host divs below. The marker card
+		     floats over the 3D pane and always exists — it hosts "Start
+		     Mission Plan" (freeze → new mission tab) and "Paste mission link…"
+		     (import back into this tab). One instance for the page's life, so
+		     addressed by id/class query like the rest of the shell-level
+		     chrome, not templated (contrast .mp-mission, cloned per mission).
+		     Toggled on/off by ephemeris-view.js's show/hide. -->
 		<div id="mp-eph-view" class="mp-eph-view">
 			<div class="mp-datebar">
 				<div class="mp-date-head">
@@ -66,12 +65,11 @@
 							<span class="mp-hud-key">right-drag</span> pan
 						</div>
 					</div>
-					<!-- Ship-marker card (task D3): a floating overlay atop the 3D
-					     pane, like the SST's own (Shared/sim/marker-card.js).
-					     Since task E2 the card ALWAYS exists here — no marker
-					     placed shows its empty state (hint + gated "Start
-					     Mission Plan" + "Paste mission link…"); ephemeris-view.js
-					     builds it into this host at init. -->
+					<!-- Ship-marker card: a floating overlay atop the 3D pane
+					     (Shared/sim/marker-card.js). It ALWAYS exists — with no
+					     marker placed it shows its empty state (hint + gated
+					     "Start Mission Plan" + "Paste mission link…").
+					     ephemeris-view.js builds it into this host at init. -->
 					<div class="mp-eph-marker"></div>
 				</div>
 				<div class="mp-panel">
@@ -107,14 +105,16 @@
 	<template id="mp-mission-template">
 		<div class="mp-mission">
 
-			<!-- Phase buttons (mockup A direction): task B1 made these real phase
-			     selectors — the dot aggregates that phase's stage results, per
-			     mockup A's phase-btn markup. -->
+			<!-- Phase buttons: the mission's phase selectors. Each dot
+			     aggregates that phase's stage results (mission-view.js's
+			     renderPhaseDots). Arrival ships disabled and is enabled by
+			     mission-view.js when the frozen plan commits to an arrival
+			     body, since only then does that phase have a frame. -->
 			<div class="mp-phasebar">
 				<button class="mp-phase mp-phase-dep" type="button"><span class="mp-dot"></span>Departure</button>
 				<button class="mp-phase mp-phase-coast" type="button"><span class="mp-dot"></span>Coast</button>
 				<button class="mp-phase mp-phase-arr" type="button" disabled
-					title="No arrival module yet — Ceres elevator and friends land in migration step 4.5"><span class="mp-dot"></span>Arrival</button>
+					title="This mission commits to no arrival body"><span class="mp-dot"></span>Arrival</button>
 				<div class="mp-compliance-bar"></div>
 				<div class="mp-brand">
 					<button class="mp-btn mp-share" type="button"
@@ -143,10 +143,10 @@
 			</div>
 
 			<!-- Per-phase clock sliders, built by ui/phase-slider.js; exactly
-			     one shows at a time (syncSliderVisibility). Departure (B3):
-			     linear over the ship's flight. Coast (B2): date-scaled, ending
-			     at the seam. Arrival (task 1.3): the seam window itself, both
-			     edges sliding with closest approach. The date bar above is now
+			     one shows at a time (mission-view.js's syncSliderVisibility).
+			     Departure: linear over the ship's flight. Coast: date-scaled,
+			     ending at the arrival seam. Arrival: the seam window itself,
+			     both edges sliding with closest approach. The date bar above is
 			     only a fallback for a phase with no resolvable span. -->
 			<div class="mp-sliderzone mp-dep-slider"></div>
 			<div class="mp-sliderzone mp-coast-slider"></div>

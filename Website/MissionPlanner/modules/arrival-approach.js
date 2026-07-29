@@ -1,12 +1,10 @@
 /* MissionPlanner/modules/arrival-approach — shared arrival-approach geometry.
  *
  * The "does the coast actually reach the destination, and how fast" measurement
- * that every arrival stage needs — the flyby leg (arrival-leg) and the arrival
- * technologies (arrival-skyhook today; the chemical capture when it's rebuilt).
- * Relocated here 2026-07-20: it had lived in capture-burn.js only because that
- * was the first arrival module built, but it is not capture-specific, and
- * capture-burn is being retired. Not a stage module — a plain helper, imported
- * by the arrival stages so the intercept check is ONE measurement, not several.
+ * every arrival stage needs: the compliance boundary (arrival-boundary), the
+ * flyby leg (arrival-leg) and the arrival technologies (arrival-skyhook). Not a
+ * stage module — a plain helper, imported by those stages so the intercept
+ * check is ONE measurement, not several.
  *
  * Pure (no DOM, no THREE), Node-testable.
  */
@@ -39,7 +37,7 @@ export function approachAt(body, data) {
 }
 
 // The intercept-check warning the arrival stages raise — same threshold as
-// transfer-leg's own miss warning, so the two ends of the flight agree on what
+// transfer-leg's own MISS_WARN_AU, so the two ends of the flight agree on what
 // counts as an encounter. Non-blocking (comply mode): a mission that misses is
 // a diagnosed mission, not a blank screen.
 export function interceptWarning(approach) {

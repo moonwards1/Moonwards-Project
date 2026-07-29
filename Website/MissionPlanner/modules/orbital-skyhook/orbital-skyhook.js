@@ -1,11 +1,10 @@
 /* MissionPlanner/modules/orbital-skyhook — the ONE skyhook carrier module.
  *
- * Unified 2026-07-20 (Kim): there is a single skyhook, and the Moon uses it
- * like any other body — the Moon-specific `lunar-skyhook` module it grew out
- * of was retired. A gravity-gradient (radial) skyhook whose centre of mass
- * rides a circular orbit around its `body`, rotating at that orbit's rate;
- * ported from the Mars-Phobos-Skyhook-Trajectory-Plotter's skyhook and
- * generalized off Mars onto any body via its own GM/radius.
+ * A gravity-gradient (radial) skyhook whose centre of mass rides a circular
+ * orbit around its `body`, rotating at that orbit's rate; ported from the
+ * Mars-Phobos-Skyhook-Trajectory-Plotter's skyhook and generalized onto any
+ * body via its own GM/radius. There is a single skyhook module, and the Moon
+ * uses it like any other body.
  *
  * Two properties let one module serve both the Moon (a satellite of Earth) and
  * a planet at rest:
@@ -28,30 +27,32 @@
  *     APPENDS ITS ROTOR ELEMENT (Shared/kinematic-chain.js shape: ecliptic
  *     plane, radius = the release point's orbit radius, rate = the CoM orbit's
  *     angular velocity, phase pinned at the plan's read-only release anchor).
- *     Riding a platform, it checks the platform's base names its own body (the
- *     body convention's mismatch guard, as lunar-skyhook did); self-originating,
- *     it is the TOP of the chain and diagnoses a missing release anchor
- *     (moon-platform's role for the lunar chain).
+ *     Riding a platform, it checks that the platform's base names its own body
+ *     (the body convention's mismatch guard); self-originating, it is the TOP of
+ *     the chain and carries the missing-release-anchor diagnostic that
+ *     moon-platform carries for a lunar chain.
  *
  * The ESCAPE physics lives downstream in the headless departure legs, never
- * here. The AIMING control (release phase) is this card's own slider, as WP-I
- * prescribes for carriers.
+ * here. The AIMING control (release phase) is this card's own slider.
  *
  * DEFAULT GEOMETRY (defaultGeometryFor): the CoM orbit radius defaults to a
  * candidate satellite's orbit.semiMajor when the body has one (Mars → Phobos),
  * else a fallback low orbit; the release point defaults above the escape radius
  * so a freshly-added skyhook drafts an escaping trajectory straight away. The
- * departure-technology dropdown/exchange that adds this card seeds `body` +
- * these defaults (task I5); the mission then persists them explicitly.
+ * mission view's departure-technology card seeds `body` + these defaults when
+ * it adds the stage (mission-view.js's addCarrier); the mission then persists
+ * them explicitly.
  *
  * update() is pure (no DOM, no THREE) so the chain is Node-testable; the view
  * hooks (`init` the card, `draw` the tether ring in the body's frame) only the
- * browser shell calls.
+ * browser shell calls. modules/arrival-skyhook imports tetherGeometry from here
+ * to model the same tether making a CATCH at the destination.
  *
- * RENDER FRAME: rendersIn declares the symbolic "body:origin" token, which the
- * mission view aliases to its own origin-body frame (buildBodyFrame / the
- * Earth-Moon frame). Combined with the per-stage attachesTo above, the tether
- * draws at the Moon in an Earth departure and at the planet's centre otherwise.
+ * RENDER FRAME: rendersIn declares the symbolic "body:origin" token, which
+ * mission-view.js's resolveFrameId aliases to that mission's own origin-body
+ * frame (the Earth-Moon frame, or scene-frames.js's buildBodyFrame). Combined
+ * with the per-stage attachesTo above, the tether draws at the Moon in an Earth
+ * departure and at the planet's centre otherwise.
  *
  * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this folder
  * breaks if moved without them coming along.
@@ -102,8 +103,8 @@ export function satelliteOrbitRadius(body) {
 // radius (else a low fallback orbit at 3× the body radius), release/top at 1.5×
 // the CoM radius — comfortably above the tether's own escape radius
 // (cbrt(2)·rCom ≈ 1.26·rCom), so the default trajectory escapes with margin.
-// Altitudes are metres above the surface. Exported for the add-carrier flow
-// (I5) and Node tests.
+// Altitudes are metres above the surface. Exported for the shell's add-carrier
+// flow and Node tests.
 export function defaultGeometryFor(body) {
 	var phys = bodyPhysics(body);
 	if (!phys) { return null; }
@@ -130,11 +131,11 @@ export function resolveParams(params) {
 // The tether's geometry + rotation figures for one param set — validation,
 // rotation rate, tip speed, and the local body-escape margin — WITHOUT the
 // "must escape" gate. Pure; returns { ok: true, ...figures } (vInfBody is 0
-// for a sub-escape tip) or { ok: false, diagnostic }. Split out of
-// tetherKinematics (task H2) because the ARRIVAL side reuses the identical
-// tether — a skyhook CATCHING an incoming ship (arrival-skyhook.js) is
-// perfectly legitimate with a tip below escape speed; only a RELEASE demands
-// escape, so that gate stays in tetherKinematics below.
+// for a sub-escape tip) or { ok: false, diagnostic }. Separate from
+// tetherKinematics because the ARRIVAL side reuses the identical tether: a
+// skyhook CATCHING an incoming ship (arrival-skyhook.js) is perfectly
+// legitimate with a tip below escape speed. Only a RELEASE demands escape, so
+// that gate lives in tetherKinematics below.
 export function tetherGeometry(params) {
 	var p = resolveParams(params);
 	var phys = bodyPhysics(p.body);
@@ -182,7 +183,7 @@ export function tetherGeometry(params) {
 // tetherGeometry plus the RELEASE gate: a departure skyhook whose tip never
 // reaches escape speed has no interplanetary release to offer, so a bound tip
 // is a hard diagnostic here (the arrival catch has no such requirement — see
-// tetherGeometry's comment). Same signature and returns as before the split.
+// tetherGeometry's comment). Same signature and returns as tetherGeometry.
 export function tetherKinematics(params) {
 	var geo = tetherGeometry(params);
 	if (!geo.ok || geo.vInfBody > 0) { return geo; }
@@ -211,8 +212,9 @@ export function rotorFor(kin, anchorJd) {
 	};
 }
 
-// Last computed kinematics per (World, stage), for the sidebar card (same
-// WeakMap pattern as every module: N missions coexist, Worlds reuse stage ids).
+// Last computed kinematics per (World, stage), for the sidebar card. Same
+// WeakMap pattern as every module here: N missions coexist and their Worlds
+// reuse stage ids, so the cache is keyed by World first.
 var lastByWorld = new WeakMap();
 export function physicsFor(world, stageId) {
 	var m = lastByWorld.get(world);
@@ -257,7 +259,8 @@ export default {
 	accepts: ["carrier-chain"],   // rides an upstream base platform when present...
 	inputOptional: true,          // ...or self-originates (a planet at rest) when not
 	emits: ["carrier-chain"],
-	rendersIn: ["body:origin"],   // aliased to the mission's origin frame (task J3)
+	rendersIn: ["body:origin"],   // aliased to the mission's origin frame by
+	                               // mission-view.js's resolveFrameId
 
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
@@ -268,10 +271,10 @@ export default {
 				{ fix: "Set the departure body (the mission's origin)." });
 		}
 
-		// Riding a platform (moon-platform, or a future body-platform): the
-		// upstream base must name THIS skyhook's body, or the tether's GM/radius
-		// would apply to the wrong body's numbers with no error (the body
-		// convention's mismatch guard — exchange-types.js's header).
+		// Riding a platform (moon-platform): the upstream base must name THIS
+		// skyhook's body, or the tether's GM/radius would apply to the wrong
+		// body's numbers with no error (the body convention's mismatch guard —
+		// exchange-types.js's header).
 		if (input && input.data && input.data.base !== params.body) {
 			rememberPhysics(ctx.world, ctx.stageId, null);
 			return makeDiagnostic("wrong-body",
@@ -350,8 +353,9 @@ export default {
 		numRow("release altitude", "km", Math.round(param("relAlt") / 1e3), 25,
 			function (v) { setParam("relAlt", v * 1e3); });
 
-		// In-card release-phase slider (WP-I: aiming lives in the cards). Drag =
-		// transient sets (live redraft, undo-coalescible); release commits.
+		// In-card release-phase slider — the carrier's aiming control. Dragging
+		// issues transient sets (live redraft, coalescible by a future undo);
+		// releasing the handle commits.
 		var row = document.createElement("div"); row.className = "mp-inrow";
 		var lab = document.createElement("label"); lab.textContent = "release phase"; row.appendChild(lab);
 		var wrap = document.createElement("span"); wrap.className = "mp-phase-wrap";
@@ -410,10 +414,10 @@ export default {
 		view.group.add(circleLine(rTop, 0x9fb6ff, 0.8));
 		view.group.add(circleLine(rCom, 0xffd24a, 0.8));
 
-		// Tether orientation: rotating at omega, at the release phase on the
-		// plan's release anchor (drawn static at the phase itself if no anchor
-		// resolves). Ecliptic plane — the body's axial tilt is a visual nicety
-		// the scaffold skips (as lunar-skyhook skips the Moon's).
+		// Tether orientation: rotating at omega, sitting at the release phase on
+		// the plan's release anchor (drawn static at the phase itself if no
+		// anchor resolves). Ecliptic plane — the body's axial tilt is a visual
+		// nicety the shell skips.
 		var omega = O.angularVelocity(GM, R + params.comAlt);
 		var anchorJd = releaseAnchorFor(snap.world);
 		var phase = (params.releasePhaseDeg * Math.PI / 180) +

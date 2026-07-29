@@ -3,39 +3,39 @@
  * The Coast phase: a ballistic arc between two ship states, with up to two
  * waypoint burns along the way — the compute core of the
  * Solar-System-Trajectory-Plotter's `computeTrajectory()`, re-hosted behind
- * the module contract, EXTENDED (2026-07-18) with real SOI encounters: where
- * the arc dips inside any body's sphere of influence the flight switches to
+ * the module contract and extended with real SOI encounters: where the arc
+ * dips inside any body's sphere of influence the flight switches to
  * Shared/body-leg.js's body+Sun integration and resumes Kepler at exit, so a
- * close pass genuinely bends and a rendezvous can be set up against the
- * body's own gravity (see the encounter block below). "Two" is this phase's current UI choice (how many
- * waypoint cards fit the sidebar today), not an architectural ceiling — see
- * ARCHITECTURE.md's "Phases are chains; compliance is a boundary check, not
- * a reconciliation": a phase is any length of ordinary stage chain, and
- * Departure/Arrival could each grow their own multi-stage chains (WP-F, H2)
- * the same way. The plotter's snap-to and Lambert targeting are NOT here
- * yet — they come across when the marker/targeting UI ports (migration-path
- * step 4.5).
+ * close pass genuinely bends and a rendezvous can be set up against the body's
+ * own gravity (see the encounter block below). "Two" waypoints is this phase's
+ * UI choice (how many waypoint cards fit the sidebar), not an architectural
+ * ceiling — per ARCHITECTURE.md's "Phases are chains; compliance is a boundary
+ * check, not a reconciliation", a phase is any length of ordinary stage chain.
+ * The plotter's snap-to and Lambert targeting are not here: they live on the
+ * Ephemeris tab (ephemeris-view.js), which authors a plan before it is frozen.
  *
  * Consumes a ship-state packet (any frame — converted to "helio" via
- * Shared/frames.js) AS THE COAST'S STARTING STATE, unmodified — no burn of
- * its own happens at that seam (removed 2026-07-14, Kim: "only a minority
- * of the delta-v needed to get somewhere comes from engine burns," so the
- * Departure→Coast handoff is a given heading and speed, not a burn formula
- * applied to some baseline. Whatever put the ship there — a departure
- * tech's release physics, a chain of burns upstream, anything — is that
- * upstream stage's business; transfer-leg just coasts from where it's
- * handed off). The two WAYPOINT burns are real, though — genuine mid-course
- * corrections during Coast — and stay. By the same reasoning the ship's
- * heading and speed at the END of Coast is likewise just the resultant of
- * that starting state plus whatever waypoint burns happened along the way —
- * nothing at the Coast→Arrival seam needs a burn concept either; a future
- * Arrival module would simply consume `leg.end` as its own input, the same
- * way this module consumes its own upstream packet.
+ * Shared/frames.js) AS THE COAST'S STARTING STATE, unmodified. No burn of its
+ * own happens at that seam: the Departure→Coast hand-off is a given heading and
+ * speed, not a burn formula applied to some baseline, because only a minority
+ * of the delta-v needed to get somewhere comes from engine burns. Whatever put
+ * the ship there — a departure tech's release physics, a chain of burns
+ * upstream, anything — is that upstream stage's business; transfer-leg just
+ * coasts from where it is handed off. The two WAYPOINT burns are real, though:
+ * genuine mid-course corrections during Coast. By the same reasoning the ship's
+ * heading and speed at the END of Coast is just the resultant of that starting
+ * state plus whatever waypoint burns happened along the way, so nothing at the
+ * Coast→Arrival seam needs a burn concept either — arrival-boundary passes the
+ * emitted state through untouched and arrival-leg builds from it.
  *
  * If a destination body is set, the miss distance at arrival is reported
  * through the envelope's WARNINGS channel — non-blocking, per the core's
- * comply-mode refinement: a leg that misses Ceres is a diagnosed mission,
- * not a blank screen.
+ * comply-mode contract: a leg that misses Ceres is a diagnosed mission, not a
+ * blank screen.
+ *
+ * The events this module emits are also read structurally elsewhere:
+ * core/arrival-seam.js finds the destination's closest-approach event to derive
+ * the Coast→Arrival window, and mission-view.js spans the Coast slider on it.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; `init` (sidebar
  * card) and `draw` (trajectory polyline in the "helio" frame) are the
@@ -82,17 +82,15 @@ function isoOf(jd) {
 
 function burnMag(b) { return Math.hypot(b.pro || 0, b.rad || 0, b.nrm || 0); }
 
-// ---- SOI encounters (2026-07-18, Kim: "the gravity of the body is
-// absolutely critical, it isn't possible to set up rendezvous without it.
-// Revise the code to include it for all bodies") -----------------------------
-//
+// ---- SOI encounters ---------------------------------------------------------
 // The coast is Sun-only Kepler EXCEPT where it dips inside a body's sphere
 // of influence: there the flight switches to Shared/body-leg.js's real
 // body + Sun integration (integrateEncounter — same RK4 and indirect term
 // the departure legs use, so a close approach genuinely bends) and resumes
-// Kepler at SOI exit. "All bodies" is literal: every `systems` entry with a
-// heliocentric orbit and a mass, no per-body special cases (the project's
-// body convention).
+// Kepler at SOI exit. A body's own gravity is what makes a rendezvous
+// possible to set up at all. "All bodies" is literal: every `systems` entry
+// with a heliocentric orbit and a mass, no per-body special cases (the
+// project's body convention).
 
 // Every body the coast can feel: built once from `systems`, not hardcoded.
 var GRAVITY_BODIES = [];
@@ -222,9 +220,8 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 			}
 			// Closest approach, from the integrated trail (surface altitude).
 			// `kind`/`body`/`vInf`/`rmin` are structured fields alongside the
-			// label — WP-1's arrival-seam derivation (core/arrival-seam.js)
-			// reads these to find the destination's own encounter and its
-			// approach speed, rather than parsing the label string.
+			// label, so core/arrival-seam.js can find the destination's own
+			// encounter and its approach speed without parsing the label string.
 			var iMin = 0;
 			for (var si = 1; si < res.samples.length; si++) {
 				if (O.vMag(res.samples[si].r) < O.vMag(res.samples[iMin].r)) { iMin = si; }
@@ -331,13 +328,12 @@ export function computeLeg(params, data) {
 		out.events.push({ jd: jdEnd, label: "Leg ends" });
 	}
 
-	// Display-only OVERRUN (2026-07-18, Kim): the drawn path continues dimmer
-	// past the leg's own end, long enough to convey the trajectory PAST the
-	// destination — the leg is a section snipped from a longer flight, and the
-	// snip shouldn't hide the pass. Runs through the same coastStretch (so a
-	// rendezvous encounter in progress at leg end completes on screen); the
-	// EMITTED end state is untouched — phases stay chains, the hand-off stays
-	// at legDays.
+	// Display-only OVERRUN: the drawn path continues dimmer past the leg's own
+	// end, long enough to convey the trajectory PAST the destination — the leg
+	// is a section snipped from a longer flight, and the snip shouldn't hide the
+	// pass. Runs through the same coastStretch (so a rendezvous encounter in
+	// progress at leg end completes on screen); the EMITTED end state is
+	// untouched — phases stay chains, the hand-off stays at legDays.
 	var overrun = [];
 	if (!impact) {
 		var overrunDays = Math.min(60, Math.max(15, Math.round(p.legDays * 0.1)));
@@ -378,10 +374,10 @@ export function stateAtElapsed(leg, t) {
 }
 
 // Last computed leg per (World, stage), for the card readouts and the
-// polyline. Keyed by World first because N missions coexist (task A1) and
-// their Worlds reuse stage ids like "stg-2" — a stageId-only cache would let
-// one mission's recompute clobber another's drawn leg. WeakMap, so a closed
-// mission's entries go with its World.
+// polyline. Keyed by World first because N missions coexist and their Worlds
+// reuse stage ids like "stg-2" — a stageId-only cache would let one mission's
+// recompute clobber another's drawn leg. WeakMap, so a closed mission's entries
+// go with its World.
 var lastByWorld = new WeakMap();
 export function legFor(world, stageId) {
 	var m = lastByWorld.get(world);
@@ -402,9 +398,9 @@ export default {
 	accepts: ["ship-state"],
 	emits: ["ship-state"],
 	rendersIn: ["helio"],
-	// No title/status header on the sidebar card (Kim, 2026-07-13): the
-	// Coast sidebar shows just the waypoint cards + add button (see init).
-	// Warnings/diagnostics still render in the card via the generic boxes.
+	// No title/status header on the sidebar card: the Coast sidebar shows just
+	// the waypoint cards + add button (see init). Warnings/diagnostics still
+	// render in the card via the shell's generic boxes.
 	plainCard: true,
 
 	update: function (ctx, input) {
@@ -441,17 +437,13 @@ export default {
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
 
-	// Sidebar card, reshaped per Kim (2026-07-13) for the frozen-mission
-	// flow: ONLY the waypoint burns live here — one small card per existing
-	// waypoint plus the add button (capped at 2). The old departure-burn /
-	// leg-duration / destination fields and the readout rows are gone: since
-	// E2's post-burn hand-off those are the frozen plan's business (the
-	// injection is the departure tech's job, the duration and destination
-	// are the plan's commitment), not knobs to twiddle on the coast — the
-	// plan's figures render in the phase bar instead. The stage also opts
-	// out of the generic title/status header (`plainCard` below); the leg's
-	// warnings and diagnostics still render underneath via the generic diag
-	// boxes.
+	// Sidebar card: ONLY the waypoint burns live here — one small card per
+	// existing waypoint plus the add button (capped at 2). Leg duration,
+	// destination and the departure injection are the frozen plan's business,
+	// not knobs on the coast, and its figures render in the phase bar's
+	// compliance readout instead. The stage opts out of the generic title/status
+	// header (`plainCard` above); the leg's warnings and diagnostics still render
+	// underneath via the shell's generic diag boxes.
 
 	init: function (ctx) {
 		var host = ctx.panelHost;
@@ -591,15 +583,14 @@ export default {
 		// the camera moves (orientMarkerSprite needs the live camera, which
 		// draw() itself is never called with).
 		//
-		// WHILE COAST IS THE ACTIVE PHASE (task 1.2), the chevron cannot be
-		// scrubbed past the Coast->Arrival seam (core/arrival-seam.js) — the
-		// drawn trajectory line above continues through closest approach and
-		// the overrun regardless, only the marker itself is held back, so a
-		// stray clock move past the seam (e.g. clicking the plan's own
-		// arrival event) can't show the ship somewhere the Coast phase has no
-		// business displaying. Once the phase changes the clamp lifts,
-		// letting the same marker (no Arrival-side chevron exists yet — see
-		// WP-2.5) continue on to the real encounter.
+		// WHILE COAST IS THE ACTIVE PHASE (snap.phase, supplied by
+		// mission-view.js's drawStage), the chevron cannot be scrubbed past the
+		// Coast->Arrival seam (core/arrival-seam.js). The drawn trajectory line
+		// above continues through closest approach and the overrun regardless;
+		// only the marker is held back, so a stray clock move past the seam (e.g.
+		// clicking the plan's own arrival event) can't show the ship somewhere the
+		// Coast phase has no business displaying. In any other phase the clamp
+		// lifts and the same marker continues on to the real encounter.
 		var t = (snap.world.jd - leg.jd0) * DAY;
 		if (snap.phase === "coast" && params.destination) {
 			var seam = computeArrivalSeam({ destination: params.destination, events: leg.events,

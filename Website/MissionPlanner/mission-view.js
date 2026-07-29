@@ -1,12 +1,12 @@
-/* Mission Planner — the per-mission view factory (task A1).
+/* Mission Planner — the per-mission view factory.
  *
  * Everything that belongs to ONE mission lives here: its World + recompute
- * engine, its Three.js frames, its panes, its sidebar cards, its date bar,
- * its stage strip and events bar, and its slice of workspace persistence.
- * The shell (planner.js) creates one instance per mission tab and switches
- * between them with show()/hide(); N instances coexist.
+ * engine, its Three.js frames, its panes, its sidebar cards, its date bar and
+ * phase sliders, its compliance and events bars, and its slice of workspace
+ * persistence. The shell (planner.js) creates one instance per mission tab and
+ * switches between them with show()/hide(); N instances coexist.
  *
- * Architecture decisions recorded here (see MissionPlannerTasks.md, A1):
+ * Structural rules this file rests on:
  *
  * - ONE RENDERER, SHARED. Browsers cap live WebGL contexts, so the shell
  *   owns the single renderer/canvas and passes it in; show() re-parents the
@@ -15,24 +15,22 @@
  *   layers) is cheap enough to keep per mission.
  *
  * - FRAMES ARE PER-MISSION, not shared-with-per-mission-state. Each view
- *   builds its own helio and Earth-Moon frames (own THREE.Scene, camera,
- *   labels) — the BUILDERS are shared (scene-frames.js, factored out by
- *   task D1 so the Ephemeris tab's view uses the identical helio frame, not
- *   a fork), but every call returns a fresh scene. Sharing scenes would mean
- *   swapping each mission's stage view groups and camera poses in and out on
- *   every tab switch, and the module contract's viewAdded()/draw() hooks
- *   assume a group that persists for the stage's lifetime. A frame's scene
- *   is a few spheres, rings and a star field — duplication is the cheap side
- *   of that trade.
+ *   builds its own frames (own THREE.Scene, camera, labels) from the shared
+ *   builders in scene-frames.js, and every call returns a fresh scene. Sharing
+ *   scenes would mean swapping each mission's stage view groups and camera
+ *   poses in and out on every tab switch, and the module contract's
+ *   viewAdded()/draw() hooks assume a group that persists for the stage's
+ *   lifetime. A frame's scene is a few spheres, rings and a star field —
+ *   duplication is the cheap side of that trade.
  *
  * - WORKSPACE IS KEYED PER MISSION. One localStorage key
  *   (mw-missionplanner-workspace, version 2) holds a { missions: { id ->
- *   { main, cams } } } map; each view reads/writes only its own slot
- *   (read-modify-write, so slots survive each other). A version-1 save from
- *   the single-mission scaffold is adopted as mission "m1"'s slot.
+ *   { main, phase, cams } } } map; each view reads/writes only its own slot
+ *   (read-modify-write, so slots survive each other). Mission CONTENT lives
+ *   under a separate key that planner.js owns.
  *
- * The module contract (init/draw/viewAdded, ctx.onResult) is unchanged from
- * the scaffold — see README.md, "Module-contract refinements".
+ * The module contract (init/draw/viewAdded, ctx.onResult) is described in
+ * README.md, "Module-contract refinements".
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
  */
@@ -59,30 +57,27 @@ var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 var SPAN_DAYS = 36525;
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// ---- phase <-> frame mapping (task B1, generalized by J3). "coast" is
-// always the heliocentric leg. "departure" used to be a fixed "body:Earth-Moon"
-// constant; now each mission view builds PHASE_FRAME.departure itself from its
-// own frozen plan's `origin` body (missionOriginBody/departureFrameFor below)
-// — "body:Earth-Moon" for the original Earth/Moon chain, or a generic
-// buildBodyFrame(origin) for any other HELIO_BODIES origin (WP-J). Departure
-// modules that render body-centrically declare the symbolic "body:origin"
-// rendersIn token (orbital-skyhook.js, body-departure-leg.js) rather than a
-// literal frame id, since they don't know the mission's origin themselves;
-// resolveFrameId() below aliases that token to the real frame id wherever a
-// module's rendersIn is consulted. "arrival" (task H2) works the same way in
-// mirror image: when the mission's frozen plan commits to an arrival body,
-// the view builds buildBodyFrame(destination), PHASE_FRAME.arrival points at
-// it, the phase button un-disables, and arrival modules' symbolic
-// "body:destination" rendersIn token (capture-burn.js, arrival-skyhook.js)
-// aliases to it. A mission with no arrival commitment (an old save, or a
-// destination-less plan) keeps the button disabled, exactly as before H2.
+// ---- phase <-> frame mapping. "coast" is always the heliocentric leg.
+// "departure" and "arrival" are per-mission: each view builds
+// PHASE_FRAME.departure from its own frozen plan's `origin` body
+// (missionOriginBody/departureFrameFor below) — "body:Earth-Moon" for an Earth
+// origin, or a generic buildBodyFrame(origin) for any other HELIO_BODIES
+// origin — and PHASE_FRAME.arrival from the plan's committed arrival body, if
+// it commits to one. A mission with no arrival commitment (a destination-less
+// plan) keeps the Arrival phase button disabled.
+//
+// Modules that render body-centrically therefore cannot name a literal frame
+// id, since they don't know the mission's origin or destination themselves.
+// They declare the symbolic "body:origin" (orbital-skyhook.js,
+// body-departure-leg.js) or "body:destination" (arrival-boundary.js,
+// arrival-leg.js, arrival-skyhook.js) rendersIn token, and resolveFrameId()
+// below aliases it to the real frame id wherever rendersIn is consulted.
 var PHASES = ["departure", "coast", "arrival"];
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
 
-// The mission's departure-origin body (task J3): read from its frozen-plan
-// stage's `origin` param (the frozen plan's own schema, C1) — "Earth" for
-// pre-comply saves or any mission without a frozen-plan stage, matching
-// frozen-plan.js's own default.
+// The mission's departure-origin body: read from its frozen-plan stage's
+// `origin` param — "Earth" for any mission without a frozen-plan stage,
+// matching frozen-plan.js's own default.
 function missionOriginBody(world) {
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
@@ -94,18 +89,17 @@ function missionOriginBody(world) {
 	return "Earth";
 }
 
-// The departure phase's real frame id for a given origin body: the original
-// Earth-Moon frame for Earth, else "body:<origin>" (built by buildBodyFrame,
-// task J1).
+// The departure phase's real frame id for a given origin body: the Earth-Moon
+// frame for Earth, else "body:<origin>" (scene-frames.js's buildBodyFrame).
 function departureFrameFor(origin) {
 	return origin === "Earth" ? "body:Earth-Moon" : "body:" + origin;
 }
 
-// The mission's arrival body (task H2): the frozen plan's own arrival
-// commitment, read directly from its stage params (the same direct-read
-// pattern as missionOriginBody — the view builds before any module resolves).
+// The mission's arrival body: the frozen plan's own arrival commitment, read
+// directly from its stage params. Same direct-read pattern as
+// missionOriginBody, because the view is built before any module resolves.
 // null when the mission has no frozen plan, no committed body, or names a
-// body the master list doesn't know.
+// body `systems` doesn't know.
 function missionArrivalBody(world) {
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
@@ -126,8 +120,8 @@ function dotClassFor(res) {
 //  Workspace store: one localStorage key, one slot per mission.
 // =======================================================================
 var WS_KEY = "mw-missionplanner-workspace";
-var LEGACY_MISSION_ID = "m1";   // version-1 saves predate tabs: exactly one
-                                // mission existed, and the shell names it "m1"
+var LEGACY_MISSION_ID = "m1";   // a version-1 save holds one unnamed mission's
+                                // layout; the shell's first mission is "m1"
 
 // The whole file, normalized to version 2. Corrupt/foreign content just
 // yields an empty store — the layout falls back to defaults, never throws.
@@ -161,7 +155,8 @@ function saveWorkspaceSlot(missionId, slot) {
 	} catch (e) { /* storage full/blocked: the layout just won't persist */ }
 }
 
-// For closing a mission tab (A2): forget its layout along with it.
+// For closing a mission tab (planner.js's closeMissionTab): forget its layout
+// along with it.
 export function deleteWorkspaceSlot(missionId) {
 	var store = readWorkspaceStore();
 	delete store.missions[missionId];
@@ -207,9 +202,9 @@ export function createMissionView(opts) {
 	var panelEl = q(".mp-panel");
 
 	// Straddling readout-box overlay (Shared/sim/readout-panes.js) — the same
-	// mechanism the Ephemeris tab uses for its burn readouts (task D2), now
-	// also available to any sidebar card via ctx.readoutLayer/mainEl/panelEl
-	// (task I4: departure-leg's waypoint burn readouts + release tooltip).
+	// mechanism the Ephemeris tab uses for its burn readouts, offered to any
+	// sidebar card via ctx.readoutLayer/mainEl/panelEl. The departure and
+	// arrival legs use it for their waypoint-burn and release/pass-by boxes.
 	var readoutLayer = document.createElement("div");
 	readoutLayer.className = "mp-readout-layer";
 	mainEl.appendChild(readoutLayer);
@@ -232,20 +227,19 @@ export function createMissionView(opts) {
 
 	var engine = createEngine(world, registry);
 
-	// ---- departure frame (task J3): this mission's own origin body picks
-	// which frame PHASE_FRAME.departure points at — the Earth-Moon frame for
-	// the original chain, or a generic buildBodyFrame(origin) for any other
-	// WP-J origin. resolveFrameId() aliases a module's symbolic "body:origin"
-	// rendersIn token to the real frame id wherever rendersIn is consulted.
+	// ---- departure frame: this mission's own origin body picks which frame
+	// PHASE_FRAME.departure points at — the Earth-Moon frame for an Earth
+	// origin, or a generic buildBodyFrame(origin) otherwise. resolveFrameId()
+	// aliases a module's symbolic "body:origin" rendersIn token to the real
+	// frame id wherever rendersIn is consulted.
 	var originBody = missionOriginBody(world);
 	var departureFrameId = departureFrameFor(originBody);
-	// ---- arrival frame (task H2): the frozen plan's arrival body gets its
-	// own buildBodyFrame, and the "body:destination" rendersIn token
-	// (capture-burn, arrival-skyhook) aliases to it. In the degenerate case
-	// where destination and origin share a frame id (a Mars→Mars mission),
-	// the one frame serves both phases and departure keeps the FRAME_PHASE
-	// claim (a float click reads as departure; the phase buttons still reach
-	// arrival directly).
+	// ---- arrival frame: the frozen plan's arrival body gets its own
+	// buildBodyFrame, and the "body:destination" rendersIn token aliases to it.
+	// In the degenerate case where destination and origin share a frame id (a
+	// Mars→Mars mission), the one frame serves both phases and departure keeps
+	// the FRAME_PHASE claim — a float click reads as departure, while the phase
+	// buttons still reach arrival directly.
 	var arrivalBody = missionArrivalBody(world);
 	var arrivalFrameId = arrivalBody ? "body:" + arrivalBody : null;
 	var PHASE_FRAME = { departure: departureFrameId, coast: "helio" };
@@ -270,23 +264,22 @@ export function createMissionView(opts) {
 		frames[arrivalFrameId] = buildBodyFrame(arrivalBody);
 	}
 
-	// The Arrival phase is reachable exactly when its frame exists (task H2);
-	// the button ships disabled in planner.html for the no-commitment case.
+	// The Arrival phase is reachable exactly when its frame exists; the button
+	// ships disabled in planner.html for the no-commitment case.
 	if (arrivalFrameId) {
 		phaseBtns.arrival.disabled = false;
 		phaseBtns.arrival.title = "Arrival at " + arrivalBody;
 	}
 
-	// ---- workspace: which frame is main, which phase is active (task B1),
-	// camera poses. This mission's slot of the shared localStorage store,
-	// never World. phase and main are kept in lockstep (see setPhase) — main
-	// is just "the frame the active phase points at" via PHASE_FRAME, except
-	// for "arrival" on a mission with no arrival commitment (no frame then —
-	// task H2). A saved/passed-in default main
-	// naming a frame this mission doesn't have (e.g. a duplicated non-Earth
-	// mission falling back to the shell's Earth-Moon default) falls back to
-	// "helio" rather than pointing the main pane at a frame that was never
-	// built. -----------------------------------
+	// ---- workspace: which frame is main, which phase is active, camera poses.
+	// This mission's slot of the shared localStorage store, never World. phase
+	// and main are kept in lockstep (see setPhase) — main is just "the frame the
+	// active phase points at" via PHASE_FRAME, except for "arrival" on a mission
+	// with no arrival commitment, which has no frame. A saved or passed-in
+	// default main naming a frame this mission doesn't have (e.g. a duplicated
+	// non-Earth mission falling back to the shell's Earth-Moon default) falls
+	// back to "helio" rather than pointing the main pane at a frame that was
+	// never built. ------------------------------------------------------------
 	var initialMain = frames[opts.defaultMain] ? opts.defaultMain : "helio";
 	var workspace = { main: initialMain, phase: FRAME_PHASE[initialMain] || "departure", cams: {} };
 	(function loadWorkspace() {
@@ -362,15 +355,15 @@ export function createMissionView(opts) {
 		if (from) { setPaneFrame(from, old); }
 	}
 
-	// Which slider shows: one per phase, exactly one at a time — Departure
-	// gets the flight slider (B3), Coast the date-scaled one ending at the
-	// seam (B2), Arrival the seam window (task 1.3). Each phase's slider IS
-	// its clock control, so the raw Ephemeris date bar is now only a FALLBACK:
-	// it appears in the Arrival phase while there is no arrival window to
-	// scrub (no encounter — 1.1's collapsed-to-a-point case), because
-	// otherwise that phase would have no clock at all. Departure and Coast
-	// keep it hidden unconditionally; both always resolve a span in practice,
-	// and their empty states are transient.
+	// Which slider shows: one per phase, exactly one at a time — Departure gets
+	// the flight slider, Coast the date-scaled one ending at the seam, Arrival
+	// the seam window (all three from ui/phase-slider.js). Each phase's slider
+	// IS its clock control, so the raw Ephemeris date bar is only a FALLBACK: it
+	// appears in the Arrival phase while there is no arrival window to scrub (no
+	// encounter, so core/arrival-seam.js collapses the window to a point),
+	// because otherwise that phase would have no clock at all. Departure and
+	// Coast keep it hidden unconditionally; both always resolve a span in
+	// practice, and their empty states are transient.
 	function syncSliderVisibility() {
 		var phase = workspace.phase;
 		depSliderEl.style.display = phase === "departure" ? "" : "none";
@@ -384,11 +377,10 @@ export function createMissionView(opts) {
 		dateBarEl.style.display = (phase === "arrival" && (!arrSlider || arrSlider.empty)) ? "" : "none";
 	}
 
-	// The phase selectors (task B1): drives the main-pane frame (via
-	// PHASE_FRAME — "arrival" has one only when the plan commits to an
-	// arrival body, else its button stays disabled — task H2),
-	// which sidebar cards show (applyPhaseToCards), which slider shows
-	// (syncSliderVisibility, task B2), and the active highlight.
+	// The phase selectors drive the main-pane frame (via PHASE_FRAME —
+	// "arrival" has one only when the plan commits to an arrival body, else its
+	// button stays disabled), which sidebar cards show (applyPhaseToCards),
+	// which slider shows (syncSliderVisibility), and the active highlight.
 	function setPhase(phase) {
 		if (PHASES.indexOf(phase) === -1 || phase === workspace.phase) { return; }
 		workspace.phase = phase;
@@ -398,16 +390,15 @@ export function createMissionView(opts) {
 		applyPhaseToCards();
 		syncSliderVisibility();
 		saveWorkspace();
-		// Redraw everything against the new phase immediately (task 1.2): the
-		// coast chevron's seam clamp only applies while Coast is active, and
-		// without this it would stay stale at its last-drawn position until
-		// the next unrelated recompute.
+		// Redraw everything against the new phase immediately: transfer-leg's
+		// chevron clamps at the arrival seam only while Coast is active, and
+		// without this it would stay stale at its last-drawn position until the
+		// next unrelated recompute.
 		engine.results().forEach(drawStage);
 	}
 
-	// A float pane's click promotes it to main; per the mockup, that's also
-	// how the mockup treats floats — an alternate way to switch phase, not
-	// just layout. If the frame maps to a phase (all of them do today),
+	// A float pane's click promotes it to main — an alternate way to switch
+	// phase, not just layout. If the frame maps to a phase (all of them do),
 	// switching to that phase does the promotion too.
 	function swapMain(frameId) {
 		var phase = FRAME_PHASE[frameId];
@@ -424,9 +415,9 @@ export function createMissionView(opts) {
 
 	// ---- share link: THIS mission's World, through the same fragment encoding
 	// the load path reads. Copying, not navigating — the URL is the artifact.
-	// The E2 envelope (ui/share-link.js) carries the shell-level TITLE along
-	// with the World, so an import arrives with its real name; getTitle is a
-	// live lookup (planner.js), not a snapshot, in case renaming ever exists.
+	// ui/share-link.js's envelope carries the shell-level TITLE along with the
+	// World, so an import arrives with its real name; getTitle is a live lookup
+	// into planner.js's mission list, not a snapshot.
 	var shareBtn = q(".mp-share");
 	shareBtn.addEventListener("click", function () {
 		var payload = packMissionLink(opts.getTitle ? opts.getTitle() : null, world.serialize());
@@ -459,9 +450,9 @@ export function createMissionView(opts) {
 	// parented at the attachesTo body's node when the frame has it. ------------
 	var stageViews = {};   // stageId -> [{ frame, group, stageId, metresPerUnit }]
 
-	// Factored out of the mount-time loop (task F1) so the departure
-	// technology dropdown's swap path can rebuild a single stage's views
-	// without touching the rest — see swapDepartureTech below.
+	// Separate from the mount-time loop so the technology add/swap paths can
+	// build a single stage's views without touching the rest — see addCarrier
+	// and swapTechStage below.
 	function buildStageViews(stage) {
 		var desc = registry.get(stage.moduleId);
 		if (!desc || !Array.isArray(desc.rendersIn)) { stageViews[stage.id] = []; return; }
@@ -491,11 +482,11 @@ export function createMissionView(opts) {
 		if (o.material) { o.material.dispose(); }
 	}
 
-	// The counterpart: tear down one stage's views (F1's swap path — a
-	// module being replaced must not leave its old THREE objects parented in
-	// the frame it drew into). `oldDesc` is the OUTGOING module (looked up
-	// before the World's moduleId changes), so its own viewRemoved hook (if
-	// any) still runs against the views it created.
+	// The counterpart: tear down one stage's views. A module being replaced or
+	// removed must not leave its old THREE objects parented in the frame it drew
+	// into. `oldDesc` is the OUTGOING module (looked up before the World's
+	// moduleId changes), so its own viewRemoved hook (if any) still runs against
+	// the views it created.
 	function disposeStageViews(stageId, oldDesc) {
 		(stageViews[stageId] || []).forEach(function (view) {
 			if (oldDesc && typeof oldDesc.viewRemoved === "function") { oldDesc.viewRemoved(view); }
@@ -518,8 +509,9 @@ export function createMissionView(opts) {
 		});
 	}
 
-	// ---- sidebar: one card per stage; the module builds its own controls in
-	// the card body, the shell renders status chips and diagnostics uniformly.
+	// ---- sidebar: one card per stage, filtered to the active phase. The module
+	// builds its own controls in the card body; the shell renders status chips
+	// and diagnostics uniformly, so engine- and module-authored ones look alike.
 	var cards = {};   // stageId -> { cardEl, chipEl, diagEl, phase, callbacks: [fn] }
 
 	function stageTitle(stage) {
@@ -527,11 +519,11 @@ export function createMissionView(opts) {
 		return desc ? desc.title : stage.moduleId;
 	}
 
-	// Which phase "owns" a stage's card (task B1): whichever phase's frame is
-	// among the stage's rendersIn (a stage attached to the Earth-Moon frame is
-	// departure tech, one attached to helio is the coast leg). A stage that
-	// doesn't map to a known phase's frame always shows, rather than vanishing
-	// from the sidebar.
+	// Which phase "owns" a stage's card: whichever phase's frame is among the
+	// stage's rendersIn (a stage rendering in the origin frame is departure
+	// tech, one rendering in helio is the coast leg). A stage that doesn't map
+	// to a known phase's frame always shows, rather than vanishing from the
+	// sidebar.
 	function stagePhaseOf(stage) {
 		var desc = registry.get(stage.moduleId);
 		if (!desc || !Array.isArray(desc.rendersIn)) { return null; }
@@ -550,21 +542,21 @@ export function createMissionView(opts) {
 		});
 	}
 
-	// Factored out of the mount-time loop (task F1) so the departure
-	// technology dropdown's swap path can rebuild a single stage's card
-	// without touching the rest. `insertBeforeEl` places the card at a given
-	// position (null = append at the end, the mount-time loop's behaviour);
-	// the swap path passes the outgoing card's old position so the new card
-	// lands exactly where it was, not at the bottom of the sidebar.
+	// Separate from the mount-time loop so the technology add/swap paths can
+	// build a single stage's card without touching the rest.
+	// `insertBeforeEl` places the card at a given position (null = append at the
+	// end, the mount-time loop's behaviour); the swap path passes the outgoing
+	// card's old position so the new card lands exactly where it was, not at the
+	// bottom of the sidebar.
 	function buildCard(stage, insertBeforeEl) {
 		var desc = registry.get(stage.moduleId);
-		if (desc && desc.sidebarCard === false) { return; }   // e.g. frozen-plan: its readouts live in the phase bar instead
+		if (desc && desc.sidebarCard === false) { return; }   // frozen-plan: its readouts live in the phase bar instead
 		var card = document.createElement("div");
 		card.className = "mp-card";
 
-		// `plainCard` (e.g. transfer-leg since 2026-07-13): no title/status
-		// header — the module's own content IS the card. Diagnostics still
-		// render below it; there's just no chip to update.
+		// `plainCard` (the legs): no title/status header — the module's own
+		// content IS the card. Diagnostics still render below it; there's just no
+		// chip to update.
 		var chip = null;
 		if (!desc || !desc.plainCard) {
 			var h = document.createElement("h3");
@@ -599,9 +591,9 @@ export function createMissionView(opts) {
 		}
 	}
 
-	// The swap path's counterpart: drop one stage's card DOM + bookkeeping.
-	// Returns the removed card's next sibling (or null), so the caller can
-	// re-insert the replacement at the same position.
+	// The counterpart: drop one stage's card DOM + bookkeeping. Returns the
+	// removed card's next sibling (or null), so the caller can re-insert a
+	// replacement at the same position.
 	function disposeCard(stageId) {
 		var entry = cards[stageId];
 		if (!entry) { return null; }
@@ -614,18 +606,18 @@ export function createMissionView(opts) {
 	world.stages().forEach(function (stage) { buildCard(stage, null); });
 	applyPhaseToCards();
 
-	// ---- departure technology: add/remove carriers (task I5) ----------------
+	// ---- departure technology: add/remove carriers --------------------------
 	// The departure stack is [ base platform (moon-platform) ] → [ 0..2 carrier
 	// cards ] → [ departure leg ]. The base platform is fixed; carriers are
 	// added and removed here. A stage is identified by its packet SHAPE, never
 	// by name: a base platform accepts nothing and emits a carrier-chain; a
-	// carrier both accepts AND emits one (the unified skyhook, a future tip
-	// launcher); the departure leg accepts a carrier-chain and emits a
-	// ship-state (the insertion boundary — carriers go before it). Options come
-	// from ui/tech-options.js, filtered by the body the chain is actually based
-	// at (departureChainBody), so this is not Moon-only. Removing the last
-	// carrier is fine — departure-leg reports "no-carrier" and, because
-	// frozen-plan is a compliance boundary, the coast still flies (never blanks).
+	// carrier both accepts AND emits one (the skyhook); the departure leg
+	// accepts a carrier-chain and emits a ship-state, and is the insertion
+	// boundary — carriers go before it. Options come from ui/tech-options.js,
+	// filtered by the body the chain is actually based at (departureChainBody),
+	// so this is not Moon-only. Removing the last carrier is fine: departure-leg
+	// reports "no-carrier" and, because frozen-plan is a compliance boundary, the
+	// coast still flies rather than blanking.
 	var DEP_TECH_KEY = "__departure-tech__";
 	var MAX_CARRIERS = 2;
 
@@ -755,19 +747,19 @@ export function createMissionView(opts) {
 
 	refreshDepartureTechControl();
 
-	// Swaps a tech stage's module (the arrival technology dropdown's change
-	// handler — task H2; the departure side's swap card was removed and is
-	// replaced by I5's add/remove carrier affordance). Disposes the outgoing
-	// module's card/views BEFORE world.set (so its viewRemoved runs against the
-	// descriptor that actually built them), commits the change (this recomputes
-	// synchronously — recompute.js — with no card/view yet registered for this
-	// stage, so that pass's updateCard/drawStage safely no-op), then builds the
-	// incoming module's card/views against the now-committed fresh params and
-	// replays the engine's already-computed result onto them by hand. Nothing
-	// here re-derives physics — recompute already ran; this only catches the
-	// view layer up to what the engine already decided. `seedParams` is the
-	// incoming module's starting params — { body } for an arrival tech (the
-	// body convention: every arrival tech carries its destination explicitly).
+	// Swaps a tech stage's module — the arrival technology dropdown's change
+	// handler. (The departure side adds and removes stages instead; see
+	// addCarrier/removeCarrier above.) Disposes the outgoing module's card/views
+	// BEFORE world.set, so its viewRemoved runs against the descriptor that
+	// actually built them; commits the change, which recomputes synchronously
+	// (recompute.js) with no card/view yet registered for this stage, so that
+	// pass's updateCard/drawStage safely no-op; then builds the incoming
+	// module's card/views against the now-committed fresh params and replays the
+	// engine's already-computed result onto them by hand. Nothing here re-derives
+	// physics — recompute already ran; this only catches the view layer up to
+	// what the engine already decided. `seedParams` is the incoming module's
+	// starting params — { body } for an arrival tech, since the body convention
+	// requires every arrival tech to carry its destination explicitly.
 	async function swapTechStage(stageId, opt, seedParams) {
 		var stage = world.getStage(stageId);
 		if (!stage || stage.moduleId === opt.moduleId) { return; }
@@ -790,14 +782,14 @@ export function createMissionView(opts) {
 		if (res) { drawStage(res); updateCard(res); }
 	}
 
-	// ---- arrival technology dropdown (task H2) -------------------------------
+	// ---- arrival technology dropdown ----------------------------------------
 	// Swaps whichever ONE stage is shaped like an arrival tech — consumes a
-	// ship-state and emits nothing (the chain's terminal catch: capture-burn,
+	// ship-state and emits nothing (the chain's terminal catch, e.g.
 	// arrival-skyhook). Options are filtered by the frozen plan's arrival body
 	// (arrivalTechOptionsFor), and the swap seeds the incoming module with that
-	// body explicitly. A mission with no such stage (an old save) just doesn't
-	// get the card — an add/remove gap on the arrival side, mirroring the one
-	// I5 closes for departure.
+	// body explicitly. A mission with no such stage simply doesn't get the card:
+	// unlike the departure side, this dropdown swaps an existing stage and
+	// cannot add or remove one.
 	function isArrivalTechStage(stage) {
 		var desc = registry.get(stage.moduleId);
 		return !!desc && desc.accepts.indexOf("ship-state") !== -1 && desc.emits.length === 0;
@@ -899,33 +891,28 @@ export function createMissionView(opts) {
 	}
 
 	// ---- plan-compliance bar + events bar (fed by the envelope's events
-	// channel) ----
-	// Task C2, redirected (2026-07-12, Kim): the old stage strip here was a
-	// row of buttons that just scrolled to a sidebar card — not useful once
-	// you can see the cards by switching phase. This space now shows C1's
-	// frozen-plan comparison instead: a compact "PLAN REQUIRES -> TECH
-	// DELIVERS" readout, always visible (not phase-gated, like the shared
-	// clock below it), reached via the registry rather than a static import
-	// so frozen-plan stays a dynamically-loaded module like any other.
+	// channel) ------------------------------------------------------------
+	// The compliance bar shows frozen-plan's comparison: a compact "PLAN
+	// REQUIRES -> TECH DELIVERS" readout, always visible (not phase-gated, like
+	// the shared clock below it), reached via the registry rather than a static
+	// import so frozen-plan stays a dynamically-loaded module like any other.
 	//
-	// frozen-plan has no sidebar card (sidebarCard: false), so this bar is
-	// ALSO now its only view surface: it has to cover the hard-diagnostic and
-	// blocked statuses the generic card used to render, plus the plan's own
-	// facts (flight time, v∞ in, plan Δv — planSummary) that used to sit in
-	// that card's rows.
-	// Reshaped per Kim (2026-07-13, re-reshaped 2026-07-14): [compliance
-	// met/unmet chip] then the plan's figures in a fixed order — v∞ out,
-	// v∞ in, plan Δv, departure, flight time, arrival. v∞ in/out are named
-	// from the SHIP's point of view: "out" is the ship departing (leaving
-	// the origin's SOI — the required departure v∞), "in" is the ship
-	// arriving (reaching the destination's SOI — the arrival commitment);
-	// see planSummary. The demand figures (v∞ out, v∞ in, plan Δv) are
-	// amber while compliance is unmet — they are what no technology is
-	// delivering yet — and green once met; departure/flight time/arrival
-	// are plain facts already fixed by the chosen timing, never colored.
-	// The aim readout was dropped from the bar (Kim: it may move to the
-	// marker card later, if at all); its warning still flows through the
-	// envelope.
+	// frozen-plan has no sidebar card (sidebarCard: false), so this bar is its
+	// ONLY view surface: it also covers the hard-diagnostic and blocked statuses
+	// a generic card would render, plus the plan's own facts (flight time, v∞ in,
+	// plan Δv — planSummary).
+	//
+	// Layout: [compliance met/unmet chip] then the plan's figures in a fixed
+	// order — v∞ out, v∞ in, plan Δv, departure, flight time, arrival. v∞
+	// in/out are named from the SHIP's point of view: "out" is the ship
+	// departing (leaving the origin's SOI — the required departure v∞), "in" is
+	// the ship arriving (reaching the destination's SOI — the arrival
+	// commitment); see planSummary. The demand figures (v∞ out, v∞ in, plan Δv)
+	// are amber while compliance is unmet — they are what no technology is
+	// delivering yet — and green once met; departure/flight time/arrival are
+	// plain facts already fixed by the chosen timing, never coloured. The aim
+	// deviation is not shown here; its warning still flows through the envelope
+	// to the departure stage's own card.
 	function cbarDate(jd) {
 		var d = O.dateFromJulian(jd);
 		return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
@@ -953,10 +940,10 @@ export function createMissionView(opts) {
 		for (var i = 0; i < results.length; i++) {
 			if (results[i].moduleId === "frozen-plan") { planRes = results[i]; break; }
 		}
-		if (!planRes) { return; }   // no comply-mode stage on this mission (an old save)
+		if (!planRes) { return; }   // this mission carries no frozen plan
 
-		// No sidebar card exists for this stage, so these two statuses (which
-		// the generic card used to render as a diag box) need a home here.
+		// No sidebar card exists for this stage, so its hard-diagnostic and
+		// blocked statuses need a home here.
 		if (planRes.status === "diagnostic") {
 			appendCbarChip("err", "plan: " + planRes.diagnostic.message, planRes.diagnostic.message);
 			return;
@@ -1015,9 +1002,9 @@ export function createMissionView(opts) {
 		}
 	}
 
-	// Phase-button dots (task B1): the worst status among a phase's stages
-	// (err worse than blocked worse than warn worse than ok); a phase with no
-	// stages mapped to it (arrival, today) keeps the neutral default dot.
+	// Phase-button dots: the worst status among a phase's stages (err worse than
+	// blocked worse than warn worse than ok). A phase with no stages mapped to
+	// it keeps the neutral default dot.
 	function renderPhaseDots(results) {
 		var worst = {};
 		results.forEach(function (res) {
@@ -1087,20 +1074,18 @@ export function createMissionView(opts) {
 		world.set({ jd: dateState.jd });   // slider and event clicks need)
 	}
 
-	// ---- the Coast slider (task B2): date-scaled, spanning the departure
-	// and coast phases' own events (coastSpan) — see ui/phase-slider.js.
+	// ---- the Coast slider: date-scaled, spanning the plan's committed dates
+	// and ending at the arrival seam (coastSpan) — see ui/phase-slider.js.
 	var coastSlider = createCoastSlider(coastSliderEl, { onSetJd: setClock, shortDate: shortDate });
 
-	// The Coast->Arrival seam (WP-1 task 1.1's core/arrival-seam.js), derived
-	// from transfer-leg's own emitted events: its destination's structured
-	// closest-approach event (kind/body/vInf/rmin — see transfer-leg.js's
-	// coastStretch) plus a fallback epoch for a coast that never actually
-	// encounters the destination. The fallback is the frozen plan's own
-	// committed arrival epoch when one exists (comply mode); absent that (a
-	// pre-comply save, or no destination), the leg's own latest event —
-	// mirroring coastSpan's pre-comply fallback below. null with no
-	// transfer-leg stage, no destination, or nothing to derive a fallback
-	// from either.
+	// The Coast->Arrival seam (core/arrival-seam.js), derived from transfer-leg's
+	// own emitted events: its destination's structured closest-approach event
+	// (kind/body/vInf/rmin — see transfer-leg.js's coastStretch) plus a fallback
+	// epoch for a coast that never actually encounters the destination. The
+	// fallback is the frozen plan's own committed arrival epoch when one exists;
+	// absent that, the leg's own latest event, mirroring coastSpan's fallback
+	// below. null with no transfer-leg stage, no destination, or nothing to
+	// derive a fallback from either.
 	function coastSeam(results) {
 		var dest = coastDestination();
 		if (!dest) { return null; }
@@ -1122,17 +1107,15 @@ export function createMissionView(opts) {
 		return computeArrivalSeam({ destination: dest, events: legRes.events, fallbackArrivalJd: fallbackJd });
 	}
 
-	// The coast span. Comply mode (task C1): when a frozen-plan stage is
-	// emitting, the coast phase IS the plan's committed dates (its departure/
-	// arrival events) — the design doc's "beginning to end of the dates set
-	// up when the mission was created" — so live edits (a longer leg, a moved
-	// waypoint) do NOT stretch the slider; they show up as deviations instead.
-	// Without a plan (or while it's blocked/broken), fall back to the
-	// pre-comply behaviour: the envelope of events emitted by departure/
-	// coast-phase stages this recompute pass. The RIGHT edge is the seam
-	// (task 1.2), not the raw committed arrival date: it moves with closest
-	// approach as the coast is tuned, ending the phase early enough to leave
-	// the Arrival phase its own window.
+	// The coast span. When a frozen-plan stage is emitting, the coast phase IS
+	// the plan's committed dates (its departure/arrival events) — the beginning
+	// to end of the dates set up when the mission was created — so live edits (a
+	// longer leg, a moved waypoint) do NOT stretch the slider; they show up as
+	// deviations instead. Without a plan (or while it's blocked/broken), fall
+	// back to the envelope of events emitted by departure/coast-phase stages this
+	// recompute pass. The RIGHT edge is the arrival seam, not the raw committed
+	// arrival date: it moves with closest approach as the coast is tuned, ending
+	// the phase early enough to leave the Arrival phase its own window.
 	function coastSpan(results) {
 		var jds = [];
 		results.forEach(function (res) {
@@ -1155,16 +1138,16 @@ export function createMissionView(opts) {
 		return { start: start, end: end };
 	}
 
-	// ---- the Departure slider (task B3): LINEAR in time over the ship's
-	// departure flight — launch (left, floats) to on-course/SOI-exit (right,
-	// the anchor). See ui/phase-slider.js and departureSpan() below.
+	// ---- the Departure slider: LINEAR in time over the ship's departure
+	// flight — launch on the left, on-course/SOI-exit on the right. See
+	// ui/phase-slider.js and departureSpan() below.
 	var depSlider = createDepartureSlider(depSliderEl, {
 		onSetJd: setClock, stamp: shortStamp
 	});
 
-	// The departure phase's flight events (release, Moon-SOI exit, Earth-SOI
-	// exit today). Flight-only: an event flagged flight:false (pre-launch or
-	// post-catch — none emitted yet) is kept off the flight scrubber.
+	// The departure phase's flight events (release, waypoint impulses, SOI
+	// exits). Flight-only: an event flagged flight:false is kept off the flight
+	// scrubber.
 	function departureEvents(results) {
 		var evs = [];
 		results.forEach(function (res) {
@@ -1175,8 +1158,9 @@ export function createMissionView(opts) {
 		return evs;
 	}
 
-	// The destination body the coast leg is aiming at (for the Hohmann default
-	// span). Read from the transfer-leg stage's params; "" / missing => none.
+	// The destination body the coast leg is aiming at — used by the arrival-seam
+	// derivation and by the Hohmann default span. Read from the transfer-leg
+	// stage's params; "" / missing => none.
 	function coastDestination() {
 		var stages = world.stages();
 		for (var i = 0; i < stages.length; i++) {
@@ -1188,11 +1172,10 @@ export function createMissionView(opts) {
 		return null;
 	}
 
-	// The frozen plan's own departure numbers (C1) — its required v∞ out and
-	// fixed on-course deadline — known the instant a mission is created, well
-	// before any departure tech resolves real flight events. null when this
-	// mission has no frozen-plan stage (a pre-comply save) or it hasn't
-	// resolved yet.
+	// The frozen plan's own departure numbers — its required v∞ out and fixed
+	// on-course deadline — known the instant a mission is created, well before
+	// any departure tech resolves real flight events. null when this mission has
+	// no frozen-plan stage, or it hasn't resolved yet.
 	function plannedDeparture(results) {
 		var planRes = null;
 		for (var i = 0; i < results.length; i++) {
@@ -1204,63 +1187,74 @@ export function createMissionView(opts) {
 		return (comp && comp.ok) ? { vInf: comp.required.vInf, jd: comp.required.jd } : null;
 	}
 
-	// The departure span for the slider. The RIGHT edge is the compliance time
-	// (when the ship must be on course); the LEFT edge (launch) floats to fit
-	// the departure duration. Today the flight events give both edges directly
-	// (release .. origin-SOI exit) once a departure tech resolves them; before
-	// that — including the moment a mission is first created, with no
-	// departure tech configured at all — the frozen plan's own required v∞
-	// out and fixed deadline (imported with the mission at creation, C1)
-	// default both edges: RIGHT anchored at the deadline, LEFT floated back by
-	// departureDefaultSpanSeconds(). A lone resolved release event (tech
-	// partly configured) anchors LEFT instead, floating RIGHT forward by the
-	// same default, since the deadline isn't the binding edge in that case.
-	// NOTE this "anchored-end" shape is only the PRE-resolution default. Once
-	// a departure tech resolves real flight events, the LEFT edge (the
-	// Release event) is actually already pinned — moon-platform.js,
-	// departure-leg.js and body-departure-leg.js all read the frozen plan's
-	// releaseAnchorJd through frozen-plan.js's releaseAnchorFor() and stamp
-	// their Release event at exactly that epoch, for every origin, not just
-	// Earth. So the real, common-case behavior is pinned-start/floating-end
-	// already, universally — task 1.4's remaining gap is narrower than "add
-	// pinned-start for satellites": this default-span fallback doesn't reuse
-	// that same anchor (it re-derives its own backward estimate instead), and
-	// the committed hand-off (frozen-plan's "Plan departure" event) never
-	// shows as a mark here at all — frozen-plan's stage phase is "coast" (its
-	// rendersIn is "helio"), so departureEvents() below, filtered to phase
-	// "departure", never sees it; it only surfaces in the unrelated flat
-	// all-phases events bar (renderEventsBar).
-	function departureSpan(results) {
-		var evs = departureEvents(results);
-		var jds = evs.map(function (e) { return e.jd; });
-		if (jds.length >= 2) {
-			return { start: Math.min.apply(null, jds), end: Math.max.apply(null, jds),
-			         marks: evs, defaulted: false };
-		}
-		if (jds.length === 1) {
-			// only the release resolved: anchor there and use the default SOI-
-			// crossing estimate for the (unknown) time to on-course.
-			var def = departureDefaultSpanSeconds(results);
-			if (!(def > 0)) { return null; }
-			return { start: jds[0], end: jds[0] + def / 86400, marks: evs, defaulted: true };
-		}
-		// No flight events at all: the mission was just created (or its
-		// departure tech is unconfigured/blocked). The frozen plan already
-		// fixes the on-course deadline and required v∞ out, so anchor the
-		// slider there instead of showing an empty track.
-		var plan = plannedDeparture(results);
-		var def0 = departureDefaultSpanSeconds(results);
-		if (!plan || !(def0 > 0)) { return null; }
-		return { start: plan.jd - def0 / 86400, end: plan.jd, marks: [], defaulted: true };
+	// The mission's read-only release anchor (frozen-plan.js's
+	// releaseAnchorFor, reached the same dynamic-registry way plannedDeparture
+	// reaches complianceFor) — fixed the instant the plan is baked, well before
+	// any departure tech resolves a real flight. null with no frozen plan yet.
+	function releaseAnchorForMission() {
+		var desc = registry.get("frozen-plan");
+		return desc && typeof desc.releaseAnchorFor === "function" ? desc.releaseAnchorFor(world) : null;
 	}
 
-	// Kim's default length: SOI_radius / v∞ — the time to cross the origin
-	// body's SOI at the plan's required departure v∞ out, the same figure
-	// imported with the mission from the frozen plan (C1). Falls back to a
+	// The departure span for the slider, by one of two procedures
+	// (Notes-and-Obsolete/decisions.md's "Departure" entry), chosen by whether
+	// the origin's departure rides a satellite carrier (Earth/Moon today —
+	// missionOriginBody() === "Earth", the same test departureFrameFor() uses):
+	//
+	//   - Earth/Moon: PINNED-START / FLOATING-END. The release anchor is fixed
+	//     the moment the plan is baked (moon-platform's card shows it read-only
+	//     from mission creation), so the LEFT edge is that anchor outright. The
+	//     RIGHT edge is the live flight's predicted origin-SOI exit once a
+	//     departure tech resolves one, else the default flight-time estimate
+	//     forward from the anchor — it floats as the tech/course is tuned.
+	//   - bodies without a satellite carrier: ANCHORED-END / FLOATING-START. The
+	//     RIGHT edge is the plan's own committed hand-off epoch outright (fixed
+	//     regardless of what any tech currently delivers). The LEFT edge floats
+	//     back from it by the best known flight duration — the resolved
+	//     release-to-SOI-exit span once a tech resolves one, else the default
+	//     estimate.
+	//
+	// Either way BOTH the committed hand-off and the predicted SOI exit render
+	// as marks (decisions.md: "the committed hand-off is always a fixed mark on
+	// the track; the predicted SOI exit is a separate, moving mark" — on course
+	// means the two fall within a day of each other). Whichever one also frames
+	// an edge is simply not drawn twice: departureSliderState only marks
+	// interior fractions, so a mark sitting exactly at an edge drops out on its
+	// own, the same rule every other slider mark follows.
+	function departureSpan(results) {
+		var evs = departureEvents(results);
+		var releaseJd = evs.length ? evs[0].jd : releaseAnchorForMission();
+		var soiExitJd = evs.length ? evs[evs.length - 1].jd : null;
+		var plan = plannedDeparture(results);
+		var def = departureDefaultSpanSeconds(results);
+		var defDays = (def > 0) ? def / 86400 : null;
+
+		var marks = evs.slice();
+		if (plan && isFinite(plan.jd)) {
+			marks.push({ jd: plan.jd, label: "Committed hand-off", cls: "mp-mark-committed" });
+		}
+
+		var start, end;
+		if (missionOriginBody(world) === "Earth") {
+			start = releaseJd;
+			end = isFinite(soiExitJd) ? soiExitJd
+				: (isFinite(start) && defDays !== null) ? start + defDays : null;
+		} else {
+			end = plan ? plan.jd : (isFinite(soiExitJd) ? soiExitJd : null);
+			var duration = (isFinite(releaseJd) && isFinite(soiExitJd)) ? (soiExitJd - releaseJd) : defDays;
+			start = (isFinite(end) && duration !== null) ? end - duration
+				: (isFinite(releaseJd) ? releaseJd : null);
+		}
+
+		if (!(isFinite(start) && isFinite(end) && end > start)) { return null; }
+		return { start: start, end: end, marks: marks, defaulted: !(evs.length && isFinite(soiExitJd)) };
+	}
+
+	// The default span length: SOI_radius / v∞ — the time to cross the origin
+	// body's SOI at the plan's required departure v∞ out. Falls back to a
 	// Hohmann-transfer dv1 estimate to the chosen destination when no frozen
-	// plan has resolved yet (a pre-comply save). Origin is this mission's own
-	// origin body (missionOriginBody(), task J3) — not always Earth since
-	// WP-J generalized departures beyond Earth. Seconds, or null.
+	// plan has resolved. Origin is this mission's own origin body
+	// (missionOriginBody()), not necessarily Earth. Seconds, or null.
 	function departureDefaultSpanSeconds(results) {
 		var origin = systems.get(missionOriginBody(world));
 		var soi = O.sphereOfInfluence(origin.orbit.a, origin.GM, GM_SUN);   // m
@@ -1273,23 +1267,21 @@ export function createMissionView(opts) {
 		return (dv1 > 0) ? soi / dv1 : null;
 	}
 
-	// ---- the Arrival slider (task 1.3): the seam window itself ---------------
-	// The third of the three per-phase scrubbers, and the one with no anchored
-	// edge at all: its span IS coastSeam()'s [start, end] — closest approach
-	// minus Δt, to closest approach plus a day. Both edges are recomputed from
-	// the live closest-approach event every pass, so the whole window slides
-	// bodily as the coast is tuned. Nothing is stored (the seam derivation is
-	// task 1.1's whole point); the slider is handed two fresh jds each update.
+	// ---- the Arrival slider: the seam window itself --------------------------
+	// The one per-phase scrubber with no anchored edge at all: its span IS
+	// coastSeam()'s [start, end] — closest approach minus Δt, to closest approach
+	// plus a day. Both edges are recomputed from the live closest-approach event
+	// every pass, so the whole window slides bodily as the coast is tuned.
+	// Nothing is stored; the slider is handed two fresh jds each update.
 	var arrSlider = createArrivalSlider(arrSliderEl, {
 		onSetJd: setClock, stamp: shortStamp
 	});
 
 	// The arrival phase's own flight events, as marks. Same flight-only rule
 	// the departure slider uses; arrivalSliderState drops any that fall outside
-	// the window, which today is most of them — modules/arrival-leg still
-	// builds a REFERENCE flyby discontinuous with the coast, and only task 7.1
-	// makes it the coast's true continuation. The marks become meaningful for
-	// free once it does.
+	// the window, which is most of them — modules/arrival-leg builds a REFERENCE
+	// flyby that is not continuous with the coast, so its own event times need
+	// not land inside the seam window the coast derives.
 	function arrivalEvents(results) {
 		var evs = [];
 		results.forEach(function (res) {
@@ -1300,9 +1292,9 @@ export function createMissionView(opts) {
 		return evs;
 	}
 
-	// null when there is no window to scrub: no transfer-leg/destination at
-	// all, or a coast that never encounters the destination — 1.1's fallback
-	// collapses the seam to a single point at the plan's committed arrival
+	// null when there is no window to scrub: no transfer-leg/destination at all,
+	// or a coast that never encounters the destination — core/arrival-seam.js
+	// then collapses the seam to a single point at the plan's committed arrival
 	// epoch, which is not a span. The slider shows its empty state and
 	// syncSliderVisibility hands the clock back to the date bar.
 	function arrivalSpan(results) {
@@ -1371,26 +1363,23 @@ export function createMissionView(opts) {
 	// frame: makeShipSprite()'s scale is a fixed WORLD-space size (0.01),
 	// which the helio frame's AU-scaled, multi-order-of-magnitude zoom range
 	// (6 AU default, 1e-4..500 AU min/max) shrinks to a fraction of a pixel
-	// at typical zoom — invisible, not just small. The Solar-System-
-	// Trajectory-Plotter's own marker avoids this the same way its waypoint
-	// gizmos do (updateGizmos(), Calculators/Solar-System-Trajectory-Plotter/
-	// solarSystemTrajectory.js): worldSizeAtPointForPx pins it to a constant
-	// ON-SCREEN size regardless of distance. draw() itself never gets a
-	// camera or a DOM element (module contract, not shell-owned), so the
-	// shell closes both loops here: each stage's view.chevron (module-owned,
-	// set fresh every draw()) is a stable slot the render loop re-reads every
-	// tick. Sized against the main pane specifically (mainPane.el) — the
-	// same single-holder choice camera control itself makes; a chevron
-	// shown as a float-pane thumbnail elsewhere sizes for the main pane's
-	// height, matching how the rest of this view treats "main" as the
-	// reference pane.
+	// at typical zoom — invisible, not just small. worldSizeAtPointForPx pins
+	// it to a constant ON-SCREEN size regardless of distance, the same way the
+	// Solar-System-Trajectory-Plotter handles its own marker and gizmos.
+	//
+	// draw() itself never gets a camera or a DOM element (that is the module
+	// contract, not shell-owned state), so the shell closes both loops here:
+	// each stage's view.chevron — module-owned, set fresh every draw() — is a
+	// stable slot the render loop re-reads every tick. Sized against the main
+	// pane specifically (mainPane.el), the same single-holder choice camera
+	// control makes, so a chevron shown as a float-pane thumbnail sizes for the
+	// main pane's height.
 	var CHEVRON_PX = 26;   // matches the Ephemeris marker's own on-screen size
-	// view.pxScaled (task I4): the same constant-on-screen-size treatment,
-	// generalized for anything a module's draw() wants held at a fixed pixel
-	// size regardless of zoom — departure-leg's waypoint gizmos, in
-	// particular (the Ephemeris tab's own updateGizmos/updateWaypointGizmos
-	// pattern). Unlike the chevron, these don't need re-orienting, only
-	// re-scaling, so it's a plain [{ obj, px }] list rebuilt fresh each draw().
+	// view.pxScaled is the same constant-on-screen-size treatment for anything
+	// else a module's draw() wants held at a fixed pixel size regardless of zoom
+	// — the departure and arrival legs' waypoint gizmos, in particular. Unlike
+	// the chevron these need only re-scaling, not re-orienting, so it's a plain
+	// [{ obj, px }] list rebuilt fresh each draw().
 	function updateChevrons() {
 		Object.keys(stageViews).forEach(function (stageId) {
 			stageViews[stageId].forEach(function (view) {
@@ -1460,14 +1449,13 @@ export function createMissionView(opts) {
 	}
 
 	// ---- go: one initial set opens the clock at the world's EXACT jd (the
-	// precise setJd path, not setBaseDays's whole-day snap) and fires the
-	// first recompute/draw pass through normal wiring. Exactness matters
-	// since task I3: a fresh mission opens at the plan's release anchor, and
-	// the skyhook tether turns every ~2.25 h — the old day-grid snap opened
-	// ~67 min early, half a rotation, drawing the tether tip on the OPPOSITE
-	// side of the Moon from the departure trajectory's start (and the in-card
-	// phase slider could never close that gap, since both ends rotate
-	// together; only a timeline scrub — the same exact-jd path — healed it).
+	// precise setJd path, not setBaseDays's whole-day snap) and fires the first
+	// recompute/draw pass through normal wiring. The exactness matters: a fresh
+	// mission opens at the plan's release anchor, and a skyhook tether turns
+	// every ~2.25 h, so a whole-day snap can place the drawn tether tip on the
+	// opposite side of the Moon from the departure trajectory's start. The
+	// in-card phase slider cannot close that gap — both ends rotate together —
+	// so only the exact jd gets it right.
 	dateBar.setJd(world.jd);
 	world.set({ jd: dateState.jd });
 	placeAll(world.jd);
