@@ -222,11 +222,14 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 			// `kind`/`body`/`vInf`/`rmin` are structured fields alongside the
 			// label, so core/arrival-seam.js can find the destination's own
 			// encounter and its approach speed without parsing the label string.
+			// display: false — this coarse coast-phase estimate is superseded
+			// for the reader by arrival-leg's own finer closest-approach event;
+			// it stays in the envelope only for arrival-seam.js to consume.
 			var iMin = 0;
 			for (var si = 1; si < res.samples.length; si++) {
 				if (O.vMag(res.samples[si].r) < O.vMag(res.samples[iMin].r)) { iMin = si; }
 			}
-			out.events.push({ jd: jdAbs + res.samples[iMin].t / DAY,
+			out.events.push({ jd: jdAbs + res.samples[iMin].t / DAY, display: false,
 				kind: "closest-approach", body: enc.body, vInf: res.vinf, rmin: res.rmin,
 				label: enc.body + " closest approach — " + Fmt3(res.rmin - c.R) + " km" });
 		}
@@ -318,14 +321,18 @@ export function computeLeg(params, data) {
 
 	var jdEnd = impact ? impact.jd : jd0 + p.legDays;
 	var miss = null;
+	// display: false on both — bookkeeping for mission-view.js's coastSpan
+	// fallback (the envelope of departure/coast event jd's, when no frozen
+	// plan supplies the span directly), not a ship event worth showing the
+	// reader; the leg's own end is already the next phase's hand-off.
 	if (impact) {
 		// The walk stopped at the surface; the leg has no coast state past it.
 	} else if (p.destination && systems.get(p.destination)) {
 		var dest = O.bodyStateAtJD(GM_SUN, systems.get(p.destination).orbit, jdEnd);
 		miss = O.vMag(O.vSub(r, dest.r)) / AU;
-		out.events.push({ jd: jdEnd, label: "Leg ends — " + miss.toFixed(3) + " AU from " + p.destination });
+		out.events.push({ jd: jdEnd, display: false, label: "Leg ends — " + miss.toFixed(3) + " AU from " + p.destination });
 	} else {
-		out.events.push({ jd: jdEnd, label: "Leg ends" });
+		out.events.push({ jd: jdEnd, display: false, label: "Leg ends" });
 	}
 
 	// Display-only OVERRUN: the drawn path continues dimmer past the leg's own

@@ -188,18 +188,6 @@ body {
 	box-shadow: 0 0 5px rgba(158, 224, 138, 0.7);
 }
 
-/* ---------- events bar ---------- */
-.mp-eventsbar {
-	flex: none; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-	padding: 5px 14px; background: #0e1220; border-bottom: 1px solid var(--line);
-	min-height: 28px; font-size: 12px;
-}
-.mp-event { color: var(--dim); cursor: pointer; white-space: nowrap; }
-.mp-event:hover { color: var(--bright); }
-.mp-event.past { color: #55688a; }
-.mp-event b { color: var(--text); font-weight: 600; margin-right: 5px; }
-.mp-event.past b { color: #6c7a94; }
-
 /* ---------- main area ---------- */
 .mp-main { display: flex; flex: 1; min-height: 0; position: relative; }
 
@@ -217,6 +205,21 @@ body {
 	font-size: 11.5px; color: #5f6a82;
 }
 .mp-hud-key { color: #93a1bd; }
+
+/* One-line mission-events readout, top-left of the main pane below the frame
+   caption. Shows the event at the clock's current position; the native
+   select arrow opens the full chronological list, and picking one jumps the
+   clock (mission-view.js's renderEventsBar). */
+.mp-event-readout {
+	position: absolute; left: 12px; top: 27px; z-index: 3; max-width: 320px;
+	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	font: inherit; font-size: 11.5px; color: var(--text);
+	background: rgba(14, 18, 32, 0.78); border: 1px solid var(--line2); border-radius: 5px;
+	padding: 3px 6px; cursor: pointer;
+}
+.mp-event-readout:hover { border-color: #3c5788; }
+.mp-event-readout:disabled { color: var(--dim); cursor: default; }
+.mp-event-readout option { background: #10131d; color: var(--text); white-space: nowrap; }
 
 .mp-floats {
 	position: absolute; right: 12px; top: 12px; z-index: 4;

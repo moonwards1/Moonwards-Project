@@ -162,7 +162,8 @@ export function computeArrivalLeg(params, data) {
 		}
 	}
 
-	var GM = bodyPhysics(body).GM;
+	var phys = bodyPhysics(body);
+	var GM = phys.GM;
 	var rp = PERI_SOI_FRACTION * bodySOI(body);
 	var peri = referencePeriapsis(GM, O.vUnit(approach.vInfVec), approach.vInf, rp);
 
@@ -200,7 +201,9 @@ export function computeArrivalLeg(params, data) {
 		}
 	}
 
-	// Closest approach, from the (anomaly-dense) samples.
+	// Closest approach, from the (anomaly-dense) samples. Reported as altitude
+	// above the surface (ca.r minus the body's own radius) — the reader-facing
+	// figure, matching how the rest of the readout describes an encounter.
 	var ca = { t: 0, r: Infinity };
 	for (var c = 0; c < samples.length; c++) {
 		var rm = Math.hypot(samples[c].r[0], samples[c].r[1], samples[c].r[2]);
@@ -211,9 +214,8 @@ export function computeArrivalLeg(params, data) {
 	events.unshift({ jd: jd0, flight: false,
 	                 label: "Arrival hand-off — " + body + " approach begins" });
 	events.push({ jd: jd0 + ca.t / DAY, flight: false,
-	              label: "Closest approach — " + Math.round(ca.r / 1e3).toLocaleString("en-US") +
-	                     " km from " + body });
-	events.push({ jd: jdEnd, flight: false, label: "Arrival leg ends — past " + body });
+	              label: "Closest approach — " + Math.round((ca.r - phys.R) / 1e3).toLocaleString("en-US") +
+	                     " km above " + body });
 	events.sort(function (a, b) { return a.jd - b.jd; });
 
 	return {

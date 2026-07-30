@@ -111,7 +111,7 @@ test("computeArrivalLeg: no burn — a pure pass-by, one day out to one day past
 	// unburned: the emitted end keeps the approach v∞ (relative to the body)
 	assert.equal(leg.totalDv, 0);
 	assert.ok(Math.abs(O.vMag(leg.end.v) - Math.sqrt(3776 * 3776 + 2 * bodyPhysics("Ceres").GM / r1)) < 1);
-	assert.equal(leg.events.length, 3);
+	assert.equal(leg.events.length, 2);
 });
 
 test("computeArrivalLeg: a waypoint burn changes the outcome and is evented; bad times diagnose", function () {
@@ -123,7 +123,7 @@ test("computeArrivalLeg: a waypoint burn changes the outcome and is evented; bad
 	assert.equal(burned.ok, true, burned.ok ? "" : burned.diagnostic.message);
 	assert.equal(burned.totalDv, 1500);
 	assert.ok(O.vMag(burned.end.v) < O.vMag(free.end.v) - 1000, "retro burn slows the leg end");
-	assert.equal(burned.events.length, 4);
+	assert.equal(burned.events.length, 3);
 	assert.ok(burned.events.some(function (e) { return /Arrival waypoint impulse — 1\.50/.test(e.label); }));
 	assert.ok(burned.wpVisuals[0] && burned.wpVisuals[0].eff, "gizmo/readout visuals recorded");
 	// outside the two-day window → diagnostic
@@ -231,7 +231,7 @@ test("engine: a frozen mission flies its scaffold → coast → flyby leg; both 
 	// stage now — nothing flows downstream until a tech is loaded.
 	var rArr = m.engine.resultFor(stageId("arrival-leg"));
 	assert.equal(rArr.status, "ok");
-	assert.equal(rArr.events.length, 3);
+	assert.equal(rArr.events.length, 2);
 });
 
 test("engine: a BROKEN coast doesn't blank the arrival seam — the boundary still reports", function () {

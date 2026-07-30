@@ -120,8 +120,8 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
 - **`mission-view.js`** exports `createMissionView({ world, registry,
   renderer, container, template, missionId, defaultMain })` — everything that
   belongs to one mission: its World + engine, frames, panes, sidebar cards,
-  phase buttons and sliders, compliance bar, events bar, share button, and its
-  slice of workspace persistence. Returns `{ world, engine, root, show, hide,
+  phase buttons and sliders, compliance bar, events readout, share button, and
+  its slice of workspace persistence. Returns `{ world, engine, root, show, hide,
   render, resize, dispose }`; N instances coexist, one per mission tab. Its
   DOM is cloned from `planner.html`'s `<template id="mp-mission-template">`,
   addressed by class, never id (ids can't repeat across instances).
@@ -185,8 +185,12 @@ the shell stays dynamically loaded rather than statically importing a module:
 `frozen-plan`'s `complianceFor` (Departure→Coast: v∞, epoch, aim) and
 `arrival-boundary`'s equivalent (Coast→Arrival: encounter, v∞, epoch) both
 feed the same `.mp-compliance-bar` — a chip plus compact per-row PLAN
-REQUIRES → TECH DELIVERS metrics, not phase-gated. An events bar fed by the
-envelope's `events` channel lets a click set the clock. Sidebar cards render
+REQUIRES → TECH DELIVERS metrics, not phase-gated. A one-line events readout
+(top-left of the main pane) shows the event at the clock's current position
+and opens a dropdown, fed by the envelope's `events` channel, to jump the
+clock to another one — filtered to `display !== false`, since some emitted
+events exist only for another consumer to read structurally (see
+transfer-leg.js's closest-approach and "Leg ends"). Sidebar cards render
 status chips and diagnostics/warnings uniformly, whether engine- or
 module-authored.
 

@@ -395,7 +395,7 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	var rArr = engine.resultFor(stages[6].id);
 	assert.equal(rArr.status, "ok");
 	assert.ok(Math.abs(rArr.output.data.jd - (rLeg.output.data.jd + 1)) < 1e-9);
-	assert.equal(rArr.events.length, 3);   // hand-off, closest approach, leg end
+	assert.equal(rArr.events.length, 2);   // hand-off, closest approach
 	assert.match(rArr.events[0].label, /Arrival hand-off/);
 	assert.match(rArr.events[1].label, /Closest approach/);
 });

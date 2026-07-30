@@ -209,7 +209,17 @@ export function createMissionView(opts) {
 	readoutLayer.className = "mp-readout-layer";
 	mainEl.appendChild(readoutLayer);
 	var complianceBarEl = q(".mp-compliance-bar");
-	var eventsBarEl = q(".mp-eventsbar");
+	// Mission-events readout (top-left of the main pane, not the floats — see
+	// renderEventsBar below). currentReadoutEvents/eventReadoutSig let it skip
+	// rebuilding its <option> list on every clock tick and only touch
+	// selectedIndex, so dragging a slider doesn't thrash this select's DOM.
+	var eventReadoutEl = paneMainEl.querySelector(".mp-event-readout");
+	var currentReadoutEvents = [];
+	var eventReadoutSig = null;
+	eventReadoutEl.addEventListener("change", function () {
+		var e = currentReadoutEvents[Number(eventReadoutEl.value)];
+		if (e) { setClock(e.jd); }
+	});
 	var dateBarEl = q(".mp-datebar");
 	var coastSliderEl = q(".mp-coast-slider");
 	var depSliderEl = q(".mp-dep-slider");
@@ -1019,30 +1029,52 @@ export function createMissionView(opts) {
 		});
 	}
 
+	// The readout's "active" event is the latest one at or before the clock
+	// (the one whose date the mission is currently living in); before the
+	// first event it falls back to that first (upcoming) one so the readout
+	// never shows a blank selection.
+	//
+	// display: false skips an event here without dropping it from the
+	// envelope: some events exist only for another consumer to read structurally
+	// (transfer-leg's coarse closest-approach feeds core/arrival-seam.js; its
+	// "Leg ends" feeds this file's own coastSpan fallback) and would otherwise
+	// duplicate or clutter the ship-events story the readout is telling.
 	function renderEventsBar(results) {
-		eventsBarEl.innerHTML = "";
 		var events = [];
-		results.forEach(function (res) { res.events.forEach(function (e) { events.push(e); }); });
-		events.sort(function (a, b) { return a.jd - b.jd; });
-		if (events.length === 0) {
-			var none = document.createElement("span");
-			none.className = "mp-muted";
-			none.textContent = "No mission events — stage outputs are blocked or empty.";
-			eventsBarEl.appendChild(none);
-			return;
-		}
-		events.forEach(function (e) {
-			var d = O.dateFromJulian(e.jd);
-			var span = document.createElement("span");
-			span.className = "mp-event" + (e.jd <= world.jd ? " past" : "");
-			span.title = "Set the clock to this event";
-			var b = document.createElement("b");
-			b.textContent = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
-			span.appendChild(b);
-			span.appendChild(document.createTextNode(e.label));
-			span.addEventListener("click", function () { setClock(e.jd); });
-			eventsBarEl.appendChild(span);
+		results.forEach(function (res) {
+			res.events.forEach(function (e) { if (e.display !== false) { events.push(e); } });
 		});
+		events.sort(function (a, b) { return a.jd - b.jd; });
+
+		var sig = events.map(function (e) { return e.jd + "|" + e.label; }).join("\n");
+		if (sig !== eventReadoutSig) {
+			eventReadoutSig = sig;
+			currentReadoutEvents = events;
+			eventReadoutEl.innerHTML = "";
+			if (events.length === 0) {
+				var none = document.createElement("option");
+				none.textContent = "No mission events — stage outputs are blocked or empty.";
+				eventReadoutEl.appendChild(none);
+				eventReadoutEl.disabled = true;
+			} else {
+				eventReadoutEl.disabled = false;
+				events.forEach(function (e, i) {
+					var d = O.dateFromJulian(e.jd);
+					var opt = document.createElement("option");
+					opt.value = String(i);
+					opt.textContent = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0") +
+						"  " + e.label;
+					eventReadoutEl.appendChild(opt);
+				});
+			}
+		}
+
+		var activeIdx = -1;
+		for (var i = 0; i < currentReadoutEvents.length; i++) {
+			if (currentReadoutEvents[i].jd <= world.jd) { activeIdx = i; } else { break; }
+		}
+		if (activeIdx === -1 && currentReadoutEvents.length) { activeIdx = 0; }
+		if (activeIdx !== -1) { eventReadoutEl.selectedIndex = activeIdx; }
 	}
 
 	// ---- the mission's clock: Shared/sim/date-bar.js writing world.set({jd})

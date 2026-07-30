@@ -152,15 +152,17 @@
 			<div class="mp-sliderzone mp-coast-slider"></div>
 			<div class="mp-sliderzone mp-arr-slider"></div>
 
-			<!-- Mission events, from the modules' envelope events -->
-			<div class="mp-eventsbar"></div>
-
 			<div class="mp-main">
 				<!-- The shell's one canvas is re-parented in here while this
 				     mission is active, scissored into main + floating panes -->
 				<div class="mp-scene">
 					<div class="mp-pane mp-pane-main">
 						<span class="mp-pane-cap"></span>
+						<!-- Mission events, from the modules' envelope events. A one-line
+						     readout of the event at the clock's current position; the
+						     browser's own dropdown arrow opens the full list, and picking
+						     one jumps the clock there (mission-view.js's renderEventsBar). -->
+						<select class="mp-event-readout" title="Mission events — jump the clock to one"></select>
 						<div class="mp-hud">
 							<span class="mp-hud-key">drag</span> rotate &nbsp;
 							<span class="mp-hud-key">wheel</span> zoom &nbsp;
