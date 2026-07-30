@@ -235,7 +235,7 @@ body {
    looked text-only. */
 .mp-float {
 	position: absolute; width: 210px; height: 148px; min-width: 140px; min-height: 100px;
-	pointer-events: auto;
+	pointer-events: auto; user-select: none;
 	border: 1px solid var(--line2); border-radius: 8px;
 	overflow: hidden; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }

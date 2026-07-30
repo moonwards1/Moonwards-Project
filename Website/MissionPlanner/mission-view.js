@@ -349,7 +349,7 @@ export function createMissionView(opts) {
 	// dragCleanup/resizeCleanup let dispose() tear down a drag or resize's
 	// window-level listeners if the mission is torn down mid-gesture (the
 	// pointerup handler removes them otherwise).
-	var floatIndex = 0, dragCleanup = null, resizeCleanup = null;
+	var floatIndex = 0, dragCleanup = null, resizeCleanup = null, floatCameraUnbinds = [];
 	function bindFloatDrag(pane) {
 		var el = pane.el, handle = pane.capEl;
 		var startX, startY, startLeft, startTop, moved;
@@ -463,8 +463,45 @@ export function createMissionView(opts) {
 		var pane = { el: el, capEl: cap, frameId: null, isMain: false };
 		bindFloatDrag(pane);
 		pane.resizeEl = bindFloatResize(pane);
+		// Suppress click-to-promote when a mouse drag just occurred. Track the
+		// mousedown position and compare with the final click position; if the
+		// distance is significant, it was a drag, not a click.
+		var dragStartX = 0, dragStartY = 0;
+		el.addEventListener("mousedown", function (e) {
+			dragStartX = e.clientX;
+			dragStartY = e.clientY;
+		});
+		// Use stopImmediatePropagation to prevent bindFloatDrag's click handler
+		// from running when a drag has occurred.
+		el.addEventListener("click", function (e) {
+			var dx = e.clientX - dragStartX, dy = e.clientY - dragStartY;
+			var dragDistance = Math.abs(dx) + Math.abs(dy);
+			// If the click came after a significant mouse movement (>3px), it was a
+			// camera drag, not a promotion click.
+			if (dragDistance > 3 && !cap.contains(e.target) && !pane.resizeEl.contains(e.target)) {
+				e.stopImmediatePropagation();
+				e.preventDefault();
+			}
+		}, true); // capture phase: runs before bindFloatDrag's bubble-phase handler
 		panes.push(pane);
 		setPaneFrame(pane, frameId);
+		// Camera controls: each float gets independent control over its own frame.
+		// The getView function reads pane.frameId at runtime, not captured at binding time,
+		// so when frames are swapped (via promoteFrame), the camera binding updates the
+		// correct frame.
+		var unbindFloatCamera = bindCameraControls(el, function () {
+			var f = frames[pane.frameId];
+			return {
+				cam: f.cam, camera: f.camera,
+				zoomMin: f.zoomMin, zoomMax: f.zoomMax,
+				pickPoint: function (e) {
+					return raycastPickPoint(f.camera, el, e,
+						{ meshes: f.pickMeshes, soiSpheres: f.pickSoiSpheres });
+				},
+				onPan: function () { f.focusBody = null; }
+			};
+		});
+		floatCameraUnbinds.push(unbindFloatCamera);
 	});
 	setPaneFrame(mainPane, workspace.main);
 
@@ -1631,6 +1668,7 @@ export function createMissionView(opts) {
 		window.removeEventListener("pagehide", saveWorkspace);
 		if (dragCleanup) { dragCleanup(); }
 		if (resizeCleanup) { resizeCleanup(); }
+		floatCameraUnbinds.forEach(function (unbind) { unbind(); });
 		unWorld();
 		unRecompute();
 		engine.dispose();
