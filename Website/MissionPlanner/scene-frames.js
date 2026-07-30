@@ -107,6 +107,7 @@ export function buildHelioFrame() {
 	return {
 		id: "helio",
 		caption: "SOLAR SYSTEM · heliocentric J2000 ecliptic",
+		shortCaption: "Solar System",
 		scene: scene, camera: camera,
 		cam: createCam(6, 0.6, 1.1, new THREE.Vector3(0, 0, 0)),
 		zoomMin: 1e-4, zoomMax: 500,
@@ -215,6 +216,7 @@ export function buildBodyFrame(name) {
 	return {
 		id: "body:" + name,
 		caption: name.toUpperCase() + " SYSTEM · " + name + "-centric ecliptic",
+		shortCaption: name + " System",
 		scene: scene, camera: camera,
 		cam: createCam(camDist, 0.7, 1.05, new THREE.Vector3(0, 0, 0)),
 		zoomMin: zoomMin, zoomMax: zoomMax,
@@ -302,6 +304,7 @@ export function buildEarthMoonFrame() {
 	return {
 		id: "body:Earth-Moon",
 		caption: "EARTH–MOON SYSTEM · geocentric ecliptic",
+		shortCaption: "Earth–Moon System",
 		scene: scene, camera: camera,
 		cam: createCam(60, 0.7, 1.05, new THREE.Vector3(0, 0, 0)),
 		zoomMin: 2, zoomMax: 30000,

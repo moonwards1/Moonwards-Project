@@ -323,12 +323,82 @@ export function createMissionView(opts) {
 
 	function setPaneFrame(pane, frameId) {
 		pane.frameId = frameId;
-		pane.capEl.textContent = frames[frameId].caption;
+		// The main pane's caption is the full descriptive one; a float's is just
+		// the short name (its title bar doubles as the drag handle, so it stays
+		// out of the way of everything else in the small pane).
+		pane.capEl.textContent = pane.isMain ? frames[frameId].caption : frames[frameId].shortCaption;
 		pane.el.appendChild(frames[frameId].labelLayer);   // appendChild re-parents
 	}
 
 	var mainPane = { el: paneMainEl, capEl: paneMainEl.querySelector(".mp-pane-cap"), frameId: null, isMain: true };
 	panes.push(mainPane);
+
+	// A float's title bar (capEl) is its drag handle, deliberately confined to
+	// that top-left strip so the rest of the small pane stays free — that's
+	// where panning/zooming the mini-view itself will eventually live. A
+	// press on the handle is either a drag or a click-to-promote, disambiguated
+	// by whether the pointer moved past a small threshold before release.
+	// dragCleanup lets dispose() tear down a drag's window-level listeners if
+	// the mission is torn down mid-drag (the pointerup handler removes them
+	// otherwise).
+	var floatIndex = 0, dragCleanup = null;
+	function bindFloatDrag(pane) {
+		var el = pane.el, handle = pane.capEl;
+		var startX, startY, startLeft, startTop, moved;
+		function onMove(e) {
+			var dx = e.clientX - startX, dy = e.clientY - startY;
+			if (Math.abs(dx) + Math.abs(dy) > 3) { moved = true; }
+			var maxLeft = Math.max(0, sceneEl.clientWidth - el.offsetWidth);
+			var maxTop = Math.max(0, sceneEl.clientHeight - el.offsetHeight);
+			el.style.left = Math.max(0, Math.min(maxLeft, startLeft + dx)) + "px";
+			el.style.top = Math.max(0, Math.min(maxTop, startTop + dy)) + "px";
+		}
+		function onUp(e) {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			dragCleanup = null;
+			if (!moved) { swapMain(pane.frameId); }
+		}
+		handle.addEventListener("pointerdown", function (e) {
+			if (e.button !== 0) { return; }
+			e.preventDefault();
+			moved = false;
+			startX = e.clientX; startY = e.clientY;
+			// getBoundingClientRect/offsetLeft only need to be accurate NOW (the
+			// pane is on screen, being pressed) — read them here rather than at
+			// construction time, when the mission's scene may still be display:none
+			// (a fresh tab, or a background tab) and report a bogus zero width.
+			// Also flips the default right-anchored position (see
+			// positionFloatDefault) over to an explicit left, since dragging can no
+			// longer be expressed as a CSS offset from the right edge.
+			startLeft = el.offsetLeft; startTop = el.offsetTop;
+			el.style.right = "auto";
+			el.style.left = startLeft + "px";
+			window.addEventListener("pointermove", onMove);
+			window.addEventListener("pointerup", onUp);
+			dragCleanup = onUp;
+		});
+		// The rest of the pane (outside the handle) keeps the plain
+		// click-to-promote behaviour; the handle's own press already promotes on
+		// a no-move release above, so a click landing there is skipped here to
+		// avoid promoting twice.
+		el.addEventListener("click", function (e) {
+			if (handle.contains(e.target)) { return; }
+			swapMain(pane.frameId);
+		});
+	}
+
+	// Default stacking mirrors the old flex-column layout (top-right, 12px
+	// margin, 10px gaps), expressed as CSS right/top offsets rather than
+	// computed left pixels — the container may not be laid out yet (this runs
+	// while building a background or not-yet-shown mission tab), so anything
+	// depending on sceneEl.clientWidth here would see zero. right/top resolve
+	// live whenever the pane is actually shown. Dragging (bindFloatDrag) later
+	// converts the pane to explicit left/top.
+	function positionFloatDefault(el, index) {
+		el.style.right = "12px";
+		el.style.top = (12 + index * (148 + 10)) + "px";
+	}
 
 	Object.keys(frames).forEach(function (frameId) {
 		if (frameId === workspace.main) { return; }
@@ -336,11 +406,13 @@ export function createMissionView(opts) {
 		el.className = "mp-pane mp-float";
 		var cap = document.createElement("span");
 		cap.className = "mp-pane-cap";
+		cap.title = "Drag to move";
 		el.appendChild(cap);
-		el.title = "Make main view";
+		el.title = "Click to make main view";
 		floatsEl.appendChild(el);
+		positionFloatDefault(el, floatIndex++);
 		var pane = { el: el, capEl: cap, frameId: null, isMain: false };
-		el.addEventListener("click", function () { swapMain(pane.frameId); });
+		bindFloatDrag(pane);
 		panes.push(pane);
 		setPaneFrame(pane, frameId);
 	});
@@ -1464,6 +1536,7 @@ export function createMissionView(opts) {
 	function dispose() {
 		saveWorkspace();
 		window.removeEventListener("pagehide", saveWorkspace);
+		if (dragCleanup) { dragCleanup(); }
 		unWorld();
 		unRecompute();
 		engine.dispose();

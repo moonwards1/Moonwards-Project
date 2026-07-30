@@ -160,7 +160,14 @@ defines the success condition the other two borrow.
 
 ### WP-3 — Panes, floats and camera
 
-- [ ] **3.1 Draggable floating panes.** ★★
+- [x] **3.1 Draggable floating panes.** ★★
+  `mission-view.js`'s `bindFloatDrag` (pointerdown/move/up, a >3px move
+  threshold to tell a drag from the existing click-to-swap-main) drags a float
+  anywhere within `.mp-scene`, clamped to stay fully inside it. Floats start
+  stacked top-right (`positionFloatDefault`, expressed as CSS `right`/`top` so
+  it resolves correctly even while the mission tab is still hidden); a drag
+  converts that pane to explicit `left`/`top`. No position persistence —
+  floats reset to the default stack on reload, same as before.
 - [ ] **3.2 Per-phase pane arrangement.** ★★
   Departure: origin system main, solar-system float, destination float.
   Coast: heliocentric main, origin float, destination float. Arrival:
