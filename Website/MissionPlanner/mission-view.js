@@ -57,6 +57,14 @@ var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 var SPAN_DAYS = 36525;
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// A float shares its frame's cam (radius/theta/phi/target) with whatever
+// pane last had that frame as main, so left untouched it shows the exact same
+// framing shrunk into a ~200px box — legible as a caption, not as a picture.
+// Cropping the radius to a fraction of that for float-only rendering (below,
+// in renderPane) keeps the same orientation and target (so the focus body
+// stays centred) while showing just the area of interest around it.
+var FLOAT_ZOOM = 0.5;
+
 // ---- phase <-> frame mapping. "coast" is always the heliocentric leg.
 // "departure" and "arrival" are per-mission: each view builds
 // PHASE_FRAME.departure from its own frozen plan's `origin` body
@@ -338,10 +346,10 @@ export function createMissionView(opts) {
 	// where panning/zooming the mini-view itself will eventually live. A
 	// press on the handle is either a drag or a click-to-promote, disambiguated
 	// by whether the pointer moved past a small threshold before release.
-	// dragCleanup lets dispose() tear down a drag's window-level listeners if
-	// the mission is torn down mid-drag (the pointerup handler removes them
-	// otherwise).
-	var floatIndex = 0, dragCleanup = null;
+	// dragCleanup/resizeCleanup let dispose() tear down a drag or resize's
+	// window-level listeners if the mission is torn down mid-gesture (the
+	// pointerup handler removes them otherwise).
+	var floatIndex = 0, dragCleanup = null, resizeCleanup = null;
 	function bindFloatDrag(pane) {
 		var el = pane.el, handle = pane.capEl;
 		var startX, startY, startLeft, startTop, moved;
@@ -378,14 +386,55 @@ export function createMissionView(opts) {
 			window.addEventListener("pointerup", onUp);
 			dragCleanup = onUp;
 		});
-		// The rest of the pane (outside the handle) keeps the plain
-		// click-to-promote behaviour; the handle's own press already promotes on
-		// a no-move release above, so a click landing there is skipped here to
-		// avoid promoting twice.
+		// The rest of the pane (outside the handle or the resize grip) keeps the
+		// plain click-to-promote behaviour; the handle's own press already
+		// promotes on a no-move release above, so a click landing on either
+		// control is skipped here to avoid promoting twice (or promoting off the
+		// back of a resize drag).
 		el.addEventListener("click", function (e) {
 			if (handle.contains(e.target)) { return; }
+			if (pane.resizeEl && pane.resizeEl.contains(e.target)) { return; }
 			swapMain(pane.frameId);
 		});
+	}
+
+	// A float's bottom-right corner grip free-resizes the pane (width/height),
+	// clamped to a minimum (matching the CSS min-width/min-height) and to
+	// whatever room is left before the scene's own right/bottom edge from the
+	// pane's current position — resizing never pushes the pane off-screen.
+	// No size persistence, same as position (see positionFloatDefault above):
+	// floats reset to the default size on reload.
+	var MIN_FLOAT_W = 140, MIN_FLOAT_H = 100;
+	function bindFloatResize(pane) {
+		var el = pane.el;
+		var handle = document.createElement("div");
+		handle.className = "mp-float-resize";
+		handle.title = "Drag to resize";
+		el.appendChild(handle);
+		var startX, startY, startW, startH;
+		function onMove(e) {
+			var dx = e.clientX - startX, dy = e.clientY - startY;
+			var maxW = Math.max(MIN_FLOAT_W, sceneEl.clientWidth - el.offsetLeft);
+			var maxH = Math.max(MIN_FLOAT_H, sceneEl.clientHeight - el.offsetTop);
+			el.style.width = Math.max(MIN_FLOAT_W, Math.min(maxW, startW + dx)) + "px";
+			el.style.height = Math.max(MIN_FLOAT_H, Math.min(maxH, startH + dy)) + "px";
+		}
+		function onUp() {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			resizeCleanup = null;
+		}
+		handle.addEventListener("pointerdown", function (e) {
+			if (e.button !== 0) { return; }
+			e.preventDefault();
+			e.stopPropagation();
+			startX = e.clientX; startY = e.clientY;
+			startW = el.offsetWidth; startH = el.offsetHeight;
+			window.addEventListener("pointermove", onMove);
+			window.addEventListener("pointerup", onUp);
+			resizeCleanup = onUp;
+		});
+		return handle;
 	}
 
 	// Default stacking mirrors the old flex-column layout (top-right, 12px
@@ -413,6 +462,7 @@ export function createMissionView(opts) {
 		positionFloatDefault(el, floatIndex++);
 		var pane = { el: el, capEl: cap, frameId: null, isMain: false };
 		bindFloatDrag(pane);
+		pane.resizeEl = bindFloatResize(pane);
 		panes.push(pane);
 		setPaneFrame(pane, frameId);
 	});
@@ -1439,6 +1489,40 @@ export function createMissionView(opts) {
 		syncSliderVisibility();
 	});
 
+	// Scratch cam for float rendering (below) — reused every pane/tick rather
+	// than allocated per call; renderPane runs synchronously and finishes with
+	// it before the next pane reads it, so nothing else may hold a reference
+	// across calls.
+	var floatCamScratch = { radius: 0, theta: 0, phi: 0, target: null };
+
+	// The main pane's caption/HUD/events-dropdown (and its current frame's DOM
+	// label layer) are positioned absolutely across the WHOLE scene and carry
+	// an explicit z-index so they paint above the shared canvas — that z-index
+	// has no ancestor stacking context to stay confined to, so it's compared
+	// globally against .mp-floats' z-index (still correctly below it) rather
+	// than clipped to "wherever the main pane is visually uncovered". A float
+	// sitting on top used to hide this by being opaque; now that a float shows
+	// its own real scene through a transparent box (see the .mp-float CSS
+	// comment), nothing stops the main pane's text from showing through
+	// wherever a float's rect happens to overlap it. Punching float-shaped
+	// holes in the main pane's clip-path hides its overlay content there
+	// without touching the shared canvas (a sibling, unaffected by this
+	// element's clip-path) — the float's own scissor-rendered scene comes
+	// through untouched either way.
+	function updateMainOcclusion() {
+		var floatPanes = panes.filter(function (p) { return !p.isMain; });
+		if (!floatPanes.length) { paneMainEl.style.clipPath = ""; return; }
+		var mr = paneMainEl.getBoundingClientRect();
+		var d = "M0 0L" + mr.width + " 0L" + mr.width + " " + mr.height + "L0 " + mr.height + "Z";
+		floatPanes.forEach(function (p) {
+			var r = p.el.getBoundingClientRect();
+			var x = r.left - mr.left, y = r.top - mr.top;
+			d += "M" + x + " " + y + "L" + (x + r.width) + " " + y +
+				"L" + (x + r.width) + " " + (y + r.height) + "L" + x + " " + (y + r.height) + "Z";
+		});
+		paneMainEl.style.clipPath = "path(evenodd, \"" + d + "\")";
+	}
+
 	// ---- rendering: the shared renderer, scissored per pane, only while this
 	// view is the active tab (main first, floats above). ----------------------
 	function renderPane(pane, canvasRect) {
@@ -1451,7 +1535,15 @@ export function createMissionView(opts) {
 
 		frame.camera.aspect = w / h;
 		frame.camera.updateProjectionMatrix();
-		updateCamera(frame.camera, frame.cam);
+		if (pane.isMain) {
+			updateCamera(frame.camera, frame.cam);
+		} else {
+			floatCamScratch.radius = frame.cam.radius * FLOAT_ZOOM;
+			floatCamScratch.theta = frame.cam.theta;
+			floatCamScratch.phi = frame.cam.phi;
+			floatCamScratch.target = frame.cam.target;
+			updateCamera(frame.camera, floatCamScratch);
+		}
 		brUpdateScales(frame.camera, pane.el, frame.scaleList, { wantSOI: frame.wantSOI });
 		brUpdateLabels(frame.camera, pane.el, frame.labelList);
 
@@ -1508,6 +1600,7 @@ export function createMissionView(opts) {
 	function render() {
 		if (!active) { return; }
 		updateChevrons();
+		updateMainOcclusion();
 		var canvasRect = renderer.domElement.getBoundingClientRect();
 		renderPane(mainPane, canvasRect);
 		for (var i = 0; i < panes.length; i++) {
@@ -1537,6 +1630,7 @@ export function createMissionView(opts) {
 		saveWorkspace();
 		window.removeEventListener("pagehide", saveWorkspace);
 		if (dragCleanup) { dragCleanup(); }
+		if (resizeCleanup) { resizeCleanup(); }
 		unWorld();
 		unRecompute();
 		engine.dispose();

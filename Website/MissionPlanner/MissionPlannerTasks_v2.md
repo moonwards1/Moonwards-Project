@@ -168,22 +168,45 @@ defines the success condition the other two borrow.
   it resolves correctly even while the mission tab is still hidden); a drag
   converts that pane to explicit `left`/`top`. No position persistence —
   floats reset to the default stack on reload, same as before.
-- [ ] **3.2 Per-phase pane arrangement.** ★★
+- [x] **3.2 Per-phase pane arrangement.** ★★
   Departure: origin system main, solar-system float, destination float.
   Coast: heliocentric main, origin float, destination float. Arrival:
-  destination system main. The destination float must be legible enough to
-  judge the pass while staying in the Coast phase.
-- [ ] **3.3 Camera controls inside floating panes.** ★
+  destination system main, with the other two frames as floats too. The
+  destination float must be legible enough to judge the pass while staying in
+  the Coast phase.
+- [x] **3.3 Float scene rendering + resizing.** ★
+  Floats were rendering their scene correctly all along (scissored off the
+  shared canvas, same as the main pane) but `.mp-float`'s own opaque DOM
+  background sat in front of that canvas region and hid it, leaving only the
+  DOM label layer and caption visible. Fixed by dropping the DOM background;
+  floats also now render their frame's cam cropped to `FLOAT_ZOOM` (0.5×
+  radius, same orientation/target) so the area of interest stays legible at
+  pane size instead of showing the same wide framing as the main pane, shrunk.
+  Added a bottom-right corner grip (`bindFloatResize`) for free resizing,
+  clamped to a minimum and to the scene's own edges; not persisted, same as
+  float position.
+  Dropping that background exposed a second, latent bug the opaque box had
+  been masking: the main pane's caption/HUD/events-dropdown (and its current
+  frame's label layer) carry an explicit z-index with no ancestor stacking
+  context to confine them, so they paint as a global layer — correctly below
+  `.mp-floats`, but a transparent float no longer occludes what's beneath it,
+  so that text bled through wherever a float's rect overlapped it (easier to
+  trigger now that resizing can push a float's edge under it). Fixed by
+  recomputing a `clip-path` on the main pane every render tick, punching a
+  hole for each float's current rect (`updateMainOcclusion`) — hides the
+  bleed-through without touching the shared canvas, which floats still read
+  from directly.
+- [ ] **3.4 Camera controls inside floating panes.** ★
   Currently click-to-swap only; each float needs its own bound controls, so a
   mini-view can be rotated in place.
-- [ ] **3.4 Click-to-focus and follow.** ★★
+- [ ] **3.5 Click-to-focus and follow.** ★★
   Clicking a body, the chevron, or an × mark focuses the camera there and
   orbits/zooms around it until a click elsewhere in the pane restores default
   movement; clicking the chevron also makes the camera follow it as its
   timeline is scrubbed. In Arrival, double-clicking the destination zooms in
   and rotates around it. Clicking a tech platform zooms close enough to watch
   it respond to parameter changes.
-- [ ] **3.5 Dimmer trajectory extension, drawn consistently.** ★
+- [ ] **3.6 Dimmer trajectory extension, drawn consistently.** ★
   The ~10°-past-the-destination continuation is currently drawn sometimes and
   not others. Make it unconditional wherever a leg has a destination.
 
@@ -369,7 +392,7 @@ is written.
 | `Shared/sim/approach-markers.js`          | ring sprite, `pickProximityTier`, `applyTierToSprite`                                                                                                        | 2.3, 6.2           |
 | `Shared/sim/readout-panes.js`             | `renderReadoutBoxes`, `positionReadoutBoxes`                                                                                                                 | 5.3, 6.1           |
 | `Shared/sim/date-bar.js`                  | `createDateBar`, `setJd`, `enableShiftDrag` — the 10×-slower fine-drag and wheel-scrub model                                                                 | 1.3, 1.4, 6.1      |
-| `Shared/sim/camera-controller.js`         | `bindCameraControls` (returns an unbind)                                                                                                                     | 3.3, 3.4           |
+| `Shared/sim/camera-controller.js`         | `bindCameraControls` (returns an unbind)                                                                                                                     | 3.4, 3.5           |
 | `Shared/sim/body-renderer.js`             | `worldSizeAtPointForPx` — constant-pixel sprite sizing; label/scale updates                                                                                  | 2.5, 3.2           |
 | `Shared/body-leg.js`                      | `integrateEncounter`, `integrateTrajectory`, `buildIntegratedLeg`, `localFrameAt`, `bodyConstants`                                                           | 7.1                |
 | `Shared/geo-leg.js`                       | `stateAtLegTime`, `burnEffect` — the ecliptic-anchored burn convention every waypoint editor means by its axes                                               | 6.1, 7.1           |

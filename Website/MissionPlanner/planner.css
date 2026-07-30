@@ -228,12 +228,32 @@ body {
    handle — the rest of the pane's area is left free for panning/zooming the
    mini-view itself. */
 .mp-floats { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+/* No background here: the shared canvas is scissor-rendered directly behind
+   this exact rect (each frame's own THREE.Color scene.background already
+   fills it), so an opaque DOM background would just paint over that render —
+   only the label layer and caption would show, which is why floats once
+   looked text-only. */
 .mp-float {
-	position: absolute; width: 210px; height: 148px; pointer-events: auto;
-	background: #10131d; border: 1px solid var(--line2); border-radius: 8px;
+	position: absolute; width: 210px; height: 148px; min-width: 140px; min-height: 100px;
+	pointer-events: auto;
+	border: 1px solid var(--line2); border-radius: 8px;
 	overflow: hidden; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .mp-float:hover { border-color: #3c5788; }
+/* Bottom-right resize grip (mission-view.js's bindFloatResize). Kept out of
+   the click-to-promote/drag paths the same way the caption handle is. */
+.mp-float-resize {
+	position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+	cursor: nwse-resize; touch-action: none;
+	background: linear-gradient(135deg,
+		transparent 0 56%, var(--line2) 56% 64%, transparent 64% 72%,
+		var(--line2) 72% 80%, transparent 80% 100%);
+}
+.mp-float-resize:hover {
+	background: linear-gradient(135deg,
+		transparent 0 56%, #3c5788 56% 64%, transparent 64% 72%,
+		#3c5788 72% 80%, transparent 80% 100%);
+}
 /* The base .mp-pane-cap rule is pointer-events:none (a decorative label on
    the main pane) with a dim color meant to sit over the mostly-empty top-left
    of the big main view; floats override it back on so this becomes a real
