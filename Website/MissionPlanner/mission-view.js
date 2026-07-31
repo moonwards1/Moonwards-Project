@@ -47,6 +47,7 @@ import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider, createArrivalSlider } from "./ui/phase-slider.js";
+import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed } from "./ui/ship-card.js";
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 
@@ -349,7 +350,7 @@ export function createMissionView(opts) {
 	// dragCleanup/resizeCleanup let dispose() tear down a drag or resize's
 	// window-level listeners if the mission is torn down mid-gesture (the
 	// pointerup handler removes them otherwise).
-	var floatIndex = 0, dragCleanup = null, resizeCleanup = null, floatCameraUnbinds = [];
+	var floatIndex = 0, dragCleanup = null, resizeCleanup = null, floatCameraUnbinds = [], cardDragCleanup = null;
 	function bindFloatDrag(pane) {
 		var el = pane.el, handle = pane.capEl;
 		var startX, startY, startLeft, startTop, moved;
@@ -505,6 +506,48 @@ export function createMissionView(opts) {
 	});
 	setPaneFrame(mainPane, workspace.main);
 
+	// ---- the ship card (ui/ship-card.js): the ship's own float, reporting on
+	// whatever the chevron currently marks. Not a frame view — there is no
+	// click-to-promote, only a drag by its title bar — but it shares the float
+	// layer, the scene-edge clamp, and the no-persistence rule. Its gizmo reads
+	// the MAIN pane's cam while "Align to view" is on, so the arrows sit at the
+	// same viewing angle as the scene behind it.
+	var shipCard = createShipCard({
+		host: floatsEl,
+		getMainCam: function () {
+			var f = frames[workspace.main];
+			return f ? f.cam : null;
+		}
+	});
+	shipCard.el.style.left = "12px";
+	shipCard.el.style.top = "56px";   // clear of the frame caption + events readout
+	bindCardDrag(shipCard.el, shipCard.el.querySelector(".mp-ship-head"));
+
+	function bindCardDrag(cardEl, handle) {
+		var startX, startY, startLeft, startTop;
+		function onMove(e) {
+			var dx = e.clientX - startX, dy = e.clientY - startY;
+			var maxLeft = Math.max(0, sceneEl.clientWidth - cardEl.offsetWidth);
+			var maxTop = Math.max(0, sceneEl.clientHeight - cardEl.offsetHeight);
+			cardEl.style.left = Math.max(0, Math.min(maxLeft, startLeft + dx)) + "px";
+			cardEl.style.top = Math.max(0, Math.min(maxTop, startTop + dy)) + "px";
+		}
+		function onUp() {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			cardDragCleanup = null;
+		}
+		handle.addEventListener("pointerdown", function (e) {
+			if (e.button !== 0) { return; }
+			e.preventDefault();
+			startX = e.clientX; startY = e.clientY;
+			startLeft = cardEl.offsetLeft; startTop = cardEl.offsetTop;
+			window.addEventListener("pointermove", onMove);
+			window.addEventListener("pointerup", onUp);
+			cardDragCleanup = onUp;
+		});
+	}
+
 	function syncPhaseButtons() {
 		PHASES.forEach(function (p) { phaseBtns[p].classList.toggle("active", workspace.phase === p); });
 	}
@@ -564,6 +607,7 @@ export function createMissionView(opts) {
 		// without this it would stay stale at its last-drawn position until the
 		// next unrelated recompute.
 		engine.results().forEach(drawStage);
+		updateShipCard();   // the card is per-phase; show/hide and refill it now
 	}
 
 	// A float pane's click promotes it to main — an alternate way to switch
@@ -1494,6 +1538,102 @@ export function createMissionView(opts) {
 		return { start: seam.start, end: seam.end, ca: seam.jd, marks: arrivalEvents(results) };
 	}
 
+	// ---- the ship card's phase contexts -------------------------------------
+	// Only the Departure phase has one so far; the card hides in the others
+	// rather than showing an empty shell.
+	//
+	// Departure reads ONE comparison, the same one frozen-plan makes: the v∞ the
+	// plan requires at hand-off against the v∞ the configured technology and
+	// waypoints actually deliver. Both are split onto the burn frame of the
+	// plan's own committed departure state (OrbitalMath.burnComponents — the
+	// same ecliptic-anchored axes every waypoint editor means), so the two rows
+	// are directly comparable and "prograde" reads the same here as it does on a
+	// gizmo out in the scene.
+	function shipCardShown() { return workspace.phase === "departure"; }
+
+	function frozenPlanStage() {
+		var stages = world.stages();
+		for (var i = 0; i < stages.length; i++) {
+			if (stages[i].moduleId === "frozen-plan") { return stages[i]; }
+		}
+		return null;
+	}
+
+	// The plan's committed heliocentric departure state { r, v, jd }, or null
+	// when this mission has no frozen plan or its state is unusable.
+	function planDepartureState() {
+		var stage = frozenPlanStage();
+		var d = (stage && stage.params && stage.params.departure) || null;
+		return (d && Array.isArray(d.r) && Array.isArray(d.v) && isFinite(d.jd)) ? d : null;
+	}
+
+	// The last computed departure flight, from whichever leg module this
+	// mission's origin uses (Earth-Moon or the generic body leg) — both expose
+	// legFor the same registry-reached way frozen-plan exposes complianceFor.
+	function departureFlight() {
+		var stage = departureLegStage();
+		if (!stage) { return null; }
+		var desc = registry.get(stage.moduleId);
+		var leg = (desc && typeof desc.legFor === "function") ? desc.legFor(world, stage.id) : null;
+		return (leg && leg.ok) ? leg : null;
+	}
+
+	function unitOf(vec) {
+		return (vec && O.vMag(vec) > 1e-9) ? O.vUnit(vec) : null;
+	}
+
+	function updateShipCard() {
+		var show = shipCardShown();
+		shipCard.el.style.display = show ? "" : "none";
+		if (!show) { return; }
+
+		var dep = planDepartureState();
+		var planStage = frozenPlanStage();
+		var planDesc = registry.get("frozen-plan");
+		var comp = (planStage && planDesc && typeof planDesc.complianceFor === "function")
+			? planDesc.complianceFor(world, planStage.id) : null;
+
+		if (!dep || !comp || !comp.ok) {
+			shipCard.setGizmo(null);
+			shipCard.setComponents(null, null);
+			shipCard.setSpeed(null);
+			shipCard.setOnCourse(false);
+			return;
+		}
+
+		var needed = vInfComponents(dep.r, dep.v, comp.required.vInfVec);
+		var current = comp.delivered ? vInfComponents(dep.r, dep.v, comp.delivered.vInfVec) : null;
+		shipCard.setGizmo({
+			axes: O.burnFrame(dep.r, dep.v),
+			needed: needed,
+			current: current,
+			neededDir: unitOf(comp.required.vInfVec),
+			currentDir: comp.delivered ? unitOf(comp.delivered.vInfVec) : null
+		});
+		shipCard.setComponents(needed, current);
+		shipCard.setOnCourse(!!comp.delivered && comp.rows.every(function (r) { return r.ok; }));
+
+		// The speed section reads the flown arc, not the hand-off packet: the
+		// bar's right edge is the flight's own peak speed, so it rescales with
+		// every recompute and the fill always reads against the fastest the ship
+		// goes this phase. The needed mark is the body-relative speed at the
+		// hand-off radius that leaves with the plan's required v∞ (v² = v∞² +
+		// 2μ/r) — the same escape the plan is asking the technology for.
+		var leg = departureFlight();
+		if (!leg) { shipCard.setSpeed(null); return; }
+		var currentSpeed = speedAlong(leg.samples, (world.jd - leg.jd0) * 86400);
+		var peak = peakSpeed(leg.samples);
+		var rHandoff = O.vMag(leg.handoff.r);
+		var neededSpeed = rHandoff > 0
+			? Math.sqrt(comp.required.vInf * comp.required.vInf +
+				2 * systems.get(originBody).GM / rHandoff)
+			: null;
+		shipCard.setSpeed(speedModel(
+			currentSpeed == null ? NaN : currentSpeed / 1000,
+			neededSpeed == null ? NaN : neededSpeed / 1000,
+			peak == null ? NaN : peak / 1000));
+	}
+
 	// ---- wiring: World changes place bodies; engine passes redraw the rest --
 	function placeAll(jd) {
 		Object.keys(frames).forEach(function (id) { frames[id].place(jd); });
@@ -1511,6 +1651,7 @@ export function createMissionView(opts) {
 		renderComplianceBar(results);
 		renderPhaseDots(results);
 		renderEventsBar(results);
+		updateShipCard();
 		var span = coastSpan(results);
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
 		var dep = departureSpan(results);
@@ -1547,12 +1688,16 @@ export function createMissionView(opts) {
 	// element's clip-path) — the float's own scissor-rendered scene comes
 	// through untouched either way.
 	function updateMainOcclusion() {
-		var floatPanes = panes.filter(function (p) { return !p.isMain; });
-		if (!floatPanes.length) { paneMainEl.style.clipPath = ""; return; }
+		var overlays = panes.filter(function (p) { return !p.isMain; }).map(function (p) { return p.el; });
+		// The ship card is opaque except for its gizmo hole, and that hole is a
+		// scissored render of its own scene — so it wants the same treatment a
+		// float gets, or the main pane's text shows through the arrows.
+		if (shipCardShown()) { overlays.push(shipCard.el); }
+		if (!overlays.length) { paneMainEl.style.clipPath = ""; return; }
 		var mr = paneMainEl.getBoundingClientRect();
 		var d = "M0 0L" + mr.width + " 0L" + mr.width + " " + mr.height + "L0 " + mr.height + "Z";
-		floatPanes.forEach(function (p) {
-			var r = p.el.getBoundingClientRect();
+		overlays.forEach(function (overlayEl) {
+			var r = overlayEl.getBoundingClientRect();
 			var x = r.left - mr.left, y = r.top - mr.top;
 			d += "M" + x + " " + y + "L" + (x + r.width) + " " + y +
 				"L" + (x + r.width) + " " + (y + r.height) + "L" + x + " " + (y + r.height) + "Z";
@@ -1643,6 +1788,7 @@ export function createMissionView(opts) {
 		for (var i = 0; i < panes.length; i++) {
 			if (!panes[i].isMain) { renderPane(panes[i], canvasRect); }
 		}
+		if (shipCardShown()) { shipCard.render(renderer, canvasRect); }
 	}
 
 	function resize() {
@@ -1668,7 +1814,9 @@ export function createMissionView(opts) {
 		window.removeEventListener("pagehide", saveWorkspace);
 		if (dragCleanup) { dragCleanup(); }
 		if (resizeCleanup) { resizeCleanup(); }
+		if (cardDragCleanup) { cardDragCleanup(); }
 		floatCameraUnbinds.forEach(function (unbind) { unbind(); });
+		shipCard.dispose();
 		unWorld();
 		unRecompute();
 		engine.dispose();
@@ -1696,6 +1844,7 @@ export function createMissionView(opts) {
 	dateBar.setJd(world.jd);
 	world.set({ jd: dateState.jd });
 	placeAll(world.jd);
+	updateShipCard();   // a no-op jd set skips the recompute that would fill it
 
 	return {
 		world: world,

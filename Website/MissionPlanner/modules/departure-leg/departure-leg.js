@@ -485,6 +485,12 @@ export default {
 		ctx.onResult(updateReadouts);
 	},
 
+	// The last computed flight, for shell readouts that need the flown arc
+	// rather than just the hand-off packet — the ship card's speed bar reads
+	// `samples` for the current and peak speeds. Same registry-reached
+	// accessor pattern frozen-plan.js uses for complianceFor.
+	legFor: legFor,
+
 	// The flight polyline in the Earth–Moon frame (geocentric — the frame's
 	// own coordinates), release and hand-off dots, plus each waypoint's
 	// prograde/radial/normal gizmo and dV/prograde-speed-change arrows.

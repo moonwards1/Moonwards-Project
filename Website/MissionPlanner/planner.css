@@ -269,6 +269,98 @@ body {
 .mp-float .mp-pane-cap:hover { border-color: #3c5788; }
 .mp-float .mp-pane-cap:active { cursor: grabbing; }
 
+/* ---------- the ship card (ui/ship-card.js) ----------
+   A float like the panes above, but showing the SHIP rather than a frame:
+   dim = what the plan needs at hand-off, bright = what the mission currently
+   delivers. Its own opaque background covers the main pane's global text
+   layers; only .mp-ship-gizmo is left transparent, because the shared canvas
+   is scissor-rendered directly behind that rect (mission-view.js adds the card
+   to updateMainOcclusion so nothing bleeds through the hole). */
+/* No background on the shell itself, and none on .mp-ship-gizmo: the shared
+   canvas renders the gizmo's scene directly behind that strip, and any opaque
+   ancestor would paint straight over it. The two bands carry the background
+   instead, and the gizmo's own scene clear (ui/ship-card.js) matches their
+   colour so the card still reads as one solid panel. */
+.mp-shipcard {
+	position: absolute; width: 246px; pointer-events: auto; user-select: none;
+	display: flex; flex-direction: column;
+	background: transparent; border: 1px solid var(--line2); border-radius: 8px;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); overflow: hidden;
+}
+.mp-shipcard:hover { border-color: #3c5788; }
+.mp-ship-top { background: #121f36; padding: 8px 10px 6px; display: flex; flex-direction: column; gap: 4px; }
+.mp-ship-head { display: flex; align-items: flex-start; justify-content: space-between; cursor: grab; }
+.mp-ship-head:active { cursor: grabbing; }
+.mp-ship-title { font-size: 19px; letter-spacing: 1px; color: var(--bright); line-height: 1.1; }
+/* The on-course check: hidden until the delivered hand-off matches the plan. */
+.mp-ship-oncourse { display: none; font-size: 21px; line-height: 1; color: var(--ok); }
+.mp-shipcard.on-course .mp-ship-oncourse { display: block; }
+.mp-ship-align {
+	display: flex; align-items: center; gap: 6px; cursor: pointer;
+	font-size: 12px; color: #7fd4f0;
+}
+.mp-ship-align input { accent-color: #7fd4f0; margin: 0; cursor: pointer; }
+/* Transparent on purpose — the gizmo's scene renders here off the shared
+   canvas. touch-action:none so a rotate-drag never scrolls the page. */
+.mp-ship-gizmo {
+	flex: 1 1 auto; min-height: 168px; background: transparent;
+	cursor: move; touch-action: none;
+}
+.mp-ship-body {
+	background: #121f36; padding: 6px 10px 9px;
+	display: flex; flex-direction: column; gap: 7px;
+}
+
+.mp-ship-table { display: flex; flex-direction: column; gap: 2px; }
+.mp-ship-row { display: grid; grid-template-columns: 52px repeat(4, 1fr); gap: 3px; align-items: center; }
+.mp-ship-rowlabel { font-size: 11.5px; text-align: right; padding-right: 3px; }
+.mp-ship-row-needed .mp-ship-rowlabel { color: var(--dim); }
+.mp-ship-row-current .mp-ship-rowlabel { color: var(--bright); }
+.mp-ship-cell { font-size: 11.5px; text-align: center; }
+.mp-ship-row-head .mp-ship-cell { font-size: 10.5px; letter-spacing: 0.2px; }
+.mp-ship-h-pro, .mp-ship-c-pro { color: #6fd49a; }
+.mp-ship-h-rad, .mp-ship-c-rad { color: #ffb45a; }
+.mp-ship-h-nrm, .mp-ship-c-nrm { color: #8ab4ff; }
+.mp-ship-h-net, .mp-ship-c-net { color: var(--bright); }
+/* The needed row reads as the plan's demand: each figure on its axis colour,
+   dimmed to the gizmo's dim layer. */
+.mp-ship-row-needed .mp-ship-cell {
+	color: var(--bright); border-radius: 3px; padding: 1px 0;
+}
+.mp-ship-row-needed .mp-ship-c-pro { background: #1f6b56; }
+.mp-ship-row-needed .mp-ship-c-rad { background: #8a7a2a; }
+.mp-ship-row-needed .mp-ship-c-nrm { background: #46608f; }
+.mp-ship-row-needed .mp-ship-c-net { background: #55627c; }
+
+.mp-ship-speed { display: flex; flex-direction: column; gap: 3px; }
+.mp-ship-speedhead { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.mp-ship-speednow { font-size: 12px; color: var(--bright); }
+.mp-ship-speednow b { font-weight: 400; }
+.mp-ship-speednow i { font-style: normal; font-size: 10.5px; color: var(--dim); }
+.mp-ship-peak { font-size: 11.5px; color: #7fd4f0; white-space: nowrap; }
+/* The bar's right edge IS the flight's peak speed, so it rescales whenever the
+   trajectory is recomputed. */
+.mp-ship-bar {
+	position: relative; height: 11px; border-radius: 6px;
+	border: 1px solid #7fd4f0; overflow: hidden;
+}
+.mp-ship-bar-fill { position: absolute; inset: 0 auto 0 0; background: #7fd4f0; }
+.mp-ship-bar-need { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--bright); }
+.mp-ship-bar-foot { position: relative; height: 22px; }
+.mp-ship-bar-marker {
+	position: absolute; top: -2px; transform: translateX(-50%);
+	font-size: 9px; color: var(--bright); line-height: 1;
+}
+.mp-ship-bar-needlabel {
+	position: absolute; top: 8px; transform: translateX(-50%);
+	font-size: 10px; color: var(--dim); white-space: nowrap;
+}
+
+.mp-ship-extra { display: flex; flex-direction: column; gap: 2px; }
+.mp-ship-extrarow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mp-ship-extralabel { font-size: 11px; color: var(--dim); }
+.mp-ship-extraval { font-size: 11.5px; color: var(--text); }
+
 /* floating body labels (Shared/sim/body-renderer.js label layer) */
 .mp-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
 .mp-label {

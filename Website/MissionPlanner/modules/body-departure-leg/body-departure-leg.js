@@ -425,6 +425,12 @@ export default {
 		ctx.onResult(updateReadouts);
 	},
 
+	// The last computed flight, for shell readouts that need the flown arc
+	// rather than just the hand-off packet — the ship card's speed bar reads
+	// `samples` for the current and peak speeds. Same registry-reached
+	// accessor pattern frozen-plan.js uses for complianceFor.
+	legFor: legFor,
+
 	draw: function (view, snap) {
 		function disposeDeep(o) {
 			if (o.children) { o.children.slice().forEach(disposeDeep); }

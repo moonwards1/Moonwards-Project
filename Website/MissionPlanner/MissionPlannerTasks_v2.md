@@ -128,22 +128,43 @@ or the savings evaporate.
 
 ### WP-2 — The ship card
 
-The design's central new interaction, and where "on course" is signalled.
-**2.1 waits on Kim's gizmo sketch.** Build the Departure context first — it
-defines the success condition the other two borrow.
+The design's central new interaction, and where "on course" is signalled. The
+Departure context defines the success condition the other two borrow.
 
-- [ ] **2.1 Shared ship card + three.js gizmo widget.** ★★★ — *needs Kim's
-  sketch.* A floating card in the pane with its own small three.js gizmo:
-  labelled axes, arrows drawn along them, a checkbox snapping the gizmo's
-  orientation to the main pane's camera, and free rotation by dragging inside
-  it when unchecked. One widget, per-phase adapters supply content.
-- [ ] **2.2 Departure context.** ★★★
-  Plan impulse per axis (axis length) vs what the current tech stack and
-  waypoints deliver at hand-off (arrows along each axis); the required heading
-  arrow (length = required speed) and the current heading arrow; prograde
-  speed at the chevron. On-course state shown in the card's top-right corner
-  and by the gizmo's background colour. Pairs with the yellow required-heading
-  arrow at the trajectory's hand-off end.
+- [x] **2.1 Shared ship card + three.js gizmo widget.** ★★★
+  `ui/ship-card.js`: a draggable float carrying its own `THREE.Scene`, rendered
+  as another scissored viewport off the shell's single canvas — the same
+  mechanism the frame floats use, so the card costs no extra WebGL context.
+  "Align to view" on copies the main pane's `cam.theta/phi` every render; off,
+  `bindCameraControls` on the gizmo host gives free rotation and zoom. Colour
+  IS the axis labelling (the bright triad matches `Shared/sim/burn-widget.js`,
+  so an axis reads the same here as on a waypoint gizmo out in the scene), which
+  keeps the widget free of any font dependency. Content is phase-supplied
+  through `setGizmo` / `setComponents` / `setSpeed` / `setExtra`, so 2.3 and 2.4
+  plug in without touching the shell; the card hides in phases with no context
+  yet rather than showing an empty frame. Structurally the card is
+  **transparent with two opaque bands and a bare gizmo strip between them** — an
+  opaque ancestor paints over the very canvas region the gizmo renders into
+  (see `decisions.md`). Pure halves (`vInfComponents`, `gizmoScale`,
+  `speedModel`, `speedAlong`, `peakSpeed`) are Node-tested in
+  `ui/tests/ship-card.test.js`.
+- [x] **2.2 Departure context.** ★★★
+  `mission-view.js`'s `updateShipCard` feeds the card ONE comparison — the same
+  one `frozen-plan` already makes, never a second opinion. `complianceFor`'s
+  `required.vInfVec` and `delivered.vInfVec` are split onto the burn frame of
+  the plan's committed departure state (`OrbitalMath.burnComponents` — the axes
+  every waypoint editor means), giving both the Needed/Current ×
+  prograde/radial/normal/net table and the dim/bright arrow pairs, plus a
+  net-heading arrow per layer. On course (every compliance row ok) shows twice,
+  as the corner check and as a green gizmo background. The speed bar's right
+  edge IS the flight's own peak speed, so it rescales on every recompute; its
+  mark is the body-relative speed at the hand-off radius that leaves with the
+  required v∞ (v² = v∞² + 2μ/r). Speed reads the flown arc through a new
+  `legFor` accessor added to both departure-leg descriptors (the same
+  registry-reached pattern `frozen-plan` uses for `complianceFor`), so it works
+  for an Earth origin and a generic body origin alike. **The yellow
+  required-heading arrow at the trajectory's hand-off end is 2.5's**, not built
+  here.
 - [ ] **2.3 Coast context.** ★★
   Prograde speed; distance at closest approach; the angle separating the ship's
   and the destination's vectors; the delivered arrival-heading arrow against an
@@ -196,9 +217,14 @@ defines the success condition the other two borrow.
   hole for each float's current rect (`updateMainOcclusion`) — hides the
   bleed-through without touching the shared canvas, which floats still read
   from directly.
-- [ ] **3.4 Camera controls inside floating panes.** ★
-  Currently click-to-swap only; each float needs its own bound controls, so a
-  mini-view can be rotated in place.
+- [x] **3.4 Camera controls inside floating panes.** ★
+  Each float gets its own `bindCameraControls`, so a mini-view rotates, zooms
+  and pans in place. The binding reads `pane.frameId` at call time rather than
+  closing over the id it was built with — panes swap frames as the phase
+  changes, and a captured id drives whichever frame that pane used to hold. A
+  capture-phase click handler suppresses click-to-promote once the pointer has
+  moved more than 3px, so a rotate-drag no longer ends by swapping the float
+  into the main pane; `user-select: none` stops the drag selecting pane text.
 - [ ] **3.5 Click-to-focus and follow.** ★★
   Clicking a body, the chevron, or an × mark focuses the camera there and
   orbits/zooms around it until a click elsewhere in the pane restores default
