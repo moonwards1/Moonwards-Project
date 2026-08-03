@@ -46,7 +46,7 @@ test("gizmoScale takes the largest magnitude across both layers", function () {
 	assert.equal(gizmoScale(needed, null), 6.24);
 });
 
-test("gizmoScale never returns zero, so no arrow divides by it", function () {
+test("gizmoScale never returns zero, so no line divides by it", function () {
 	assert.equal(gizmoScale(null, null), 1);
 	assert.equal(gizmoScale({ pro: 0, rad: 0, nrm: 0, net: 0 }, null), 1);
 });

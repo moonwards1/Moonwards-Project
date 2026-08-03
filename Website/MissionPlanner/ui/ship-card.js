@@ -12,7 +12,7 @@
  *
  * The gizmo is a scissored viewport off the shell's single shared renderer —
  * the same mechanism the floating panes use — so the card costs no extra WebGL
- * context. Its scene holds nothing but arrows in a unit-normalized space, so
+ * context. Its scene holds nothing but lines in a unit-normalized space, so
  * it needs no constant-on-screen-size pass: the camera sits at a fixed radius
  * and the content is scaled into it.
  *
@@ -65,7 +65,7 @@ export function vInfComponents(r, v, vec) {
 }
 
 // The km/s that maps to one gizmo unit: the largest magnitude either layer
-// shows, so the longest arrow always fills the box and the two layers stay
+// shows, so the longest line always fills the box and the two layers stay
 // directly comparable. 1 (harmless) when there is nothing to draw.
 export function gizmoScale(needed, current) {
 	var m = 0;
@@ -130,22 +130,37 @@ function el(tag, cls, text) {
 
 function kms(x) { return (x == null || !isFinite(x)) ? "—" : x.toFixed(2); }
 
-// One arrow from the gizmo origin. `len` is in gizmo units; a negative
-// component is drawn as a positive length down the opposite direction, so the
-// sign shows as a direction rather than vanishing.
-function makeArrow(dir, len, colorHex) {
+// Line thickness in gizmo units (radius, so the drawn width is twice this).
+// Needed is drawn fat and current thin, and the current layer is drawn over it
+// (see render), so neither hides the other where the two nearly coincide —
+// which is exactly when the card is being read most closely.
+var LINE_RADIUS = { dim: 0.032, bright: 0.014 };
+
+// A unit cylinder (radius 1, height 1, centred on the origin, running up +Y)
+// that every line scales and orients. Shared across all instances and never
+// disposed: the gizmo rebuilds its lines on every recompute, and dropping a
+// shared geometry would blank every rebuild after it.
+var LINE_GEO = null;
+function lineGeo() {
+	if (!LINE_GEO) { LINE_GEO = new THREE.CylinderGeometry(1, 1, 1, 8); }
+	return LINE_GEO;
+}
+
+// One line from the gizmo origin, drawn as a thin cylinder because WebGL
+// ignores LineBasicMaterial.linewidth — real thickness has to be geometry.
+// `len` and `radius` are in gizmo units; a negative component is drawn as a
+// positive length down the opposite direction, so the sign shows as a
+// direction rather than vanishing.
+function makeLine(dir, len, colorHex, radius) {
 	if (!(len > 1e-4)) { return null; }
 	var d = new THREE.Vector3(dir[0], dir[1], dir[2]);
 	if (d.lengthSq() < 1e-12) { return null; }
 	d.normalize();
-	var a = new THREE.ArrowHelper(d, new THREE.Vector3(0, 0, 0), len, colorHex,
-		len * 0.22, len * 0.12);
-	[a.line, a.cone].forEach(function (o) {
-		o.material.depthTest = false;
-		o.material.depthWrite = false;
-		o.material.transparent = true;
-	});
-	return a;
+	var m = new THREE.Mesh(lineGeo(), new THREE.MeshBasicMaterial({ color: colorHex }));
+	m.scale.set(radius, len, radius);
+	m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+	m.position.copy(d).multiplyScalar(len / 2);
+	return m;
 }
 
 // opts:
@@ -209,46 +224,53 @@ export function createShipCard(opts) {
 
 	// ---- the gizmo scene --------------------------------------------------
 	var scene = new THREE.Scene();
-	scene.background = new THREE.Color(bg);
+	var bgColor = new THREE.Color(bg);
+	scene.background = bgColor;
 	var camera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
 	// Radius is fixed and the content is normalized into it, so the gizmo needs
 	// no per-frame rescaling; the zoom range only exists for the free-rotate
 	// mode's wheel.
 	var cam = createCam(3.4, Math.PI * 0.25, Math.PI * 0.42, new THREE.Vector3(0, 0, 0));
-	var group = new THREE.Group();
-	scene.add(group);
+	// The two layers live in their own groups so render can draw them as
+	// separate depth passes.
+	var neededGroup = new THREE.Group();
+	var currentGroup = new THREE.Group();
+	scene.add(neededGroup);
+	scene.add(currentGroup);
 
 	var unbindCamera = bindCameraControls(gizmoEl, function () {
 		return { cam: cam, camera: camera, zoomMin: 1.2, zoomMax: 12 };
 	});
 
-	// MATERIALS ONLY. THREE.ArrowHelper builds its line and cone from two
-	// module-level geometry singletons shared by every instance ever created —
-	// disposing those would blank not just this gizmo's next rebuild but every
-	// other arrow in the app (the waypoint burn arrows included). Its materials
-	// are per-instance and do need dropping, since this runs on every recompute.
+	// MATERIALS ONLY. Every line shares the module-level cylinder geometry, so
+	// disposing geometry here would blank the next rebuild. The materials carry
+	// the per-line colour and are per-instance, so they do need dropping — this
+	// runs on every recompute.
 	function clearGroup() {
-		group.children.slice().forEach(function (child) {
-			group.remove(child);
-			(child.children || []).forEach(function (part) {
-				if (part.material) { part.material.dispose(); }
+		[neededGroup, currentGroup].forEach(function (g) {
+			g.children.slice().forEach(function (child) {
+				g.remove(child);
+				if (child.material) { child.material.dispose(); }
 			});
 		});
 	}
 
 	// spec: { axes: { pro, rad, nrm } unit vectors,
 	//         needed, current: { pro, rad, nrm, net } km/s (either may be null),
-	//         neededDir, currentDir: unit vectors for the net arrows }
+	//         neededDir, currentDir: unit vectors for the net lines }
 	// Passing null clears the gizmo.
 	function setGizmo(spec) {
 		clearGroup();
 		if (!spec || !spec.axes) { return; }
 		var scale = gizmoScale(spec.needed, spec.current);
-		[["dim", spec.needed, spec.neededDir], ["bright", spec.current, spec.currentDir]]
+		[["dim", spec.needed, spec.neededDir, neededGroup],
+			["bright", spec.current, spec.currentDir, currentGroup]]
 			.forEach(function (layer) {
 				var colors = SHIP_COLORS[layer[0]];
 				var comp = layer[1];
 				var netDir = layer[2];
+				var g = layer[3];
+				var radius = LINE_RADIUS[layer[0]];
 				if (!comp) { return; }
 				AXIS_KEYS.forEach(function (k) {
 					var axis = spec.axes[k];
@@ -256,13 +278,13 @@ export function createShipCard(opts) {
 					var value = comp[k];
 					if (!isFinite(value)) { return; }
 					var sign = value < 0 ? -1 : 1;
-					var a = makeArrow([axis[0] * sign, axis[1] * sign, axis[2] * sign],
-						Math.abs(value) / scale, colors[k]);
-					if (a) { group.add(a); }
+					var a = makeLine([axis[0] * sign, axis[1] * sign, axis[2] * sign],
+						Math.abs(value) / scale, colors[k], radius);
+					if (a) { g.add(a); }
 				});
 				if (netDir && isFinite(comp.net)) {
-					var n = makeArrow(netDir, comp.net / scale, colors.net);
-					if (n) { group.add(n); }
+					var n = makeLine(netDir, comp.net / scale, colors.net, radius);
+					if (n) { g.add(n); }
 				}
 			});
 	}
@@ -354,10 +376,10 @@ export function createShipCard(opts) {
 
 	// On course: the check in the corner, and a tint on the gizmo's own
 	// background — the design signals it twice so it reads whether the user is
-	// looking at the numbers or the arrows.
+	// looking at the numbers or the lines.
 	function setOnCourse(on) {
 		root.classList.toggle("on-course", !!on);
-		scene.background.setHex(on ? 0x14301f : bg);
+		bgColor.setHex(on ? 0x14301f : bg);
 	}
 
 	// Scissored render into the gizmo's rect, called by the shell's render loop
@@ -377,7 +399,31 @@ export function createShipCard(opts) {
 		var y = canvasRect.height - (r.top - canvasRect.top + h);   // GL origin: bottom-left
 		renderer.setViewport(x, y, w, h);
 		renderer.setScissor(x, y, w, h);
+
+		// TWO PASSES, so the thin current lines are always visible over the fat
+		// needed ones without either layer losing its own depth sorting. Pass one
+		// draws needed (and, having a Color background, clears colour and depth
+		// inside the scissor). Pass two clears depth ONLY, then draws current on
+		// a clean slate, so it can never be hidden by a needed line in front.
+		// scene.background must be nulled for that pass: a Color background makes
+		// three.js force a full clear regardless of autoClear, which would wipe
+		// pass one.
+		currentGroup.visible = false;
 		renderer.render(scene, camera);
+		if (currentGroup.children.length) {
+			currentGroup.visible = true;
+			neededGroup.visible = false;
+			var auto = renderer.autoClear;
+			scene.background = null;
+			renderer.autoClear = false;
+			renderer.clearDepth();
+			renderer.render(scene, camera);
+			renderer.autoClear = auto;
+			scene.background = bgColor;
+			neededGroup.visible = true;
+		} else {
+			currentGroup.visible = true;
+		}
 	}
 
 	function dispose() {
