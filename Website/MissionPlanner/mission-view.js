@@ -204,19 +204,10 @@ export function createMissionView(opts) {
 	opts.container.appendChild(root);
 	function q(sel) { return root.querySelector(sel); }
 
-	var mainEl = q(".mp-main");
 	var sceneEl = q(".mp-scene");
 	var paneMainEl = q(".mp-pane-main");
 	var floatsEl = q(".mp-floats");
 	var panelEl = q(".mp-panel");
-
-	// Straddling readout-box overlay (Shared/sim/readout-panes.js) — the same
-	// mechanism the Ephemeris tab uses for its burn readouts, offered to any
-	// sidebar card via ctx.readoutLayer/mainEl/panelEl. The departure and
-	// arrival legs use it for their waypoint-burn and release/pass-by boxes.
-	var readoutLayer = document.createElement("div");
-	readoutLayer.className = "mp-readout-layer";
-	mainEl.appendChild(readoutLayer);
 	var complianceBarEl = q(".mp-compliance-bar");
 	// Mission-events readout (top-left of the main pane, not the floats — see
 	// renderEventsBar below). currentReadoutEvents/eventReadoutSig let it skip
@@ -796,10 +787,7 @@ export function createMissionView(opts) {
 				stageId: stage.id,
 				panelHost: host,
 				exchange: Exchange,
-				onResult: function (cb) { entry.callbacks.push(cb); },
-				mainEl: mainEl,
-				panelEl: panelEl,
-				readoutLayer: readoutLayer
+				onResult: function (cb) { entry.callbacks.push(cb); }
 			});
 		}
 	}

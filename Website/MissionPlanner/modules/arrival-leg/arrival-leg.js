@@ -32,9 +32,10 @@
  * radial frame (O.applyBurn via geo-leg's burnEffect — the same convention
  * every waypoint editor in the planner means by its axes).
  *
- * HEADLESS (`plainCard`), like the departure legs: its card is the waypoint
- * cards + a pass-by readout box; its visible output is the polyline in the
- * destination frame (start/pass/end dots, waypoint gizmos + burn arrows).
+ * HEADLESS (`plainCard`), like the departure legs: its card is just the
+ * waypoint cards; its visible output is the polyline in the destination
+ * frame (start/pass/end dots, waypoint gizmos + burn arrows). Numeric
+ * readouts of hand-off/burn results live in the Ephemeris tab, not here.
  * Emits the leg-end ship-state (one day past the body, lifted to helio) so
  * an arrival technology downstream (arrival-skyhook) keeps its ship-state
  * input.
@@ -56,7 +57,6 @@ import { burnEffect } from "../../../Shared/geo-leg.js";
 import { bodySOI } from "../../../Shared/body-leg.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
-import { renderReadoutBoxes, positionReadoutBoxes } from "../../../Shared/sim/readout-panes.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { approachAt } from "../arrival-approach.js";
 import { bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
@@ -70,7 +70,6 @@ export var PERI_SOI_FRACTION = 0.5; // reference periapsis: half the SOI radius
 
 var BURN_VEC_SCALE = 8;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
-var dvHex = "#ff5fd0", spdHex = "#ffd24a";
 var GIZMO_PX = 42;
 
 export var defaultParams = {
@@ -296,41 +295,10 @@ export default {
 			return inp;
 		}
 
-		// The pass-by readout box (mirrors the departure legs' release box).
-		var passHead = document.createElement("div"); passHead.className = "mp-wp-head";
-		passHead.textContent = "pass-by";
-		host.appendChild(passHead);
-		var passBox = null;
-		function updatePassBox(leg) {
-			if (passBox) { ctx.readoutLayer.removeChild(passBox.el); passBox = null; }
-			if (!ctx.readoutLayer || !leg) { return; }
-			var box = document.createElement("div"); box.className = "mp-readout";
-			box.innerHTML =
-				'<div class="mp-readout-row"><span class="mp-readout-label">hand-off</span>' +
-				'<span class="mp-readout-val">' + isoOf(leg.jd0) + '</span></div>' +
-				'<div class="mp-readout-row"><span class="mp-readout-label">approach v∞</span>' +
-				'<span class="mp-readout-val">' + (leg.approach.vInf / 1000).toFixed(2) + ' km/s</span></div>' +
-				'<div class="mp-readout-row"><span class="mp-readout-label">closest approach</span>' +
-				'<span class="mp-readout-val">' + Math.round(leg.ca.r / 1e3).toLocaleString("en-US") + ' km</span></div>';
-			ctx.readoutLayer.appendChild(box);
-			passBox = { el: box, host: passHead };
-		}
-
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
-		var burnReadoutBoxes = [];
-		var wpRows = [];
-
-		function positionReadouts() {
-			if (!ctx.readoutLayer) { return; }
-			var all = burnReadoutBoxes.slice();
-			if (passBox) { all.push(passBox); }
-			positionReadoutBoxes(all, ctx.mainEl, ctx.panelEl);
-		}
-		if (ctx.panelEl) { ctx.panelEl.addEventListener("scroll", positionReadouts); }
 
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
-			wpRows = [];
 			var wps = stageParams().waypoints.slice();
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
@@ -342,7 +310,6 @@ export default {
 					list.splice(i, 1);
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
-					updateReadouts();
 				});
 				head.appendChild(del); card.appendChild(head);
 				numRow(card, "at hour", "h", (wp.t || 0) / 3600, 1, function (v) {
@@ -358,7 +325,6 @@ export default {
 					setParam("waypoints", list);
 				});
 				wpHost.appendChild(card);
-				wpRows.push({ burnHost: burnHost });
 			});
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
@@ -371,7 +337,6 @@ export default {
 					            burn: { pro: 0, rad: 0, nrm: 0 } });
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
-					updateReadouts();
 				});
 				wpHost.appendChild(add);
 			}
@@ -383,21 +348,6 @@ export default {
 			stageParams = saved;
 		}
 		rebuildWaypointRows();
-
-		function updateReadouts() {
-			var leg = legFor(ctx.world, ctx.stageId);
-			updatePassBox(leg && leg.ok ? leg : null);
-
-			var entries = wpRows.map(function (row, i) {
-				var wv = leg && leg.ok && leg.wpVisuals && leg.wpVisuals[i];
-				return { host: row.burnHost, data: wv ? wv.eff : null };
-			});
-			burnReadoutBoxes = renderReadoutBoxes(ctx.readoutLayer, burnReadoutBoxes, entries,
-				{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex, planeChangeLabel: "plane change (to ecliptic)" });
-			positionReadouts();
-		}
-
-		ctx.onResult(updateReadouts);
 	},
 
 	// The flyby polyline in the destination frame: hand-off dot (magenta),

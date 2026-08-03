@@ -7,11 +7,11 @@
  * health is exactly the flight's (impact/bound/no-handoff diagnostics) — the
  * departure leg covers everything leading up to the hand-off, so a separate
  * status chip would say nothing extra. Its `init` builds up to 2
- * waypoint-impulse cards + a release-point readout, alongside the shell's
- * generic diagnostic boxes. Its visible output is the drawn trajectory polyline
- * in the Earth–Moon frame, its flight events (release, waypoint impulses, SOI
- * exits — the Departure slider's marks), and each waypoint's gizmo/arrows and
- * readout boxes.
+ * waypoint-impulse cards, alongside the shell's generic diagnostic boxes.
+ * Its visible output is the drawn trajectory polyline in the Earth–Moon
+ * frame, its flight events (release, waypoint impulses, SOI exits — the
+ * Departure slider's marks), and each waypoint's gizmo/arrows. Numeric
+ * readouts of hand-off/burn results live in the Ephemeris tab, not here.
  *
  * What update() does — every recompute is one FORWARD pass, no fixed-point
  * iteration, no hidden solving:
@@ -61,7 +61,6 @@ import { evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { buildIntegratedLeg, stateAtLegTime, localFrameAt, burnEffect,
          moonGeoPos, SOI_MOON, SOI_EARTH } from "../../../Shared/geo-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
-import { renderReadoutBoxes, positionReadoutBoxes } from "../../../Shared/sim/readout-panes.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
@@ -74,7 +73,6 @@ var DAY = 86400;
 // Earth-Moon frame (1000 km per scene unit) this leg's samples already use.
 var BURN_VEC_SCALE = 8;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
-var dvHex = "#ff5fd0", spdHex = "#ffd24a";
 var GIZMO_PX = 42;   // matches the Ephemeris tab's own waypoint gizmos
 
 export var defaultParams = {
@@ -333,12 +331,9 @@ export default {
 	// Up to 2 waypoint-impulse cards (the same per-waypoint pattern as
 	// transfer-leg.js's init — but `t` here is SECONDS after release, presented
 	// as hours, since a departure flight runs hours-to-days rather than the
-	// coast's hundreds of days) plus a release-point readout box. The burn
-	// Δv/plane-change/prograde-Δv readouts use the same straddling-box mechanism
-	// the Ephemeris tab's waypoints do (Shared/sim/readout-panes.js): geo-leg's
-	// burnEffect, stored per-waypoint in leg.wpVisuals by computeDepartureLeg,
-	// already returns exactly the shape renderReadoutBoxes expects, so no
-	// separate readout-data function is needed here.
+	// coast's hundreds of days). Numeric burn/hand-off readouts are the
+	// Ephemeris tab's job, not the mission-plan sidebar's — this card is just
+	// the editing controls.
 	init: function (ctx) {
 		var host = ctx.panelHost;
 
@@ -367,51 +362,10 @@ export default {
 			return inp;
 		}
 
-		// The release-point readout: a straddling box (same mechanism as the
-		// per-waypoint burn readouts below) anchored to this "release" row,
-		// showing the flight's headline figures near where the release dot
-		// actually sits in the Earth-Moon pane.
-		var releaseHead = document.createElement("div"); releaseHead.className = "mp-wp-head";
-		releaseHead.textContent = "release";
-		host.appendChild(releaseHead);
-		var releaseBox = null;   // { el, host } | null
-		function updateReleaseBox(leg) {
-			if (releaseBox) { ctx.readoutLayer.removeChild(releaseBox.el); releaseBox = null; }
-			if (!ctx.readoutLayer || !leg) { return; }
-			var box = document.createElement("div"); box.className = "mp-readout";
-			box.innerHTML =
-				'<div class="mp-readout-row"><span class="mp-readout-label">release</span>' +
-				'<span class="mp-readout-val">' + isoOf(leg.jd0) + '</span></div>' +
-				'<div class="mp-readout-row"><span class="mp-readout-label">hand-off v∞</span>' +
-				'<span class="mp-readout-val">' + (leg.vinfEarth / 1000).toFixed(2) + ' km/s</span></div>' +
-				'<div class="mp-readout-row"><span class="mp-readout-label">flight time</span>' +
-				'<span class="mp-readout-val">' + (leg.handoff.tSoi / DAY).toFixed(2) + ' d</span></div>';
-			ctx.readoutLayer.appendChild(box);
-			releaseBox = { el: box, host: releaseHead };
-		}
-
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
-		var burnReadoutBoxes = [];
-		var wpRows = [];   // [{ burnHost }] — one per current waypoint, in param order
 
-		function positionReadouts() {
-			if (!ctx.readoutLayer) { return; }
-			var all = burnReadoutBoxes.slice();
-			if (releaseBox) { all.push(releaseBox); }
-			positionReadoutBoxes(all, ctx.mainEl, ctx.panelEl);
-		}
-		if (ctx.panelEl) { ctx.panelEl.addEventListener("scroll", positionReadouts); }
-
-		// setParam's recompute fires ctx.onResult SYNCHRONOUSLY, so whenever the
-		// waypoint COUNT changes, wpRows must already reflect the new set of
-		// cards before setParam runs — otherwise the recompute that carries the
-		// new/removed waypoint's data lands against stale rows and its readout
-		// box never appears until some unrelated later recompute. rebuild first,
-		// commit second (updateReadouts() then re-syncs immediately after, so
-		// the fresh rows aren't left showing stale data either).
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
-			wpRows = [];
 			var wps = stageParams().waypoints.slice();
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
@@ -423,7 +377,6 @@ export default {
 					list.splice(i, 1);
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
-					updateReadouts();
 				});
 				head.appendChild(del); card.appendChild(head);
 				numRow(card, "at hour", "h", (wp.t || 0) / 3600, 1, function (v) {
@@ -439,7 +392,6 @@ export default {
 					setParam("waypoints", list);
 				});
 				wpHost.appendChild(card);
-				wpRows.push({ burnHost: burnHost });
 			});
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
@@ -452,7 +404,6 @@ export default {
 					            burn: { pro: 0, rad: 0, nrm: 0 } });
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
-					updateReadouts();
 				});
 				wpHost.appendChild(add);
 			}
@@ -468,21 +419,6 @@ export default {
 			stageParams = saved;
 		}
 		rebuildWaypointRows();
-
-		function updateReadouts() {
-			var leg = legFor(ctx.world, ctx.stageId);
-			updateReleaseBox(leg && leg.ok ? leg : null);
-
-			var entries = wpRows.map(function (row, i) {
-				var wv = leg && leg.ok && leg.wpVisuals && leg.wpVisuals[i];
-				return { host: row.burnHost, data: wv ? wv.eff : null };
-			});
-			burnReadoutBoxes = renderReadoutBoxes(ctx.readoutLayer, burnReadoutBoxes, entries,
-				{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex, planeChangeLabel: "plane change (to ecliptic)" });
-			positionReadouts();
-		}
-
-		ctx.onResult(updateReadouts);
 	},
 
 	// The last computed flight, for shell readouts that need the flown arc

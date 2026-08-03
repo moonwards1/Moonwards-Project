@@ -454,8 +454,9 @@ body {
 .mp-diag .mp-fix { color: var(--dim); margin-top: 3px; }
 
 /* ---------- straddling burn-readout panes (Shared/sim/readout-panes.js with
-   classPrefix "mp"): used by the Ephemeris tab and by the mission views'
-   departure/arrival leg cards ---------- */
+   classPrefix "mp"): used by the Ephemeris tab only — departure/arrival/
+   waypoint burn results are reported there, not in the mission-plan
+   sidebar ---------- */
 .mp-readout-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
 .mp-readout {
 	position: absolute; box-sizing: border-box; min-width: 122px; padding: 7px 11px;

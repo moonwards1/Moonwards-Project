@@ -12,10 +12,10 @@
  *
  * HEADLESS (`plainCard`): no title/status header — this stage's health is
  * exactly the flight's (impact/bound/no-handoff diagnostics). Its `init` adds
- * up to 2 waypoint-impulse cards + a release readout; its visible output is the
- * trajectory polyline in the origin-body frame, its flight events (release,
- * waypoint impulses, body-SOI exit), and each waypoint's gizmo/arrows/readout
- * boxes.
+ * up to 2 waypoint-impulse cards; its visible output is the trajectory
+ * polyline in the origin-body frame, its flight events (release, waypoint
+ * impulses, body-SOI exit), and each waypoint's gizmo/arrows. Numeric
+ * readouts of hand-off/burn results live in the Ephemeris tab, not here.
  *
  * update() — every recompute is one FORWARD pass, no fixed-point iteration:
  *   1. Read the release-epoch ANCHOR from the frozen plan (releaseAnchorFor) —
@@ -42,9 +42,8 @@
  * (scene-frames.js's buildBodyFrame). See orbital-skyhook.js.
  *
  * The view layer here is a close structural copy of departure-leg.js's (the
- * waypoint cards, readout boxes, gizmo/arrow draw); only the vector editor is
- * genuinely shared, via Shared/sim/vector-editor.js. update() is pure and
- * Node-testable.
+ * waypoint cards, gizmo/arrow draw); only the vector editor is genuinely
+ * shared, via Shared/sim/vector-editor.js. update() is pure and Node-testable.
  *
  * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this folder
  * breaks if moved without them coming along.
@@ -59,7 +58,6 @@ import { evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { buildIntegratedLeg, stateAtLegTime, localFrameAt, burnEffect,
          bodySOI } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
-import { renderReadoutBoxes, positionReadoutBoxes } from "../../../Shared/sim/readout-panes.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
@@ -69,7 +67,6 @@ var DAY = 86400;
 
 var BURN_VEC_SCALE = 8;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
-var dvHex = "#ff5fd0", spdHex = "#ffd24a";
 var GIZMO_PX = 42;
 
 export var defaultParams = {
@@ -321,41 +318,10 @@ export default {
 			return inp;
 		}
 
-		// The release-point readout box.
-		var releaseHead = document.createElement("div"); releaseHead.className = "mp-wp-head";
-		releaseHead.textContent = "release";
-		host.appendChild(releaseHead);
-		var releaseBox = null;
-		function updateReleaseBox(leg) {
-			if (releaseBox) { ctx.readoutLayer.removeChild(releaseBox.el); releaseBox = null; }
-			if (!ctx.readoutLayer || !leg) { return; }
-			var box = document.createElement("div"); box.className = "mp-readout";
-			box.innerHTML =
-				'<div class="mp-readout-row"><span class="mp-readout-label">release</span>' +
-				'<span class="mp-readout-val">' + isoOf(leg.jd0) + '</span></div>' +
-				'<div class="mp-readout-row"><span class="mp-readout-label">hand-off v∞</span>' +
-				'<span class="mp-readout-val">' + (leg.vinfBody / 1000).toFixed(2) + ' km/s</span></div>' +
-				'<div class="mp-readout-row"><span class="mp-readout-label">flight time</span>' +
-				'<span class="mp-readout-val">' + (leg.handoff.tSoi / DAY).toFixed(2) + ' d</span></div>';
-			ctx.readoutLayer.appendChild(box);
-			releaseBox = { el: box, host: releaseHead };
-		}
-
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
-		var burnReadoutBoxes = [];
-		var wpRows = [];
-
-		function positionReadouts() {
-			if (!ctx.readoutLayer) { return; }
-			var all = burnReadoutBoxes.slice();
-			if (releaseBox) { all.push(releaseBox); }
-			positionReadoutBoxes(all, ctx.mainEl, ctx.panelEl);
-		}
-		if (ctx.panelEl) { ctx.panelEl.addEventListener("scroll", positionReadouts); }
 
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
-			wpRows = [];
 			var wps = stageParams().waypoints.slice();
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
@@ -367,7 +333,6 @@ export default {
 					list.splice(i, 1);
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
-					updateReadouts();
 				});
 				head.appendChild(del); card.appendChild(head);
 				numRow(card, "at hour", "h", (wp.t || 0) / 3600, 1, function (v) {
@@ -383,7 +348,6 @@ export default {
 					setParam("waypoints", list);
 				});
 				wpHost.appendChild(card);
-				wpRows.push({ burnHost: burnHost });
 			});
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
@@ -396,7 +360,6 @@ export default {
 					            burn: { pro: 0, rad: 0, nrm: 0 } });
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
-					updateReadouts();
 				});
 				wpHost.appendChild(add);
 			}
@@ -408,21 +371,6 @@ export default {
 			stageParams = saved;
 		}
 		rebuildWaypointRows();
-
-		function updateReadouts() {
-			var leg = legFor(ctx.world, ctx.stageId);
-			updateReleaseBox(leg && leg.ok ? leg : null);
-
-			var entries = wpRows.map(function (row, i) {
-				var wv = leg && leg.ok && leg.wpVisuals && leg.wpVisuals[i];
-				return { host: row.burnHost, data: wv ? wv.eff : null };
-			});
-			burnReadoutBoxes = renderReadoutBoxes(ctx.readoutLayer, burnReadoutBoxes, entries,
-				{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex, planeChangeLabel: "plane change (to ecliptic)" });
-			positionReadouts();
-		}
-
-		ctx.onResult(updateReadouts);
 	},
 
 	// The last computed flight, for shell readouts that need the flown arc
