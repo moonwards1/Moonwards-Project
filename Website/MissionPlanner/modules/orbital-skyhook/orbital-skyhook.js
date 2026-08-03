@@ -377,24 +377,6 @@ export default {
 			var v = parseFloat(slider.value);
 			if (isFinite(v)) { setParam("releasePhaseDeg", v); }
 		});
-
-		var out = document.createElement("div"); out.className = "mp-readouts";
-		host.appendChild(out);
-
-		ctx.onResult(function () {
-			var phys = physicsFor(ctx.world, ctx.stageId);
-			if (!phys || !phys.ok) { out.innerHTML = ""; return; }
-			out.innerHTML = "";
-			[["release speed", Math.round(phys.vRel) + " m/s"],
-			 ["rotation period", (phys.period / 3600).toFixed(2) + " h"],
-			 ["v∞ at " + phys.body + " SOI", Math.round(phys.vInfBody) + " m/s"]
-			].forEach(function (pair) {
-				var r = document.createElement("div"); r.className = "mp-row";
-				var k = document.createElement("span"); k.className = "mp-k"; k.textContent = pair[0];
-				var v = document.createElement("span"); v.className = "mp-v"; v.textContent = pair[1];
-				r.appendChild(k); r.appendChild(v); out.appendChild(r);
-			});
-		});
 	},
 
 	// Tether hardware in the origin-body frame (body-centric — the body is the

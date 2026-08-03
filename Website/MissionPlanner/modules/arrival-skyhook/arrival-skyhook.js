@@ -173,27 +173,6 @@ export default {
 			function (v) { setParam("topAlt", v * 1e3); });
 		numRow("catch altitude", "km", Math.round(fullParams().relAlt / 1e3), 25,
 			function (v) { setParam("relAlt", v * 1e3); });
-
-		var out = document.createElement("div"); out.className = "mp-readouts";
-		host.appendChild(out);
-
-		ctx.onResult(function () {
-			var cat = catchFor(ctx.world, ctx.stageId);
-			out.innerHTML = "";
-			if (!cat || !cat.ok) { return; }
-			[["approach v∞", (cat.approach.vInf / 1000).toFixed(2) + " km/s"],
-			 ["ship at catch point", (cat.vCatch / 1000).toFixed(2) + " km/s"],
-			 ["tip speed", (cat.geo.vRel / 1000).toFixed(2) + " km/s"],
-			 ["trim Δv at catch", (cat.trimDv / 1000).toFixed(2) + " km/s"],
-			 ["rotation period", (cat.geo.period / 3600).toFixed(2) + " h"],
-			 ["catch date", isoOf(cat.jd)]
-			].forEach(function (pair) {
-				var r = document.createElement("div"); r.className = "mp-row";
-				var k = document.createElement("span"); k.className = "mp-k"; k.textContent = pair[0];
-				var v = document.createElement("span"); v.className = "mp-v"; v.textContent = pair[1];
-				r.appendChild(k); r.appendChild(v); out.appendChild(r);
-			});
-		});
 	},
 
 	// Tether hardware in the destination frame — the same draw shape
