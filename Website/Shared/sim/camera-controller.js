@@ -179,6 +179,12 @@ export function bindCameraControls(rendererEl, getView) {
 
 	function onMouseDown(e) {
 		var v = getView();
+		// Suppress the browser's native text-selection drag: without this, a
+		// rotate/pan drag that passes over a floating label or card (labelLayer
+		// names, readout/marker-card text -- all siblings of this element, not
+		// descendants, so they're untouched by any pointer-events setting here)
+		// highlights that text as the cursor crosses it.
+		e.preventDefault();
 		// A second press cancels a pending single-click pick, so a double-click
 		// never also fires the deferred click.
 		if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
