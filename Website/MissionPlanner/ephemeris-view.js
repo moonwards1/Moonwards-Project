@@ -205,7 +205,8 @@ export function createEphemerisView(opts) {
 			destination: legDefaults.destination
 		},
 		marker: null,          // { f0, angle (deg), mode: "free"|"track"|"target", dvBudget, ... }
-		markerFocused: false   // camera pivots on the marker
+		markerFocused: false,  // camera pivots on the marker
+		destFocused: false     // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
 	};
 
 	var trajLine = null, endDots = [], wpMarkers = [], burnArrows = [];
@@ -1348,6 +1349,7 @@ export function createEphemerisView(opts) {
 		}
 		updateModeButtons();
 		if (state.markerFocused) { frame.cam.target.copy(markerSprite.position); }
+		if (state.destFocused && destSprite && destSprite.visible) { frame.cam.target.copy(destSprite.position); }
 	}
 
 	// Make the marker the camera's pivot — the view then rotates and zooms
@@ -1355,13 +1357,25 @@ export function createEphemerisView(opts) {
 	function focusMarker() {
 		if (!state.marker || !markerSprite) { return; }
 		state.markerFocused = true;
+		state.destFocused = false;
 		frame.focusBody = null;
 		frame.cam.target.copy(markerSprite.position);
+	}
+
+	// Make the destination "×" the camera's pivot, same as focusMarker but for
+	// updateDestinationMarker's destSprite. Triggered by clicking it in handlePick.
+	function focusDest() {
+		if (!destSprite || !destSprite.visible) { return; }
+		state.destFocused = true;
+		state.markerFocused = false;
+		frame.focusBody = null;
+		frame.cam.target.copy(destSprite.position);
 	}
 
 	function removeMarker() {
 		state.marker = null;
 		state.markerFocused = false;
+		state.destFocused = false;
 		setHint("Marker removed — click the drawn trajectory to place a new one.");
 		updateMarker();
 	}
@@ -1577,13 +1591,15 @@ export function createEphemerisView(opts) {
 
 	// =======================================================================
 	//  Click picking, main pane, in priority order: (1) the marker's own
-	//  sprite refocuses the camera on it without moving it; (2) the nearest
-	//  trajectory sample within range places/moves the marker there; (3)
-	//  failing both, the nearest body within PICK_PX becomes the orbit/zoom
-	//  pivot instead — collapsed-to-a-point bodies (updateScales, the normal
-	//  case at solar-system zoom) are a sub-pixel target for an exact hit, so
-	//  pickBodyName falls back to nearest-centre-within-range; (4) truly empty
-	//  space releases whichever lock is active. Projection is against
+	//  sprite refocuses the camera on it without moving it; (2) the destination
+	//  "×" (updateDestinationMarker's destSprite) likewise refocuses on it
+	//  without moving it; (3) the nearest trajectory sample within range
+	//  places/moves the marker there; (4) failing all three, the nearest body
+	//  within PICK_PX becomes the orbit/zoom pivot instead — collapsed-to-a-point
+	//  bodies (updateScales, the normal case at solar-system zoom) are a
+	//  sub-pixel target for an exact hit, so pickBodyName falls back to
+	//  nearest-centre-within-range; (5) truly empty space releases whichever
+	//  lock is active. Projection is against
 	//  `paneMainEl`'s own rect rather than the whole canvas — the same pane the
 	//  wheel-zoom `pickPoint` below uses — because this shell scissors panes and
 	//  the two rects need not coincide (the Ephemeris tab is single-pane, so
@@ -1607,6 +1623,15 @@ export function createEphemerisView(opts) {
 			}
 		}
 
+		// click on the destination "×" -> focus/follow it, same as the marker above
+		if (destSprite && destSprite.visible) {
+			var xv = destSprite.position.clone().project(frame.camera);
+			if (xv.z <= 1) {
+				var xx = (xv.x * 0.5 + 0.5) * rect.width, xy = (-xv.y * 0.5 + 0.5) * rect.height;
+				if (Math.hypot(xx - px, xy - py) < 16) { focusDest(); return; }
+			}
+		}
+
 		// otherwise place/move the marker at the nearest trajectory sample
 		// (trajSamples is in metres, so each candidate is converted to scene
 		// units before projecting)
@@ -1626,6 +1651,7 @@ export function createEphemerisView(opts) {
 		var name = pickBodyName(frame.camera, paneMainEl, e, frame.scaleList, PICK_PX);
 		if (name) {
 			state.markerFocused = false;
+			state.destFocused = false;
 			frame.focusBody = name;
 			var node = frame.bodyNode(name);
 			if (node) { frame.cam.target.copy(node.position); }
@@ -1635,6 +1661,7 @@ export function createEphemerisView(opts) {
 		// truly empty space: release whichever lock is active (marker/body stay
 		// put — this only stops the camera re-centring on them every tick).
 		state.markerFocused = false;
+		state.destFocused = false;
 		frame.focusBody = null;
 	}
 
@@ -1649,9 +1676,10 @@ export function createEphemerisView(opts) {
 				return raycastPickPoint(frame.camera, paneMainEl, e,
 					{ meshes: frame.pickMeshes, soiSpheres: frame.pickSoiSpheres });
 			},
-			onPan: function () { frame.focusBody = null; state.markerFocused = false; },
+			onPan: function () { frame.focusBody = null; state.markerFocused = false; state.destFocused = false; },
 			lockedZoomTarget: function () {
 				if (state.markerFocused && markerSprite && markerSprite.visible) { return markerSprite.position; }
+				if (state.destFocused && destSprite && destSprite.visible) { return destSprite.position; }
 				if (frame.focusBody) {
 					var node = frame.bodyNode(frame.focusBody);
 					if (node) { return node.position; }

@@ -657,7 +657,11 @@ export function createMissionView(opts) {
 	// exists, with no change needed here. Body picking itself is
 	// body-renderer.js's pickBodyName — a body far/small enough to have
 	// collapsed to updateScales' bright point is a sub-pixel target for an
-	// exact hit-test, so it falls back to nearest-centre-within-PICK_PX.
+	// exact hit-test, so it falls back to nearest-centre-within-PICK_PX. Only
+	// the origin and destination bodies are ever pickable this way — a mission
+	// tab's frames carry every HELIO_BODIES entry, and locking onto an
+	// irrelevant one just gets in the way (pickFocus filters the name; the
+	// Arrival double-click already only ever matches the destination).
 	var PICK_PX = 10;
 
 	function chevronsInFrame(frameId) {
@@ -714,6 +718,11 @@ export function createMissionView(opts) {
 				return;
 			}
 			var name = pickBodyName(f.camera, pane.el, e, f.scaleList, PICK_PX);
+			// Only the origin and destination are ever worth pivoting on here — a
+			// mission tab's frames (helio especially) carry every HELIO_BODIES
+			// entry, and letting all of them lock/follow just gets in the way at
+			// this stage. A hit on any other body is treated the same as a miss.
+			if (name !== originBody && name !== arrivalBody) { name = null; }
 			if (name) {
 				f.focusChevron = null; f.focusBody = name;
 				var node = f.bodyNode(name);
@@ -721,7 +730,8 @@ export function createMissionView(opts) {
 				saveWorkspace();
 				return;
 			}
-			// empty space: release the lock, same as a pan
+			// empty space (or a body that isn't the origin/destination): release
+			// the lock, same as a pan
 			f.focusBody = null; f.focusChevron = null;
 			saveWorkspace();
 		};
