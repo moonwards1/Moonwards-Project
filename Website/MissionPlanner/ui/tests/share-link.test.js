@@ -60,3 +60,25 @@ test("missionFragmentFrom: rejects non-links", () => {
 	assert.equal(missionFragmentFrom(""), null);
 	assert.equal(missionFragmentFrom(undefined), null);
 });
+
+test("missionFragmentFrom: survives Notepad/messaging-app reflow of a pasted link", () => {
+	// Notepad and chat apps routinely reflow a long pasted token: real
+	// newlines inserted at wrap points, or invisible zero-width characters
+	// spliced in so it CAN wrap without a visible break. Neither should
+	// break a paste of a real mission link.
+	var frag = encodeFragment(packMissionLink("T", worldData));
+	var mid = Math.floor(frag.length / 2);
+	var withNewline = frag.slice(0, mid) + "\n" + frag.slice(mid);
+	var withZeroWidth = frag.slice(0, mid) + "\u200B" + frag.slice(mid);
+
+	// "#mission=" form: reflow noise (and stray trailing punctuation) is
+	// filtered out because the marker anchors the rest as link content.
+	assert.equal(missionFragmentFrom("https://x.test/planner.html#mission=" + withNewline), frag);
+	assert.equal(missionFragmentFrom("https://x.test/planner.html#mission=" + withZeroWidth), frag);
+	assert.equal(missionFragmentFrom("https://x.test/planner.html#mission=" + frag + "."), frag);
+
+	// Bare-blob form: newlines and zero-width chars are unambiguous wrap
+	// artifacts and get stripped too.
+	assert.equal(missionFragmentFrom(withNewline), frag);
+	assert.equal(missionFragmentFrom(withZeroWidth), frag);
+});

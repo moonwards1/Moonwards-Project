@@ -1207,8 +1207,35 @@ export function createEphemerisView(opts) {
 			? O.burnComponents(natural.r, natural.v, dv)
 			: { pro: 0, rad: 0, nrm: 0 };
 
+		// Earth's frozen hand-off velocity already has the Moon's own free
+		// prograde speed folded in (assistedBurn, below) — net it back out so
+		// state.leg.burn holds the AUTHORED figure, not a total that gets the
+		// same contribution added a second time on the next refresh(). Same
+		// two-bounded-passes trick as applyTargeting's Lambert solve above:
+		// the Moon's position (and so its free prograde) depends on the very
+		// launch-date estimate the burn itself feeds.
+		if (state.origin === "Earth" && O.vMag(dv) > 1e-6) {
+			var proL = burn.pro;
+			var est = estimateDeparture({ origin: "Earth", vInfVec: dv,
+				jdHandoff: dateState.jd, profile: state.depProfile });
+			if (est.ok) {
+				burn.pro = proL - moonProgradeSpeed(est.jdLaunch, natural.v);
+				var vDepCorr = O.applyBurn(natural.r, natural.v, burn.pro, burn.nrm, burn.rad);
+				var est2 = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepCorr, natural.v),
+					jdHandoff: dateState.jd, profile: state.depProfile });
+				if (est2.ok) { burn.pro = proL - moonProgradeSpeed(est2.jdLaunch, natural.v); }
+			}
+		}
+
 		state.leg.destination = p.arrival.body || "";
-		state.leg.burn = { pro: burn.pro, rad: burn.rad, nrm: burn.nrm };
+		// Mutate the existing burn object's fields rather than replacing it —
+		// the Departure card's vector editor (Shared/sim/vector-editor.js) is
+		// built once at tab setup and closes over this exact object, so
+		// reassigning state.leg.burn wholesale would leave the sidebar fields
+		// stuck showing stale (usually zero) values forever.
+		state.leg.burn.pro = burn.pro;
+		state.leg.burn.rad = burn.rad;
+		state.leg.burn.nrm = burn.nrm;
 		state.leg.waypoints = (lp.waypoints || []).map(function (wp) {
 			var b = wp.burn || {};
 			return { days: wp.days, burn: { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 },

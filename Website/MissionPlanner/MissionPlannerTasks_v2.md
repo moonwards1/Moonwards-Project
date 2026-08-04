@@ -268,9 +268,41 @@ Departure context defines the success condition the other two borrow.
   `ctx.world.jd` (the same clock `draw()`'s `stateAtElapsed` uses), clamped
   just inside the leg's valid span, instead of the midpoint/fixed-hour
   fallback. That fallback is kept for when there's no computed leg yet.
-- [ ] **4.5 Mission-link data survives across sessions.** ★★
+- [x] **4.5 Mission-link data survives across sessions.** ★★
   Copied link data pasted back after a restart must reload the mission
   parameters. Verify the round trip and harden whatever doesn't survive.
+  The round trip itself (`share-link.js`'s pack/unpack + `Shared/exchange.js`'s
+  base64url fragment codec) was already sound; the break was on the paste
+  side — Notepad and messaging apps routinely reflow a long pasted link,
+  splicing in real newlines or invisible zero-width characters at the wrap
+  points, and `missionFragmentFrom()`'s regex silently truncated or failed
+  on the result. It now filters those out: once the `#mission=`/`&mission=`
+  marker is found, everything after it is filtered down to the base64url
+  alphabet (marker anchors it as link content, so whitespace/invisible
+  chars/stray punctuation anywhere in the tail are safe to drop); the
+  bare-fragment form strips newlines/tabs/invisible chars but keeps spaces
+  significant, so unrelated pasted text still gets rejected rather than
+  matched. Covered by new cases in `ui/tests/share-link.test.js` and
+  verified live in the browser against a real "Copy mission link" output.
+
+  A pasted link also needs its departure impulse back on the Ephemeris tab —
+  `loadFrozenPlanIntoState()` (`ephemeris-view.js`) had two bugs there. It
+  reassigned `state.leg.burn` to a brand-new object, but the Departure
+  card's vector editor (`Shared/sim/vector-editor.js`) is built once at tab
+  setup and closes over the original object, so the Prograde/Radial/Normal
+  fields stayed stuck at 0.00 no matter what was reconstructed internally —
+  fixed by mutating the existing object's fields in place instead. And for
+  an Earth origin, the frozen hand-off velocity already has the Moon's own
+  free prograde speed folded in (`assistedBurn`), which the naive
+  reconstruction left in — so `assistedBurn` added it a second time on the
+  next refresh, inflating the departure speed and throwing off the drawn
+  trajectory (observed: the reloaded marker sat 0.11 AU off Mars's orbit
+  instead of 0.03 AU). Fixed by netting the Moon's contribution back out
+  with the same two-bounded-passes estimate `applyTargeting` already uses,
+  so `state.leg.burn` holds the authored figure rather than a doubled
+  total. Verified live against real "Copy mission link" output for both an
+  Earth origin (Earth → Mars 2033) and a non-Earth origin (Mars → Mercury
+  2032).
 - [ ] **4.6 Bodies must move as the marker slider is scrubbed.** ★★
   `updateMarker()` moves the chevron and the
   destination × mark along the trajectory by `tof` (time past
@@ -304,12 +336,7 @@ Departure context defines the success condition the other two borrow.
   A small ring mass driver or spin launcher can be added as a second layer on
   an appropriate base platform (space elevator, skyhook). The dropdown filters
   its options by a rule set describing which combinations are realistic.
-- [ ] **5.3 Departure waypoint placement rules.** ★★
-  Up to two, no snap points: the first appears at the midpoint of the
-  trajectory established by the cards above it and slides end to end; the
-  second appears at the midpoint of what remains and slides from the first to
-  the end of the leg.
-- [ ] **5.4 Simple platform renderings.** ★★ (per platform)
+- [ ] **5.3 Simple platform renderings.** ★★ (per platform)
   Enough geometry to show how a platform works and where the ship starts from.
 
 ### WP-6

@@ -15,6 +15,14 @@
  * whole URL, just the "#mission=..." tail, or the bare base64url blob —
  * all three resolve to the fragment string decodeFragment wants.
  * (Base64url alphabet per Shared/exchange.js: A-Z a-z 0-9 - _ .)
+ *
+ * A link that round-trips through Notepad or a messaging app often comes
+ * back mangled: long unbroken tokens get reflowed with real newlines at the
+ * wrap points, or spliced with invisible zero-width characters so they CAN
+ * wrap without a visible break. missionFragmentFrom() undoes that — see its
+ * own comment for how the "#mission=" and bare-blob forms are handled
+ * differently, so a link still round-trips but ordinary non-link text still
+ * gets rejected.
  */
 
 export var MISSION_LINK_KIND = "moonwards-mission-link";
@@ -63,10 +71,25 @@ export function unpackMissionLink(decoded) {
 // or the bare fragment blob on its own. The 8-char floor on the bare form
 // keeps stray short words from being treated as a fragment (a real one is
 // hundreds of characters).
+//
+// Once the "#mission="/"&mission=" marker itself is found, everything after
+// it to the end of the pasted text is filtered down to the base64url
+// alphabet — the marker is a strong enough signal that the rest is link
+// content that it's safe to drop whitespace, invisible reflow characters,
+// and stray trailing punctuation (a period, a closing quote) wherever they
+// landed. The bare-blob form has no such marker to anchor on, so it only
+// drops newlines/tabs/invisible chars (unambiguous wrap artifacts) and
+// keeps spaces significant — otherwise ordinary prose like "not a link at
+// all" would collapse into something that looks like a fragment.
+var INVISIBLE_CHARS = /[\u200B-\u200D\uFEFF]/g;
+
 export function missionFragmentFrom(text) {
 	if (typeof text !== "string") { return null; }
-	var m = /[#&]mission=([A-Za-z0-9_-]+)/.exec(text);
-	if (m) { return m[1]; }
-	var t = text.trim();
+	var marker = /[#&]mission=/.exec(text);
+	if (marker) {
+		var frag = text.slice(marker.index + marker[0].length).replace(/[^A-Za-z0-9_-]/g, "");
+		return frag.length >= 8 ? frag : null;
+	}
+	var t = text.replace(INVISIBLE_CHARS, "").replace(/[\r\n\t]/g, "").trim();
 	return /^[A-Za-z0-9_-]{8,}$/.test(t) ? t : null;
 }
