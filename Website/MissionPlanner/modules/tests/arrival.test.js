@@ -19,7 +19,7 @@ import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js"
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
 import arrivalSkyhook, { computeCatch } from "../arrival-skyhook/arrival-skyhook.js";
-import arrivalLeg, { computeArrivalLeg, referencePeriapsis,
+import arrivalLeg, { computeArrivalLeg, referencePeriapsis, stateAtElapsed,
 	LEAD_S, TAIL_S, PERI_SOI_FRACTION } from "../arrival-leg/arrival-leg.js";
 import { bodySOI } from "../../../Shared/body-leg.js";
 import { tetherGeometry, tetherKinematics, resolveParams as resolveSkyhookParams,
@@ -139,6 +139,42 @@ test("computeArrivalLeg: diagnostics — no body, unknown body, ~zero approach s
 	assert.equal(computeArrivalLeg({ body: "Xyzzy" }, data).diagnostic.code, "bad-params");
 	assert.equal(computeArrivalLeg({ body: "Ceres" }, arrivingAt("Ceres", 0.5, 0)).diagnostic.code,
 		"no-approach-speed");
+});
+
+// ---- stateAtElapsed (2.5's chevron position source) ------------------------
+
+test("arrival-leg stateAtElapsed: t=0 matches the hand-off state", function () {
+	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
+	var s = stateAtElapsed(leg, 0);
+	assert.ok(O.vMag(O.vSub(s.r, leg.segs[0].r0)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.segs[0].v0)) < 1e-6);
+});
+
+test("arrival-leg stateAtElapsed: at the leg's full span matches leg.end exactly", function () {
+	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
+	var s = stateAtElapsed(leg, LEAD_S + TAIL_S);
+	assert.ok(O.vMag(O.vSub(s.r, leg.end.r)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.end.v)) < 1e-6);
+});
+
+test("arrival-leg stateAtElapsed: mid-segment agrees with a drawn polyline sample at the same t", function () {
+	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
+	var sample = leg.samples[50];
+	var s = stateAtElapsed(leg, sample.t);
+	assert.ok(O.vMag(O.vSub(s.r, sample.r)) < 1);
+});
+
+test("arrival-leg stateAtElapsed: clamps outside the leg's span to its nearest end", function () {
+	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
+	var before = stateAtElapsed(leg, -1e6);
+	assert.ok(O.vMag(O.vSub(before.r, leg.segs[0].r0)) < 1);
+	var after = stateAtElapsed(leg, LEAD_S + TAIL_S + 1e6);
+	assert.ok(O.vMag(O.vSub(after.r, leg.end.r)) < 1);
+});
+
+test("arrival-leg stateAtElapsed: a malformed/missing leg returns null", function () {
+	assert.equal(stateAtElapsed({ ok: false }, 0), null);
+	assert.equal(stateAtElapsed(null, 0), null);
 });
 
 // ---- the arrival-tech catalog (ui/tech-options.js) --------------------------

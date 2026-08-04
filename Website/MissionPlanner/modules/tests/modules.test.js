@@ -13,7 +13,8 @@ import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import moonPlatform, { moonFigures } from "../moon-platform/moon-platform.js";
 import skyhook, { tetherKinematics, rotorFor } from "../orbital-skyhook/orbital-skyhook.js";
-import departureLeg, { computeDepartureLeg } from "../departure-leg/departure-leg.js";
+import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed }
+	from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
 import transferLeg, { computeLeg, stateAtElapsed, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
 import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
@@ -176,6 +177,44 @@ test("departure flight: a chain with no releasing carrier is a diagnostic", func
 	var leg = computeDepartureLeg({ waypoints: [] }, { base: "Moon", rotors: [] }, JD_ANCHOR);
 	assert.equal(leg.ok, false);
 	assert.equal(leg.diagnostic.code, "no-carrier");
+});
+
+// ---- departure-leg's stateAtElapsed (2.5's chevron position source) --------
+
+test("departure-leg stateAtElapsed: t=0 matches the release state", function () {
+	var leg = computeDepartureLeg({ waypoints: [] }, presetChainData(), JD_ANCHOR);
+	var s = depStateAtElapsed(leg, 0);
+	assert.ok(O.vMag(O.vSub(s.r, leg.samples[0].r)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.samples[0].v)) < 1e-6);
+});
+
+test("departure-leg stateAtElapsed: at the hand-off matches leg.handoff exactly", function () {
+	var leg = computeDepartureLeg({ waypoints: [] }, presetChainData(), JD_ANCHOR);
+	var s = depStateAtElapsed(leg, leg.handoff.tSoi);
+	assert.ok(O.vMag(O.vSub(s.r, leg.handoff.r)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.handoff.v)) < 1e-6);
+});
+
+test("departure-leg stateAtElapsed: crossing a waypoint impulse still lands on the hand-off", function () {
+	var leg = computeDepartureLeg({
+		waypoints: [{ t: 12 * 3600, burn: { pro: 300, rad: 0, nrm: 0 } }]
+	}, presetChainData(), JD_ANCHOR);
+	assert.equal(leg.ok, true);
+	var s = depStateAtElapsed(leg, leg.handoff.tSoi);
+	assert.ok(O.vMag(O.vSub(s.r, leg.handoff.r)) < 1);
+});
+
+test("departure-leg stateAtElapsed: clamps outside the flight's span to its nearest end", function () {
+	var leg = computeDepartureLeg({ waypoints: [] }, presetChainData(), JD_ANCHOR);
+	var before = depStateAtElapsed(leg, -1e6);
+	assert.ok(O.vMag(O.vSub(before.r, leg.samples[0].r)) < 1);
+	var after = depStateAtElapsed(leg, leg.handoff.tSoi + 1e6);
+	assert.ok(O.vMag(O.vSub(after.r, leg.handoff.r)) < 1);
+});
+
+test("departure-leg stateAtElapsed: a malformed/missing leg returns null", function () {
+	assert.equal(depStateAtElapsed({ ok: false }, 0), null);
+	assert.equal(depStateAtElapsed(null, 0), null);
 });
 
 // ---- computeLeg (pure chain) — unchanged by I3 ------------------------------

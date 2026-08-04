@@ -61,6 +61,7 @@ import { evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { buildIntegratedLeg, stateAtLegTime, localFrameAt, burnEffect,
          moonGeoPos, SOI_MOON, SOI_EARTH } from "../../../Shared/geo-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
+import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
@@ -286,6 +287,27 @@ function rememberLeg(world, stageId, leg) {
 	m.set(stageId, leg);
 }
 
+// State (r, v; geocentric m, m/s) at elapsed time t (s) since release
+// (leg.jd0) -- TRUE re-propagation via geo-leg's stateAtLegTime, walking
+// leg.segs to find which impulse-to-impulse sub-flight t falls in. Mirrors
+// transfer-leg.js's stateAtElapsed -- the drawn polyline's `samples` only
+// carry position, not velocity, which the chevron needs to orient along the
+// direction of travel. Clamped to [0, leg.handoff.tSoi]: each sub-leg's own
+// integration runs on past the hand-off (see computeDepartureLeg's header),
+// and the phase clock persists across a phase switch, so a stray t outside
+// the drawn (truncated) flight still resolves to the nearest end rather than
+// running past it.
+export function stateAtElapsed(leg, t) {
+	if (!leg || !leg.segs || !leg.segs.length) { return null; }
+	var tc = Math.max(0, Math.min(leg.handoff.tSoi, t));
+	var segs = leg.segs;
+	var seg = segs[segs.length - 1];
+	for (var i = 0; i < segs.length; i++) {
+		if (segs[i].tEnd === null || tc <= segs[i].tEnd) { seg = segs[i]; break; }
+	}
+	return stateAtLegTime(seg.leg, tc - seg.tStart);
+}
+
 export default {
 	id: "departure-leg",
 	title: "Departure leg",
@@ -436,6 +458,7 @@ export default {
 			if (o.children) { o.children.slice().forEach(disposeDeep); }
 			if (o.geometry) { o.geometry.dispose(); }
 			if (o.material) { o.material.dispose(); }
+			if (o.material && o.material.map) { o.material.map.dispose(); }
 		}
 		while (view.group.children.length) {
 			var c = view.group.children[0];
@@ -444,7 +467,7 @@ export default {
 		}
 		view.pxScaled = [];
 		var leg = legFor(snap.world, snap.stageId);
-		if (!leg || !leg.ok || snap.result.status !== "ok") { return; }
+		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
 
 		var pts = leg.samples.map(function (s) {
@@ -488,5 +511,23 @@ export default {
 			var dvArrow = makeBurnArrow(renderPos, wv.eff.dv, DV_COLOR, BURN_VEC_SCALE);
 			[spdArrow, dvArrow].forEach(function (a) { if (a) { view.group.add(a); } });
 		});
+
+		// The ship-marker chevron (2.5) -- same shell contract as transfer-leg's:
+		// no state of its own, positioned wherever the shared mission clock
+		// (snap.world.jd) sits along the flight, oriented along its own velocity.
+		// view.chevron is a stable slot mission-view.js's render loop re-reads
+		// every frame to keep the sprite screen-facing and constant-sized as the
+		// camera moves (draw() itself never gets the live camera).
+		var t = (snap.world.jd - leg.jd0) * DAY;
+		var s = stateAtElapsed(leg, t);
+		if (s) {
+			var chevron = makeShipSprite();
+			chevron.position.set(s.r[0] / U, s.r[1] / U, s.r[2] / U);
+			view.group.add(chevron);
+			view.chevron = { sprite: chevron,
+				velDir: new THREE.Vector3(s.v[0], s.v[1], s.v[2]).normalize() };
+		} else {
+			view.chevron = null;
+		}
 	}
 };

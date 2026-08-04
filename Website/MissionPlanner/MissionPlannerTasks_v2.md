@@ -126,7 +126,7 @@ or the savings evaporate.
   divided by approach speed, clamped to 2–5 days, measured back from closest
   approach rather than from the plotted arrival date.
 
-### WP-2 — The ship card
+### WP-2
 
 The design's central new interaction, and where "on course" is signalled. The
 Departure context defines the success condition the other two borrow.
@@ -162,9 +162,7 @@ Departure context defines the success condition the other two borrow.
   required v∞ (v² = v∞² + 2μ/r). Speed reads the flown arc through a new
   `legFor` accessor added to both departure-leg descriptors (the same
   registry-reached pattern `frozen-plan` uses for `complianceFor`), so it works
-  for an Earth origin and a generic body origin alike. **The yellow
-  required-heading arrow at the trajectory's hand-off end is 2.5's**, not built
-  here.
+  for an Earth origin and a generic body origin alike. **
 - [ ] **2.3 Coast context.** ★★
   Prograde speed; distance at closest approach; the angle separating the ship's
   and the destination's vectors; the delivered arrival-heading arrow against an
@@ -175,11 +173,21 @@ Departure context defines the success condition the other two borrow.
 - [ ] **2.4 Arrival context.** ★★
   Ship speed at the chevron. Reserve the layout for approach data against a
   capture platform (open question — see below).
-- [ ] **2.5 Chevron on the departure and arrival trajectories.** ★★
-  Driven by the phase clock, as the coast chevron already is. Includes the
-  yellow required-heading arrow at the departure trajectory's hand-off end.
+- [x] **2.5 Chevron on the departure and arrival trajectories.** ★★
+  `departure-leg.js`, `body-departure-leg.js` (the generic non-Earth origin
+  sibling), and `arrival-leg.js` each gained their own `stateAtElapsed(leg, t)`
+  (Node-tested) and a `draw()`-time chevron, exact copies of transfer-leg's
+  existing pattern: no state of its own, positioned at `snap.world.jd` via a
+  true re-propagation (position AND velocity, for orientation), clamped to the
+  leg's own drawn span so a clock left outside it (the phase clock persists
+  across a phase switch) still resolves to the nearest end. `view.chevron` is
+  the same generic slot `mission-view.js`'s render loop, click-to-focus, and
+  camera-follow already read off any stage — no shell changes needed, per the
+  code's own "not yet drawn anywhere" comment at the pick-chevron call site.
+- [ ] **2.6 Required heading arrow**
+  Put a yellow required-heading arrow at the departure trajectory's hand-off end, showing it in heliocentric terms (?).
 
-### WP-3 — Panes, floats and camera
+### WP-3
 
 - [x] **3.1 Draggable floating panes.** ★★
   `mission-view.js`'s `bindFloatDrag` (pointerdown/move/up, a >3px move
@@ -226,25 +234,32 @@ Departure context defines the success condition the other two borrow.
   moved more than 3px, so a rotate-drag no longer ends by swapping the float
   into the main pane; `user-select: none` stops the drag selecting pane text.
 - [ ] **3.5 Click-to-focus and follow.** ★★
-  Clicking a body, the chevron, or an × mark focuses the camera there and
-  orbits/zooms around it until a click elsewhere in the pane restores default
-  movement; clicking the chevron also makes the camera follow it as its
-  timeline is scrubbed. In Arrival, double-clicking the destination zooms in
-  and rotates around it. Clicking a tech platform zooms close enough to watch
+  Clicking a tech platform zooms close enough to watch
   it respond to parameter changes.
 - [ ] **3.6 Dimmer trajectory extension, drawn consistently.** ★
   The ~10°-past-the-destination continuation is currently drawn sometimes and
   not others. Make it unconditional wherever a leg has a destination.
 
-### WP-4 — Ephemeris tab
+### WP-4
 
-- [ ] **4.1 Remove the Track mode.** ★
+- [x] **4.1 Remove the Track mode.** ★
   Kim: unused in practice. Removes a mode from the marker card's state
   machine and its help text.
-- [ ] **4.2 Shift-click Free keeps the target impulse values.** ★
+  `Shared/sim/marker-card.js`'s button row now takes an optional `opts.modes`
+  override (defaulting to Free/Track/Target, unchanged for the standalone
+  plotters that still use Track); Mission Planner's `ephemeris-view.js` passes
+  `[["free","Free"],["target","Target"]]`, drops the `track` branch from
+  `updateMarker`, and updates the mode-title/comment text accordingly.
+- [x] **4.2 Shift-click Free keeps the target impulse values.** ★
   Plain Free restores the user's pre-target values, as now.
-- [ ] **4.3 Rename 'dive in' to 'with flyby'.** ★
+  `marker-card.js`'s mode-button click handler now passes the event through;
+  `ephemeris-view.js`'s `setMarkerMode(mode, keepBurn)` skips the burn/position
+  restore when `keepBurn` is true, wired from `onModeClick`'s `e.shiftKey`.
+- [x] **4.3 Rename 'dive in' to 'with flyby'.** ★
   In the departure-course field and anywhere the phrase surfaces.
+  Display text and tooltip only (`ephemeris-view.js`); the internal
+  `"dive-in"` profile value is unchanged, so `departure-estimate.js` and its
+  tests are untouched.
 - [ ] **4.4 Add-waypoint places the waypoint at the chevron.** ★
   In the departure phase's sidebar, "add waypoint" creates it at the chevron's
   current location rather than a fixed default.
@@ -252,7 +267,7 @@ Departure context defines the success condition the other two borrow.
   Copied link data pasted back after a restart must reload the mission
   parameters. Verify the round trip and harden whatever doesn't survive.
 - [ ] **4.6 Bodies must move as the marker slider is scrubbed.** ★★
-  Bug, not a design question. `updateMarker()` moves the chevron and the
+  `updateMarker()` moves the chevron and the
   destination × mark along the trajectory by `tof` (time past
   `dateState.jd`), and even labels the × with the resulting arrival date —
   but never calls `frame.place()`, so the planets stay frozen at
@@ -275,7 +290,7 @@ Departure context defines the success condition the other two borrow.
   equivalent, ad-hoc raycast-only picker (3.5), fixing the same precision gap
   there.
 
-### WP-5 — Departure sidebar and technology
+### WP-5
 
 - [ ] **5.1 Parameter interfaces on tech cards.** ★★ (per platform)
   Each loaded technology card gets the controls that set the impulse it
@@ -292,7 +307,7 @@ Departure context defines the success condition the other two borrow.
 - [ ] **5.4 Simple platform renderings.** ★★ (per platform)
   Enough geometry to show how a platform works and where the ship starts from.
 
-### WP-6 — Coast refinement
+### WP-6
 
 - [ ] **6.1 Constrained fine-tune waypoint card.** ★★★
   Per the settled rules: ±100 m/s axes at 0.1 m/s steps with shift-drag,
@@ -303,11 +318,11 @@ Departure context defines the success condition the other two borrow.
   Update enables only when the working state's outcome beats the snapshot's —
   closer at the recalculated closest approach, or better vector alignment
   without leaving the 0.0002 AU innermost ring. Depends on 6.1.
-- [ ] **6.3 Add coast waypoints when none exist.** ★
+- [ ] **6.3 Adding coast waypoints if none exist.** ★
   First at the trajectory midpoint, second halfway along the remainder; then
   they behave as above.
 
-### WP-7 — Arrival phase
+### WP-7
 
 - [ ] **7.1 Rebuild the arrival leg as the true continuation of the coast.** ★★★
   `modules/arrival-leg/` currently constructs a *reference* flyby — one day
@@ -334,7 +349,7 @@ Departure context defines the success condition the other two borrow.
   trajectory segment inside the atmosphere, with waypoint burns tunable there.
   Source: `Calculators/Earth-Aerobrake-Calculator/`.
 
-### WP-8 — Platform library and calculator links
+### WP-8
 
 - [ ] **8.1 Platform module shape: shared spec + role adapters.** ★★★
   Per the settled rule. Migrate the skyhook onto it first — `arrival-skyhook.js`
@@ -358,7 +373,7 @@ Departure context defines the success condition the other two borrow.
   aerobrake. Each arrives with whichever roles apply. Calculator sources are
   listed in the inventory below.
 
-### WP-9 — Shell and missions
+### WP-9
 
 - [ ] **9.1 Example-mission dropdown.** ★★
   The top pane's button for opening a mission from a small set of curated

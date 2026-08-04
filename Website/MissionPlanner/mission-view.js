@@ -652,9 +652,9 @@ export function createMissionView(opts) {
 	// already promotes it synchronously (see bindFloatDrag above), which would
 	// race onPick's deferred timer, so floats keep the lock read-only via
 	// lockedZoomTarget, sharing whatever the frame's main pane last focused.
-	// Chevrons are read generically off stageViews, so a departure or arrival
-	// chevron (2.5, not yet drawn anywhere) becomes clickable the moment one
-	// exists, with no change needed here. Body picking itself is
+	// Chevrons are read generically off stageViews, so the departure and
+	// arrival legs' own chevrons (2.5) are clickable here with no change
+	// needed, same as the coast leg's. Body picking itself is
 	// body-renderer.js's pickBodyName — a body far/small enough to have
 	// collapsed to updateScales' bright point is a sub-pixel target for an
 	// exact hit-test, so it falls back to nearest-centre-within-PICK_PX. Only

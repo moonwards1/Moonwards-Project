@@ -13,7 +13,8 @@ import { createEngine } from "../../core/recompute.js";
 import orbitalSkyhook, {
 	tetherKinematics, rotorFor, defaultGeometryFor, satelliteOrbitRadius, resolveParams
 } from "../orbital-skyhook/orbital-skyhook.js";
-import bodyDepartureLeg, { computeBodyDepartureLeg } from "../body-departure-leg/body-departure-leg.js";
+import bodyDepartureLeg, { computeBodyDepartureLeg, stateAtElapsed }
+	from "../body-departure-leg/body-departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
 import { evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { bodySOI } from "../../../Shared/body-leg.js";
@@ -124,6 +125,38 @@ test("computeBodyDepartureLeg: a waypoint impulse re-shapes the flight and its h
 	assert.ok(Math.abs(boosted.totalDv - 500) < 1e-6, "totalDv tracks the impulse");
 	assert.ok(boosted.wpVisuals[0] && boosted.wpVisuals[0].eff, "waypoint visual computed");
 	assert.ok(Math.abs(boosted.wpVisuals[0].eff.progradeDv - 0.5) < 1e-6, "prograde Δv readout");
+});
+
+// ---- stateAtElapsed (2.5's chevron position source) ------------------------
+
+test("body-departure-leg stateAtElapsed: t=0 matches the release state", function () {
+	var params = { body: "Mars", releasePhaseDeg: 40 };
+	var leg = computeBodyDepartureLeg({ waypoints: [] }, marsChain(params, JD_ANCHOR), JD_ANCHOR);
+	var s = stateAtElapsed(leg, 0);
+	assert.ok(O.vMag(O.vSub(s.r, leg.samples[0].r)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.samples[0].v)) < 1e-6);
+});
+
+test("body-departure-leg stateAtElapsed: at the hand-off matches leg.handoff exactly", function () {
+	var params = { body: "Mars", releasePhaseDeg: 40 };
+	var leg = computeBodyDepartureLeg({ waypoints: [] }, marsChain(params, JD_ANCHOR), JD_ANCHOR);
+	var s = stateAtElapsed(leg, leg.handoff.tSoi);
+	assert.ok(O.vMag(O.vSub(s.r, leg.handoff.r)) < 1);
+	assert.ok(O.vMag(O.vSub(s.v, leg.handoff.v)) < 1e-6);
+});
+
+test("body-departure-leg stateAtElapsed: clamps outside the flight's span to its nearest end", function () {
+	var params = { body: "Mars", releasePhaseDeg: 40 };
+	var leg = computeBodyDepartureLeg({ waypoints: [] }, marsChain(params, JD_ANCHOR), JD_ANCHOR);
+	var before = stateAtElapsed(leg, -1e6);
+	assert.ok(O.vMag(O.vSub(before.r, leg.samples[0].r)) < 1);
+	var after = stateAtElapsed(leg, leg.handoff.tSoi + 1e6);
+	assert.ok(O.vMag(O.vSub(after.r, leg.handoff.r)) < 1);
+});
+
+test("body-departure-leg stateAtElapsed: a malformed/missing leg returns null", function () {
+	assert.equal(stateAtElapsed({ ok: false }, 0), null);
+	assert.equal(stateAtElapsed(null, 0), null);
 });
 
 // ---- diagnostics -----------------------------------------------------------

@@ -308,6 +308,11 @@ function makeCardDraggable(card, handle) {
 //   hostEl,                      // element to append the card to
 //   sliderTitle,                 // tooltip text for the angle slider
 //   modeTitles: { free, track, target },  // tooltip text per mode button
+//   modes,                        // optional [[value,label],...] override;
+//                                  // defaults to Free/Track/Target for the
+//                                  // standalone plotters -- Mission Planner
+//                                  // passes [["free","Free"],["target","Target"]]
+//                                  // (Track mode dropped there, WP-4.1)
 //   rows: [{ key, label }, ...], // readout rows in display order; a row
 //                                // whose key is "rad" gets an extra
 //                                // ".km" sub-line appended right after it
@@ -346,11 +351,11 @@ export function buildMarkerCard(opts) {
 
 	var modeRow = document.createElement("div"); modeRow.className = cls + "-marker-mode";
 	var modeBtns = {};
-	[["free", "Free"], ["track", "Track"], ["target", "Target"]].forEach(function (m) {
+	(opts.modes || [["free", "Free"], ["track", "Track"], ["target", "Target"]]).forEach(function (m) {
 		var b = document.createElement("button");
 		b.type = "button"; b.className = cls + "-mode-btn"; b.textContent = m[1];
 		b.title = opts.modeTitles[m[0]];
-		b.addEventListener("click", function () { opts.onModeClick(m[0]); });
+		b.addEventListener("click", function (e) { opts.onModeClick(m[0], e); });
 		modeBtns[m[0]] = b; modeRow.appendChild(b);
 	});
 	card.appendChild(modeRow);

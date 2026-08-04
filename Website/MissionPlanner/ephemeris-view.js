@@ -29,8 +29,8 @@
  * by X AU" check — with no defined arrival time, "did you arrive on time" is not
  * yet a coherent question. Judging an encounter is the ship marker's job.
  *
- * THE SHIP MARKER is a slidable probe on the drawn path with Free / Track /
- * Target modes, plus the destination-at-arrival "×" and the
+ * THE SHIP MARKER is a slidable probe on the drawn path with Free / Target
+ * modes, plus the destination-at-arrival "×" and the
  * temporal-proximity ring (both inside updateDestinationMarker). The
  * mechanical layer — sprites, card skeleton, slider physics, the
  * closest-approach search — is Shared/sim/marker-card.js; the mode state
@@ -120,9 +120,9 @@ var BURN_VEC_SCALE = 0.03;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var dvHex = "#ff5fd0", spdHex = "#ffd24a";
 
-// Marker proximity thresholds. APPROACH_FAR doubles as Track mode's "inside an
-// encounter ring" engagement distance, and as the space ring's own farthest
-// tier (just below).
+// Marker proximity thresholds. APPROACH_FAR doubles as released Target mode's
+// "inside an encounter ring" engagement distance, and as the space ring's own
+// farthest tier (just below).
 var APPROACH_FAR = 0.004 * AU;   // m
 // Orbit-approach ring tiers: distance from the drawn path to a candidate body's
 // orbit *ring*, independent of whether the body is there
@@ -205,7 +205,7 @@ export function createEphemerisView(opts) {
 			legDays: 0,
 			destination: legDefaults.destination
 		},
-		marker: null,          // { f0, angle (deg), mode: "free"|"track"|"target", dvBudget, ... }
+		marker: null,          // { f0, angle (deg), mode: "free"|"target", dvBudget, ... }
 		markerFocused: false,  // camera pivots on the marker
 		destFocused: false     // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
 	};
@@ -393,10 +393,10 @@ export function createEphemerisView(opts) {
 	var profileLab = document.createElement("label"); profileLab.textContent = "departure course";
 	profileRow.appendChild(profileLab);
 	var profileSel = document.createElement("select");
-	profileSel.title = "How the departure leg leaves Earth's system: dive-in drops to a low-perigee " +
+	profileSel.title = "How the departure leg leaves Earth's system: with flyby drops to a low-perigee " +
 		"Oberth pass first, direct-out climbs straight out. Auto picks by where the Moon sits " +
 		"(dive when it's within the 75° wedge opposite the exit heading).";
-	[["auto", "auto"], ["dive-in", "dive-in"], ["direct-out", "direct-out"]].forEach(function (d) {
+	[["auto", "auto"], ["dive-in", "with flyby"], ["direct-out", "direct-out"]].forEach(function (d) {
 		var opt = document.createElement("option"); opt.value = d[0]; opt.textContent = d[1];
 		profileSel.appendChild(opt);
 	});
@@ -671,8 +671,8 @@ export function createEphemerisView(opts) {
 	}
 
 	// =======================================================================
-	//  Ship marker: a slidable probe on the drawn trajectory, with Free / Track
-	//  / Target modes, over this view's trajSegs/trajTotalT representation.
+	//  Ship marker: a slidable probe on the drawn trajectory, with Free / Target
+	//  modes, over this view's trajSegs/trajTotalT representation.
 	//  Mechanics (sprites, card skeleton, slider physics, the closest-approach
 	//  search) come from Shared/sim/marker-card.js; placement is click-to-place
 	//  on the drawn path (see handlePick below), with no placement button.
@@ -722,7 +722,7 @@ export function createEphemerisView(opts) {
 
 	// Keep the marker glued to the destination-orbit crossing while it is
 	// inside an encounter ring; freeze when out of range
-	// (Shared/sim/marker-card.js). Used by Track mode and released Target.
+	// (Shared/sim/marker-card.js). Used by released Target.
 	function followCrossing() {
 		if (!state.marker || !trajSegs.length) { return; }
 		var dn = state.leg.destination;
@@ -817,11 +817,11 @@ export function createEphemerisView(opts) {
 	// different absolute times under the solved arc vs the manual arc, so
 	// feeding a drifted fraction back in would walk the arrival date — and
 	// the required Δv — further each round trip until it released.
-	function setMarkerMode(mode) {
+	function setMarkerMode(mode, keepBurn) {
 		var m = state.marker;
 		if (!m) { return; }
 		var term = terminalBurnRef().burn;
-		if (m.mode === "target" && mode !== "target" && m._baseBurn) {
+		if (m.mode === "target" && mode !== "target" && m._baseBurn && !keepBurn) {
 			term.pro = m._baseBurn.pro; term.rad = m._baseBurn.rad; term.nrm = m._baseBurn.nrm;
 			m._baseBurn = null;
 			if (m._savedF0 != null) { m.f0 = m._savedF0; m.angle = m._savedAngle; m._savedF0 = null; }
@@ -1020,9 +1020,9 @@ export function createEphemerisView(opts) {
 			sliderTitle: "drag to slide the marker along the whole path (0° = where it was placed); "
 				+ "~10× more mouse travel than the track for fine control, ×4 finer again with Shift. "
 				+ "Arrow keys nudge by ⅓° (¹⁄₁₂° with Shift) when focused.",
+			modes: [["free", "Free"], ["target", "Target"]],   // no Track mode here (WP-4.1)
 			modeTitles: {
 				free: "slide the marker freely",
-				track: "follow the destination orbit crossing while within an encounter ring (burns fixed)",
 				target: "re-solve the terminal burn (Lambert) to hold the encounter as the date scrubs; releases above the Δv budget"
 			},
 			rows: [
@@ -1039,7 +1039,7 @@ export function createEphemerisView(opts) {
 			removeTitle: "Delete marker and start fresh",
 			onSliderChange: function (a) { if (state.marker) { state.marker.angle = a; updateMarker(); } },
 			onRemove: function () { removeMarker(); },
-			onModeClick: function (mode) { setMarkerMode(mode); },
+			onModeClick: function (mode, e) { setMarkerMode(mode, !!(e && e.shiftKey)); },
 			onBudgetChange: function (dvBudget) { if (state.marker) { state.marker.dvBudget = dvBudget; refresh(); } }
 		});
 		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
@@ -1308,12 +1308,11 @@ export function createEphemerisView(opts) {
 		}
 		if (!state.marker.mode) { state.marker.mode = "free"; }
 		if (!markerSprite) { markerSprite = makeShipSprite(); frame.scene.add(markerSprite); }
-		if (state.marker.mode === "track") { followCrossing(); }
-		else if (state.marker.mode === "target") {
+		if (state.marker.mode === "target") {
 			if (!state.marker._released && state.marker._encT != null && trajTotalT > 0) {
 				state.marker.f0 = Math.max(0, Math.min(1, state.marker._encT / trajTotalT));
 				state.marker.angle = 0;                          // sit at the solved encounter
-			} else { followCrossing(); }                         // released -> behave like Track
+			} else { followCrossing(); }                         // released -> falls back to geometric tracking
 		}
 
 		var f = mcMarkerFraction(state.marker.f0, state.marker.angle);
@@ -1348,7 +1347,7 @@ export function createEphemerisView(opts) {
 
 		updateDestinationMarker(s.r, tof);
 
-		mk.slider.disabled = (state.marker.mode !== "free");      // position driven in Track/Target
+		mk.slider.disabled = (state.marker.mode !== "free");      // position driven in Target mode
 		if (document.activeElement !== mk.slider) { mk.slider.value = state.marker.angle; }
 
 		// Target-mode controls/readouts (budget input + solved Δv); hidden otherwise
