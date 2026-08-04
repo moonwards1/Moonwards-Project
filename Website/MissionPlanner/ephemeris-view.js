@@ -79,7 +79,8 @@ import { OrbitalMath } from "../Shared/math-utils.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import {
-	updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName
+	updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName,
+	soiRadiusAU, projectedRadiusPx
 } from "../Shared/sim/body-renderer.js";
 import { createWaypointGizmo, makeBurnArrow } from "../Shared/sim/burn-widget.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
@@ -220,7 +221,7 @@ export function createEphemerisView(opts) {
 	var trajTotalT = 0;       // total drawn-leg duration (s)
 	var trajSampleCount = 0;  // polyline sample count (sets followCrossing's search window)
 	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input
-	var markerSprite = null, destSprite = null, tempRing = null;
+	var markerSprite = null, destSprite = null, destSoi = null, tempRing = null;
 	var orbitApproachMarks = [];   // hollow-ring sprites where the path nears a body's orbit
 	var markerVelDir = null;  // THREE.Vector3 — ship heading, for the sprite's per-frame orientation
 	var mk = null;            // the built marker card's refs (Shared/sim/marker-card.js)
@@ -927,18 +928,36 @@ export function createEphemerisView(opts) {
 		var dn = state.leg.destination;
 		if (!dn) {
 			if (destSprite) { destSprite.visible = false; }
+			if (destSoi) { destSoi.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
 			if (mk) { mk.vals.phase.textContent = "—"; }
 			updateStartMissionButton({ hasDest: false });
 			return;
 		}
-		var orbit = systems.get(dn).orbit;
+		var destSys = systems.get(dn);
+		var orbit = destSys.orbit;
 		var arrJd = dateState.jd + tofSec / DAY;
 		var b = O.bodyStateAtJD(GM_SUN, orbit, arrJd);
 		if (!destSprite) { destSprite = makeXMarkSprite(); destSprite.renderOrder = 13; frame.scene.add(destSprite); }
 		destSprite.visible = true;
-		destSprite.material.color.set(systems.get(dn).color || "#ffffff");
+		destSprite.material.color.set(destSys.color || "#ffffff");
 		destSprite.position.set(b.r[0] / AU, b.r[1] / AU, b.r[2] / AU);
+
+		// A translucent sphere at the destination's true SOI radius, centred on
+		// the same arrival point as the "×" — gives the marker's space-ring
+		// proximity check (nearOrbit/APPROACH_FAR below) a visual sense of scale
+		// against the body's actual capture zone.
+		if (!destSoi) {
+			destSoi = new THREE.Mesh(
+				new THREE.SphereGeometry(1, 24, 16),
+				new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, depthWrite: false }));
+			destSoi.renderOrder = 12;
+			frame.scene.add(destSoi);
+		}
+		destSoi.visible = true;
+		destSoi.material.color.set(destSys.color || "#ffffff");
+		destSoi.position.copy(destSprite.position);
+		destSoi.scale.setScalar(soiRadiusAU(destSys, SUN.mass, AU));
 
 		var distToOrbit = orbit.e < 1 ? O.distanceToOrbit(orbit, markerR) : Infinity;
 		var nearOrbit = distToOrbit < APPROACH_FAR;
@@ -1281,6 +1300,7 @@ export function createEphemerisView(opts) {
 		if (!state.marker) {
 			if (markerSprite) { markerSprite.visible = false; }
 			if (destSprite) { destSprite.visible = false; }
+			if (destSoi) { destSoi.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
 			setCardEmpty(true);
 			updateStartMissionButton({ noMarker: true });
@@ -1302,6 +1322,7 @@ export function createEphemerisView(opts) {
 		if (!s) {
 			markerSprite.visible = false;
 			if (destSprite) { destSprite.visible = false; }
+			if (destSoi) { destSoi.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
 			setCardEmpty(true);
 			setHint("No drawn trajectory to probe — fix the leg, then click it to place a marker.");
@@ -1714,6 +1735,13 @@ export function createEphemerisView(opts) {
 		}
 		if (destSprite && destSprite.visible) {
 			destSprite.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, destSprite.position, 22));
+		}
+		if (destSoi) {
+			destSoi.visible = !!(destSprite && destSprite.visible && frame.wantSOI);
+			if (destSoi.visible) {
+				var soiDist = frame.camera.position.distanceTo(destSoi.position) || 1e-9;
+				destSoi.visible = projectedRadiusPx(frame.camera, paneMainEl, destSoi.scale.x, soiDist) >= 2.0;
+			}
 		}
 		if (tempRing && tempRing.visible) { scaleApproachMark(frame.camera, paneMainEl, tempRing); }
 		orbitApproachMarks.forEach(function (sp) { scaleApproachMark(frame.camera, paneMainEl, sp); });
