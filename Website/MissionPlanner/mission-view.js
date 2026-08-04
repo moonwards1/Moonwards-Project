@@ -45,7 +45,7 @@ import { packMissionLink } from "./ui/share-link.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
-import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
+import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider, createArrivalSlider } from "./ui/phase-slider.js";
 import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed } from "./ui/ship-card.js";
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
@@ -304,6 +304,7 @@ export function createMissionView(opts) {
 			f.cam.radius = c.radius; f.cam.theta = c.theta; f.cam.phi = c.phi;
 			f.cam.target.fromArray(c.target);
 			f.focusBody = c.focusBody || null;
+			f.focusChevron = c.focusChevron || null;
 		});
 	})();
 
@@ -312,7 +313,8 @@ export function createMissionView(opts) {
 		Object.keys(frames).forEach(function (id) {
 			var f = frames[id];
 			cams[id] = { radius: f.cam.radius, theta: f.cam.theta, phi: f.cam.phi,
-			             target: f.cam.target.toArray(), focusBody: f.focusBody };
+			             target: f.cam.target.toArray(), focusBody: f.focusBody,
+			             focusChevron: f.focusChevron || null };
 		});
 		saveWorkspaceSlot(missionId, { main: workspace.main, phase: workspace.phase, cams: cams });
 	}
@@ -490,7 +492,15 @@ export function createMissionView(opts) {
 					return raycastPickPoint(f.camera, el, e,
 						{ meshes: f.pickMeshes, soiSpheres: f.pickSoiSpheres });
 				},
-				onPan: function () { f.focusBody = null; }
+				// Picking (onPick/onDoubleClick) is main-pane only, per 3.5: a plain
+				// click on a float promotes it (see the capture-phase handler above),
+				// synchronously and before onPick's deferred timer would ever fire, so
+				// wiring click-to-focus here would race that promotion and land on
+				// whatever frame the pane swapped to. lockedZoomTarget still applies —
+				// it's read-only and keys off the frame's own focus state, which a
+				// float shares with whichever pane last had this frame as main.
+				lockedZoomTarget: function () { return focusTargetOf(f, pane.frameId); },
+				onPan: function () { f.focusBody = null; f.focusChevron = null; }
 			};
 		});
 		floatCameraUnbinds.push(unbindFloatCamera);
@@ -635,8 +645,108 @@ export function createMissionView(opts) {
 		});
 	});
 
+	// ---- click-to-focus picking (3.5). A body or a leg's chevron becomes the
+	// orbit/zoom pivot on a plain click in the main pane; a click on empty
+	// space releases it, same as a pan does. onPick/onDoubleClick are wired on
+	// the main pane's camera binding only (below) — a float's plain click
+	// already promotes it synchronously (see bindFloatDrag above), which would
+	// race onPick's deferred timer, so floats keep the lock read-only via
+	// lockedZoomTarget, sharing whatever the frame's main pane last focused.
+	// Chevrons are read generically off stageViews, so a departure or arrival
+	// chevron (2.5, not yet drawn anywhere) becomes clickable the moment one
+	// exists, with no change needed here. Body picking itself is
+	// body-renderer.js's pickBodyName — a body far/small enough to have
+	// collapsed to updateScales' bright point is a sub-pixel target for an
+	// exact hit-test, so it falls back to nearest-centre-within-PICK_PX.
+	var PICK_PX = 10;
+
+	function chevronsInFrame(frameId) {
+		var list = [];
+		Object.keys(stageViews).forEach(function (stageId) {
+			stageViews[stageId].forEach(function (view) {
+				if (view.frame === frameId && view.chevron) { list.push({ stageId: stageId, chevron: view.chevron }); }
+			});
+		});
+		return list;
+	}
+
+	function pickChevronAt(frame, frameId, el, e) {
+		var rect = el.getBoundingClientRect();
+		var px = e.clientX - rect.left, py = e.clientY - rect.top;
+		var best = null, bestD = PICK_PX;
+		chevronsInFrame(frameId).forEach(function (c) {
+			var p = c.chevron.sprite.position.clone().project(frame.camera);
+			if (p.z > 1) { return; }
+			var sx = (p.x * 0.5 + 0.5) * rect.width, sy = (-p.y * 0.5 + 0.5) * rect.height;
+			var d = Math.hypot(sx - px, sy - py);
+			if (d < bestD) { bestD = d; best = c; }
+		});
+		return best;
+	}
+
+	// The live pivot for the CURRENT focus lock, re-read every call so a
+	// locked zoom (and the chevron follow in updateChevrons below) tracks a
+	// moving target rather than a snapshot position.
+	function focusTargetOf(frame, frameId) {
+		if (frame.focusChevron) {
+			var hit = null;
+			chevronsInFrame(frameId).some(function (c) {
+				if (c.stageId !== frame.focusChevron) { return false; }
+				hit = c; return true;
+			});
+			return hit ? hit.chevron.sprite.position : null;
+		}
+		if (frame.focusBody) {
+			var node = frame.bodyNode(frame.focusBody);
+			return node ? node.position : null;
+		}
+		return null;
+	}
+
+	function pickFocus(pane) {
+		return function (e) {
+			var frameId = pane.frameId, f = frames[frameId];
+			var chev = pickChevronAt(f, frameId, pane.el, e);
+			if (chev) {
+				f.focusBody = null; f.focusChevron = chev.stageId;
+				f.cam.target.copy(chev.chevron.sprite.position);
+				saveWorkspace();
+				return;
+			}
+			var name = pickBodyName(f.camera, pane.el, e, f.scaleList, PICK_PX);
+			if (name) {
+				f.focusChevron = null; f.focusBody = name;
+				var node = f.bodyNode(name);
+				if (node) { f.cam.target.copy(node.position); }
+				saveWorkspace();
+				return;
+			}
+			// empty space: release the lock, same as a pan
+			f.focusBody = null; f.focusChevron = null;
+			saveWorkspace();
+		};
+	}
+
+	// In Arrival, double-clicking the destination pulls the view in closer as
+	// well as focusing it; everywhere else this is a no-op on top of the
+	// single-click focus above.
+	function pickArrivalDoubleClick(pane) {
+		return function (e) {
+			if (!pane.isMain || workspace.phase !== "arrival") { return; }
+			var f = frames[pane.frameId];
+			var name = pickBodyName(f.camera, pane.el, e, f.scaleList, PICK_PX);
+			if (name !== arrivalBody) { return; }
+			f.focusChevron = null; f.focusBody = name;
+			var node = f.bodyNode(name);
+			if (node) { f.cam.target.copy(node.position); }
+			f.cam.radius = Math.max(f.zoomMin, f.cam.radius * 0.35);
+			saveWorkspace();
+		};
+	}
+
 	// ---- camera controls: bound once, on this view's main pane; the config
-	// follows whichever frame is main (floats are click-to-swap only) ----------
+	// follows whichever frame is main. Floats get their own binding, on the
+	// same frame-swap-aware pattern, where the panes are built above. ---------
 	var unbindCamera = bindCameraControls(paneMainEl, function () {
 		var f = frames[workspace.main];
 		return {
@@ -646,7 +756,10 @@ export function createMissionView(opts) {
 				return raycastPickPoint(f.camera, paneMainEl, e,
 					{ meshes: f.pickMeshes, soiSpheres: f.pickSoiSpheres });
 			},
-			onPan: function () { f.focusBody = null; }
+			lockedZoomTarget: function () { return focusTargetOf(f, workspace.main); },
+			onPan: function () { f.focusBody = null; f.focusChevron = null; },
+			onPick: pickFocus(mainPane),
+			onDoubleClick: pickArrivalDoubleClick(mainPane)
 		};
 	});
 
@@ -1756,6 +1869,10 @@ export function createMissionView(opts) {
 					chevron.sprite.scale.setScalar(
 						worldSizeAtPointForPx(frame.camera, paneMainEl, chevron.sprite.position, CHEVRON_PX));
 					orientMarkerSprite(frame.camera, chevron.sprite, chevron.velDir);
+					// 3.5's chevron follow: recentre the lock every tick, not just on
+					// jd changes, so a click-focused chevron stays the pivot while its
+					// own phase's timeline is scrubbed.
+					if (frame.focusChevron === stageId) { frame.cam.target.copy(chevron.sprite.position); }
 				}
 				if (view.pxScaled) {
 					view.pxScaled.forEach(function (g) {

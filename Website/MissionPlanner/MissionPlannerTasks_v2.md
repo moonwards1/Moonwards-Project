@@ -260,6 +260,20 @@ Departure context defines the success condition the other two borrow.
   claims it will be. `onSliderChange` (and `followCrossing`/Target-mode's
   own moves) need to advance body positions to `dateState.jd + tof/DAY` in
   step with the marker, in `ephemeris-view.js`.
+- [x] **4.7 Click-to-focus and follow on bodies.** ★★
+  Clicking a body (any HELIO_BODIES entry, or the Sun) makes it the orbit/zoom
+  pivot and keeps the camera on it as the ephemeris date scrubs; a click on
+  empty space releases the lock, same as a pan. Lower priority than the
+  existing marker-sprite refocus and trajectory-sample marker placement, so
+  neither changes behaviour — a body pick only runs once both of those miss.
+  `Shared/sim/body-renderer.js`'s `pickBodyName` does the hit-test: an exact
+  mesh hit first, falling back to the nearest body centre within 10px, since a
+  Kepler body at typical solar-system zoom is a sub-pixel target for an exact
+  raycast. `ephemeris-view.js`'s `handlePick` calls it after the trajectory
+  check fails; `frame.focusBody` and `lockedZoomTarget` already existed
+  (unused) for this. The same `pickBodyName` replaced Mission Planner's
+  equivalent, ad-hoc raycast-only picker (3.5), fixing the same precision gap
+  there.
 
 ### WP-5 — Departure sidebar and technology
 

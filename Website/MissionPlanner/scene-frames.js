@@ -115,8 +115,9 @@ export function buildHelioFrame() {
 		scaleList: scaleList, labelList: labelList, labelLayer: labelLayer,
 		wantSOI: true,
 		focusBody: null,
+		focusChevron: null,
 		pickMeshes: pickMeshes, pickSoiSpheres: pickSoiSpheres,
-		bodyNode: function (name) { return bodyGroups[name] || null; },
+		bodyNode: function (name) { return name === "Sun" ? sunBody.group : (bodyGroups[name] || null); },
 		place: function (jd) {
 			HELIO_BODIES.forEach(function (name) {
 				var s = O.bodyStateAtJD(GM_SUN, systems.get(name).orbit, jd);
@@ -224,6 +225,7 @@ export function buildBodyFrame(name) {
 		scaleList: scaleList, labelList: labelList, labelLayer: labelLayer,
 		wantSOI: false,
 		focusBody: name,
+		focusChevron: null,
 		pickMeshes: [heroCore],
 		pickSoiSpheres: [],
 		bodyNode: function (bodyName) { return bodyName === name ? heroGroup : null; },
@@ -312,6 +314,7 @@ export function buildEarthMoonFrame() {
 		scaleList: scaleList, labelList: labelList, labelLayer: labelLayer,
 		wantSOI: false,
 		focusBody: "Moon",   // keeps the skyhook in view as the date moves; pan releases
+		focusChevron: null,
 		pickMeshes: [earthCore, moonCore],
 		pickSoiSpheres: [{ center: moonNode.position, radius: 40, nearFaceRadius: MOON.radius / U }],
 		bodyNode: function (name) {

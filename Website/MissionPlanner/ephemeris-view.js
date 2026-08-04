@@ -79,7 +79,7 @@ import { OrbitalMath } from "../Shared/math-utils.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import {
-	updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx
+	updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName
 } from "../Shared/sim/body-renderer.js";
 import { createWaypointGizmo, makeBurnArrow } from "../Shared/sim/burn-widget.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
@@ -1576,9 +1576,14 @@ export function createEphemerisView(opts) {
 	}
 
 	// =======================================================================
-	//  Click-to-place-marker picking: a plain click places/moves the marker at
-	//  the nearest trajectory sample in screen space; clicking the marker's own
-	//  sprite just refocuses the camera on it. Projection is against
+	//  Click picking, main pane, in priority order: (1) the marker's own
+	//  sprite refocuses the camera on it without moving it; (2) the nearest
+	//  trajectory sample within range places/moves the marker there; (3)
+	//  failing both, the nearest body within PICK_PX becomes the orbit/zoom
+	//  pivot instead — collapsed-to-a-point bodies (updateScales, the normal
+	//  case at solar-system zoom) are a sub-pixel target for an exact hit, so
+	//  pickBodyName falls back to nearest-centre-within-range; (4) truly empty
+	//  space releases whichever lock is active. Projection is against
 	//  `paneMainEl`'s own rect rather than the whole canvas — the same pane the
 	//  wheel-zoom `pickPoint` below uses — because this shell scissors panes and
 	//  the two rects need not coincide (the Ephemeris tab is single-pane, so
@@ -1587,8 +1592,9 @@ export function createEphemerisView(opts) {
 	//  and wasn't the first half of a double-click, so it never fights camera
 	//  rotate-drag.
 	// =======================================================================
+	var PICK_PX = 10;
+
 	function handlePick(e) {
-		if (!trajSamples.length) { return; }
 		var rect = paneMainEl.getBoundingClientRect();
 		var px = e.clientX - rect.left, py = e.clientY - rect.top;
 
@@ -1614,13 +1620,22 @@ export function createEphemerisView(opts) {
 			var d = Math.hypot(sx - px, sy - py);
 			if (d < bestD) { bestD = d; best = i; }
 		}
-		if (best < 0) {
-			// clicked empty space: release the focus lock (marker stays put)
-			// so the camera stops re-centring on it every zoom/update tick.
+		if (best >= 0) { placeMarkerAtGlobalTime(trajSamples[best].t); return; }
+
+		// nothing on the path (or no path drawn at all): try a body instead
+		var name = pickBodyName(frame.camera, paneMainEl, e, frame.scaleList, PICK_PX);
+		if (name) {
 			state.markerFocused = false;
+			frame.focusBody = name;
+			var node = frame.bodyNode(name);
+			if (node) { frame.cam.target.copy(node.position); }
 			return;
 		}
-		placeMarkerAtGlobalTime(trajSamples[best].t);
+
+		// truly empty space: release whichever lock is active (marker/body stay
+		// put — this only stops the camera re-centring on them every tick).
+		state.markerFocused = false;
+		frame.focusBody = null;
 	}
 
 	// ---- camera controls: one frame, so the view config never changes. Like
@@ -1636,8 +1651,12 @@ export function createEphemerisView(opts) {
 			},
 			onPan: function () { frame.focusBody = null; state.markerFocused = false; },
 			lockedZoomTarget: function () {
-				return (state.markerFocused && markerSprite && markerSprite.visible)
-					? markerSprite.position : null;
+				if (state.markerFocused && markerSprite && markerSprite.visible) { return markerSprite.position; }
+				if (frame.focusBody) {
+					var node = frame.bodyNode(frame.focusBody);
+					if (node) { return node.position; }
+				}
+				return null;
 			},
 			onPick: handlePick
 		};

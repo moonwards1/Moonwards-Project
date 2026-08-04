@@ -238,3 +238,43 @@ export function updateScales(camera, holderEl, scaleList, opts) {
 		}
 	}
 }
+
+// ---- click-picking a named body -------------------------------------------
+
+var _pickRaycaster = null;
+var _pickWorldPos = null;
+
+// Which `scaleList` entry (if any) a click landed on, by name. Two tiers: an
+// exact hit on the body's own core mesh first, so a body rendered large on
+// screen (zoomed in close) can be clicked anywhere on its visible disk; then
+// a fallback to the nearest body CENTRE within `pxThreshold` screen pixels,
+// so a body that has collapsed to `updateScales`' bright point — the common
+// case at typical zoom, where a planet's true sphere is a sub-pixel target —
+// is still clickable. Returns a name, or null if nothing in range.
+export function pickBodyName(camera, holderEl, e, scaleList, pxThreshold) {
+	var rect = holderEl.getBoundingClientRect();
+	var ndc = new THREE.Vector2(
+		((e.clientX - rect.left) / rect.width) * 2 - 1,
+		-(((e.clientY - rect.top) / rect.height) * 2 - 1));
+	var rc = _pickRaycaster || (_pickRaycaster = new THREE.Raycaster());
+	rc.setFromCamera(ndc, camera);
+	var meshes = scaleList.map(function (b) { return b.core; });
+	var hits = rc.intersectObjects(meshes, true);
+	if (hits.length) {
+		for (var i = 0; i < scaleList.length; i++) {
+			if (scaleList[i].core === hits[0].object) { return scaleList[i].name; }
+		}
+	}
+
+	var px = e.clientX - rect.left, py = e.clientY - rect.top;
+	var best = null, bestD = pxThreshold == null ? 10 : pxThreshold;
+	var wp = _pickWorldPos || (_pickWorldPos = new THREE.Vector3());
+	for (var j = 0; j < scaleList.length; j++) {
+		scaleList[j].group.getWorldPosition(wp).project(camera);
+		if (wp.z > 1) { continue; }
+		var sx = (wp.x * 0.5 + 0.5) * rect.width, sy = (-wp.y * 0.5 + 0.5) * rect.height;
+		var d = Math.hypot(sx - px, sy - py);
+		if (d < bestD) { bestD = d; best = scaleList[j].name; }
+	}
+	return best;
+}
