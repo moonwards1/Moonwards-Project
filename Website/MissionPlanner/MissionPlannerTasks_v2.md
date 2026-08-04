@@ -260,9 +260,14 @@ Departure context defines the success condition the other two borrow.
   Display text and tooltip only (`ephemeris-view.js`); the internal
   `"dive-in"` profile value is unchanged, so `departure-estimate.js` and its
   tests are untouched.
-- [ ] **4.4 Add-waypoint places the waypoint at the chevron.** ★
-  In the departure phase's sidebar, "add waypoint" creates it at the chevron's
-  current location rather than a fixed default.
+- [x] **4.4 Add-waypoint places the waypoint at the chevron.** ★
+  In the departure and arrival phases' sidebars, "add waypoint" creates it at
+  the chevron's current location rather than a fixed default.
+  `departure-leg.js`, `body-departure-leg.js`, and `arrival-leg.js`'s "+ add
+  waypoint" handlers now read the chevron's live elapsed time off
+  `ctx.world.jd` (the same clock `draw()`'s `stateAtElapsed` uses), clamped
+  just inside the leg's valid span, instead of the midpoint/fixed-hour
+  fallback. That fallback is kept for when there's no computed leg yet.
 - [ ] **4.5 Mission-link data survives across sessions.** ★★
   Copied link data pasted back after a restart must reload the mission
   parameters. Verify the round trip and harden whatever doesn't survive.

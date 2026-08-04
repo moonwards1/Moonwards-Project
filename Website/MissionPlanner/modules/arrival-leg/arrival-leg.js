@@ -354,10 +354,13 @@ export default {
 				add.textContent = "+ add waypoint";
 				add.addEventListener("click", function () {
 					var list = stageParams().waypoints.slice();
-					// first waypoint defaults to the pass itself (t = 1 day),
-					// a second lands an hour after the first
-					list.push({ t: list.length ? Math.min(list[0].t + 3600, LEAD_S + TAIL_S - 3600) : LEAD_S,
-					            burn: { pro: 0, rad: 0, nrm: 0 } });
+					var leg = legFor(ctx.world, ctx.stageId);
+					// Placed at the chevron's current location (4.4) -- the elapsed time
+					// since hand-off the chevron is drawn at, same clock as stateAtElapsed.
+					var t = (leg && leg.ok)
+						? Math.max(1, Math.min(LEAD_S + TAIL_S - 1, (ctx.world.jd - leg.jd0) * DAY))
+						: LEAD_S;
+					list.push({ t: t, burn: { pro: 0, rad: 0, nrm: 0 } });
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
 				});

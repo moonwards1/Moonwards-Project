@@ -421,9 +421,12 @@ export default {
 				add.addEventListener("click", function () {
 					var list = stageParams().waypoints.slice();
 					var leg = legFor(ctx.world, ctx.stageId);
-					var mid = (leg && leg.ok) ? leg.handoff.tSoi / 2 : 6 * 3600;
-					list.push({ t: list.length ? Math.min(list[0].t + 3600, mid) : mid,
-					            burn: { pro: 0, rad: 0, nrm: 0 } });
+					// Placed at the chevron's current location (4.4) -- the elapsed time
+					// since release the chevron is drawn at, same clock as stateAtElapsed.
+					var t = (leg && leg.ok)
+						? Math.max(1, Math.min(leg.handoff.tSoi - 1, (ctx.world.jd - leg.jd0) * DAY))
+						: 6 * 3600;
+					list.push({ t: t, burn: { pro: 0, rad: 0, nrm: 0 } });
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
 				});
