@@ -250,16 +250,19 @@ Departure context defines the success condition the other two borrow.
   plotters that still use Track); Mission Planner's `ephemeris-view.js` passes
   `[["free","Free"],["target","Target"]]`, drops the `track` branch from
   `updateMarker`, and updates the mode-title/comment text accordingly.
+
 - [x] **4.2 Shift-click Free keeps the target impulse values.** ★
   Plain Free restores the user's pre-target values, as now.
   `marker-card.js`'s mode-button click handler now passes the event through;
   `ephemeris-view.js`'s `setMarkerMode(mode, keepBurn)` skips the burn/position
   restore when `keepBurn` is true, wired from `onModeClick`'s `e.shiftKey`.
+
 - [x] **4.3 Rename 'dive in' to 'with flyby'.** ★
   In the departure-course field and anywhere the phrase surfaces.
   Display text and tooltip only (`ephemeris-view.js`); the internal
   `"dive-in"` profile value is unchanged, so `departure-estimate.js` and its
   tests are untouched.
+
 - [x] **4.4 Add-waypoint places the waypoint at the chevron.** ★
   In the departure and arrival phases' sidebars, "add waypoint" creates it at
   the chevron's current location rather than a fixed default.
@@ -268,6 +271,7 @@ Departure context defines the success condition the other two borrow.
   `ctx.world.jd` (the same clock `draw()`'s `stateAtElapsed` uses), clamped
   just inside the leg's valid span, instead of the midpoint/fixed-hour
   fallback. That fallback is kept for when there's no computed leg yet.
+
 - [x] **4.5 Mission-link data survives across sessions.** ★★
   Copied link data pasted back after a restart must reload the mission
   parameters. Verify the round trip and harden whatever doesn't survive.
@@ -303,15 +307,20 @@ Departure context defines the success condition the other two borrow.
   total. Verified live against real "Copy mission link" output for both an
   Earth origin (Earth → Mars 2033) and a non-Earth origin (Mars → Mercury
   2032).
-- [ ] **4.6 Bodies must move as the marker slider is scrubbed.** ★★
-  `updateMarker()` moves the chevron and the
-  destination × mark along the trajectory by `tof` (time past
-  `dateState.jd`), and even labels the × with the resulting arrival date —
-  but never calls `frame.place()`, so the planets stay frozen at
-  `dateState.jd`. The destination body is not actually where the × mark
-  claims it will be. `onSliderChange` (and `followCrossing`/Target-mode's
-  own moves) need to advance body positions to `dateState.jd + tof/DAY` in
-  step with the marker, in `ephemeris-view.js`.
+
+- [x] **4.6 Bodies must move as the marker slider is scrubbed.** ★★
+  `updateMarker()` (`ephemeris-view.js`) now calls `frame.place(dateState.jd
+
+  + tof / DAY)` once it has a valid probe state, so all `HELIO_BODIES`
+    advance to the marker's implied time together — this covers Free mode's
+    slider, Target mode's `followCrossing`/solved-encounter moves, and
+    anything else that funnels through `updateMarker()`. The two early-return
+    branches (no marker; no drawn trajectory to probe) call `frame.place(
+    dateState.jd)` instead, so bodies snap back to the ephemeris date when
+    there's nothing to probe. Verified live: placing a marker on an Earth→Mars
+    leg moves Mars to sit near the destination × immediately, and scrubbing
+    the slider (or clicking Reset) moves every planet in step.
+
 - [x] **4.7 Click-to-focus and follow on bodies.** ★★
   Clicking a body (any HELIO_BODIES entry, or the Sun) makes it the orbit/zoom
   pivot and keeps the camera on it as the ephemeris date scrubs; a click on

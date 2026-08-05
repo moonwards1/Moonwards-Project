@@ -930,7 +930,7 @@ export function createEphemerisView(opts) {
 			if (destSprite) { destSprite.visible = false; }
 			if (destSoi) { destSoi.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
-			if (mk) { mk.vals.phase.textContent = "—"; }
+			if (mk) { mk.vals.phase.textContent = "—"; mk.vals.closeApproach.textContent = "—"; }
 			updateStartMissionButton({ hasDest: false });
 			return;
 		}
@@ -938,6 +938,11 @@ export function createEphemerisView(opts) {
 		var orbit = destSys.orbit;
 		var arrJd = dateState.jd + tofSec / DAY;
 		var b = O.bodyStateAtJD(GM_SUN, orbit, arrJd);
+		var missDist = O.vMag([markerR[0] - b.r[0], markerR[1] - b.r[1], markerR[2] - b.r[2]]);
+		var altitude = missDist - (destSys.radius || 0);
+		mk.vals.closeApproach.textContent = altitude >= 0
+			? fmtKm(altitude)
+			: "impact (" + fmtKm(-altitude) + " below surface)";
 		if (!destSprite) { destSprite = makeXMarkSprite(); destSprite.renderOrder = 13; frame.scene.add(destSprite); }
 		destSprite.visible = true;
 		destSprite.material.color.set(destSys.color || "#ffffff");
@@ -1032,7 +1037,8 @@ export function createEphemerisView(opts) {
 				{ key: "deg", label: "radial from origin" },
 				{ key: "tof", label: "time of flight" },
 				{ key: "arr", label: "arrival date" },
-				{ key: "phase", label: "phasing" }
+				{ key: "phase", label: "phasing" },
+				{ key: "closeApproach", label: "closest approach" }
 			],
 			getAngle: function () { return state.marker ? state.marker.angle : 0; },
 			removeLabel: "Reset",
@@ -1331,6 +1337,7 @@ export function createEphemerisView(opts) {
 			if (tempRing) { tempRing.visible = false; }
 			setCardEmpty(true);
 			updateStartMissionButton({ noMarker: true });
+			frame.place(dateState.jd);
 			return;
 		}
 		if (!state.marker.mode) { state.marker.mode = "free"; }
@@ -1353,8 +1360,11 @@ export function createEphemerisView(opts) {
 			setCardEmpty(true);
 			setHint("No drawn trajectory to probe — fix the leg, then click it to place a marker.");
 			updateStartMissionButton({ noMarker: true });
+			frame.place(dateState.jd);
 			return;
 		}
+
+		frame.place(dateState.jd + tof / DAY);   // bodies track the marker's implied time, not just the date bar
 
 		markerSprite.visible = true;
 		setCardEmpty(false);
