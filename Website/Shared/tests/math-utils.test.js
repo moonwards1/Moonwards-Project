@@ -211,3 +211,31 @@ test("soiExitTime: degenerate geometry returns null, not a wrong number", () => 
 	assert.equal(O.soiExitTimeDirect(GM_E, -1, D_MOON, R_SOI_E), null);
 	assert.equal(O.soiExitTimeDirect(GM_E, NaN, D_MOON, R_SOI_E), null);
 });
+
+test("relativeInclination: a state built with the orbit's own i/Omega is coplanar (0)", () => {
+	var orbit = { inclination: 20 * Math.PI / 180, longitude: 50 * Math.PI / 180 };
+	// argument/eccentricity/nu are irrelevant to the plane -- pick arbitrary ones.
+	var s = O.stateFromElements(GM_SUN, AU, 0.3, orbit.inclination, orbit.longitude, 1.2, 2.1);
+	var incl = O.relativeInclination(s.r, s.v, orbit);
+	assert.ok(incl < 1e-9, "got " + incl);
+});
+
+test("relativeInclination: reversing velocity flips it to retrograde (pi)", () => {
+	var orbit = { inclination: 20 * Math.PI / 180, longitude: 50 * Math.PI / 180 };
+	var s = O.stateFromElements(GM_SUN, AU, 0.3, orbit.inclination, orbit.longitude, 1.2, 2.1);
+	var vRetro = [-s.v[0], -s.v[1], -s.v[2]];
+	var incl = O.relativeInclination(s.r, vRetro, orbit);
+	assert.ok(Math.abs(incl - Math.PI) < 1e-9, "got " + incl);
+});
+
+test("relativeInclination: a plane perpendicular to the orbit's reads pi/2", () => {
+	var orbit = { inclination: 0, longitude: 0 };   // orbit normal is +z
+	var r = [AU, 0, 0], v = [0, 0, 1000];             // ship's relative plane is x-z
+	var incl = O.relativeInclination(r, v, orbit);
+	assert.ok(Math.abs(incl - Math.PI / 2) < 1e-9, "got " + incl);
+});
+
+test("relativeInclination: degenerate (radial) relative state returns 0, not NaN", () => {
+	var orbit = { inclination: 0.4, longitude: 1.1 };
+	assert.equal(O.relativeInclination([AU, 0, 0], [0, 0, 0], orbit), 0);
+});

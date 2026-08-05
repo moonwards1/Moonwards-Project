@@ -924,13 +924,16 @@ export function createEphemerisView(opts) {
 	// sits inside BOTH closest-approach rings — space (nearOrbit, the same
 	// APPROACH_FAR threshold as the space-ring tiers) and time (the temporal
 	// ring's own tier >= 0). See updateStartMissionButton.
-	function updateDestinationMarker(markerR, tofSec) {
+	function updateDestinationMarker(markerR, markerV, tofSec) {
 		var dn = state.leg.destination;
 		if (!dn) {
 			if (destSprite) { destSprite.visible = false; }
 			if (destSoi) { destSoi.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
-			if (mk) { mk.vals.phase.textContent = "—"; mk.vals.closeApproach.textContent = "—"; }
+			if (mk) {
+				mk.vals.phase.textContent = "—"; mk.vals.closeApproach.textContent = "—";
+				mk.vals.captureIncl.textContent = "—";
+			}
 			updateStartMissionButton({ hasDest: false });
 			return;
 		}
@@ -938,11 +941,13 @@ export function createEphemerisView(opts) {
 		var orbit = destSys.orbit;
 		var arrJd = dateState.jd + tofSec / DAY;
 		var b = O.bodyStateAtJD(GM_SUN, orbit, arrJd);
-		var missDist = O.vMag([markerR[0] - b.r[0], markerR[1] - b.r[1], markerR[2] - b.r[2]]);
+		var rRel = [markerR[0] - b.r[0], markerR[1] - b.r[1], markerR[2] - b.r[2]];
+		var missDist = O.vMag(rRel);
 		var altitude = missDist - (destSys.radius || 0);
 		mk.vals.closeApproach.textContent = altitude >= 0
 			? fmtKm(altitude)
 			: "impact (" + fmtKm(-altitude) + " below surface)";
+
 		if (!destSprite) { destSprite = makeXMarkSprite(); destSprite.renderOrder = 13; frame.scene.add(destSprite); }
 		destSprite.visible = true;
 		destSprite.material.color.set(destSys.color || "#ffffff");
@@ -983,6 +988,18 @@ export function createEphemerisView(opts) {
 			mk.vals.phase.textContent = "—";
 			if (tempRing) { tempRing.visible = false; }
 		}
+
+		// Only meaningful once the marker is at least within the outer
+		// proximity rings (both space and time) — outside that, "the plane
+		// this capture would carry in" isn't describing an actual encounter.
+		if (nearOrbit && timeOk) {
+			var vRel = [markerV[0] - b.v[0], markerV[1] - b.v[1], markerV[2] - b.v[2]];
+			var inclDeg = O.relativeInclination(rRel, vRel, orbit) * 180 / Math.PI;
+			mk.vals.captureIncl.textContent = inclDeg.toFixed(1) + "°" + (inclDeg > 90 ? " (retrograde)" : "");
+		} else {
+			mk.vals.captureIncl.textContent = "—";
+		}
+
 		updateStartMissionButton({ hasDest: true, spaceOk: nearOrbit, timeOk: timeOk,
 			distToOrbit: distToOrbit, dtDays: dtDays, destName: dn });
 	}
@@ -1038,7 +1055,8 @@ export function createEphemerisView(opts) {
 				{ key: "tof", label: "time of flight" },
 				{ key: "arr", label: "arrival date" },
 				{ key: "phase", label: "phasing" },
-				{ key: "closeApproach", label: "closest approach" }
+				{ key: "closeApproach", label: "closest approach" },
+				{ key: "captureIncl", label: "capture inclination" }
 			],
 			getAngle: function () { return state.marker ? state.marker.angle : 0; },
 			removeLabel: "Reset",
@@ -1382,7 +1400,7 @@ export function createEphemerisView(opts) {
 		mk.vals.tof.textContent = fmtTof(tof);
 		mk.vals.arr.textContent = fmtDate(dateState.jd + tof / DAY);
 
-		updateDestinationMarker(s.r, tof);
+		updateDestinationMarker(s.r, s.v, tof);
 
 		mk.slider.disabled = (state.marker.mode !== "free");      // position driven in Target mode
 		if (document.activeElement !== mk.slider) { mk.slider.value = state.marker.angle; }

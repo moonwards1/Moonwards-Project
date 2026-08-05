@@ -490,6 +490,25 @@ export const OrbitalMath = {
 			return Math.hypot(OrbitalMath.distancePointEllipse(A, B, x, y), z);
 		},
 
+		// Inclination (radians, 0..pi) of a relative state's (rvec, vvec)
+		// implied orbital plane against `orbit`'s OWN plane -- not the frame
+		// rvec/vvec happen to be expressed in. E.g. how a ship's
+		// destination-relative approach state (r,v relative to the
+		// destination body) sits against the plane the destination itself
+		// orbits the Sun in, rather than against the ecliptic. 0 = coplanar,
+		// same sense as `orbit`'s own motion; pi = coplanar, opposite sense;
+		// pi/2 = perpendicular either way. `orbit` carries {inclination,
+		// longitude (Omega)} -- only the plane's orientation matters, not its
+		// shape or where the body sits on it, so argument/eccentricity are
+		// irrelevant here.
+		relativeInclination: function (rvec, vvec, orbit) {
+			var i = orbit.inclination || 0, Om = orbit.longitude || 0, si = Math.sin(i);
+			var n = [Math.sin(Om) * si, -Math.cos(Om) * si, Math.cos(i)];
+			var h = OrbitalMath.vCross(rvec, vvec), hMag = OrbitalMath.vMag(h);
+			if (hMag < 1e-9) { return 0; }
+			return Math.acos(Math.max(-1, Math.min(1, OrbitalMath.vDot(h, n) / hMag)));
+		},
+
 		// Lambert's problem (zero-revolution, universal-variable form after Vallado).
 		// Given start/end position vectors (m) and a time of flight (s), return the
 		// transfer's { v1, v2 } velocities (m/s) and the achieved dt. `prograde`
