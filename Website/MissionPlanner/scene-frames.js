@@ -20,7 +20,7 @@ import { OrbitalMath } from "../Shared/math-utils.js";
 import { LunarEphemeris } from "../Shared/lunar-ephemeris.js";
 import { createCam } from "../Shared/sim/camera-controller.js";
 import {
-	createBody, createSunBody, makePoint, addLabel as brAddLabel
+	createBody, createSunBody, makePoint, tiltBody, addLabel as brAddLabel
 } from "../Shared/sim/body-renderer.js";
 import { createKeplerOrbitRing, makeArcLine } from "../Shared/sim/orbit-rings.js";
 
@@ -164,6 +164,7 @@ export function buildBodyFrame(name) {
 	var heroCore = new THREE.Mesh(
 		new THREE.SphereGeometry(radiusU, 32, 24),
 		new THREE.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(0.3), roughness: 0.85 }));
+	tiltBody(heroCore, radiusU, sys, col.clone().lerp(new THREE.Color(0xffffff), 0.6).getHex());
 	var heroPoint = makePoint(col.clone().lerp(new THREE.Color(0xffffff), 0.45).getHex(), 2.5);
 	heroGroup.add(heroCore); heroGroup.add(heroPoint);
 	scene.add(heroGroup);
@@ -258,6 +259,7 @@ export function buildEarthMoonFrame() {
 	var earthCore = new THREE.Mesh(
 		new THREE.SphereGeometry(EARTH.radius / U, 32, 24),
 		new THREE.MeshStandardMaterial({ color: 0x3b6ea8, emissive: 0x0e1c30, roughness: 0.8 }));
+	tiltBody(earthCore, EARTH.radius / U, EARTH, 0x9fc4ef);
 	var earthPoint = makePoint(0x9fc4ef, 2.5);
 	earthGroup.add(earthCore); earthGroup.add(earthPoint);
 	scene.add(earthGroup);
@@ -277,6 +279,7 @@ export function buildEarthMoonFrame() {
 	var moonCore = new THREE.Mesh(
 		new THREE.SphereGeometry(MOON.radius / U, 24, 18),
 		new THREE.MeshStandardMaterial({ color: 0x9aa3b5, emissive: 0x14161c, roughness: 0.95 }));
+	tiltBody(moonCore, MOON.radius / U, MOON, 0xd8dde8);
 	var moonPoint = makePoint(0xd8dde8, 2.5);
 	moonNode.add(moonCore); moonNode.add(moonPoint);
 	scene.add(moonNode);

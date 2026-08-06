@@ -316,6 +316,28 @@ export const OrbitalMath = {
 		vMag:   function (a) { return Math.hypot(a[0], a[1], a[2]); },
 		vUnit:  function (a) { var m = Math.hypot(a[0],a[1],a[2]); return m ? [a[0]/m,a[1]/m,a[2]/m] : [0,0,0]; },
 
+		// A body's true rotation-axis direction, as a unit vector in the
+		// heliocentric-ecliptic J2000 frame this codebase places bodies in (X
+		// toward the equinox, Z ecliptic north — see stateFromElements/burnFrame).
+		// raRad/decRad are the body's IAU-published north-pole right ascension /
+		// declination in the ICRF equatorial frame (the standard those figures are
+		// quoted in); this rotates that into the ecliptic frame via Earth's mean
+		// obliquity. For a retrograde rotator (Venus, Uranus, Pluto, ...) the IAU
+		// pole is the one south of the orbital plane, so the returned vector's
+		// angle from ecliptic-Z is correctly > 90 deg — no separate sign handling
+		// needed.
+		poleVectorEcliptic: function (raRad, decRad) {
+			var eps = 23.4392811 * Math.PI / 180;   // mean obliquity of the ecliptic, J2000
+			var xEq = Math.cos(decRad) * Math.cos(raRad);
+			var yEq = Math.cos(decRad) * Math.sin(raRad);
+			var zEq = Math.sin(decRad);
+			return [
+				xEq,
+				yEq * Math.cos(eps) + zEq * Math.sin(eps),
+				-yEq * Math.sin(eps) + zEq * Math.cos(eps)
+			];
+		},
+
 		// ---- Kepler's equation -------------------------------------------------
 
 		// Eccentric anomaly E from mean anomaly M (rad) for an ellipse (e<1).

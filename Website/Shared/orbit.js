@@ -288,6 +288,19 @@ class System{
 	get tidalLock(){
 		return this.properties.tidalLock === true
 	}
+	get axialTilt(){
+		return this.properties.axialTilt || 0
+	}
+	get axialTiltEcliptic(){
+		return this.properties.axialTiltEcliptic || this.axialTilt
+	}
+	// IAU north-pole right ascension/declination (ICRF equatorial J2000,
+	// radians) — see Shared/math-utils.js's poleVectorEcliptic for converting
+	// this into the heliocentric-ecliptic frame the scenes are built in. null
+	// for the few bodies (e.g. Psyche) with no published pole solution.
+	get pole(){
+		return this.properties.pole || null
+	}
 	get satellites(){
 		return (this.properties.satellites || []).map(e => systems.get(e) || e)
 	}
@@ -1159,6 +1172,8 @@ vp^2 = mu * (2/P - 1/a)
 	volume: 1.41e27,
 	density: 1.408e3,
 	gravity: 274,
+	axialTilt: 7.25*(Math.PI/180),
+	pole: { ra: 286.13*(Math.PI/180), dec: 63.87*(Math.PI/180) },
 	color: "#FFFF00",
 	satellites: ["Mercury","Venus","Earth","Mars","Ceres","Vesta","Psyche","Jupiter","Saturn","Uranus","Neptune","Pluto","Eris"]
 },
@@ -1174,6 +1189,8 @@ vp^2 = mu * (2/P - 1/a)
 	density: 5.514e3,
 	area: 510072000e6,
 	gravity: 9.807,
+	axialTilt: 23.4392811*(Math.PI/180),
+	pole: { ra: 0, dec: 90*(Math.PI/180) },
 	period: 0.99726968 * 86400,
 	lowOrbitAltitude: 200e3,
 	satellites: ["Moon"],
@@ -1283,6 +1300,7 @@ vp^2 = mu * (2/P - 1/a)
 	axialTilt: 6.687*(Math.PI/180),
 	axialTiltEcliptic: 1.5424*(Math.PI/180),
 	axialTiltParent: 24*(Math.PI/180),
+	pole: { ra: 266.86*(Math.PI/180), dec: 65.64*(Math.PI/180) },
 	period: 27.321661*86400,
 	tidalLock: true,
 	geology: {
@@ -1310,6 +1328,7 @@ vp^2 = mu * (2/P - 1/a)
 	density: 5.427e3,
 	gravity: 3.7,
 	axialTilt: 0.034*(Math.PI/180),
+	pole: { ra: 281.01*(Math.PI/180), dec: 61.41*(Math.PI/180) },
 	period: 58.646 * 86400,
 	color: "#5dbb63",
 	geology: {
@@ -1335,6 +1354,8 @@ vp^2 = mu * (2/P - 1/a)
 	GM: 3.24859e14,
 	radius: 6051.8e3,
 	period: -243.025 * 86400,
+	axialTilt: 177.36*(Math.PI/180),
+	pole: { ra: 92.76*(Math.PI/180), dec: -67.16*(Math.PI/180) },
 	geology: {
 		k2: 0.295
 	},
@@ -1475,6 +1496,7 @@ vp^2 = mu * (2/P - 1/a)
 	gravity: 3.72076,
 	lowOrbitAltitude: 200e3,
 	axialTilt: 25.19*(Math.PI/180),
+	pole: { ra: 317.68*(Math.PI/180), dec: 52.89*(Math.PI/180) },
 	period: 1.025957*86400,
 	satellites: ["Phobos","Deimos"],
 	geology: {
@@ -1549,6 +1571,8 @@ vp^2 = mu * (2/P - 1/a)
 	mass: 9.3835e20,
 	area: 2770000e6,
 	density: 2.162e3,
+	axialTilt: 4*(Math.PI/180),
+	pole: { ra: 291.428*(Math.PI/180), dec: 66.760*(Math.PI/180) },
 	color: "#a25fe0",
 	
 	orbit: {
@@ -1596,6 +1620,8 @@ vp^2 = mu * (2/P - 1/a)
 	mass: 2.59076e20,
 	GM: 1.729e10,
 	period: 1325.389042911101*86400,
+	axialTilt: 27*(Math.PI/180),
+	pole: { ra: 309.03*(Math.PI/180), dec: 42.23*(Math.PI/180) },
 	color: "#e87fae",
 	orbit: {
 		system: "Sun",
@@ -1626,6 +1652,7 @@ vp^2 = mu * (2/P - 1/a)
 	gravity: 24.79,
 	period: 9.925 * 3600,
 	axialTilt: 3.13*(Math.PI/180),
+	pole: { ra: 268.06*(Math.PI/180), dec: 64.50*(Math.PI/180) },
 	satelittes: ["Io","Europa","Ganymede","Callisto"],
 	color: "#cf9356",
 	orbit: {
@@ -1648,6 +1675,8 @@ vp^2 = mu * (2/P - 1/a)
 	radius: 58232e3,
 	radiusPolar: 54364e3,
 	radiusEquator: 60268e3,
+	axialTilt: 26.73*(Math.PI/180),
+	pole: { ra: 40.59*(Math.PI/180), dec: 83.54*(Math.PI/180) },
 	satellites: ["Titan"],
 	geology: {
 		k2: 0.390
@@ -1674,6 +1703,8 @@ vp^2 = mu * (2/P - 1/a)
 	radius: 25362e3,
 	radiusPolar: 24973e3,
 	radiusequator: 25559e3,
+	axialTilt: 97.77*(Math.PI/180),
+	pole: { ra: 257.31*(Math.PI/180), dec: -15.18*(Math.PI/180) },
 	orbit: {
 		system: "Sun",
 		period: 30687.153*86400,
@@ -1693,6 +1724,8 @@ vp^2 = mu * (2/P - 1/a)
 	type: "gas planet",
 	GM: 6.836529e15,
 	radius: 24622e3,
+	axialTilt: 28.32*(Math.PI/180),
+	pole: { ra: 299.33*(Math.PI/180), dec: 42.95*(Math.PI/180) },
 	satellites: ["Triton"],
 	color: "#3a5fd6",
 	orbit: {
@@ -1716,6 +1749,8 @@ vp^2 = mu * (2/P - 1/a)
 	mass: 1.303e22,
 	radius: 1188.3e3,
 	density: 1.854e3,
+	axialTilt: 122.53*(Math.PI/180),
+	pole: { ra: 132.99*(Math.PI/180), dec: -6.16*(Math.PI/180) },
 	color: "#b9a0c9",
 	satellites: ["Charon","Nix","Hydra"],
 	atmosphere: {

@@ -54,6 +54,7 @@
 /* global THREE */
 
 import { OrbitalMath } from "../math-utils.js";
+import { makeArcLine } from "./orbit-rings.js";
 
 // ---- pixel-scale math ---------------------------------------------------
 // The root formula behind every "how big is this on screen" question here:
@@ -107,6 +108,48 @@ export function makeSOIShell(radiusU, colorHex, opacity) {
 			depthWrite: false, side: THREE.BackSide }));
 }
 
+// A body's equator, as a thin closed line sitting on its own sphere surface
+// (radius `radius`, same units as the sphere). Lies in the local XY plane by
+// convention — the scene's Z axis is ecliptic/orbital north throughout this
+// codebase (body positions are placed straight from orbit.js state vectors),
+// so a sphere with zero rotation already has this ring on-plane; tilting the
+// body (see `tiltBody` below) carries the ring with it.
+export function makeEquatorRing(radius, colorHex, opacity) {
+	var N = 64;
+	var pts = [];
+	for (var k = 0; k <= N; k++) {
+		var a = 2 * Math.PI * k / N;
+		pts.push(new THREE.Vector3(radius * Math.cos(a), radius * Math.sin(a), 0));
+	}
+	return makeArcLine(pts, colorHex, opacity == null ? 0.45 : opacity);
+}
+
+// Give a body mesh its real orientation and an equator marker: aligns
+// `core`'s local +Z (the equator ring's normal) to the body's true celestial
+// pole — `sys.pole` (IAU right ascension/declination, converted into this
+// codebase's ecliptic scene frame by OrbitalMath.poleVectorEcliptic) when
+// the data has it — and adds a matching equator ring as its child, so the
+// ring inherits the orientation and the core's visibility (including
+// `updateScales`' collapse-to-point toggle) automatically. Falls back to a
+// plain X-axis rotation by `sys.axialTilt` (magnitude only, arbitrary
+// azimuth) for the few bodies with no published pole solution (e.g.
+// Psyche), where `axialTilt` itself is usually 0 too (untilted sphere).
+// A pole and its antipode draw an identical ring (same plane, either
+// direction of the normal), so there's no north/south convention to get
+// wrong here.
+export function tiltBody(core, radius, sys, ringColorHex, ringOpacity) {
+	var pole = sys.pole;
+	if (pole) {
+		var v = OrbitalMath.poleVectorEcliptic(pole.ra, pole.dec);
+		core.quaternion.setFromUnitVectors(
+			new THREE.Vector3(0, 0, 1),
+			new THREE.Vector3(v[0], v[1], v[2]).normalize());
+	} else {
+		core.rotation.x = sys.axialTilt || 0;
+	}
+	core.add(makeEquatorRing(radius, ringColorHex, ringOpacity));
+}
+
 // True sphere-of-influence radius in AU (0 for a body with no orbit, e.g.
 // the Sun). `primaryMassKg` is the mass being orbited (the Sun, for every
 // current caller).
@@ -150,9 +193,11 @@ export function updateLabels(camera, holderEl, labelList) {
 
 // ---- Kepler-body creation (the SST / Helio-overlay pattern) --------------
 
-// One orbiting body at true AU scale: a shaded core sphere, a translucent
-// front-face SOI shell (sized via soiRadiusAU), and a constant-pixel point
-// for when both have collapsed below a pixel. Adds the group to `scene`,
+// One orbiting body at true AU scale: a shaded core sphere tilted to its real
+// axial tilt with an equator ring (via `tiltBody`, using `sys.axialTilt` —
+// 0 if the body's data has none), a translucent front-face SOI shell (sized
+// via soiRadiusAU), and a constant-pixel point for when both have collapsed
+// below a pixel. Adds the group to `scene`,
 // pushes { name, group, core, soi, point, radiusAU, soiAU } onto `scaleList`
 // (consumed by `updateScales` below) and returns that same descriptor, so a
 // caller can also key its own name->group lookup off it.
@@ -174,6 +219,7 @@ export function createBody(scene, scaleList, name, opts) {
 	var core = new THREE.Mesh(
 		new THREE.SphereGeometry(radAU, coreSeg[0], coreSeg[1]),
 		new THREE.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(0.3), roughness: 0.85 }));
+	tiltBody(core, radAU, sys, col.clone().lerp(new THREE.Color(0xffffff), 0.6).getHex());
 
 	var soiAU = soiRadiusAU(sys, opts.primaryMass, AU);
 	var soi = new THREE.Mesh(
@@ -204,6 +250,7 @@ export function createSunBody(scene, scaleList, opts) {
 	var core = new THREE.Mesh(
 		new THREE.SphereGeometry(radAU, seg[0], seg[1]),
 		new THREE.MeshBasicMaterial({ color: opts.color == null ? 0xffe066 : opts.color }));
+	tiltBody(core, radAU, sys, 0xfff2a0, 0.3);
 	var point = makePoint(opts.pointColor == null ? 0xfff2a0 : opts.pointColor, opts.pointSize == null ? 3 : opts.pointSize);
 
 	var g = new THREE.Group();
