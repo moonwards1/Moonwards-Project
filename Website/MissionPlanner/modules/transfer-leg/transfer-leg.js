@@ -41,8 +41,8 @@
  * card) and `draw` (trajectory polyline in the "helio" frame) are the
  * browser-only view hooks.
  *
- * Imports from ../../../Shared/ and ../../core/ — this folder breaks if
- * moved without them coming along.
+ * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this
+ * folder breaks if moved without them coming along.
  */
 /* global THREE */
 
@@ -56,6 +56,7 @@ import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
+import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -71,6 +72,13 @@ var GIZMO_PX = 42;   // constant on-screen size for waypoint gizmos, matching ot
 // Bodies offered as leg destinations (a subset of the plotter's list).
 export var DESTINATIONS = ["Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
 	"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"];
+
+// A waypoint burn edited during Coast is a COURSE CORRECTION, not a fresh
+// injection: the sidebar card caps how far any single axis may move from its
+// baseline (the frozen plan's original burn for an existing waypoint, or
+// zero for one added after freezing — see rebuildWaypointRows). Exported so
+// the shell/tests can reference the same figure.
+export var WAYPOINT_AXIS_CAP_MPS = 100;
 
 // Warn when the leg ends farther than this from the destination body.
 export var MISS_WARN_AU = 0.02;
@@ -457,6 +465,21 @@ export default {
 	// compliance readout instead. The stage opts out of the generic title/status
 	// header (`plainCard` above); the leg's warnings and diagnostics still render
 	// underneath via the shell's generic diag boxes.
+	//
+	// An ORIGINAL plan waypoint (index-matched against planWaypointsFor's
+	// frozen reference copy) is a committed course correction, not a knob the
+	// user can delete outright: its card's button reads "reset" and restores
+	// the plan's own days/burn rather than removing the row. A waypoint added
+	// AFTER freezing (index beyond the frozen list) is a later course
+	// correction with no commitment behind it yet, so it keeps the ordinary
+	// "remove" button.
+	//
+	// Every waypoint's burn editor runs the vector-editor's delta-cap mode
+	// (WAYPOINT_AXIS_CAP_MPS, ±100 m/s per axis), baselined at the value the
+	// "reset" button would restore — the plan's original burn for an original
+	// waypoint, zero for one added later. Both cases read the same way: a
+	// waypoint on Coast is a bounded trim from wherever it started, never a
+	// fresh injection.
 
 	init: function (ctx) {
 		var host = ctx.panelHost;
@@ -490,27 +513,47 @@ export default {
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
+			var planWps = planWaypointsFor(ctx.world);   // the frozen plan's original waypoints, by index
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
 				var head = document.createElement("div"); head.className = "mp-wp-head";
 				head.textContent = "waypoint " + (i + 1);
-				var del = document.createElement("button"); del.className = "mp-btn"; del.textContent = "remove";
-				del.addEventListener("click", function () {
-					var list = stageParams().waypoints.slice();
-					list.splice(i, 1);
-					setParam("waypoints", list);
-					rebuildWaypointRows();
-				});
-				head.appendChild(del); card.appendChild(head);
+				var original = planWps[i] || null;
+				var btn = document.createElement("button"); btn.className = "mp-btn";
+				if (original) {
+					// Part of the committed plan: not removable, only resettable.
+					btn.textContent = "reset";
+					btn.addEventListener("click", function () {
+						var list = stageParams().waypoints.slice();
+						list[i] = { days: original.days, burn: Object.assign({}, original.burn) };
+						setParam("waypoints", list);
+						rebuildWaypointRows();
+					});
+				} else {
+					btn.textContent = "remove";
+					btn.addEventListener("click", function () {
+						var list = stageParams().waypoints.slice();
+						list.splice(i, 1);
+						setParam("waypoints", list);
+						rebuildWaypointRows();
+					});
+				}
+				head.appendChild(btn); card.appendChild(head);
 				numRow(card, "at day", "", wp.days, 5, function (v) {
 					var list = stageParams().waypoints.slice(); list[i].days = v;
 					setParam("waypoints", list);
 				});
+				var hint = document.createElement("div"); hint.className = "mp-muted";
+				hint.textContent = "course correction — up to ±" + WAYPOINT_AXIS_CAP_MPS +
+					" m/s per axis from " + (original ? "the plan" : "zero");
+				card.appendChild(hint);
+				var burnBaseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
 				var burnHost = document.createElement("div"); card.appendChild(burnHost);
 				buildVectorEditor(burnHost, wp.burn, function (axis, mps) {
 					var list = stageParams().waypoints.slice(); list[i].burn[axis] = mps;
 					setParam("waypoints", list);
-				});
+				}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS,
+				     displayDiv: 1, decimals: 1, step: 0.1, unitLabel: "m/s" });
 				wpHost.appendChild(card);
 			});
 			if (wps.length < 2) {

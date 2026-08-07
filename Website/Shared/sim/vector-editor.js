@@ -35,18 +35,36 @@
  * calculators (Solar-System-Trajectory-Plotter, Moon-Skyhook, Mars-Phobos)
  * keep their own older inlined copies of this widget.
  *
- * buildVectorEditor(host, values, onChange):
+ * buildVectorEditor(host, values, onChange, opts):
  * - host: a container element; its content is replaced with the controls
  *   row + SVG + the numeric row. The widget stores its redraw on
  *   `host._sstRedraw` so a caller that mutates `values` externally can
  *   refresh the arrows.
  * - values: a { pro, rad, nrm } object in m/s — MUTATED IN PLACE as the user
- *   drags or types (callers rely on this; it's the live burn object).
+ *   drags or types (callers rely on this; it's the live burn object). Always
+ *   holds the ABSOLUTE burn component, regardless of opts below.
  * - onChange(axisKey, mps): called after each user edit with the axis
- *   ("pro" | "rad" | "nrm") and its new value in m/s.
+ *   ("pro" | "rad" | "nrm") and its new ABSOLUTE value in m/s.
+ * - opts (optional) — DELTA-CAP MODE, for editors that adjust an existing
+ *   burn within a limited budget rather than dialing one up from rest (the
+ *   Coast phase's waypoint cards, transfer-leg.js): each axis's zero point
+ *   (ship glyph, drag origin) is relocated to opts.baseline[axis] instead of
+ *   literal zero, the full axis length spans ±opts.maxDeltaMps instead of
+ *   ±15 km/s, and — unlike the default mode's drag-only clamp — TYPED entry
+ *   is hard-clamped too, since the whole point of this mode is a real limit,
+ *   not just a display range. The legend/number row shows the DELTA from
+ *   baseline (signed), not the absolute value, formatted via opts.displayDiv
+ *   (m/s-per-displayed-unit, e.g. 1 for m/s or 1000 for km/s), opts.decimals
+ *   and opts.step. opts.unitLabel, if given, prints that text beside each
+ *   number field (e.g. "m/s") and narrows the field to make room — the
+ *   default mode leaves the field full-width with no visible unit (the km/s
+ *   convention is implied, not printed). Omitting opts (or opts.maxDeltaMps)
+ *   reproduces the original absolute-from-zero, drag-clamped/type-unclamped,
+ *   km/s-display behavior exactly.
  *
  * Styling comes from the page's own CSS (.sst-vecwidget, .sst-vec-controls,
- * .sst-vec-nums, .sst-vec-num — MissionPlanner/planner.css carries them).
+ * .sst-vec-nums, .sst-vec-num, .sst-vec-num-row, .sst-vec-num-narrow —
+ * MissionPlanner/planner.css carries them).
  */
 
 var SVGNS = "http://www.w3.org/2000/svg";
@@ -55,10 +73,24 @@ function svgEl(tag, attrs) {
 	for (var k in attrs) { e.setAttribute(k, attrs[k]); }
 	return e;
 }
-export function buildVectorEditor(host, values, onChange) {
+export function buildVectorEditor(host, values, onChange, opts) {
 	host.innerHTML = "";
 	host.style.position = "relative"; // anchors the floated up/down pan buttons
-	var W = 278, H = 300, OX = 139, OY = 150, SCALE = 7.5, MAXV = 15, LEN = MAXV * SCALE;
+	// Delta-cap mode (see header): a caller opts in by passing maxDeltaMps.
+	// All geometry below works in RAW m/s (matching `values` itself) with the
+	// baseline subtracted; displayDiv/decimals/step only affect the number
+	// row and legend text. AXIS_LEN is the fixed on-screen half-length a full
+	// ±maxMps swing draws to (same pixels the original ±15 km/s used).
+	var capped = !!(opts && isFinite(opts.maxDeltaMps));
+	var baseline = (opts && opts.baseline) || { pro: 0, rad: 0, nrm: 0 };
+	var maxMps = capped ? opts.maxDeltaMps : 15000;
+	var dispDiv = (opts && isFinite(opts.displayDiv)) ? opts.displayDiv : 1000;
+	var decimals = (opts && isFinite(opts.decimals)) ? opts.decimals : 2;
+	var numStep = (opts && isFinite(opts.step)) ? opts.step : 0.01;
+	var unitLabel = (opts && opts.unitLabel) || null;   // shown beside each number field, narrowed to make room
+	var HIDE_FRAC = 0.008;   // matches the original 0.12 km/s dead-zone at MAXV=15 km/s
+	var hideMps = maxMps * HIDE_FRAC;
+	var W = 278, H = 300, OX = 139, OY = 150, AXIS_LEN = 112.5, SCALE = AXIS_LEN / maxMps, LEN = AXIS_LEN;
 	var ZMIN = 1, ZMAX = 12, ZSTEP = 1.4, PANSTEP = 40; // never smaller than the default view
 	// Line/arrowhead length always grows 1:1 with zoom (it's what you're aiming
 	// with), but thickness only grows as zoom^THICK_EXP — a lot slower — so a
@@ -161,13 +193,30 @@ export function buildVectorEditor(host, values, onChange) {
 		tag.textContent = a.name.charAt(0).toUpperCase() + a.name.slice(1);
 		tag.style.color = a.col;
 		var inp = document.createElement("input");
-		inp.type = "number"; inp.step = 0.01; inp.value = (values[a.key]/1000).toFixed(2);
+		inp.type = "number"; inp.step = numStep;
+		if (unitLabel) { inp.className = "sst-vec-num-narrow"; }
+		inp.value = ((values[a.key] - baseline[a.key]) / dispDiv).toFixed(decimals);
 		inp.addEventListener("change", function () {
 			var v = parseFloat(inp.value); if (!isFinite(v)) { v = 0; }
-			values[a.key] = v * 1000; redraw(); onChange(a.key, v * 1000);
+			var delta = v * dispDiv;
+			if (capped) { delta = Math.max(-maxMps, Math.min(maxMps, delta)); }
+			values[a.key] = baseline[a.key] + delta;
+			redraw(); onChange(a.key, values[a.key]);
 		});
 		nums[a.key] = inp;
-		cell.appendChild(tag); cell.appendChild(inp); row.appendChild(cell);
+		cell.appendChild(tag);
+		if (unitLabel) {
+			// Input + unit on one row, narrower than the old full-width field —
+			// there's room now that a visible "m/s" replaces the implied-km/s
+			// convention the unlabeled fields rely on.
+			var inpRow = document.createElement("span"); inpRow.className = "sst-vec-num-row";
+			var unit = document.createElement("span"); unit.className = "mp-unit"; unit.textContent = unitLabel;
+			inpRow.appendChild(inp); inpRow.appendChild(unit);
+			cell.appendChild(inpRow);
+		} else {
+			cell.appendChild(inp);
+		}
+		row.appendChild(cell);
 	});
 	host.appendChild(row);
 
@@ -178,10 +227,10 @@ export function buildVectorEditor(host, values, onChange) {
 		var thickComp = Math.pow(zoom, THICK_EXP - 1);
 		var strokeW = BASE_STROKE * thickComp, headLen = BASE_HEAD_LEN * thickComp, headHalf = BASE_HEAD_HALF * thickComp;
 		axes.forEach(function (a) {
-			var v = values[a.key] / 1000;
-			var vis = Math.max(-MAXV, Math.min(MAXV, v));
+			var raw = values[a.key] - baseline[a.key];
+			var vis = Math.max(-maxMps, Math.min(maxMps, raw));
 			var tx = OX + a.dx*vis*SCALE, ty = OY + a.dy*vis*SCALE;
-			var show = Math.abs(vis) > 0.12;
+			var show = Math.abs(vis) > hideMps;
 			[a.line, a.head].forEach(function (n) { n.style.display = show ? "" : "none"; });
 			if (show) {
 				a.line.setAttribute("stroke-width", strokeW.toFixed(3));
@@ -197,8 +246,17 @@ export function buildVectorEditor(host, values, onChange) {
 				a.head.setAttribute("points",
 					tx + "," + ty + " " + (bx+px*headHalf) + "," + (by+py*headHalf) + " " + (bx-px*headHalf) + "," + (by-py*headHalf));
 			}
-			a.legendVal.textContent = v.toFixed(2);
-			if (document.activeElement !== nums[a.key]) { nums[a.key].value = v.toFixed(2); }
+			// Unclamped raw (not vis): matches the pre-cap widget's behavior of
+			// showing the true typed value even past the drawn arrow's clamp. In
+			// capped mode this is moot — the stored value is hard-clamped at every
+			// mutation site, so raw already can't exceed vis.
+			var numStr = (raw / dispDiv).toFixed(decimals);
+			// The legend gets an explicit "+" for a positive delta (it's a plain
+			// text node); the <input type=number> must not — a leading "+" is not
+			// a valid number-input value per the HTML spec, so setting it blanks
+			// the field instead of showing it.
+			a.legendVal.textContent = (capped && raw > 0) ? "+" + numStr : numStr;
+			if (document.activeElement !== nums[a.key]) { nums[a.key].value = numStr; }
 		});
 	}
 
@@ -264,10 +322,10 @@ export function buildVectorEditor(host, values, onChange) {
 	var BURN_SENS = 1 / SCALE;
 	function setAxisAbsolute(p, a) {
 		var proj = (p[0] - OX) * a.dx + (p[1] - OY) * a.dy;
-		var v = Math.max(-MAXV, Math.min(MAXV, proj / SCALE));
-		values[a.key] = v * 1000;
+		var raw = Math.max(-maxMps, Math.min(maxMps, proj / SCALE));
+		values[a.key] = baseline[a.key] + raw;
 		redraw();
-		onChange(a.key, v * 1000);
+		onChange(a.key, values[a.key]);
 	}
 	svg.addEventListener("pointerdown", function (e) {
 		if (e.button === 2) {
@@ -297,10 +355,10 @@ export function buildVectorEditor(host, values, onChange) {
 		var dproj = (w[0] - lastWorld[0]) * a.dx + (w[1] - lastWorld[1]) * a.dy;
 		lastWorld = w;
 		var sens = BURN_SENS * (e.shiftKey ? 0.25 : 1);
-		var v = Math.max(-MAXV, Math.min(MAXV, values[a.key] / 1000 + dproj * sens));
-		values[a.key] = v * 1000;
+		var raw = Math.max(-maxMps, Math.min(maxMps, (values[a.key] - baseline[a.key]) + dproj * sens));
+		values[a.key] = baseline[a.key] + raw;
 		redraw();
-		onChange(a.key, v * 1000);
+		onChange(a.key, values[a.key]);
 	});
 	function endDrag() { dragIdx = -1; lastWorld = null; panDragging = false; lastScreen = null; }
 	svg.addEventListener("pointerup", endDrag);

@@ -51,7 +51,12 @@
  *                              burns, for readouts and comparison (the
  *                              WORKING copy lives on the transfer-leg stage,
  *                              where the user edits them); the plan does not
- *                              recompute the coast from them.
+ *                              recompute the coast from them. Also the line
+ *                              between an original plan waypoint and a
+ *                              later course correction: transfer-leg's
+ *                              sidebar card reads this back through
+ *                              planWaypointsFor to lock/reset the former
+ *                              (index-matched) and freely remove the latter.
  *
  * The module declares `inputOptional: true` (a comply-mode carve-out in
  * recompute.js): a mission spawned with an empty tech slot still shows its
@@ -155,6 +160,27 @@ export function arrivalCommitmentFor(world) {
 	return null;
 }
 
+// The mission's ORIGINAL waypoint burns — the reference copy frozen at plan
+// creation (core/freeze.js), read the same way releaseAnchorFor and
+// arrivalCommitmentFor read their fields. transfer-leg's sidebar card uses
+// this to tell an original plan waypoint (part of the committed mission,
+// not removable — only resettable to these values) from one added later as
+// a course correction during Coast (freely removable). Index-matched against
+// the working copy on the transfer-leg stage: edits mutate waypoints in
+// place and never reorder them, so position i here is plan waypoint i there.
+// [] when the mission has no frozen plan.
+export function planWaypointsFor(world) {
+	if (!world || typeof world.stages !== "function") { return []; }
+	var stages = world.stages();
+	for (var i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId !== "frozen-plan") { continue; }
+		return ((stages[i].params && stages[i].params.waypoints) || []).map(function (wp) {
+			return { days: wp.days, burn: copyBurn(wp.burn) };
+		});
+	}
+	return [];
+}
+
 // The mission's hand-off window half-width (days), read off the plan the same
 // way releaseAnchorFor and arrivalCommitmentFor read their fields. There is ONE
 // window per mission and both seams reach it here: this module's own epoch row
@@ -180,6 +206,11 @@ function vec3Finite(a) {
 }
 
 function burnMag(b) { return Math.hypot(b.pro || 0, b.rad || 0, b.nrm || 0); }
+
+function copyBurn(b) {
+	b = b || {};
+	return { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 };
+}
 
 // The plan's own facts for the phase bar's compliance readout
 // (mission-view.js, reached via the registry like complianceFor). v∞ IN/OUT
@@ -430,5 +461,6 @@ export default {
 	planSummary: planSummary,
 	releaseAnchorFor: releaseAnchorFor,
 	arrivalCommitmentFor: arrivalCommitmentFor,
-	handoffWindowFor: handoffWindowFor
+	handoffWindowFor: handoffWindowFor,
+	planWaypointsFor: planWaypointsFor
 };

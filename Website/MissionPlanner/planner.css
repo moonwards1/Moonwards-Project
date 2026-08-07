@@ -505,6 +505,13 @@ body {
 .sst-vec-num { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1; min-width: 0; font-size: 11px; font-weight: 600; }
 .sst-vec-num span { color: var(--text); }
 .sst-vec-num input { width: 100%; min-width: 0; font-weight: 400; background: #0f1424; border: 1px solid var(--line2); color: var(--text); border-radius: 6px; padding: 4px 7px; font: inherit; font-size: 12.5px; color-scheme: dark; }
+/* Delta-cap mode (opts.unitLabel — currently the Coast waypoint card): the
+   field is narrower than the default full-width one and a unit sits beside
+   it, since a signed one-decimal m/s value needs far less room than the
+   unlabeled km/s fields do. */
+.sst-vec-num-row { display: flex; align-items: center; gap: 5px; }
+.sst-vec-num input.sst-vec-num-narrow { width: 58px; flex: none; }
+.sst-vec-num .mp-unit { color: #5f6a82; margin-left: 0; }
 
 /* ---------- Ephemeris tab: ship-marker card ----------
    Skeleton from Shared/sim/marker-card.js with classPrefix "mp", floating atop
