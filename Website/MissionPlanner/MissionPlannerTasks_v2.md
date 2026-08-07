@@ -128,9 +128,6 @@ or the savings evaporate.
 
 ### WP-2
 
-The design's central new interaction, and where "on course" is signalled. The
-Departure context defines the success condition the other two borrow.
-
 - [x] **2.1 Shared ship card + three.js gizmo widget.** ★★★
   `ui/ship-card.js`: a draggable float carrying its own `THREE.Scene`, rendered
   as another scissored viewport off the shell's single canvas — the same

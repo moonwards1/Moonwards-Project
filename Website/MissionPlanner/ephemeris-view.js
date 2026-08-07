@@ -1487,6 +1487,20 @@ export function createEphemerisView(opts) {
 
 	// ==== recompute + draw: the one function every input change calls --------
 	function refresh() {
+		// trajTotalT (the drawn leg's total duration) can change from this very
+		// recompute — e.g. adding a waypoint pushes the "one period past the
+		// last waypoint" tail further out (finalCoastDays) even though nothing
+		// upstream of it moved. state.marker.f0 is a FRACTION of trajTotalT, so
+		// holding f0 fixed across such a change silently retargets the marker
+		// to a different absolute time. Snapshot the marker's current absolute
+		// time-of-flight now, under the OLD trajTotalT, and re-derive f0 from
+		// it once the new trajTotalT is known (below), so the marker — and the
+		// slider, which reads its angle — stays put unless the path actually
+		// reshaped under it.
+		var prevTotalT = trajTotalT;
+		var markerAbsTof = (state.marker && prevTotalT > 0)
+			? mcMarkerFraction(state.marker.f0, state.marker.angle) * prevTotalT : null;
+
 		var originSys = systems.get(state.origin);
 		var dep = O.bodyStateAtJD(GM_SUN, originSys.orbit, dateState.jd);
 
@@ -1558,6 +1572,17 @@ export function createEphemerisView(opts) {
 			});
 			trajSegs.push({ r0: segR, v0: segV, tStart: tStart, dur: legDays * DAY - tStart });
 			trajTotalT = legDays * DAY;
+
+			// Re-anchor the marker to the SAME absolute time-of-flight it had
+			// before this recompute (see the note at the top of refresh()),
+			// rather than leaving it at the same fraction of a total that may
+			// have just moved. Target mode overrides f0 from its own absolute
+			// _encT right after this (updateMarker), so this only has lasting
+			// effect on Free/released-Target marker positions.
+			if (state.marker && markerAbsTof != null) {
+				state.marker.f0 = Math.max(0, Math.min(1, markerAbsTof / trajTotalT));
+				state.marker.angle = 0;
+			}
 			trajSampleCount = leg.samples.length;
 			trajSamples = leg.samples;
 
