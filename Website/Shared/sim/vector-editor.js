@@ -59,10 +59,15 @@ export function buildVectorEditor(host, values, onChange) {
 	host.innerHTML = "";
 	var W = 278, H = 300, OX = 139, OY = 150, SCALE = 7.5, MAXV = 15, LEN = MAXV * SCALE;
 	var ZMIN = 0.5, ZMAX = 12, ZSTEP = 1.4, PANSTEP = 40;
+	// Line/arrowhead length always grows 1:1 with zoom (it's what you're aiming
+	// with), but thickness only grows as zoom^THICK_EXP — a lot slower — so a
+	// heavily zoomed-in arrow doesn't turn into a fat wedge that's harder to
+	// place precisely than the small one it replaced.
+	var THICK_EXP = 1/3, BASE_STROKE = 2.5, BASE_HEAD_LEN = 9, BASE_HEAD_HALF = 5;
 	var axes = [
-		{ key: "pro", name: "prograde", col: "#6fd49a", dx:  Math.cos(-Math.PI/6), dy: Math.sin(-Math.PI/6) },
-		{ key: "rad", name: "radial",   col: "#ffb45a", dx:  Math.cos( Math.PI/6), dy: Math.sin( Math.PI/6) },
-		{ key: "nrm", name: "normal",   col: "#8ab4ff", dx: 0, dy: -1 }
+		{ key: "pro", name: "prograde", col: "#6fd49a", rayCol: "#0f3719", dx:  Math.cos(-Math.PI/6), dy: Math.sin(-Math.PI/6) },
+		{ key: "rad", name: "radial",   col: "#ffb45a", rayCol: "#562a1d", dx:  Math.cos( Math.PI/6), dy: Math.sin( Math.PI/6) },
+		{ key: "nrm", name: "normal",   col: "#8ab4ff", rayCol: "#232d47", dx: 0, dy: -1 }
 	];
 
 	// ---- controls row: Zoom label + -/+ buttons, then vertical/horizontal pan steppers ----
@@ -102,24 +107,29 @@ export function buildVectorEditor(host, values, onChange) {
 	var world = svgEl("g", { "class": "sst-vec-world" });
 
 	(function () {
-		var ux = Math.cos(-Math.PI/6), uy = Math.sin(-Math.PI/6);
-		var vx = -uy, vy = ux;
-		function P(lx, ly) { return [OX + lx*ux + ly*vx, OY + lx*uy + ly*vy]; }
-		var A1 = P(-20, -6), A2 = P(-9, -12), A3 = P(-9, 10), A4 = P(-20, 16), E = P(28, -1);
+		// Three-face ship glyph (yqnn-generated path), scaled so its footprint
+		// matches the old glyph's ~48-unit local length, centred on (5,6) — the
+		// vertex shared by all three faces — so that vertex lands on the origin.
+		var SHIP_SCALE = 3, SHIP_CX = 5, SHIP_CY = 6;
+		function P(lx, ly) { return [OX + (lx - SHIP_CX) * SHIP_SCALE, OY + (ly - SHIP_CY) * SHIP_SCALE]; }
 		function poly(pts, fill) {
 			return svgEl("polygon", {
 				points: pts.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" "),
-				fill: fill, stroke: "#0c0f17", "stroke-width": 1.2, "stroke-linejoin": "round" });
+				fill: fill, "fill-opacity": 0.6 });
 		}
-		world.appendChild(poly([A1, A2, A3, A4], "#595d66"));
-		world.appendChild(poly([A1, A2, E],      "#7e828c"));
-		world.appendChild(poly([A2, A3, E],      "#3b3e46"));
+		var p0 = P(0, 4), p1 = P(5, 6), p2 = P(16, 0), p3 = P(11, 12), p4 = P(5, 10);
+		world.appendChild(poly([p0, p1, p2],     "#595d66")); // Face A — medium gray
+		world.appendChild(poly([p1, p3, p4, p0], "#3b3e46")); // Face B (quad) — dark gray
+		world.appendChild(poly([p2, p3, p1],     "#7e828c")); // Face C — light gray
 	})();
 
 	axes.forEach(function (a) {
+		// Solid dark per-axis rays (own darker tint, not the bright impulse-
+		// arrow colour) — drawn after the glyph so they read clearly over it,
+		// while staying visually distinct from the bright, thick arrows.
 		world.appendChild(svgEl("line", {
 			x1: OX - a.dx*LEN, y1: OY - a.dy*LEN, x2: OX + a.dx*LEN, y2: OY + a.dy*LEN,
-			stroke: a.col, "stroke-opacity": 0.22, "stroke-width": 1 }));
+			stroke: a.rayCol, "stroke-width": 1.5 }));
 		var lx = OX + a.dx*(LEN+11), ly = OY + a.dy*(LEN+11);
 		var t = svgEl("text", { x: lx, y: ly, fill: a.col, "text-anchor": "middle" });
 		var letter = svgEl("tspan", { x: lx, dy: 0, "font-size": 12, "font-weight": 700 });
@@ -131,7 +141,7 @@ export function buildVectorEditor(host, values, onChange) {
 	});
 
 	axes.forEach(function (a) {
-		a.line = svgEl("line", { stroke: a.col, "stroke-width": 2.5, "stroke-linecap": "round" });
+		a.line = svgEl("line", { stroke: a.col, "stroke-linecap": "round" });
 		a.head = svgEl("polygon", { fill: a.col });
 		world.appendChild(a.line); world.appendChild(a.head);
 	});
@@ -158,6 +168,11 @@ export function buildVectorEditor(host, values, onChange) {
 	host.appendChild(row);
 
 	function redraw() {
+		// Local-space compensation so that after the `world` group's scale(zoom)
+		// transform, the RENDERED stroke/arrowhead size ends up as
+		// base * zoom^THICK_EXP instead of base * zoom.
+		var thickComp = Math.pow(zoom, THICK_EXP - 1);
+		var strokeW = BASE_STROKE * thickComp, headLen = BASE_HEAD_LEN * thickComp, headHalf = BASE_HEAD_HALF * thickComp;
 		axes.forEach(function (a) {
 			var v = values[a.key] / 1000;
 			var vis = Math.max(-MAXV, Math.min(MAXV, v));
@@ -165,12 +180,18 @@ export function buildVectorEditor(host, values, onChange) {
 			var show = Math.abs(vis) > 0.12;
 			[a.line, a.head].forEach(function (n) { n.style.display = show ? "" : "none"; });
 			if (show) {
-				a.line.setAttribute("x1", OX); a.line.setAttribute("y1", OY);
-				a.line.setAttribute("x2", tx); a.line.setAttribute("y2", ty);
+				a.line.setAttribute("stroke-width", strokeW.toFixed(3));
 				var s = vis < 0 ? -1 : 1, hx = s*a.dx, hy = s*a.dy, px = -hy, py = hx;
-				var bx = tx - hx*9, by = ty - hy*9;
+				// The shaft stops where the arrowhead's base starts, not at the value
+				// point itself — the arrowhead sits past the end of the line, tip at
+				// the value point, as arrows usually look. Clamp so a value shorter
+				// than the arrowhead can't push its base past the origin.
+				var baseLen = Math.min(headLen, Math.abs(vis) * SCALE);
+				var bx = tx - hx*baseLen, by = ty - hy*baseLen;
+				a.line.setAttribute("x1", OX); a.line.setAttribute("y1", OY);
+				a.line.setAttribute("x2", bx); a.line.setAttribute("y2", by);
 				a.head.setAttribute("points",
-					tx + "," + ty + " " + (bx+px*5) + "," + (by+py*5) + " " + (bx-px*5) + "," + (by-py*5));
+					tx + "," + ty + " " + (bx+px*headHalf) + "," + (by+py*headHalf) + " " + (bx-px*headHalf) + "," + (by-py*headHalf));
 			}
 			a.legendVal.textContent = v.toFixed(2);
 			if (document.activeElement !== nums[a.key]) { nums[a.key].value = v.toFixed(2); }
@@ -192,6 +213,7 @@ export function buildVectorEditor(host, values, onChange) {
 		panX = OX - wx * zoom;
 		panY = OY - wy * zoom;
 		applyTransform();
+		redraw(); // thickness/arrowhead size depend on zoom too, not just position
 	}
 	function pan(dx, dy) { panX += dx; panY += dy; applyTransform(); }
 
