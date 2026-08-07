@@ -57,8 +57,9 @@ function svgEl(tag, attrs) {
 }
 export function buildVectorEditor(host, values, onChange) {
 	host.innerHTML = "";
+	host.style.position = "relative"; // anchors the floated up/down pan buttons
 	var W = 278, H = 300, OX = 139, OY = 150, SCALE = 7.5, MAXV = 15, LEN = MAXV * SCALE;
-	var ZMIN = 0.5, ZMAX = 12, ZSTEP = 1.4, PANSTEP = 40;
+	var ZMIN = 1, ZMAX = 12, ZSTEP = 1.4, PANSTEP = 40; // never smaller than the default view
 	// Line/arrowhead length always grows 1:1 with zoom (it's what you're aiming
 	// with), but thickness only grows as zoom^THICK_EXP — a lot slower — so a
 	// heavily zoomed-in arrow doesn't turn into a fat wedge that's harder to
@@ -86,11 +87,13 @@ export function buildVectorEditor(host, values, onChange) {
 	var spacer = document.createElement("span"); spacer.className = "sst-vec-spacer";
 	controls.appendChild(spacer);
 
+	// Floated separately (not in the controls row) — see .sst-vec-pangroup-v —
+	// so its buttons render at full height instead of being squeezed to fit
+	// the row; positioned just below the row, at the card's right edge.
 	var vGroup = document.createElement("div"); vGroup.className = "sst-vec-pangroup sst-vec-pangroup-v";
 	var panUp = ctrlBtn("", "▲", "Pan up");
 	var panDown = ctrlBtn("", "▼", "Pan down");
 	vGroup.appendChild(panUp); vGroup.appendChild(panDown);
-	controls.appendChild(vGroup);
 
 	var hGroup = document.createElement("div"); hGroup.className = "sst-vec-pangroup sst-vec-pangroup-h";
 	var panLeft = ctrlBtn("", "◀", "Pan left");
@@ -99,6 +102,7 @@ export function buildVectorEditor(host, values, onChange) {
 	controls.appendChild(hGroup);
 
 	host.appendChild(controls);
+	host.appendChild(vGroup);
 
 	// ---- SVG: world (zoom/pan) layer — glyph, guide rays, arrows — behind the
 	// fixed overlay legend, so the legend always reads on top even at high zoom ----

@@ -486,8 +486,10 @@ body {
 .sst-vec-btn:hover { background: #233054; }
 .sst-vec-pangroup { display: flex; border-radius: 5px; overflow: hidden; }
 .sst-vec-pangroup .sst-vec-btn { border-radius: 0; }
-.sst-vec-pangroup-v { flex-direction: column; }
-.sst-vec-pangroup-v .sst-vec-btn { height: 10px; }
+.sst-vec-pangroup-v {
+	position: absolute; top: 24px; right: 0; flex-direction: column; z-index: 2;
+}
+.sst-vec-pangroup-v .sst-vec-btn { height: 20px; }
 .sst-vec-pangroup-v .sst-vec-btn:first-child { border-bottom: none; }
 .sst-vec-pangroup-h .sst-vec-btn:first-child { border-right: none; }
 .sst-vecwidget {
