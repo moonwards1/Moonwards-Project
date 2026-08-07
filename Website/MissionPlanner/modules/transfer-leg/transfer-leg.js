@@ -55,12 +55,18 @@ import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime } from "../../../Shared/body-leg.js";
+import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
 var GM_SUN = SUN.GM;
 var AU = 149597870700;   // m
 var DAY = 86400;
+
+// Burn-vector arrows: a fixed physical scale (AU drawn per km/s), matching ephemeris-view.js
+var BURN_VEC_SCALE = 0.03;
+var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
+var GIZMO_PX = 42;   // constant on-screen size for waypoint gizmos, matching other phases
 
 // Bodies offered as leg destinations (a subset of the plotter's list).
 export var DESTINATIONS = ["Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
@@ -534,6 +540,7 @@ export default {
 			if (c.material) { c.material.dispose(); }
 			if (c.material && c.material.map) { c.material.map.dispose(); }
 		}
+		view.pxScaled = [];
 		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
@@ -575,6 +582,42 @@ export default {
 		if (params.destination && systems.get(params.destination)) {
 			var dest = O.bodyStateAtJD(GM_SUN, systems.get(params.destination).orbit, leg.end.jd);
 			view.group.add(dot(dest.r, 0xe0a84a, 8));
+		}
+
+		// Waypoint gizmos and burn arrows: display each waypoint with three axes
+		// and burn vectors, just like the Ephemeris tab. For each waypoint, get
+		// the exact state at that point using stateAtElapsed, then create the
+		// gizmo and burn arrows. Gizmos are held at constant on-screen size via
+		// view.pxScaled, the shell's per-frame rescale hook.
+		if (params.waypoints && params.waypoints.length) {
+			params.waypoints.forEach(function (wp) {
+				var wpTimeS = (wp.days || 0) * DAY;
+				var wpState = stateAtElapsed(leg, wpTimeS);
+				if (!wpState) { return; }
+
+				// Create the waypoint gizmo (three axes: prograde, radial, normal)
+				var gizPos = new THREE.Vector3(wpState.r[0] / U, wpState.r[1] / U, wpState.r[2] / U);
+				var giz = createWaypointGizmo(wpState.r, wpState.v, gizPos);
+				view.group.add(giz);
+				view.pxScaled.push({ obj: giz, px: GIZMO_PX });
+
+				// Create burn arrows for the waypoint impulse
+				if (wp.burn && (wp.burn.pro || wp.burn.rad || wp.burn.nrm)) {
+					var vAfter = O.applyBurn(wpState.r, wpState.v, wp.burn.pro || 0,
+						wp.burn.nrm || 0, wp.burn.rad || 0);
+					var dSpeed = O.vMag(vAfter) - O.vMag(wpState.v);
+					var dSpeedVec = O.vScale(O.vUnit(vAfter), dSpeed);
+
+					// Prograde speed change arrow (yellow)
+					var spdArrow = makeBurnArrow(gizPos, dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
+					if (spdArrow) { view.group.add(spdArrow); }
+
+					// Delta-v arrow (pink)
+					var dvVec = O.vSub(vAfter, wpState.v);
+					var dvArrow = makeBurnArrow(gizPos, dvVec, DV_COLOR, BURN_VEC_SCALE);
+					if (dvArrow) { view.group.add(dvArrow); }
+				}
+			});
 		}
 
 		// The ship-marker chevron (ported from the Ephemeris tab's marker —
