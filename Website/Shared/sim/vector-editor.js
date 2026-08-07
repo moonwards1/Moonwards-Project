@@ -242,11 +242,15 @@ export function buildVectorEditor(host, values, onChange) {
 	}
 	function toWorld(p) { return [ (p[0] - panX) / zoom, (p[1] - panY) / zoom ]; }
 	function pickAxis(px, py) {
-		var best = -1, bestPerp = 18, rx = px - OX, ry = py - OY;
+		// Dead zone is a constant 15 SCREEN px along the axis, not a fixed world
+		// distance — so at high zoom, where 15px is a small fraction of a km/s,
+		// clicking near the 0 point still repositions the arrow instead of being
+		// swallowed by an oversized dead zone.
+		var best = -1, bestPerp = 18, rx = px - OX, ry = py - OY, deadZone = 15 / zoom;
 		for (var i = 0; i < axes.length; i++) {
 			var a = axes[i];
 			var proj = rx*a.dx + ry*a.dy, perp = Math.abs(rx*a.dy - ry*a.dx);
-			if (Math.abs(proj) > 6 && perp < bestPerp) { bestPerp = perp; best = i; }
+			if (Math.abs(proj) > deadZone && perp < bestPerp) { bestPerp = perp; best = i; }
 		}
 		return best;
 	}
