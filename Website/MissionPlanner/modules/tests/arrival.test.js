@@ -19,9 +19,12 @@ import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js"
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
 import arrivalSkyhook, { computeCatch } from "../arrival-skyhook/arrival-skyhook.js";
-import arrivalLeg, { computeArrivalLeg, referencePeriapsis, stateAtElapsed,
-	LEAD_S, TAIL_S, PERI_SOI_FRACTION } from "../arrival-leg/arrival-leg.js";
-import { bodySOI } from "../../../Shared/body-leg.js";
+import arrivalLeg, { computeArrivalLeg, arrivalWindow, stateAtElapsed,
+	legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
+import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed }
+	from "../transfer-leg/transfer-leg.js";
+import { SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
+import { bodySOI, bodyConstants } from "../../../Shared/body-leg.js";
 import { tetherGeometry, tetherKinematics, resolveParams as resolveSkyhookParams,
 	bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
 import { arrivalTechOptionsFor, ARRIVAL_TECH_OPTIONS } from "../../ui/tech-options.js";
@@ -78,97 +81,169 @@ test("computeCatch: no body / bad geometry diagnose like the departure skyhook",
 	assert.equal(bad.diagnostic.code, "bad-params");
 });
 
-// ---- arrival-leg: the constructed flyby hand-off ---------------------------
+// ---- arrival-leg: the coast, continued -------------------------------------
+// The leg spans the seam window and flies whatever the coast hands it, under
+// the destination's own gravity (task 7.1). Nothing about the pass is
+// constructed, so these tests check that the delivered geometry — not a
+// reference periapsis — is what comes out the far end.
 
-test("referencePeriapsis: periapsis at the requested radius, incoming asymptote along the delivered heading", function () {
-	var GM = bodyPhysics("Ceres").GM;
-	var vInf = 3776, rp = PERI_SOI_FRACTION * bodySOI("Ceres");
-	var s = O.vUnit([0.3, -0.9, 0.1]);
-	var peri = referencePeriapsis(GM, s, vInf, rp);
-	assert.ok(Math.abs(O.vMag(peri.r) - rp) < 1e-3, "periapsis radius");
-	assert.ok(Math.abs(O.vMag(peri.v) - Math.sqrt(vInf * vInf + 2 * GM / rp)) < 1e-9, "periapsis speed");
-	assert.ok(Math.abs(O.vDot(peri.r, peri.v)) < 1e-3 * O.vMag(peri.r) * O.vMag(peri.v), "r ⊥ v at periapsis");
-	// propagate far backward: the incoming motion direction converges on s
-	var back = O.propagateState(GM, peri.r, peri.v, -10 * 86400);
-	var dirIn = O.vUnit(back.v);
-	assert.ok(O.vDot(dirIn, s) > 0.9999, "incoming heading matches, dot " + O.vDot(dirIn, s));
-	// energy: the excess speed round-trips
-	var vB = O.vMag(back.v), rB = O.vMag(back.r);
-	assert.ok(Math.abs(Math.sqrt(vB * vB - 2 * GM / rB) - vInf) < 1, "v∞ from energy");
-});
+// A heliocentric approach spec for computeArrivalLeg: a ship that at epoch JD
+// would sit `offsetM` off `body` (perpendicular to its relative velocity) with
+// `vInf` m/s of excess along +x, wound back `days` days on a Sun-only arc so
+// the window opens before the encounter. Body gravity then bends the real pass
+// in, which is exactly the effect under test.
+function approachSpec(body, vInf, offsetM, days) {
+	var bs = Frames.bodyHelioState(body, JD);
+	var atCa = { r: O.vAdd(bs.r, [0, offsetM, 0]), v: O.vAdd(bs.v, [vInf, 0, 0]) };
+	var back = O.propagateState(GM_SUN, atCa.r, atCa.v, -days * 86400);
+	return { r: back.r, v: back.v, jd0: JD - days, jdEnd: JD + ARRIVAL_TAIL_DAYS };
+}
 
-test("computeArrivalLeg: no burn — a pure pass-by, one day out to one day past, pass at SOI/2", function () {
-	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
+var CERES_R = bodyConstants("Ceres").R;
+
+test("computeArrivalLeg: no burn — the whole window is flown, ending where it says", function () {
+	var spec = approachSpec("Ceres", 3776, 6e6, SEAM_MIN_DAYS);
+	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, spec);
 	assert.equal(leg.ok, true, leg.ok ? "" : leg.diagnostic.message);
-	assert.ok(Math.abs(leg.jd0 - (JD - 1)) < 1e-9, "hand-off a day before the pass");
-	assert.ok(Math.abs(leg.jdEnd - (JD + 1)) < 1e-9, "ends a day after");
-	var rp = PERI_SOI_FRACTION * bodySOI("Ceres");
-	assert.ok(Math.abs(leg.ca.r - rp) < 0.02 * rp, "closest approach ~SOI/2, got " + leg.ca.r);
-	assert.ok(Math.abs(leg.ca.t - LEAD_S) < 600, "pass ~1 day in, got " + (leg.ca.t / 3600).toFixed(1) + " h");
-	// symmetric window: start and end sit at comparable distances
-	var r0 = O.vMag(leg.samples[0].r), r1 = O.vMag(leg.samples[leg.samples.length - 1].r);
-	assert.ok(Math.abs(r0 - r1) < 0.05 * r0, "≈symmetric endpoints");
-	// unburned: the emitted end keeps the approach v∞ (relative to the body)
+	assert.equal(leg.jd0, spec.jd0);
+	assert.ok(Math.abs(leg.jdEnd - spec.jdEnd) < 1e-6, "runs to the window's right edge");
+	assert.ok(Math.abs(leg.T - (spec.jdEnd - spec.jd0) * 86400) < 1, "T is the window's own width");
 	assert.equal(leg.totalDv, 0);
-	assert.ok(Math.abs(O.vMag(leg.end.v) - Math.sqrt(3776 * 3776 + 2 * bodyPhysics("Ceres").GM / r1)) < 1);
+	assert.equal(leg.impact, null);
+	assert.deepEqual(leg.warnings, []);
+	// hand-off + closest approach; nothing else with no waypoints
 	assert.equal(leg.events.length, 2);
+	assert.ok(/approach begins/.test(leg.events[0].label));
+	assert.ok(/Closest approach/.test(leg.events[1].label));
+	// the pass sits inside the window and clear of the surface
+	assert.ok(leg.ca.t > 0 && leg.ca.t < leg.T, "closest approach inside the window");
+	assert.ok(leg.ca.r > CERES_R, "clears the surface");
 });
 
-test("computeArrivalLeg: a waypoint burn changes the outcome and is evented; bad times diagnose", function () {
-	var data = arrivingAt("Ceres", 3776, 0);
-	var free = computeArrivalLeg({ body: "Ceres", waypoints: [] }, data);
+test("computeArrivalLeg: the pass is whatever the coast delivers — NOT a constructed periapsis", function () {
+	var near = computeArrivalLeg({ body: "Ceres", waypoints: [] },
+		approachSpec("Ceres", 3776, 6e6, SEAM_MIN_DAYS));
+	var far = computeArrivalLeg({ body: "Ceres", waypoints: [] },
+		approachSpec("Ceres", 3776, 3e7, SEAM_MIN_DAYS));
+	assert.equal(near.ok, true, near.ok ? "" : near.diagnostic.message);
+	assert.equal(far.ok, true, far.ok ? "" : far.diagnostic.message);
+	// the delivered offset drives the pass distance, monotonically
+	assert.ok(far.ca.r > near.ca.r * 3, "a wider delivery passes wider: " +
+		near.ca.r.toExponential(2) + " vs " + far.ca.r.toExponential(2));
+	// the two passes differ at all: the retired reference flyby pinned BOTH at
+	// half the SOI radius regardless of what the coast delivered
+	var halfSoi = 0.5 * bodySOI("Ceres");
+	assert.ok(Math.abs(near.ca.r - far.ca.r) > 0.1 * halfSoi, "two deliveries, two passes");
+	// gravitational focusing pulls each pass INSIDE its unperturbed offset
+	assert.ok(near.ca.r < 6e6 && far.ca.r < 3e7, "focused inward by the body's own pull");
+});
+
+test("computeArrivalLeg: the leg starts exactly at the state it was handed", function () {
+	var spec = approachSpec("Ceres", 3776, 6e6, SEAM_MIN_DAYS);
+	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, spec);
+	var handed = Frames.helioToLocal("Ceres", spec.jd0, spec.r, spec.v);
+	var s = stateAtElapsed(leg, 0);
+	assert.ok(O.vMag(O.vSub(s.r, handed.r)) < 1, "position continuous across the seam");
+	assert.ok(O.vMag(O.vSub(s.v, handed.v)) < 1e-6, "velocity continuous across the seam");
+	assert.ok(O.vMag(O.vSub(leg.samples[0].r, handed.r)) < 1, "and the drawn line starts there too");
+});
+
+test("computeArrivalLeg: a waypoint burn changes the outcome and is evented", function () {
+	var spec = approachSpec("Ceres", 3776, 6e6, SEAM_MIN_DAYS);
+	var free = computeArrivalLeg({ body: "Ceres", waypoints: [] }, spec);
 	// retro burn at the pass: slows the ship, pulls the later track in
 	var burned = computeArrivalLeg({ body: "Ceres",
-		waypoints: [{ t: LEAD_S, burn: { pro: -1500, rad: 0, nrm: 0 } }] }, data);
+		waypoints: [{ t: free.ca.t, burn: { pro: -1500, rad: 0, nrm: 0 } }] }, spec);
 	assert.equal(burned.ok, true, burned.ok ? "" : burned.diagnostic.message);
 	assert.equal(burned.totalDv, 1500);
 	assert.ok(O.vMag(burned.end.v) < O.vMag(free.end.v) - 1000, "retro burn slows the leg end");
 	assert.equal(burned.events.length, 3);
 	assert.ok(burned.events.some(function (e) { return /Arrival waypoint impulse — 1\.50/.test(e.label); }));
 	assert.ok(burned.wpVisuals[0] && burned.wpVisuals[0].eff, "gizmo/readout visuals recorded");
-	// outside the two-day window → diagnostic
+});
+
+test("computeArrivalLeg: a waypoint outside the window is clamped and warned, never blanked", function () {
+	var spec = approachSpec("Ceres", 3776, 6e6, SEAM_MIN_DAYS);
+	var T = (spec.jdEnd - spec.jd0) * 86400;
+	var leg = computeArrivalLeg({ body: "Ceres",
+		waypoints: [{ t: T + 20 * 3600, burn: { pro: -50, rad: 0, nrm: 0 } }] }, spec);
+	assert.equal(leg.ok, true, leg.ok ? "" : leg.diagnostic.message);
+	assert.equal(leg.warnings.length, 1);
+	assert.equal(leg.warnings[0].code, "waypoint-outside-window");
+	assert.equal(leg.totalDv, 50, "the burn still happens, at the window's edge");
+	// a non-finite time IS damaged params, and still diagnoses
 	var bad = computeArrivalLeg({ body: "Ceres",
-		waypoints: [{ t: LEAD_S + TAIL_S + 60, burn: { pro: 0, rad: 0, nrm: 0 } }] }, data);
+		waypoints: [{ t: NaN, burn: { pro: 0, rad: 0, nrm: 0 } }] }, spec);
 	assert.equal(bad.ok, false);
 	assert.equal(bad.diagnostic.code, "waypoint-outside-leg");
 });
 
-test("computeArrivalLeg: diagnostics — no body, unknown body, ~zero approach speed", function () {
+test("computeArrivalLeg: an approach that hits the body warns and stops there", function () {
+	// aimed straight at the centre: the integration reaches the surface
+	var spec = approachSpec("Ceres", 3776, 0, SEAM_MIN_DAYS);
+	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, spec);
+	assert.equal(leg.ok, true, leg.ok ? "" : leg.diagnostic.message);
+	assert.ok(leg.impact, "records the impact");
+	assert.equal(leg.impact.body, "Ceres");
+	assert.ok(leg.jdEnd < spec.jdEnd, "the leg ends early, at the surface");
+	assert.ok(leg.warnings.some(function (w) { return w.code === "impacts-body"; }));
+	assert.ok(leg.events.some(function (e) { return /Impacts Ceres/.test(e.label); }));
+});
+
+test("computeArrivalLeg: diagnostics — no body, unknown body, an empty window", function () {
+	var spec = approachSpec("Ceres", 3776, 6e6, SEAM_MIN_DAYS);
+	assert.equal(computeArrivalLeg({ waypoints: [] }, spec).diagnostic.code, "no-body");
+	assert.equal(computeArrivalLeg({ body: "Xyzzy" }, spec).diagnostic.code, "bad-params");
+	assert.equal(computeArrivalLeg({ body: "Ceres" },
+		{ r: spec.r, v: spec.v, jd0: JD, jdEnd: JD }).diagnostic.code, "bad-params");
+});
+
+// ---- arrivalWindow: where the phase begins ---------------------------------
+
+test("arrivalWindow: with no coast leg, the window brackets the delivered epoch by Kepler", function () {
 	var data = arrivingAt("Ceres", 3776, 0);
-	assert.equal(computeArrivalLeg({ waypoints: [] }, data).diagnostic.code, "no-body");
-	assert.equal(computeArrivalLeg({ body: "Xyzzy" }, data).diagnostic.code, "bad-params");
-	assert.equal(computeArrivalLeg({ body: "Ceres" }, arrivingAt("Ceres", 0.5, 0)).diagnostic.code,
-		"no-approach-speed");
+	var win = arrivalWindow("Ceres", null, data, null);
+	assert.equal(win.hasEncounter, false);
+	assert.equal(win.fromCoast, false);
+	assert.ok(Math.abs(win.jd0 - (JD - SEAM_MIN_DAYS)) < 1e-9);
+	assert.ok(Math.abs(win.jdEnd - (JD + ARRIVAL_TAIL_DAYS)) < 1e-9);
+	// the start state is the delivered state wound back on a Sun-only arc
+	var fwd = O.propagateState(GM_SUN, win.r, win.v, SEAM_MIN_DAYS * 86400);
+	assert.ok(O.vMag(O.vSub(fwd.r, data.r)) < 1, "round-trips to the delivered position");
+});
+
+test("arrivalWindow: the plan's committed epoch is the no-encounter anchor, not the delivered one", function () {
+	var data = arrivingAt("Ceres", 3776, 0);
+	var win = arrivalWindow("Ceres", null, data, JD + 3);
+	assert.ok(Math.abs(win.jd0 - (JD + 3 - SEAM_MIN_DAYS)) < 1e-9);
 });
 
 // ---- stateAtElapsed (2.5's chevron position source) ------------------------
 
-test("arrival-leg stateAtElapsed: t=0 matches the hand-off state", function () {
-	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
-	var s = stateAtElapsed(leg, 0);
-	assert.ok(O.vMag(O.vSub(s.r, leg.segs[0].r0)) < 1);
-	assert.ok(O.vMag(O.vSub(s.v, leg.segs[0].v0)) < 1e-6);
-});
+function ceresLeg() {
+	return computeArrivalLeg({ body: "Ceres", waypoints: [] },
+		approachSpec("Ceres", 3776, 6e6, SEAM_MIN_DAYS));
+}
 
-test("arrival-leg stateAtElapsed: at the leg's full span matches leg.end exactly", function () {
-	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
-	var s = stateAtElapsed(leg, LEAD_S + TAIL_S);
+test("arrival-leg stateAtElapsed: at the leg's full span matches leg.end", function () {
+	var leg = ceresLeg();
+	var s = stateAtElapsed(leg, leg.T);
 	assert.ok(O.vMag(O.vSub(s.r, leg.end.r)) < 1);
 	assert.ok(O.vMag(O.vSub(s.v, leg.end.v)) < 1e-6);
 });
 
 test("arrival-leg stateAtElapsed: mid-segment agrees with a drawn polyline sample at the same t", function () {
-	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
+	var leg = ceresLeg();
 	var sample = leg.samples[50];
 	var s = stateAtElapsed(leg, sample.t);
 	assert.ok(O.vMag(O.vSub(s.r, sample.r)) < 1);
 });
 
 test("arrival-leg stateAtElapsed: clamps outside the leg's span to its nearest end", function () {
-	var leg = computeArrivalLeg({ body: "Ceres", waypoints: [] }, arrivingAt("Ceres", 3776, 0));
+	var leg = ceresLeg();
 	var before = stateAtElapsed(leg, -1e6);
-	assert.ok(O.vMag(O.vSub(before.r, leg.segs[0].r0)) < 1);
-	var after = stateAtElapsed(leg, LEAD_S + TAIL_S + 1e6);
+	assert.ok(O.vMag(O.vSub(before.r, leg.samples[0].r)) < 1);
+	var after = stateAtElapsed(leg, leg.T + 1e6);
 	assert.ok(O.vMag(O.vSub(after.r, leg.end.r)) < 1);
 });
 
@@ -262,12 +337,22 @@ test("engine: a frozen mission flies its scaffold → coast → flyby leg; both 
 	assert.ok(rBound.warnings.some(function (w) { return w.code === "intercept-miss"; }));
 	assert.equal(rBound.output, m.engine.resultFor(stageId("transfer-leg")).output);
 
-	// the flyby leg builds the REFERENCE pass regardless (pinned at the body,
-	// the delivered state supplying heading/speed/epoch), and is the terminal
-	// stage now — nothing flows downstream until a tech is loaded.
+	// the arrival leg continues that coast anyway (7.1: no constructed pass to
+	// fall back on), so the miss it flies is the miss the coast delivered. It is
+	// the terminal stage here — nothing flows downstream until a tech is loaded.
 	var rArr = m.engine.resultFor(stageId("arrival-leg"));
 	assert.equal(rArr.status, "ok");
 	assert.equal(rArr.events.length, 2);
+	var arrLeg = arrivalLegFor(m.world, stageId("arrival-leg"));
+	assert.ok(arrLeg.ca.r > 0.1 * 149597870700,
+		"a 0.17 AU miss stays a 0.17 AU miss — the retired reference flyby would " +
+		"have passed Mars at SOI/2 whatever the coast did");
+	// and it starts from the coast's own state at the seam, not from the packet
+	var coast = coastLegFor(m.world, stageId("transfer-leg"));
+	var atSeam = coastStateAtElapsed(coast, (arrLeg.jd0 - coast.jd0) * 86400);
+	var handed = Frames.helioToLocal("Mars", arrLeg.jd0, atSeam.r, atSeam.v);
+	assert.ok(O.vMag(O.vSub(stateAtElapsed(arrLeg, 0).r, handed.r)) < 1,
+		"continuous with the coast at the seam");
 });
 
 test("engine: a BROKEN coast doesn't blank the arrival seam — the boundary still reports", function () {
@@ -301,5 +386,8 @@ test("engine: an arrival skyhook appended after the flyby leg computes clean", f
 	assert.equal(r.output, null);   // terminal: nothing flows downstream
 	assert.equal(r.events.length, 1);
 	assert.match(r.events[0].label, /Skyhook catch at Mars/);
-	assert.deepEqual(r.warnings, []);
+	// This synthetic shot misses Mars, and the arrival leg no longer papers over
+	// that with a constructed pass, so the catch says so — the geometry it
+	// reports is still computed, which is what "computes clean" means here.
+	assert.deepEqual(r.warnings.map(function (w) { return w.code; }), ["intercept-miss"]);
 });

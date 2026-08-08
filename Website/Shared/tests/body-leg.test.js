@@ -153,7 +153,7 @@ test("burnEffect (re-exported): a prograde impulse raises speed along prograde",
 
 // ---- integrateEncounter (the arrival-side mirror: a coast through an SOI) --
 
-import { integrateEncounter } from "../body-leg.js";
+import { integrateEncounter, refineClosestApproach } from "../body-leg.js";
 import { Frames } from "../frames.js";
 
 function marsEncounterStart(relR, relV, jd) {
@@ -195,6 +195,45 @@ test("integrateEncounter: maxDur elapsing inside the SOI reports branch 'time'",
 	var res = integrateEncounter("Mars", s.r, s.v, JD0, 3600);
 	assert.equal(res.branch, "time");
 	assert.ok(Math.abs(res.duration - 3600) < 1, "stopped at the boundary: " + res.duration);
+});
+
+test("integrateEncounter: exitEnds false flies the whole window, in and back out of the SOI", () => {
+	// The arrival leg's case (MissionPlanner task 7.1): the window opens OUTSIDE
+	// the SOI, so the default "leaving the SOI ends the run" would stop on step
+	// one. Start 1.4 SOI out, aimed past the planet, and run six days.
+	var c = bodyConstants("Mars");
+	var s = marsEncounterStart([c.SOI * 1.4, c.SOI * 0.15, 0], [-4000, 0, 0], JD0);
+	var stopped = integrateEncounter("Mars", s.r, s.v, JD0, 6 * DAY);
+	assert.equal(stopped.branch, "exit");
+	assert.ok(stopped.duration < 0.01 * 6 * DAY,
+		"the default gives up on its first step out here: " + stopped.duration + " s");
+
+	var res = integrateEncounter("Mars", s.r, s.v, JD0, 6 * DAY, { exitEnds: false });
+	assert.equal(res.branch, "time");
+	assert.ok(Math.abs(res.duration - 6 * DAY) < 1, "flew the full window");
+	assert.ok(res.rmin < c.SOI * 0.3, "went well inside on the way through: " + res.rmin);
+	// tmin sits strictly inside the run, and no sample beats the reported rmin
+	assert.ok(res.tmin > 0 && res.tmin < res.duration, "closest approach inside the window");
+	var sampledMin = Math.min.apply(null, res.samples.map(function (p) { return O.vMag(p.r); }));
+	assert.ok(res.rmin <= sampledMin + 1e-6, "rmin is at or below every sample");
+	assert.ok(res.rmin > 0.98 * sampledMin, "and the refinement is a nudge, not a leap");
+	// and it comes back out again — the far end is outside the SOI, undisturbed
+	assert.ok(O.vMag(res.samples[res.samples.length - 1].r) > c.SOI);
+});
+
+test("refineClosestApproach: recovers a periapsis the sampling straddles", () => {
+	// A straight-line fly-past sampled on a coarse, deliberately off-centre grid:
+	// the true minimum is 3 at t = 10, and no sample sits there.
+	var trail = [0, 6, 14, 22].map(function (t) {
+		return { t: t, r: [t - 10, 3, 0] };
+	});
+	var got = refineClosestApproach(trail, 1);        // sampled min is t = 6, r = 5
+	// r squared is exactly parabolic here, so both come out exact
+	assert.ok(Math.abs(got.t - 10) < 1e-9, "vertex at t=10, got " + got.t);
+	assert.ok(Math.abs(got.r - 3) < 1e-9, "true miss 3, got " + got.r);
+	// a minimum at either end is a truncated pass — the raw sample stands
+	assert.deepEqual(refineClosestApproach(trail, 0), { t: 0, r: Math.hypot(10, 3) });
+	assert.deepEqual(refineClosestApproach(trail, 3), { t: 22, r: Math.hypot(12, 3) });
 });
 
 test("integrateEncounter: a state already at the surface reports entry without integrating", () => {

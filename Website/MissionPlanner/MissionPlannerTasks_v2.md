@@ -348,10 +348,10 @@ or the savings evaporate.
 ### WP-6
 
 - [ ] **6.1 Constrained fine-tune waypoint card.** ★★★
-  Per the settled rules: ±100 m/s axes at 0.1 m/s steps with shift-drag,
-  numeric entry and arrow-key nudges; a ±5° position slider above the axes; a
+  Per the settled rules: ±100 m/s axes ~~at 0.1 m/s steps with shift-drag~~,
+  numeric entry and arrow-key nudges (redesigned to have zoom and pan functions); a ±5° position slider above the axes; ~~a
   timing bar below, zero-centred, showing the arrival-time shift the current
-  working edit implies.
+  working edit implies~~(moved to ship card)
 - [ ] **6.2 Session-level commit: snapshot, live preview, Update, Revert.** ★★★
   Update enables only when the working state's outcome beats the snapshot's —
   closer at the recalculated closest approach, or better vector alignment
@@ -362,14 +362,30 @@ or the savings evaporate.
 
 ### WP-7
 
-- [ ] **7.1 Rebuild the arrival leg as the true continuation of the coast.** ★★★
-  `modules/arrival-leg/` currently constructs a *reference* flyby — one day
-  out, periapsis pinned at SOI/2, deliberately discontinuous with the coast.
-  The design needs the real thing: the leg starts at the seam from the coast's
-  delivered state, integrates under the destination's gravity (RK4), and the
-  pass position is whatever the coast delivers. `Shared/body-leg.js`'s
-  `integrateEncounter` already does this physics for the coast; this is
-  re-pointing the arrival leg at it. Depends on 1.1.
+- [x] **7.1 Rebuild the arrival leg as the true continuation of the coast.** ★★★
+  The leg now spans the seam window (1.1's `computeArrivalSeam`: closest
+  approach −Δt to +1 day), starts from the state the coast itself is in at the
+  window's left edge, and integrates forward with `Shared/body-leg.js`'s
+  `integrateEncounter`. The pass is whatever the coast delivers — no reference
+  periapsis, no pinned epoch (`referencePeriapsis`, `LEAD_S`/`TAIL_S`/
+  `PERI_SOI_FRACTION` are gone).
+  The start state is read off transfer-leg's own `legFor`/`stateAtElapsed`
+  rather than taken from the input packet, because the packet sits LATER, at
+  the coast's leg end — where `arrival-boundary` has to measure the delivered
+  approach against the commitment (measuring at the seam would put the ship a
+  whole SOI radius from the body and make every epoch systematically Δt early).
+  With no coast leg reachable, or no encounter at all, the window is placed
+  around the plan's committed arrival epoch and its start state found by plain
+  heliocentric back-propagation — exact in precisely the case that produces it.
+  Two supporting changes in `Shared/body-leg.js`: `integrateEncounter` gains
+  `opts.exitEnds` (false for the arrival leg, whose window routinely begins and
+  ends OUTSIDE a small destination's SOI — the default would stop it on its
+  first step), and a `refineClosestApproach` parabolic fit on r² now sharpens
+  `rmin`/`tmin` for every caller, which `transfer-leg` also adopts in place of
+  its own duplicate scan so the seam epoch and the leg's pass are one
+  measurement. Waypoint times stay seconds-after-hand-off (no save-format
+  change); since the window's width now follows Δt, one falling outside it is
+  clamped with a warning rather than failing the leg.
 - [ ] **7.2 Reference-frame toggle.** ★★
   Destination-centred ↔ heliocentric, for orientation during approach work.
 - [ ] **7.3 Capture-technology dropdown.** ★★

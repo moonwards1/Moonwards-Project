@@ -130,6 +130,36 @@ export function bodyAccel(name, r, jde) {
 	return a;
 }
 
+// Closest approach refined off an RK4 trail: the sampled minimum, plus the
+// vertex of the parabola through it and its two neighbours. The step is
+// turn-angle capped, so a DISTANT pass (low curvature, step pinned at the cap)
+// is sampled coarsely — the ship can cross a good fraction of the miss distance
+// in one step — and its raw minimum sits up to half a step off the true one.
+// The fit recovers it without re-integrating.
+//
+// It fits r SQUARED, not r: for a straight-line pass r² is EXACTLY a parabola
+// in time, so the coarse distant case the refinement exists for is solved
+// exactly, and near any real periapsis r² stays the better-behaved of the two.
+// A minimum at either end of the trail is a truncated pass (the run stopped
+// before periapsis); there is no vertex to find, so the raw sample stands.
+// Uneven spacing is expected and handled. Exported for tests.
+export function refineClosestApproach(samples, iMin) {
+	function sq(p) { return p.r[0] * p.r[0] + p.r[1] * p.r[1] + p.r[2] * p.r[2]; }
+	var b = samples[iMin];
+	var qb = sq(b);
+	if (iMin <= 0 || iMin >= samples.length - 1) { return { t: b.t, r: Math.sqrt(qb) }; }
+	var a = samples[iMin - 1], cc = samples[iMin + 1];
+	var d1 = b.t - a.t, d2 = cc.t - b.t;
+	if (!(d1 > 0 && d2 > 0)) { return { t: b.t, r: Math.sqrt(qb) }; }
+	var u = (sq(a) - qb) / d1, v = (sq(cc) - qb) / d2;
+	var A = (u + v) / (d1 + d2);
+	if (!(A > 0)) { return { t: b.t, r: Math.sqrt(qb) }; }
+	var B = v - A * d2;
+	var dt = -B / (2 * A);
+	if (!(isFinite(dt) && dt > -d1 && dt < d2)) { return { t: b.t, r: Math.sqrt(qb) }; }
+	return { t: b.t + dt, r: Math.sqrt(Math.max(0, qb - B * B / (4 * A))) };
+}
+
 // Speed and flight-path angle (rad, positive while descending) at a
 // body-centred state, read where the trajectory crosses the atmosphere/surface
 // interface (see integrateTrajectory's "entry" branch).
@@ -288,27 +318,41 @@ export function buildIntegratedLeg(name, R0, V0, jde0) {
 // caller keeps the honest inside-SOI state).
 //
 // rHelio/vHelio: heliocentric state (m, m/s) at jde0 — normally at (or just
-// inside) the SOI boundary. Returns:
+// inside) the SOI boundary.
+//
+// `opts.exitEnds` (default true) is what leaving the SOI means. For the coast
+// it means the encounter is over and Kepler resumes, so the run stops there.
+// The ARRIVAL leg (MissionPlanner/modules/arrival-leg) sets it false: its span
+// is a fixed window around closest approach, and for a small-SOI destination
+// that window BEGINS outside the SOI and ends outside it again — with the
+// default the run would terminate on its very first step. bodyAccel is body +
+// Sun with the indirect term, which is valid at any distance, so simply flying
+// the whole window is correct physics, not a licence. Surface/atmosphere entry
+// still ends the run either way.
+//
+// Returns:
 //   samples  body-centred { r, v, t } trail (stateAtLegTime-compatible with
 //            { samples, jde0 }), turn-angle-capped like integrateTrajectory
 //   branch   "exit" (left the SOI), "entry" (surface/atmosphere impact),
 //            or "time" (maxDurS elapsed still inside)
 //   rmin     closest approach to the body centre (m)
+//   tmin     time (s from the start) at which rmin occurs
 //   vinf     hyperbolic excess speed vs the body (m/s) at the start state,
 //            or null if the state is bound to the body
 //   duration integrated time (s)
 //   end      heliocentric { r, v } lifted at jde0 + duration/86400
 //   entry    entry conditions record when branch === "entry" (else null)
-export function integrateEncounter(name, rHelio, vHelio, jde0, maxDurS) {
+export function integrateEncounter(name, rHelio, vHelio, jde0, maxDurS, opts) {
+	var exitEnds = !(opts && opts.exitEnds === false);
 	var c = bodyConstants(name);
 	var dropped = Frames.helioToLocal(name, jde0, rHelio, vHelio);
 	var r = dropped.r.slice(), v = dropped.v.slice(), t = 0;
 	var samples = [{ r: r.slice(), v: v.slice(), t: 0 }];
-	var rmin = Math.hypot(r[0], r[1], r[2]);
+	var rmin = Math.hypot(r[0], r[1], r[2]), tmin = 0, iMin = 0;
 	if (rmin <= c.entryR) {
 		// Handed a state already at/inside the surface interface — report it
 		// as an immediate entry rather than integrating from a singularity.
-		return { samples: samples, branch: "entry", rmin: rmin, vinf: null,
+		return { samples: samples, branch: "entry", rmin: rmin, tmin: 0, vinf: null,
 		         duration: 0, end: { r: rHelio.slice(), v: vHelio.slice() },
 		         entry: entryConditionsFromState(r, v) };
 	}
@@ -333,13 +377,17 @@ export function integrateEncounter(name, rHelio, vHelio, jde0, maxDurS) {
 		t += dt;
 		samples.push({ r: r.slice(), v: v.slice(), t: t });
 		var rmag = Math.hypot(r[0], r[1], r[2]);
-		if (rmag < rmin) { rmin = rmag; }
+		if (rmag < rmin) { rmin = rmag; tmin = t; iMin = samples.length - 1; }
 		if (rmag <= c.entryR) { entry = entryConditionsFromState(r, v); branch = "entry"; break; }
-		if (rmag > c.SOI) { branch = "exit"; break; }
+		if (exitEnds && rmag > c.SOI) { branch = "exit"; break; }
+	}
+	if (!entry) {
+		var refined = refineClosestApproach(samples, iMin);
+		rmin = refined.r; tmin = refined.t;
 	}
 
 	var jdeEnd = jde0 + t / 86400;
 	var lifted = Frames.localToHelio(name, jdeEnd, r, v);
-	return { samples: samples, branch: branch, rmin: rmin, vinf: vinf,
+	return { samples: samples, branch: branch, rmin: rmin, tmin: tmin, vinf: vinf,
 	         duration: t, end: { r: lifted.r, v: lifted.v }, entry: entry };
 }

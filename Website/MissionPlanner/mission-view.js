@@ -1624,10 +1624,11 @@ export function createMissionView(opts) {
 	});
 
 	// The arrival phase's own flight events, as marks. Same flight-only rule
-	// the departure slider uses; arrivalSliderState drops any that fall outside
-	// the window, which is most of them — modules/arrival-leg builds a REFERENCE
-	// flyby that is not continuous with the coast, so its own event times need
-	// not land inside the seam window the coast derives.
+	// the departure slider uses; arrivalSliderState drops any falling outside
+	// the window. Since 7.1 the arrival leg spans exactly this window, so its
+	// events land inside by construction — its own closest approach is the one
+	// deliberate exception, flagged flight:false so it doesn't draw a second
+	// mark a few hours from the seam's .mp-mark-ca.
 	function arrivalEvents(results) {
 		var evs = [];
 		results.forEach(function (res) {

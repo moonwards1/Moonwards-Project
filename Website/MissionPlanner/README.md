@@ -272,12 +272,15 @@ re-derived).
 
 **Arrival:**
 
-- **`modules/arrival-leg/`** — the visible Coast→Arrival hand-off: a
-  *reference* flyby (not a patched continuation of the coast) built from the
-  delivered v∞ heading/magnitude/epoch — starts one day out, passes the
-  destination at half its SOI radius, ends one day after. Waypoints (up to 2)
-  put burns on it; a retro burn near the pass drops/captures. HEADLESS
-  (`plainCard`); two-body Kepler around the destination.
+- **`modules/arrival-leg/`** — the coast, continued under the destination's
+  gravity. It spans the seam window (`core/arrival-seam.js`: closest approach
+  −Δt to +1 day), starts from the state the coast itself is in at the
+  window's left edge — read off transfer-leg's own leg, since the packet the
+  chain delivers sits later, at the coast's end — and integrates forward with
+  `Shared/body-leg.js`'s `integrateEncounter` (RK4, body + Sun). Nothing about
+  the pass is constructed: where the ship goes past, how close and how fast are
+  whatever the coast delivers. Waypoints (up to 2) put burns on it; a retro
+  burn near the pass drops/captures. HEADLESS (`plainCard`).
 - **`modules/arrival-skyhook/`** — a skyhook CATCH at the destination,
   literally reusing `orbital-skyhook.js`'s tether geometry run in reverse: a
   trim burn at the catch point closes the gap between the approach

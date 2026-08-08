@@ -26,7 +26,10 @@
  * heading and speed at the END of Coast is just the resultant of that starting
  * state plus whatever waypoint burns happened along the way, so nothing at the
  * Coast→Arrival seam needs a burn concept either — arrival-boundary passes the
- * emitted state through untouched and arrival-leg builds from it.
+ * emitted state through untouched, and arrival-leg simply continues this leg's
+ * own flight from the seam (it reads the state there off legFor/stateAtElapsed
+ * below, since the EMITTED state sits later, at this leg's end, where
+ * arrival-boundary has to measure it).
  *
  * If a destination body is set, the miss distance at arrival is reported
  * through the envelope's WARNINGS channel — non-blocking, per the core's
@@ -52,7 +55,7 @@ import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { computeArrivalSeam } from "../../core/arrival-seam.js";
-import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
+import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
@@ -232,18 +235,16 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 				out.events.push({ jd: jdAbs, label: enc.body + " SOI entry — " +
 					(res.vinf != null ? "v∞ " + (res.vinf / 1000).toFixed(2) + " km/s" : "bound") });
 			}
-			// Closest approach, from the integrated trail (surface altitude).
-			// `kind`/`body`/`vInf`/`rmin` are structured fields alongside the
-			// label, so core/arrival-seam.js can find the destination's own
-			// encounter and its approach speed without parsing the label string.
-			// display: false — this coarse coast-phase estimate is superseded
-			// for the reader by arrival-leg's own finer closest-approach event;
-			// it stays in the envelope only for arrival-seam.js to consume.
-			var iMin = 0;
-			for (var si = 1; si < res.samples.length; si++) {
-				if (O.vMag(res.samples[si].r) < O.vMag(res.samples[iMin].r)) { iMin = si; }
-			}
-			out.events.push({ jd: jdAbs + res.samples[iMin].t / DAY, display: false,
+			// Closest approach, from the integrated trail (surface altitude) —
+			// integrateEncounter's own refined rmin/tmin, so the epoch the
+			// arrival window is hung on and the epoch the arrival leg finds are
+			// the same measurement. `kind`/`body`/`vInf`/`rmin` are structured
+			// fields alongside the label, so core/arrival-seam.js can find the
+			// destination's own encounter and its approach speed without parsing
+			// the label string. display: false — the reader sees arrival-leg's
+			// own closest-approach event instead; this one stays in the envelope
+			// for arrival-seam.js to consume.
+			out.events.push({ jd: jdAbs + res.tmin / DAY, display: false,
 				kind: "closest-approach", body: enc.body, vInf: res.vinf, rmin: res.rmin,
 				label: enc.body + " closest approach — " + Fmt3(res.rmin - c.R) + " km" });
 		}
@@ -394,6 +395,43 @@ export function stateAtElapsed(leg, t) {
 	return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
 }
 
+// The waypoint card's "at deg" field: heliocentric degrees swept from the
+// leg's own start (day 0) to the point reached `day` days in — the same
+// "swept from origin" quantity Shared/sim/marker-card.js's marker readout
+// shows, reusing its sweepAngleFrom so a waypoint's angle and a marker's mean
+// the same thing. The card still stores/edits the waypoint by DAY internally
+// (computeLeg's chain-walk is time-parameterized, and freeze/reset compare
+// against the frozen plan's own days) -- this and dayAtDeg below are purely
+// the display/edit conversion at the UI boundary.
+export function degAtDay(leg, day) {
+	if (!leg || !leg.ok || !leg.segs.length) { return 0; }
+	var s = stateAtElapsed(leg, Math.max(0, day) * DAY);
+	return s ? sweepAngleFrom(leg.segs[0].r0, leg.segs[0].v0, s.r) : 0;
+}
+
+// Inverse of degAtDay: the day in [0, legDays] whose swept angle is closest
+// to targetDeg, found by Newton iteration from dayGuess (the waypoint's
+// current day) so a small nudge in degrees lands on the same nearby crossing
+// rather than some other day sharing the same angle mod 360 -- relevant on
+// legs that sweep more than a full turn.
+export function dayAtDeg(leg, legDays, dayGuess, targetDeg) {
+	if (!leg || !leg.ok || !leg.segs.length || !(legDays > 0)) { return dayGuess; }
+	function wrap180(a) { return ((a + 180) % 360 + 360) % 360 - 180; }
+	function f(d) { return wrap180(degAtDay(leg, d) - targetDeg); }
+	var day = Math.max(0, Math.min(legDays, dayGuess));
+	var h = Math.max(0.02, legDays * 0.001);
+	for (var i = 0; i < 40; i++) {
+		var f0 = f(day);
+		if (Math.abs(f0) < 0.01) { break; }
+		var hh = (day + h <= legDays) ? h : -h;
+		var deriv = (f(day + hh) - f0) / hh;
+		if (!isFinite(deriv) || Math.abs(deriv) < 1e-9) { break; }
+		var step = Math.max(-legDays / 3, Math.min(legDays / 3, f0 / deriv));
+		day = Math.max(0.01, Math.min(legDays - 0.01, day - step));
+	}
+	return day;
+}
+
 // Last computed leg per (World, stage), for the card readouts and the
 // polyline. Keyed by World first because N missions coexist and their Worlds
 // reuse stage ids like "stg-2" — a stageId-only cache would let one mission's
@@ -539,8 +577,10 @@ export default {
 					});
 				}
 				head.appendChild(btn); card.appendChild(head);
-				numRow(card, "at day", "", wp.days, 5, function (v) {
-					var list = stageParams().waypoints.slice(); list[i].days = v;
+				numRow(card, "at", "°", degAtDay(legFor(ctx.world, ctx.stageId), wp.days), 1, function (v) {
+					var list = stageParams().waypoints.slice();
+					var leg = legFor(ctx.world, ctx.stageId);
+					list[i].days = dayAtDeg(leg, stageParams().legDays, list[i].days, v);
 					setParam("waypoints", list);
 				});
 				var hint = document.createElement("div"); hint.className = "mp-muted";

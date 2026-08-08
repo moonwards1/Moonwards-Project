@@ -1,44 +1,49 @@
-/* MissionPlanner/modules/arrival-leg — the arrival flyby leg: the visible
- * Coast→Arrival hand-off, and waypoint burns on the approach.
+/* MissionPlanner/modules/arrival-leg — the arrival approach: the coast's own
+ * flight, continued under the destination's gravity, plus waypoint burns on it.
  *
- * THE SHAPE. The coast phase terminates at a visible point where it hands off
- * to the arrival phase. That point is somewhat arbitrary, but chosen far
- * enough out to be reasonable:
+ * THE SHAPE. This leg IS the coast, re-parameterized. It spans the seam window
+ * core/arrival-seam.js derives —
  *
- *   - the incoming trajectory PASSES the destination at HALF ITS SOI RADIUS
- *     (the reference flyby's periapsis),
- *   - it STARTS ONE DAY OUT, headed along the coast trajectory's own
- *     delivered heading (the approach v∞ direction),
- *   - it ENDS ONE DAY AFTER passing the body.
+ *   [ closest approach − Δt , closest approach + ~1 day ]
  *
- * With no burn programmed the trajectory just passes by, endpoints as noted.
+ * — starting from the state the COAST ITSELF is in at the window's left edge,
+ * and integrating forward under the destination's gravity (RK4, body + Sun with
+ * the indirect term: Shared/body-leg.js's integrateEncounter, the same physics
+ * the coast uses inside an SOI). Nothing about the pass is constructed: where
+ * the ship goes past the body, how close, and how fast are whatever the coast
+ * delivers. With no burn programmed the drawn arrival trajectory is the drawn
+ * coast trajectory, continuing.
+ *
  * Waypoints (up to 2, the standard vector-editor interface) put burns on it —
- * a retro burn near the pass drops/captures, a nudge earlier moves the pass.
+ * a retro burn near the pass drops or captures, a nudge earlier moves the pass.
  *
- * THE CONSTRUCTION is a REFERENCE flyby, not a patched continuation of the
- * coast: the delivered coast state supplies the v∞ heading, magnitude and
- * epoch (the pass is pinned at the delivered arrival epoch), and the leg builds
- * the two-body hyperbola around the destination with that asymptote and a
- * periapsis of SOI/2 — in the plane through the asymptote closest to the
- * ecliptic, so which side of the body it passes is arbitrary. The delivered
- * position's own miss is transfer-leg's and arrival-boundary's business, not
- * re-judged here, and the drawn trajectories are consequently NOT continuous
- * across the hand-off. Physics is two-body around the destination (Kepler
- * segments, exact conics — O.propagateState/sampleArc handle the hyperbola);
- * at one day out the arc is near its asymptote anyway.
+ * WHERE THE STARTING STATE COMES FROM, and why it is not simply the input
+ * packet. The chain hands this stage the coast's emitted state, which sits at
+ * the coast's own leg end — at (or just before) closest approach, because that
+ * is where arrival-boundary has to measure the delivered approach against the
+ * plan's commitment. The arrival phase begins EARLIER than that, at the seam.
+ * So the seam state is read off the coast leg directly: transfer-leg's
+ * legFor()/stateAtElapsed() (the same registry-reached, cross-stage read
+ * arrival-boundary makes for the plan's commitment), sampled at the window's
+ * left edge. The input packet is still what supplies `dvUsed`, and it is the
+ * fallback source when no coast leg is reachable — then the window is placed
+ * around the delivered epoch and its start state found by plain heliocentric
+ * back-propagation, which is exact precisely in the case that produces it (a
+ * coast that never encountered the destination is pure Kepler out there).
  *
- * Waypoint times are SECONDS AFTER THE HAND-OFF (the leg start); the pass
- * itself sits at t = 1 day. Burns use the ecliptic-anchored prograde/normal/
- * radial frame (O.applyBurn via geo-leg's burnEffect — the same convention
- * every waypoint editor in the planner means by its axes).
+ * Because the window's width is Δt + 1 day rather than a fixed span, waypoint
+ * times — SECONDS AFTER THE HAND-OFF, as before — can fall outside it when the
+ * coast is retuned and the window shrinks. That is a warning and a clamp, not a
+ * diagnostic: the coast getting faster must not blank the arrival phase.
+ * Burns use the ecliptic-anchored prograde/normal/radial frame (geo-leg's
+ * burnEffect — the same convention every waypoint editor in the planner means
+ * by its axes).
  *
- * HEADLESS (`plainCard`), like the departure legs: its card is just the
- * waypoint cards; its visible output is the polyline in the destination
- * frame (start/pass/end dots, waypoint gizmos + burn arrows). Numeric
- * readouts of hand-off/burn results live in the Ephemeris tab, not here.
- * Emits the leg-end ship-state (one day past the body, lifted to helio) so
- * an arrival technology downstream (arrival-skyhook) keeps its ship-state
- * input.
+ * HEADLESS (`plainCard`), like the departure legs: its card is the window
+ * readout plus the waypoint cards; its visible output is the polyline in the
+ * destination frame (hand-off/closest-approach/end dots, waypoint gizmos + burn
+ * arrows). Emits the leg-end ship-state (lifted to helio) so an arrival
+ * technology downstream (arrival-skyhook) keeps its ship-state input.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; init/draw are the
  * browser-only view hooks. rendersIn "body:destination" is aliased to the
@@ -50,24 +55,26 @@
  */
 /* global THREE */
 
+import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
+import { bodyConstants, integrateEncounter, stateAtLegTime } from "../../../Shared/body-leg.js";
 import { burnEffect } from "../../../Shared/geo-leg.js";
-import { bodySOI } from "../../../Shared/body-leg.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { approachAt } from "../arrival-approach.js";
-import { bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
+import { computeArrivalSeam, SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
+import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed }
+	from "../transfer-leg/transfer-leg.js";
+import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
+var GM_SUN = systems.get("Sun").GM;
 var DAY = 86400;
 
-export var LEAD_S = DAY;            // hand-off: one day before the pass
-export var TAIL_S = DAY;            // leg end: one day after the pass
-export var PERI_SOI_FRACTION = 0.5; // reference periapsis: half the SOI radius
+var MAX_POLY_SAMPLES = 400;   // per segment, decimated from the RK4 trail
 
 var BURN_VEC_SCALE = 8;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
@@ -85,61 +92,75 @@ function isoOf(jd) {
 
 function burnMag(b) { b = b || {}; return Math.hypot(b.pro || 0, b.rad || 0, b.nrm || 0); }
 
-// The reference flyby's periapsis state (body-centric r, v arrays): the
-// hyperbola with incoming-asymptote MOTION direction s (unit), excess speed
-// vInf, and periapsis radius rp, in the plane through s closest to the
-// ecliptic. That plane choice is what fixes which side of the body it passes
-// (see the header). Exported for Node tests.
-export function referencePeriapsis(GM, s, vInf, rp) {
-	var e = 1 + rp * vInf * vInf / GM;
-	var vp = Math.sqrt(vInf * vInf + 2 * GM / rp);
+function kmOf(m) { return Math.round(m / 1000).toLocaleString("en-US"); }
 
-	// Plane normal: ecliptic +z with its along-asymptote component removed
-	// (x-axis fallback for a near-vertical asymptote).
-	var h0 = O.vSub([0, 0, 1], O.vScale(s, s[2]));
-	if (O.vMag(h0) < 1e-9) { h0 = O.vSub([1, 0, 0], O.vScale(s, s[0])); }
-	var h = O.vUnit(h0);
+// The seam window and the state the coast is in at its left edge, in
+// heliocentric terms. `coastLeg` is transfer-leg's own last computed leg (or
+// null); `data` the delivered helio ship-state payload; `commitJd` the plan's
+// committed arrival epoch (or null) — the no-encounter fallback core/
+// arrival-seam.js uses, kept the same here as in mission-view.js's coastSeam so
+// the leg and the Arrival slider agree on where the window sits.
+//
+// Returns { jd0, jdEnd, r, v, ca, deltaDays, hasEncounter, fromCoast }.
+// `fromCoast` records whether the start state was read off the coast leg or
+// back-propagated from the delivered state (see the header).
+export function arrivalWindow(body, coastLeg, data, commitJd) {
+	// isFinite(null) is true (null coerces to 0), so "is there a committed
+	// epoch at all?" needs the type check, not just finiteness.
+	var fallbackJd = (typeof commitJd === "number" && isFinite(commitJd)) ? commitJd : data.jd;
+	var seam = computeArrivalSeam({
+		destination: body,
+		events: (coastLeg && coastLeg.ok) ? coastLeg.events : [],
+		fallbackArrivalJd: fallbackJd
+	});
+	// With no encounter the seam collapses to a point (arrival-seam's fallback);
+	// the phase still needs a window to work in, so one of the standard width is
+	// placed around that epoch.
+	var jd0 = seam.hasEncounter ? seam.start : seam.jd - SEAM_MIN_DAYS;
+	var jdEnd = seam.hasEncounter ? seam.end : seam.jd + ARRIVAL_TAIL_DAYS;
 
-	// Canonical 2D frame (x = periapsis direction, y = periapsis motion,
-	// z = plane normal): the incoming asymptote's motion direction there.
-	var cosTh = -1 / e;
-	var sinTh = Math.sqrt(Math.max(0, 1 - cosTh * cosTh));
-	var uIn = O.vUnit([sinTh, e + cosTh, 0]);
-
-	// The rotation taking the canonical frame {uIn, z×uIn, z} onto the target
-	// frame {s, h×s, h}; applied to canonical x̂ and ŷ.
-	var A = [s, O.vCross(h, s), h];                    // target basis (columns)
-	var B = [uIn, O.vCross([0, 0, 1], uIn), [0, 0, 1]]; // canonical basis
-	function rot(vec) {
-		var c = [O.vDot(B[0], vec), O.vDot(B[1], vec), O.vDot(B[2], vec)];
-		return O.vAdd(O.vScale(A[0], c[0]), O.vAdd(O.vScale(A[1], c[1]), O.vScale(A[2], c[2])));
+	var st = null;
+	if (coastLeg && coastLeg.ok) {
+		var tSeam = (jd0 - coastLeg.jd0) * DAY;
+		var legSpan = (coastLeg.end.jd - coastLeg.jd0) * DAY;
+		if (tSeam >= 0 && tSeam <= legSpan) { st = coastStateAtElapsed(coastLeg, tSeam); }
 	}
-	return { r: O.vScale(rot([1, 0, 0]), rp), v: O.vScale(rot([0, 1, 0]), vp), e: e, vp: vp };
+	if (st) {
+		return { jd0: jd0, jdEnd: jdEnd, r: st.r, v: st.v, ca: seam.jd,
+		         deltaDays: seam.deltaDays, hasEncounter: seam.hasEncounter, fromCoast: true };
+	}
+	var back = O.propagateState(GM_SUN, data.r, data.v, (jd0 - data.jd) * DAY);
+	return { jd0: jd0, jdEnd: jdEnd, r: back.r, v: back.v, ca: seam.jd,
+	         deltaDays: seam.deltaDays, hasEncounter: seam.hasEncounter, fromCoast: false };
 }
 
-// The whole leg, pure. `data` is a helio-frame ship-state payload (the
-// delivered coast end). Returns { ok: true, body, jd0, jdPeri, jdEnd, rp,
-// samples, segs, wpVisuals, ca, end, events, totalDv, approach } or
-// { ok: false, diagnostic }. `samples` are body-centric { r, t } (t seconds
-// after the hand-off). Exported for Node tests and the view hooks.
-export function computeArrivalLeg(params, data) {
+// The whole leg, pure. `spec` is a heliocentric start state plus the window it
+// spans: { r, v, jd0, jdEnd } — normally arrivalWindow()'s output. Returns
+//
+//   { ok: true, body, jd0, jdEnd, T, samples, segs, wpVisuals, ca, end,
+//     events, warnings, totalDv, vInf0, rStart, impact }
+//
+// or { ok: false, diagnostic }. `samples` are body-centric { r, t } (t seconds
+// after the hand-off) for the drawn polyline; `segs` keep the full RK4 trails
+// stateAtElapsed() interpolates. Exported for Node tests and the view hooks.
+export function computeArrivalLeg(params, spec) {
 	var body = params.body;
 	if (!body) {
 		return { ok: false, diagnostic: makeDiagnostic("no-body",
 			"This arrival leg has no destination body set.",
 			{ fix: "Set the arrival body (the mission's destination)." }) };
 	}
-	var approach = approachAt(body, data);
-	if (!approach) {
+	var c;
+	try { c = bodyConstants(body); } catch (e) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
 			"The arrival body '" + body + "' is not a body with a heliocentric orbit.",
 			{ values: { body: body } }) };
 	}
-	if (!(approach.vInf > 1)) {
-		return { ok: false, diagnostic: makeDiagnostic("no-approach-speed",
-			"The delivered coast arrives essentially co-moving with " + body +
-			" — there is no incoming heading to build the approach from.",
-			{ values: { vInf: approach.vInf } }) };
+	var T = (spec.jdEnd - spec.jd0) * DAY;
+	if (!(isFinite(T) && T > 0)) {
+		return { ok: false, diagnostic: makeDiagnostic("bad-params",
+			"The arrival window has no duration — the coast delivers no usable epoch.",
+			{ values: { jd0: spec.jd0, jdEnd: spec.jdEnd } }) };
 	}
 
 	var wps = (params.waypoints || []).map(function (wp, i) {
@@ -150,78 +171,124 @@ export function computeArrivalLeg(params, data) {
 			"The arrival leg supports at most 2 waypoint impulses.",
 			{ values: { count: wps.length } }) };
 	}
-	var T = LEAD_S + TAIL_S;
+	var warnings = [];
 	for (var w = 0; w < wps.length; w++) {
-		if (!(isFinite(wps[w].t) && wps[w].t > 0 && wps[w].t < T)) {
+		if (!isFinite(wps[w].t)) {
 			return { ok: false, diagnostic: makeDiagnostic("waypoint-outside-leg",
-				"Waypoint " + (wps[w].originalIndex + 1) + " at " + ((wps[w].t || 0) / 3600).toFixed(1) +
-				" h after hand-off falls outside the leg (0 – " + (T / 3600).toFixed(0) + " h).",
-				{ values: { t: wps[w].t, legSeconds: T },
-				  fix: "Keep the waypoint inside the two-day arrival window (the pass sits at hour " +
-				       (LEAD_S / 3600).toFixed(0) + ")." }) };
+				"Waypoint " + (wps[w].originalIndex + 1) + " has no valid time.",
+				{ values: { t: wps[w].t } }) };
+		}
+		// The window's width follows Δt, so tuning the coast can pull it in from
+		// under a waypoint. Clamp and say so rather than failing the leg — the
+		// arrival phase must not go blank because the approach got faster.
+		var clamped = Math.max(60, Math.min(T - 60, wps[w].t));
+		if (Math.abs(clamped - wps[w].t) > 1e-6) {
+			warnings.push(makeDiagnostic("waypoint-outside-window",
+				"Waypoint " + (wps[w].originalIndex + 1) + " sits at hour " +
+				(wps[w].t / 3600).toFixed(1) + ", outside the " + (T / DAY).toFixed(1) +
+				"-day approach window — it is being flown at hour " +
+				(clamped / 3600).toFixed(1) + " instead.",
+				{ values: { t: wps[w].t, flownAt: clamped, windowSeconds: T },
+				  fix: "Move the waypoint inside the window, or lengthen it by slowing the approach." }));
+			wps[w].t = clamped;
 		}
 	}
-
-	var phys = bodyPhysics(body);
-	var GM = phys.GM;
-	var rp = PERI_SOI_FRACTION * bodySOI(body);
-	var peri = referencePeriapsis(GM, O.vUnit(approach.vInfVec), approach.vInf, rp);
-
-	// The pass is pinned at the delivered arrival epoch; the leg starts one
-	// day before it.
-	var jdPeri = data.jd;
-	var jd0 = jdPeri - LEAD_S / DAY;
-	var st0 = O.propagateState(GM, peri.r, peri.v, -LEAD_S);
+	wps.sort(function (a, b) { return a.t - b.t; });
 
 	// The segment chain, transfer-leg style: each segment ends at the next
-	// waypoint (burn applied there), the last at the leg end.
-	var r = st0.r, v = st0.v;
+	// waypoint (burn applied there), the last at the window's end. Every segment
+	// is real body + Sun integration, run to its own boundary — exitEnds false,
+	// since the window routinely begins and ends outside a small destination's
+	// SOI (see body-leg.js's integrateEncounter).
+	var rH = spec.r.slice(), vH = spec.v.slice();
+	var local = Frames.helioToLocal(body, spec.jd0, rH, vH);   // body-centric, for a zero-length first segment
+	var jd = spec.jd0, tPrev = 0;
 	var samples = [], segs = [], wpVisuals = [], events = [];
-	var totalDv = 0, tPrev = 0;
+	var totalDv = 0, impact = null;
+	var ca = { t: 0, r: O.vMag(local.r) };
+	var vInf0 = null, rStart = O.vMag(local.r);
 	var bounds = wps.map(function (wp) { return wp.t; }).concat([T]);
-	for (var seg = 0; seg < bounds.length; seg++) {
+
+	for (var seg = 0; seg < bounds.length && !impact; seg++) {
 		var durS = bounds[seg] - tPrev;
-		segs.push({ r0: r, v0: v, tStart: tPrev, dur: durS });
-		var arc = O.sampleArc(GM, r, v, durS, seg === bounds.length - 1 ? 200 : 120);
-		for (var k = (seg > 0 ? 1 : 0); k < arc.length; k++) {
-			samples.push({ r: arc[k].r, t: tPrev + arc[k].t });
+		// Two waypoints can land on the same instant once both have been clamped
+		// into a shrunken window; the burn still happens, there is just no arc
+		// between them to integrate.
+		if (durS >= 1) {
+			var res = integrateEncounter(body, rH, vH, jd, durS, { exitEnds: false });
+			if (vInf0 === null) { vInf0 = res.vinf; }
+			segs.push({ leg: { samples: res.samples, jde0: jd }, tStart: tPrev, dur: res.duration });
+
+			// Polyline points, decimated (the RK4 trail is turn-angle-capped, so
+			// it is dense exactly where the curve bends); the last is never lost.
+			var last = res.samples.length - 1;
+			var stride = Math.max(1, Math.floor(res.samples.length / MAX_POLY_SAMPLES));
+			for (var si = (samples.length ? stride : 0); si <= last; si += stride) {
+				var idx = (si + stride > last) ? last : si;
+				samples.push({ r: res.samples[idx].r, t: tPrev + res.samples[idx].t });
+				if (idx === last) { break; }
+			}
+			if (res.rmin < ca.r) { ca = { t: tPrev + res.tmin, r: res.rmin }; }
+
+			local = { r: res.samples[last].r, v: res.samples[last].v };
+			rH = res.end.r; vH = res.end.v;
+			jd += res.duration / DAY;
+			tPrev += res.duration;
+
+			if (res.branch === "entry") {
+				impact = { body: body, jd: jd, entry: res.entry };
+				break;
+			}
 		}
-		var endState = O.propagateState(GM, r, v, durS);
-		r = endState.r; v = endState.v;
-		tPrev = bounds[seg];
 		if (seg < wps.length) {
 			var wp = wps[seg];
-			var eff = burnEffect(GM, r, v, Object.assign({ pro: 0, rad: 0, nrm: 0 }, wp.burn));
-			wpVisuals[wp.originalIndex] = { renderPos: r, rLocal: r, vLocal: v, eff: eff };
+			var eff = burnEffect(c.GM, local.r, local.v, Object.assign({ pro: 0, rad: 0, nrm: 0 }, wp.burn));
+			wpVisuals[wp.originalIndex] = { renderPos: local.r, rLocal: local.r, vLocal: local.v, eff: eff };
 			var mag = burnMag(wp.burn);
 			totalDv += mag;
-			events.push({ jd: jd0 + wp.t / DAY, flight: false,
+			events.push({ jd: jd,
 			              label: "Arrival waypoint impulse — " + (mag / 1000).toFixed(2) + " km/s" });
-			v = eff.vAfter;
+			local = { r: local.r, v: eff.vAfter };
+			var lifted = Frames.localToHelio(body, jd, local.r, local.v);
+			rH = lifted.r; vH = lifted.v;
 		}
 	}
 
-	// Closest approach, from the (anomaly-dense) samples. Reported as altitude
-	// above the surface (ca.r minus the body's own radius) — the reader-facing
-	// figure, matching how the rest of the readout describes an encounter.
-	var ca = { t: 0, r: Infinity };
-	for (var c = 0; c < samples.length; c++) {
-		var rm = Math.hypot(samples[c].r[0], samples[c].r[1], samples[c].r[2]);
-		if (rm < ca.r) { ca = { t: samples[c].t, r: rm }; }
+	if (!segs.length) {
+		return { ok: false, diagnostic: makeDiagnostic("bad-params",
+			"The arrival window is too short to fly.",
+			{ values: { windowSeconds: T } }) };
 	}
 
-	var jdEnd = jd0 + T / DAY;
-	events.unshift({ jd: jd0, flight: false,
+	var jdEnd = jd;
+
+	events.unshift({ jd: spec.jd0,
 	                 label: "Arrival hand-off — " + body + " approach begins" });
-	events.push({ jd: jd0 + ca.t / DAY, flight: false,
-	              label: "Closest approach — " + Math.round((ca.r - phys.R) / 1e3).toLocaleString("en-US") +
-	                     " km above " + body });
+	// display/mark policy: the seam's own closest approach is already marked on
+	// the Arrival slider's track (mission-view's arrivalSpan, .mp-mark-ca), so
+	// this finer figure carries flight:false to avoid a second mark a few hours
+	// away from the first. It keeps transfer-leg's structured shape so it reads
+	// as the same kind of thing.
+	events.push({ jd: spec.jd0 + ca.t / DAY, flight: false,
+	              kind: "closest-approach", body: body, vInf: vInf0, rmin: ca.r,
+	              label: "Closest approach — " + kmOf(Math.max(0, ca.r - c.R)) + " km above " + body });
+	if (impact) {
+		events.push({ jd: impact.jd, label: "Impacts " + body + " — " +
+			(impact.entry.v / 1000).toFixed(2) + " km/s" });
+		warnings.push(makeDiagnostic("impacts-body",
+			"The approach hits " + body + " on " + isoOf(impact.jd) + " at " +
+			(impact.entry.v / 1000).toFixed(2) + " km/s.",
+			{ values: { body: body, jd: impact.jd, speed: impact.entry.v },
+			  fix: "Raise the pass with a waypoint impulse here, or with the coast's own corrections." }));
+	}
 	events.sort(function (a, b) { return a.jd - b.jd; });
 
 	return {
-		ok: true, body: body, jd0: jd0, jdPeri: jdPeri, jdEnd: jdEnd, rp: rp,
+		ok: true, body: body, jd0: spec.jd0, jdEnd: jdEnd, T: tPrev,
 		samples: samples, segs: segs, wpVisuals: wpVisuals, ca: ca,
-		end: { r: r, v: v }, events: events, totalDv: totalDv, approach: approach
+		end: { r: local.r, v: local.v }, impact: impact,
+		events: events, warnings: warnings, totalDv: totalDv,
+		vInf0: vInf0, rStart: rStart
 	};
 }
 
@@ -240,25 +307,21 @@ function rememberLeg(world, stageId, leg) {
 }
 
 // State (r, v; body-centric m, m/s) at elapsed time t (s) since the hand-off
-// (leg.jd0) -- TRUE Kepler re-propagation via O.propagateState, walking
-// leg.segs (each waypoint-to-waypoint stretch's own starting r0/v0) to find
-// which one t falls in. Same pattern as transfer-leg.js's stateAtElapsed --
-// the drawn polyline's `samples` only carry position, not velocity, which the
-// chevron needs to orient along the direction of travel. Clamped to
-// [0, LEAD_S+TAIL_S]: the phase clock persists across a phase switch, so a
-// stray t outside this leg's own two-day span still resolves to the nearest
-// end rather than running past it.
+// (leg.jd0), interpolated off the segment's own RK4 trail (geo-leg's
+// stateAtLegTime — the trail is dense wherever the curve bends, so this is the
+// same "true state" the drawn polyline is a decimation of). Clamped to
+// [0, leg.T]: the phase clock persists across a phase switch, so a stray t
+// outside this leg's window still resolves to the nearest end.
 export function stateAtElapsed(leg, t) {
 	if (!leg || !leg.segs || !leg.segs.length) { return null; }
-	var GM = bodyPhysics(leg.body).GM;
-	var tc = Math.max(0, Math.min(LEAD_S + TAIL_S, t));
+	var tc = Math.max(0, Math.min(leg.T, t));
 	var segs = leg.segs;
 	var seg = segs[segs.length - 1];
 	for (var i = 0; i < segs.length; i++) {
 		if (tc <= segs[i].tStart + segs[i].dur) { seg = segs[i]; break; }
 	}
-	var dt = Math.max(0, Math.min(seg.dur, tc - seg.tStart));
-	return O.propagateState(GM, seg.r0, seg.v0, dt);
+	var s = stateAtLegTime(seg.leg, Math.max(0, Math.min(seg.dur, tc - seg.tStart)));
+	return { r: s.r, v: s.v };
 }
 
 export default {
@@ -275,7 +338,24 @@ export default {
 		var params = Object.assign({}, defaultParams, ctx.params);
 		var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 
-		var leg = computeArrivalLeg(params, data);
+		// The coast leg itself, for the seam window and the state at its left
+		// edge (see the header). Absent in a bare Node call, or before the coast
+		// has computed — arrivalWindow falls back to the delivered state.
+		var coastLeg = null;
+		if (ctx.world && typeof ctx.world.stages === "function") {
+			var stages = ctx.world.stages();
+			for (var i = 0; i < stages.length; i++) {
+				if (stages[i].moduleId === "transfer-leg") {
+					coastLeg = coastLegFor(ctx.world, stages[i].id);
+					break;
+				}
+			}
+		}
+		var commit = ctx.world ? arrivalCommitmentFor(ctx.world) : null;
+		var commitJd = (commit && commit.body === params.body) ? commit.jd : null;
+
+		var win = arrivalWindow(params.body, coastLeg, data, commitJd);
+		var leg = computeArrivalLeg(params, win);
 		rememberLeg(ctx.world, ctx.stageId, leg);
 		if (!leg.ok) { return leg.diagnostic; }
 
@@ -285,7 +365,7 @@ export default {
 			  dvUsed: (data.dvUsed || 0) + leg.totalDv },
 			{ tool: "mission-planner/arrival-leg", label: "arrival leg end (past " + leg.body + ")",
 			  iso: isoOf(leg.jdEnd) });
-		return { packet: packet, events: leg.events };
+		return { packet: packet, warnings: leg.warnings, events: leg.events };
 	},
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
@@ -318,7 +398,22 @@ export default {
 			return inp;
 		}
 
+		// The window is no longer a fixed two days, so its width and where the
+		// pass falls inside it are what a waypoint's "at hour" is measured
+		// against — say so, or the field has no scale.
+		var windowNote = document.createElement("div");
+		windowNote.className = "mp-muted";
+		host.appendChild(windowNote);
+
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
+
+		function refreshWindowNote() {
+			var leg = legFor(ctx.world, ctx.stageId);
+			windowNote.textContent = (leg && leg.ok)
+				? "approach window " + (leg.T / DAY).toFixed(1) + " d — closest approach at hour " +
+				  (leg.ca.t / 3600).toFixed(1)
+				: "";
+		}
 
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
@@ -335,7 +430,7 @@ export default {
 					setParam("waypoints", list);
 				});
 				head.appendChild(del); card.appendChild(head);
-				numRow(card, "at hour", "h", (wp.t || 0) / 3600, 1, function (v) {
+				numRow(card, "at hour", "h", ((wp.t || 0) / 3600).toFixed(1), 0.5, function (v) {
 					var list = stageParams().waypoints.slice(); list[i].t = v * 3600;
 					setParam("waypoints", list);
 				});
@@ -354,12 +449,12 @@ export default {
 				add.textContent = "+ add waypoint";
 				add.addEventListener("click", function () {
 					var list = stageParams().waypoints.slice();
-					var leg = legFor(ctx.world, ctx.stageId);
+					var live = legFor(ctx.world, ctx.stageId);
 					// Placed at the chevron's current location (4.4) -- the elapsed time
 					// since hand-off the chevron is drawn at, same clock as stateAtElapsed.
-					var t = (leg && leg.ok)
-						? Math.max(1, Math.min(LEAD_S + TAIL_S - 1, (ctx.world.jd - leg.jd0) * DAY))
-						: LEAD_S;
+					var t = (live && live.ok)
+						? Math.max(60, Math.min(live.T - 60, (ctx.world.jd - live.jd0) * DAY))
+						: 12 * 3600;
 					list.push({ t: t, burn: { pro: 0, rad: 0, nrm: 0 } });
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
@@ -374,9 +469,12 @@ export default {
 			stageParams = saved;
 		}
 		rebuildWaypointRows();
+		// Only the readout follows every recompute; rebuilding the waypoint
+		// cards here would tear down a vector editor mid-drag.
+		ctx.onResult(refreshWindowNote);
 	},
 
-	// The flyby polyline in the destination frame: hand-off dot (magenta),
+	// The approach polyline in the destination frame: hand-off dot (magenta),
 	// leg-end dot (white), closest-approach dot (amber), waypoint gizmos +
 	// burn arrows. snap = { world, stageId, params, result }.
 	draw: function (view, snap) {
@@ -451,5 +549,10 @@ export default {
 		} else {
 			view.chevron = null;
 		}
-	}
+	},
+
+	// Exposed on the descriptor (not just as a named export) so the shell can
+	// reach the last computed leg via registry.get("arrival-leg") without a
+	// static import — the same access rule the departure legs follow.
+	legFor: legFor
 };

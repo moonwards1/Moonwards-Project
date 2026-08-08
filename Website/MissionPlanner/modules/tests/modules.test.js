@@ -16,7 +16,8 @@ import skyhook, { tetherKinematics, rotorFor } from "../orbital-skyhook/orbital-
 import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed }
 	from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
-import transferLeg, { computeLeg, stateAtElapsed, MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
+import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_AU }
+	from "../transfer-leg/transfer-leg.js";
 import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
@@ -299,6 +300,46 @@ test("stateAtElapsed: clamps outside the leg's span to its nearest end", functio
 test("stateAtElapsed: a leg with no segments (malformed) returns null", function () {
 	assert.equal(stateAtElapsed({ ok: false }, 0), null);
 	assert.equal(stateAtElapsed(null, 0), null);
+});
+
+// ---- degAtDay / dayAtDeg (the waypoint card's day<->degree UI conversion) --
+
+test("degAtDay: 0 degrees swept at the leg's own start", function () {
+	var leg = computeLeg({ waypoints: [], legDays: 480, destination: "" }, HELIO_START);
+	var deg = degAtDay(leg, 0);
+	assert.ok(deg < 1e-6 || deg > 360 - 1e-6);   // floating-point straddles the 0/360 wrap
+});
+
+test("degAtDay: increases with day (prograde coast sweeps forward around the Sun)", function () {
+	var leg = computeLeg({ waypoints: [], legDays: 480, destination: "" }, HELIO_START);
+	var d1 = degAtDay(leg, 60), d2 = degAtDay(leg, 240);
+	assert.ok(d1 > 0 && d2 > d1);
+});
+
+test("dayAtDeg: inverts degAtDay back to (about) the same day", function () {
+	var leg = computeLeg({
+		waypoints: [{ days: 120, burn: { pro: 500, rad: 0, nrm: 0 } }],
+		legDays: 480, destination: ""
+	}, boosted(HELIO_START, 3000));
+	[30, 120, 300, 450].forEach(function (day) {
+		var deg = degAtDay(leg, day);
+		var back = dayAtDeg(leg, 480, day, deg);
+		assert.ok(Math.abs(back - day) < 0.05, "day " + day + " -> " + deg + "deg -> " + back);
+	});
+});
+
+test("dayAtDeg: a small degree nudge near a waypoint moves it a small number of days", function () {
+	var leg = computeLeg({ waypoints: [], legDays: 480, destination: "" }, HELIO_START);
+	var deg = degAtDay(leg, 200);
+	var nudged = dayAtDeg(leg, 480, 200, deg + 1);
+	assert.ok(nudged > 200 && nudged - 200 < 10);
+});
+
+test("degAtDay/dayAtDeg: a malformed or not-ok leg is a safe no-op", function () {
+	assert.equal(degAtDay(null, 10), 0);
+	assert.equal(degAtDay({ ok: false }, 10), 0);
+	assert.equal(dayAtDeg(null, 480, 10, 50), 10);
+	assert.equal(dayAtDeg({ ok: false }, 480, 10, 50), 10);
 });
 
 // ---- the chained profile through the engine --------------------------------
