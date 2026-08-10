@@ -348,17 +348,16 @@ or the savings evaporate.
 ### WP-6
 
 - [ ] **6.1 Constrained fine-tune waypoint card.** ★★★
-  Per the settled rules: ±100 m/s axes ~~at 0.1 m/s steps with shift-drag~~,
+  Per the settled rules: ±100 m/s axes at 0.1 m/s steps ~~with shift-drag~~,
   numeric entry and arrow-key nudges (redesigned to have zoom and pan functions); a ±5° position slider above the axes; ~~a
   timing bar below, zero-centred, showing the arrival-time shift the current
-  working edit implies~~(moved to ship card)
+  working edit implies~~ (moved to ship card)
 - [ ] **6.2 Session-level commit: snapshot, live preview, Update, Revert.** ★★★
   Update enables only when the working state's outcome beats the snapshot's —
   closer at the recalculated closest approach, or better vector alignment
   without leaving the 0.0002 AU innermost ring. Depends on 6.1.
 - [ ] **6.3 Adding coast waypoints if none exist.** ★
-  First at the trajectory midpoint, second halfway along the remainder; then
-  they behave as above.
+  First at the trajectory midpoint, second at location of chevron (but must be after midpoint); then they behave as above.
 
 ### WP-7
 

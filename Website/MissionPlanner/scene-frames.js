@@ -20,7 +20,8 @@ import { OrbitalMath } from "../Shared/math-utils.js";
 import { LunarEphemeris } from "../Shared/lunar-ephemeris.js";
 import { createCam } from "../Shared/sim/camera-controller.js";
 import {
-	createBody, createSunBody, makePoint, tiltBody, addLabel as brAddLabel
+	createBody, createSunBody, makePoint, makeSOIShell, soiRadiusAU, tiltBody,
+	addLabel as brAddLabel
 } from "../Shared/sim/body-renderer.js";
 import { createKeplerOrbitRing, makeArcLine } from "../Shared/sim/orbit-rings.js";
 
@@ -149,16 +150,35 @@ export function buildBodyFrame(name) {
 	var sys = systems.get(name);
 	var scene = new THREE.Scene();
 	scene.background = new THREE.Color(0x0d111c);
-	var camera = new THREE.PerspectiveCamera(45, 1, 0.05, 400000);
+	// Far plane must reach the Sun's true distance (up to ~49 AU out, for a
+	// Pluto aphelion) now that the Sun marker sits at its real position rather
+	// than a compressed stand-in. planner.js's renderer runs a logarithmic
+	// depth buffer, which is what keeps that huge near/far ratio from
+	// z-fighting the close-in body geometry.
+	var camFar = Math.max(400000, sys.orbit.apoapsis / U * 1.2);
+	var camera = new THREE.PerspectiveCamera(45, 1, 0.05, camFar);
 	scene.add(new THREE.AmbientLight(0x556070, 0.55));
 	var sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
 	scene.add(sunLight);
-	scene.add(makeStars(120000, 900));
+
+	// Scaled off the body's own radius, not hardcoded, since HELIO_BODIES
+	// spans Ceres (radiusU ~0.5) to Jupiter (radiusU ~70) — the same ratios
+	// Earth-Moon (radiusU 6.4, cam 60, zoomMin 2, zoomMax 30000) and the
+	// Mars-Phobos plotter (radiusU 3.4, cam 35) already use, generalized.
+	var radiusU = sys.radius / U;
+	var camDist = Math.max(20, radiusU * 15);
+	var zoomMin = Math.max(0.5, radiusU * 0.3);
+	var zoomMax = Math.max(20000, radiusU * 3000);
+
+	// The star sphere must sit well outside zoomMax, or fully zooming out (a
+	// Jupiter/Saturn-sized zoomMax exceeds the old fixed 120000) puts the
+	// camera past the near side of the star shell, which then renders in
+	// front of the body it's supposed to be a backdrop for.
+	scene.add(makeStars(Math.max(120000, zoomMax * 1.5), 900));
 
 	var scaleList = [], labelList = [];
 	var labelLayer = makeLabelLayer();
 
-	var radiusU = sys.radius / U;
 	var heroGroup = new THREE.Group();
 	var col = new THREE.Color(sys.color || "#9aa3b5");
 	var heroCore = new THREE.Mesh(
@@ -166,19 +186,25 @@ export function buildBodyFrame(name) {
 		new THREE.MeshStandardMaterial({ color: col, emissive: col.clone().multiplyScalar(0.3), roughness: 0.85 }));
 	tiltBody(heroCore, radiusU, sys, col.clone().lerp(new THREE.Color(0xffffff), 0.6).getHex());
 	var heroPoint = makePoint(col.clone().lerp(new THREE.Color(0xffffff), 0.45).getHex(), 2.5);
-	heroGroup.add(heroCore); heroGroup.add(heroPoint);
+	// The body's own SOI (relative to the Sun, same formula the heliocentric
+	// frame uses) — a back-face shell since the camera routinely sits well
+	// inside it at this "hero body" scale (see body-renderer.js's makeSOIShell).
+	var heroSoiAU = soiRadiusAU(sys, SUN.mass, U);
+	var heroSoi = makeSOIShell(heroSoiAU, col.getHex(), 0.08);
+	heroGroup.add(heroCore); heroGroup.add(heroPoint); heroGroup.add(heroSoi);
 	scene.add(heroGroup);
 	brAddLabel(labelLayer, labelList, name, heroGroup, "mp-label");
-	scaleList.push({ name: name, group: heroGroup, core: heroCore, soi: null,
-	                 point: heroPoint, radiusAU: radiusU, soiAU: 0 });
+	scaleList.push({ name: name, group: heroGroup, core: heroCore, soi: heroSoi,
+	                 point: heroPoint, radiusAU: radiusU, soiAU: heroSoiAU });
 
-	// Sun marker: a bright labelled point along the true Sun direction, at a
-	// fixed scene distance (direction is the orientation cue; the real Sun is
-	// far outside any body pane's box).
-	var SUN_DIST = 60000;
-	var sunMark = new THREE.Group();
-	sunMark.add(makePoint(0xffd27a, 5));
-	scene.add(sunMark);
+	// The Sun itself, at true scale and true position — this body's own
+	// heliocentric state gives both direction and distance, so it reads as
+	// the real Sun rather than a compressed stand-in. Pushed onto the same
+	// scaleList as the hero body, so updateScales collapses it to a bright
+	// point once its true angular size drops below a pixel or two, exactly
+	// like every other body here (and like buildHelioFrame's own Sun).
+	var sunBody = createSunBody(scene, scaleList, { sys: SUN, AU: U });
+	var sunMark = sunBody.group;
 	brAddLabel(labelLayer, labelList, "Sun", sunMark, "mp-label");
 
 	// The local stretch of the body's own heliocentric orbit, drawn relative
@@ -207,14 +233,6 @@ export function buildBodyFrame(name) {
 		arcJd = jd;
 	}
 
-	// Scaled off the body's own radius, not hardcoded, since HELIO_BODIES
-	// spans Ceres (radiusU ~0.5) to Jupiter (radiusU ~70) — the same ratios
-	// Earth-Moon (radiusU 6.4, cam 60, zoomMin 2, zoomMax 30000) and the
-	// Mars-Phobos plotter (radiusU 3.4, cam 35) already use, generalized.
-	var camDist = Math.max(20, radiusU * 15);
-	var zoomMin = Math.max(0.5, radiusU * 0.3);
-	var zoomMax = Math.max(20000, radiusU * 3000);
-
 	return {
 		id: "body:" + name,
 		caption: name.toUpperCase() + " SYSTEM · " + name + "-centric ecliptic",
@@ -224,7 +242,7 @@ export function buildBodyFrame(name) {
 		zoomMin: zoomMin, zoomMax: zoomMax,
 		metresPerUnit: U,
 		scaleList: scaleList, labelList: labelList, labelLayer: labelLayer,
-		wantSOI: false,
+		wantSOI: true,
 		focusBody: name,
 		focusChevron: null,
 		pickMeshes: [heroCore],
@@ -234,7 +252,7 @@ export function buildBodyFrame(name) {
 			var s = O.bodyStateAtJD(GM_SUN, sys.orbit, jd);
 			var mag = Math.sqrt(s.r[0] * s.r[0] + s.r[1] * s.r[1] + s.r[2] * s.r[2]) || 1;
 			sunLight.position.set(-s.r[0] / mag * 50000, -s.r[1] / mag * 50000, -s.r[2] / mag * 50000);
-			sunMark.position.set(-s.r[0] / mag * SUN_DIST, -s.r[1] / mag * SUN_DIST, -s.r[2] / mag * SUN_DIST);
+			sunMark.position.set(-s.r[0] / U, -s.r[1] / U, -s.r[2] / U);
 			rebuildOrbitArc(jd);
 			if (this.focusBody === name) { this.cam.target.set(0, 0, 0); }
 		}
@@ -244,7 +262,11 @@ export function buildBodyFrame(name) {
 export function buildEarthMoonFrame() {
 	var scene = new THREE.Scene();
 	scene.background = new THREE.Color(0x0d111c);
-	var camera = new THREE.PerspectiveCamera(45, 1, 0.05, 400000);
+	// Same true-distance-Sun-marker rationale as buildBodyFrame; Earth's own
+	// aphelion sets the floor (see that function's comment for the
+	// logarithmic-depth-buffer note).
+	var camFar = Math.max(400000, EARTH.orbit.apoapsis / U * 1.2);
+	var camera = new THREE.PerspectiveCamera(45, 1, 0.05, camFar);
 	scene.add(new THREE.AmbientLight(0x556070, 0.55));
 	var sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
 	scene.add(sunLight);
@@ -261,18 +283,21 @@ export function buildEarthMoonFrame() {
 		new THREE.MeshStandardMaterial({ color: 0x3b6ea8, emissive: 0x0e1c30, roughness: 0.8 }));
 	tiltBody(earthCore, EARTH.radius / U, EARTH, 0x9fc4ef);
 	var earthPoint = makePoint(0x9fc4ef, 2.5);
-	earthGroup.add(earthCore); earthGroup.add(earthPoint);
+	// Earth's own SOI relative to the Sun — same back-face-shell treatment as
+	// buildBodyFrame's hero body, since the Moon's orbit sits well inside it.
+	var earthSoiAU = soiRadiusAU(EARTH, SUN.mass, U);
+	var earthSoi = makeSOIShell(earthSoiAU, 0x9fc4ef, 0.06);
+	earthGroup.add(earthCore); earthGroup.add(earthPoint); earthGroup.add(earthSoi);
 	scene.add(earthGroup);
 	brAddLabel(labelLayer, labelList, "Earth", earthGroup, "mp-label");
-	scaleList.push({ name: "Earth", group: earthGroup, core: earthCore, soi: null,
-	                 point: earthPoint, radiusAU: EARTH.radius / U, soiAU: 0 });
+	scaleList.push({ name: "Earth", group: earthGroup, core: earthCore, soi: earthSoi,
+	                 point: earthPoint, radiusAU: EARTH.radius / U, soiAU: earthSoiAU });
 
-	// Sun marker (same cue as buildBodyFrame's): a bright labelled point
-	// along the true Sun direction.
-	var SUN_DIST = 60000;
-	var sunMark = new THREE.Group();
-	sunMark.add(makePoint(0xffd27a, 5));
-	scene.add(sunMark);
+	// The Sun itself, at true scale and true position (same treatment as
+	// buildBodyFrame's) — on the same scaleList as Earth and the Moon, so it
+	// collapses to a bright point once too small to read as a disc.
+	var sunBody = createSunBody(scene, scaleList, { sys: SUN, AU: U });
+	var sunMark = sunBody.group;
 	brAddLabel(labelLayer, labelList, "Sun", sunMark, "mp-label");
 
 	var moonNode = new THREE.Group();
@@ -281,11 +306,15 @@ export function buildEarthMoonFrame() {
 		new THREE.MeshStandardMaterial({ color: 0x9aa3b5, emissive: 0x14161c, roughness: 0.95 }));
 	tiltBody(moonCore, MOON.radius / U, MOON, 0xd8dde8);
 	var moonPoint = makePoint(0xd8dde8, 2.5);
-	moonNode.add(moonCore); moonNode.add(moonPoint);
+	// The Moon's own SOI, but relative to EARTH (its orbit.system), not the
+	// Sun — the boundary a departing/arriving ship actually crosses near it.
+	var moonSoiAU = soiRadiusAU(MOON, EARTH.mass, U);
+	var moonSoi = makeSOIShell(moonSoiAU, 0xd8dde8, 0.1);
+	moonNode.add(moonCore); moonNode.add(moonPoint); moonNode.add(moonSoi);
 	scene.add(moonNode);
 	brAddLabel(labelLayer, labelList, "Moon", moonNode, "mp-label");
-	scaleList.push({ name: "Moon", group: moonNode, core: moonCore, soi: null,
-	                 point: moonPoint, radiusAU: MOON.radius / U, soiAU: 0 });
+	scaleList.push({ name: "Moon", group: moonNode, core: moonCore, soi: moonSoi,
+	                 point: moonPoint, radiusAU: MOON.radius / U, soiAU: moonSoiAU });
 
 	// Geocentric Moon orbit, sampled from the real ephemeris around the
 	// current date; rebuilt when the clock has moved more than half a day.
@@ -306,6 +335,33 @@ export function buildEarthMoonFrame() {
 		ringJd = jd;
 	}
 
+	// The local stretch of Earth's own heliocentric orbit, drawn relative to
+	// Earth's current position — the same technique buildBodyFrame's
+	// rebuildOrbitArc uses for every other origin/destination body, missing
+	// here until now because Earth's frame otherwise only draws the
+	// geocentric Moon ring.
+	var aHelioEarth = isFinite(EARTH.orbit.semiMajor) ? EARTH.orbit.semiMajor
+		: (EARTH.orbit.apoapsis + EARTH.orbit.periapsis) / 2;
+	var periodDaysEarth = 2 * Math.PI * Math.sqrt(Math.pow(aHelioEarth, 3) / GM_SUN) / 86400;
+	var spanDaysEarth = periodDaysEarth * 0.08;
+	var helioArcLine = null, helioArcJd = null;
+	function rebuildHelioArc(jd) {
+		if (helioArcLine !== null && Math.abs(jd - helioArcJd) < 0.5) { return; }
+		if (helioArcLine) {
+			scene.remove(helioArcLine);
+			helioArcLine.geometry.dispose(); helioArcLine.material.dispose();
+		}
+		var here = O.bodyStateAtJD(GM_SUN, EARTH.orbit, jd).r;
+		var pts = [], N = 96;
+		for (var k = 0; k <= N; k++) {
+			var r = O.bodyStateAtJD(GM_SUN, EARTH.orbit, jd - spanDaysEarth / 2 + spanDaysEarth * k / N).r;
+			pts.push(new THREE.Vector3((r[0] - here[0]) / U, (r[1] - here[1]) / U, (r[2] - here[2]) / U));
+		}
+		helioArcLine = makeArcLine(pts, 0x3a4763, 0.55);
+		scene.add(helioArcLine);
+		helioArcJd = jd;
+	}
+
 	return {
 		id: "body:Earth-Moon",
 		caption: "EARTH–MOON SYSTEM · geocentric ecliptic",
@@ -315,7 +371,7 @@ export function buildEarthMoonFrame() {
 		zoomMin: 2, zoomMax: 30000,
 		metresPerUnit: U,
 		scaleList: scaleList, labelList: labelList, labelLayer: labelLayer,
-		wantSOI: false,
+		wantSOI: true,
 		focusBody: "Moon",   // keeps the skyhook in view as the date moves; pan releases
 		focusChevron: null,
 		pickMeshes: [earthCore, moonCore],
@@ -327,9 +383,11 @@ export function buildEarthMoonFrame() {
 			var r = LE.moonVector(jd);
 			moonNode.position.set(r[0] * 1e3 / U, r[1] * 1e3 / U, r[2] * 1e3 / U);
 			var s = LE.sunDirection(jd);
+			var sv = LE.sunVector(jd);   // km, Earth -> Sun, true direction AND distance
 			sunLight.position.set(s[0] * 50000, s[1] * 50000, s[2] * 50000);
-			sunMark.position.set(s[0] * SUN_DIST, s[1] * SUN_DIST, s[2] * SUN_DIST);
+			sunMark.position.set(sv[0] * 1e3 / U, sv[1] * 1e3 / U, sv[2] * 1e3 / U);
 			rebuildRing(jd);
+			rebuildHelioArc(jd);
 			if (this.focusBody === "Moon") { this.cam.target.copy(moonNode.position); }
 			else if (this.focusBody === "Earth") { this.cam.target.set(0, 0, 0); }
 		}
