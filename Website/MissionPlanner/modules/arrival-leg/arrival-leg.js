@@ -509,18 +509,19 @@ export default {
 				color: colorHex, size: sizePx, sizeAttenuation: false,
 				transparent: true, depthTest: false }));
 		}
-		if (leg.samples.length) {
-			view.group.add(dot(leg.samples[0].r, 0xff5fd0, 6));
-			view.group.add(dot(leg.samples[leg.samples.length - 1].r, 0xe8ecf5, 6));
-		}
-		// closest approach — nearest sample to ca.t
+		// The only point worth marking: the ship's own position at closest
+		// approach (white). Unlike Coast's matching dot, there is no separate
+		// destination marker here -- the destination IS this frame's origin,
+		// at every instant, so a dot for it would just sit on the body itself.
+		// The hand-off/leg-end states exist to structure the interface, not to
+		// be looked at.
 		var caSample = leg.samples[0];
 		for (var i = 1; i < leg.samples.length; i++) {
 			if (Math.abs(leg.samples[i].t - leg.ca.t) < Math.abs(caSample.t - leg.ca.t)) {
 				caSample = leg.samples[i];
 			}
 		}
-		view.group.add(dot(caSample.r, 0xe0a84a, 8));
+		view.group.add(dot(caSample.r, 0xe8ecf5, 6));
 
 		(leg.wpVisuals || []).forEach(function (wv) {
 			if (!wv) { return; }

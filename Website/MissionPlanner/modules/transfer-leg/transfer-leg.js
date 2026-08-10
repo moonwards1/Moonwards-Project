@@ -627,13 +627,43 @@ export default {
 		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
+		var params = Object.assign({}, defaultParams, snap.params);
 
-		var pts = leg.samples.map(function (s) {
-			return new THREE.Vector3(s.r[0] / U, s.r[1] / U, s.r[2] / U);
-		});
+		// The Coast->Arrival seam (core/arrival-seam.js) -- where this phase
+		// hands off to Arrival, regardless of which phase is currently active.
+		// Past it the drawn line switches to the same dimmed treatment as the
+		// destination overrun below, so the hand-off point reads clearly on
+		// sight instead of only being visible as where the chevron stops.
+		var seam = null, seamT = null;
+		if (params.destination && systems.get(params.destination)) {
+			seam = computeArrivalSeam({ destination: params.destination, events: leg.events,
+			                             fallbackArrivalJd: leg.end.jd });
+			seamT = (seam.start - leg.jd0) * DAY;
+		}
+
+		function ptsFrom(samples) {
+			return samples.map(function (s) { return new THREE.Vector3(s.r[0] / U, s.r[1] / U, s.r[2] / U); });
+		}
+
+		// Split index: the first sample at/after the seam. splitIdx ===
+		// samples.length (no destination, or the seam never arrives) keeps the
+		// whole line bright, matching the pre-split behaviour.
+		var splitIdx = leg.samples.length;
+		if (seamT !== null) {
+			for (var si0 = 0; si0 < leg.samples.length; si0++) {
+				if (leg.samples[si0].t >= seamT) { splitIdx = si0; break; }
+			}
+		}
 		view.group.add(new THREE.Line(
-			new THREE.BufferGeometry().setFromPoints(pts),
+			new THREE.BufferGeometry().setFromPoints(ptsFrom(leg.samples.slice(0, splitIdx + 1))),
 			new THREE.LineBasicMaterial({ color: 0x66f0ff })));
+		if (splitIdx < leg.samples.length) {
+			// Shares the seam-index vertex with the bright segment above, so
+			// the two segments join without a visible gap.
+			view.group.add(new THREE.Line(
+				new THREE.BufferGeometry().setFromPoints(ptsFrom(leg.samples.slice(splitIdx))),
+				new THREE.LineBasicMaterial({ color: 0x66f0ff, transparent: true, opacity: 0.3 })));
+		}
 
 		// The display-only overrun: the path continued dimmer past the leg's
 		// own end, so the pass by the destination reads as a pass (see
@@ -647,7 +677,14 @@ export default {
 				new THREE.LineBasicMaterial({ color: 0x66f0ff, transparent: true, opacity: 0.3 })));
 		}
 
-		// Constant-pixel dots: leg start (release) and leg end.
+		// Constant-pixel dots: the only two points worth marking are the point
+		// of closest approach (white) and where the destination itself sits at
+		// that same moment (amber) -- the leg's own start/end exist to
+		// structure the interface (the hand-off clamp, the miss-distance
+		// warning), not to be looked at. seam.jd (computed above) already IS
+		// this epoch: the real closest-approach date for an encountered
+		// destination, or the plan's committed arrival epoch as a stand-in
+		// when the coast never actually reaches its SOI.
 		function dot(rM, colorHex, sizePx) {
 			var g = new THREE.BufferGeometry();
 			g.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
@@ -656,15 +693,11 @@ export default {
 				color: colorHex, size: sizePx, sizeAttenuation: false,
 				transparent: true, depthTest: false }));
 		}
-		if (leg.samples.length) { view.group.add(dot(leg.samples[0].r, 0xff5fd0, 6)); }
-		view.group.add(dot(leg.end.r, 0xe8ecf5, 6));
-
-		// Destination position at arrival, if one is set — the "how far off
-		// are we" mark the warning talks about.
-		var params = Object.assign({}, defaultParams, snap.params);
-		if (params.destination && systems.get(params.destination)) {
-			var dest = O.bodyStateAtJD(GM_SUN, systems.get(params.destination).orbit, leg.end.jd);
-			view.group.add(dot(dest.r, 0xe0a84a, 8));
+		if (seam && systems.get(params.destination)) {
+			var caState = stateAtElapsed(leg, (seam.jd - leg.jd0) * DAY);
+			if (caState) { view.group.add(dot(caState.r, 0xe8ecf5, 6)); }
+			var destAtCA = O.bodyStateAtJD(GM_SUN, systems.get(params.destination).orbit, seam.jd);
+			view.group.add(dot(destAtCA.r, 0xe0a84a, 8));
 		}
 
 		// Waypoint gizmos and burn arrows: display each waypoint with three axes
@@ -725,12 +758,7 @@ export default {
 		// Coast phase has no business displaying. In any other phase the clamp
 		// lifts and the same marker continues on to the real encounter.
 		var t = (snap.world.jd - leg.jd0) * DAY;
-		if (snap.phase === "coast" && params.destination) {
-			var seam = computeArrivalSeam({ destination: params.destination, events: leg.events,
-			                                 fallbackArrivalJd: leg.end.jd });
-			var seamT = (seam.start - leg.jd0) * DAY;
-			if (t > seamT) { t = seamT; }
-		}
+		if (snap.phase === "coast" && seamT !== null && t > seamT) { t = seamT; }
 		var s = stateAtElapsed(leg, t);
 		if (s) {
 			var chevron = makeShipSprite();
