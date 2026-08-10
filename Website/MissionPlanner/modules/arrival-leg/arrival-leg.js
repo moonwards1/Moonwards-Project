@@ -539,14 +539,22 @@ export default {
 		// for the shell contract (no state of its own, positioned wherever
 		// snap.world.jd sits along the flight, re-oriented/rescaled every
 		// render frame by mission-view.js via the stable view.chevron slot).
+		// Unlike departure/coast, this frame's own axes are body-relative, so
+		// the local velocity swings with the destination's own motion around
+		// the Sun even on an unburned coast -- pointing the chevron along it
+		// reads as a course change that isn't there. Orient along the lifted
+		// heliocentric velocity instead; position stays local (that IS where
+		// the ship is, relative to the frame's origin).
 		var t = (snap.world.jd - leg.jd0) * DAY;
 		var s = stateAtElapsed(leg, t);
 		if (s) {
 			var chevron = makeShipSprite();
 			chevron.position.set(s.r[0] / U, s.r[1] / U, s.r[2] / U);
 			view.group.add(chevron);
+			var jdAt = leg.jd0 + Math.max(0, Math.min(leg.T, t)) / DAY;
+			var vHelio = Frames.localToHelio(leg.body, jdAt, s.r, s.v).v;
 			view.chevron = { sprite: chevron,
-				velDir: new THREE.Vector3(s.v[0], s.v[1], s.v[2]).normalize() };
+				velDir: new THREE.Vector3(vHelio[0], vHelio[1], vHelio[2]).normalize() };
 		} else {
 			view.chevron = null;
 		}
