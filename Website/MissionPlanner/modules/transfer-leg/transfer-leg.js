@@ -420,9 +420,14 @@ export function computeLeg(params, data) {
 	if (impact) {
 		// The walk stopped at the surface; the leg has no coast state past it.
 	} else if (p.destination && systems.get(p.destination)) {
+		// The label states the leg's END, which is what it says; `miss` — the
+		// figure the "misses destination" warning is judged on — is set from the
+		// PASS further down, once the leg exists to measure. A leg routinely ends
+		// before its own closest approach, so its end separation says little
+		// about whether the destination was reached.
 		var dest = O.bodyStateAtJD(GM_SUN, systems.get(p.destination).orbit, jdEnd);
-		miss = O.vMag(O.vSub(r, dest.r)) / AU;
-		out.events.push({ jd: jdEnd, display: false, label: "Leg ends — " + miss.toFixed(3) + " AU from " + p.destination });
+		out.events.push({ jd: jdEnd, display: false, label: "Leg ends — " +
+			(O.vMag(O.vSub(r, dest.r)) / AU).toFixed(3) + " AU from " + p.destination });
 	} else {
 		out.events.push({ jd: jdEnd, display: false, label: "Leg ends" });
 	}
@@ -456,6 +461,9 @@ export function computeLeg(params, data) {
 	// sliders and the ship card read: one measurement, reported once.
 	if (!impact && p.destination && systems.get(p.destination)) {
 		var pass = nearestApproach(leg, p.destination);
+		// "Did this coast reach its destination" is the closest it ever comes,
+		// not where its own duration parameter happened to run out.
+		if (pass) { leg.miss = pass.rmin / AU; }
 		if (pass && pass.insideSoi) {
 			var c2 = bodyConstants(p.destination);
 			out.events = out.events.filter(function (e) {
@@ -735,7 +743,7 @@ export default {
 		}
 		if (leg.miss !== null && leg.miss > MISS_WARN_AU) {
 			warnings.push(makeDiagnostic("misses-destination",
-				"The leg ends " + leg.miss.toFixed(3) + " AU from " + params.destination +
+				"The coast comes no closer than " + leg.miss.toFixed(3) + " AU to " + params.destination +
 				" (within " + MISS_WARN_AU + " AU counts as arrival).",
 				{ values: { missAU: leg.miss, destination: params.destination },
 				  fix: "Adjust the waypoint impulses, the leg duration, or whatever delivers the coast's starting state." }));

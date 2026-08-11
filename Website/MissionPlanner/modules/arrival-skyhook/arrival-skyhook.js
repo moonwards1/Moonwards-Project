@@ -43,7 +43,8 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { tetherGeometry, resolveParams, bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
-import { approachAt, interceptWarning } from "../arrival-approach.js";
+import { approachAt, approachFromPass, interceptWarning } from "../arrival-approach.js";
+import { passFor as arrivalPassFor } from "../arrival-leg/arrival-leg.js";
 import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
@@ -65,14 +66,19 @@ function isoOf(jd) {
 // (comAlt / topAlt / relAlt — relAlt is the CATCH altitude here), resolved
 // through its resolveParams so a stage carrying only { body } gets the same
 // satellite-orbit-seeded defaults a departure skyhook would.
-export function computeCatch(params, data) {
+// `pass` (optional) is the arrival leg's own measured pass — the approach this
+// catcher actually has to absorb, at closest approach and with any arrival
+// waypoints already in it. Without one the catch falls back to measuring at the
+// delivered instant, which sits at the arrival leg's END, roughly a day PAST
+// the pass and therefore neither the closest nor the fastest point.
+export function computeCatch(params, data, pass) {
 	var p = resolveParams(params);
 	if (!p.body) {
 		return { ok: false, diagnostic: makeDiagnostic("no-body",
 			"This skyhook catch has no destination body set.",
 			{ fix: "Set the arrival body (the mission's destination)." }) };
 	}
-	var approach = approachAt(p.body, data);
+	var approach = (pass ? approachFromPass(p.body, pass) : null) || approachAt(p.body, data);
 	if (!approach) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
 			"The catch body '" + p.body + "' is not a body with a heliocentric orbit.",
@@ -93,6 +99,19 @@ export function computeCatch(params, data) {
 		vCatch: vCatch, trimDv: trimDv, jd: data.jd,
 		warnings: warnings
 	};
+}
+
+// The arrival leg's own measured pass, reached sideways the way every
+// cross-stage trajectory read in this app works (the packet carries one
+// instant; a pass needs the flight). null in a bare Node call, or with no
+// arrival leg ahead of this catcher — computeCatch then falls back.
+function arrivalPassOf(world) {
+	if (!world || typeof world.stages !== "function") { return null; }
+	var stages = world.stages();
+	for (var i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId === "arrival-leg") { return arrivalPassFor(world, stages[i].id); }
+	}
+	return null;
 }
 
 // Last computed catch per (World, stage) — the WeakMap pattern every module
@@ -120,7 +139,7 @@ export default {
 
 	update: function (ctx, input) {
 		var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
-		var cat = computeCatch(ctx.params, data);
+		var cat = computeCatch(ctx.params, data, arrivalPassOf(ctx.world));
 		rememberCatch(ctx.world, ctx.stageId, cat);
 		if (!cat.ok) { return cat.diagnostic; }
 

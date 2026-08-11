@@ -315,6 +315,30 @@ export function computeArrivalLeg(params, spec) {
 // Last computed leg per (World, stage) — the WeakMap pattern every module here
 // uses: keyed by World first, since N missions coexist and reuse stage ids.
 var lastByWorld = new WeakMap();
+// This leg's own measured pass, in the shape transfer-leg's nearestApproach
+// returns — so an arrival technology downstream reads the approach it actually
+// has to catch (arrival waypoints included) through the same interface, rather
+// than re-measuring at whatever instant the packet happens to carry.
+//
+// Its figures come from the segments' own integrateEncounter minima, which is
+// the best trajectory available this close to the body. `atEdge` forwards
+// caAtEdge: a minimum on a window boundary is not a periapsis.
+export function passFor(world, stageId) {
+	var leg = legFor(world, stageId);
+	if (!leg || !leg.ok || !leg.ca) { return null; }
+	var c = bodyConstants(leg.body);
+	var vInf = (typeof leg.vInf0 === "number" && isFinite(leg.vInf0)) ? leg.vInf0 : null;
+	return {
+		jd: leg.jd0 + leg.ca.t / DAY,
+		rmin: leg.ca.r,
+		altitude: leg.ca.r - c.R,
+		vInf: vInf,
+		speed: vInf === null ? null : Math.sqrt(vInf * vInf + 2 * c.GM / leg.ca.r),
+		insideSoi: leg.ca.r < c.SOI,
+		atEdge: !!leg.caAtEdge
+	};
+}
+
 export function legFor(world, stageId) {
 	var m = lastByWorld.get(world);
 	return (m && m.get(stageId)) || null;

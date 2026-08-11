@@ -169,3 +169,89 @@ test("every warning carries a fix line", function () {
 	assert.ok(arrivalComplianceWarnings(
 		computeArrivalCompliance({ commitment: COMMIT, data: null, windowDays: 1 }))[0].fix.length > 0);
 });
+
+// ---- all three rows measure the PASS, not the delivered instant -------------
+// The delivered packet sits at the coast leg's END — `jd0 + legDays`, a
+// parameter rather than an event — which is neither where the ship comes
+// closest nor when it gets there. Measuring there left the epoch row
+// structurally unable to move when waypoints were tuned.
+
+// A pass at `rmin` metres, `vInf` m/s, `jd` — the shape transfer-leg's
+// nearestApproach returns.
+function passAt(rmin, vInf, jd) {
+	return { jd: jd, rmin: rmin, vInf: vInf, speed: vInf, insideSoi: true, vRel: [vInf, 0, 0] };
+}
+
+test("compliance: the epoch row reads the pass, not the delivered epoch", function () {
+	// Delivered half a day AFTER the pass — exactly the coast's own situation,
+	// since its leg routinely runs on past closest approach.
+	var comp = computeArrivalCompliance({
+		commitment: COMMIT,
+		pass: passAt(1e7, 3776, ARR_JD + 0.3),
+		data: delivered("Ceres", 3776, 0, ARR_JD),
+		windowDays: 1
+	});
+	var rows = rowsOf(comp);
+	assert.ok(Math.abs(rows.epoch.delivered - (ARR_JD + 0.3)) < 1e-9,
+		"epoch row took the delivered instant instead of the pass");
+	assert.ok(Math.abs(rows.epoch.delta - 0.3) < 1e-9);
+	assert.equal(comp.delivered.jd, ARR_JD + 0.3);
+});
+
+test("compliance: the encounter row reads the pass distance", function () {
+	// Delivered a long way off, but the PASS is close — the coast reached the
+	// body and then carried on, which must not read as a miss.
+	var comp = computeArrivalCompliance({
+		commitment: COMMIT,
+		pass: passAt(2e7, 3776, ARR_JD),
+		data: delivered("Ceres", 3776, 0.5 * AU),
+		windowDays: 1
+	});
+	var rows = rowsOf(comp);
+	assert.ok(Math.abs(rows.encounter.delivered - 2e7 / AU) < 1e-12);
+	assert.equal(rows.encounter.ok, true, "a close pass must not read as a miss");
+	assert.deepEqual(arrivalComplianceWarnings(comp), []);
+});
+
+test("compliance: the v∞ row reads the pass's asymptotic speed", function () {
+	var comp = computeArrivalCompliance({
+		commitment: COMMIT,
+		pass: passAt(1e7, 3776 + ARRIVAL_VINF_TOL + 5, ARR_JD),
+		data: delivered("Ceres", 3776, 0),   // on-plan at the delivered instant
+		windowDays: 1
+	});
+	var rows = rowsOf(comp);
+	assert.ok(Math.abs(rows.vinf.delivered - (3776 + ARRIVAL_VINF_TOL + 5)) < 1e-9);
+	assert.equal(rows.vinf.ok, false, "the pass is outside tolerance and must say so");
+});
+
+test("compliance: with no pass it falls back to the delivered instant", function () {
+	// A bare Node call, or a chain whose coast hasn't computed: the delivered
+	// state is all there is, and the old behaviour is exactly right there.
+	var withoutPass = computeArrivalCompliance({
+		commitment: COMMIT, data: delivered("Ceres", 3776, 0), windowDays: 1 });
+	assert.deepEqual(rowsOf(withoutPass).epoch.delivered, ARR_JD);
+	assert.equal(rowsOf(withoutPass).encounter.ok, true);
+	// null and undefined alike mean "no measurement available".
+	var nullPass = computeArrivalCompliance({
+		commitment: COMMIT, pass: null, data: delivered("Ceres", 3776, 0), windowDays: 1 });
+	assert.deepEqual(rowsOf(nullPass).epoch.delivered, ARR_JD);
+});
+
+test("compliance: fractional day counts read as plural", function () {
+	// The epoch row reports the PASS now, so non-integer day counts are the
+	// norm rather than an oddity — "1.4 day early" was the old threshold showing.
+	function msgFor(deltaDays) {
+		var comp = computeArrivalCompliance({
+			commitment: COMMIT,
+			pass: passAt(1e7, 3776, ARR_JD + deltaDays),
+			data: delivered("Ceres", 3776, 0),
+			windowDays: 1
+		});
+		return arrivalComplianceWarnings(comp).map(function (w) { return w.message; }).join(" ");
+	}
+	assert.match(msgFor(-1.4), /1\.4 days early/);
+	assert.match(msgFor(2.5), /2\.5 days late/);
+	// Exactly one day stays singular.
+	assert.match(msgFor(-1.02), /1\.0 day early/);
+});

@@ -21,7 +21,7 @@ import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_
 	from "../transfer-leg/transfer-leg.js";
 import { findClosestApproach as findClosestApproachEvent,
 	computeArrivalSeam as computeArrivalSeamFor } from "../../core/arrival-seam.js";
-import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
+import arrivalBoundary, { arrivalComplianceFor } from "../arrival-boundary/arrival-boundary.js";
 import arrivalLeg, { legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
@@ -895,4 +895,38 @@ test("seam: an SOI entry is detected even when the leg ends just outside it", fu
 	assert.ok(Math.abs(ev.rmin - pass.rmin) < 1,
 		"event " + ev.rmin + " vs measurement " + pass.rmin);
 	assert.ok(Math.abs(ev.jd - pass.jd) * DAY < 1, "epochs disagree");
+});
+
+test("compliance: the arrival epoch row moves when waypoints move the pass", function () {
+	// The defect this replaced: the epoch row measured the coast's leg end,
+	// which is `jd0 + legDays` — fixed by construction — so tuning waypoints
+	// swung the actual arrival by most of a day while the compliance row read
+	// exactly zero deviation every time.
+	var seen = [-6, -3, 0, 3, 6].map(function (d) {
+		var res = deserializeWorld(defaultMission);
+		var world = res.world;
+		var coast = world.stages().filter(function (s) {
+			return s.moduleId === "transfer-leg"; })[0];
+		var wps = JSON.parse(JSON.stringify(coast.params.waypoints));
+		wps[0].burn.pro += d;
+		world.set({ stage: coast.id, params: { waypoints: wps, handoff: null } });
+		createEngine(world, makeRegistry());
+		var bnd = world.stages().filter(function (s) {
+			return s.moduleId === "arrival-boundary"; })[0];
+		var comp = arrivalComplianceFor(world, bnd.id);
+		var epoch = comp.rows.filter(function (r) { return r.key === "epoch"; })[0];
+		var enc = comp.rows.filter(function (r) { return r.key === "encounter"; })[0];
+		return { d: d, epoch: epoch.delta, miss: enc.delivered };
+	});
+	// Monotonic in the impulse, and actually moving — a fixed leg end gave the
+	// same number five times.
+	for (var i = 1; i < seen.length; i++) {
+		assert.ok(seen[i].epoch > seen[i - 1].epoch,
+			"epoch row not monotonic at " + seen[i].d + ": " + JSON.stringify(seen));
+	}
+	assert.ok(seen[seen.length - 1].epoch - seen[0].epoch > 0.5,
+		"the epoch row barely moved across the sweep — is it reading the leg end again?");
+	// The shipped mission flies its own frozen plan, so it sits on the epoch.
+	var onPlanRow = seen.filter(function (s) { return s.d === 0; })[0];
+	assert.ok(Math.abs(onPlanRow.epoch) < 0.01, "the unmodified preset should arrive on time");
 });

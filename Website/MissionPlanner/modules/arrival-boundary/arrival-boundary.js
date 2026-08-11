@@ -59,8 +59,9 @@
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { approachAt, interceptWarning } from "../arrival-approach.js";
-import { MISS_WARN_AU } from "../transfer-leg/transfer-leg.js";
+import { approachAt, approachFromPass, interceptWarning } from "../arrival-approach.js";
+import { MISS_WARN_AU, handoffLegFor as coastHandoffLegFor,
+	nearestApproach as coastNearestApproach } from "../transfer-leg/transfer-leg.js";
 import { arrivalCommitmentFor, handoffWindowFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
@@ -79,6 +80,23 @@ export var defaultParams = {};      // the commitment lives on the plan
 // committed speed at all?" needs the type check, not just finiteness.
 function isNum(x) { return typeof x === "number" && isFinite(x); }
 
+// The COMMITTED coast's measured pass at `body` — the same sideways,
+// registry-free read arrival-leg makes for its own window (the packet carries
+// one instant; a pass needs the trajectory). The committed leg, not the live
+// one: this seam reports on what the arrival phase is running on, so a pending
+// waypoint edit must not move it. null in a bare Node call, before the coast
+// has computed, or with no arrival body committed.
+function coastPassFor(world, body) {
+	if (!world || typeof world.stages !== "function" || !body) { return null; }
+	var stages = world.stages();
+	for (var i = 0; i < stages.length; i++) {
+		if (stages[i].moduleId !== "transfer-leg") { continue; }
+		var leg = coastHandoffLegFor(world, stages[i].id);
+		return leg ? coastNearestApproach(leg, body) : null;
+	}
+	return null;
+}
+
 function isoOf(jd) {
 	var d = O.dateFromJulian(jd);
 	return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
@@ -86,10 +104,22 @@ function isoOf(jd) {
 
 // The comparison, pure. spec = {
 //   commitment,   // { body, jd, vInf } from the plan, or null (no commitment)
+//   pass,          // the coast's MEASURED pass at the commitment's body
+//                  // (transfer-leg's nearestApproach) — what the three rows are
+//                  // measured from whenever a coast trajectory is reachable
 //   data,          // the coast's delivered helio-frame ship-state payload, or
-//                  // null when nothing is reaching the seam
+//                  // null when nothing is reaching the seam. Still what says
+//                  // whether anything arrived at all; the FALLBACK measurement
+//                  // when there is no pass (see arrival-approach.js)
 //   windowDays     // epoch tolerance half-width (d)
 // }
+//
+// ALL THREE ROWS MEASURE THE PASS, not the coast leg's end. The leg's end is
+// `jd0 + legDays` — a parameter, not an event — so measuring there made the
+// epoch row structurally incapable of moving when waypoints were tuned (it read
+// zero deviation while the actual arrival swung by ±0.7 d), and made the
+// encounter row report the separation at an arbitrary instant rather than at
+// closest approach.
 // Returns { ok: false, diagnostic } only when the COMMITMENT ITSELF is
 // unusable (a damaged save), else:
 //
@@ -115,14 +145,15 @@ export function computeArrivalCompliance(spec) {
 		return { ok: true, commitment: commitment, delivered: null, rows: [] };
 	}
 
-	var approach = approachAt(commitment.body, data);
+	var approach = (spec.pass ? approachFromPass(commitment.body, spec.pass) : null)
+		|| approachAt(commitment.body, data);
 	if (!approach) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
 			"The plan's arrival body '" + commitment.body + "' is not a body with a heliocentric orbit.",
 			{ values: { body: commitment.body } }) };
 	}
 
-	var delivered = { body: commitment.body, jd: data.jd, vInf: approach.vInf,
+	var delivered = { body: commitment.body, jd: approach.jd, vInf: approach.vInf,
 	                  missAU: approach.missAU, vInfVec: approach.vInfVec };
 
 	// The encounter row replaces the departure seam's "aim" row. The plan
@@ -141,9 +172,11 @@ export function computeArrivalCompliance(spec) {
 		            ok: Math.abs(approach.vInf - commitment.vInf) <= ARRIVAL_VINF_TOL });
 	}
 	var windowDays = (isNum(spec.windowDays) && spec.windowDays > 0) ? spec.windowDays : 1;
-	rows.push({ key: "epoch", required: commitment.jd, delivered: data.jd,
-	            delta: data.jd - commitment.jd, window: windowDays,
-	            ok: Math.abs(data.jd - commitment.jd) <= windowDays });
+	// The epoch of the PASS — when the ship actually gets there — not when the
+	// coast stage's parameter runs out.
+	rows.push({ key: "epoch", required: commitment.jd, delivered: approach.jd,
+	            delta: approach.jd - commitment.jd, window: windowDays,
+	            ok: Math.abs(approach.jd - commitment.jd) <= windowDays });
 
 	return { ok: true, commitment: commitment, delivered: delivered, rows: rows };
 }
@@ -192,7 +225,11 @@ export function arrivalComplianceWarnings(comp) {
 		} else if (row.key === "epoch") {
 			warnings.push(makeDiagnostic("arrival-epoch-mismatch",
 				"The coast reaches " + comp.commitment.body + " on " + isoOf(row.delivered) + ", " +
-				Math.abs(row.delta).toFixed(1) + " day" + (Math.abs(row.delta) >= 1.95 ? "s" : "") +
+				// Plural for everything except exactly "1.0" as printed — the row
+				// reports the pass now, so fractional day counts are the norm and
+				// a >= 1.95 threshold read "1.4 day".
+				Math.abs(row.delta).toFixed(1) + " day" +
+				(Math.abs(row.delta).toFixed(1) === "1.0" ? "" : "s") +
 				(row.delta > 0 ? " late" : " early") + " — outside the plan's ±" + row.window +
 				" d window around " + isoOf(row.required) + ".",
 				{ values: { required: row.required, delivered: row.delivered,
@@ -237,8 +274,10 @@ export default {
 		if (input) {
 			data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 		}
+		var commitment = arrivalCommitmentFor(ctx.world);
 		var comp = computeArrivalCompliance({
-			commitment: arrivalCommitmentFor(ctx.world),
+			commitment: commitment,
+			pass: coastPassFor(ctx.world, commitment && commitment.body),
 			data: data,
 			windowDays: handoffWindowFor(ctx.world)
 		});
@@ -295,7 +334,10 @@ export default {
 				row("delivered v∞", d ? (d.vInf / 1000).toFixed(2) + " km/s" : "—",
 					(byKey.vinf && !byKey.vinf.ok) ? "mp-bad" : "");
 			}
-			row("miss at hand-off", d ? d.missAU.toFixed(4) + " AU" : "—",
+			// Not "miss at hand-off" any more: every row here measures the PASS,
+			// so this is how close the coast actually comes, not its separation
+			// at whatever instant the leg happened to end.
+			row("closest approach", d ? d.missAU.toFixed(4) + " AU" : "—",
 				(byKey.encounter && !byKey.encounter.ok) ? "mp-bad" : "");
 		});
 	},

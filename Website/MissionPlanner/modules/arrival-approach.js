@@ -18,10 +18,43 @@ import { MISS_WARN_AU } from "./transfer-leg/transfer-leg.js";
 var O = OrbitalMath;
 var AU = 149597870700;   // m
 
+// The delivered approach, built from a MEASURED PASS rather than from a single
+// instant — transfer-leg's nearestApproach (or arrival-leg's own equivalent).
+// This is the form every arrival stage should use when a trajectory is
+// reachable.
+//
+// Why it exists: approachAt below measures at whatever epoch the packet
+// carries, which is the emitting leg's END. A leg routinely ends before its own
+// closest approach, so that instant is neither the closest the ship gets nor
+// the speed it gets there at — on the shipped Ceres mission a pass 1,649 km
+// from the body reads as 182,000 km away, and the epoch never moves at all when
+// waypoints are tuned, because a leg's end is `jd0 + legDays` by construction.
+// The pass is the physical event those figures are meant to describe.
+//
+// `vInfVec` is the relative velocity AT closest approach, not the asymptote —
+// its magnitude is deliberately not used for `vInf`, which takes the pass's own
+// asymptotic figure. Nothing currently reads the vector; it is kept so the
+// shape matches approachAt's.
+export function approachFromPass(body, pass) {
+	var sys = systems.get(body);
+	if (!sys || !sys.orbit || !pass) { return null; }
+	return {
+		body: body,
+		missAU: pass.rmin / AU,
+		vInf: (typeof pass.vInf === "number" && isFinite(pass.vInf)) ? pass.vInf : pass.speed,
+		vInfVec: pass.vRel || null,
+		jd: pass.jd
+	};
+}
+
 // The delivered approach at `body`: miss distance (AU) and v∞ (m/s, with
 // vector) measured against the body's own heliocentric state at the ship's
 // epoch. `data` is a helio-frame ship-state payload. Returns null for an
 // unknown body.
+//
+// THE FALLBACK, not the default — see approachFromPass above. Correct only when
+// no trajectory is reachable to measure a pass on (a bare Node call, or a chain
+// whose coast has not computed), where the delivered instant is all there is.
 export function approachAt(body, data) {
 	var sys = systems.get(body);
 	if (!sys || !sys.orbit) { return null; }
