@@ -377,7 +377,7 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 
 // ---- releaseAnchorFor: the read-only anchor's one lookup -------------------
 
-test("releaseAnchorFor: plan anchor → plan departure.jd → legacy releaseJd → null", function () {
+test("releaseAnchorFor: plan anchor → plan departure.jd → null", function () {
 	function worldWith(stages) {
 		var w = createWorld({ jd: JD });
 		stages.forEach(function (s) { w.set({ addStage: s }); });
@@ -390,16 +390,7 @@ test("releaseAnchorFor: plan anchor → plan departure.jd → legacy releaseJd �
 	// 2. a pre-D7 plan: no anchor recorded — the hand-off epoch stands in
 	var w2 = worldWith([{ moduleId: "frozen-plan", params: { departure: { jd: JD } } }]);
 	assert.equal(releaseAnchorFor(w2), JD);
-	// 3. no plan at all: a legacy releaseJd on any stage (pre-I3 saves kept
-	// it on the skyhook) still anchors the chain
-	var w3 = worldWith([{ moduleId: "lunar-skyhook", params: { releaseJd: JD - 1 } }]);
-	assert.equal(releaseAnchorFor(w3), JD - 1);
-	// 3b. the plan outranks a legacy releaseJd when both exist
-	var w4 = worldWith([
-		{ moduleId: "lunar-skyhook", params: { releaseJd: JD - 1 } },
-		{ moduleId: "frozen-plan", params: { departure: { jd: JD }, releaseAnchorJd: JD - 2.2 } }]);
-	assert.equal(releaseAnchorFor(w4), JD - 2.2);
-	// 4. nothing anywhere → null (and a null/bare world is null too)
+	// 3. no plan at all → null (and a null/bare world is null too)
 	assert.equal(releaseAnchorFor(worldWith([{ moduleId: "transfer-leg", params: {} }])), null);
 	assert.equal(releaseAnchorFor(null), null);
 });

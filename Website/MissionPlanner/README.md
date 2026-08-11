@@ -325,17 +325,19 @@ across tabs.
 
 ## Save format
 
-`core/world.js`'s `WORLD_VERSION` is 4; `deserializeWorld` migrates v1→v2→v3→v4
-on load and refuses (politely, `{ ok:false, reason }`) a version newer than it
-understands. A save is always storable regardless of feasibility or whether
+`core/world.js`'s `WORLD_VERSION` is 4; `deserializeWorld` refuses (politely,
+`{ ok:false, reason }`) anything that isn't exactly the current version — no
+migration (saved missions are disposable test data, not something a schema
+change promises to carry forward; see `Notes-and-Obsolete/decisions.md`,
+2026-08-11). A save is always storable regardless of feasibility or whether
 its module ids are currently registered — feasibility is the recompute
 engine's diagnostic, not a data-layer validity condition.
 
 ## Tests
 
 `core/tests/*.test.js`, `modules/tests/*.test.js`, `ui/tests/*.test.js` —
-`node:test` suites covering World mutations/serialization (including every
-migration step), registry validation, the recompute/diagnostic/blocked/
+`node:test` suites covering World mutations/serialization, registry validation,
+the recompute/diagnostic/blocked/
 boundary/comply semantics, the carrier chain and integrated legs (departure
 and arrival, Earth-origin and generic-origin), the frozen-plan and
 arrival-boundary compliance rows, the phase-slider state functions, and the

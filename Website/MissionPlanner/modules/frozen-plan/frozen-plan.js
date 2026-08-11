@@ -117,10 +117,8 @@ export function windowDaysOf(params) {
 // user planned around in the Ephemeris tab. Resolution order:
 //   1. the frozen-plan stage's releaseAnchorJd,
 //   2. its departure.jd (a save with no flight-time lead recorded),
-//   3. any stage's legacy releaseJd param (older saves kept the release epoch
-//      on the skyhook stage itself; core/world.js's migrations preserve it, so
-//      a plan-less old save still anchors),
-//   4. null — no anchor; the departure chain reports it as a diagnostic.
+//   3. null — no plan, or no anchor recorded; the departure chain reports it
+//      as a diagnostic.
 // Lives here because the plan owns the anchor; moon-platform, orbital-skyhook,
 // departure-leg and body-departure-leg all read it through this one function.
 export function releaseAnchorFor(world) {
@@ -132,10 +130,6 @@ export function releaseAnchorFor(world) {
 		p = stages[i].params || {};
 		if (isFinite(p.releaseAnchorJd)) { return p.releaseAnchorJd; }
 		if (p.departure && isFinite(p.departure.jd)) { return p.departure.jd; }
-	}
-	for (i = 0; i < stages.length; i++) {
-		p = stages[i].params || {};
-		if (isFinite(p.releaseJd)) { return p.releaseJd; }
 	}
 	return null;
 }

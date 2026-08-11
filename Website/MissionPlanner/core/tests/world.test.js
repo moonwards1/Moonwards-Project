@@ -171,13 +171,20 @@ test("deserialize refuses bad saves with a reason, never throws", function () {
 	var newer = { kind: WORLD_KIND, version: WORLD_VERSION + 1, jd: JD, stages: [] };
 	var r = deserializeWorld(newer);
 	assert.equal(r.ok, false);
-	assert.match(r.reason, /newer/);
-	assert.equal(deserializeWorld({ kind: WORLD_KIND, version: 1, jd: "x", stages: [] }).ok, false);
-	assert.equal(deserializeWorld({ kind: WORLD_KIND, version: 1, jd: JD }).ok, false);
-	assert.equal(deserializeWorld({ kind: WORLD_KIND, version: 1, jd: JD,
+	assert.match(r.reason, /no migration/);
+	assert.equal(deserializeWorld({ kind: WORLD_KIND, version: WORLD_VERSION, jd: "x", stages: [] }).ok, false);
+	assert.equal(deserializeWorld({ kind: WORLD_KIND, version: WORLD_VERSION, jd: JD }).ok, false);
+	assert.equal(deserializeWorld({ kind: WORLD_KIND, version: WORLD_VERSION, jd: JD,
 		stages: [{ id: "", moduleId: "m" }] }).ok, false);
-	var dup = deserializeWorld({ kind: WORLD_KIND, version: 1, jd: JD,
+	var dup = deserializeWorld({ kind: WORLD_KIND, version: WORLD_VERSION, jd: JD,
 		stages: [{ id: "stg-1", moduleId: "m" }, { id: "stg-1", moduleId: "m" }] });
 	assert.equal(dup.ok, false);
 	assert.match(dup.reason, /duplicate/);
+});
+
+test("deserialize refuses an older version too — no migration", function () {
+	var older = { kind: WORLD_KIND, version: WORLD_VERSION - 1, jd: JD, stages: [] };
+	var r = deserializeWorld(older);
+	assert.equal(r.ok, false);
+	assert.match(r.reason, /no migration/);
 });

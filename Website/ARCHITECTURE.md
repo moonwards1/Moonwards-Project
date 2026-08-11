@@ -56,8 +56,10 @@ Decisions baked in from the start, because retrofitting them is expensive:
   through one door makes them cheap instead of a rework. Continuous gestures
   (date-bar drags, gizmo drags) produce transient sets coalesced into one undo
   entry when the gesture ends.
-- **Versioned serialization.** World carries a schema version, like packets
-  do, from day one, so saved missions survive schema evolution.
+- **Versioned serialization.** World carries a schema version; `deserializeWorld`
+  refuses (politely) anything that isn't exactly the current version. No
+  migration — saved missions are disposable test data, not something a schema
+  change promises to carry forward.
 - **Always storable.** World may describe a physically infeasible mission — it
   is never rejected at the data layer. Feasibility is a *diagnostic*, not a
   validity condition (see *Recompute rules*).

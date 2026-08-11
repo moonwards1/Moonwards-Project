@@ -20,8 +20,10 @@
 //     Continuous gestures pass `{ transient: true }` so a future undo can
 //     coalesce them; listeners still fire on every set.
 //   - VERSIONED SERIALIZATION. `serialize()` stamps a schema version;
-//     `deserializeWorld()` refuses (politely, { ok:false, reason }) versions
-//     newer than it understands, like PacketTypes.validate does.
+//     `deserializeWorld()` refuses (politely, { ok:false, reason }) anything
+//     that isn't exactly the current version — no migration. Saved missions
+//     are disposable test data, not something a schema change promises to
+//     carry forward (Notes-and-Obsolete/decisions.md, 2026-08-11).
 //   - ALWAYS STORABLE. A World may describe a physically infeasible mission
 //     — even an unknown moduleId round-trips through save/load untouched.
 //     Feasibility is the recompute engine's diagnostic, not a data-layer
@@ -52,104 +54,6 @@
 
 export const WORLD_KIND = "moonwards-world";
 export const WORLD_VERSION = 4;
-
-// ---- saved-mission migrations ----------------------------------------------
-// These are the one place core code knows module ids by name. They are DATA
-// migration (save-format facts), not registry validation — deserializeWorld
-// never checks moduleIds for existence.
-//
-// Version 2: the departure system is a CARRIER CHAIN. A v1 profile names a
-// lunar-skyhook stage that emits a ship-state directly; v2 wraps it in
-// [moon-platform → skyhook → departure-leg], where the skyhook emits a
-// carrier-chain rotor and the headless departure-leg integrates the released
-// flight to the hand-off. A v1 profile therefore no longer type-checks
-// stage-to-stage, so migration inserts the two stages around each
-// lunar-skyhook — moon-platform immediately before, departure-leg immediately
-// after — with fresh never-used ids. Everything else passes through untouched,
-// including the skyhook's legacy releaseJd param, which frozen-plan.js's
-// releaseAnchorFor still honours as a last-resort anchor (the always-storable
-// rule).
-function migrateV1toV2(saved) {
-	var out = structuredClone(saved);
-	out.version = 2;
-	if (!Array.isArray(out.stages)) { return out; }   // malformed; validation below rejects it
-
-	var maxNum = 0;
-	out.stages.forEach(function (s) {
-		var m = s && typeof s.id === "string" ? /^stg-(\d+)$/.exec(s.id) : null;
-		if (m) { maxNum = Math.max(maxNum, parseInt(m[1], 10)); }
-	});
-	var next = Math.max(maxNum + 1, typeof out.nextStage === "number" ? out.nextStage : 1);
-
-	var stages = [];
-	out.stages.forEach(function (s) {
-		if (s && s.moduleId === "lunar-skyhook") {
-			stages.push({ id: "stg-" + (next++), moduleId: "moon-platform", params: {} });
-			stages.push(s);
-			stages.push({ id: "stg-" + (next++), moduleId: "departure-leg", params: { waypoints: [] } });
-		} else {
-			stages.push(s);
-		}
-	});
-	out.stages = stages;
-	out.nextStage = next;
-	return out;
-}
-
-// Version 3: there is ONE generic `orbital-skyhook` module, carrying its
-// `body` explicitly (the body convention). A v2 save's `lunar-skyhook` stage
-// becomes an `orbital-skyhook` stage with body "Moon" added; its altitudes /
-// release phase / legacy releaseJd pass through untouched. Same
-// place-in-the-list, same stage id — a pure module swap, no stages added or
-// removed (contrast the v1→v2 reshape above).
-function migrateV2toV3(saved) {
-	var out = structuredClone(saved);
-	out.version = 3;
-	if (!Array.isArray(out.stages)) { return out; }
-	out.stages.forEach(function (s) {
-		if (s && s.moduleId === "lunar-skyhook") {
-			s.moduleId = "orbital-skyhook";
-			if (!s.params || typeof s.params !== "object") { s.params = {}; }
-			if (s.params.body === undefined || s.params.body === null) { s.params.body = "Moon"; }
-		}
-	});
-	return out;
-}
-
-// Version 4: the Coast→Arrival seam has its own compliance boundary stage
-// (modules/arrival-boundary), the mirror of frozen-plan at the other end of the
-// mission. A pure insertion — one paramless stage immediately after each
-// transfer-leg, which is where the coast hands over — with a fresh never-used
-// id. Everything else passes through untouched.
-//
-// Anchored on transfer-leg rather than on arrival-leg because the boundary
-// belongs to the seam, not to the arrival hardware: a save with a coast but no
-// arrival leg still gets its commitment checked, and the boundary still lands
-// ahead of any arrival stage that follows. A save with no coast at all gets no
-// boundary — there is no delivery to measure.
-function migrateV3toV4(saved) {
-	var out = structuredClone(saved);
-	out.version = 4;
-	if (!Array.isArray(out.stages)) { return out; }
-
-	var maxNum = 0;
-	out.stages.forEach(function (s) {
-		var m = s && typeof s.id === "string" ? /^stg-(\d+)$/.exec(s.id) : null;
-		if (m) { maxNum = Math.max(maxNum, parseInt(m[1], 10)); }
-	});
-	var next = Math.max(maxNum + 1, typeof out.nextStage === "number" ? out.nextStage : 1);
-
-	var stages = [];
-	out.stages.forEach(function (s) {
-		stages.push(s);
-		if (s && s.moduleId === "transfer-leg") {
-			stages.push({ id: "stg-" + (next++), moduleId: "arrival-boundary", params: {} });
-		}
-	});
-	out.stages = stages;
-	out.nextStage = next;
-	return out;
-}
 
 export function createWorld(opts) {
 	var o = opts || {};
@@ -337,13 +241,10 @@ export function deserializeWorld(saved) {
 	if (typeof saved.version !== "number") {
 		return { ok: false, reason: "missing version" };
 	}
-	if (saved.version > WORLD_VERSION) {
+	if (saved.version !== WORLD_VERSION) {
 		return { ok: false, reason: "saved mission is v" + saved.version +
-			", newer than this page understands (v" + WORLD_VERSION + ")" };
+			", this page understands only v" + WORLD_VERSION + " — no migration" };
 	}
-	if (saved.version === 1) { saved = migrateV1toV2(saved); }
-	if (saved.version === 2) { saved = migrateV2toV3(saved); }
-	if (saved.version === 3) { saved = migrateV3toV4(saved); }
 	if (typeof saved.jd !== "number" || !isFinite(saved.jd)) {
 		return { ok: false, reason: "missing or bad jd" };
 	}

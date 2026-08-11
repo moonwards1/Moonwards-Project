@@ -53,10 +53,12 @@ function makeRegistry() {
 	return reg;
 }
 
-// A departure chain + coast with NO frozen plan: the release anchor resolves
-// through releaseAnchorFor's LEGACY fallback — a releaseJd param left on the
-// skyhook stage, exactly what a pre-I3 save carries through migration.
-function makeChain(skyhookParams, legParams) {
+// A departure chain + coast. When anchorJd is given, a bare frozen-plan stage
+// carrying only releaseAnchorJd is appended after the coast — off the end of
+// the pipeline, so it neither feeds nor consumes the chain's own packets,
+// existing solely for releaseAnchorFor to find (it scans world.stages() by
+// moduleId, not pipeline position). Omit anchorJd to test the no-anchor path.
+function makeChain(skyhookParams, legParams, anchorJd) {
 	var world = createWorld({ jd: JD_ANCHOR });
 	var ids = {};
 	ids.moon = world.set({ addStage: { moduleId: "moon-platform", params: {} } });
@@ -64,6 +66,9 @@ function makeChain(skyhookParams, legParams) {
 		params: Object.assign({ body: "Moon" }, skyhookParams) } });
 	ids.dep = world.set({ addStage: { moduleId: "departure-leg", params: {} } });
 	ids.leg = world.set({ addStage: { moduleId: "transfer-leg", params: legParams } });
+	if (anchorJd !== undefined) {
+		world.set({ addStage: { moduleId: "frozen-plan", params: { releaseAnchorJd: anchorJd } } });
+	}
 	var engine = createEngine(world, makeRegistry());
 	return { world: world, engine: engine, ids: ids };
 }
@@ -348,9 +353,8 @@ test("degAtDay/dayAtDeg: a malformed or not-ok leg is a safe no-op", function ()
 // ---- the chained profile through the engine --------------------------------
 
 test("chain: Moon base → skyhook rotor → integrated flight → transfer leg; all ok", function () {
-	var c = makeChain(
-		Object.assign({}, MOON_SKYHOOK, { releaseJd: JD_ANCHOR }),   // legacy-fallback anchor
-		{ waypoints: [], legDays: 480, destination: "" });
+	var c = makeChain(MOON_SKYHOOK,
+		{ waypoints: [], legDays: 480, destination: "" }, JD_ANCHOR);
 	var rMoon = c.engine.resultFor(c.ids.moon);
 	var rSky = c.engine.resultFor(c.ids.skyhook);
 	var rDep = c.engine.resultFor(c.ids.dep);
@@ -381,8 +385,8 @@ test("chain: Moon base → skyhook rotor → integrated flight → transfer leg;
 
 test("chain: a bound-at-moon skyhook blocks the flight, params intact", function () {
 	var c = makeChain(
-		{ relAlt: 100e3, releaseJd: JD_ANCHOR },
-		{ waypoints: [], legDays: 480, destination: "" });
+		{ relAlt: 100e3 },
+		{ waypoints: [], legDays: 480, destination: "" }, JD_ANCHOR);
 	var rSky = c.engine.resultFor(c.ids.skyhook);
 	var rDep = c.engine.resultFor(c.ids.dep);
 	assert.equal(rSky.status, "diagnostic");
@@ -397,7 +401,7 @@ test("chain: a bound-at-moon skyhook blocks the flight, params intact", function
 
 test("chain: no anchor anywhere → moon-platform diagnoses at the top of the stack", function () {
 	var c = makeChain(
-		{},   // no legacy releaseJd, and no frozen plan in this profile
+		{},   // no frozen plan in this profile — anchorJd omitted
 		{ waypoints: [], legDays: 480, destination: "" });
 	var rMoon = c.engine.resultFor(c.ids.moon);
 	assert.equal(rMoon.status, "diagnostic");
@@ -416,9 +420,8 @@ test("chain: a transfer leg with nothing upstream is missing-input", function ()
 });
 
 test("chain: moving the clock recomputes but does not change the mission", function () {
-	var c = makeChain(
-		Object.assign({}, MOON_SKYHOOK, { releaseJd: JD_ANCHOR }),
-		{ waypoints: [], legDays: 480, destination: "" });
+	var c = makeChain(MOON_SKYHOOK,
+		{ waypoints: [], legDays: 480, destination: "" }, JD_ANCHOR);
 	var before = c.engine.resultFor(c.ids.leg).output.data.r.slice();
 	c.world.set({ jd: JD_ANCHOR + 100 });   // the viewing clock, not the release epoch
 	var after = c.engine.resultFor(c.ids.leg).output.data.r;
@@ -511,97 +514,6 @@ test("preset: survives the share-link fragment round trip", function () {
 	var back = deserializeWorld(decodeFragment(frag));
 	assert.equal(back.ok, true);
 	assert.deepEqual(back.world.serialize(), res.world.serialize());
-});
-
-// ---- v1 saves: the I3 migration (core/world.js) ------------------------------
-
-// A faithful copy of the PRE-I3 shipped preset: skyhook first (with its old
-// releaseJd param), no moon-platform, no departure-leg, a frozen plan with
-// neither timing field.
-var V1_PRESET = {
-	kind: "moonwards-world",
-	version: 1,
-	jd: 2463220.75,
-	nextStage: 4,
-	stages: [
-		{ id: "stg-1", moduleId: "lunar-skyhook",
-		  params: { comAlt: 275e3, topAlt: 6000e3, relAlt: 6000e3,
-		            releasePhaseDeg: 92, releaseJd: 2463220.75 } },
-		{ id: "stg-3", moduleId: "frozen-plan",
-		  params: {
-			origin: "Earth",
-			departure: {
-				r: [5856642340.899307, 147066185880.355, 0],
-				v: [-36785.2006878309, 1422.8029976413443, 236.73516629337746],
-				jd: 2463220.75
-			},
-			arrival: { body: "Ceres", jd: 2463970.75, vInf: 3776.34 },
-			waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }]
-		  } },
-		{ id: "stg-2", moduleId: "transfer-leg",
-		  params: { waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }],
-		            legDays: 750, destination: "Ceres" } }
-	]
-};
-
-test("migration: a v1 save gains moon-platform + departure-leg around its skyhook and still flies", function () {
-	var res = deserializeWorld(structuredClone(V1_PRESET));
-	assert.equal(res.ok, true, res.reason);
-	var stages = res.world.stages();
-	// v1→v2 wraps the skyhook in the carrier chain; v3→v4 appends the arrival
-	// compliance boundary after the coast
-	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
-		 "arrival-boundary"]);
-	// original ids survive; inserted ids are fresh, beyond the old counter
-	assert.equal(stages[1].id, "stg-1");
-	assert.equal(stages[3].id, "stg-3");
-	assert.notEqual(stages[0].id, stages[2].id);
-	assert.equal(stages.filter(function (s) { return s.id === stages[5].id; }).length, 1);
-	// the skyhook's params — including the legacy releaseJd — pass through, and
-	// the v3 migration adds the explicit body the unified skyhook needs
-	assert.equal(stages[1].params.releaseJd, 2463220.75);
-	assert.equal(stages[1].params.body, "Moon");
-	// a re-serialize is the current version (no double migration on the next load)
-	assert.equal(res.world.serialize().version, 4);
-
-	// The migrated mission RUNS: the anchor falls back to the plan's
-	// departure.jd (pre-D7 plans have no releaseAnchorJd), so the integrated
-	// flight releases at the old hand-off epoch and lands its real hand-off
-	// ~2.6 d later — outside the ±1 d default window. Honest warnings, no
-	// blocks, and the frozen coast still arrives.
-	var engine = createEngine(res.world, makeRegistry());
-	stages.forEach(function (s, i) {
-		var st = engine.resultFor(s.id).status;
-		assert.equal(st, "ok", "stage " + i + " (" + s.moduleId + ") is " + st);
-	});
-	var planWarnings = engine.resultFor(stages[3].id).warnings.map(function (w) { return w.code; }).sort();
-	assert.deepEqual(planWarnings, ["aim-mismatch", "epoch-mismatch", "vinf-mismatch"]);
-	var arr = O.dateFromJulian(engine.resultFor(stages[4].id).output.data.jd);
-	assert.deepEqual([arr.Y, arr.Mo, arr.D], [2034, 1, 8]);
-});
-
-test("migration: v1 saves without a skyhook (freeze-spawned shape) pass through untouched", function () {
-	var v1 = { kind: "moonwards-world", version: 1, jd: 2463220.75, nextStage: 3,
-		stages: [
-			{ id: "stg-1", moduleId: "frozen-plan", params: V1_PRESET.stages[1].params },
-			{ id: "stg-2", moduleId: "transfer-leg", params: V1_PRESET.stages[2].params }
-		] };
-	var res = deserializeWorld(v1);
-	assert.equal(res.ok, true);
-	// v1→v2 has nothing to wrap (no skyhook); v3→v4 still adds the arrival
-	// boundary, because there IS a coast whose delivery can be measured
-	assert.deepEqual(res.world.stages().map(function (s) { return s.moduleId; }),
-		["frozen-plan", "transfer-leg", "arrival-boundary"]);
-});
-
-test("migration: a save with no coast gets no arrival boundary — nothing is delivered to measure", function () {
-	var v3 = { kind: "moonwards-world", version: 3, jd: JD_HANDOFF, nextStage: 2,
-		stages: [{ id: "stg-1", moduleId: "frozen-plan", params: V1_PRESET.stages[1].params }] };
-	var res = deserializeWorld(v3);
-	assert.equal(res.ok, true, res.reason);
-	assert.deepEqual(res.world.stages().map(function (s) { return s.moduleId; }), ["frozen-plan"]);
-	assert.equal(res.world.serialize().version, 4);
 });
 
 test("transfer-leg update: converts a body-frame input to helio", function () {
