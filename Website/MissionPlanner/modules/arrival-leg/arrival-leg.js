@@ -2,7 +2,12 @@
  * flight, continued under the destination's gravity, plus waypoint burns on it.
  *
  * THE SHAPE. This leg IS the coast, re-parameterized. It spans the seam window
- * core/arrival-seam.js derives —
+ * core/arrival-seam.js derives FROM THE COAST’S OWN MEASURED PASS
+ * (transfer-leg’s nearestApproach) — not from an emitted event, which can be
+ * absent or truncated exactly when the pass sits near the coast’s leg end. The
+ * two phases stay separate chains but describe ONE pass: the coast measures it
+ * to place this window, and this leg then finds it again by integrating in the
+ * body frame. They agree to about a kilometre, and a test holds them there —
  *
  *   [ closest approach − Δt , closest approach + ~1 day ]
  *
@@ -66,7 +71,8 @@ import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-wid
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { computeArrivalSeam, SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
-import { handoffLegFor as coastLegFor, stateAtElapsed as coastStateAtElapsed }
+import { handoffLegFor as coastLegFor, stateAtElapsed as coastStateAtElapsed,
+	nearestApproach as coastNearestApproach }
 	from "../transfer-leg/transfer-leg.js";
 import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 
@@ -110,7 +116,7 @@ export function arrivalWindow(body, coastLeg, data, commitJd) {
 	var fallbackJd = (typeof commitJd === "number" && isFinite(commitJd)) ? commitJd : data.jd;
 	var seam = computeArrivalSeam({
 		destination: body,
-		events: (coastLeg && coastLeg.ok) ? coastLeg.events : [],
+		pass: (coastLeg && coastLeg.ok) ? coastNearestApproach(coastLeg, body) : null,
 		fallbackArrivalJd: fallbackJd
 	});
 	// With no encounter the seam collapses to a point (arrival-seam's fallback);
@@ -205,7 +211,12 @@ export function computeArrivalLeg(params, spec) {
 	var jd = spec.jd0, tPrev = 0;
 	var samples = [], segs = [], wpVisuals = [], events = [];
 	var totalDv = 0, impact = null;
-	var ca = { t: 0, r: O.vMag(local.r) };
+	// The pass, taken ONLY from the integrated segments' own refined minima.
+	// Seeding it with the distance at the window's START (as this once did) lets
+	// a window edge masquerade as closest approach whenever the real minimum
+	// falls outside — silently, and by hundreds of thousands of km. Null until a
+	// segment supplies one; `caAtEdge` below says when even that is suspect.
+	var ca = null;
 	var vInf0 = null, rStart = O.vMag(local.r);
 	var bounds = wps.map(function (wp) { return wp.t; }).concat([T]);
 
@@ -228,7 +239,7 @@ export function computeArrivalLeg(params, spec) {
 				samples.push({ r: res.samples[idx].r, t: tPrev + res.samples[idx].t });
 				if (idx === last) { break; }
 			}
-			if (res.rmin < ca.r) { ca = { t: tPrev + res.tmin, r: res.rmin }; }
+			if (!ca || res.rmin < ca.r) { ca = { t: tPrev + res.tmin, r: res.rmin }; }
 
 			local = { r: res.samples[last].r, v: res.samples[last].v };
 			rH = res.end.r; vH = res.end.v;
@@ -262,6 +273,15 @@ export function computeArrivalLeg(params, spec) {
 
 	var jdEnd = jd;
 
+	// A minimum sitting on either edge of the window is not a periapsis — the
+	// real one lies outside, and the figure is a window boundary. It is reported
+	// with the flag rather than suppressed (it is still the closest the flown
+	// approach comes) so the reader is told the window needs moving, not shown a
+	// blank. With the seam now placed from the coast's own measured pass this
+	// should not arise; the flag is here to say so if it ever does.
+	var caAtEdge = !ca || ca.t < 60 || ca.t > tPrev - 60;
+	if (!ca) { ca = { t: 0, r: rStart }; }
+
 	events.unshift({ jd: spec.jd0,
 	                 label: "Arrival hand-off — " + body + " approach begins" });
 	// display/mark policy: the seam's own closest approach is already marked on
@@ -285,7 +305,7 @@ export function computeArrivalLeg(params, spec) {
 
 	return {
 		ok: true, body: body, jd0: spec.jd0, jdEnd: jdEnd, T: tPrev,
-		samples: samples, segs: segs, wpVisuals: wpVisuals, ca: ca,
+		samples: samples, segs: segs, wpVisuals: wpVisuals, ca: ca, caAtEdge: caAtEdge,
 		end: { r: local.r, v: local.v }, impact: impact,
 		events: events, warnings: warnings, totalDv: totalDv,
 		vInf0: vInf0, rStart: rStart

@@ -17,10 +17,12 @@ import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed 
 	from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
 import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_AU,
-	handoffPending, commitHandoff, sameWaypoints, copyWaypoints }
+	handoffPending, commitHandoff, sameWaypoints, copyWaypoints, legFor, nearestApproach }
 	from "../transfer-leg/transfer-leg.js";
+import { findClosestApproach as findClosestApproachEvent,
+	computeArrivalSeam as computeArrivalSeamFor } from "../../core/arrival-seam.js";
 import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
-import arrivalLeg from "../arrival-leg/arrival-leg.js";
+import arrivalLeg, { legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -475,7 +477,29 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 
 	var rArr = engine.resultFor(stages[6].id);
 	assert.equal(rArr.status, "ok");
-	assert.ok(Math.abs(rArr.output.data.jd - (rLeg.output.data.jd + 1)) < 1e-9);
+	// The arrival leg ends ARRIVAL_TAIL_DAYS past the measured pass — not past
+	// the coast's leg end, which merely happens to sit near it. The pass is the
+	// true periapsis and falls a few minutes INSIDE the coast leg.
+	var coastPass = nearestApproach(legFor(res.world, stages[4].id), "Ceres");
+	assert.ok(coastPass && coastPass.insideSoi, "the shipped coast must reach Ceres");
+	assert.ok(Math.abs(rArr.output.data.jd - (coastPass.jd + 1)) < 1e-9);
+	assert.ok(coastPass.jd < rLeg.output.data.jd, "closest approach should precede the leg's end");
+	assert.ok(rLeg.output.data.jd - coastPass.jd < 0.01, "but only just");
+
+	// THE POINT OF THE SHARED MEASUREMENT: the coast measures the pass to place
+	// the arrival window, then the arrival leg integrates that window in the
+	// body frame and finds the pass for itself. Two independent routes over
+	// different physics must land on the same event, or the phases are once
+	// again describing two different passes.
+	var aLeg = arrivalLegFor(res.world, stages[6].id);
+	assert.ok(aLeg && aLeg.ok, "the arrival leg must have flown");
+	assert.equal(aLeg.caAtEdge, false, "the pass must not sit on a window edge");
+	var arrCaJd = aLeg.jd0 + aLeg.ca.t / DAY;
+	assert.ok(Math.abs(arrCaJd - coastPass.jd) * DAY < 60,
+		"epochs differ by " + (Math.abs(arrCaJd - coastPass.jd) * DAY).toFixed(1) + " s");
+	assert.ok(Math.abs(aLeg.ca.r - coastPass.rmin) < 5000,
+		"distances differ by " + ((aLeg.ca.r - coastPass.rmin) / 1000).toFixed(1) + " km");
+
 	assert.equal(rArr.events.length, 2);   // hand-off, closest approach
 	assert.match(rArr.events[0].label, /Arrival hand-off/);
 	assert.match(rArr.events[1].label, /Closest approach/);
@@ -757,4 +781,118 @@ test("handoff: the arrival phase runs on the committed coast, not the pending on
 		"a pending edit moved the arrival leg");
 	assert.ok(O.vMag(O.vSub(liveCommitted.arrival, committedOnly.arrival)) > 1e6,
 		"WP_B should genuinely move the arrival phase once committed");
+});
+
+// ---- nearestApproach: one continuous measurement of the pass ---------------
+// The Coast ship card's closest-approach figure. The bug these pin: reading the
+// nearest POLYLINE SAMPLE made the figure jump by tens of thousands of km the
+// moment a waypoint nudge walked the pass out of the destination's SOI, because
+// outside an SOI the samples are a Kepler point per day and at a few km/s that
+// is hundreds of thousands of km apart.
+
+function ceresLeg(deltaPro) {
+	var res = deserializeWorld(defaultMission);
+	assert.equal(res.ok, true, res.reason);
+	var world = res.world;
+	var coast = world.stages().filter(function (s) { return s.moduleId === "transfer-leg"; })[0];
+	var wps = JSON.parse(JSON.stringify(coast.params.waypoints));
+	wps[0].burn.pro += deltaPro;
+	world.set({ stage: coast.id, params: { waypoints: wps, handoff: null } });
+	createEngine(world, makeRegistry());
+	return legFor(world, coast.id);
+}
+
+test("nearestApproach: agrees with the integrated encounter's own rmin", function () {
+	var leg = ceresLeg(0);
+	var na = nearestApproach(leg, "Ceres");
+	var ca = findClosestApproachEvent(leg.events, "Ceres");
+	assert.ok(na && ca, "expected both an encounter event and a measurement");
+	// Two independent routes to the same number: integrateEncounter's refined
+	// rmin, and a ternary search over the seg chain it produced.
+	assert.ok(Math.abs(na.rmin - ca.rmin) / ca.rmin < 0.002,
+		"rmin " + na.rmin + " vs event " + ca.rmin);
+	assert.ok(Math.abs(na.jd - ca.jd) < 0.01, "epochs differ by " + (na.jd - ca.jd) + " d");
+	assert.equal(na.insideSoi, true);
+});
+
+test("nearestApproach: continuous across the SOI boundary", function () {
+	// Walk the waypoint's prograde impulse down through the value where the arc
+	// stops entering Ceres's SOI. Sampling the polyline used to leap from
+	// ~25,000 km to ~78,000 km here on a 0.05 m/s step.
+	var deltas = [-3, -3.1, -3.15, -3.2, -3.25, -3.3, -3.5];
+	var vals = deltas.map(function (d) { return nearestApproach(ceresLeg(d), "Ceres"); });
+	vals.forEach(function (v, i) { assert.ok(v, "no measurement at " + deltas[i]); });
+	for (var i = 1; i < vals.length; i++) {
+		// Monotonic: reducing the impulse can only widen the pass here.
+		assert.ok(vals[i].rmin > vals[i - 1].rmin,
+			"not monotonic at " + deltas[i] + ": " + vals[i].rmin + " after " + vals[i - 1].rmin);
+		// And smooth — no step may exceed a few hundred km per 0.05 m/s, which a
+		// branch change would blow through by two orders of magnitude.
+		var perMps = (vals[i].rmin - vals[i - 1].rmin) / Math.abs(deltas[i] - deltas[i - 1]);
+		assert.ok(perMps < 5e6, "jump of " + (perMps / 1000) + " km per m/s at " + deltas[i]);
+	}
+});
+
+test("nearestApproach: finds a pass that falls past the leg's own end", function () {
+	// A bigger prograde impulse moves closest approach into the display overrun.
+	// The emitted event cannot see it (the encounter scan stops at the leg
+	// boundary), but the drawn arc goes there and so must the readout.
+	var leg = ceresLeg(6);
+	var na = nearestApproach(leg, "Ceres");
+	assert.ok(na, "expected a measurement");
+	assert.equal(na.pastLegEnd, true);
+	assert.ok(na.rmin < 1e7, "expected a close pass, got " + na.rmin + " m");
+	// Sanity: the reported state really is that distance from Ceres.
+	assert.ok(Math.abs(O.vMag(na.rRel) - na.rmin) < 1, "rRel disagrees with rmin");
+});
+
+test("nearestApproach: safe on a leg with no destination, body, or segs", function () {
+	var leg = ceresLeg(0);
+	assert.equal(nearestApproach(leg, ""), null);
+	assert.equal(nearestApproach(leg, "Nowhere"), null);
+	assert.equal(nearestApproach(null, "Ceres"), null);
+	assert.equal(nearestApproach({ ok: true, segs: [] }, "Ceres"), null);
+});
+
+test("seam: the arrival window follows the pass continuously as the coast is tuned", function () {
+	// The regression this whole shared-measurement change exists for. The seam
+	// used to be hung on the emitted closest-approach EVENT, which vanished
+	// whenever the pass climbed back out of the SOI before the leg's end — the
+	// window then silently collapsed onto the plan's committed epoch and the
+	// Arrival phase was placed on the wrong days. Walking the impulse through
+	// that band, the window must stay an encounter window and move smoothly.
+	var deltas = [-3, -3.1, -3.2, -3.3, -3.5, -4];
+	var prev = null;
+	deltas.forEach(function (d) {
+		var leg = ceresLeg(d);
+		var pass = nearestApproach(leg, "Ceres");
+		var seam = computeArrivalSeamFor({ destination: "Ceres", pass: pass,
+			fallbackArrivalJd: leg.end.jd + 500 });   // a fallback so wrong it cannot hide
+		assert.equal(seam.hasEncounter, true, "seam lost the encounter at " + d);
+		assert.ok(Math.abs(seam.jd - leg.end.jd) < 5,
+			"window ran away to the fallback at " + d);
+		if (prev !== null) {
+			assert.ok(Math.abs(seam.jd - prev) < 0.05,
+				"window jumped " + ((seam.jd - prev) * 24).toFixed(2) + " h at " + d);
+		}
+		prev = seam.jd;
+	});
+});
+
+test("seam: an SOI entry is detected even when the leg ends just outside it", function () {
+	// The detector's own end-of-window case. A pass whose periapsis falls inside
+	// the leg but which has climbed back out of the SOI by the leg's end used to
+	// be rejected outright — so the body's gravity was never applied to the arc
+	// at all, not merely mis-reported.
+	var leg = ceresLeg(-3.5);
+	var labels = leg.events.map(function (e) { return e.label; }).join(" | ");
+	assert.match(labels, /Ceres SOI entry/);
+	var pass = nearestApproach(leg, "Ceres");
+	assert.ok(pass.insideSoi, "the pass genuinely enters the SOI");
+	// The emitted event agrees with the measurement — one figure, not two.
+	var ev = findClosestApproachEvent(leg.events, "Ceres");
+	assert.ok(ev, "no closest-approach event emitted for the destination");
+	assert.ok(Math.abs(ev.rmin - pass.rmin) < 1,
+		"event " + ev.rmin + " vs measurement " + pass.rmin);
+	assert.ok(Math.abs(ev.jd - pass.jd) * DAY < 1, "epochs disagree");
 });

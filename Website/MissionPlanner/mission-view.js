@@ -37,7 +37,7 @@
 /* global THREE */
 
 import { createEngine } from "./core/recompute.js";
-import { computeArrivalSeam, findClosestApproach } from "./core/arrival-seam.js";
+import { computeArrivalSeam } from "./core/arrival-seam.js";
 import { systems } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Exchange, encodeFragment } from "../Shared/exchange.js";
@@ -1436,9 +1436,11 @@ export function createMissionView(opts) {
 	function coastSeam(results) {
 		var dest = coastDestination();
 		if (!dest) { return null; }
-		var legRes = null;
+		var legRes = null, legStageId = null;
 		for (var i = 0; i < results.length; i++) {
-			if (results[i].moduleId === "transfer-leg") { legRes = results[i]; break; }
+			if (results[i].moduleId === "transfer-leg") {
+				legRes = results[i]; legStageId = results[i].stageId; break;
+			}
 		}
 		if (!legRes || legRes.status !== "ok") { return null; }
 
@@ -1451,8 +1453,24 @@ export function createMissionView(opts) {
 			if (!jds.length) { return null; }
 			fallbackJd = Math.max.apply(null, jds);
 		}
-		return computeArrivalSeam({ destination: dest, events: legRes.events, fallbackArrivalJd: fallbackJd });
+		// The phase structure follows the COMMITTED coast — the one the Arrival
+		// phase is running on — so a pending waypoint edit moves the drawn arc
+		// without dragging the sliders and the arrival window with it.
+		return computeArrivalSeam({ destination: dest, pass: committedCoastPass(legStageId),
+			fallbackArrivalJd: fallbackJd });
 	}
+
+	// The measured pass at the destination on a coast leg, through the module's
+	// own nearestApproach. `live` picks the leg being tuned rather than the one
+	// handed off. null when there is no coast, no destination, or no leg yet.
+	function coastPass(stageId, live) {
+		var dest = coastDestination();
+		var desc = registry.get("transfer-leg");
+		if (!dest || !desc || !stageId) { return null; }
+		var leg = live ? desc.legFor(world, stageId) : desc.handoffLegFor(world, stageId);
+		return leg ? desc.nearestApproach(leg, dest) : null;
+	}
+	function committedCoastPass(stageId) { return coastPass(stageId, false); }
 
 	// The coast span. When a frozen-plan stage is emitting, the coast phase IS
 	// the plan's committed dates (its departure/arrival events) — the beginning
@@ -1715,86 +1733,6 @@ export function createMissionView(opts) {
 		return null;
 	}
 
-	// The pass a coast leg makes at `dest` — the figures the Coast card reports.
-	//
-	// Inside the SOI this reads the leg's own structured closest-approach event
-	// (transfer-leg emits body/vInf/rmin on it precisely so nothing downstream
-	// has to re-derive them) and converts v∞ into the speed AT closest approach,
-	// which is the speed a capture actually has to absorb.
-	//
-	// WITH NO ENCOUNTER it falls back to the heliocentric closest approach along
-	// the leg. That case is not an error and must not blank the card: nudging a
-	// waypoint a little too far throws the pass clean out of a small body's SOI,
-	// and that is exactly the moment the reader needs to see the distance
-	// balloon so they can pull back. The two branches agree at the boundary —
-	// both measure centre-to-centre distance at the moment it is least.
-	function passFor(desc, leg, dest) {
-		if (!leg || !leg.ok || !dest) { return null; }
-		var sys = systems.get(dest);
-		var ca = findClosestApproach(leg.events, dest);
-		if (ca && isFinite(ca.rmin) && ca.rmin > 0) {
-			return {
-				jd: ca.jd, rmin: ca.rmin, altitude: ca.rmin - sys.radius, encounter: true,
-				speed: isFinite(ca.vInf) ? Math.sqrt(ca.vInf * ca.vInf + 2 * sys.GM / ca.rmin) : null
-			};
-		}
-		// The flight AS DRAWN, overrun included. The coast is a section snipped
-		// from a longer arc and the overrun exists so the pass reads as a pass
-		// (transfer-leg's computeLeg); on a leg that ends before its own closest
-		// approach — which is exactly what a miss tends to produce — the least
-		// separation lies past the leg boundary, and measuring only up to it
-		// would report a distance the reader can see is not the closest the
-		// drawn line comes.
-		var pts = (leg.samples || []).concat(leg.overrun || []);
-		if (pts.length < 2) { return null; }
-		function bodyAt(t) { return O.bodyStateAtJD(GM_SUN, sys.orbit, leg.jd0 + t / 86400); }
-		var best = -1, bestD = Infinity;
-		for (var i = 0; i < pts.length; i++) {
-			if (!pts[i].v) { continue; }   // no velocity, no approach speed to report
-			var d = O.vMag(O.vSub(pts[i].r, bodyAt(pts[i].t).r));
-			if (d < bestD) { bestD = d; best = i; }
-		}
-		if (best < 0) { return null; }
-		var legEnd = leg.samples.length ? leg.samples[leg.samples.length - 1].t : 0;
-		var tMin = pts[best].t, st = pts[best];
-		// Refine only where the segment chain can be propagated — inside the leg
-		// proper. The overrun is display-only and records no segs, so out there
-		// the sampled point is the best available, and it is dense enough (it is
-		// the drawn polyline) for a figure meant to say "you are miles off".
-		if (tMin < legEnd && best > 0) {
-			function sep(t) {
-				var s = desc.stateAtElapsed(leg, t);
-				return s ? O.vMag(O.vSub(s.r, bodyAt(t).r)) : Infinity;
-			}
-			var lo = pts[best - 1].t, hi = Math.min(legEnd, pts[Math.min(pts.length - 1, best + 1)].t);
-			for (var k = 0; k < 50; k++) {
-				var m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
-				if (sep(m1) <= sep(m2)) { hi = m2; } else { lo = m1; }
-			}
-			tMin = (lo + hi) / 2;
-			st = desc.stateAtElapsed(leg, tMin) || st;
-		}
-		var bs = bodyAt(tMin);
-		var rmin = O.vMag(O.vSub(st.r, bs.r));
-		return {
-			jd: leg.jd0 + tMin / 86400, rmin: rmin, altitude: rmin - sys.radius,
-			encounter: false, speed: O.vMag(O.vSub(st.v, bs.v))
-		};
-	}
-
-	// Which side of the destination the ship passes on, as a B-plane bearing at
-	// closest approach (Shared/math-utils.js's bPlane). The state there comes
-	// off the leg's own segment chain, then goes body-relative. null when the
-	// pass is not hyperbolic relative to the body — a captured arrival has no
-	// approach asymptote to take a bearing from.
-	function bPlaneFor(desc, leg, dest, caJd) {
-		if (!leg || !leg.ok || !dest || !isFinite(caJd)) { return null; }
-		var s = desc.stateAtElapsed(leg, (caJd - leg.jd0) * 86400);
-		if (!s) { return null; }
-		var b = O.bodyStateAtJD(GM_SUN, systems.get(dest).orbit, caJd);
-		return O.bPlane(systems.get(dest).GM, O.vSub(s.r, b.r), O.vSub(s.v, b.v));
-	}
-
 	function fmtKm(m) {
 		return (m == null || !isFinite(m)) ? "—" : Math.round(m / 1000).toLocaleString("en-US");
 	}
@@ -1865,9 +1803,12 @@ export function createMissionView(opts) {
 		// hide the variation the reader is scrubbing for. The position sampled is
 		// the chevron's, seam clamp included (transfer-leg's draw), so the number
 		// belongs to the marker on screen.
+		// The chevron's own clamp, from the LIVE arc — this is the seam on the
+		// trajectory being drawn, matching transfer-leg's draw(), not the
+		// committed one the sliders follow.
 		var dest = coastDestination();
-		var seam = dest ? computeArrivalSeam({ destination: dest, events: live.events,
-			fallbackArrivalJd: live.end.jd }) : null;
+		var seam = dest ? computeArrivalSeam({ destination: dest,
+			pass: desc.nearestApproach(live, dest), fallbackArrivalJd: live.end.jd }) : null;
 		var t = (world.jd - live.jd0) * 86400;
 		if (seam) { t = Math.min(t, (seam.start - live.jd0) * 86400); }
 		var range = speedRange(live.samples);
@@ -1879,8 +1820,13 @@ export function createMissionView(opts) {
 		// The pass itself. Both figures come off the live leg, with the committed
 		// leg's own values shown underneath whenever an edit is pending, so a
 		// change reads as a move from one number to another.
-		var livePass = passFor(desc, live, dest);
-		var refPass = pending ? passFor(desc, committed, dest) : null;
+		// ONE measurement of the pass, whether or not the arc enters the SOI —
+		// transfer-leg's nearestApproach, which scans time rather than polyline
+		// samples so the figure is a continuous function of the waypoints. A
+		// sample-based reading jumped by tens of thousands of km the moment a
+		// nudge walked the pass out of the SOI; see that function's own note.
+		var livePass = desc.nearestApproach(live, dest);
+		var refPass = pending ? desc.nearestApproach(committed, dest) : null;
 		if (!livePass) {
 			shipCard.setApproach(null);
 			shipCard.setTiming(null);
@@ -1891,7 +1837,7 @@ export function createMissionView(opts) {
 			return (was == null || !isFinite(was) || !isFinite(now2)) ? null : now2 < was;
 		}
 		shipCard.setApproach([
-			{ label: livePass.encounter ? "Closest approach" : "Closest approach (misses SOI)",
+			{ label: livePass.insideSoi ? "Closest approach" : "Closest approach (outside SOI)",
 			  value: fmtKm(livePass.altitude), unit: "km",
 			  ref: refPass ? "was " + fmtKm(refPass.altitude) : null,
 			  better: refPass ? better(livePass.altitude, refPass.altitude) : null },
@@ -1912,7 +1858,11 @@ export function createMissionView(opts) {
 		shipCard.setTiming((commit && commit.body === dest)
 			? timingModel(livePass.jd, commit.jd, windowDays) : null);
 
-		var bp = bPlaneFor(desc, live, dest, livePass.jd);
+		// The approach geometry comes off the same measurement — nearestApproach
+		// hands back the body-relative state it already found. null when the pass
+		// is not hyperbolic about the body: a captured arrival has no approach
+		// asymptote to take a bearing from.
+		var bp = O.bPlane(systems.get(dest).GM, livePass.rRel, livePass.vRel);
 		shipCard.setBPlane(bp ? { angleDeg: bp.angleDeg,
 			label: "Where the ship passes " + dest + ", seen coming in with ecliptic north up"
 		} : null);

@@ -13,12 +13,11 @@
  * window. Both are wired up in mission-view.js — see its coastSeam/coastSpan/
  * arrivalSpan.
  *
- * NOTHING IS STORED: the seam is recomputed live from transfer-leg's own
- * emitted events every time the coast recomputes, so its two edges move with
- * closest approach as the coast is tuned. The closest-approach event
- * transfer-leg emits carries structured `body`/`vInf`/`rmin` fields precisely
- * so this file never has to re-derive them or parse a label string (see
- * transfer-leg.js's coastStretch).
+ * NOTHING IS STORED: the seam is recomputed live from the coast’s own MEASURED
+ * pass (transfer-leg’s nearestApproach) every time it recomputes, so its two
+ * edges move with closest approach as the coast is tuned — smoothly, which was
+ * the whole reason for taking a measurement rather than an emitted event. See
+ * computeArrivalSeam below for what went wrong with the event.
  *
  * With no encounter at all against the destination (a coast that misses, or
  * a destination this leg's arc never dips inside the SOI of), there is no
@@ -52,10 +51,14 @@ export function seamDeltaDays(rSoiM, vInfMps) {
 	return Math.max(SEAM_MIN_DAYS, Math.min(SEAM_MAX_DAYS, days));
 }
 
-// The destination's own closest-approach event, from transfer-leg's emitted
-// events (leg.events, or a stage result's events array) — the earliest one
-// whose body matches, if more than one somehow qualifies. null if the coast
-// never encountered this destination's SOI at all.
+// The destination's own closest-approach event, from a leg's emitted events —
+// the earliest one whose body matches, if more than one somehow qualifies.
+// null if there is none.
+//
+// NOT the seam's own input any more: computeArrivalSeam takes a measured pass
+// (transfer-leg's nearestApproach) instead, because an event can be absent or
+// truncated exactly when the pass sits near the leg's end. Kept for readers
+// that genuinely want the event — the events bar, tests.
 export function findClosestApproach(events, destination) {
 	if (!Array.isArray(events) || !destination) { return null; }
 	var hit = null;
@@ -70,11 +73,28 @@ export function findClosestApproach(events, destination) {
 
 // The seam, derived live. spec = {
 //   destination,        // the arrival commitment's body name
-//   events,              // transfer-leg's emitted events for this recompute
+//   pass,                // the MEASURED pass at that body — transfer-leg's
+//                        // nearestApproach({ jd, vInf, rmin, insideSoi }) — or
+//                        // null when the coast has none
 //   fallbackArrivalJd    // the plan's committed arrival epoch (frozen-plan's
 //                        // arrival.jd) — used verbatim when there's no
 //                        // encounter to derive a window from
 // }
+//
+// WHY A MEASURED PASS RATHER THAN THE EMITTED EVENT. The window used to be hung
+// on transfer-leg's closest-approach EVENT, which is emitted per SOI encounter
+// and measured inside the leg's own span. Both properties fail at the worst
+// moment: a pass sitting near the leg's end reports the leg boundary instead of
+// the periapsis, and a pass whose encounter falls past the leg end emits no
+// event at all — so the window silently collapsed to the plan's committed epoch
+// and the whole Arrival phase was placed on the wrong days, discontinuously, as
+// a coast waypoint was tuned. nearestApproach measures the same thing
+// continuously across the leg AND its overrun, so the seam moves smoothly with
+// the coast instead of jumping between branches.
+//
+// `insideSoi` is what makes it an encounter: a coast that merely comes closest
+// half an AU away has a measurable pass but no arrival to open a window around.
+//
 // Returns { hasEncounter, jd, deltaDays, start, end, vInf, rmin }:
 //   jd          — closest approach epoch, or the fallback epoch
 //   deltaDays   — Δt, or null when there's no encounter
@@ -83,15 +103,15 @@ export function findClosestApproach(events, destination) {
 //   end         — the Arrival window's right edge: jd + ARRIVAL_TAIL_DAYS, or
 //                 just jd with no encounter
 export function computeArrivalSeam(spec) {
-	var closest = findClosestApproach(spec.events, spec.destination);
-	if (closest) {
+	var pass = spec.pass;
+	if (pass && pass.insideSoi && isFinite(pass.jd)) {
 		var rSoi = originSoiRadius(spec.destination);
-		var dt = seamDeltaDays(rSoi, closest.vInf);
+		var dt = seamDeltaDays(rSoi, pass.vInf);
 		if (dt == null) { dt = SEAM_MIN_DAYS; }   // an encounter with no usable v∞ still gets a window
 		return {
-			hasEncounter: true, jd: closest.jd, deltaDays: dt,
-			start: closest.jd - dt, end: closest.jd + ARRIVAL_TAIL_DAYS,
-			vInf: closest.vInf, rmin: closest.rmin
+			hasEncounter: true, jd: pass.jd, deltaDays: dt,
+			start: pass.jd - dt, end: pass.jd + ARRIVAL_TAIL_DAYS,
+			vInf: pass.vInf, rmin: pass.rmin
 		};
 	}
 	var jd = spec.fallbackArrivalJd;

@@ -236,8 +236,16 @@ function findFirstEncounter(r, v, jdAbs, durS, insideBody) {
 			iFirst++;   // the exit sample itself can't be an entry minimum
 		}
 		for (var i = iFirst; i <= N; i++) {
+			// At the window's last grid point there is no sample on the far side
+			// to complete a local minimum, so a still-descending dip counts as a
+			// candidate. It must NOT additionally require that last point to be
+			// inside the SOI: a pass whose periapsis falls inside the window but
+			// which has climbed back out by the window's end would be rejected,
+			// and the body's gravity never applied to the arc at all. Whether the
+			// dip really enters the SOI is settled after refinement below, exactly
+			// as it is for an interior minimum.
 			var isMin = (i < N) ? (d[i] <= d[i - 1] && d[i] <= d[i + 1])
-			                    : (d[i] < d[i - 1] && d[i] < c.SOI);   // dip still falling at the window end
+			                    : (d[i] < d[i - 1]);
 			if (!isMin || d[i] > refineBound) { continue; }
 			var lo = spacing * (i - 1), hi = Math.min(durS, spacing * (i + 1));
 			for (var k = 0; k < 60; k++) {   // ternary search for the true minimum
@@ -274,7 +282,12 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 		insideBody = null;   // only ever applies to the stretch's own start
 		var kepDur = enc ? enc.tEnter : remaining;
 		if (kepDur > 1) {
-			if (!out.quiet) { out.segs.push({ type: "kepler", r0: r, v0: v, tStart: t0, dur: kepDur }); }
+			// Segs are recorded even on the quiet (overrun) walk: they are what
+			// lets a state be recovered anywhere along the drawn flight, and
+			// nearestApproach measures across the overrun too. `quiet` suppresses
+			// EVENTS only — the overrun is display-only and must not put entries
+			// in the events bar or move the arrival seam.
+			out.segs.push({ type: "kepler", r0: r, v0: v, tStart: t0, dur: kepDur });
 			var n = Math.max(60, Math.min(240, Math.round(kepDur / DAY * 0.5)));
 			var arc = O.sampleArc(GM_SUN, r, v, kepDur, n);
 			for (var k = (out.samples.length ? 1 : 0); k < arc.length; k++) {
@@ -288,10 +301,10 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 
 		var res = integrateEncounter(enc.body, r, v, jdAbs, remaining);
 		var c = bodyConstants(enc.body);
+		out.segs.push({ type: "enc", body: enc.body,
+		                leg: { samples: res.samples, jde0: jdAbs },
+		                tStart: t0, dur: res.duration });
 		if (!out.quiet) {
-			out.segs.push({ type: "enc", body: enc.body,
-			                leg: { samples: res.samples, jde0: jdAbs },
-			                tStart: t0, dur: res.duration });
 			if (enc.tEnter > 0) {   // a resumed encounter already announced itself
 				out.events.push({ jd: jdAbs, label: enc.body + " SOI entry — " +
 					(res.vinf != null ? "v∞ " + (res.vinf / 1000).toFixed(2) + " km/s" : "bound") });
@@ -420,16 +433,43 @@ export function computeLeg(params, data) {
 	// pass. Runs through the same coastStretch (so a rendezvous encounter in
 	// progress at leg end completes on screen); the EMITTED end state is
 	// untouched — phases stay chains, the hand-off stays at legDays.
-	var overrun = [];
+	var overrun = [], overrunSegs = [];
 	if (!impact) {
 		var overrunDays = Math.min(60, Math.max(15, Math.round(p.legDays * 0.1)));
-		var over = { samples: overrun, segs: [], events: [], quiet: true };
+		var over = { samples: overrun, segs: overrunSegs, events: [], quiet: true };
 		coastStretch(r, v, jd0 + p.legDays, p.legDays * DAY, overrunDays * DAY, over, inside);
 	}
 
-	return { ok: true, jd0: jd0, samples: out.samples, segs: out.segs,
-	         end: { r: r, v: v, jd: jdEnd }, impact: impact, overrun: overrun,
-	         events: out.events, totalDv: totalDv, miss: miss };
+	var leg = { ok: true, jd0: jd0, samples: out.samples, segs: out.segs,
+	            end: { r: r, v: v, jd: jdEnd }, impact: impact, overrun: overrun,
+	            overrunSegs: overrunSegs,
+	            events: out.events, totalDv: totalDv, miss: miss };
+
+	// THE DESTINATION'S PASS IS REPORTED FROM THE MEASUREMENT, not from whichever
+	// SOI encounter happened to fall inside the leg. The per-encounter events
+	// above stay — they are real, and they cover every body the arc meets — but
+	// for the destination they can be absent (its encounter falls past the leg's
+	// end) or truncated (the leg ends before periapsis, so the boundary distance
+	// is reported as the approach). nearestApproach searches the leg and its
+	// overrun together and is continuous in the waypoints, so the destination's
+	// event is replaced with its answer. This is the same figure the seam, the
+	// sliders and the ship card read: one measurement, reported once.
+	if (!impact && p.destination && systems.get(p.destination)) {
+		var pass = nearestApproach(leg, p.destination);
+		if (pass && pass.insideSoi) {
+			var c2 = bodyConstants(p.destination);
+			out.events = out.events.filter(function (e) {
+				return !(e.kind === "closest-approach" && e.body === p.destination);
+			});
+			out.events.push({ jd: pass.jd, display: false,
+				kind: "closest-approach", body: p.destination,
+				vInf: pass.vInf, rmin: pass.rmin,
+				label: p.destination + " closest approach — " + Fmt3(pass.rmin - c2.R) + " km" });
+			out.events.sort(function (a, b) { return a.jd - b.jd; });
+			leg.events = out.events;
+		}
+	}
+	return leg;
 }
 
 // Heliocentric state (r, v in m, m/s) at elapsed time t (s) since the leg's
@@ -457,6 +497,101 @@ export function stateAtElapsed(leg, t) {
 		return { r: O.vAdd(s.r, b.r), v: O.vAdd(s.v, b.v) };
 	}
 	return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
+}
+
+// The closest the drawn flight comes to `body`, and how fast it is going
+// relative to it there. ONE measurement, whether or not the arc enters the
+// body's SOI — which is the point of it.
+//
+// The obvious cheap version, scanning the polyline samples, is wrong and was
+// tried first: inside an SOI the samples come from the integrated encounter and
+// are dense, but outside one they are a Kepler point per day or so, and at a
+// few km/s relative that is hundreds of thousands of kilometres between
+// samples. The figure then jumped by tens of thousands of km the instant a
+// waypoint nudge walked the pass out of the SOI, and moved non-monotonically
+// outside it — sampling luck, not physics.
+//
+// So this scans TIME, not samples: a grid coarse enough to be cheap (the
+// approach to any body rides a weeks-wide distance dip, exactly the property
+// findFirstEncounter above relies on) with every local minimum ternary-refined
+// to convergence. Resolution comes from the refinement, so the answer is a
+// continuous function of the trajectory and agrees with the integrated
+// encounter's own rmin where there is one.
+//
+// The span is the flight AS DRAWN — the leg plus its display overrun (see
+// computeLeg), which is why the overrun records segs. A pass that falls just
+// past the leg boundary is still the pass the reader is looking at.
+//
+// Returns { jd, tElapsed, rmin, altitude, speed, rRel, vRel, insideSoi,
+// pastLegEnd } or null. rRel/vRel are the BODY-RELATIVE state at the minimum,
+// so a caller wanting the approach geometry (the ship card's B-plane square)
+// takes it from here rather than re-deriving a state the scan already had.
+// Pure; Node-tested.
+export function nearestApproach(leg, body) {
+	if (!leg || !leg.ok || !body) { return null; }
+	var sys = systems.get(body);
+	if (!sys || !sys.orbit) { return null; }
+	var segs = leg.segs || [];
+	if (!segs.length) { return null; }
+	var oSegs = leg.overrunSegs || [];
+	function spanEndOf(list) {
+		var last = list[list.length - 1];
+		return last.tStart + last.dur;
+	}
+	var legEnd = spanEndOf(segs);
+	var end = oSegs.length ? spanEndOf(oSegs) : legEnd;
+
+	function sep(t) {
+		var s = (t <= legEnd || !oSegs.length)
+			? stateAtElapsed(leg, t)
+			: stateAtElapsed({ segs: oSegs }, t);
+		if (!s) { return Infinity; }
+		var b = O.bodyStateAtJD(GM_SUN, sys.orbit, leg.jd0 + t / DAY);
+		return O.vMag(O.vSub(s.r, b.r));
+	}
+
+	// ~1-day grid, bounded so a very long leg stays cheap and a very short one
+	// still gets enough points to bracket its dip.
+	var N = Math.max(24, Math.min(1500, Math.round(end / DAY)));
+	var d = new Array(N + 1);
+	for (var i = 0; i <= N; i++) { d[i] = sep(end * i / N); }
+
+	var bestT = 0, bestD = Infinity;
+	function consider(lo, hi) {
+		for (var k = 0; k < 80; k++) {
+			var m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+			if (sep(m1) <= sep(m2)) { hi = m2; } else { lo = m1; }
+		}
+		var t = (lo + hi) / 2, val = sep(t);
+		if (val < bestD) { bestD = val; bestT = t; }
+	}
+	var step = end / N;
+	for (var j = 0; j <= N; j++) {
+		var isMin = (j === 0) ? (d[0] <= d[1])
+			: (j === N) ? (d[N] <= d[N - 1])
+				: (d[j] <= d[j - 1] && d[j] <= d[j + 1]);
+		if (!isMin) { continue; }
+		consider(Math.max(0, step * (j - 1)), Math.min(end, step * (j + 1)));
+	}
+	if (!isFinite(bestD)) { return null; }
+
+	var s = (bestT <= legEnd || !oSegs.length)
+		? stateAtElapsed(leg, bestT)
+		: stateAtElapsed({ segs: oSegs }, bestT);
+	var b = O.bodyStateAtJD(GM_SUN, sys.orbit, leg.jd0 + bestT / DAY);
+	var rRel = O.vSub(s.r, b.r), vRel = O.vSub(s.v, b.v);
+	var vRelMag = O.vMag(vRel);
+	// v∞, the speed the approach still has once clear of the body — what the
+	// seam's SOI-crossing estimate is measured at, and what an arrival
+	// commitment is written in. Null when the pass is bound (no asymptote).
+	var vInfSq = vRelMag * vRelMag - 2 * sys.GM / bestD;
+	return {
+		jd: leg.jd0 + bestT / DAY, tElapsed: bestT, rmin: bestD,
+		altitude: bestD - sys.radius, speed: vRelMag,
+		vInf: vInfSq > 0 ? Math.sqrt(vInfSq) : null,
+		rRel: rRel, vRel: vRel,
+		insideSoi: bestD < bodyConstants(body).SOI, pastLegEnd: bestT > legEnd
+	};
 }
 
 // The waypoint card's "at deg" field: heliocentric degrees swept from the
@@ -555,6 +690,7 @@ export default {
 	legFor: legFor,
 	handoffLegFor: handoffLegFor,
 	stateAtElapsed: stateAtElapsed,
+	nearestApproach: nearestApproach,
 	handoffPending: handoffPending,
 	commitHandoff: commitHandoff,
 
@@ -764,7 +900,8 @@ export default {
 		// sight instead of only being visible as where the chevron stops.
 		var seam = null, seamT = null;
 		if (params.destination && systems.get(params.destination)) {
-			seam = computeArrivalSeam({ destination: params.destination, events: leg.events,
+			seam = computeArrivalSeam({ destination: params.destination,
+			                             pass: nearestApproach(leg, params.destination),
 			                             fallbackArrivalJd: leg.end.jd });
 			seamT = (seam.start - leg.jd0) * DAY;
 		}

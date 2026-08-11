@@ -54,24 +54,32 @@ or the savings evaporate.
   closest-approach event `transfer-leg` emits, with the no-encounter fallback
   to the plan's arrival epoch. **No stored field and no save-format change** —
   it is recomputed with everything else. Gates 1.2, 1.3, 1.5 and WP-7.
-  `core/arrival-seam.js`: `computeArrivalSeam({ destination, events,
-  fallbackArrivalJd })` reads the destination's `closest-approach` event
-  (`kind`/`body`/`vInf`/`rmin`, now attached in `transfer-leg.js`'s
-  `coastStretch`) and returns `{ hasEncounter, jd, deltaDays, start, end,
-  vInf, rmin }` — `start` is 1.2's Coast-slider end, `[start, end]` is 1.3's
-  Arrival window. No encounter: the window collapses to a point at
+  `core/arrival-seam.js`: `computeArrivalSeam({ destination, pass,
+  fallbackArrivalJd })` takes the coast’s own MEASURED pass
+  (`transfer-leg`’s `nearestApproach`, `pass.insideSoi` deciding whether it
+  counts as an encounter) and returns `{ hasEncounter, jd, deltaDays, start,
+  end, vInf, rmin }` — `start` is 1.2’s Coast-slider end, `[start, end]` is
+  1.3’s Arrival window. No encounter: the window collapses to a point at
   `fallbackArrivalJd`, no `Δt`.
+  It reads a measurement rather than the emitted `closest-approach` EVENT
+  because an event is per-SOI-encounter and measured inside the leg’s own
+  span: it vanishes when the encounter falls past the leg end and reports the
+  leg boundary when the leg ends before periapsis, either way collapsing the
+  window onto the plan’s epoch and placing the whole Arrival phase on the
+  wrong days as the coast is tuned. See `decisions.md`.
 - [x] **1.2 Coast slider ends at the seam; chevron clamped.** ★★
   `coastSpan` in `mission-view.js` currently runs to the frozen arrival event.
   Its right edge becomes the seam, and the chevron cannot be scrubbed past it
   while the Coast phase is active — the drawn line continues regardless. The
   edge moves as the encounter shifts.
   `mission-view.js`'s `coastSeam()` calls `computeArrivalSeam` (1.1) against
-  the transfer-leg stage's own events + the frozen plan's arrival commitment
+  the COMMITTED coast's measured pass + the frozen plan's arrival commitment
   as fallback; `coastSpan`'s right edge is `seam.start`. `transfer-leg.js`'s
-  `draw()` re-derives the same seam from its own `leg.events` +
+  `draw()` re-derives the same seam from its own leg's pass +
   `params.destination` to clamp the chevron, gated on a new `snap.phase`
-  field so the clamp only holds while Coast is the active phase.
+  field so the clamp only holds while Coast is the active phase. Sliders
+  follow the committed coast, the drawn arc and its clamp the live one, so a
+  pending waypoint edit moves the arc without dragging the phase structure.
 - [x] **1.3 Arrival timeline.** ★★★
   The Arrival phase's own clock control, and the third slider: a window
   `[closest approach − Δt, closest approach + ~1 day]` that slides bodily as
@@ -178,9 +186,12 @@ or the savings evaporate.
   committed figures beneath when an edit is pending (`setApproach`); a timing
   bar against the committed arrival epoch, scaled to the plan's hand-off window
   (`timingModel`); and a B-plane approach square (`setBPlane`,
-  `OrbitalMath.bPlane`). With no SOI encounter the approach figures fall back to
-  the closest the DRAWN arc comes, overrun included — a nudge that throws the
-  pass out of a small body's SOI must not blank the card.
+  `OrbitalMath.bPlane`). The approach figures are ONE measurement whether or not
+  the arc enters the SOI — transfer-leg's `nearestApproach`, which scans time
+  (coarse grid to bracket, ternary refinement for resolution) across the leg AND
+  its display overrun. Reading the nearest polyline sample instead makes the
+  figure jump by tens of thousands of km when a nudge walks the pass out of a
+  small body's SOI, since outside one the samples are a Kepler point per day.
   Waypoint edits defer to the Arrival phase until Update (see `decisions.md`).
   Open question 1 below (third arrow, relative angle to the destination's
   orbital prograde) is untouched; so is focusing the gizmo by clicking a

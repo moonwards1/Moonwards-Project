@@ -9,7 +9,7 @@ import {
 	SEAM_MIN_DAYS, SEAM_MAX_DAYS, ARRIVAL_TAIL_DAYS
 } from "../arrival-seam.js";
 import { originSoiRadius } from "../departure-estimate.js";
-import { computeLeg } from "../../modules/transfer-leg/transfer-leg.js";
+import { computeLeg, nearestApproach } from "../../modules/transfer-leg/transfer-leg.js";
 import { bodyConstants } from "../../../Shared/body-leg.js";
 import { Frames } from "../../../Shared/frames.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
@@ -77,7 +77,7 @@ test("findClosestApproach: earliest wins when more than one somehow qualifies", 
 
 test("computeArrivalSeam: no encounter falls back to the plan's arrival epoch, no window", () => {
 	var fallbackJd = 2463500.25;
-	var seam = computeArrivalSeam({ destination: "Mars", events: [], fallbackArrivalJd: fallbackJd });
+	var seam = computeArrivalSeam({ destination: "Mars", pass: null, fallbackArrivalJd: fallbackJd });
 	assert.equal(seam.hasEncounter, false);
 	assert.equal(seam.jd, fallbackJd);
 	assert.equal(seam.deltaDays, null);
@@ -86,10 +86,13 @@ test("computeArrivalSeam: no encounter falls back to the plan's arrival epoch, n
 	assert.equal(seam.vInf, null);
 });
 
-test("computeArrivalSeam: an encounter with a DIFFERENT body still falls back", () => {
+test("computeArrivalSeam: a pass that never reaches the SOI still falls back", () => {
+	// A measurable closest approach is not an arrival: a coast that comes
+	// nearest half an AU away has a pass, but nothing to open a window around.
 	var fallbackJd = 2463500.25;
-	var events = [{ jd: 2463480, kind: "closest-approach", body: "Venus", vInf: 3000, rmin: 5e6 }];
-	var seam = computeArrivalSeam({ destination: "Mars", events: events, fallbackArrivalJd: fallbackJd });
+	var seam = computeArrivalSeam({ destination: "Mars",
+		pass: { jd: 2463480, vInf: 3000, rmin: 5e10, insideSoi: false },
+		fallbackArrivalJd: fallbackJd });
 	assert.equal(seam.hasEncounter, false);
 	assert.equal(seam.jd, fallbackJd);
 });
@@ -111,12 +114,16 @@ function marsFlybyLeg() {
 test("computeArrivalSeam: a real Mars encounter derives a window within [2, 5] days", () => {
 	var leg = marsFlybyLeg();
 	assert.equal(leg.ok, true);
-	var closest = findClosestApproach(leg.events, "Mars");
-	assert.ok(closest, "computeLeg must emit a structured Mars closest-approach event");
+	var closest = nearestApproach(leg, "Mars");
+	assert.ok(closest, "computeLeg must produce a measurable Mars pass");
 	assert.ok(closest.vInf > 0);
+	assert.equal(closest.insideSoi, true);
+	// The emitted event reports the SAME pass — one measurement, reported once.
+	var ev = findClosestApproach(leg.events, "Mars");
+	assert.ok(ev && Math.abs(ev.rmin - closest.rmin) < 1, "event and measurement disagree");
 
 	var fallbackJd = leg.end.jd + 999;   // must be ignored — an encounter exists
-	var seam = computeArrivalSeam({ destination: "Mars", events: leg.events, fallbackArrivalJd: fallbackJd });
+	var seam = computeArrivalSeam({ destination: "Mars", pass: closest, fallbackArrivalJd: fallbackJd });
 	assert.equal(seam.hasEncounter, true);
 	assert.equal(seam.jd, closest.jd);
 	assert.ok(seam.deltaDays >= SEAM_MIN_DAYS && seam.deltaDays <= SEAM_MAX_DAYS,
@@ -136,7 +143,7 @@ test("computeArrivalSeam: Ceres' small SOI clamps to the 2-day floor at a realis
 	// in well under two days at any realistic interplanetary speed.
 	var seam = computeArrivalSeam({
 		destination: "Ceres",
-		events: [{ jd: 2463900, kind: "closest-approach", body: "Ceres", vInf: 3000, rmin: 5e5 }],
+		pass: { jd: 2463900, vInf: 3000, rmin: 5e5, insideSoi: true },
 		fallbackArrivalJd: 0
 	});
 	assert.ok(rSoi / 3000 / DAY < SEAM_MIN_DAYS, "fixture sanity: Ceres crossing should be sub-floor");
@@ -147,7 +154,7 @@ test("computeArrivalSeam: Jupiter's huge SOI clamps to the 5-day ceiling", () =>
 	var rSoi = originSoiRadius("Jupiter");
 	var seam = computeArrivalSeam({
 		destination: "Jupiter",
-		events: [{ jd: 2463900, kind: "closest-approach", body: "Jupiter", vInf: 6000, rmin: 1e8 }],
+		pass: { jd: 2463900, vInf: 6000, rmin: 1e8, insideSoi: true },
 		fallbackArrivalJd: 0
 	});
 	assert.ok(rSoi / 6000 / DAY > SEAM_MAX_DAYS, "fixture sanity: Jupiter crossing should be over the ceiling");
