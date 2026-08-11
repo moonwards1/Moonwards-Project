@@ -160,13 +160,31 @@ or the savings evaporate.
   `legFor` accessor added to both departure-leg descriptors (the same
   registry-reached pattern `frozen-plan` uses for `complianceFor`), so it works
   for an Earth origin and a generic body origin alike. **
-- [ ] **2.3 Coast context.** ★★
-  Prograde speed; distance at closest approach; the angle separating the ship's
-  and the destination's vectors; the delivered arrival-heading arrow against an
-  ideal-heading arrow aimed at a low orbit altitude at closest approach.
-  Clicking a waypoint in the pane focuses the gizmo on that point's axes.
-  A third arrow (relative angle to the destination's orbital prograde) is an
-  open question — build it behind a toggle and judge after use.
+- [x] **2.3 Coast context.** ★★
+  The Coast card grades nothing — many passes arrive successfully, so there is
+  no "needed" to measure against. `updateCoastCard` compares the leg-end
+  heading the Arrival phase is running on (dim) with the one the live waypoints
+  produce (bright), as NET LINES ONLY: components would be meaningless, since a
+  leg-end velocity resolved in its own burn frame is `(|v|, 0, 0)` by
+  construction. The triad is therefore a pure orientation reference —
+  `setReferenceFrame`, drawn as a third render pass through its own fixed-radius
+  camera, so it holds its size and place wherever the main camera flies. The two
+  headings differ by parts in a thousand and the difference lives at the TIPS,
+  so `setGizmo`'s `focus` puts the camera target on the committed net tip and
+  opens the near zoom clamp.
+  Readouts: the net speed change pending edits make at leg end (`setChange`);
+  a speed bar spanning the leg's own min..max rather than 0..max (`speedRange`,
+  `speedModel`'s `floor`); distance and speed at closest approach, with the
+  committed figures beneath when an edit is pending (`setApproach`); a timing
+  bar against the committed arrival epoch, scaled to the plan's hand-off window
+  (`timingModel`); and a B-plane approach square (`setBPlane`,
+  `OrbitalMath.bPlane`). With no SOI encounter the approach figures fall back to
+  the closest the DRAWN arc comes, overrun included — a nudge that throws the
+  pass out of a small body's SOI must not blank the card.
+  Waypoint edits defer to the Arrival phase until Update (see `decisions.md`).
+  Open question 1 below (third arrow, relative angle to the destination's
+  orbital prograde) is untouched; so is focusing the gizmo by clicking a
+  waypoint in the pane.
 - [ ] **2.4 Arrival context.** ★★
   Ship speed at the chevron. Reserve the layout for approach data against a
   capture platform (open question — see below).

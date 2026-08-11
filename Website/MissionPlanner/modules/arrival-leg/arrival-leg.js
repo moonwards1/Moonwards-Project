@@ -66,7 +66,7 @@ import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-wid
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { computeArrivalSeam, SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
-import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed }
+import { handoffLegFor as coastLegFor, stateAtElapsed as coastStateAtElapsed }
 	from "../transfer-leg/transfer-leg.js";
 import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 
@@ -341,6 +341,12 @@ export default {
 		// The coast leg itself, for the seam window and the state at its left
 		// edge (see the header). Absent in a bare Node call, or before the coast
 		// has computed — arrivalWindow falls back to the delivered state.
+		//
+		// The COMMITTED hand-off, not the live coast: a waypoint edit pending on
+		// the Coast phase moves the drawn arc there without moving this phase,
+		// until the ship card's Update button hands it over (transfer-leg's
+		// hand-off snapshot block). Reading the live leg here would defeat that
+		// and drag the whole arrival phase along behind every nudge.
 		var coastLeg = null;
 		if (ctx.world && typeof ctx.world.stages === "function") {
 			var stages = ctx.world.stages();

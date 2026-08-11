@@ -239,3 +239,77 @@ test("relativeInclination: degenerate (radial) relative state returns 0, not NaN
 	var orbit = { inclination: 0.4, longitude: 1.1 };
 	assert.equal(O.relativeInclination([AU, 0, 0], [0, 0, 0], orbit), 0);
 });
+
+// ---- bPlane: the hyperbolic approach aim point ------------------------------
+// Added for the Mission Planner Coast ship card, whose approach square reads
+// "which side does the ship pass on" straight off these axes.
+
+var GM_EARTH = 3.986004418e14;
+
+// A body-relative approach state at 10,000 km with a chosen velocity.
+function approach(vvec) {
+	return { r: [1e7, 0, 0], v: vvec };
+}
+
+test("bPlane: a bound state has no asymptote", () => {
+	// Circular speed at 10,000 km — well under escape.
+	var vc = Math.sqrt(GM_EARTH / 1e7);
+	assert.equal(O.bPlane(GM_EARTH, [1e7, 0, 0], [0, vc, 0]), null);
+});
+
+test("bPlane: B is perpendicular to the asymptote and |B| = h / vInf", () => {
+	var s = approach([1200, 11000, 3000]);
+	var bp = O.bPlane(GM_EARTH, s.r, s.v);
+	assert.ok(bp, "expected a hyperbolic approach");
+	assert.ok(Math.abs(O.vDot(bp.B, bp.S)) / bp.b < 1e-9, "B not perpendicular to S");
+	var vInf = Math.sqrt(O.vDot(s.v, s.v) - 2 * GM_EARTH / O.vMag(s.r));
+	var h = O.vMag(O.vCross(s.r, s.v));
+	assert.ok(Math.abs(bp.b - h / vInf) / bp.b < 1e-9, "b " + bp.b + " vs " + h / vInf);
+});
+
+test("bPlane: B x vInf*S reproduces the angular momentum vector", () => {
+	// The defining identity of the B vector — an independent check on both its
+	// magnitude and its SIGN, which is the whole point of the readout.
+	var s = approach([1200, 11000, 3000]);
+	var bp = O.bPlane(GM_EARTH, s.r, s.v);
+	var vInf = Math.sqrt(O.vDot(s.v, s.v) - 2 * GM_EARTH / O.vMag(s.r));
+	var got = O.vCross(bp.B, O.vScale(bp.S, vInf));
+	var want = O.vCross(s.r, s.v);
+	for (var i = 0; i < 3; i++) {
+		assert.ok(Math.abs(got[i] - want[i]) / O.vMag(want) < 1e-9,
+			"component " + i + ": " + got[i] + " vs " + want[i]);
+	}
+});
+
+test("bPlane: north always points to the ecliptic-north side", () => {
+	[[1200, 11000, 3000], [0, 11000, 0], [500, -9000, -8000]].forEach(function (v) {
+		var bp = O.bPlane(GM_EARTH, [1e7, 0, 0], v);
+		assert.ok(bp.north[2] > 0, "north z " + bp.north[2] + " for v " + v);
+		assert.ok(Math.abs(O.vDot(bp.north, bp.S)) < 1e-12, "north not perpendicular to S");
+		assert.ok(Math.abs(O.vDot(bp.east, bp.north)) < 1e-12, "east not perpendicular to north");
+	});
+});
+
+test("bPlane: an in-ecliptic pass reads as pure side, no above/below", () => {
+	// h along +z, so the whole hyperbola lies in the ecliptic and the aim point
+	// can only be to one side — 90 or 270 degrees from north, never up or down.
+	var bp = O.bPlane(GM_EARTH, [1e7, 0, 0], [0, 12000, 0]);
+	var fromSide = Math.min(Math.abs(bp.angleDeg - 90), Math.abs(bp.angleDeg - 270));
+	assert.ok(fromSide < 1e-6, "angle " + bp.angleDeg);
+});
+
+test("bPlane: mirroring the pass through the ecliptic swaps above for below", () => {
+	// Flipping the z components reflects the geometry north<->south. North is a
+	// FIXED lab direction (it is not mirrored with the state), so the aim point's
+	// north component negates while its east component is untouched: the pass
+	// swaps sides vertically and stays on the same side horizontally. In bearing
+	// terms that is a reflection about the east-west line, theta -> 180 - theta.
+	var bp = O.bPlane(GM_EARTH, [1e7, 0, 0], [1200, 11000, 3000]);
+	var mir = O.bPlane(GM_EARTH, [1e7, 0, 0], [1200, 11000, -3000]);
+	assert.ok(O.vDot(bp.B, bp.north) * O.vDot(mir.B, mir.north) < 0, "north component did not flip");
+	assert.ok(Math.abs(O.vDot(bp.B, bp.east) - O.vDot(mir.B, mir.east)) / bp.b < 1e-9,
+		"east component changed");
+	var want = ((180 - bp.angleDeg) + 360) % 360;
+	assert.ok(Math.abs(mir.angleDeg - want) < 1e-6,
+		"mirrored " + mir.angleDeg + " vs expected " + want);
+});

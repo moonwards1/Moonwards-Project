@@ -356,10 +356,68 @@ body {
 	font-size: 10px; color: var(--dim); white-space: nowrap;
 }
 
+/* Both ends of a floor-based bar (the Coast card's min..max span). */
+.mp-ship-barends {
+	display: flex; justify-content: space-between;
+	font-size: 10px; color: var(--dim);
+}
+
 .mp-ship-extra { display: flex; flex-direction: column; gap: 2px; }
 .mp-ship-extrarow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .mp-ship-extralabel { font-size: 11px; color: var(--dim); }
 .mp-ship-extraval { font-size: 11.5px; color: var(--text); }
+
+/* ---- the Coast card's own parts ----
+   All of these render nothing until their setter is called, so the Departure
+   card is unaffected by their presence in the markup. */
+/* The change row's label wraps across the narrow first column. */
+.mp-ship-changelabel { line-height: 1.15; white-space: normal; }
+.mp-ship-titlewrap { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.mp-ship-subtitle { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.mp-ship-commit { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+/* The commit control. Never disabled for "the pass got worse" — which way is
+   better is the user's call (see setUpdate) — so it carries no warning state. */
+.mp-ship-update { font-size: 12px; padding: 2px 10px; cursor: pointer; }
+.mp-ship-update:disabled { opacity: 0.4; cursor: default; }
+/* The approach square: bearing only, at a fixed radius. Distance is the chips'
+   business (see setBPlane). */
+.mp-ship-bplane {
+	width: 46px; height: 46px; flex: 0 0 auto;
+	border: 1px solid var(--line2); border-radius: 5px; background: #0d1729;
+}
+.mp-ship-bsvg { display: block; width: 100%; height: 100%; }
+
+.mp-ship-approach { display: flex; gap: 8px; }
+.mp-ship-appcell { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.mp-ship-applabel { font-size: 11px; color: var(--dim); text-align: center; line-height: 1.15; }
+.mp-ship-appchip {
+	display: flex; align-items: baseline; gap: 3px;
+	background: #c2571f; border-radius: 3px; padding: 2px 7px;
+}
+/* Which way a pending edit moved the figure. Both are readable states, not a
+   pass/fail: the card reports the move and leaves the judgement to the user. */
+.mp-ship-appchip.better { background: #1f6b56; }
+.mp-ship-appchip.worse { background: #8a3a2a; }
+.mp-ship-appval { font-size: 14px; color: var(--bright); }
+.mp-ship-appunit { font-size: 10px; color: #e8d7c8; }
+.mp-ship-appref { font-size: 10px; color: var(--dim); white-space: nowrap; }
+
+.mp-ship-timing { display: flex; flex-direction: column; gap: 3px; }
+.mp-ship-timinghead { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
+.mp-ship-timinghead b { font-weight: 400; font-size: 12px; color: var(--dim); }
+.mp-ship-timingval { font-size: 12.5px; color: var(--bright); }
+.mp-ship-timingval.outside { color: var(--warn, #ffb45a); }
+/* The bar's two ends ARE the plan's hand-off window, so running off it and
+   failing the arrival epoch check are the same event. */
+.mp-ship-timingbar {
+	position: relative; height: 11px; border-radius: 6px;
+	border: 1px solid #7fd4f0; overflow: hidden;
+}
+.mp-ship-timingfill { position: absolute; top: 0; bottom: 0; background: #7fd4f0; }
+.mp-ship-timingzero {
+	position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
+	background: var(--bright);
+}
 
 /* floating body labels (Shared/sim/body-renderer.js label layer) */
 .mp-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }

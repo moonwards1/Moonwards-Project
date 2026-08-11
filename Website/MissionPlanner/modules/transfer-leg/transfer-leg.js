@@ -27,9 +27,15 @@
  * state plus whatever waypoint burns happened along the way, so nothing at the
  * Coast→Arrival seam needs a burn concept either — arrival-boundary passes the
  * emitted state through untouched, and arrival-leg simply continues this leg's
- * own flight from the seam (it reads the state there off legFor/stateAtElapsed
- * below, since the EMITTED state sits later, at this leg's end, where
- * arrival-boundary has to measure it).
+ * own flight from the seam (it reads the state there off
+ * handoffLegFor/stateAtElapsed below, since the EMITTED state sits later, at
+ * this leg's end, where arrival-boundary has to measure it).
+ *
+ * THE LEG IS COMPUTED TWICE, and the two answers go to different places: the
+ * live tuning is drawn and reported on the ship card, while the last committed
+ * hand-off is what the Arrival phase runs on. See the hand-off snapshot block
+ * below defaultParams for why, and legFor/handoffLegFor for which consumer
+ * reads which.
  *
  * If a destination body is set, the miss distance at arrival is reported
  * through the envelope's WARNINGS channel — non-blocking, per the core's
@@ -86,11 +92,66 @@ export var WAYPOINT_AXIS_CAP_MPS = 100;
 // Warn when the leg ends farther than this from the destination body.
 export var MISS_WARN_AU = 0.02;
 
+// ---- the hand-off snapshot --------------------------------------------------
+// Waypoint edits on Coast take effect on the DRAWN coast immediately, but they
+// do not reach the Arrival phase until the ship card's Update button is
+// pressed. There is no single right approach — many passes arrive successfully —
+// so the user tunes against the card's live closest-approach/speed readouts and
+// commits when the pass is one they want, rather than dragging the whole
+// arrival phase along behind every nudge.
+//
+// `handoff` holds the waypoint list as of the last commit. null means nothing
+// is pending and the live waypoints ARE the hand-off — which is also what every
+// save written before this feature deserializes to, so no migration is needed:
+// such a mission simply behaves as it always did until its first waypoint edit,
+// which captures the snapshot (see init's commitWaypoints).
 export var defaultParams = {
 	waypoints: [],                       // up to 2: { days, burn: {pro,rad,nrm} }
+	handoff: null,                       // waypoints as of the last Update, or null
 	legDays: 480,                        // duration from leg start to the emitted state
 	destination: ""                      // body name, or "" for none
 };
+
+// Waypoint lists equal for hand-off purposes: same count, same times, same
+// burns. Compared rather than identity-checked so that editing a waypoint and
+// putting it back reads as "nothing pending" instead of leaving the card
+// offering an Update that would change nothing.
+export function sameWaypoints(a, b) {
+	if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) { return false; }
+	for (var i = 0; i < a.length; i++) {
+		var x = a[i] || {}, y = b[i] || {};
+		var xb = x.burn || {}, yb = y.burn || {};
+		if (x.days !== y.days || (xb.pro || 0) !== (yb.pro || 0) ||
+		    (xb.rad || 0) !== (yb.rad || 0) || (xb.nrm || 0) !== (yb.nrm || 0)) { return false; }
+	}
+	return true;
+}
+
+// A detached copy of a waypoint list — the snapshot must not alias the live
+// objects the vector editor mutates in place.
+export function copyWaypoints(list) {
+	return (list || []).map(function (wp) {
+		var b = wp.burn || {};
+		return { days: wp.days, burn: { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 } };
+	});
+}
+
+// Does the live coast differ from the one the Arrival phase is running on?
+// The ship card's Update button exists exactly when this is true. Takes a
+// stage's raw params.
+export function handoffPending(params) {
+	var p = Object.assign({}, defaultParams, params || {});
+	return Array.isArray(p.handoff) && !sameWaypoints(p.handoff, p.waypoints);
+}
+
+// Hand the live coast to Arrival: the Update button's whole effect. Snapshots
+// the current waypoints, which makes handoffPending false until the next edit.
+export function commitHandoff(world, stageId) {
+	var stage = world.getStage(stageId);
+	if (!stage) { return; }
+	var p = Object.assign({}, defaultParams, stage.params);
+	world.set({ stage: stageId, params: { handoff: copyWaypoints(p.waypoints) } });
+}
 
 function isoOf(jd) {
 	var d = O.dateFromJulian(jd);
@@ -217,7 +278,7 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 			var n = Math.max(60, Math.min(240, Math.round(kepDur / DAY * 0.5)));
 			var arc = O.sampleArc(GM_SUN, r, v, kepDur, n);
 			for (var k = (out.samples.length ? 1 : 0); k < arc.length; k++) {
-				out.samples.push({ r: arc[k].r, t: t0 + arc[k].t });
+				out.samples.push({ r: arc[k].r, v: arc[k].v, t: t0 + arc[k].t });
 			}
 			var st = O.propagateState(GM_SUN, r, v, kepDur);
 			r = st.r; v = st.v;
@@ -250,13 +311,16 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 		}
 		// Lift the body-centred trail to helio samples (decimated to keep the
 		// polyline light; the seg keeps the full trail for stateAtElapsed).
+		// Velocity is lifted alongside position — the ship card's speed bar
+		// reads its profile straight off these samples, and a pass through an
+		// SOI is exactly where the speed is most worth seeing.
 		var stride = Math.max(1, Math.floor(res.samples.length / 400));
 		var lastIdx = res.samples.length - 1;
 		for (var si2 = 1; si2 <= lastIdx; si2 += stride) {
 			var idx = (si2 + stride > lastIdx) ? lastIdx : si2;   // never skip the exit point
 			var s = res.samples[idx];
-			out.samples.push({ r: O.vAdd(s.r, bodyPosAt(enc.body, jdAbs + s.t / DAY)),
-			                   t: t0 + s.t });
+			var bs = O.bodyStateAtJD(GM_SUN, systems.get(enc.body).orbit, jdAbs + s.t / DAY);
+			out.samples.push({ r: O.vAdd(s.r, bs.r), v: O.vAdd(s.v, bs.v), t: t0 + s.t });
 			if (idx === lastIdx) { break; }
 		}
 		r = res.end.r; v = res.end.v;
@@ -432,22 +496,43 @@ export function dayAtDeg(leg, legDays, dayGuess, targetDeg) {
 	return day;
 }
 
-// Last computed leg per (World, stage), for the card readouts and the
+// Last computed legs per (World, stage), for the card readouts and the
 // polyline. Keyed by World first because N missions coexist and their Worlds
 // reuse stage ids like "stg-2" — a stageId-only cache would let one mission's
 // recompute clobber another's drawn leg. WeakMap, so a closed mission's entries
 // go with its World.
+//
+// TWO legs per stage, because the coast has two answers at once (see the
+// hand-off snapshot block above): `live` is the coast as currently tuned — the
+// drawn polyline, the chevron, the ship card's live readouts — and `handoff` is
+// the coast the Arrival phase is running on. They are the same object whenever
+// nothing is pending.
 var lastByWorld = new WeakMap();
-export function legFor(world, stageId) {
+function legsOf(world, stageId) {
 	var m = lastByWorld.get(world);
 	return (m && m.get(stageId)) || null;
 }
-function rememberLeg(world, stageId, leg) {
+
+// The coast as currently tuned. Everything that DRAWS the coast wants this.
+export function legFor(world, stageId) {
+	var l = legsOf(world, stageId);
+	return l ? l.live : null;
+}
+
+// The coast the Arrival phase is running on — the last hand-off. Arrival stages
+// read the coast through THIS, so a pending waypoint edit moves the drawn arc
+// without moving the approach the arrival phase has been built against.
+export function handoffLegFor(world, stageId) {
+	var l = legsOf(world, stageId);
+	return l ? l.handoff : null;
+}
+
+function rememberLegs(world, stageId, live, handoff) {
 	if (!world || typeof world !== "object") { return; }   // a bare Node call
 	                                                       // (ctx.world null) has no view to feed
 	var m = lastByWorld.get(world);
 	if (!m) { m = new Map(); lastByWorld.set(world, m); }
-	m.set(stageId, leg);
+	m.set(stageId, { live: live, handoff: handoff });
 }
 
 export default {
@@ -462,18 +547,47 @@ export default {
 	// render in the card via the shell's generic boxes.
 	plainCard: true,
 
+	// Exposed on the DESCRIPTOR, not just as named exports, so the shell
+	// (mission-view.js's Coast ship card) can reach them through
+	// registry.get("transfer-leg") — modules stay dynamically loaded
+	// (planner.js's MODULE_URLS) and only the registry is a shared handle. The
+	// same arrangement frozen-plan uses for complianceFor and friends.
+	legFor: legFor,
+	handoffLegFor: handoffLegFor,
+	stateAtElapsed: stateAtElapsed,
+	handoffPending: handoffPending,
+	commitHandoff: commitHandoff,
+
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
 		var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 
+		// The live coast: what is drawn, and what the ship card reports against.
 		var leg = computeLeg(params, data);
-		rememberLeg(ctx.world, ctx.stageId, leg);
+		// The hand-off coast: what Arrival is running on. Identical unless a
+		// waypoint edit is pending, in which case this is the SECOND full
+		// integration of the leg — the price of letting the arc move without
+		// dragging the arrival phase with it.
+		var handoff = leg;
+		if (Array.isArray(params.handoff) && !sameWaypoints(params.handoff, params.waypoints)) {
+			handoff = computeLeg(Object.assign({}, params, { waypoints: params.handoff }), data);
+		}
+		rememberLegs(ctx.world, ctx.stageId, leg, handoff.ok ? handoff : leg);
 		if (!leg.ok) { return leg.diagnostic; }
+		// A pending edit that breaks the leg must not take the committed
+		// hand-off down with it, and vice versa: fall back to whichever ran.
+		if (!handoff.ok) { handoff = leg; }
 
+		// PACKET AND EVENTS COME FROM THE HAND-OFF, warnings from the live arc.
+		// The packet is the Arrival phase's input and the events carry the
+		// structure hung off this leg — core/arrival-seam.js's window, the
+		// phase sliders, the events bar — so all of that holds still until
+		// Update. The warnings are feedback on the arc the user is looking at
+		// and is actively dragging, so they track the live leg instead.
 		var packet = PacketTypes.make("ship-state",
-			{ r: leg.end.r, v: leg.end.v, jd: leg.end.jd, frame: "helio",
-			  dvUsed: (data.dvUsed || 0) + leg.totalDv },
-			{ tool: "mission-planner/transfer-leg", label: "leg end", iso: isoOf(leg.end.jd) });
+			{ r: handoff.end.r, v: handoff.end.v, jd: handoff.end.jd, frame: "helio",
+			  dvUsed: (data.dvUsed || 0) + handoff.totalDv },
+			{ tool: "mission-planner/transfer-leg", label: "leg end", iso: isoOf(handoff.end.jd) });
 
 		var warnings = [];
 		if (leg.impact) {
@@ -491,7 +605,7 @@ export default {
 				  fix: "Adjust the waypoint impulses, the leg duration, or whatever delivers the coast's starting state." }));
 		}
 
-		return { packet: packet, warnings: warnings, events: leg.events };
+		return { packet: packet, warnings: warnings, events: handoff.events };
 	},
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
@@ -526,8 +640,20 @@ export default {
 			var stage = ctx.world.getStage(ctx.stageId);
 			return Object.assign({}, defaultParams, stage ? stage.params : {});
 		}
-		function setParam(name, value) {
-			var patch = {}; patch[name] = value;
+		// EVERY waypoint mutation goes through here. It writes the new list and,
+		// the first time anything on this leg is touched, captures the pre-edit
+		// list as the hand-off snapshot — in ONE patch, so there is never an
+		// instant where the live waypoints have moved and the hand-off has not.
+		//
+		// `list` must be DETACHED (copyWaypoints), never the live param objects:
+		// the callers below hand the vector editor a copy of each burn precisely
+		// so that the params still hold the pre-edit values when this runs. An
+		// editor writing through to the live burn would erase the very snapshot
+		// this is here to take.
+		function commitWaypoints(list) {
+			var p = stageParams();
+			var patch = { waypoints: list };
+			if (!Array.isArray(p.handoff)) { patch.handoff = copyWaypoints(p.waypoints); }
 			ctx.world.set({ stage: ctx.stageId, params: patch });
 		}
 
@@ -562,26 +688,26 @@ export default {
 					// Part of the committed plan: not removable, only resettable.
 					btn.textContent = "reset";
 					btn.addEventListener("click", function () {
-						var list = stageParams().waypoints.slice();
+						var list = copyWaypoints(stageParams().waypoints);
 						list[i] = { days: original.days, burn: Object.assign({}, original.burn) };
-						setParam("waypoints", list);
+						commitWaypoints(list);
 						rebuildWaypointRows();
 					});
 				} else {
 					btn.textContent = "remove";
 					btn.addEventListener("click", function () {
-						var list = stageParams().waypoints.slice();
+						var list = copyWaypoints(stageParams().waypoints);
 						list.splice(i, 1);
-						setParam("waypoints", list);
+						commitWaypoints(list);
 						rebuildWaypointRows();
 					});
 				}
 				head.appendChild(btn); card.appendChild(head);
 				numRow(card, "at", "°", degAtDay(legFor(ctx.world, ctx.stageId), wp.days), 1, function (v) {
-					var list = stageParams().waypoints.slice();
+					var list = copyWaypoints(stageParams().waypoints);
 					var leg = legFor(ctx.world, ctx.stageId);
 					list[i].days = dayAtDeg(leg, stageParams().legDays, list[i].days, v);
-					setParam("waypoints", list);
+					commitWaypoints(list);
 				});
 				var hint = document.createElement("div"); hint.className = "mp-muted";
 				hint.textContent = "course correction — up to ±" + WAYPOINT_AXIS_CAP_MPS +
@@ -589,9 +715,11 @@ export default {
 				card.appendChild(hint);
 				var burnBaseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
 				var burnHost = document.createElement("div"); card.appendChild(burnHost);
-				buildVectorEditor(burnHost, wp.burn, function (axis, mps) {
-					var list = stageParams().waypoints.slice(); list[i].burn[axis] = mps;
-					setParam("waypoints", list);
+				// A COPY of the burn, not the live object — see commitWaypoints.
+				buildVectorEditor(burnHost, Object.assign({}, wp.burn), function (axis, mps) {
+					var list = copyWaypoints(stageParams().waypoints);
+					list[i].burn[axis] = mps;
+					commitWaypoints(list);
 				}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS,
 				     displayDiv: 1, decimals: 1, step: 0.1, unitLabel: "m/s" });
 				wpHost.appendChild(card);
@@ -600,11 +728,11 @@ export default {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
 				add.textContent = "+ add waypoint";
 				add.addEventListener("click", function () {
-					var list = stageParams().waypoints.slice();
+					var list = copyWaypoints(stageParams().waypoints);
 					var half = Math.round(stageParams().legDays / 2);
 					list.push({ days: list.length ? Math.min(list[0].days + 60, stageParams().legDays - 10) : half,
 					            burn: { pro: 0, rad: 0, nrm: 0 } });
-					setParam("waypoints", list);
+					commitWaypoints(list);
 					rebuildWaypointRows();
 				});
 				wpHost.appendChild(add);

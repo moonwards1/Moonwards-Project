@@ -830,6 +830,64 @@ export const OrbitalMath = {
 			return { pro: O.vDot(dv, f.pro), nrm: O.vDot(dv, f.nrm), rad: O.vDot(dv, f.rad) };
 		},
 
+		// The B-plane of a hyperbolic approach: the plane through the body's
+		// centre perpendicular to the INCOMING asymptote, and the aim point in
+		// it. This is the standard instrument for "which side does the ship pass
+		// on" — unlike a view-direction projection it is defined by the approach
+		// itself, so it stays stable as the pass is tuned and its sign never
+		// flips on a near-head-on geometry.
+		//
+		// (GM, rvec, vvec) are BODY-RELATIVE (m, m/s). Returns null when the
+		// approach is not hyperbolic (e <= 1) — a bound state has no asymptote
+		// and so no B-plane.
+		//
+		// Axes are anchored the way burnFrame anchors its own: ecliptic north
+		// projected perpendicular to the primary axis. `north` is that
+		// projection (screen up), `east` completes a view looking ALONG the
+		// direction of travel (screen right), so a reader is placed as if riding
+		// the ship in toward the body with ecliptic north at 0 degrees.
+		//
+		// Returns { S, B, b, north, east, angleDeg, e }:
+		//   S        — incoming asymptote unit vector (the direction of v∞ in)
+		//   B        — the B vector (m): centre to where the asymptote pierces
+		//              the plane, pointing to the periapsis side of the turn
+		//   b        — |B|, the impact parameter (m)
+		//   angleDeg — B's bearing in the plane, degrees clockwise from north
+		bPlane: function (GM, rvec, vvec) {
+			var O = OrbitalMath;
+			var r = O.vMag(rvec), v2 = O.vDot(vvec, vvec);
+			var hvec = O.vCross(rvec, vvec);
+			if (O.vMag(hvec) < 1e-9 || !(r > 0) || !(GM > 0)) { return null; }
+			var hhat = O.vUnit(hvec);
+			// e vector, same construction elementsFromState uses.
+			var evec = O.vScale(O.vSub(O.vScale(rvec, v2 - GM / r),
+				O.vScale(vvec, O.vDot(rvec, vvec))), 1 / GM);
+			var e = O.vMag(evec);
+			if (!(e > 1)) { return null; }
+			var ehat = O.vScale(evec, 1 / e);
+			var qhat = O.vCross(hhat, ehat);            // perifocal in-plane, along motion at periapsis
+			// Incoming asymptote: the velocity direction at true anomaly -nu_inf,
+			// where cos(nu_inf) = -1/e. In the (ehat, qhat) basis that is
+			// (1, sqrt(e^2-1)) normalized — which tends to qhat as e grows, i.e. a
+			// nearly-straight pass comes in along its own periapsis heading.
+			var k = Math.sqrt(e * e - 1);
+			var S = O.vUnit(O.vAdd(O.vScale(ehat, 1 / e), O.vScale(qhat, k / e)));
+			// Impact parameter from the semi-major axis (negative on a hyperbola).
+			var a = 1 / (2 / r - v2 / GM);
+			var b = Math.abs(a) * k;
+			var B = O.vScale(O.vUnit(O.vCross(S, hhat)), b);
+
+			var up = [0, 0, 1];
+			var proj = O.vSub(up, O.vScale(S, O.vDot(up, S)));
+			var north = (O.vMag(proj) < 1e-9)
+				? O.vUnit(O.vCross(S, hhat))            // asymptote along the pole: any perpendicular
+				: O.vUnit(proj);
+			var east = O.vUnit(O.vCross(S, north));     // screen right, looking along S
+			var angleDeg = Math.atan2(O.vDot(B, east), O.vDot(B, north)) * 180 / Math.PI;
+			return { S: S, B: B, b: b, north: north, east: east,
+				angleDeg: (angleDeg + 360) % 360, e: e };
+		},
+
 		// Sample positions along the two-body arc starting at (rvec,vvec), over
 		// `duration` seconds, into `steps`+1 points. Returns array of [x,y,z].
 		sampleTrajectory: function (GM, rvec, vvec, duration, steps) {
@@ -872,7 +930,10 @@ export const OrbitalMath = {
 		// hyperbolic) anomaly rather than in time. Uniform-in-time crowds points
 		// at apoapsis and starves periapsis, so an eccentric arc renders as long
 		// straight chords through periapsis; uniform-in-anomaly puts the points
-		// where the curvature is. Returns [{r:[x,y,z], t:seconds-from-start}, ...].
+		// where the curvature is. Returns
+		// [{r:[x,y,z], v:[x,y,z], t:seconds-from-start}, ...] — velocity comes
+		// free from stateFromElements, and callers that plot a speed profile
+		// along the arc (the Mission Planner ship cards) need it.
 		sampleArc: function (GM, rvec, vvec, duration, steps) {
 			var O = OrbitalMath;
 			var el = O.elementsFromState(GM, rvec, vvec);
@@ -889,7 +950,7 @@ export const OrbitalMath = {
 					nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(x / 2),
 					                    Math.sqrt(1 - e) * Math.cos(x / 2));
 					s = O.stateFromElements(GM, a, e, i, Om, w, nu);
-					pts.push({ r: s.r, t: (x - e * Math.sin(x) - Me0) / n });
+					pts.push({ r: s.r, v: s.v, t: (x - e * Math.sin(x) - Me0) / n });
 				}
 			} else {
 				var H0 = 2 * Math.atanh(Math.sqrt((e - 1) / (e + 1)) * Math.tan(nu0 / 2));
@@ -900,7 +961,7 @@ export const OrbitalMath = {
 					nu = 2 * Math.atan2(Math.sqrt(e + 1) * Math.sinh(x / 2),
 					                    Math.sqrt(e - 1) * Math.cosh(x / 2));
 					s = O.stateFromElements(GM, a, e, i, Om, w, nu);
-					pts.push({ r: s.r, t: (e * Math.sinh(x) - x - Mh0) / n });
+					pts.push({ r: s.r, v: s.v, t: (e * Math.sinh(x) - x - Mh0) / n });
 				}
 			}
 			return pts;

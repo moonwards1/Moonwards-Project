@@ -1,28 +1,40 @@
 /* Mission Planner — the ship card.
  *
  * A floating card in the scene pane reporting on the ship the chevron marks:
- * a small three.js gizmo comparing the heading the plan NEEDS against the one
- * the mission currently DELIVERS, a numeric summary of the same comparison,
- * and a speed bar.
+ * a small three.js gizmo comparing two headings, a numeric summary, and a
+ * speed bar — plus, for phases that ask for them, an approach readout, a
+ * timing bar, a B-plane square and a commit button.
  *
  * Two layers, one comparison. Every visual in the card says the same thing
- * twice: dim = needed (what the frozen plan requires at hand-off), bright =
- * current (what the configured technology and waypoints actually deliver).
- * On course is when the two coincide.
+ * twice: dim = the reference, bright = what the mission currently delivers, and
+ * the phase decides what the reference IS. Departure compares the v∞ the frozen
+ * plan requires at hand-off against the v∞ the technology delivers, and "on
+ * course" is when the two coincide. Coast compares the leg-end heading the
+ * Arrival phase is running on against the heading the live waypoints produce,
+ * and has no on-course state at all: many passes arrive successfully, so the
+ * card reports the approach and offers Update rather than grading it.
+ *
+ * OPTIONAL PARTS. Every section is filled by a setter and renders nothing until
+ * one is called, so a phase takes only the parts it needs and the card stays
+ * phase-agnostic: setComponents/setOnCourse are Departure's, setApproach/
+ * setTiming/setBPlane/setUpdate/setReferenceFrame are Coast's, and the gizmo and
+ * speed bar serve both.
  *
  * The gizmo is a scissored viewport off the shell's single shared renderer —
  * the same mechanism the floating panes use — so the card costs no extra WebGL
- * context. Its scene holds nothing but lines in a unit-normalized space, so
- * it needs no constant-on-screen-size pass: the camera sits at a fixed radius
- * and the content is scaled into it.
+ * context. Its scene holds nothing but lines in a unit-normalized space, and at
+ * rest the camera sits at a fixed radius with the content scaled into it. A
+ * FOCUSED gizmo (setGizmo's `focus`) is the exception: it orbits a net line's
+ * tip and flies in far closer, which means the near plane and the line widths
+ * both have to track the camera — see render.
  *
- * The card is phase-agnostic. A caller fills it through setComponents /
- * setSpeed / setExtra and supplies the gizmo's vectors; what those mean is the
- * phase adapter's business, not this file's.
+ * The card is phase-agnostic. A caller fills it through the setters and
+ * supplies the gizmo's vectors; what those mean is the phase adapter's
+ * business, not this file's.
  *
  * The pure halves (vInfComponents, gizmoScale, speedModel, speedAlong,
- * peakSpeed) take and return plain values and are Node-tested in
- * tests/ship-card.test.js.
+ * speedRange, peakSpeed, bearingPoint, timingModel) take and return plain
+ * values and are Node-tested in tests/ship-card.test.js.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
  */
@@ -45,6 +57,7 @@ var AXIS_KEYS = ["pro", "rad", "nrm"];
 var AXIS_LABELS = { pro: "Prograde", rad: "Radial", nrm: "Normal" };
 
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+function isNum(x) { return typeof x === "number" && isFinite(x); }
 
 // =======================================================================
 //  Pure model
@@ -71,22 +84,37 @@ export function gizmoScale(needed, current) {
 	var m = 0;
 	[needed, current].forEach(function (s) {
 		if (!s) { return; }
-		m = Math.max(m, Math.abs(s.pro), Math.abs(s.rad), Math.abs(s.nrm), Math.abs(s.net));
+		// A net-only layer (the Coast card) carries no components at all, so
+		// each is skipped rather than folded in as NaN — which would poison the
+		// running maximum and collapse the scale to its fallback.
+		["pro", "rad", "nrm", "net"].forEach(function (k) {
+			if (isFinite(s[k])) { m = Math.max(m, Math.abs(s[k])); }
+		});
 	});
 	return m > 0 ? m : 1;
 }
 
 // The speed bar's model, km/s. Peak pins the right edge and is recomputed with
 // the trajectory, so the bar rescales as the flight is tuned and the fill
-// always reads as a fraction of the fastest the ship ever goes this phase.
-export function speedModel(current, needed, peak) {
+// always reads as a fraction of the fastest the ship goes this phase.
+//
+// `floor` pins the LEFT edge. Omitted (the Departure card) the bar starts at
+// zero, as it always has. Given (the Coast card) the bar spans the flight's own
+// [min, max] instead: an interplanetary coast never goes anywhere near zero, so
+// a zero-based bar would spend four fifths of its length saying nothing and the
+// variation the reader is scrubbing for would be invisible.
+export function speedModel(current, needed, peak, floor) {
 	var p = (isFinite(peak) && peak > 0) ? peak : null;
+	var f = (isFinite(floor) && floor >= 0 && p && floor < p) ? floor : 0;
+	var span = p ? p - f : 0;
+	function frac(x) { return (span > 0 && isFinite(x)) ? clamp01((x - f) / span) : 0; }
 	return {
 		current: isFinite(current) ? current : null,
 		needed: isFinite(needed) ? needed : null,
 		peak: p,
-		currentFrac: (p && isFinite(current)) ? clamp01(current / p) : 0,
-		neededFrac: (p && isFinite(needed)) ? clamp01(needed / p) : null
+		floor: f > 0 ? f : null,
+		currentFrac: (p && isFinite(current)) ? frac(current) : 0,
+		neededFrac: (p && isFinite(needed)) ? frac(needed) : null
 	};
 }
 
@@ -108,13 +136,57 @@ export function speedAlong(samples, elapsed) {
 	return O.vMag(last.v);
 }
 
+// The slowest and fastest the ship goes anywhere on the sampled flight (m/s),
+// null when there is nothing sampled or no sample carries a velocity.
+export function speedRange(samples) {
+	if (!samples || !samples.length) { return null; }
+	var lo = Infinity, hi = 0, seen = false;
+	for (var i = 0; i < samples.length; i++) {
+		if (!samples[i].v) { continue; }
+		var s = O.vMag(samples[i].v);
+		if (s < lo) { lo = s; }
+		if (s > hi) { hi = s; }
+		seen = true;
+	}
+	return seen ? { min: lo, max: hi } : null;
+}
+
 // The fastest the ship goes anywhere on the sampled flight (m/s), null when
 // there is nothing sampled.
 export function peakSpeed(samples) {
-	if (!samples || !samples.length) { return null; }
-	var m = 0;
-	for (var i = 0; i < samples.length; i++) { m = Math.max(m, O.vMag(samples[i].v)); }
-	return m;
+	var r = speedRange(samples);
+	return r ? r.max : null;
+}
+
+// Where the approach dot sits in the B-plane square: a point on a FIXED-radius
+// circle at `angleDeg` clockwise from straight up (ecliptic north). Distance to
+// the body is deliberately not conveyed — only which side the ship passes — so
+// the radius is a constant and the bearing is the only thing that moves.
+// Returns { x, y } in the square's own coordinates, y growing downward as SVG's
+// does.
+export function bearingPoint(angleDeg, radius) {
+	var a = (angleDeg - 90) * Math.PI / 180;
+	return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
+}
+
+// The timing bar's model: how far the delivered closest approach sits from the
+// epoch the plan committed to. `windowDays` is the plan's own hand-off
+// tolerance, so the bar's two ends ARE the limits arrival-boundary reports an
+// epoch mismatch outside of — running off the end of the bar and failing
+// compliance are the same event.
+//
+// Returns { hours, frac, outside } — frac is the marker's position with 0.5 at
+// the committed epoch, clamped to the bar; outside says the clamp bit.
+export function timingModel(deliveredJd, committedJd, windowDays) {
+	// isFinite(null) is true — null coerces to 0 — so "is there an epoch at all?"
+	// needs the type check, not just finiteness. A plan with no committed arrival
+	// hands a null through here, and treating it as JD 0 would draw a bar
+	// measuring the delivered epoch against the year -4712.
+	if (!isNum(deliveredJd) || !isNum(committedJd)) { return null; }
+	var w = (isNum(windowDays) && windowDays > 0) ? windowDays : 1;
+	var deltaDays = deliveredJd - committedJd;
+	var raw = 0.5 + deltaDays / (2 * w);
+	return { hours: deltaDays * 24, frac: clamp01(raw), outside: raw < 0 || raw > 1 };
 }
 
 // =======================================================================
@@ -129,12 +201,32 @@ function el(tag, cls, text) {
 }
 
 function kms(x) { return (x == null || !isFinite(x)) ? "—" : x.toFixed(2); }
+// A change figure: one decimal, and small enough values read as a plain zero
+// rather than as "-0.0", which looks like a measurement when it is a rounding.
+function chg(x) {
+	if (x == null || !isFinite(x)) { return "—"; }
+	return Math.abs(x) < 0.05 ? "0" : x.toFixed(1);
+}
 
 // Line thickness in gizmo units (radius, so the drawn width is twice this).
 // Needed is drawn fat and current thin, and the current layer is drawn over it
 // (see render), so neither hides the other where the two nearly coincide —
 // which is exactly when the card is being read most closely.
 var LINE_RADIUS = { dim: 0.032, bright: 0.014 };
+
+// The reference triad (setReferenceFrame): fixed geometry in its OWN camera's
+// units, never scaled by the content or the main camera's zoom. The short stub
+// down each negative direction marks the axis as two-sided without letting the
+// triad read as six equal spokes.
+var FRAME_AXIS_LEN = 0.9;
+var FRAME_AXIS_RADIUS = 0.022;
+var FRAME_OPACITY = 0.5;
+// The gizmo camera's resting distance. Doubles as the reference for the
+// focused mode's constant-on-screen line width, so at rest the lines are drawn
+// at exactly their nominal LINE_RADIUS and nothing about the Departure card
+// changes.
+var GIZMO_REF_RADIUS = 3.4;
+var FRAME_CAM_RADIUS = GIZMO_REF_RADIUS;
 
 // A unit cylinder (radius 1, height 1, centred on the origin, running up +Y)
 // that every line scales and orients. Shared across all instances and never
@@ -152,7 +244,7 @@ function lineGeo() {
 // positive length down the opposite direction, so the sign shows as a
 // direction rather than vanishing.
 function makeLine(dir, len, colorHex, radius) {
-	if (!(len > 1e-4)) { return null; }
+	if (!(len > 1e-9)) { return null; }
 	var d = new THREE.Vector3(dir[0], dir[1], dir[2]);
 	if (d.lengthSq() < 1e-12) { return null; }
 	d.normalize();
@@ -160,6 +252,11 @@ function makeLine(dir, len, colorHex, radius) {
 	m.scale.set(radius, len, radius);
 	m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
 	m.position.copy(d).multiplyScalar(len / 2);
+	// Kept so a focused gizmo can hold the line's WIDTH constant on screen while
+	// it flies in (see render): thickness fixed in world units would magnify with
+	// everything else, and two lines a few parts in a thousand apart could never
+	// separate however far you zoomed.
+	m.userData.baseRadius = radius;
 	return m;
 }
 
@@ -189,11 +286,27 @@ export function createShipCard(opts) {
 	var root = el("div", "mp-shipcard");
 	var top = el("div", "mp-ship-top");
 	var head = el("div", "mp-ship-head");
+	var titleWrap = el("span", "mp-ship-titlewrap");
 	var title = el("span", "mp-ship-title", "SHIP");
+	var subtitle = el("span", "mp-ship-subtitle", "");
+	titleWrap.appendChild(title);
+	titleWrap.appendChild(subtitle);
 	var badge = el("span", "mp-ship-oncourse", "✓");
 	badge.title = "On course";
-	head.appendChild(title);
-	head.appendChild(badge);
+	// The commit control and the approach square are Coast's; both stay empty
+	// and out of the layout until a caller fills them (setUpdate / setBPlane).
+	var commitWrap = el("span", "mp-ship-commit");
+	var updateBtn = document.createElement("button");
+	updateBtn.className = "mp-btn mp-ship-update";
+	updateBtn.textContent = "Update";
+	updateBtn.style.display = "none";
+	commitWrap.appendChild(badge);
+	commitWrap.appendChild(updateBtn);
+	var bPlaneEl = el("div", "mp-ship-bplane");
+	bPlaneEl.style.display = "none";
+	head.appendChild(titleWrap);
+	head.appendChild(commitWrap);
+	head.appendChild(bPlaneEl);
 	top.appendChild(head);
 
 	var alignLabel = el("label", "mp-ship-align");
@@ -217,6 +330,10 @@ export function createShipCard(opts) {
 	bodyEl.appendChild(tableEl);
 	var speedEl = el("div", "mp-ship-speed");
 	bodyEl.appendChild(speedEl);
+	var approachEl = el("div", "mp-ship-approach");
+	bodyEl.appendChild(approachEl);
+	var timingEl = el("div", "mp-ship-timing");
+	bodyEl.appendChild(timingEl);
 	var extraEl = el("div", "mp-ship-extra");
 	bodyEl.appendChild(extraEl);
 
@@ -229,42 +346,74 @@ export function createShipCard(opts) {
 	var camera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
 	// Radius is fixed and the content is normalized into it, so the gizmo needs
 	// no per-frame rescaling; the zoom range only exists for the free-rotate
-	// mode's wheel.
-	var cam = createCam(3.4, Math.PI * 0.25, Math.PI * 0.42, new THREE.Vector3(0, 0, 0));
+	// mode's wheel — and, with a focus point set, for flying in on the tips.
+	var cam = createCam(GIZMO_REF_RADIUS, Math.PI * 0.25, Math.PI * 0.42, new THREE.Vector3(0, 0, 0));
 	// The two layers live in their own groups so render can draw them as
 	// separate depth passes.
 	var neededGroup = new THREE.Group();
 	var currentGroup = new THREE.Group();
+	// The reference triad, when a caller supplies one. It is NOT part of the
+	// compared content: it renders in its own pass through its own camera, so it
+	// keeps its size and its place on screen no matter where the main camera has
+	// flown. See setReferenceFrame.
+	var frameGroup = new THREE.Group();
 	scene.add(neededGroup);
 	scene.add(currentGroup);
+	scene.add(frameGroup);
+	var frameCamera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
+	var frameCam = createCam(GIZMO_REF_RADIUS, cam.theta, cam.phi, new THREE.Vector3(0, 0, 0));
+
+	// The point the camera orbits. null (Departure) leaves it at the origin,
+	// where both layers' lines start. The Coast card sets it to the tip of the
+	// committed net line instead: there the two layers differ by a few parts in
+	// a thousand of their own length, and the difference lives at the TIPS — an
+	// origin-centred zoom magnifies the shared tail and pushes the tips off
+	// screen, which is exactly backwards for reading it.
+	var focusPoint = null;
+	var framePlacement = "centre";
 
 	var unbindCamera = bindCameraControls(gizmoEl, function () {
-		return { cam: cam, camera: camera, zoomMin: 1.2, zoomMax: 12 };
+		// Flying in on the tips needs a far closer approach than looking at the
+		// whole vector does, so the near clamp opens up once a focus is set.
+		// Resolving two headings a few parts in a thousand apart means closing to
+		// a radius of that order; the near plane and the line widths follow the
+		// camera in (see render) so the approach stays legible all the way down.
+		return { cam: cam, camera: camera, zoomMin: focusPoint ? 1e-4 : 1.2, zoomMax: 12 };
 	});
 
 	// MATERIALS ONLY. Every line shares the module-level cylinder geometry, so
 	// disposing geometry here would blank the next rebuild. The materials carry
 	// the per-line colour and are per-instance, so they do need dropping — this
 	// runs on every recompute.
-	function clearGroup() {
-		[neededGroup, currentGroup].forEach(function (g) {
+	function clearGroups(groups) {
+		groups.forEach(function (g) {
 			g.children.slice().forEach(function (child) {
 				g.remove(child);
 				if (child.material) { child.material.dispose(); }
 			});
 		});
 	}
+	function clearGroup() { clearGroups([neededGroup, currentGroup]); }
 
-	// spec: { axes: { pro, rad, nrm } unit vectors,
+	// spec: { axes: { pro, rad, nrm } unit vectors — OMIT for a net-only gizmo,
 	//         needed, current: { pro, rad, nrm, net } km/s (either may be null),
-	//         neededDir, currentDir: unit vectors for the net lines }
+	//         neededDir, currentDir: unit vectors for the net lines,
+	//         focus: "needed" | "current" | null — orbit the named layer's net
+	//                tip instead of the origin (see focusPoint) }
 	// Passing null clears the gizmo.
+	//
+	// With `axes` the card draws the Departure comparison: each layer's three
+	// components plus its net. Without, only the net lines are drawn — the Coast
+	// card's picture, where the components would be meaningless (a leg-end
+	// velocity resolved in its own burn frame is (|v|, 0, 0) by construction)
+	// and the frame is supplied separately through setReferenceFrame.
 	function setGizmo(spec) {
 		clearGroup();
-		if (!spec || !spec.axes) { return; }
+		focusPoint = null;
+		if (!spec) { return; }
 		var scale = gizmoScale(spec.needed, spec.current);
-		[["dim", spec.needed, spec.neededDir, neededGroup],
-			["bright", spec.current, spec.currentDir, currentGroup]]
+		[["dim", spec.needed, spec.neededDir, neededGroup, "needed"],
+			["bright", spec.current, spec.currentDir, currentGroup, "current"]]
 			.forEach(function (layer) {
 				var colors = SHIP_COLORS[layer[0]];
 				var comp = layer[1];
@@ -272,21 +421,61 @@ export function createShipCard(opts) {
 				var g = layer[3];
 				var radius = LINE_RADIUS[layer[0]];
 				if (!comp) { return; }
-				AXIS_KEYS.forEach(function (k) {
-					var axis = spec.axes[k];
-					if (!axis) { return; }
-					var value = comp[k];
-					if (!isFinite(value)) { return; }
-					var sign = value < 0 ? -1 : 1;
-					var a = makeLine([axis[0] * sign, axis[1] * sign, axis[2] * sign],
-						Math.abs(value) / scale, colors[k], radius);
-					if (a) { g.add(a); }
-				});
+				if (spec.axes) {
+					AXIS_KEYS.forEach(function (k) {
+						var axis = spec.axes[k];
+						if (!axis) { return; }
+						var value = comp[k];
+						if (!isFinite(value)) { return; }
+						var sign = value < 0 ? -1 : 1;
+						var a = makeLine([axis[0] * sign, axis[1] * sign, axis[2] * sign],
+							Math.abs(value) / scale, colors[k], radius);
+						if (a) { g.add(a); }
+					});
+				}
 				if (netDir && isFinite(comp.net)) {
 					var n = makeLine(netDir, comp.net / scale, colors.net, radius);
 					if (n) { g.add(n); }
+					if (spec.focus === layer[4]) {
+						focusPoint = new THREE.Vector3(netDir[0], netDir[1], netDir[2])
+							.multiplyScalar(comp.net / scale);
+					}
 				}
 			});
+	}
+
+	// The orientation reference: three fixed-length axes in the burn frame's own
+	// directions, drawn as an OVERLAY. It carries no magnitudes — its whole job
+	// is to say which way prograde, radial and normal point for the net lines
+	// being compared, in the same three colours the waypoint gizmos out in the
+	// scene use. axes: { pro, rad, nrm } unit vectors, or null to clear.
+	//
+	// Rendered through its own camera at a fixed radius (see render's third
+	// pass), so zooming the main camera in on the net tips never carries the
+	// reference off screen or scales it away. Semi-transparent and depth-free so
+	// it reads over the lines rather than fighting them for space.
+	// `placement` is "centre" (default — the triad sits over the content, at the
+	// same screen point the focused net tip does) or "corner" (a small nav
+	// widget tucked into the gizmo's bottom-left, clear of the lines).
+	function setReferenceFrame(axes, placement) {
+		clearGroups([frameGroup]);
+		framePlacement = placement === "corner" ? "corner" : "centre";
+		if (!axes) { return; }
+		AXIS_KEYS.forEach(function (k) {
+			var axis = axes[k];
+			if (!axis) { return; }
+			[1, -1].forEach(function (sign) {
+				var line = makeLine([axis[0] * sign, axis[1] * sign, axis[2] * sign],
+					sign > 0 ? FRAME_AXIS_LEN : FRAME_AXIS_LEN * 0.35,
+					SHIP_COLORS.bright[k], FRAME_AXIS_RADIUS);
+				if (!line) { return; }
+				line.material.transparent = true;
+				line.material.opacity = sign > 0 ? FRAME_OPACITY : FRAME_OPACITY * 0.5;
+				line.material.depthTest = false;
+				line.material.depthWrite = false;
+				frameGroup.add(line);
+			});
+		});
 	}
 
 	// ---- readouts ---------------------------------------------------------
@@ -316,8 +505,35 @@ export function createShipCard(opts) {
 		});
 	}
 
+	// A SINGLE labelled row of axis figures, for a phase reporting one vector
+	// rather than a comparison — the Coast card's net speed change from its
+	// waypoints. Shares tableEl (and so the axis colours and column widths) with
+	// setComponents; a phase uses one or the other, never both.
+	function setChange(label, comps, unit) {
+		tableEl.innerHTML = "";
+		if (!comps) { return; }
+		var head2 = el("div", "mp-ship-row mp-ship-row-head");
+		head2.appendChild(el("span", "mp-ship-rowlabel", ""));
+		AXIS_KEYS.forEach(function (k) {
+			head2.appendChild(el("span", "mp-ship-cell mp-ship-h-" + k, AXIS_LABELS[k]));
+		});
+		head2.appendChild(el("span", "mp-ship-cell mp-ship-h-net", "Net"));
+		tableEl.appendChild(head2);
+
+		var row = el("div", "mp-ship-row mp-ship-row-current");
+		row.appendChild(el("span", "mp-ship-rowlabel mp-ship-changelabel",
+			label + (unit ? " " + unit : "")));
+		AXIS_KEYS.forEach(function (k) {
+			row.appendChild(el("span", "mp-ship-cell mp-ship-c-" + k, chg(comps[k])));
+		});
+		row.appendChild(el("span", "mp-ship-cell mp-ship-c-net", chg(comps.net)));
+		tableEl.appendChild(row);
+	}
+
 	// The speed section: a headline, then a bar whose right edge IS the peak
-	// speed of this phase's flight, with the needed speed ticked on it.
+	// speed of this phase's flight, with the needed speed ticked on it. With a
+	// floor (the Coast card) the left edge is the flight's slowest instead of
+	// zero, and both ends are printed under the bar so the span is readable.
 	function setSpeed(model) {
 		speedEl.innerHTML = "";
 		if (!model) { return; }
@@ -333,7 +549,10 @@ export function createShipCard(opts) {
 
 		var bar = el("div", "mp-ship-bar");
 		var fill = el("div", "mp-ship-bar-fill");
-		fill.style.width = (model.currentFrac * 100).toFixed(2) + "%";
+		// A floor-based bar reads at its minimum as an empty tube, which looks
+		// broken rather than slow; keep a sliver so the fill is always a fill.
+		fill.style.width = Math.max(model.floor != null ? 1.5 : 0,
+			model.currentFrac * 100).toFixed(2) + "%";
 		bar.appendChild(fill);
 		if (model.neededFrac != null) {
 			var tick = el("div", "mp-ship-bar-need");
@@ -342,6 +561,14 @@ export function createShipCard(opts) {
 			bar.appendChild(tick);
 		}
 		speedEl.appendChild(bar);
+
+		// The span's two ends, printed only when the left one isn't zero.
+		if (model.floor != null && model.peak != null) {
+			var ends = el("div", "mp-ship-barends");
+			ends.appendChild(el("span", null, kms(model.floor)));
+			ends.appendChild(el("span", null, kms(model.peak)));
+			speedEl.appendChild(ends);
+		}
 
 		if (model.neededFrac != null) {
 			var pct = (model.neededFrac * 100).toFixed(2) + "%";
@@ -359,6 +586,110 @@ export function createShipCard(opts) {
 			foot.appendChild(lab);
 			speedEl.appendChild(foot);
 		}
+	}
+
+	// A phase qualifier beside the title ("- Coast"). "" clears it.
+	function setSubtitle(text) {
+		subtitle.textContent = text ? " - " + text : "";
+	}
+
+	// The commit control. spec: { show, enabled, title, onClick } — null hides
+	// it. The button is NEVER disabled merely because the pass got worse: which
+	// way is better is the user's call (raising a closest approach to clear an
+	// impact is an improvement, and the plan commits no periapsis to judge it
+	// against), so the chips say which way each figure moved and the button
+	// stays live.
+	function setUpdate(spec) {
+		if (!spec || !spec.show) { updateBtn.style.display = "none"; return; }
+		updateBtn.style.display = "";
+		updateBtn.disabled = spec.enabled === false;
+		updateBtn.title = spec.title || "";
+		updateBtn.onclick = spec.onClick || null;
+	}
+
+	// The approach chips: the figures the reader is actually steering — how
+	// close the pass comes and how fast it arrives. Each is a big value on a
+	// chip, with the committed figure underneath when it differs, so a pending
+	// edit reads as a move from one number to another.
+	//
+	// rows: [{ label, value, unit, ref, better }] — `ref` is the committed
+	// figure's text (omitted when nothing is pending), `better` is true/false/
+	// null for the direction of the move. null clears.
+	function setApproach(rows) {
+		approachEl.innerHTML = "";
+		if (!rows || !rows.length) { return; }
+		rows.forEach(function (r) {
+			var cell = el("div", "mp-ship-appcell");
+			cell.appendChild(el("div", "mp-ship-applabel", r.label));
+			var chip = el("div", "mp-ship-appchip");
+			if (r.better === true) { chip.classList.add("better"); }
+			if (r.better === false) { chip.classList.add("worse"); }
+			chip.appendChild(el("span", "mp-ship-appval", r.value));
+			if (r.unit) { chip.appendChild(el("span", "mp-ship-appunit", r.unit)); }
+			cell.appendChild(chip);
+			if (r.ref) { cell.appendChild(el("div", "mp-ship-appref", r.ref)); }
+			approachEl.appendChild(cell);
+		});
+	}
+
+	// The timing bar: where closest approach falls against the epoch the plan
+	// committed to, on a scale whose two ends ARE the plan's hand-off window.
+	// model comes from timingModel; null clears.
+	function setTiming(model) {
+		timingEl.innerHTML = "";
+		if (!model) { return; }
+		var mag = Math.abs(model.hours);
+		var text = mag < 0.05 ? "on the committed epoch"
+			: (mag >= 48 ? (model.hours / 24).toFixed(1) + " d" : model.hours.toFixed(1) + " h");
+		var line = el("div", "mp-ship-timinghead");
+		line.appendChild(el("b", null, "Timing:"));
+		var val = el("span", "mp-ship-timingval", text);
+		if (model.outside) { val.classList.add("outside"); }
+		line.appendChild(val);
+		timingEl.appendChild(line);
+
+		var bar = el("div", "mp-ship-timingbar");
+		// The fill runs from the committed epoch (the centre) out to where the
+		// pass actually falls, so early reads as a bar to the left and late as a
+		// bar to the right — the direction is legible without reading the number.
+		var fill = el("div", "mp-ship-timingfill");
+		var lo = Math.min(0.5, model.frac), hi = Math.max(0.5, model.frac);
+		fill.style.left = (lo * 100).toFixed(2) + "%";
+		fill.style.width = Math.max(0.6, (hi - lo) * 100).toFixed(2) + "%";
+		bar.appendChild(fill);
+		bar.appendChild(el("div", "mp-ship-timingzero"));
+		timingEl.appendChild(bar);
+	}
+
+	// The approach square: which side of the destination the ship passes on,
+	// read off the B-plane (Shared/math-utils.js's bPlane). model:
+	// { angleDeg, label } or null. Only the BEARING is shown — the dot sits at a
+	// fixed radius and says nothing about distance, which the chips above carry.
+	function setBPlane(model) {
+		bPlaneEl.innerHTML = "";
+		if (!model || !isFinite(model.angleDeg)) { bPlaneEl.style.display = "none"; return; }
+		bPlaneEl.style.display = "";
+		var R = 25, C = 32, ring = 19;
+		var p = bearingPoint(model.angleDeg, ring);
+		var ns = "http://www.w3.org/2000/svg";
+		var svg = document.createElementNS(ns, "svg");
+		svg.setAttribute("viewBox", "0 0 " + (C * 2) + " " + (C * 2));
+		svg.setAttribute("class", "mp-ship-bsvg");
+		function node(name, attrs) {
+			var n = document.createElementNS(ns, name);
+			Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+			svg.appendChild(n);
+			return n;
+		}
+		// North tick, so "up is ecliptic north" is stated by the square itself.
+		node("line", { x1: C, y1: C - R - 3, x2: C, y2: C - R + 3,
+			stroke: "#7fd4f0", "stroke-width": 1.4 });
+		node("circle", { cx: C, cy: C, r: ring, fill: "none",
+			stroke: "#5a6b8c", "stroke-width": 1, "stroke-dasharray": "2 3" });
+		node("circle", { cx: C, cy: C, r: 8.5, fill: "#6f7c93" });
+		node("circle", { cx: C + p.x, cy: C + p.y, r: 4.2, fill: "#f2f6ff" });
+		bPlaneEl.appendChild(svg);
+		bPlaneEl.title = model.label || "";
 	}
 
 	// Free-form rows below the speed section, for a phase that reports figures
@@ -392,7 +723,27 @@ export function createShipCard(opts) {
 			var main = getMainCam();
 			if (main) { cam.theta = main.theta; cam.phi = main.phi; }
 		}
+		// The focus point owns the camera target while it is set: this gizmo is a
+		// comparison instrument, not a scene to wander around in, and letting a
+		// pan drift the target would strand the zoom somewhere with nothing in
+		// it. Rotate and zoom still work normally.
+		if (focusPoint) { cam.target.copy(focusPoint); }
 		camera.aspect = w / h;
+		if (focusPoint) {
+			// Flying in on the tips runs the camera far inside the fixed 0.01 near
+			// plane, which would clip the whole scene away; and the lines have to
+			// stay the same WIDTH on screen as they close in, or their thickness
+			// magnifies with the gap and hides the very difference being examined.
+			camera.near = Math.max(1e-7, cam.radius * 0.002);
+			camera.far = cam.radius * 200 + 10;
+			var widthScale = cam.radius / GIZMO_REF_RADIUS;
+			[neededGroup, currentGroup].forEach(function (g) {
+				g.children.forEach(function (child) {
+					var base = child.userData && child.userData.baseRadius;
+					if (base) { child.scale.x = child.scale.z = base * widthScale; }
+				});
+			});
+		}
 		camera.updateProjectionMatrix();
 		updateCamera(camera, cam);
 		var x = r.left - canvasRect.left;
@@ -400,35 +751,74 @@ export function createShipCard(opts) {
 		renderer.setViewport(x, y, w, h);
 		renderer.setScissor(x, y, w, h);
 
-		// TWO PASSES, so the thin current lines are always visible over the fat
-		// needed ones without either layer losing its own depth sorting. Pass one
-		// draws needed (and, having a Color background, clears colour and depth
-		// inside the scissor). Pass two clears depth ONLY, then draws current on
-		// a clean slate, so it can never be hidden by a needed line in front.
-		// scene.background must be nulled for that pass: a Color background makes
-		// three.js force a full clear regardless of autoClear, which would wipe
-		// pass one.
+		// UP TO THREE PASSES, so the thin current lines are always visible over
+		// the fat needed ones without either layer losing its own depth sorting.
+		// Pass one draws needed (and, having a Color background, clears colour
+		// and depth inside the scissor). Pass two clears depth ONLY, then draws
+		// current on a clean slate, so it can never be hidden by a needed line in
+		// front. Pass three does the same for the reference frame, through its
+		// OWN camera. scene.background must be nulled for passes two and three: a
+		// Color background makes three.js force a full clear regardless of
+		// autoClear, which would wipe the pass before.
+		var auto = renderer.autoClear;
+		function overlayPass(cameraToUse) {
+			scene.background = null;
+			renderer.autoClear = false;
+			renderer.clearDepth();
+			renderer.render(scene, cameraToUse);
+			renderer.autoClear = auto;
+			scene.background = bgColor;
+		}
+
+		frameGroup.visible = false;
 		currentGroup.visible = false;
 		renderer.render(scene, camera);
 		if (currentGroup.children.length) {
 			currentGroup.visible = true;
 			neededGroup.visible = false;
-			var auto = renderer.autoClear;
-			scene.background = null;
-			renderer.autoClear = false;
-			renderer.clearDepth();
-			renderer.render(scene, camera);
-			renderer.autoClear = auto;
-			scene.background = bgColor;
+			overlayPass(camera);
 			neededGroup.visible = true;
 		} else {
+			currentGroup.visible = true;
+		}
+		if (frameGroup.children.length) {
+			// Fixed radius on the frame camera, sharing only the ORIENTATION — so
+			// the triad turns with the view (and with the main pane, when Align to
+			// view is on) while holding its size and its place on screen.
+			frameGroup.visible = true;
+			neededGroup.visible = false;
+			currentGroup.visible = false;
+			frameCam.theta = cam.theta;
+			frameCam.phi = cam.phi;
+			frameCam.radius = FRAME_CAM_RADIUS;
+			// "corner" narrows the pass to a small square in the bottom-left,
+			// clear of the lines; "centre" uses the whole rect, putting the triad
+			// over the content. The viewport is restored either way, since the
+			// shell's loop renders other floats off the same renderer.
+			var fw = w, fh = h, fx = x, fy = y;
+			if (framePlacement === "corner") {
+				fw = fh = Math.max(36, Math.min(w, h) * 0.34);
+				fx = x + 4;
+				fy = y + 4;
+				renderer.setViewport(fx, fy, fw, fh);
+				renderer.setScissor(fx, fy, fw, fh);
+			}
+			frameCamera.aspect = fw / fh;
+			frameCamera.updateProjectionMatrix();
+			updateCamera(frameCamera, frameCam);
+			overlayPass(frameCamera);
+			if (framePlacement === "corner") {
+				renderer.setViewport(x, y, w, h);
+				renderer.setScissor(x, y, w, h);
+			}
+			neededGroup.visible = true;
 			currentGroup.visible = true;
 		}
 	}
 
 	function dispose() {
 		unbindCamera();
-		clearGroup();
+		clearGroups([neededGroup, currentGroup, frameGroup]);
 		root.remove();
 	}
 
@@ -437,8 +827,15 @@ export function createShipCard(opts) {
 		gizmoEl: gizmoEl,
 		setOnCourse: setOnCourse,
 		setGizmo: setGizmo,
+		setReferenceFrame: setReferenceFrame,
 		setComponents: setComponents,
+		setChange: setChange,
 		setSpeed: setSpeed,
+		setSubtitle: setSubtitle,
+		setUpdate: setUpdate,
+		setApproach: setApproach,
+		setTiming: setTiming,
+		setBPlane: setBPlane,
 		setExtra: setExtra,
 		render: render,
 		dispose: dispose

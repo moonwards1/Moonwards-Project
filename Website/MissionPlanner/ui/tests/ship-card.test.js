@@ -3,8 +3,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { vInfComponents, gizmoScale, speedModel, speedAlong, peakSpeed }
-	from "../ship-card.js";
+import { vInfComponents, gizmoScale, speedModel, speedAlong, peakSpeed, speedRange,
+	bearingPoint, timingModel } from "../ship-card.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 
 var O = OrbitalMath;
@@ -97,4 +97,83 @@ test("peakSpeed is the fastest anywhere on the flight, not the last point", func
 	assert.equal(peakSpeed(SAMPLES), 3000);
 	assert.equal(peakSpeed([]), null);
 	assert.equal(peakSpeed(null), null);
+});
+
+// ---- the Coast card's pure model -------------------------------------------
+
+test("speedModel: a floor spans the bar min..max instead of 0..max", () => {
+	var m = speedModel(25, NaN, 30, 20);
+	assert.equal(m.floor, 20);
+	assert.ok(Math.abs(m.currentFrac - 0.5) < 1e-12, "got " + m.currentFrac);
+	assert.equal(speedModel(20, NaN, 30, 20).currentFrac, 0);
+	assert.equal(speedModel(30, NaN, 30, 20).currentFrac, 1);
+});
+
+test("speedModel: omitting the floor keeps the zero-based bar", () => {
+	var m = speedModel(15, NaN, 30);
+	assert.equal(m.floor, null);
+	assert.ok(Math.abs(m.currentFrac - 0.5) < 1e-12);
+});
+
+test("speedModel: a floor at or above the peak is ignored, not divided by", () => {
+	[speedModel(25, NaN, 30, 30), speedModel(25, NaN, 30, 45)].forEach(function (m) {
+		assert.equal(m.floor, null);
+		assert.ok(isFinite(m.currentFrac));
+	});
+});
+
+test("speedRange: min and max across the sampled flight", () => {
+	var s = [{ v: [3000, 0, 0] }, { v: [5000, 0, 0] }, { v: [4000, 0, 0] }];
+	assert.deepEqual(speedRange(s), { min: 3000, max: 5000 });
+	assert.equal(peakSpeed(s), 5000);
+	assert.equal(speedRange([]), null);
+	// Position-only samples (a polyline that carries no velocity) yield nothing
+	// rather than a bar pinned at zero.
+	assert.equal(speedRange([{ r: [1, 2, 3] }]), null);
+});
+
+test("bearingPoint: 0 degrees is straight up, 90 is to the right", () => {
+	var up = bearingPoint(0, 10);
+	assert.ok(Math.abs(up.x) < 1e-9 && Math.abs(up.y + 10) < 1e-9, JSON.stringify(up));
+	var right = bearingPoint(90, 10);
+	assert.ok(Math.abs(right.x - 10) < 1e-9 && Math.abs(right.y) < 1e-9, JSON.stringify(right));
+	var down = bearingPoint(180, 10);
+	assert.ok(Math.abs(down.y - 10) < 1e-9, JSON.stringify(down));
+});
+
+test("timingModel: the committed epoch sits at the centre of the bar", () => {
+	var m = timingModel(2463000, 2463000, 1);
+	assert.equal(m.hours, 0);
+	assert.equal(m.frac, 0.5);
+	assert.equal(m.outside, false);
+});
+
+test("timingModel: early reads left of centre, late reads right", () => {
+	var early = timingModel(2463000 - 0.5, 2463000, 1);
+	assert.ok(Math.abs(early.hours + 12) < 1e-9, "got " + early.hours);
+	assert.equal(early.frac, 0.25);
+	var late = timingModel(2463000 + 0.5, 2463000, 1);
+	assert.equal(late.frac, 0.75);
+	assert.equal(late.outside, false);
+});
+
+test("timingModel: the bar's ends are the plan's window, and past them clamps", () => {
+	var out = timingModel(2463000 + 3, 2463000, 1);
+	assert.equal(out.frac, 1);
+	assert.equal(out.outside, true);
+	assert.ok(Math.abs(out.hours - 72) < 1e-9);
+	// A wider window puts the same delta back inside.
+	assert.equal(timingModel(2463000 + 3, 2463000, 5).outside, false);
+});
+
+test("timingModel: a missing epoch on either side is no bar at all", () => {
+	assert.equal(timingModel(NaN, 2463000, 1), null);
+	assert.equal(timingModel(2463000, null, 1), null);
+});
+
+test("gizmoScale: a net-only layer scales on its net, not on NaN components", () => {
+	// The Coast card's layers carry only `net`; the absent components must be
+	// skipped rather than poisoning the maximum.
+	assert.equal(gizmoScale({ net: 24 }, { net: 26 }), 26);
+	assert.equal(gizmoScale({ net: 24 }, null), 24);
 });

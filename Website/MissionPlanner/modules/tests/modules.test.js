@@ -16,7 +16,8 @@ import skyhook, { tetherKinematics, rotorFor } from "../orbital-skyhook/orbital-
 import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed }
 	from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
-import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_AU }
+import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_AU,
+	handoffPending, commitHandoff, sameWaypoints, copyWaypoints }
 	from "../transfer-leg/transfer-leg.js";
 import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";
@@ -658,4 +659,102 @@ test("computeLeg: the drawn overrun continues past the leg end (display only)", 
 		"long enough to read the pass (48 d for a 480 d leg)");
 	// The emitted end state is untouched by the overrun.
 	assert.equal(leg.end.jd, HELIO_START.jd + 480);
+});
+
+// ---- the Coast hand-off snapshot ------------------------------------------
+// Waypoint edits move the drawn coast at once but reach the Arrival phase only
+// when the ship card's Update is pressed. transfer-leg carries that as a
+// `handoff` param: the waypoint list as of the last commit.
+
+// A coast state well clear of any body, so these tests measure the snapshot
+// mechanism and not an encounter.
+function plainCoastInput() {
+	var jd = 2463000;
+	return { kind: "moonwards-packet", type: "ship-state", version: 1, source: {},
+		data: { r: [1.2 * 149597870700, 0, 0], v: [0, 24000, 300], jd: jd,
+		        frame: "helio", dvUsed: 0 } };
+}
+
+function coastUpdate(params) {
+	return makeRegistry().get("transfer-leg").update(
+		{ world: null, jd: 2463000, stageId: "stg-t", params: params }, plainCoastInput());
+}
+
+var WP_A = [{ days: 100, burn: { pro: 0, rad: 0, nrm: 0 } }];
+var WP_B = [{ days: 100, burn: { pro: 60, rad: 0, nrm: 0 } }];
+
+test("handoff: null hands off the live waypoints — a save predating the feature is unchanged", function () {
+	var withNull = coastUpdate({ waypoints: WP_B, handoff: null, legDays: 300, destination: "" });
+	var without = coastUpdate({ waypoints: WP_B, legDays: 300, destination: "" });
+	assert.deepEqual(withNull.packet.data.r, without.packet.data.r);
+	assert.equal(handoffPending({ waypoints: WP_B, handoff: null }), false);
+});
+
+test("handoff: a pending edit moves the live leg but not the emitted packet", function () {
+	// Committed at WP_A, live at WP_B: the packet must still be the WP_A flight.
+	var pending = coastUpdate({ waypoints: WP_B, handoff: WP_A, legDays: 300, destination: "" });
+	var committed = coastUpdate({ waypoints: WP_A, handoff: null, legDays: 300, destination: "" });
+	var live = coastUpdate({ waypoints: WP_B, handoff: null, legDays: 300, destination: "" });
+	assert.deepEqual(pending.packet.data.r, committed.packet.data.r,
+		"the packet followed the pending edit instead of the hand-off");
+	assert.ok(O.vMag(O.vSub(live.packet.data.r, committed.packet.data.r)) > 1e8,
+		"the two waypoint settings should give visibly different flights");
+	assert.equal(handoffPending({ waypoints: WP_B, handoff: WP_A }), true);
+});
+
+test("handoff: dvUsed follows the hand-off, not the pending burn", function () {
+	var pending = coastUpdate({ waypoints: WP_B, handoff: WP_A, legDays: 300, destination: "" });
+	assert.equal(pending.packet.data.dvUsed, 0, "WP_A is a zero burn");
+});
+
+test("handoff: editing back to the committed values clears the pending state", function () {
+	assert.equal(handoffPending({ waypoints: WP_A, handoff: WP_A }), false);
+	// Same numbers, different objects — the comparison is by value.
+	assert.equal(handoffPending({ waypoints: copyWaypoints(WP_A), handoff: WP_A }), false);
+	assert.equal(sameWaypoints(WP_A, WP_B), false);
+	assert.equal(sameWaypoints(WP_A, []), false);
+});
+
+test("handoff: commitHandoff snapshots the live waypoints and clears pending", function () {
+	var world = createWorld({ jd: 2463000 });
+	var id = world.set({ addStage: { moduleId: "transfer-leg",
+		params: { waypoints: copyWaypoints(WP_B), handoff: copyWaypoints(WP_A),
+		          legDays: 300, destination: "" } } });
+	assert.equal(handoffPending(world.getStage(id).params), true);
+	commitHandoff(world, id);
+	assert.equal(handoffPending(world.getStage(id).params), false);
+	assert.deepEqual(world.getStage(id).params.handoff, copyWaypoints(WP_B));
+	// The snapshot must not alias the live list, or a later edit would silently
+	// move the hand-off with it.
+	world.getStage(id).params.waypoints[0].burn.pro = 999;
+	assert.equal(world.getStage(id).params.handoff[0].burn.pro, 60);
+});
+
+test("handoff: the arrival phase runs on the committed coast, not the pending one", function () {
+	// The shipped chain: plan → coast → boundary → arrival leg. With an edit
+	// pending, nothing downstream of the coast may move.
+	function build(waypoints, handoff) {
+		var res = deserializeWorld(defaultMission);
+		assert.equal(res.ok, true, res.reason);
+		var world = res.world;
+		var coast = world.stages().filter(function (s) {
+			return s.moduleId === "transfer-leg"; })[0];
+		world.set({ stage: coast.id, params: { waypoints: waypoints, handoff: handoff } });
+		var engine = createEngine(world, makeRegistry());
+		var arrival = world.stages().filter(function (s) {
+			return s.moduleId === "arrival-leg"; })[0];
+		// Position, not epoch: the arrival leg's end epoch is pinned to the seam
+		// window's right edge, so it barely moves even when the pass does.
+		return { coast: engine.resultFor(coast.id).output.data.r,
+		         arrival: engine.resultFor(arrival.id).output.data.r };
+	}
+	var committedOnly = build(copyWaypoints(WP_A), null);
+	var pending = build(copyWaypoints(WP_B), copyWaypoints(WP_A));
+	var liveCommitted = build(copyWaypoints(WP_B), null);
+	assert.deepEqual(pending.coast, committedOnly.coast,
+		"a pending edit reached the arrival boundary");
+	assert.deepEqual(pending.arrival, committedOnly.arrival,
+		"a pending edit moved the arrival leg");
+	assert.ok(O.vMag(O.vSub(liveCommitted.arrival, committedOnly.arrival)) > 1e6,
+		"WP_B should genuinely move the arrival phase once committed");
 });
