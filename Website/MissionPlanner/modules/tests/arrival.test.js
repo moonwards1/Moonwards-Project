@@ -17,7 +17,7 @@ import moonPlatform from "../moon-platform/moon-platform.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
-import arrivalSkyhook, { computeCatch } from "../arrival-skyhook/arrival-skyhook.js";
+import arrivalSkyhook, { computeCatch } from "../skyhook/skyhook-arrival.js";
 import arrivalLeg, { computeArrivalLeg, arrivalWindow, stateAtElapsed,
 	legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
 import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed }
@@ -25,7 +25,7 @@ import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed }
 import { SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
 import { bodySOI, bodyConstants } from "../../../Shared/body-leg.js";
 import { tetherGeometry, tetherKinematics, resolveParams as resolveSkyhookParams,
-	bodyPhysics } from "../orbital-skyhook/orbital-skyhook.js";
+	bodyPhysics } from "../skyhook/skyhook.js";
 import { arrivalTechOptionsFor, ARRIVAL_TECH_OPTIONS } from "../../ui/tech-options.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";

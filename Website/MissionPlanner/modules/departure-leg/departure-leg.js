@@ -57,7 +57,7 @@
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
-import { evaluateChain } from "../../../Shared/kinematic-chain.js";
+import { evaluateChain, elementCount } from "../../../Shared/kinematic-chain.js";
 import { buildIntegratedLeg, stateAtLegTime, localFrameAt, burnEffect,
          moonGeoPos, SOI_MOON, SOI_EARTH } from "../../../Shared/geo-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
@@ -105,7 +105,7 @@ function firstCrossing(samples, target, measure) {
 }
 
 // The whole flight, pure. `chainData` is a carrier-chain payload
-// ({ base, rotors }); `anchorJd` the release epoch. Returns
+// ({ base, rotors, impulses }); `anchorJd` the release epoch. Returns
 // { ok: true, samples, jd0, segs, wpVisuals, handoff, events, totalDv,
 // vinfEarth } or { ok: false, diagnostic }. `samples` are geocentric
 // { r, v, t } — TRUNCATED AT THE HAND-OFF (everything after Earth-SOI exit
@@ -133,12 +133,12 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 		}
 	}
 
-	// A bare base with no rotors can't release anything — "released" would
+	// A bare base with nothing on it can't release anything — "released" would
 	// mean the base body's own state, which is degenerate for the integrator
 	// (zero body-relative radius) and meaningless as a mission. This is the
 	// state a mission is in with its departure-technology slot empty.
 	var rotors = chainData.rotors || [];
-	if (rotors.length === 0) {
+	if (elementCount(chainData) === 0) {
 		return { ok: false, diagnostic: makeDiagnostic("no-carrier",
 			"The carrier chain has no releasing carrier — nothing sets the payload moving.",
 			{ fix: "Add a carrier technology (e.g. the skyhook) to the departure stack." }) };
@@ -149,6 +149,12 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 	// Moon-bound piece's inclination (geo-leg's moonPlaneNormal parameter —
 	// what the plotter measured against its skyhook's plane).
 	var state = evaluateChain(chainData, anchorJd);
+	if (!(O.vMag(state.r) > 0)) {
+		return { ok: false, diagnostic: makeDiagnostic("no-release-point",
+			"The carrier chain releases from the centre of " + chainData.base +
+			" — nothing on it places the payload above the surface.",
+			{ fix: "Add a carrier with a release point above the body (e.g. the skyhook)." }) };
+	}
 	var opts = rotors.length ? { moonPlaneNormal: O.vUnit(rotors[rotors.length - 1].normal) } : undefined;
 
 	// Walk the impulse chain: integrate, cut at the next waypoint, apply the

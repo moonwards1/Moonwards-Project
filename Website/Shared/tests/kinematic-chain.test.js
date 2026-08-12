@@ -1,11 +1,12 @@
-// Node tests for Shared/kinematic-chain.js (Mission Planner task I2 — the
-// kinematic-chain evaluator). Run from the repo root:
+// Node tests for Shared/kinematic-chain.js — the kinematic-chain evaluator.
+// Run from the repo root:
 //   node --test Website/Shared/tests/kinematic-chain.test.js
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { evaluateChain, baseState, planeBasis } from "../kinematic-chain.js";
+import { evaluateChain, baseState, planeBasis, emptyChain, appendElement,
+         rotorElement, impulseElement, elementCount } from "../kinematic-chain.js";
 import { OrbitalMath as O } from "../math-utils.js";
 import { LunarEphemeris as LE } from "../lunar-ephemeris.js";
 import { systems } from "../orbit.js";
@@ -128,4 +129,56 @@ test("a chain with no rotors is just the base body's own state", () => {
 	var got = evaluateChain({ base: "Moon", rotors: [] }, jd);
 	var want = baseState("Moon", jd);
 	assert.deepEqual(got, want);
+});
+
+// ---- impulse elements ------------------------------------------------------
+// The second element kind: hardware that pushes rather than carries (a linear
+// mass driver's track, a tug, a rocket).
+
+test("an impulse element adds to velocity and leaves position alone", () => {
+	var jd = 2463220.75;
+	var chain = appendElement(emptyChain("Moon"), impulseElement([100, -50, 25]));
+	var got = evaluateChain(chain, jd);
+	var base = baseState("Moon", jd);
+	assert.deepEqual(got.r, base.r);
+	assert.deepEqual(got.v, O.vAdd(base.v, [100, -50, 25]));
+});
+
+test("rotors and impulses compose additively, in either order", () => {
+	var jd = 2463220.75;
+	var rotor = rotorElement([0, 0, 1], [1, 0, 0], 1e7, 1e-4, 0.3, jd);
+	var kick = impulseElement([250, 0, -75]);
+	var rotorFirst = appendElement(appendElement(emptyChain("Mars"), rotor), kick);
+	var kickFirst = appendElement(appendElement(emptyChain("Mars"), kick), rotor);
+	var a = evaluateChain(rotorFirst, jd);
+	var b = evaluateChain(kickFirst, jd);
+	assert.ok(O.vMag(O.vSub(a.r, b.r)) < 1e-9, "position is order-independent");
+	assert.ok(O.vMag(O.vSub(a.v, b.v)) < 1e-9, "velocity is order-independent");
+
+	// And it really is the rotor's own contribution plus the kick.
+	var rotorOnly = evaluateChain(appendElement(emptyChain("Mars"), rotor), jd);
+	assert.ok(O.vMag(O.vSub(a.v, O.vAdd(rotorOnly.v, [250, 0, -75]))) < 1e-9);
+});
+
+test("appendElement never mutates the chain it extends", () => {
+	var jd = 2463220.75;
+	var base = appendElement(emptyChain("Mars"),
+		rotorElement([0, 0, 1], [1, 0, 0], 1e7, 1e-4, 0, jd));
+	var extended = appendElement(base, impulseElement([10, 0, 0]));
+	assert.equal(base.rotors.length, 1);
+	assert.equal(base.impulses.length, 0, "the upstream chain is another stage's packet");
+	assert.equal(extended.rotors.length, 1);
+	assert.equal(extended.impulses.length, 1);
+	assert.equal(elementCount(base), 1);
+	assert.equal(elementCount(extended), 2);
+});
+
+test("an element with no kind is taken for a rotor, as chains originally held", () => {
+	var jd = 2463220.75;
+	var plain = { normal: [0, 0, 1], ref: [1, 0, 0], radius: 1e7, rate: 1e-4, phase0: 0, epoch: jd };
+	var chain = appendElement(emptyChain("Mars"), plain);
+	assert.equal(chain.rotors.length, 1);
+	assert.equal(chain.impulses.length, 0);
+	assert.deepEqual(evaluateChain(chain, jd),
+		evaluateChain({ base: "Mars", rotors: [plain] }, jd));
 });

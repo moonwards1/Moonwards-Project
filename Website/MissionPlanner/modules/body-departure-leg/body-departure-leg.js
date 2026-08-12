@@ -6,7 +6,7 @@
  * but the flight is BODY-centric (origin body + Sun, Shared/body-leg.js — the
  * Mars-Phobos plotter's escape integrator, generalized) instead of geocentric
  * (Earth + Moon + Sun, geo-leg.js). The origin body comes from the incoming
- * carrier chain's `base`, which orbital-skyhook sets, so one module serves
+ * carrier chain's `base`, which the departure platform sets, so one module serves
  * Mars, Ceres, Vesta, … — the release physics only ever needs the body's own
  * GM/radius/SOI.
  *
@@ -39,7 +39,7 @@
  *
  * RENDER FRAME: rendersIn declares "body:origin", which mission-view.js's
  * resolveFrameId aliases to the mission's own origin frame
- * (scene-frames.js's buildBodyFrame). See orbital-skyhook.js.
+ * (scene-frames.js's buildBodyFrame). See modules/skyhook/skyhook.js.
  *
  * The view layer here is a close structural copy of departure-leg.js's (the
  * waypoint cards, gizmo/arrow draw); only the vector editor is genuinely
@@ -54,7 +54,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
-import { evaluateChain } from "../../../Shared/kinematic-chain.js";
+import { evaluateChain, elementCount } from "../../../Shared/kinematic-chain.js";
 import { buildIntegratedLeg, stateAtLegTime, localFrameAt, burnEffect,
          bodySOI } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
@@ -103,7 +103,7 @@ function firstCrossing(samples, target) {
 }
 
 // The whole flight, pure. `chainData` is a carrier-chain payload
-// ({ base, rotors }); `anchorJd` the release epoch. Returns
+// ({ base, rotors, impulses }); `anchorJd` the release epoch. Returns
 // { ok:true, samples, jd0, segs, wpVisuals, handoff, events, totalDv,
 // vinfBody, body } or { ok:false, diagnostic }. `samples` are body-centric
 // { r, v, t }, TRUNCATED AT THE HAND-OFF (past body-SOI exit belongs to the
@@ -133,8 +133,7 @@ export function computeBodyDepartureLeg(params, chainData, anchorJd) {
 		}
 	}
 
-	var rotors = (chainData.rotors) || [];
-	if (rotors.length === 0) {
+	if (elementCount(chainData) === 0) {
 		return { ok: false, diagnostic: makeDiagnostic("no-carrier",
 			"The carrier chain has no releasing carrier — nothing sets the payload moving.",
 			{ fix: "Add a carrier technology (e.g. the skyhook) to the departure stack." }) };
@@ -142,6 +141,12 @@ export function computeBodyDepartureLeg(params, chainData, anchorJd) {
 
 	var SOI_BODY = bodySOI(body);
 	var state = evaluateChain(chainData, anchorJd);
+	if (!(O.vMag(state.r) > 0)) {
+		return { ok: false, diagnostic: makeDiagnostic("no-release-point",
+			"The carrier chain releases from the centre of " + body +
+			" — nothing on it places the payload above the surface.",
+			{ fix: "Add a carrier with a release point above the body (e.g. the skyhook)." }) };
+	}
 
 	var segs = [];        // [{ leg, tStart, tEnd }]
 	var samples = [];     // concatenated body-centric { r, v, t } — t global

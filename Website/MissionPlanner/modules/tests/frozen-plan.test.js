@@ -12,7 +12,7 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import moonPlatform from "../moon-platform/moon-platform.js";
-import skyhook from "../orbital-skyhook/orbital-skyhook.js";
+import skyhook from "../skyhook/skyhook-departure.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";

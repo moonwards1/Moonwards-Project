@@ -8,7 +8,7 @@
 // the genuine result back into frozen-plan's departure/arrival fields, so
 // opening it shows a clean flight with no comply-boundary warnings — a
 // state nothing else in the example set demonstrates. Also the only example
-// carrying a configured arrival-skyhook CATCH (modules/arrival-skyhook/arrival-skyhook.js,
+// carrying a configured arrival-skyhook CATCH (modules/skyhook/skyhook-arrival.js,
 // real trim-Δv physics, not a stub), since the other examples leave arrival
 // tech empty like the default.
 //

@@ -360,13 +360,17 @@ or the savings evaporate.
 
 ### WP-5
 
-- [ ] **5.1 Parameter interfaces on tech cards.** ★★ (per platform)
+- [ ] **5.1 Parameter interfaces on tech cards.** ★ (per platform)
   Each loaded technology card gets the controls that set the impulse it
-  imparts. Depends on WP-8.1's platform shape.
+  imparts. Now a data change: entries in the platform's own `params` list
+  (`modules/platform/platform-spec.js`), which the role adapters build the card
+  from. Also where each platform's `readouts` hook gets filled in.
 - [ ] **5.2 Context-sensitive add-on options.** ★★
   A small ring mass driver or spin launcher can be added as a second layer on
-  an appropriate base platform (space elevator, skyhook). The dropdown filters
-  its options by a rule set describing which combinations are realistic.
+  an appropriate base platform (space elevator, skyhook). Each platform already
+  declares `ridesOn`, and `platform-spec.js`'s `canRideOn` is the rule; what is
+  left is filtering `mission-view.js`'s departure dropdown through it against
+  the platform currently below.
 - [ ] **5.3 Simple platform renderings.** ★★ (per platform)
   Enough geometry to show how a platform works and where the ship starts from.
 
@@ -415,12 +419,16 @@ or the savings evaporate.
 - [ ] **7.3 Capture-technology dropdown.** ★★
   Skyhook, space elevator, tug; a ring mass driver or spin launcher addable as
   a second layer on the first two, by the same rule set as 5.2. Options appear
-  as the platforms are built. Depends on WP-8.1.
-- [ ] **7.4 Catch phasing set at the capture point.** ★★
+  as the platforms are built. The second LAYER is the open piece 8.1 left: the
+  arrival stage is terminal and takes a ship-state, so there is no chain for a
+  second layer to extend.
+- [ ] **7.4 Catch phasing set at the capture point.** ★
   The platform's sweep through its orbit or rotation is established by the
   phase the user chooses at the capture point; scrubbing the timeline moves it
   from there. Deliberately avoids forcing the user to time the flyby to the
-  platform's position.
+  platform's position. The draw already pins the phase to the committed
+  arrival; what is missing is the control, i.e. adding `catch` to the phase
+  param's `roles` in each platform.
 - [ ] **7.5 Earth arrival specifics.** ★★★
   The Moon shown with any chosen platform, the same gravity treatment the
   departure phase uses, and aerobraking displayed as a colour change on the
@@ -429,11 +437,31 @@ or the savings evaporate.
 
 ### WP-8
 
-- [ ] **8.1 Platform module shape: shared spec + role adapters.** ★★★
-  Per the settled rule. Migrate the skyhook onto it first — `arrival-skyhook.js`
-  already imports `tetherGeometry` from `orbital-skyhook.js`, so most of the
-  move is pushing the rest of the shared substance down and leaving two thin
-  shells. **Gates 8.4, 5.1, 5.4 and 7.3.**
+- [x] **8.1 Platform module shape: shared spec + role adapters.** ★★★
+  `modules/platform/platform-spec.js` is what a platform IS as data — declared
+  params (so a card is built from them), per-body defaults and applicability,
+  `ridesOn`, geometry, a release half (gate + chain element) and a capture half
+  (`rendezvous` or `pass-through`). `modules/platform/platform-roles.js`'s
+  `makeCarrier`/`makeTerminal` turn a spec into the two descriptors, carrying
+  everything a role does apart from the platform's own physics: the body checks
+  and chain-mismatch guard, the chain plumbing, the release anchor, the arrival
+  leg's measured pass and the intercept check, the card, and the epoch a drawn
+  platform's phase is pinned to. The skyhook is migrated: `modules/skyhook/` is
+  `skyhook.js` (substance) plus two 3-line adapters, registry ids
+  `orbital-skyhook`/`arrival-skyhook` unchanged so saves and presets still load.
+  Behaviour is unchanged throughout — a migration, browser-verified against the
+  departure and arrival cards, the drawn tether, the timeline events and the
+  recompute chain.
+  Scope decisions are in `decisions.md` (2026-08-12): two chain element kinds
+  (a rotor that carries, an impulse that pushes — `Shared/kinematic-chain.js`
+  now holds both, for the tug/mass driver/rocket); kinematics-and-impulse-only
+  fidelity, with the engineering left in the calculators; `pass-through` as the
+  arrival kind the aerobrake needs; add-ons as their own platforms riding the
+  chain, with `ridesOn` as the design's rule set; and body applicability
+  declared beside the physics rather than duplicated in `ui/tech-options.js`.
+  **Gates 8.4, 5.1, 5.2 and 7.3**, and shrinks 7.4 to one line.
+  Left open, deliberately: a two-LAYER catch. The arrival stage is terminal and
+  takes a ship-state, so there is no chain for a second layer to extend.
 - [ ] **8.2 Link-to-calculator toggle with two-way sync.** ★★★
   A toggle on each tech card: when on, and the matching calculator is open with
   impulse-related parameters set for the correct body, import them; thereafter
@@ -446,9 +474,12 @@ or the savings evaporate.
   The reverse direction — push the parameters found by playing in the app out
   to the relevant calculator. Producer pattern:
   `Calculators/Gravity-gradient-skyhooks/`.
-- [ ] **8.4 New platforms.** ★★★ each — depends on 8.1.
+- [ ] **8.4 New platforms.** ★★ each.
   Space elevator, tug, ring mass driver, mass driver, tip spin launcher,
-  aerobrake. Each arrives with whichever roles apply. Calculator sources are
+  aerobrake. Each is one folder against the 8.1 contract, shipping whichever
+  role adapters apply — the elevator/ring driver/tip launcher contribute
+  rotors, the mass driver a rotor plus an impulse, the tug an impulse, the
+  aerobrake a `pass-through` capture and no release. Calculator sources are
   listed in the inventory below.
 
 ### WP-9
@@ -529,7 +560,7 @@ is written.
 | `Shared/sim/body-renderer.js`             | `worldSizeAtPointForPx` — constant-pixel sprite sizing; label/scale updates                                                                                  | 2.5, 3.2           |
 | `Shared/body-leg.js`                      | `integrateEncounter`, `integrateTrajectory`, `buildIntegratedLeg`, `localFrameAt`, `bodyConstants`                                                           | 7.1                |
 | `Shared/geo-leg.js`                       | `stateAtLegTime`, `burnEffect` — the ecliptic-anchored burn convention every waypoint editor means by its axes                                               | 6.1, 7.1           |
-| `Shared/kinematic-chain.js`               | the carrier-chain shape and its evaluator                                                                                                                    | 8.1                |
+| `Shared/kinematic-chain.js`               | the carrier-chain shape and its evaluator — `emptyChain`/`appendElement`, `rotorElement` (hardware that carries) and `impulseElement` (hardware that pushes) | 8.4                |
 | `Shared/frames.js`                        | `localToHelio` / `helioToLocal` / `convert`, `bodyHelioState`                                                                                                | 1.5, 7.1, 7.2      |
 | `Shared/exchange.js`, `exchange-types.js` | `Exchange.send/accept/pending/consume/linkFor`, `PacketTypes.make/validate`                                                                                  | 8.2, 8.3           |
 | `Shared/math-utils.js`                    | `sphereOfInfluence`, `hohmann`, `coastTimeToRadius`, snap-to helpers (`apsisFromBurn`, `nodeInfo`, `snapTargetNu`, `timeToTrueAnomaly`, `snapTau`)           | 1.1, 6.2           |
@@ -544,7 +575,7 @@ is written.
 | `core/freeze.js`                                  | the freeze contract and its timing fields                                                                                                 | 1.1                  |
 | `core/recompute.js`                               | the boundary flag and the warnings/events envelope                                                                                        | 1.5                  |
 | `modules/transfer-leg/transfer-leg.js`            | the module template: pure compute + descriptor + card-building `init` + `draw`; `computeLeg`'s encounter scan and `stateAtElapsed`        | 1.5, 7.1, 8.1        |
-| `modules/orbital-skyhook/` + `arrival-skyhook.js` | the two halves 8.1 unifies; `tetherGeometry` is already shared                                                                            | 8.1                  |
+| `modules/platform/` + `modules/skyhook/`          | the platform contract, its two role adapters, and the one platform on it                                                                  | 5.1, 5.2, 7.3, 8.4   |
 | `ui/tech-options.js`                              | the body-tagged option table the dropdowns filter                                                                                         | 5.2, 7.3             |
 | `ephemeris-view.js`                               | the marker/target state machine, Lambert `applyTargeting`, the moon widget                                                                | 4.1, 4.2, question 7 |
 

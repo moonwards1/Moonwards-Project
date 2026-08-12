@@ -10,9 +10,10 @@ import assert from "node:assert/strict";
 import { createWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
-import orbitalSkyhook, {
+import orbitalSkyhook from "../skyhook/skyhook-departure.js";
+import {
 	tetherKinematics, rotorFor, defaultGeometryFor, satelliteOrbitRadius, resolveParams
-} from "../orbital-skyhook/orbital-skyhook.js";
+} from "../skyhook/skyhook.js";
 import bodyDepartureLeg, { computeBodyDepartureLeg, stateAtElapsed }
 	from "../body-departure-leg/body-departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";

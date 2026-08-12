@@ -213,18 +213,22 @@ never a stage param: it is the plan's read-only release anchor
 re-derived).
 
 - **`modules/moon-platform/`** — the Moon as the departure stack's read-only
-  top card, for Earth-origin missions only. Emits the chain base (`{ base:
-  "Moon", rotors: [] }`) and shows the Moon's heading/impulse contribution at
+  top card, for Earth-origin missions only. Emits the chain base
+  (`emptyChain("Moon")`) and shows the Moon's heading/impulse contribution at
   the release anchor. No knobs — plan around the Moon in the Ephemeris tab. A
   mission with no release anchor at all is diagnosed here, at the top of the
   chain.
-- **`modules/orbital-skyhook/`** — the ONE skyhook carrier module, serving
-  every body: a gravity-gradient (radial) skyhook whose centre of mass rides
-  a circular orbit at its `body`'s rate. Optionally rides an upstream base
-  platform (`inputOptional`) — for the Moon, `moon-platform`; for any other
-  body, the skyhook self-originates (the body is simply at rest) and carries
-  the missing-anchor diagnostic itself. Appends its rotor element to the
-  incoming chain; release phase is the card's own aiming slider.
+- **`modules/skyhook/`** — the skyhook TECHNOLOGY PLATFORM (see
+  `modules/platform/` below), serving every body and both ends of a mission
+  from one folder. `skyhook.js` holds the substance: a gravity-gradient
+  (radial) tether whose centre of mass rides a circular orbit at its `body`'s
+  rate, its parameters, its release gate and rotor element, its catch figures,
+  and its drawing. `skyhook-departure.js` registers it as the carrier module
+  `orbital-skyhook`; `skyhook-arrival.js` registers it as the terminal module
+  `arrival-skyhook`. As a carrier it optionally rides an upstream base platform
+  (`inputOptional`) — for the Moon, `moon-platform`; for any other body it
+  self-originates (the body is simply at rest). Release phase is the card's own
+  aiming slider.
 - **`modules/departure-leg/`** — HEADLESS (`plainCard`): the integrated
   geocentric flight (Earth + Moon + Sun, real ephemerides, RK4) from carrier
   release to Earth-SOI exit, for Earth-origin missions. Applies up to 2
@@ -273,16 +277,34 @@ re-derived).
   the pass is constructed: where the ship goes past, how close and how fast are
   whatever the coast delivers. Waypoints (up to 2) put burns on it; a retro
   burn near the pass drops/captures. HEADLESS (`plainCard`).
-- **`modules/arrival-skyhook/`** — a skyhook CATCH at the destination,
-  literally reusing `orbital-skyhook.js`'s tether geometry run in reverse: a
-  trim burn at the catch point closes the gap between the approach
-  hyperbola's periapsis speed and the tether tip's own speed. Terminal stage
-  (consumes the coast's delivered ship-state, emits nothing). Not modelled:
+- **`modules/skyhook/skyhook-arrival.js`** — the same skyhook platform in its
+  terminal role: a CATCH at the destination, the very same tether geometry run
+  in reverse. A trim burn at the catch point closes the gap between the
+  approach hyperbola's periapsis speed and the tether tip's own speed. Consumes
+  the coast's delivered ship-state and emits nothing. Not modelled:
   catch-window phasing, the post-catch unload down the tether.
 - **`modules/arrival-approach.js`** — not a stage module, a shared helper
-  (`approachAt`, `interceptWarning`) imported by `arrival-skyhook` so the
-  "does the coast actually reach the destination, and how fast" measurement
-  is one computation, not several.
+  (`approachFromPass`, `approachAt`, `interceptWarning`) imported by the
+  platform layer so the "does the coast actually reach the destination, and how
+  fast" measurement is one computation, not several.
+
+**Technology platforms** — one platform, one folder; two thin role adapters.
+
+- **`modules/platform/platform-spec.js`** — what a platform IS, as data: its
+  parameters (declared, so its card is built from them), its per-body defaults
+  and applicability, what it can be layered on (`ridesOn`), its geometry, its
+  release half (gate + chain element) and its capture half (`rendezvous` or
+  `pass-through`). A platform models KINEMATICS AND IMPULSE ONLY — mass, taper,
+  materials and cost stay in the calculators and arrive through the exchange
+  packet.
+- **`modules/platform/platform-roles.js`** — `makeCarrier` and `makeTerminal`,
+  which turn a spec into the two stage descriptors the registry holds. They
+  carry everything a role does apart from the platform's own physics: the body
+  checks and chain-mismatch guard, the chain plumbing, the release anchor, the
+  arrival leg's measured pass and the intercept check, the declared-parameter
+  card, and the epoch a drawn platform's phase is pinned to. The two roles
+  cannot be one descriptor — the registry validates `accepts`/`emits`
+  statically and `mission-view.js` identifies tech stages by those types.
 
 ## ui/ — shell-local widgets
 

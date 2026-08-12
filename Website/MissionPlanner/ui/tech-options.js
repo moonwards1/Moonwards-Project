@@ -17,16 +17,29 @@
 // `bodies` follows the project's "body" convention (Shared/exchange-types.js's
 // header): a body-scoped catalog entry, never a hardcoded "the Moon is the only
 // place with tech" assumption. `bodies: "*"` means any body the chain can be
-// based at; a body-specific entry keeps an explicit list. Per-body plausibility
-// limits (a Venus skyhook is a stretch goal, a Jupiter space elevator is not)
-// are not modelled — the generic entries offer against every body, and the
-// dropdown filters by whichever body the chain's base actually is.
+// based at; a body-specific entry keeps an explicit list.
+//
+// A BUILT entry states no `bodies` of its own — its `platform` is the platform
+// spec (modules/platform/platform-spec.js), which declares its own
+// applicability, so where a technology can be used is decided once, beside its
+// physics. Only `future` entries carry a hand-written list, having no platform
+// to ask yet.
+
+import { platformAppliesTo } from "../modules/platform/platform-spec.js";
+import { SKYHOOK } from "../modules/skyhook/skyhook.js";
+
+// Does `opt` apply at `body`? Built entries ask their platform; future entries
+// use their own list.
+function optionAppliesTo(opt, body) {
+	if (opt.platform) { return platformAppliesTo(opt.platform, body); }
+	return opt.bodies === "*" || opt.bodies.indexOf(body) !== -1;
+}
 
 export var DEPARTURE_TECH_OPTIONS = [
 	// The one built departure technology: the generic skyhook, which orbits
-	// any body (modules/orbital-skyhook).
-	{ id: "skyhook", label: "Skyhook", bodies: "*",
-	  moduleId: "orbital-skyhook", moduleUrl: "../modules/orbital-skyhook/orbital-skyhook.js" },
+	// any body (modules/skyhook).
+	{ id: "skyhook", label: "Skyhook", platform: SKYHOOK,
+	  moduleId: "orbital-skyhook", moduleUrl: "../modules/skyhook/skyhook-departure.js" },
 	{ id: "space-elevator", label: "Space elevator", bodies: "*", future: true },
 	{ id: "mass-driver", label: "Mass driver", bodies: "*", future: true },
 	{ id: "chemical-rocket", label: "Chemical rocket", bodies: "*", future: true }
@@ -38,19 +51,17 @@ export var DEPARTURE_TECH_OPTIONS = [
 export function techOptionsFor(body) {
 	if (typeof body !== "string" || body === "") { return []; }
 	return DEPARTURE_TECH_OPTIONS.filter(function (opt) {
-		return opt.bodies === "*" || opt.bodies.indexOf(body) !== -1;
+		return optionAppliesTo(opt, body);
 	});
 }
 
 // The ARRIVAL technologies — same catalog shape, filtered against the frozen
-// plan's arrival body instead of the chain's base. The one built entry is
-// generic (`bodies: "*"` — any destination the plan can commit to): the
-// skyhook catch, the same tether run in reverse (arrival-skyhook.js).
-// Body-specific entries keep explicit lists, like the departure side.
+// plan's arrival body instead of the chain's base. The one built entry is the
+// same skyhook platform in its arrival role: the tether run in reverse.
 export var ARRIVAL_TECH_OPTIONS = [
 	{ id: "capture-burn", label: "Chemical capture burn", bodies: "*", future: true },
-	{ id: "arrival-skyhook", label: "Orbital skyhook catch", bodies: "*",
-	  moduleId: "arrival-skyhook", moduleUrl: "../modules/arrival-skyhook/arrival-skyhook.js" },
+	{ id: "arrival-skyhook", label: "Orbital skyhook catch", platform: SKYHOOK,
+	  moduleId: "arrival-skyhook", moduleUrl: "../modules/skyhook/skyhook-arrival.js" },
 	{ id: "ceres-elevator-catch", label: "Ceres elevator catch port", bodies: ["Ceres"], future: true }
 ];
 
@@ -59,6 +70,6 @@ export var ARRIVAL_TECH_OPTIONS = [
 export function arrivalTechOptionsFor(body) {
 	if (typeof body !== "string" || body === "") { return []; }
 	return ARRIVAL_TECH_OPTIONS.filter(function (opt) {
-		return opt.bodies === "*" || opt.bodies.indexOf(body) !== -1;
+		return optionAppliesTo(opt, body);
 	});
 }

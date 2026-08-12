@@ -45,10 +45,10 @@ import { createEphemerisView } from "./ephemeris-view.js";
 var MODULE_URLS = [
 	// The departure stack's fixed base for Earth-origin missions.
 	"./modules/moon-platform/moon-platform.js",
-	// The ONE skyhook carrier: serves the Moon (riding moon-platform, escaping
-	// Earth via departure-leg) and any HELIO_BODIES origin (self-originating,
-	// escaping that body via body-departure-leg).
-	"./modules/orbital-skyhook/orbital-skyhook.js",
+	// The ONE skyhook platform in its departure role: serves the Moon (riding
+	// moon-platform, escaping Earth via departure-leg) and any HELIO_BODIES
+	// origin (self-originating, escaping that body via body-departure-leg).
+	"./modules/skyhook/skyhook-departure.js",
 	// The two integrated departure flights: geocentric (Earth+Moon+Sun) and
 	// generic body-centric (body+Sun).
 	"./modules/departure-leg/departure-leg.js",
@@ -60,9 +60,9 @@ var MODULE_URLS = [
 	// past the body at SOI/2, one day beyond — with waypoint burns on the
 	// approach.
 	"./modules/arrival-leg/arrival-leg.js",
-	// Arrival technology: the skyhook catch at the destination (the same tether
-	// run in reverse). Missions ship with the arrival-tech slot empty.
-	"./modules/arrival-skyhook/arrival-skyhook.js"
+	// Arrival technology: the same skyhook platform in its arrival role, the
+	// tether run in reverse. Missions ship with the arrival-tech slot empty.
+	"./modules/skyhook/skyhook-arrival.js"
 ];
 var registry = createRegistry();
 var loaded = await Promise.all(MODULE_URLS.map(function (u) { return import(u); }));

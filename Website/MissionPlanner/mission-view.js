@@ -78,10 +78,10 @@ var FLOAT_ZOOM = 0.5;
 //
 // Modules that render body-centrically therefore cannot name a literal frame
 // id, since they don't know the mission's origin or destination themselves.
-// They declare the symbolic "body:origin" (orbital-skyhook.js,
-// body-departure-leg.js) or "body:destination" (arrival-leg.js,
-// arrival-skyhook.js) rendersIn token, and resolveFrameId()
-// below aliases it to the real frame id wherever rendersIn is consulted.
+// They declare the symbolic "body:origin" (a platform's carrier role,
+// body-departure-leg.js) or "body:destination" (arrival-leg.js, a platform's
+// terminal role) rendersIn token, and resolveFrameId() below aliases it to the
+// real frame id wherever rendersIn is consulted.
 var PHASES = ["departure", "coast", "arrival"];
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
 

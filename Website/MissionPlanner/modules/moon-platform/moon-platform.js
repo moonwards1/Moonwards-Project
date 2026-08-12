@@ -4,9 +4,9 @@
  * The Moon itself is the first CARRIER: ~1 km/s of geocentric velocity plus
  * position that every lunar departure rides for free. This module makes that a
  * visible, READ-ONLY card at the top of the departure sidebar and emits the
- * carrier chain's base ({ base: "Moon", rotors: [] } — the
- * Shared/kinematic-chain.js shape) for the carrier stages downstream to extend
- * (orbital-skyhook appends its rotor; departure-leg integrates the result).
+ * carrier chain's base (Shared/kinematic-chain.js's `emptyChain("Moon")`) for
+ * the carrier stages downstream to extend (the skyhook appends its rotor;
+ * departure-leg integrates the result).
  * Non-Earth origins have no platform stage at all — their skyhook
  * self-originates; see core/freeze.js's scaffold.
  *
@@ -39,7 +39,7 @@
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
-import { baseState } from "../../../Shared/kinematic-chain.js";
+import { baseState, emptyChain } from "../../../Shared/kinematic-chain.js";
 import { moonProgradeSpeed } from "../../core/departure-estimate.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
@@ -103,7 +103,7 @@ export default {
 		rememberFigures(ctx.world, ctx.stageId, moonFigures(anchorJd));
 
 		var packet = PacketTypes.make("carrier-chain",
-			{ base: "Moon", rotors: [] },
+			emptyChain("Moon"),
 			{ tool: "mission-planner/moon-platform", label: "carrier chain base",
 			  iso: isoOf(anchorJd) });
 		return { packet: packet };

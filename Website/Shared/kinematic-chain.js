@@ -1,27 +1,35 @@
-/* Shared/kinematic-chain.js — kinematic chain evaluator (Mission Planner
- * task I2): a base body plus an ordered list of rigid rotors, each pivoting
- * on whatever the chain has composed so far and contributing its own
- * uniform circular motion — a fixed plane (normal + a phase-0 reference
- * direction), radius, rotation rate, and phase at an epoch. Feeds task I3's
- * departure carriers (Moon -> skyhook -> a future tip-spin-launcher): the
- * Moon is the base, the skyhook is rotor 0, a tip launcher would be rotor 1
- * riding the skyhook's own tip.
+/* Shared/kinematic-chain.js — kinematic chain evaluator: a base body plus the
+ * contributions of the departure platforms stacked on it, composed into the
+ * state of the payload they release. Each departure platform in the Mission
+ * Planner's carrier stack appends ONE element here (see
+ * MissionPlanner/modules/platform/platform-spec.js).
+ *
+ * There are two element kinds, because that is what the platforms actually do:
+ *
+ *   - a ROTOR — uniform circular motion in a fixed plane (normal + a phase-0
+ *     reference direction), with a radius, a rotation rate and a phase at an
+ *     epoch. This is hardware that carries the payload around and lets go:
+ *     a skyhook, a space elevator (turning at its body's own rate), a ring
+ *     mass driver, a tip spin launcher.
+ *   - an IMPULSE — a plain Δv, no position and no motion of its own. This is
+ *     hardware that pushes: a linear mass driver's track, a tug, a rocket.
+ *     A surface launcher is normally both — a rotor of the body's radius
+ *     turning at its sidereal rate, plus the impulse the track imparts.
  *
  * Composition is a plain vector sum, not a rotating-frame transform: every
- * rotor's plane is fixed in the same non-rotating, ecliptic-aligned axes the
- * rest of Shared/ works in (see geo-leg.js's header), so a rotor's own
- * uniform circular motion adds directly onto its parent's state without any
- * Coriolis/centrifugal bookkeeping — exactly the assumption
- * lunar-skyhook.js's inline "tether kinematics" already made (and the
- * Moon-Skyhook plotter's hookBasis before it). Nothing here touches gravity
- * or escape physics: this file computes WHERE the payload is and how fast
- * it's moving relative to the fixed stars, not whether it's bound or
- * escaping — that belongs downstream (task I3's departure-leg feeds this
- * position/velocity into geo-leg.js's integrator).
+ * element is expressed in the same non-rotating, ecliptic-aligned axes the
+ * rest of Shared/ works in (see geo-leg.js's header), so each contribution
+ * adds directly onto what the chain has composed so far without any
+ * Coriolis/centrifugal bookkeeping. Order within the chain therefore does not
+ * affect the result. Nothing here touches gravity or escape physics: this
+ * file computes WHERE the payload is and how fast it's moving relative to the
+ * fixed stars, not whether it's bound or escaping — that belongs downstream,
+ * where the departure legs feed this position/velocity into their integrator.
  *
  * Chain shape (plain, serializable data):
  *   { base: "Moon" | "Earth" | <any origin body>,
- *     rotors: [ { normal: [x,y,z], ref: [x,y,z], radius, rate, phase0, epoch }, ... ] }
+ *     rotors:   [ { normal: [x,y,z], ref: [x,y,z], radius, rate, phase0, epoch }, ... ],
+ *     impulses: [ { dv: [x,y,z] }, ... ] }
  * All vectors plain [x,y,z]; metres, seconds, radians throughout. `normal`
  * is the rotor's plane normal (need not be pre-normalized); `ref` is any
  * vector with a nonzero component in that plane — it fixes the phase-0
@@ -30,7 +38,8 @@
  * `phase0` is its phase (rad) at Julian date `epoch` — evaluating at
  * jd = epoch reduces to exactly phase0, so a rotor whose phase is pinned at
  * a specific date (e.g. a release phase fixed at the release date) never
- * needs a drift term folded in by the caller.
+ * needs a drift term folded in by the caller. `impulses` is optional; a chain
+ * without one is a chain of pure rotors.
  *
  * Pure (no DOM, no THREE): Node-testable. Imports LunarEphemeris only for
  * the Moon base-body lookup.
@@ -97,14 +106,60 @@ function addRotor(parent, rotor, jd) {
 	};
 }
 
-// Evaluate a chain at Julian date jd: the base body's own geocentric
-// ephemeris state, composed with each rotor's circular contribution in
-// order (each pivots on the state accumulated so far). Returns
-// { r, v } geocentric, metres and m/s.
+// Evaluate a chain at Julian date jd: the base body's own state in the frame
+// it anchors, plus every rotor's circular contribution and every impulse's
+// Δv. Returns { r, v } in that frame, metres and m/s. Impulses move the
+// payload's velocity only — a push has no radius of its own, so whatever
+// rotor holds the launcher is what places it in space.
 export function evaluateChain(chain, jd) {
 	var state = baseState(chain.base, jd);
 	(chain.rotors || []).forEach(function (rotor) {
 		state = addRotor(state, rotor, jd);
 	});
+	(chain.impulses || []).forEach(function (impulse) {
+		state = { r: state.r, v: O.vAdd(state.v, impulse.dv) };
+	});
 	return state;
+}
+
+// ---- building a chain ------------------------------------------------------
+// The Mission Planner's carrier stages compose a chain through these rather
+// than by reaching into its arrays, so the shape stays in one place as
+// element kinds are added.
+
+// A chain with a base body and nothing on it yet.
+export function emptyChain(base) {
+	return { base: base, rotors: [], impulses: [] };
+}
+
+// A rotor element. `phase0` is its phase (rad) at `epoch` — see the header.
+export function rotorElement(normal, ref, radius, rate, phase0, epoch) {
+	return { kind: "rotor", normal: normal, ref: ref, radius: radius,
+	         rate: rate, phase0: phase0, epoch: epoch };
+}
+
+// An impulse element: a Δv (m/s) in the chain's own ecliptic-aligned axes.
+export function impulseElement(dv) {
+	return { kind: "impulse", dv: dv };
+}
+
+// `chain` with `element` appended, as a fresh object — an upstream chain is
+// another stage's emitted packet and is never mutated. An element with no
+// `kind` is taken for a rotor, the only kind chains originally held.
+export function appendElement(chain, element) {
+	var next = {
+		base: chain.base,
+		rotors: (chain.rotors || []).slice(),
+		impulses: (chain.impulses || []).slice()
+	};
+	if (element && element.kind === "impulse") { next.impulses.push(element); }
+	else if (element) { next.rotors.push(element); }
+	return next;
+}
+
+// How many elements a chain carries, of either kind — zero means nothing on
+// the chain sets the payload moving.
+export function elementCount(chain) {
+	if (!chain) { return 0; }
+	return ((chain.rotors || []).length) + ((chain.impulses || []).length);
 }

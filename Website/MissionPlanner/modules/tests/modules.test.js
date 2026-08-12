@@ -12,7 +12,8 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import moonPlatform, { moonFigures } from "../moon-platform/moon-platform.js";
-import skyhook, { tetherKinematics, rotorFor } from "../orbital-skyhook/orbital-skyhook.js";
+import skyhook from "../skyhook/skyhook-departure.js";
+import { tetherKinematics, rotorFor } from "../skyhook/skyhook.js";
 import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed }
 	from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
