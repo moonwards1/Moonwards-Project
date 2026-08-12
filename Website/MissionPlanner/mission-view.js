@@ -79,8 +79,8 @@ var FLOAT_ZOOM = 0.5;
 // Modules that render body-centrically therefore cannot name a literal frame
 // id, since they don't know the mission's origin or destination themselves.
 // They declare the symbolic "body:origin" (orbital-skyhook.js,
-// body-departure-leg.js) or "body:destination" (arrival-boundary.js,
-// arrival-leg.js, arrival-skyhook.js) rendersIn token, and resolveFrameId()
+// body-departure-leg.js) or "body:destination" (arrival-leg.js,
+// arrival-skyhook.js) rendersIn token, and resolveFrameId()
 // below aliases it to the real frame id wherever rendersIn is consulted.
 var PHASES = ["departure", "coast", "arrival"];
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
@@ -1847,16 +1847,9 @@ export function createMissionView(opts) {
 			  better: refPass ? better(livePass.speed, refPass.speed) : null }
 		]);
 
-		// Timing runs against the epoch the PLAN committed to, on a scale whose
-		// ends are the plan's own hand-off window — so drifting off the bar and
-		// failing arrival-boundary's epoch check are the same event.
-		var planDesc = registry.get("frozen-plan");
-		var commit = (planDesc && typeof planDesc.arrivalCommitmentFor === "function")
-			? planDesc.arrivalCommitmentFor(world) : null;
-		var windowDays = (planDesc && typeof planDesc.handoffWindowFor === "function")
-			? planDesc.handoffWindowFor(world) : 1;
-		shipCard.setTiming((commit && commit.body === dest)
-			? timingModel(livePass.jd, commit.jd, windowDays) : null);
+		// Timing: how far the pending edit has moved arrival from the coast's
+		// own last-committed arrival — nothing to show once nothing is pending.
+		shipCard.setTiming(refPass ? timingModel(livePass.jd, refPass.jd) : null);
 
 		// The approach geometry comes off the same measurement — nearestApproach
 		// hands back the body-relative state it already found. null when the pass

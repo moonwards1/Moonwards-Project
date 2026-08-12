@@ -87,11 +87,6 @@ export var jupiterMercuryMission = {
 			}
 		},
 		{
-			id: "stg-5",
-			moduleId: "arrival-boundary",
-			params: {}
-		},
-		{
 			// The arrival-tech slot is empty, like the shipped default's: this
 			// mission is about the departure/coast extremes, not a catch.
 			id: "stg-6",

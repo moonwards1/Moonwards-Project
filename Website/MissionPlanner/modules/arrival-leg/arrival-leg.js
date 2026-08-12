@@ -24,13 +24,11 @@
  *
  * WHERE THE STARTING STATE COMES FROM, and why it is not simply the input
  * packet. The chain hands this stage the coast's emitted state, which sits at
- * the coast's own leg end — at (or just before) closest approach, because that
- * is where arrival-boundary has to measure the delivered approach against the
- * plan's commitment. The arrival phase begins EARLIER than that, at the seam.
- * So the seam state is read off the coast leg directly: transfer-leg's
- * legFor()/stateAtElapsed() (the same registry-reached, cross-stage read
- * arrival-boundary makes for the plan's commitment), sampled at the window's
- * left edge. The input packet is still what supplies `dvUsed`, and it is the
+ * the coast's own leg end — at (or just before) closest approach. The arrival
+ * phase begins EARLIER than that, at the seam. So the seam state is read off
+ * the coast leg directly: transfer-leg's legFor()/stateAtElapsed() (a
+ * registry-reached, cross-stage read), sampled at the window's left edge.
+ * The input packet is still what supplies `dvUsed`, and it is the
  * fallback source when no coast leg is reachable — then the window is placed
  * around the delivered epoch and its start state found by plain heliocentric
  * back-propagation, which is exact precisely in the case that produces it (a

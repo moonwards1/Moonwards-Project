@@ -8,8 +8,8 @@
  * file only assembles the profile:
  *
  *   [ departure scaffold ] -> [ frozen-plan (the commitment) ] ->
- *   [ transfer-leg (the working coast) ] -> [ arrival-boundary ] ->
- *   [ arrival-leg (the flyby hand-off) ].
+ *   [ transfer-leg (the working coast) ] -> [ arrival-leg (the flyby
+ *   hand-off) ].
  *
  *   THE DEPARTURE SCAFFOLD is a base + an integrated leg with an EMPTY carrier
  *   slot, which mission-view.js's "Departure technology" card fills:
@@ -19,11 +19,13 @@
  *   the leg reports "no carrier".
  *
  *   THE ARRIVAL-TECH SLOT is empty too: arrival-leg is simply the terminal
- *   stage until an arrival technology is loaded. Both endpoint slots being
- *   empty is safe because frozen-plan and arrival-boundary are compliance
- *   BOUNDARIES (recompute.js): an empty or half-built departure never blanks
- *   the committed coast — the mission still flies and arrives while its
- *   endpoint slots are filled in.
+ *   stage until an arrival technology is loaded. The departure slot being
+ *   empty is safe because frozen-plan is a compliance BOUNDARY
+ *   (recompute.js): an empty or half-built departure never blanks the
+ *   committed coast — the mission still flies and arrives while its
+ *   departure slot is filled in. The arrival phase has no such boundary —
+ *   the coast's own live readouts (the ship card) are what tell the user
+ *   whether the flight actually reaches the destination.
  *
  * THE HAND-OFF IS POST-BURN: the frozen departure state is the origin body's
  * position with the DEPARTURE BURN ALREADY APPLIED — the ship sitting on the
@@ -141,11 +143,6 @@ export function freezeMissionWorld(spec) {
 		waypoints: waypoints.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; })
 	});
 	add("transfer-leg", { waypoints: waypoints, legDays: legDays, destination: spec.destination });
-	// The Coast→Arrival compliance boundary: the mirror of frozen-plan at the
-	// far seam — one comparison of what the coast delivers against the arrival
-	// commitment two lines up, non-blocking. Paramless: the commitment is the
-	// plan's.
-	add("arrival-boundary", {});
 	// The arrival flyby leg: the visible Coast→Arrival hand-off, no burns, and
 	// the terminal stage — the arrival-tech slot is empty by default.
 	add("arrival-leg", { body: spec.destination, waypoints: [] });
@@ -163,7 +160,8 @@ export function freezeMissionWorld(spec) {
 		// day out is deliberately allowed: that tolerance is what makes
 		// estimating a departure's duration tractable at all, and a few hours is
 		// nothing on interplanetary timeframes. The arrival seam has the same
-		// looseness (frozen-plan.js's handoffWindowFor serves both ends).
+		// looseness (frozen-plan.js's handoffWindowFor also backs the ship
+		// card's Coast-phase timing bar).
 		jd: spec.jd,
 		nextStage: n,
 		stages: stages

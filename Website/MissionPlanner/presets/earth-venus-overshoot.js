@@ -111,11 +111,6 @@ export var earthVenusOvershootMission = {
 			}
 		},
 		{
-			id: "stg-6",
-			moduleId: "arrival-boundary",
-			params: {}
-		},
-		{
 			// The arrival-tech slot is empty, like the shipped default's: this
 			// mission is about waypoint tuning on the coast, not a catch.
 			id: "stg-7",

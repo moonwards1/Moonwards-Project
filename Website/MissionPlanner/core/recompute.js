@@ -96,9 +96,11 @@
 // stages that produced the upstream failure keep their own diagnostic/blocked
 // status (rendered on their own cards); only propagation PAST the boundary is
 // cut. A boundary's OWN failure (its params are damaged) still blocks
-// downstream normally. Two modules set the flag, one per mission seam:
-// modules/frozen-plan (Departure→Coast) and modules/arrival-boundary
-// (Coast→Arrival), so both ends of a mission share one mechanism.
+// downstream normally. modules/frozen-plan (Departure→Coast) sets the flag;
+// the Coast→Arrival seam has no such boundary — the coast's own live
+// readouts are what tell the user whether the flight reaches the
+// destination, so there is nothing there to measure against a frozen
+// commitment.
 //
 // The engine calls `update(ctx, input)` with ctx = { world, jd, stageId,
 // params } — not the `update(world, input)` of ARCHITECTURE.md's sketch. A

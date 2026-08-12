@@ -33,7 +33,7 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 | `diagnostics.js`         | `makeDiagnostic`, `isDiagnostic`, `DIAGNOSTIC_KIND`               | The structured-diagnostic model: `{ kind, stageId, code, message, values, fix? }` — what a stage's `update()` returns instead of a packet when the mission is infeasible. Plain and JSON-able, distinguishable from a packet by `kind`.                    |
 | `registry.js`            | `createRegistry`, `validateDescriptor`                            | The module registry. Validates a descriptor's `id`/`title`/`accepts`/`emits`/`update` at registration (packet types checked against `PacketTypes`, so typos fail loud and early); view-facing fields (`rendersIn`, `init`, …) are optional and unexamined here. An *unregistered* id in a profile is user data, not an error — the engine reports it as a diagnostic. |
 | `recompute.js`           | `createEngine`                                                    | The chain-recompute engine. Subscribes to the World; on any change recomputes from the dirty index **downstream, in order, synchronously**. Per-stage results keyed by stage id: `ok` (with the output packet), `diagnostic`, or `blocked` (waiting on the failed stage, `update()` not called, params intact); results also carry `warnings` and `events` arrays (see the module contract below). Locks the World during a pass, so modules cannot `set()` from `update()`. |
-| `freeze.js`              | (see header — assembles a serialized World)                       | The "Start Mission Plan" contract: turns a plan authored on the Ephemeris tab into a fresh serialized World — `[ departure scaffold ] → [ frozen-plan ] → [ transfer-leg ] → [ arrival-boundary ] → [ arrival-leg ]` — with the departure carrier slot and the arrival-technology slot both left empty for the mission tab to fill in. Pure; the caller resolves every view-side number first and hands in plain data. |
+| `freeze.js`              | (see header — assembles a serialized World)                       | The "Start Mission Plan" contract: turns a plan authored on the Ephemeris tab into a fresh serialized World — `[ departure scaffold ] → [ frozen-plan ] → [ transfer-leg ] → [ arrival-leg ]` — with the departure carrier slot and the arrival-technology slot both left empty for the mission tab to fill in. Pure; the caller resolves every view-side number first and hands in plain data. |
 | `departure-estimate.js`  | (see header — estimates the departure leg's duration)              | How long the departure leg lasts, estimated from the frozen plan alone (before any departure tech is chosen): the required v∞, the hand-off epoch, and — for Earth — where the Moon is, via the dive-in/direct-out wedge rule. Feeds the read-only release anchor `freeze.js` bakes into the plan, the Ephemeris tab's Moon-phase widget, and the Departure slider's default span. |
 | `arrival-seam.js`        | `computeArrivalSeam`                                               | The Coast→Arrival seam derivation: a window `[closest approach − Δt, closest approach + ~1 day]` around the coast's own closest-approach event, `Δt = clamp(R_SOI/v∞, 2 d, 5 d)`. Nothing is stored — recomputed live from `transfer-leg`'s emitted events every recompute, so the window moves as the coast is tuned. No encounter at all: the window collapses to a point at the plan's committed arrival epoch. |
 
@@ -57,10 +57,10 @@ mode's reporting channel:
 - `packet` — anything a bare return accepts (packet / `null` / diagnostic; a
   diagnostic still fails the stage hard and drops the envelope's extras).
 - `warnings` — diagnostic-shaped objects that do **not** block downstream.
-  A boundary stage (`frozen-plan`, `arrival-boundary`) uses this to report
-  "the tech misses the plan by X" while still emitting its own output.
-  `stageId` is filled with the authoring stage's id when absent; set it
-  explicitly to aim a warning at another stage.
+  The boundary stage (`frozen-plan`) uses this to report "the tech misses
+  the plan by X" while still emitting its own output. `stageId` is filled
+  with the authoring stage's id when absent; set it explicitly to aim a
+  warning at another stage.
 - `events` — `[{ jd, label, ... }]` timeline entries (finite `jd`, non-empty
   `label`, extra fields pass through) for the phase sliders and the events
   bar.
@@ -73,8 +73,10 @@ refine that default:
 - **`boundary: true`** — the stage is called with `input === null` instead of
   going `blocked` when its upstream failed, so a compliance seam always
   reports what it's missing (a warning it authors itself) rather than the
-  whole downstream phase going grey with no explanation. `frozen-plan` and
-  `arrival-boundary` are the two boundary stages, one at each phase seam.
+  whole downstream phase going grey with no explanation. `frozen-plan` is the
+  one boundary stage, at the Departure→Coast seam; the Coast→Arrival seam has
+  none — the coast's own live readouts (the ship card) already show whether
+  the flight reaches the destination.
 - **`inputOptional: true`** — the stage is called with `input === null`
   instead of failing with `missing-input` when nothing arrives; used where a
   stage must keep flowing with an empty upstream slot (the frozen plan with no
@@ -180,12 +182,13 @@ resolvable span:
 - **Arrival** — the window around closest approach, sliding bodily as the
   coast is tuned; the playhead reads signed time relative to closest approach.
 
-Both phase seams are **compliance boundaries**, reached via the registry so
-the shell stays dynamically loaded rather than statically importing a module:
-`frozen-plan`'s `complianceFor` (Departure→Coast: v∞, epoch, aim) and
-`arrival-boundary`'s equivalent (Coast→Arrival: encounter, v∞, epoch) both
-feed the same `.mp-compliance-bar` — a chip plus compact per-row PLAN
-REQUIRES → TECH DELIVERS metrics, not phase-gated. A one-line events readout
+The Departure→Coast seam is a **compliance boundary**, reached via the
+registry so the shell stays dynamically loaded rather than statically
+importing a module: `frozen-plan`'s `complianceFor` (v∞, epoch, aim) feeds
+`.mp-compliance-bar` — a chip plus compact per-row PLAN REQUIRES → TECH
+DELIVERS metrics, not phase-gated. The Coast→Arrival seam has no such
+boundary or bar; the coast's own live readouts (the ship card) are what tell
+the user whether the flight reaches the destination. A one-line events readout
 (top-left of the main pane) shows the event at the clock's current position
 and opens a dropdown, fed by the envelope's `events` channel, to jump the
 clock to another one — filtered to `display !== false`, since some emitted
@@ -259,17 +262,6 @@ re-derived).
   destination reports its arrival miss distance through the warnings channel.
   Snap-to and Lambert targeting stay on the Ephemeris tab.
 
-**The Coast→Arrival boundary:**
-
-- **`modules/arrival-boundary/`** — the mirror of `frozen-plan` at the far
-  seam (`boundary: true`, no params, no save-format data — the commitment is
-  read through `frozen-plan`'s `arrivalCommitmentFor`). Three rows: encounter,
-  v∞, epoch, each a warning against the plan's arrival commitment. Unlike
-  `frozen-plan` it **measures but never substitutes** — the delivered
-  ship-state passes through untouched, because the arrival phase's job is
-  refining the approach the coast actually flew, and the commitment fixes no
-  approach direction to synthesize a stand-in from.
-
 **Arrival:**
 
 - **`modules/arrival-leg/`** — the coast, continued under the destination's
@@ -288,10 +280,9 @@ re-derived).
   (consumes the coast's delivered ship-state, emits nothing). Not modelled:
   catch-window phasing, the post-catch unload down the tether.
 - **`modules/arrival-approach.js`** — not a stage module, a shared helper
-  (`approachAt`, `interceptWarning`) imported by every arrival-side stage
-  (`arrival-boundary`, `arrival-leg`, `arrival-skyhook`) so the "does the
-  coast actually reach the destination, and how fast" measurement is one
-  computation, not several.
+  (`approachAt`, `interceptWarning`) imported by `arrival-skyhook` so the
+  "does the coast actually reach the destination, and how fast" measurement
+  is one computation, not several.
 
 ## ui/ — shell-local widgets
 
@@ -339,10 +330,10 @@ engine's diagnostic, not a data-layer validity condition.
 `node:test` suites covering World mutations/serialization, registry validation,
 the recompute/diagnostic/blocked/
 boundary/comply semantics, the carrier chain and integrated legs (departure
-and arrival, Earth-origin and generic-origin), the frozen-plan and
-arrival-boundary compliance rows, the phase-slider state functions, and the
-shipped preset plus every catalog entry end to end (deserialize, recompute,
-survive the share-link round trip). Run from the repo root:
+and arrival, Earth-origin and generic-origin), the frozen-plan compliance
+rows, the phase-slider state functions, and the shipped preset plus every
+catalog entry end to end (deserialize, recompute, survive the share-link
+round trip). Run from the repo root:
 
 ```
 node --test Website/MissionPlanner/core/tests/*.test.js

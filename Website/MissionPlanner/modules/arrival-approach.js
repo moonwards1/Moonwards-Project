@@ -1,10 +1,9 @@
 /* MissionPlanner/modules/arrival-approach — shared arrival-approach geometry.
  *
  * The "does the coast actually reach the destination, and how fast" measurement
- * every arrival stage needs: the compliance boundary (arrival-boundary), the
- * flyby leg (arrival-leg) and the arrival technologies (arrival-skyhook). Not a
- * stage module — a plain helper, imported by those stages so the intercept
- * check is ONE measurement, not several.
+ * the arrival-side stages need: the flyby leg (arrival-leg) and the arrival
+ * technologies (arrival-skyhook). Not a stage module — a plain helper, imported
+ * by those stages so the intercept check is ONE measurement, not several.
  *
  * Pure (no DOM, no THREE), Node-testable.
  */

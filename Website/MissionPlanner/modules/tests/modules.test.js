@@ -21,7 +21,6 @@ import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_
 	from "../transfer-leg/transfer-leg.js";
 import { findClosestApproach as findClosestApproachEvent,
 	computeArrivalSeam as computeArrivalSeamFor } from "../../core/arrival-seam.js";
-import arrivalBoundary, { arrivalComplianceFor } from "../arrival-boundary/arrival-boundary.js";
 import arrivalLeg, { legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
@@ -47,7 +46,6 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalBoundary);   // the Coast→Arrival compliance boundary
 	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
 	                             // flyby leg; arrival tech is empty by default
 	return reg;
@@ -440,10 +438,9 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();
-	assert.equal(stages.length, 7);
+	assert.equal(stages.length, 6);
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
-		 "arrival-boundary",   // the far seam's compliance check
 		 "arrival-leg"]);      // arrival tech empty by default — the mission ends at the flyby
 
 	var rMoon = engine.resultFor(stages[0].id);
@@ -465,20 +462,10 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	var arr = O.dateFromJulian(rLeg.output.data.jd);
 	assert.deepEqual([arr.Y, arr.Mo, arr.D], [2034, 1, 8]);
 
-	// the arrival flyby leg: the pass pinned at the delivered
-	// arrival epoch, hand-off a day before, end a day after; closest
-	// approach at half Ceres's SOI (the reference construction).
 	// the terminal stage: the arrival flyby leg, pinned at the
 	// delivered arrival epoch, hand-off a day before, end a day after; closest
 	// approach at half Ceres's SOI (the reference construction).
-	// the arrival boundary between them: the shipped coast flies the FROZEN
-	// plan, so it arrives exactly on the commitment — no deviation at all
-	var rBound = engine.resultFor(stages[5].id);
-	assert.equal(rBound.status, "ok");
-	assert.deepEqual(rBound.warnings, []);
-	assert.equal(rBound.output, rLeg.output);   // measured, never substituted
-
-	var rArr = engine.resultFor(stages[6].id);
+	var rArr = engine.resultFor(stages[5].id);
 	assert.equal(rArr.status, "ok");
 	// The arrival leg ends ARRIVAL_TAIL_DAYS past the measured pass — not past
 	// the coast's leg end, which merely happens to sit near it. The pass is the
@@ -494,7 +481,7 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	// body frame and finds the pass for itself. Two independent routes over
 	// different physics must land on the same event, or the phases are once
 	// again describing two different passes.
-	var aLeg = arrivalLegFor(res.world, stages[6].id);
+	var aLeg = arrivalLegFor(res.world, stages[5].id);
 	assert.ok(aLeg && aLeg.ok, "the arrival leg must have flown");
 	assert.equal(aLeg.caAtEdge, false, "the pass must not sit on a window edge");
 	var arrCaJd = aLeg.jd0 + aLeg.ca.t / DAY;
@@ -809,36 +796,3 @@ test("seam: an SOI entry is detected even when the leg ends just outside it", fu
 	assert.ok(Math.abs(ev.jd - pass.jd) * DAY < 1, "epochs disagree");
 });
 
-test("compliance: the arrival epoch row moves when waypoints move the pass", function () {
-	// The defect this replaced: the epoch row measured the coast's leg end,
-	// which is `jd0 + legDays` — fixed by construction — so tuning waypoints
-	// swung the actual arrival by most of a day while the compliance row read
-	// exactly zero deviation every time.
-	var seen = [-6, -3, 0, 3, 6].map(function (d) {
-		var res = deserializeWorld(defaultMission);
-		var world = res.world;
-		var coast = world.stages().filter(function (s) {
-			return s.moduleId === "transfer-leg"; })[0];
-		var wps = JSON.parse(JSON.stringify(coast.params.waypoints));
-		wps[0].burn.pro += d;
-		world.set({ stage: coast.id, params: { waypoints: wps, handoff: null } });
-		createEngine(world, makeRegistry());
-		var bnd = world.stages().filter(function (s) {
-			return s.moduleId === "arrival-boundary"; })[0];
-		var comp = arrivalComplianceFor(world, bnd.id);
-		var epoch = comp.rows.filter(function (r) { return r.key === "epoch"; })[0];
-		var enc = comp.rows.filter(function (r) { return r.key === "encounter"; })[0];
-		return { d: d, epoch: epoch.delta, miss: enc.delivered };
-	});
-	// Monotonic in the impulse, and actually moving — a fixed leg end gave the
-	// same number five times.
-	for (var i = 1; i < seen.length; i++) {
-		assert.ok(seen[i].epoch > seen[i - 1].epoch,
-			"epoch row not monotonic at " + seen[i].d + ": " + JSON.stringify(seen));
-	}
-	assert.ok(seen[seen.length - 1].epoch - seen[0].epoch > 0.5,
-		"the epoch row barely moved across the sweep — is it reading the leg end again?");
-	// The shipped mission flies its own frozen plan, so it sits on the epoch.
-	var onPlanRow = seen.filter(function (s) { return s.d === 0; })[0];
-	assert.ok(Math.abs(onPlanRow.epoch) < 0.01, "the unmodified preset should arrive on time");
-});

@@ -25,11 +25,11 @@
  * genuine mid-course corrections during Coast. By the same reasoning the ship's
  * heading and speed at the END of Coast is just the resultant of that starting
  * state plus whatever waypoint burns happened along the way, so nothing at the
- * Coast→Arrival seam needs a burn concept either — arrival-boundary passes the
- * emitted state through untouched, and arrival-leg simply continues this leg's
- * own flight from the seam (it reads the state there off
- * handoffLegFor/stateAtElapsed below, since the EMITTED state sits later, at
- * this leg's end, where arrival-boundary has to measure it).
+ * Coast→Arrival seam needs a burn concept either — the emitted state passes
+ * through untouched, and arrival-leg simply continues this leg's own flight
+ * from the seam (it reads the state there off handoffLegFor/stateAtElapsed
+ * below, since the EMITTED state sits later, at this leg's end, past where
+ * the arrival phase actually begins).
  *
  * THE LEG IS COMPUTED TWICE, and the two answers go to different places: the
  * live tuning is drawn and reported on the ship card, while the last committed

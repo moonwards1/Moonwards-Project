@@ -406,18 +406,6 @@ body {
 .mp-ship-timinghead { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
 .mp-ship-timinghead b { font-weight: 400; font-size: 12px; color: var(--dim); }
 .mp-ship-timingval { font-size: 12.5px; color: var(--bright); }
-.mp-ship-timingval.outside { color: var(--warn, #ffb45a); }
-/* The bar's two ends ARE the plan's hand-off window, so running off it and
-   failing the arrival epoch check are the same event. */
-.mp-ship-timingbar {
-	position: relative; height: 11px; border-radius: 6px;
-	border: 1px solid #7fd4f0; overflow: hidden;
-}
-.mp-ship-timingfill { position: absolute; top: 0; bottom: 0; background: #7fd4f0; }
-.mp-ship-timingzero {
-	position: absolute; top: 0; bottom: 0; left: 50%; width: 1px;
-	background: var(--bright);
-}
 
 /* floating body labels (Shared/sim/body-renderer.js label layer) */
 .mp-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
@@ -478,9 +466,6 @@ body {
 .mp-row { display: flex; justify-content: space-between; gap: 10px; padding: 2.5px 0; font-size: 13px; }
 .mp-row .mp-k { color: var(--dim); }
 .mp-row .mp-v { text-align: right; }
-/* A readout that is off its committed value (the arrival-boundary card): the
-   warning below it says what and why; this just marks which row it is. */
-.mp-row .mp-v.mp-bad { color: var(--warn); }
 
 .mp-wp-head {
 	display: flex; justify-content: space-between; align-items: center;

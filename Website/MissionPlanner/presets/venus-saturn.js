@@ -33,8 +33,7 @@
 //             ~1.5 days after the real periapsis), Saturn closest approach
 //             at ~15,734 km altitude 2040-03-06, asymptotic v∞ 7.00 km/s —
 //             but the commitment below is 9.75 km/s, the RAW relative speed
-//             at the leg's own (trimmed) end epoch, because that is what
-//             arrival-boundary actually compares (arrival-approach.js's
+//             at the leg's own (trimmed) end epoch (arrival-approach.js's
 //             approachAt) — still climbing out of Saturn's deep well at
 //             that point, not yet down to the asymptotic figure
 //
@@ -91,11 +90,6 @@ export var venusSaturnMission = {
 				legDays: 2197.5,
 				destination: "Saturn"
 			}
-		},
-		{
-			id: "stg-5",
-			moduleId: "arrival-boundary",
-			params: {}
 		},
 		{
 			// The arrival-tech slot is empty, like the shipped default's: this

@@ -141,34 +141,21 @@ test("bearingPoint: 0 degrees is straight up, 90 is to the right", () => {
 	assert.ok(Math.abs(down.y - 10) < 1e-9, JSON.stringify(down));
 });
 
-test("timingModel: the committed epoch sits at the centre of the bar", () => {
-	var m = timingModel(2463000, 2463000, 1);
+test("timingModel: zero delta at the reference epoch", () => {
+	var m = timingModel(2463000, 2463000);
 	assert.equal(m.hours, 0);
-	assert.equal(m.frac, 0.5);
-	assert.equal(m.outside, false);
 });
 
-test("timingModel: early reads left of centre, late reads right", () => {
-	var early = timingModel(2463000 - 0.5, 2463000, 1);
+test("timingModel: earlier reads negative, later reads positive", () => {
+	var early = timingModel(2463000 - 0.5, 2463000);
 	assert.ok(Math.abs(early.hours + 12) < 1e-9, "got " + early.hours);
-	assert.equal(early.frac, 0.25);
-	var late = timingModel(2463000 + 0.5, 2463000, 1);
-	assert.equal(late.frac, 0.75);
-	assert.equal(late.outside, false);
+	var late = timingModel(2463000 + 0.5, 2463000);
+	assert.ok(Math.abs(late.hours - 12) < 1e-9, "got " + late.hours);
 });
 
-test("timingModel: the bar's ends are the plan's window, and past them clamps", () => {
-	var out = timingModel(2463000 + 3, 2463000, 1);
-	assert.equal(out.frac, 1);
-	assert.equal(out.outside, true);
-	assert.ok(Math.abs(out.hours - 72) < 1e-9);
-	// A wider window puts the same delta back inside.
-	assert.equal(timingModel(2463000 + 3, 2463000, 5).outside, false);
-});
-
-test("timingModel: a missing epoch on either side is no bar at all", () => {
-	assert.equal(timingModel(NaN, 2463000, 1), null);
-	assert.equal(timingModel(2463000, null, 1), null);
+test("timingModel: a missing epoch on either side is no delta at all", () => {
+	assert.equal(timingModel(NaN, 2463000), null);
+	assert.equal(timingModel(2463000, null), null);
 });
 
 test("gizmoScale: a net-only layer scales on its net, not on NaN components", () => {

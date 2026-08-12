@@ -4,9 +4,7 @@
  * mission was created from the Ephemeris tab (core/freeze.js does the
  * capturing). The module sits AT THE DEPARTURE→COAST BOUNDARY — see
  * ARCHITECTURE.md's "Phases are chains; compliance is a boundary check, not
- * a reconciliation" for the general shape this is one instance of, and
- * modules/arrival-boundary for the mirror instance at the far seam — and
- * enforces the comply rule:
+ * a reconciliation" for the general shape — and enforces the comply rule:
  *
  *   THE PLAN IS AUTHORITATIVE. update() always emits the plan's own frozen
  *   departure ship-state downstream — never the tech's — so the coast
@@ -136,11 +134,11 @@ export function releaseAnchorFor(world) {
 
 // The mission's ARRIVAL COMMITMENT: the plan's { body, jd, vInf }, read the
 // same way releaseAnchorFor reads the release anchor — the plan owns both
-// mission endpoints, so arrival-boundary, the arrival technologies
-// (arrival-skyhook) and mission-view.js's seam fallback all read the catch
-// epoch through this one function rather than each groping through the stages
-// themselves. Returns null when the mission has no frozen plan or the plan
-// commits to no arrival body.
+// mission endpoints, so the arrival technologies (arrival-skyhook) and
+// mission-view.js's seam fallback and ship-card timing bar all read the
+// catch epoch through this one function rather than each groping through
+// the stages themselves. Returns null when the mission has no frozen plan
+// or the plan commits to no arrival body.
 export function arrivalCommitmentFor(world) {
 	if (!world || typeof world.stages !== "function") { return null; }
 	var stages = world.stages();
@@ -176,10 +174,9 @@ export function planWaypointsFor(world) {
 }
 
 // The mission's hand-off window half-width (days), read off the plan the same
-// way releaseAnchorFor and arrivalCommitmentFor read their fields. There is ONE
-// window per mission and both seams reach it here: this module's own epoch row
-// and arrival-boundary's, which checks the DELIVERED arrival epoch against the
-// same tolerance. DEFAULT_WINDOW_DAYS when the mission has no plan at all.
+// way releaseAnchorFor and arrivalCommitmentFor read their fields: this
+// module's own epoch row, and the ship card's Coast-phase timing bar.
+// DEFAULT_WINDOW_DAYS when the mission has no plan at all.
 export function handoffWindowFor(world) {
 	if (!world || typeof world.stages !== "function") { return DEFAULT_WINDOW_DAYS; }
 	var stages = world.stages();
@@ -402,9 +399,8 @@ export default {
 	// an upstream departure that is absent, half-built, or failing (a bound
 	// skyhook, a no-carrier chain, an impacting flight) must never blank the
 	// committed plan or the coast beyond it. The block chain terminates here;
-	// the shortfall becomes a compliance warning, not a block. The Coast→Arrival
-	// seam sets the same flag (modules/arrival-boundary), so both ends of a
-	// mission share one mechanism.
+	// the shortfall becomes a compliance warning, not a block. The
+	// Coast→Arrival seam has no equivalent boundary.
 	boundary: true,
 	rendersIn: ["helio"],
 	// No sidebar card: this stage's readouts and diagnostics all render in the

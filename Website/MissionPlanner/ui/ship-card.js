@@ -169,24 +169,17 @@ export function bearingPoint(angleDeg, radius) {
 	return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
 }
 
-// The timing bar's model: how far the delivered closest approach sits from the
-// epoch the plan committed to. `windowDays` is the plan's own hand-off
-// tolerance, so the bar's two ends ARE the limits arrival-boundary reports an
-// epoch mismatch outside of — running off the end of the bar and failing
-// compliance are the same event.
+// How far the live arrival sits from the coast's own last-committed arrival —
+// a plain delta, not a comparison to the frozen plan. Positive hours = later.
 //
-// Returns { hours, frac, outside } — frac is the marker's position with 0.5 at
-// the committed epoch, clamped to the bar; outside says the clamp bit.
-export function timingModel(deliveredJd, committedJd, windowDays) {
+// Returns { hours }, or null when either epoch is missing.
+export function timingModel(deliveredJd, refJd) {
 	// isFinite(null) is true — null coerces to 0 — so "is there an epoch at all?"
-	// needs the type check, not just finiteness. A plan with no committed arrival
-	// hands a null through here, and treating it as JD 0 would draw a bar
-	// measuring the delivered epoch against the year -4712.
-	if (!isNum(deliveredJd) || !isNum(committedJd)) { return null; }
-	var w = (isNum(windowDays) && windowDays > 0) ? windowDays : 1;
-	var deltaDays = deliveredJd - committedJd;
-	var raw = 0.5 + deltaDays / (2 * w);
-	return { hours: deltaDays * 24, frac: clamp01(raw), outside: raw < 0 || raw > 1 };
+	// needs the type check, not just finiteness. Nothing pending (or nothing
+	// reachable) hands a null through here, and treating it as JD 0 would
+	// measure the delivered epoch against the year -4712.
+	if (!isNum(deliveredJd) || !isNum(refJd)) { return null; }
+	return { hours: (deliveredJd - refJd) * 24 };
 }
 
 // =======================================================================
@@ -632,33 +625,20 @@ export function createShipCard(opts) {
 		});
 	}
 
-	// The timing bar: where closest approach falls against the epoch the plan
-	// committed to, on a scale whose two ends ARE the plan's hand-off window.
-	// model comes from timingModel; null clears.
+	// A plain readout (matching setChange's style, not a bar): how far the live
+	// arrival has moved from the coast's own last-committed arrival. model
+	// comes from timingModel; null clears.
 	function setTiming(model) {
 		timingEl.innerHTML = "";
 		if (!model) { return; }
 		var mag = Math.abs(model.hours);
-		var text = mag < 0.05 ? "on the committed epoch"
-			: (mag >= 48 ? (model.hours / 24).toFixed(1) + " d" : model.hours.toFixed(1) + " h");
+		var text = mag < 0.05 ? "unchanged"
+			: (mag >= 48 ? (model.hours / 24).toFixed(1) + " d" : model.hours.toFixed(1) + " h") +
+			  (model.hours > 0 ? " later" : " earlier");
 		var line = el("div", "mp-ship-timinghead");
 		line.appendChild(el("b", null, "Timing:"));
-		var val = el("span", "mp-ship-timingval", text);
-		if (model.outside) { val.classList.add("outside"); }
-		line.appendChild(val);
+		line.appendChild(el("span", "mp-ship-timingval", text));
 		timingEl.appendChild(line);
-
-		var bar = el("div", "mp-ship-timingbar");
-		// The fill runs from the committed epoch (the centre) out to where the
-		// pass actually falls, so early reads as a bar to the left and late as a
-		// bar to the right — the direction is legible without reading the number.
-		var fill = el("div", "mp-ship-timingfill");
-		var lo = Math.min(0.5, model.frac), hi = Math.max(0.5, model.frac);
-		fill.style.left = (lo * 100).toFixed(2) + "%";
-		fill.style.width = Math.max(0.6, (hi - lo) * 100).toFixed(2) + "%";
-		bar.appendChild(fill);
-		bar.appendChild(el("div", "mp-ship-timingzero"));
-		timingEl.appendChild(bar);
 	}
 
 	// The approach square: which side of the destination the ship passes on,

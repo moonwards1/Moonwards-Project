@@ -85,11 +85,6 @@ export var marsMercuryMission = {
 			}
 		},
 		{
-			id: "stg-5",
-			moduleId: "arrival-boundary",
-			params: {}
-		},
-		{
 			// The arrival-tech slot is empty, like the shipped default's: this
 			// mission is about the departure/arrival delta-v extremes, not a
 			// catch.

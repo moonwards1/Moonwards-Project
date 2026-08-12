@@ -13,9 +13,9 @@
  * estimate's error.
  *
  * That anchor is read back through frozen-plan.js's releaseAnchorFor(), and
- * consumed by frozen-plan.js's own epoch-compliance row, arrival-boundary.js's
- * mirror at the far seam, and — for every origin, not just Earth —
- * moon-platform.js, departure-leg.js and body-departure-leg.js, which stamp
+ * consumed by frozen-plan.js's own epoch-compliance row, and — for every
+ * origin, not just Earth — moon-platform.js, departure-leg.js and
+ * body-departure-leg.js, which stamp
  * their Release flight event at exactly this epoch. mission-view.js's
  * departureSpan reads it directly too: for a satellite-carrier origin
  * (Earth/Moon), it is the Departure slider's pinned LEFT edge outright, even

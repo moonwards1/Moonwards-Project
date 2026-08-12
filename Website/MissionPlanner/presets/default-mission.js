@@ -17,7 +17,7 @@
 // THE CHAIN:
 //
 //   moon-platform → orbital-skyhook → departure-leg → frozen-plan →
-//   transfer-leg → arrival-boundary → arrival-leg
+//   transfer-leg → arrival-leg
 //
 // moon-platform emits the chain base (the Moon's own ~1 km/s), the skyhook
 // appends its rotor, and the headless departure-leg evaluates the chain at the
@@ -55,7 +55,7 @@ export var defaultMission = {
 	kind: "moonwards-world",
 	version: 4,
 	jd: 2463218.546734214,   // the clock opens at the release anchor
-	nextStage: 8,
+	nextStage: 7,
 	stages: [
 		{
 			// The Moon card: read-only top of the departure stack.
@@ -111,19 +111,6 @@ export var defaultMission = {
 				legDays: 750,
 				destination: "Ceres"
 			}
-		},
-		{
-			// The Coast→Arrival compliance boundary: measures what the coast
-			// above delivers at Ceres against the commitment in stg-4, and
-			// reports the gap as warnings. Paramless, and placed at the seam —
-			// exactly where core/world.js's v3→v4 migration inserts it into
-			// older saves. Its id is stg-7 rather than stg-6 for the same reason
-			// that migration allocates a fresh number: stage ids are stable
-			// handles, never positions, so renumbering stg-6 would rewrite an id
-			// that already exists in saved missions.
-			id: "stg-7",
-			moduleId: "arrival-boundary",
-			params: {}
 		},
 		{
 			// The arrival flyby leg: the visible Coast→Arrival hand-off — starts

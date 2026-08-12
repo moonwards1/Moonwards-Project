@@ -27,11 +27,11 @@
 //             Mars closest approach at ~47,900 km (real integrated SOI
 //             encounter, not an estimate) with an asymptotic v∞ 4.669 km/s —
 //             but the commitment below is 4.857 km/s, the RAW relative
-//             speed AT THE LEG'S END, because that is what arrival-boundary
-//             actually compares (arrival-approach.js's approachAt, measured
-//             at the delivered state's own epoch, not the encounter event's
-//             asymptotic figure) — leg end sits close enough to periapsis
-//             that the two numbers genuinely differ. What arrival-skyhook's
+//             speed AT THE LEG'S END (arrival-approach.js's approachAt,
+//             measured at the delivered state's own epoch, not the
+//             encounter event's asymptotic figure) — leg end sits close
+//             enough to periapsis that the two numbers genuinely differ.
+//             What arrival-skyhook's
 //             default Mars geometry (CoM at Phobos's orbit) actually catches
 //             is a 2.24 km/s trim burn against the true periapsis speed.
 //
@@ -109,11 +109,6 @@ export var earthMarsReferenceMission = {
 				legDays: 260,
 				destination: "Mars"
 			}
-		},
-		{
-			id: "stg-6",
-			moduleId: "arrival-boundary",
-			params: {}
 		},
 		{
 			id: "stg-7",

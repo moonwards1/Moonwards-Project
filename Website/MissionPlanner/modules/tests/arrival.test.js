@@ -17,7 +17,6 @@ import moonPlatform from "../moon-platform/moon-platform.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
-import arrivalBoundary from "../arrival-boundary/arrival-boundary.js";
 import arrivalSkyhook, { computeCatch } from "../arrival-skyhook/arrival-skyhook.js";
 import arrivalLeg, { computeArrivalLeg, arrivalWindow, stateAtElapsed,
 	legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
@@ -302,7 +301,6 @@ function makeFrozenMission() {
 	reg.register(departureLeg);   // carrier slot) freeze now prepends
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalBoundary);   // the Coast→Arrival compliance boundary
 	reg.register(arrivalLeg);
 	reg.register(arrivalSkyhook);
 	return { world: res.world, engine: createEngine(res.world, reg) };
@@ -312,11 +310,9 @@ test("engine: a frozen mission flies its scaffold → coast → flyby leg; both 
 	var m = makeFrozenMission();   // origin Earth
 	var stages = m.world.stages();
 	// Earth scaffold (moon-platform + departure-leg, empty carrier) up front;
-	// the arrival boundary sits at the far seam; the flyby leg is terminal
-	// (empty arrival-tech slot).
+	// the flyby leg is terminal (empty arrival-tech slot).
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg",
-		 "arrival-boundary", "arrival-leg"]);
+		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
 	function stageId(m2) { return stages.find(function (s) { return s.moduleId === m2; }).id; }
 
 	// the empty carrier slot: departure-leg has no releasing carrier, but the
@@ -328,14 +324,6 @@ test("engine: a frozen mission flies its scaffold → coast → flyby leg; both 
 	// coast's own miss warning reports that
 	var rLeg = m.engine.resultFor(stageId("transfer-leg"));
 	assert.deepEqual(rLeg.warnings.map(function (w) { return w.code; }), ["misses-destination"]);
-
-	// the arrival boundary reports the same miss from the OTHER side
-	// of the seam — its own comparison against the plan's commitment — and
-	// passes the delivered state straight through rather than substituting one
-	var rBound = m.engine.resultFor(stageId("arrival-boundary"));
-	assert.equal(rBound.status, "ok");
-	assert.ok(rBound.warnings.some(function (w) { return w.code === "intercept-miss"; }));
-	assert.equal(rBound.output, m.engine.resultFor(stageId("transfer-leg")).output);
 
 	// the arrival leg continues that coast anyway (7.1: no constructed pass to
 	// fall back on), so the miss it flies is the miss the coast delivered. It is
@@ -355,11 +343,10 @@ test("engine: a frozen mission flies its scaffold → coast → flyby leg; both 
 		"continuous with the coast at the seam");
 });
 
-test("engine: a BROKEN coast doesn't blank the arrival seam — the boundary still reports", function () {
-	// This is the whole reason the stage carries `boundary: true` (recompute.js's boundary rule,
-	// reusing frozen-plan's mechanism): a coast that fails must not leave the
-	// arrival phase silently greyed out. Break the coast with a negative
-	// duration, the way a damaged save or a bad edit would.
+test("engine: a BROKEN coast blocks the arrival phase, standard propagation", function () {
+	// Without a compliance boundary at this seam, a failing coast blocks
+	// downstream the ordinary way (recompute.js's ok/diagnostic/blocked rule) —
+	// no special-cased reporting at the seam.
 	var m = makeFrozenMission();
 	var stages = m.world.stages();
 	function stageId(m2) { return stages.find(function (s) { return s.moduleId === m2; }).id; }
@@ -367,14 +354,7 @@ test("engine: a BROKEN coast doesn't blank the arrival seam — the boundary sti
 	m.world.set({ stage: stageId("transfer-leg"), params: { legDays: -1 } });
 
 	assert.equal(m.engine.resultFor(stageId("transfer-leg")).status, "diagnostic");
-	// the boundary is COMPUTED, not blocked, and says what the seam is missing
-	var rBound = m.engine.resultFor(stageId("arrival-boundary"));
-	assert.equal(rBound.status, "ok");
-	assert.equal(rBound.warnings.length, 1);
-	assert.equal(rBound.warnings[0].code, "no-coast-delivery");
-	assert.equal(rBound.output, null);   // nothing delivered, so nothing to pass on
-	// and downstream fails on its own honest terms rather than silently
-	assert.equal(m.engine.resultFor(stageId("arrival-leg")).status, "diagnostic");
+	assert.equal(m.engine.resultFor(stageId("arrival-leg")).status, "blocked");
 });
 
 test("engine: an arrival skyhook appended after the flyby leg computes clean", function () {
