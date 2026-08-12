@@ -1747,11 +1747,11 @@ export function createMissionView(opts) {
 		return (m == null || !isFinite(m)) ? "—" : Math.round(m / 1000).toLocaleString("en-US");
 	}
 
-	// The Coast card. Two headings compared — the leg end the Arrival phase is
-	// running on (dim) against the one the live waypoints produce (bright) —
-	// plus the pass those waypoints actually buy. Nothing here is graded: the
-	// chips say which way a pending edit moved each figure and Update hands the
-	// live coast over, but the card never decides that a pass is wrong.
+	// The Coast card. The gizmo and the change row both show the same thing —
+	// the speed change pending waypoint edits make at leg end — plus the pass
+	// those waypoints actually buy. Nothing here is graded: the chips say which
+	// way a pending edit moved each figure and Update hands the live coast
+	// over, but the card never decides that a pass is wrong.
 	function updateCoastCard() {
 		shipCard.setSubtitle("Coast");
 		shipCard.setComponents(null, null);
@@ -1774,7 +1774,6 @@ export function createMissionView(opts) {
 
 		if (!live || !live.ok || !committed.ok) {
 			shipCard.setGizmo(null);
-			shipCard.setReferenceFrame(null);
 			shipCard.setChange(null, null);
 			shipCard.setSpeed(null);
 			shipCard.setApproach(null);
@@ -1783,28 +1782,23 @@ export function createMissionView(opts) {
 			return;
 		}
 
-		// THE GIZMO IS THE ABSOLUTE LEG-END HEADING, not the change: it exists to
-		// put the correction in context, and the tiny angle between the two net
-		// lines is the point — a few parts in a thousand, which the focus zoom
-		// (setGizmo's `focus`) is there to open up. The reference triad carries no
-		// magnitudes and is drawn as an overlay, because resolving a leg-end
-		// velocity in its own burn frame gives (|v|, 0, 0) by construction and
-		// component lines would say nothing.
+		// THE GIZMO IS THE SPEED CHANGE: what the pending waypoint edits do to the
+		// leg-end velocity, split onto the committed leg end's own burn frame —
+		// the same axes and colours Departure's comparison gizmo uses, so an axis
+		// means the same thing on both cards. There is only one layer (nothing to
+		// compare the change against), and the net line draws in the bright/white
+		// net colour.
 		var end = committed.end, liveEnd = live.end;
-		shipCard.setGizmo({
-			needed: { net: O.vMag(end.v) / 1000 },
-			current: { net: O.vMag(liveEnd.v) / 1000 },
-			neededDir: unitOf(end.v),
-			currentDir: unitOf(liveEnd.v),
-			focus: "needed"
-		});
-		shipCard.setReferenceFrame(O.burnFrame(end.r, end.v), "corner");
-
-		// The change row: what the pending waypoint edits do to the leg-end
-		// velocity, split on the committed leg end's own burn frame so the
-		// figures and the gizmo's two lines are the same statement.
 		var dv = O.vSub(liveEnd.v, end.v);
 		var c = O.burnComponents(end.r, end.v, dv);
+		shipCard.setGizmo({
+			axes: O.burnFrame(end.r, end.v),
+			current: { pro: c.pro, rad: c.rad, nrm: c.nrm, net: O.vMag(dv) },
+			currentDir: unitOf(dv)
+		});
+
+		// The change row: the same figures the gizmo draws as lengths along the
+		// burn frame's axes, restated as numbers.
 		shipCard.setChange("Speed change", { pro: c.pro, rad: c.rad, nrm: c.nrm,
 			net: O.vMag(dv) }, "m/s");
 
@@ -1879,7 +1873,6 @@ export function createMissionView(opts) {
 		// switching phases can never leave a stale row behind.
 		if (workspace.phase === "coast") { updateCoastCard(); return; }
 		shipCard.setSubtitle("Departure");
-		shipCard.setReferenceFrame(null);
 		shipCard.setApproach(null);
 		shipCard.setTiming(null);
 		shipCard.setBPlane(null);

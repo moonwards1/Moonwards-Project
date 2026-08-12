@@ -1,32 +1,29 @@
 /* Mission Planner — the ship card.
  *
  * A floating card in the scene pane reporting on the ship the chevron marks:
- * a small three.js gizmo comparing two headings, a numeric summary, and a
- * speed bar — plus, for phases that ask for them, an approach readout, a
- * timing bar, a B-plane square and a commit button.
+ * a small three.js gizmo, a numeric summary, and a speed bar — plus, for
+ * phases that ask for them, an approach readout, a timing bar, a B-plane
+ * square and a commit button.
  *
- * Two layers, one comparison. Every visual in the card says the same thing
- * twice: dim = the reference, bright = what the mission currently delivers, and
- * the phase decides what the reference IS. Departure compares the v∞ the frozen
- * plan requires at hand-off against the v∞ the technology delivers, and "on
- * course" is when the two coincide. Coast compares the leg-end heading the
- * Arrival phase is running on against the heading the live waypoints produce,
- * and has no on-course state at all: many passes arrive successfully, so the
+ * Departure's gizmo is a comparison: dim = the v∞ the frozen plan requires at
+ * hand-off, bright = what the technology delivers, each split onto the burn
+ * frame's three axes plus a net line, and "on course" is when the two coincide.
+ * Coast's gizmo shows a single vector instead — the speed change pending
+ * waypoint edits make at leg end, split onto the committed leg end's own burn
+ * frame the same way, with the net line drawn in the bright/white net colour.
+ * Coast has no on-course state at all: many passes arrive successfully, so the
  * card reports the approach and offers Update rather than grading it.
  *
  * OPTIONAL PARTS. Every section is filled by a setter and renders nothing until
  * one is called, so a phase takes only the parts it needs and the card stays
  * phase-agnostic: setComponents/setOnCourse are Departure's, setApproach/
- * setTiming/setBPlane/setUpdate/setReferenceFrame are Coast's, and the gizmo and
- * speed bar serve both.
+ * setTiming/setBPlane/setUpdate are Coast's, and the gizmo and speed bar serve
+ * both.
  *
  * The gizmo is a scissored viewport off the shell's single shared renderer —
  * the same mechanism the floating panes use — so the card costs no extra WebGL
- * context. Its scene holds nothing but lines in a unit-normalized space, and at
- * rest the camera sits at a fixed radius with the content scaled into it. A
- * FOCUSED gizmo (setGizmo's `focus`) is the exception: it orbits a net line's
- * tip and flies in far closer, which means the near plane and the line widths
- * both have to track the camera — see render.
+ * context. Its scene holds nothing but lines in a unit-normalized space, and
+ * the camera sits at a fixed radius with the content scaled into it.
  *
  * The card is phase-agnostic. A caller fills it through the setters and
  * supplies the gizmo's vectors; what those mean is the phase adapter's
@@ -207,19 +204,8 @@ function chg(x) {
 // which is exactly when the card is being read most closely.
 var LINE_RADIUS = { dim: 0.032, bright: 0.014 };
 
-// The reference triad (setReferenceFrame): fixed geometry in its OWN camera's
-// units, never scaled by the content or the main camera's zoom. The short stub
-// down each negative direction marks the axis as two-sided without letting the
-// triad read as six equal spokes.
-var FRAME_AXIS_LEN = 0.9;
-var FRAME_AXIS_RADIUS = 0.022;
-var FRAME_OPACITY = 0.5;
-// The gizmo camera's resting distance. Doubles as the reference for the
-// focused mode's constant-on-screen line width, so at rest the lines are drawn
-// at exactly their nominal LINE_RADIUS and nothing about the Departure card
-// changes.
+// The gizmo camera's resting distance.
 var GIZMO_REF_RADIUS = 3.4;
-var FRAME_CAM_RADIUS = GIZMO_REF_RADIUS;
 
 // A unit cylinder (radius 1, height 1, centred on the origin, running up +Y)
 // that every line scales and orients. Shared across all instances and never
@@ -245,11 +231,6 @@ function makeLine(dir, len, colorHex, radius) {
 	m.scale.set(radius, len, radius);
 	m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
 	m.position.copy(d).multiplyScalar(len / 2);
-	// Kept so a focused gizmo can hold the line's WIDTH constant on screen while
-	// it flies in (see render): thickness fixed in world units would magnify with
-	// everything else, and two lines a few parts in a thousand apart could never
-	// separate however far you zoomed.
-	m.userData.baseRadius = radius;
 	return m;
 }
 
@@ -339,39 +320,17 @@ export function createShipCard(opts) {
 	var camera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
 	// Radius is fixed and the content is normalized into it, so the gizmo needs
 	// no per-frame rescaling; the zoom range only exists for the free-rotate
-	// mode's wheel — and, with a focus point set, for flying in on the tips.
+	// mode's wheel.
 	var cam = createCam(GIZMO_REF_RADIUS, Math.PI * 0.25, Math.PI * 0.42, new THREE.Vector3(0, 0, 0));
 	// The two layers live in their own groups so render can draw them as
 	// separate depth passes.
 	var neededGroup = new THREE.Group();
 	var currentGroup = new THREE.Group();
-	// The reference triad, when a caller supplies one. It is NOT part of the
-	// compared content: it renders in its own pass through its own camera, so it
-	// keeps its size and its place on screen no matter where the main camera has
-	// flown. See setReferenceFrame.
-	var frameGroup = new THREE.Group();
 	scene.add(neededGroup);
 	scene.add(currentGroup);
-	scene.add(frameGroup);
-	var frameCamera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
-	var frameCam = createCam(GIZMO_REF_RADIUS, cam.theta, cam.phi, new THREE.Vector3(0, 0, 0));
-
-	// The point the camera orbits. null (Departure) leaves it at the origin,
-	// where both layers' lines start. The Coast card sets it to the tip of the
-	// committed net line instead: there the two layers differ by a few parts in
-	// a thousand of their own length, and the difference lives at the TIPS — an
-	// origin-centred zoom magnifies the shared tail and pushes the tips off
-	// screen, which is exactly backwards for reading it.
-	var focusPoint = null;
-	var framePlacement = "centre";
 
 	var unbindCamera = bindCameraControls(gizmoEl, function () {
-		// Flying in on the tips needs a far closer approach than looking at the
-		// whole vector does, so the near clamp opens up once a focus is set.
-		// Resolving two headings a few parts in a thousand apart means closing to
-		// a radius of that order; the near plane and the line widths follow the
-		// camera in (see render) so the approach stays legible all the way down.
-		return { cam: cam, camera: camera, zoomMin: focusPoint ? 1e-4 : 1.2, zoomMax: 12 };
+		return { cam: cam, camera: camera, zoomMin: 1.2, zoomMax: 12 };
 	});
 
 	// MATERIALS ONLY. Every line shares the module-level cylinder geometry, so
@@ -389,24 +348,21 @@ export function createShipCard(opts) {
 	function clearGroup() { clearGroups([neededGroup, currentGroup]); }
 
 	// spec: { axes: { pro, rad, nrm } unit vectors — OMIT for a net-only gizmo,
-	//         needed, current: { pro, rad, nrm, net } km/s (either may be null),
-	//         neededDir, currentDir: unit vectors for the net lines,
-	//         focus: "needed" | "current" | null — orbit the named layer's net
-	//                tip instead of the origin (see focusPoint) }
+	//         needed, current: { pro, rad, nrm, net } (either may be null),
+	//         neededDir, currentDir: unit vectors for the net lines }
 	// Passing null clears the gizmo.
 	//
-	// With `axes` the card draws the Departure comparison: each layer's three
-	// components plus its net. Without, only the net lines are drawn — the Coast
-	// card's picture, where the components would be meaningless (a leg-end
-	// velocity resolved in its own burn frame is (|v|, 0, 0) by construction)
-	// and the frame is supplied separately through setReferenceFrame.
+	// Departure passes both layers with `axes`, drawing the needed/current
+	// comparison: each layer's three components plus its net. Coast passes only
+	// `current` with `axes` set to the leg end's own burn frame — the speed
+	// change pending waypoint edits make, split onto that frame, with no
+	// "needed" layer to compare against.
 	function setGizmo(spec) {
 		clearGroup();
-		focusPoint = null;
 		if (!spec) { return; }
 		var scale = gizmoScale(spec.needed, spec.current);
-		[["dim", spec.needed, spec.neededDir, neededGroup, "needed"],
-			["bright", spec.current, spec.currentDir, currentGroup, "current"]]
+		[["dim", spec.needed, spec.neededDir, neededGroup],
+			["bright", spec.current, spec.currentDir, currentGroup]]
 			.forEach(function (layer) {
 				var colors = SHIP_COLORS[layer[0]];
 				var comp = layer[1];
@@ -429,46 +385,8 @@ export function createShipCard(opts) {
 				if (netDir && isFinite(comp.net)) {
 					var n = makeLine(netDir, comp.net / scale, colors.net, radius);
 					if (n) { g.add(n); }
-					if (spec.focus === layer[4]) {
-						focusPoint = new THREE.Vector3(netDir[0], netDir[1], netDir[2])
-							.multiplyScalar(comp.net / scale);
-					}
 				}
 			});
-	}
-
-	// The orientation reference: three fixed-length axes in the burn frame's own
-	// directions, drawn as an OVERLAY. It carries no magnitudes — its whole job
-	// is to say which way prograde, radial and normal point for the net lines
-	// being compared, in the same three colours the waypoint gizmos out in the
-	// scene use. axes: { pro, rad, nrm } unit vectors, or null to clear.
-	//
-	// Rendered through its own camera at a fixed radius (see render's third
-	// pass), so zooming the main camera in on the net tips never carries the
-	// reference off screen or scales it away. Semi-transparent and depth-free so
-	// it reads over the lines rather than fighting them for space.
-	// `placement` is "centre" (default — the triad sits over the content, at the
-	// same screen point the focused net tip does) or "corner" (a small nav
-	// widget tucked into the gizmo's bottom-left, clear of the lines).
-	function setReferenceFrame(axes, placement) {
-		clearGroups([frameGroup]);
-		framePlacement = placement === "corner" ? "corner" : "centre";
-		if (!axes) { return; }
-		AXIS_KEYS.forEach(function (k) {
-			var axis = axes[k];
-			if (!axis) { return; }
-			[1, -1].forEach(function (sign) {
-				var line = makeLine([axis[0] * sign, axis[1] * sign, axis[2] * sign],
-					sign > 0 ? FRAME_AXIS_LEN : FRAME_AXIS_LEN * 0.35,
-					SHIP_COLORS.bright[k], FRAME_AXIS_RADIUS);
-				if (!line) { return; }
-				line.material.transparent = true;
-				line.material.opacity = sign > 0 ? FRAME_OPACITY : FRAME_OPACITY * 0.5;
-				line.material.depthTest = false;
-				line.material.depthWrite = false;
-				frameGroup.add(line);
-			});
-		});
 	}
 
 	// ---- readouts ---------------------------------------------------------
@@ -703,27 +621,7 @@ export function createShipCard(opts) {
 			var main = getMainCam();
 			if (main) { cam.theta = main.theta; cam.phi = main.phi; }
 		}
-		// The focus point owns the camera target while it is set: this gizmo is a
-		// comparison instrument, not a scene to wander around in, and letting a
-		// pan drift the target would strand the zoom somewhere with nothing in
-		// it. Rotate and zoom still work normally.
-		if (focusPoint) { cam.target.copy(focusPoint); }
 		camera.aspect = w / h;
-		if (focusPoint) {
-			// Flying in on the tips runs the camera far inside the fixed 0.01 near
-			// plane, which would clip the whole scene away; and the lines have to
-			// stay the same WIDTH on screen as they close in, or their thickness
-			// magnifies with the gap and hides the very difference being examined.
-			camera.near = Math.max(1e-7, cam.radius * 0.002);
-			camera.far = cam.radius * 200 + 10;
-			var widthScale = cam.radius / GIZMO_REF_RADIUS;
-			[neededGroup, currentGroup].forEach(function (g) {
-				g.children.forEach(function (child) {
-					var base = child.userData && child.userData.baseRadius;
-					if (base) { child.scale.x = child.scale.z = base * widthScale; }
-				});
-			});
-		}
 		camera.updateProjectionMatrix();
 		updateCamera(camera, cam);
 		var x = r.left - canvasRect.left;
@@ -731,15 +629,14 @@ export function createShipCard(opts) {
 		renderer.setViewport(x, y, w, h);
 		renderer.setScissor(x, y, w, h);
 
-		// UP TO THREE PASSES, so the thin current lines are always visible over
-		// the fat needed ones without either layer losing its own depth sorting.
-		// Pass one draws needed (and, having a Color background, clears colour
-		// and depth inside the scissor). Pass two clears depth ONLY, then draws
-		// current on a clean slate, so it can never be hidden by a needed line in
-		// front. Pass three does the same for the reference frame, through its
-		// OWN camera. scene.background must be nulled for passes two and three: a
-		// Color background makes three.js force a full clear regardless of
-		// autoClear, which would wipe the pass before.
+		// TWO PASSES, so the thin current lines are always visible over the fat
+		// needed ones without either layer losing its own depth sorting. Pass one
+		// draws needed (and, having a Color background, clears colour and depth
+		// inside the scissor). Pass two clears depth ONLY, then draws current on a
+		// clean slate, so it can never be hidden by a needed line in front.
+		// scene.background must be nulled for pass two: a Color background makes
+		// three.js force a full clear regardless of autoClear, which would wipe
+		// pass one.
 		var auto = renderer.autoClear;
 		function overlayPass(cameraToUse) {
 			scene.background = null;
@@ -750,7 +647,6 @@ export function createShipCard(opts) {
 			scene.background = bgColor;
 		}
 
-		frameGroup.visible = false;
 		currentGroup.visible = false;
 		renderer.render(scene, camera);
 		if (currentGroup.children.length) {
@@ -761,44 +657,11 @@ export function createShipCard(opts) {
 		} else {
 			currentGroup.visible = true;
 		}
-		if (frameGroup.children.length) {
-			// Fixed radius on the frame camera, sharing only the ORIENTATION — so
-			// the triad turns with the view (and with the main pane, when Align to
-			// view is on) while holding its size and its place on screen.
-			frameGroup.visible = true;
-			neededGroup.visible = false;
-			currentGroup.visible = false;
-			frameCam.theta = cam.theta;
-			frameCam.phi = cam.phi;
-			frameCam.radius = FRAME_CAM_RADIUS;
-			// "corner" narrows the pass to a small square in the bottom-left,
-			// clear of the lines; "centre" uses the whole rect, putting the triad
-			// over the content. The viewport is restored either way, since the
-			// shell's loop renders other floats off the same renderer.
-			var fw = w, fh = h, fx = x, fy = y;
-			if (framePlacement === "corner") {
-				fw = fh = Math.max(36, Math.min(w, h) * 0.34);
-				fx = x + 4;
-				fy = y + 4;
-				renderer.setViewport(fx, fy, fw, fh);
-				renderer.setScissor(fx, fy, fw, fh);
-			}
-			frameCamera.aspect = fw / fh;
-			frameCamera.updateProjectionMatrix();
-			updateCamera(frameCamera, frameCam);
-			overlayPass(frameCamera);
-			if (framePlacement === "corner") {
-				renderer.setViewport(x, y, w, h);
-				renderer.setScissor(x, y, w, h);
-			}
-			neededGroup.visible = true;
-			currentGroup.visible = true;
-		}
 	}
 
 	function dispose() {
 		unbindCamera();
-		clearGroups([neededGroup, currentGroup, frameGroup]);
+		clearGroups([neededGroup, currentGroup]);
 		root.remove();
 	}
 
@@ -807,7 +670,6 @@ export function createShipCard(opts) {
 		gizmoEl: gizmoEl,
 		setOnCourse: setOnCourse,
 		setGizmo: setGizmo,
-		setReferenceFrame: setReferenceFrame,
 		setComponents: setComponents,
 		setChange: setChange,
 		setSpeed: setSpeed,
