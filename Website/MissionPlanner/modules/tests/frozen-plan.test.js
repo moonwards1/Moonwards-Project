@@ -229,7 +229,7 @@ test("comply: the shipped preset's skyhook alone falls short of the full departu
 	assert.equal(rPlan.output.data.jd, JD);
 	// plan endpoints on the events channel (the coast slider's future span)
 	assert.equal(rPlan.events.length, 2);
-	assert.match(rPlan.events[0].label, /Plan departure/);
+	assert.match(rPlan.events[0].label, /Exit origin SOI/);
 	assert.match(rPlan.events[1].label, /Plan arrival — Ceres/);
 	assert.equal(rPlan.events[1].jd, JD + 750);
 

@@ -1228,13 +1228,13 @@ export function createMissionView(opts) {
 	// plan Δv — planSummary).
 	//
 	// Layout: [compliance met/unmet chip] then the plan's figures in a fixed
-	// order — v∞ out, v∞ in, plan Δv, departure, flight time, arrival. v∞
+	// order — v∞ out, v∞ in, plan Δv, Exit origin SOI, flight time, arrival. v∞
 	// in/out are named from the SHIP's point of view: "out" is the ship
 	// departing (leaving the origin's SOI — the required departure v∞), "in" is
 	// the ship arriving (reaching the destination's SOI — the arrival
 	// commitment); see planSummary. The demand figures (v∞ out, v∞ in, plan Δv)
 	// are amber while compliance is unmet — they are what no technology is
-	// delivering yet — and green once met; departure/flight time/arrival are
+	// delivering yet — and green once met; Exit origin SOI/flight time/arrival are
 	// plain facts already fixed by the chosen timing, never coloured. The aim
 	// deviation is not shown here; its warning still flows through the envelope
 	// to the departure stage's own card.
@@ -1254,7 +1254,8 @@ export function createMissionView(opts) {
 		var m = document.createElement("span");
 		m.className = "mp-cbar-metric" + (cls ? " " + cls : "");
 		var b = document.createElement("b"); b.textContent = label; m.appendChild(b);
-		m.appendChild(document.createTextNode(text));
+		var v = document.createElement("span");
+		v.className = "mp-cbar-value"; v.textContent = text; m.appendChild(v);
 		if (title) { m.title = title; }
 		complianceBarEl.appendChild(m);
 	}
@@ -1315,7 +1316,7 @@ export function createMissionView(opts) {
 		}
 
 		var rE = rowsByKey.epoch;
-		appendCbarMetric("departure",
+		appendCbarMetric("Exit origin SOI",
 			(rE && !rE.ok) ? cbarDate(rE.required) + " → " + cbarDate(rE.delivered) : cbarDate(comp.required.jd),
 			null, (rE && !rE.ok) ? fixTitleFor("epoch") : null);
 

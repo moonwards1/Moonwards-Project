@@ -430,7 +430,7 @@ export default {
 		// The plan's endpoint dates — the span mission-view.js's coastSpan reads
 		// for the Coast slider.
 		var events = [{ jd: dep.jd,
-		                label: "Plan departure — v∞ " + (comp.required.vInf / 1000).toFixed(2) + " km/s" }];
+		                label: "Exit origin SOI — v∞ " + (comp.required.vInf / 1000).toFixed(2) + " km/s" }];
 		var arr = params.arrival || {};
 		if (arr.body && isFinite(arr.jd)) {
 			events.push({ jd: arr.jd,
