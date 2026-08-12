@@ -290,7 +290,12 @@ export function createCoastSlider(container, opts) {
 // header for the full rule.
 //
 // Either way the caller hands over two edge jds plus event marks; the widget is
-// a plain linear scrubber over them, identical in feel to the Coast slider.
+// a plain linear scrubber over them, identical in feel to the Coast slider —
+// except the caller also hands over the release event's own jd, which under
+// ANCHORED-END/FLOATING-START can land short of the track's geometric left
+// edge (nothing happened before release). createDepartureSlider floors
+// scrubbing at that jd rather than the track's edge, and it — not the edge —
+// is the "0 d" zero point for the playhead readout.
 // Everything about which times mean what lives in mission-view.js.
 
 // Pure: even time ticks across [start, end] for the linear scale, plus the
@@ -300,6 +305,7 @@ export function departureSliderState(opts) {
 	var start = opts.start, end = opts.end, jd = opts.jd;
 	var ticks = opts.ticks || 5;
 	var stamp = opts.stamp;
+	var releaseJd = isFinite(opts.releaseJd) ? opts.releaseJd : start;
 	if (!(isFinite(start) && isFinite(end) && end > start)) { return { empty: true }; }
 	var span = end - start;
 
@@ -323,9 +329,12 @@ export function departureSliderState(opts) {
 	var playheadFrac = pinnedAt === "start" ? 0
 		: pinnedAt === "end" ? 1
 		: (jd - start) / span;
-	// `start` IS launch/departure itself here, so elapsedStamp needs no separate
-	// epoch — "0 d" reads naturally as "same day as launch".
-	var stampVal = elapsedStamp(jd, start);
+	// The zero point is the actual release event, not the track's geometric
+	// left edge — the two coincide under PINNED-START but can differ under
+	// ANCHORED-END/FLOATING-START (see mission-view.js's departureSpan), where
+	// the track can run a little short of release. "0 d" always means "at
+	// release", wherever its mark sits on the track.
+	var stampVal = elapsedStamp(jd, releaseJd);
 	return { empty: false, segments: segments, marks: marks,
 	         playheadFrac: playheadFrac, pinnedAt: pinnedAt,
 	         playheadDays: stampVal.days, playheadTime: stampVal.time };
@@ -340,24 +349,34 @@ export function createDepartureSlider(container, opts) {
 	var ticks = opts.ticks;
 	var emptyMsg = opts.emptyMsg ||
 		"No departure span yet — the release needs to resolve, and a destination set.";
-	var span = null;   // { start, end } — null while empty
+	var span = null;       // { start, end } — null while empty
+	var releaseJd = NaN;   // the scrub floor — see departureSliderState's stamp epoch
 
 	var slider = createSegmentedSlider(container, {
+		// Scrubbing can't reach a time before release even when the track's
+		// geometric left edge sits earlier than that (ANCHORED-END/FLOATING-START
+		// — see mission-view.js's departureSpan): nothing happened before release,
+		// so there's nothing to scrub to there.
 		onScrub: function (fraction) {
-			if (span) { onSetJd(span.start + fraction * (span.end - span.start)); }
+			if (!span) { return; }
+			var jd = span.start + fraction * (span.end - span.start);
+			if (isFinite(releaseJd) && jd < releaseJd) { jd = releaseJd; }
+			onSetJd(jd);
 		}
 	});
 
 	function update(state) {
 		var s = departureSliderState({ start: state.start, end: state.end, jd: state.jd,
-			ticks: ticks, stamp: stamp, marks: state.marks });
+			ticks: ticks, stamp: stamp, marks: state.marks, releaseJd: state.releaseJd });
 		if (s.empty) {
 			span = null;
+			releaseJd = NaN;
 			slider.setMarks([]);
 			slider.setEmpty(emptyMsg);
 			return;
 		}
 		span = { start: state.start, end: state.end };
+		releaseJd = isFinite(state.releaseJd) ? state.releaseJd : state.start;
 		slider.setSegments(s.segments);
 		slider.setMarks(s.marks);
 		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadDays, s.playheadTime);

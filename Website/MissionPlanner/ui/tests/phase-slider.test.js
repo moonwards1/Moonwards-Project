@@ -141,6 +141,23 @@ test("departureSliderState: the clock outside the span pins the playhead", () =>
 	assert.equal(departureSliderState({ start: 0, end: 12, jd: 12, stamp }).pinnedAt, null);
 });
 
+test("departureSliderState: the '0 d' zero point is releaseJd, not the track's start", () => {
+	// ANCHORED-END/FLOATING-START can leave the track's geometric start short
+	// of the actual release event (mission-view.js's departureSpan) — the
+	// stamp still reads "0 d" exactly at release, wherever on the track it is.
+	var s = departureSliderState({ start: 0, end: 12, jd: 3, releaseJd: 3, stamp });
+	assert.equal(s.playheadDays, "0 d");
+	assert.equal(s.playheadTime, "00:00");
+	// one day after release, two days after the track's own start
+	var s2 = departureSliderState({ start: 0, end: 12, jd: 4, releaseJd: 3, stamp });
+	assert.equal(s2.playheadDays, "1 d");
+});
+
+test("departureSliderState: without releaseJd, the stamp falls back to start (old behavior)", () => {
+	var s = departureSliderState({ start: 0, end: 12, jd: 6, stamp });
+	assert.equal(s.playheadDays, "6 d");
+});
+
 // ---- the Arrival slider ----------------------------------------------------
 // The seam window from core/arrival-seam.js: [ca - Δt, ca + 1 day]. The
 // canonical case below is a 3-day Δt, so ca sits at 3/4 of a 4-day span.

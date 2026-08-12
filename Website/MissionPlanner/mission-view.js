@@ -1586,6 +1586,14 @@ export function createMissionView(opts) {
 	// an edge is simply not drawn twice: departureSliderState only marks
 	// interior fractions, so a mark sitting exactly at an edge drops out on its
 	// own, the same rule every other slider mark follows.
+	//
+	// The returned `releaseJd` is the actual release event's own jd, which the
+	// ANCHORED-END/FLOATING-START procedure can leave short of `start` (the
+	// track still runs its full computed length, but nothing before release
+	// happened). createDepartureSlider uses it as the scrub floor — dragging
+	// can't reach a time before release even if the track geometrically starts
+	// earlier — and as the "0 d" zero point for the playhead readout, so T+0
+	// always lands on release itself rather than on the track's left edge.
 	function departureSpan(results) {
 		var evs = departureEvents(results);
 		var releaseJd = evs.length ? evs[0].jd : releaseAnchorForMission();
@@ -1612,7 +1620,8 @@ export function createMissionView(opts) {
 		}
 
 		if (!(isFinite(start) && isFinite(end) && end > start)) { return null; }
-		return { start: start, end: end, marks: marks, defaulted: !(evs.length && isFinite(soiExitJd)) };
+		return { start: start, end: end, marks: marks, defaulted: !(evs.length && isFinite(soiExitJd)),
+		         releaseJd: releaseJd };
 	}
 
 	// The default span length: SOI_radius / v∞ — the time to cross the origin
@@ -1944,7 +1953,8 @@ export function createMissionView(opts) {
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
 		var dep = departureSpan(results);
 		depSlider.update(dep
-			? { start: dep.start, end: dep.end, jd: world.jd, marks: dep.marks, defaulted: dep.defaulted }
+			? { start: dep.start, end: dep.end, jd: world.jd, marks: dep.marks, defaulted: dep.defaulted,
+			    releaseJd: dep.releaseJd }
 			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
 		var arr = arrivalSpan(results);
 		arrSlider.update(arr
