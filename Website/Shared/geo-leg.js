@@ -287,22 +287,40 @@ export function bodyLabelForGM(GM) {
 // expose — inclination is purely geometric (h = r × v), so any positive GM
 // gives the same planeChange.
 //
-// `vBefore` may be the zero vector (nothing was moving yet — a payload a
-// carrier rotor spins up from rest, rather than a burn nudging an existing
-// trajectory): there is then no BEFORE orbital plane to compare against, so
-// planeChange reads 0 rather than the acos(0/0) NaN a literal zero-angular-
-// -momentum state would otherwise produce.
+// Either side's state may carry no orbital plane at all — zero velocity (a
+// payload a carrier element spins/pushes up from rest, rather than a burn
+// nudging an existing trajectory) or zero position (an impulse element
+// evaluated in isolation, with nothing upstream to place it in space — see
+// platform-roles.js). Angular momentum h = r × v is then zero or undefined,
+// which is the acos(0/0) NaN elementsFromState().i would otherwise produce;
+// inclinationOrNull reports "no plane" (null) instead.
+function inclinationOrNull(GM, r, v) {
+	if (O.vMag(v) < 1e-6 || O.vMag(O.vCross(r, v)) < 1e-6) { return null; }
+	return O.elementsFromState(GM, r, v).i;
+}
+
+// planeChange with no BEFORE plane (iBefore null — an isolated element with
+// nothing before it, not a burn on a real trajectory) is not "unknown, so
+// read 0": it is iAfter measured against an IMPLICIT zero-inclination
+// reference, i.e. the ecliptic itself — exactly what platform-roles.js's
+// straddling readout box wants for a departure/arrival element evaluated on
+// its own (see makeCarrier's own comment): a skyhook's rotor is confined to
+// the ecliptic plane by construction (skyhook.js's rotorFor), so it reads a
+// true, non-placeholder 0°; a future rotor riding a body's TILTED equatorial
+// plane (a space elevator) or a linear track along its rotating surface (a
+// mass driver) would read that body's real axial tilt here instead. Only a
+// genuinely undefined AFTER (iAfter null — no position of its own to place
+// it in space at all) falls back to a plain 0.
 export function stateDeltaEffect(GM, rBefore, vBefore, rAfter, vAfter) {
 	var dSpeed = O.vMag(vAfter) - O.vMag(vBefore);
-	var hasBefore = O.vMag(vBefore) > 1e-6;
-	var iBefore = hasBefore ? O.elementsFromState(GM, rBefore, vBefore).i : null;
-	var iAfter = O.elementsFromState(GM, rAfter, vAfter).i;
+	var iBefore = inclinationOrNull(GM, rBefore, vBefore);
+	var iAfter = inclinationOrNull(GM, rAfter, vAfter);
 	return {
 		vAfter: vAfter,
 		dv: O.vSub(vAfter, vBefore),
 		dSpeedVec: O.vScale(O.vUnit(vAfter), dSpeed),      // along local prograde; reversed if dSpeed<0
 		burnDv: O.vMag(O.vSub(vAfter, vBefore)) / 1000,
-		planeChange: hasBefore ? (iAfter - iBefore) * 180 / Math.PI : 0,
+		planeChange: iAfter === null ? 0 : (iAfter - (iBefore === null ? 0 : iBefore)) * 180 / Math.PI,
 		progradeDv: dSpeed / 1000
 	};
 }

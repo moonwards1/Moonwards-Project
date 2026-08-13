@@ -106,6 +106,19 @@ function addRotor(parent, rotor, jd) {
 	};
 }
 
+// One element's own contribution, added onto `state` (whatever precedes it —
+// a real parent state from evaluateChain's walk, or a bare { r:[0,0,0],
+// v:[0,0,0] } to isolate the element in ITS OWN terms, decoupled from
+// whatever it rides on — see platform-roles.js's straddling readout box,
+// which wants exactly that isolation rather than a "net" figure blended with
+// the carrier underneath it). Exported so both evaluateChain (below) and that
+// isolation case share the one rotor/impulse formula.
+export function applyElement(state, element, jd) {
+	if (!element) { return state; }
+	if (element.kind === "impulse") { return { r: state.r, v: O.vAdd(state.v, element.dv) }; }
+	return addRotor(state, element, jd);
+}
+
 // Evaluate a chain at Julian date jd: the base body's own state in the frame
 // it anchors, plus every rotor's circular contribution and every impulse's
 // Δv. Returns { r, v } in that frame, metres and m/s. Impulses move the
@@ -113,12 +126,8 @@ function addRotor(parent, rotor, jd) {
 // rotor holds the launcher is what places it in space.
 export function evaluateChain(chain, jd) {
 	var state = baseState(chain.base, jd);
-	(chain.rotors || []).forEach(function (rotor) {
-		state = addRotor(state, rotor, jd);
-	});
-	(chain.impulses || []).forEach(function (impulse) {
-		state = { r: state.r, v: O.vAdd(state.v, impulse.dv) };
-	});
+	(chain.rotors || []).forEach(function (rotor) { state = applyElement(state, rotor, jd); });
+	(chain.impulses || []).forEach(function (impulse) { state = applyElement(state, impulse, jd); });
 	return state;
 }
 

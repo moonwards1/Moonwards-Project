@@ -28,7 +28,7 @@
 
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
-import { emptyChain, appendElement, evaluateChain } from "../../../Shared/kinematic-chain.js";
+import { emptyChain, appendElement, applyElement, evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseAnchorFor, arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
@@ -41,6 +41,46 @@ import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
 function assertSpec(spec) {
 	var v = validatePlatformSpec(spec);
 	if (!v.ok) { throw new Error("platform-roles: " + (spec && spec.id) + " " + v.reason); }
+}
+
+function speedKmS(v) { return Math.hypot(v[0], v[1], v[2]) / 1000; }
+
+// The straddling readout box's data for a carrier element (Shared/sim/
+// readout-panes.js). Pure; exported for the Node tests.
+//
+// The three rows answer three different questions, and only the middle one
+// needs the chain the element rides:
+//
+//   impulse Δv    the element's OWN contribution, isolated against a bare zero
+//                 state. Composition is a plain vector sum, so this magnitude
+//                 is the same whatever the element is mounted on — a rotor's
+//                 tip speed, a driver's kick — and it is the one row that
+//                 stays a property of the hardware alone.
+//   prograde Δv   the speeds the payload moved BETWEEN: the mount's own speed,
+//                 and the speed once this element's contribution is added on.
+//                 A magnitude difference alone would be actively misleading
+//                 here — a 0.5 km/s kick aimed 90° off a 6 km/s mount raises
+//                 the speed by only 21 m/s, and reporting that number would
+//                 hide the entire kick. Reporting the pair shows both what the
+//                 element bought and what it started from; how far it TURNED
+//                 the heading is the release arrows' job, not this box's.
+//                 A mount at rest (a self-originating platform on a body that
+//                 is its own frame origin) simply reads "0.00 → …", which is
+//                 exactly what a launch from rest is.
+//   plane change  the element's own inclination against an implicit ecliptic
+//                 reference (Shared/geo-leg.js's stateDeltaEffect), NOT a diff
+//                 against the mount's orbit. A skyhook's rotor is confined to
+//                 the ecliptic by construction (skyhook.js's rotorFor), so
+//                 this reads a true 0° today; it becomes a live number when a
+//                 platform can be given a plane of its own.
+export function carrierReadout(geo, element, upstream, anchorJd) {
+	var own = applyElement({ r: [0, 0, 0], v: [0, 0, 0] }, element, anchorJd);
+	var eff = stateDeltaEffect(geo.GM, [0, 0, 0], [0, 0, 0], own.r, own.v);
+	var mount = evaluateChain(upstream, anchorJd);
+	eff.speedBefore = speedKmS(mount.v);
+	eff.speedAfter = speedKmS(applyElement(mount, element, anchorJd).v);
+	eff.progradeDv = eff.speedAfter - eff.speedBefore;
+	return eff;
 }
 
 function noBodyDiagnostic(spec, role) {
@@ -129,17 +169,11 @@ export function makeCarrier(spec, opts) {
 			var element = spec.release.element(geo, anchorJd);
 			var chain = appendElement(upstream, element);
 
-			// The straddling readout box's data: diff the chain just before and
-			// just after THIS element (Shared/kinematic-chain.js's evaluateChain),
-			// so "impulse" is exactly what this platform itself contributes — the
-			// Moon's own ~1 km/s (or nothing, self-originating) is the BEFORE
-			// state, never counted as part of this platform's own delivery. Works
-			// for any future release platform unchanged: a rotor, an impulse, or
-			// both, since evaluateChain composes either kind the same way.
-			var before = evaluateChain(upstream, anchorJd);
-			var after = evaluateChain(chain, anchorJd);
+			// The straddling readout box's data — see carrierReadout's own
+			// header for what its three rows mean and why the prograde one is
+			// measured against the mount rather than against nothing.
 			readoutCache.remember(ctx.world, ctx.stageId,
-				stateDeltaEffect(geo.GM, before.r, before.v, after.r, after.v));
+				carrierReadout(geo, element, upstream, anchorJd));
 
 			return { packet: PacketTypes.make("carrier-chain", chain,
 				{ tool: "mission-planner/" + opts.id,
@@ -219,9 +253,22 @@ export function computeCapture(spec, params, data, pass) {
 // trimDv (a "pass-through" one, or one that hasn't adopted the convention
 // yet) simply gets no box — same graceful-absence rule as a negligible
 // waypoint burn.
-function captureReadout(figures) {
+//
+// trimDv is what the SHIP must shed (vCatch − vRel, positive when it arrives
+// faster than the hardware it is matching), so as a prograde change it is
+// that value negated. A platform reporting both speeds gets the same
+// "before → after" prograde row a carrier element does, which is the pair a
+// speed-matching trim is most legible as: the speed the ship came in at, and
+// the tip speed it leaves matched to.
+export function captureReadout(figures, geo) {
 	if (!figures || typeof figures.trimDv !== "number" || !isFinite(figures.trimDv)) { return null; }
-	return { burnDv: Math.abs(figures.trimDv) / 1000, planeChange: 0, progradeDv: figures.trimDv / 1000 };
+	var out = { burnDv: Math.abs(figures.trimDv) / 1000, planeChange: 0,
+	            progradeDv: -figures.trimDv / 1000 };
+	if (geo && isFinite(figures.vCatch) && isFinite(geo.vRel)) {
+		out.speedBefore = figures.vCatch / 1000;
+		out.speedAfter = geo.vRel / 1000;
+	}
+	return out;
 }
 
 export function makeTerminal(spec, opts) {
@@ -244,7 +291,8 @@ export function makeTerminal(spec, opts) {
 			var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 			var cap = computeCapture(spec, ctx.params, data, arrivalPassOf(ctx.world));
 			cache.remember(ctx.world, ctx.stageId, cap);
-			readoutCache.remember(ctx.world, ctx.stageId, cap.ok ? captureReadout(cap.figures) : null);
+			readoutCache.remember(ctx.world, ctx.stageId,
+				cap.ok ? captureReadout(cap.figures, cap.geo) : null);
 			if (!cap.ok) { return cap.diagnostic; }
 
 			return {

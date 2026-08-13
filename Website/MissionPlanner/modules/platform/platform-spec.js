@@ -67,12 +67,30 @@
  *                          this sits here and not in geometry().
  *     element(geo, anchorJd)  the chain element it contributes —
  *                          `rotorElement` or `impulseElement` from
- *                          Shared/kinematic-chain.js. platform-roles.js diffs
- *                          the kinematic chain just before/after this element
- *                          (Shared/kinematic-chain.js's evaluateChain) to fill
- *                          the card's own straddling impulse/prograde/plane-
- *                          change readout box automatically — no platform-side
- *                          work needed (see readouts, below).
+ *                          Shared/kinematic-chain.js. platform-roles.js
+ *                          evaluates THIS element alone, isolated from
+ *                          whatever it rides on (Shared/kinematic-chain.js's
+ *                          applyElement, against a bare zero state — never a
+ *                          diff against the upstream chain, which would fold
+ *                          the carrier's own delivery into this platform's own
+ *                          figures) to fill the card's own straddling impulse/
+ *                          prograde/plane-change readout box automatically —
+ *                          no platform-side work needed (see readouts, below).
+ *                          Impulse always reads == prograde (no BEFORE state
+ *                          to diff a speed against, isolated from whatever it
+ *                          rides on). Plane change is NOT a blank 0 the same
+ *                          way, though — Shared/geo-leg.js's stateDeltaEffect
+ *                          reads it as this element's own inclination to the
+ *                          ecliptic (an implicit zero-inclination reference,
+ *                          used whenever there is no real BEFORE orbit to diff
+ *                          against). A platform confined to the ecliptic
+ *                          plane by construction (today's skyhook: rotorFor's
+ *                          normal is always [0,0,1]) genuinely reads 0° there
+ *                          — not a limitation of this readout. A platform
+ *                          riding a body's tilted equatorial plane (a future
+ *                          space elevator) or a linear track along its
+ *                          rotating surface (a future mass driver) would read
+ *                          that body's real axial tilt instead.
  *
  *   capture              the arrival half, or null:
  *     kind                 "rendezvous" — the ship meets moving hardware and

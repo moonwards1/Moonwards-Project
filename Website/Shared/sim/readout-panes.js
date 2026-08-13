@@ -25,6 +25,15 @@
  *   than the three tools' original label-beside-row layout). Opt-in and
  *   false by default, so the three original call sites are unaffected.
  *
+ * THE PROGRADE ROW HAS TWO FORMS. A burn on an existing trajectory reports
+ * the signed change alone ("+0.25 km/s") — the speed it started from is the
+ * ship's own and needs no restating. A carrier-chain element instead reports
+ * the speeds it moved BETWEEN ("1.02 → 6.09 km/s"), because the speed it
+ * started from is its MOUNT's, not the payload's, and is the whole context
+ * for what the hardware did. An entry opts into the second form by carrying
+ * `speedBefore`/`speedAfter` (km/s) alongside `progradeDv`; without them the
+ * signed form is used, so the three original call sites are unaffected.
+ *
  * What's NOT here: `burnReadoutData` (the |Δv| / plane-change / prograde-Δv
  * physics) stays local to each calculator — it reads tool-specific state
  * (GM_SUN vs GM_S, local-vs-absolute r/vBefore) that isn't worth threading
@@ -50,6 +59,7 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 	var planeChangeLabel = opts.planeChangeLabel || "plane change";
 	entries.forEach(function (en) {
 		if (!en.data || !en.host) { return; }
+		var prograde = fmtPrograde(en.data);
 		var box = document.createElement("div");
 		box.className = cls + "-readout" + (opts.compact ? " " + cls + "-readout-compact" : "");
 		box.innerHTML = opts.compact
@@ -57,7 +67,7 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">prograde</span>'
-			  + '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + fmtSigned(en.data.progradeDv, 2, ' km/s') + '</span></div>'
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + prograde + '</span></div>'
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">plane<br>change</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
 			: '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse Δv</span>'
@@ -65,7 +75,7 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + planeChangeLabel + '</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">prograde Δv</span>'
-			  + '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + fmtSigned(en.data.progradeDv, 2, ' km/s') + '</span></div>';
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + prograde + '</span></div>';
 		layer.appendChild(box);
 		next.push({ el: box, host: en.host });
 	});
@@ -105,4 +115,19 @@ export function positionReadoutBoxes(boxes, mainEl, panelEl, edgeOffset) {
 // which can go either direction.
 function fmtSigned(x, digits, unit) {
 	return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(digits) + unit;
+}
+
+// isFinite(null) is true (null coerces to 0), so the speed-pair test below
+// needs the type check as well — a missing speed must fall through to the
+// signed form, not read as 0.00.
+function isNum(x) { return typeof x === "number" && isFinite(x); }
+
+// The prograde row's text: "1.02 → 6.09 km/s" when the entry carries the pair
+// of speeds it moved between, else the signed change on its own. Exported for
+// the Node tests, which check the two forms without a DOM.
+export function fmtPrograde(data) {
+	if (isNum(data.speedBefore) && isNum(data.speedAfter)) {
+		return data.speedBefore.toFixed(2) + " → " + data.speedAfter.toFixed(2) + " km/s";
+	}
+	return fmtSigned(data.progradeDv, 2, " km/s");
 }

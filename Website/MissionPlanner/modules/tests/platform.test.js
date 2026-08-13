@@ -10,12 +10,14 @@ import assert from "node:assert/strict";
 import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
          platformAppliesTo, canRideOn, paramsForRole, paramToDisplay,
          paramFromDisplay, createStageCache } from "../platform/platform-spec.js";
-import { makeCarrier, makeTerminal, computeCapture } from "../platform/platform-roles.js";
+import { makeCarrier, makeTerminal, computeCapture,
+         carrierReadout, captureReadout } from "../platform/platform-roles.js";
+import { fmtPrograde } from "../../../Shared/sim/readout-panes.js";
 import { SKYHOOK, tetherGeometry, defaultGeometryFor } from "../skyhook/skyhook.js";
 import skyhookDeparture from "../skyhook/skyhook-departure.js";
 import skyhookArrival from "../skyhook/skyhook-arrival.js";
 import { validateDescriptor } from "../../core/registry.js";
-import { evaluateChain, elementCount } from "../../../Shared/kinematic-chain.js";
+import { evaluateChain, elementCount, emptyChain } from "../../../Shared/kinematic-chain.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 
 var JD_ANCHOR = 2463220.75;
@@ -265,6 +267,92 @@ test("the release gate is the departure role's alone — a bound tip still catch
 	var cap = computeCapture(SKYHOOK, params, arriving);
 	assert.equal(cap.ok, true, "a catch does not");
 	assert.ok(cap.trimDv > 0, "the ship burns off whatever the hook cannot absorb");
+});
+
+// ---- the straddling readout box -------------------------------------------
+
+test("carrierReadout: a self-originating platform launches from a mount at rest", function () {
+	var params = { body: "Mars", comAlt: 9000e3, topAlt: 14000e3, relAlt: 13000e3 };
+	var geo = tetherGeometry(params);
+	var element = SKYHOOK.release.element(geo, JD_ANCHOR);
+	var out = carrierReadout(geo, element, emptyChain("Mars"), JD_ANCHOR);
+
+	assert.equal(out.speedBefore, 0, "Mars is its own frame origin — nothing is moving yet");
+	assert.ok(Math.abs(out.speedAfter - geo.vRel / 1000) < 1e-9);
+	assert.ok(Math.abs(out.progradeDv - geo.vRel / 1000) < 1e-9);
+	assert.ok(Math.abs(out.burnDv - geo.vRel / 1000) < 1e-9, "impulse is the tip speed");
+});
+
+test("carrierReadout: riding the Moon, the mount's own ~1 km/s is the before speed", function () {
+	var params = { body: "Moon", comAlt: 3000e3, topAlt: 5000e3, relAlt: 5000e3 };
+	var geo = tetherGeometry(params);
+	assert.equal(geo.ok, true);
+	var element = SKYHOOK.release.element(geo, JD_ANCHOR);
+	var out = carrierReadout(geo, element, emptyChain("Moon"), JD_ANCHOR);
+
+	var moon = evaluateChain(emptyChain("Moon"), JD_ANCHOR);
+	assert.ok(Math.abs(out.speedBefore - O.vMag(moon.v) / 1000) < 1e-9);
+	assert.ok(out.speedBefore > 0.9 && out.speedBefore < 1.1, "the Moon's geocentric ~1 km/s");
+
+	// Impulse stays the hardware's own tip speed — composition is a vector sum,
+	// so what the element is mounted on cannot change its magnitude.
+	assert.ok(Math.abs(out.burnDv - geo.vRel / 1000) < 1e-9);
+	assert.ok(Math.abs(out.progradeDv - (out.speedAfter - out.speedBefore)) < 1e-12);
+	assert.notEqual(out.burnDv.toFixed(3), out.progradeDv.toFixed(3),
+		"prograde no longer just restates the impulse");
+});
+
+test("carrierReadout: the release phase moves the prograde reading, not the impulse", function () {
+	var base = { body: "Moon", comAlt: 3000e3, topAlt: 5000e3, relAlt: 5000e3 };
+	var speeds = [0, 90, 180, 270].map(function (deg) {
+		var geo = tetherGeometry(Object.assign({}, base, { releasePhaseDeg: deg }));
+		var out = carrierReadout(geo, SKYHOOK.release.element(geo, JD_ANCHOR),
+			emptyChain("Moon"), JD_ANCHOR);
+		return out;
+	});
+	speeds.forEach(function (out) {
+		assert.ok(Math.abs(out.burnDv - speeds[0].burnDv) < 1e-9, "impulse is phase-invariant");
+	});
+	var pro = speeds.map(function (s) { return s.progradeDv; });
+	assert.ok(Math.max.apply(null, pro) - Math.min.apply(null, pro) > 0.5,
+		"phase swings the prograde reading by more than 0.5 km/s");
+});
+
+test("carrierReadout: a 90° kick off its mount reads its whole impulse, not the speed it added", function () {
+	// Kim's case: 0.5 km/s applied square to a 6 km/s mount. sqrt(6^2+0.5^2)-6
+	// is 21 m/s — the number a magnitude difference alone would report, which
+	// would hide the entire kick.
+	var mount = { base: "Mars", rotors: [], impulses: [{ kind: "impulse", dv: [6000, 0, 0] }] };
+	var kick = { kind: "impulse", dv: [0, 500, 0] };
+	var out = carrierReadout({ GM: 4.2828e13 }, kick, mount, JD_ANCHOR);
+
+	assert.ok(Math.abs(out.burnDv - 0.5) < 1e-9, "the impulse row shows the whole 0.5");
+	assert.ok(Math.abs(out.speedBefore - 6) < 1e-9);
+	assert.ok(Math.abs(out.speedAfter - Math.hypot(6, 0.5)) < 1e-9);
+	assert.equal(fmtPrograde(out), "6.00 → 6.02 km/s");
+});
+
+test("fmtPrograde: no speed pair falls back to the signed change", function () {
+	assert.equal(fmtPrograde({ progradeDv: 0.25 }), "+0.25 km/s");
+	assert.equal(fmtPrograde({ progradeDv: -0.04 }), "−0.04 km/s");
+	assert.equal(fmtPrograde({ progradeDv: 0.25, speedBefore: null, speedAfter: null }),
+		"+0.25 km/s", "null speeds must not read as 0.00");
+});
+
+test("captureReadout: a catch reads the speed the ship shed to match the tip", function () {
+	var params = { body: "Mars", comAlt: 9000e3, topAlt: 12000e3, relAlt: 11000e3 };
+	var arriving = { r: [2.2e11, 0, 0], v: [0, 2.5e4, 0], jd: 2463400.5, frame: "helio" };
+	var cap = computeCapture(SKYHOOK, params, arriving);
+	assert.equal(cap.ok, true);
+
+	var out = captureReadout(cap.figures, cap.geo);
+	assert.ok(Math.abs(out.speedBefore - cap.vCatch / 1000) < 1e-9);
+	assert.ok(Math.abs(out.speedAfter - cap.geo.vRel / 1000) < 1e-9);
+	assert.ok(out.speedBefore > out.speedAfter, "the ship arrives faster than the tip");
+	assert.ok(out.progradeDv < 0, "shedding speed is a negative prograde change");
+	assert.ok(Math.abs(out.burnDv - Math.abs(cap.trimDv) / 1000) < 1e-9);
+
+	assert.equal(captureReadout({}, cap.geo), null, "no trimDv, no box");
 });
 
 test("the carrier's chain element reproduces the tether tip at the release anchor", function () {
