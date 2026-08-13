@@ -51,9 +51,19 @@ import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, spee
 	timingModel } from "./ui/ship-card.js";
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
+import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
+
+// Straddling burn-readout box colours (Shared/sim/readout-panes.js) — matches
+// every leg module's own DV_COLOR/DSPEED_COLOR burn-arrow constants, so a
+// readout row means the same colour here as the arrow it reports on.
+var READOUT_DV_HEX = "#ff5fd0", READOUT_SPD_HEX = "#ffd24a";
+// How far a readout box shifts toward the main pane off dead-centre on the
+// panel's edge (Shared/sim/readout-panes.js's positionReadoutBoxes) — matches
+// the Ephemeris tab's own call.
+var READOUT_EDGE_OFFSET = 15;
 
 var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 var SPAN_DAYS = 36525;
@@ -209,7 +219,17 @@ export function createMissionView(opts) {
 	var paneMainEl = q(".mp-pane-main");
 	var floatsEl = q(".mp-floats");
 	var panelEl = q(".mp-panel");
+	var mainEl = q(".mp-main");
 	var complianceBarEl = q(".mp-compliance-bar");
+
+	// Straddling burn-readout boxes (Shared/sim/readout-panes.js) — the same
+	// mechanism the Ephemeris tab uses for its departure/waypoint burns, poking
+	// past the panel's left edge off whichever waypoint card's vector editor a
+	// leg module reports through view.readoutEntries (see drawStage below).
+	var readoutLayer = document.createElement("div");
+	readoutLayer.className = "mp-readout-layer";
+	mainEl.appendChild(readoutLayer);
+	var readoutBoxes = [];
 	// Mission-events readout (top-left of the main pane, not the floats — see
 	// renderEventsBar below). currentReadoutEvents/eventReadoutSig let it skip
 	// rebuilding its <option> list on every clock tick and only touch
@@ -835,6 +855,23 @@ export function createMissionView(opts) {
 			desc.draw(view, { world: world, stageId: res.stageId, params: stage.params, result: res,
 			                   phase: workspace.phase });
 		});
+		refreshReadouts();
+	}
+
+	// Rebuilds the readout-box list from every current stage view's own
+	// view.readoutEntries (a leg module's draw() fills this the same way it
+	// fills view.pxScaled — see transfer-leg.js and friends). Cheap and
+	// idempotent, so redoing it wholesale on every drawStage call (rather than
+	// tracking which stage's entries changed) is simplest.
+	function refreshReadouts() {
+		var entries = [];
+		Object.keys(stageViews).forEach(function (stageId) {
+			stageViews[stageId].forEach(function (view) {
+				(view.readoutEntries || []).forEach(function (en) { entries.push(en); });
+			});
+		});
+		readoutBoxes = renderReadoutBoxes(readoutLayer, readoutBoxes, entries,
+			{ classPrefix: "mp", dvHex: READOUT_DV_HEX, spdHex: READOUT_SPD_HEX, compact: true });
 	}
 
 	// ---- sidebar: one card per stage, filtered to the active phase. The module
@@ -2085,6 +2122,7 @@ export function createMissionView(opts) {
 			if (!panes[i].isMain) { renderPane(panes[i], canvasRect); }
 		}
 		if (shipCardShown()) { shipCard.render(renderer, canvasRect); }
+		positionReadoutBoxes(readoutBoxes, mainEl, panelEl, READOUT_EDGE_OFFSET);
 	}
 
 	function resize() {

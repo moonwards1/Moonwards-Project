@@ -1611,8 +1611,8 @@ export function createEphemerisView(opts) {
 		}
 
 		readoutBoxes = renderReadoutBoxes(readoutLayer, readoutBoxes, entries,
-			{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex });
-		positionReadoutBoxes(readoutBoxes, mainEl, panelEl);
+			{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex, compact: true });
+		positionReadoutBoxes(readoutBoxes, mainEl, panelEl, 15);
 
 		// keep the marker on the (possibly reshaped) path + refresh its card
 		updateMarker();
@@ -1824,7 +1824,7 @@ export function createEphemerisView(opts) {
 		}
 		if (tempRing && tempRing.visible) { scaleApproachMark(frame.camera, paneMainEl, tempRing); }
 		orbitApproachMarks.forEach(function (sp) { scaleApproachMark(frame.camera, paneMainEl, sp); });
-		positionReadoutBoxes(readoutBoxes, mainEl, panelEl);
+		positionReadoutBoxes(readoutBoxes, mainEl, panelEl, 15);
 
 		renderer.setViewport(x, y, w, h);
 		renderer.setScissor(x, y, w, h);

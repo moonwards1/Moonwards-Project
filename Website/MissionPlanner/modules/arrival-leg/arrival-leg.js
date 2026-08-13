@@ -43,10 +43,12 @@
  * by its axes).
  *
  * HEADLESS (`plainCard`), like the departure legs: its card is the window
- * readout plus the waypoint cards; its visible output is the polyline in the
- * destination frame (hand-off/closest-approach/end dots, waypoint gizmos + burn
- * arrows). Emits the leg-end ship-state (lifted to helio) so an arrival
- * technology downstream (arrival-skyhook) keeps its ship-state input.
+ * readout plus the waypoint cards, each with a straddling impulse/prograde/
+ * plane-change readout box (Shared/sim/readout-panes.js); its visible output
+ * is the polyline in the destination frame (hand-off/closest-approach/end
+ * dots, waypoint gizmos + burn arrows). Emits the leg-end ship-state (lifted
+ * to helio) so an arrival technology downstream (arrival-skyhook) keeps its
+ * ship-state input.
  *
  * update() is pure (no DOM, no THREE) and Node-testable; init/draw are the
  * browser-only view hooks. rendersIn "body:destination" is aliased to the
@@ -348,6 +350,22 @@ function rememberLeg(world, stageId, leg) {
 	m.set(stageId, leg);
 }
 
+// Each waypoint card's burn-editor host (init, below), by index — draw()
+// needs these to anchor the straddling readout box (Shared/sim/readout-panes.js)
+// on the same card the user is editing. Same WeakMap-per-World pattern as
+// lastByWorld above.
+var wpHostsByWorld = new WeakMap();
+function wpHostsFor(world, stageId) {
+	var m = wpHostsByWorld.get(world);
+	return (m && m.get(stageId)) || [];
+}
+function rememberWpHosts(world, stageId, hosts) {
+	if (!world || typeof world !== "object") { return; }
+	var m = wpHostsByWorld.get(world);
+	if (!m) { m = new Map(); wpHostsByWorld.set(world, m); }
+	m.set(stageId, hosts);
+}
+
 // State (r, v; body-centric m, m/s) at elapsed time t (s) since the hand-off
 // (leg.jd0), interpolated off the segment's own RK4 trail (geo-leg's
 // stateAtLegTime — the trail is dense wherever the curve bends, so this is the
@@ -466,6 +484,7 @@ export default {
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
+			var burnHosts = [];
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
 				var head = document.createElement("div"); head.className = "mp-wp-head";
@@ -491,7 +510,9 @@ export default {
 					setParam("waypoints", list);
 				});
 				wpHost.appendChild(card);
+				burnHosts.push(burnHost);
 			});
+			rememberWpHosts(ctx.world, ctx.stageId, burnHosts);
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
 				add.textContent = "+ add waypoint";
@@ -538,6 +559,7 @@ export default {
 			disposeDeep(c);
 		}
 		view.pxScaled = [];
+		view.readoutEntries = [];
 		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
@@ -571,7 +593,11 @@ export default {
 		}
 		view.group.add(dot(caSample.r, 0xe8ecf5, 6));
 
-		(leg.wpVisuals || []).forEach(function (wv) {
+		// wv.eff (geo-leg's burnEffect) carries the burnDv/planeChange/progradeDv
+		// trio for the straddling readout box, paired with that waypoint's own
+		// card (wpHostsFor, indexed by originalIndex same as wpVisuals).
+		var wpHosts = wpHostsFor(snap.world, snap.stageId);
+		(leg.wpVisuals || []).forEach(function (wv, i) {
 			if (!wv) { return; }
 			var renderPos = new THREE.Vector3(wv.renderPos[0] / U, wv.renderPos[1] / U, wv.renderPos[2] / U);
 			var giz = createWaypointGizmo(wv.rLocal, wv.vLocal, renderPos);
@@ -581,6 +607,8 @@ export default {
 			var spdArrow = makeBurnArrow(renderPos, wv.eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
 			var dvArrow = makeBurnArrow(renderPos, wv.eff.dv, DV_COLOR, BURN_VEC_SCALE);
 			[spdArrow, dvArrow].forEach(function (a) { if (a) { view.group.add(a); } });
+
+			if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: wv.eff }); }
 		});
 
 		// The ship-marker chevron (2.5) -- see departure-leg.js's sibling code

@@ -278,24 +278,49 @@ export function bodyLabelForGM(GM) {
 	return "Earth";
 }
 
+// The general two-states-in, readout-card-shape-out core: given a BEFORE and
+// an AFTER state (each with its own position — unlike a burn, a state change
+// need not happen at a single point; see stateDeltaEffect's own header),
+// returns the |Δv|/plane-change/prograde-Δv trio every straddling readout box
+// (Shared/sim/readout-panes.js) shows, plus the raw vectors the burn arrows
+// draw from. GM only matters for a semi-major axis/eccentricity this doesn't
+// expose — inclination is purely geometric (h = r × v), so any positive GM
+// gives the same planeChange.
+//
+// `vBefore` may be the zero vector (nothing was moving yet — a payload a
+// carrier rotor spins up from rest, rather than a burn nudging an existing
+// trajectory): there is then no BEFORE orbital plane to compare against, so
+// planeChange reads 0 rather than the acos(0/0) NaN a literal zero-angular-
+// -momentum state would otherwise produce.
+export function stateDeltaEffect(GM, rBefore, vBefore, rAfter, vAfter) {
+	var dSpeed = O.vMag(vAfter) - O.vMag(vBefore);
+	var hasBefore = O.vMag(vBefore) > 1e-6;
+	var iBefore = hasBefore ? O.elementsFromState(GM, rBefore, vBefore).i : null;
+	var iAfter = O.elementsFromState(GM, rAfter, vAfter).i;
+	return {
+		vAfter: vAfter,
+		dv: O.vSub(vAfter, vBefore),
+		dSpeedVec: O.vScale(O.vUnit(vAfter), dSpeed),      // along local prograde; reversed if dSpeed<0
+		burnDv: O.vMag(O.vSub(vAfter, vBefore)) / 1000,
+		planeChange: hasBefore ? (iAfter - iBefore) * 180 / Math.PI : 0,
+		progradeDv: dSpeed / 1000
+	};
+}
+
 // Core burn math in ONE consistent local frame (GM, rLocal, vBefore all
 // relative to the same body). Everything a waypoint needs — the resulting
 // velocity, the drawn arrows, the readout card — derives from this single
 // call, so the burn, its Oberth amplification and its (ecliptic-relative)
 // plane change are all evaluated at the same point with the same physics.
+// A burn always has a real (non-zero) vBefore — an existing trajectory — so
+// this is stateDeltaEffect at a single point (rBefore === rAfter === rLocal),
+// with burnDv taken from the authored burn components rather than
+// re-derived from vAfter − vBefore (identical in theory; exact in practice).
 export function burnEffect(GM, rLocal, vBefore, burn) {
 	var vAfter = O.applyBurn(rLocal, vBefore, burn.pro, burn.nrm, burn.rad);
-	var dSpeed = O.vMag(vAfter) - O.vMag(vBefore);
-	var iBefore = O.elementsFromState(GM, rLocal, vBefore).i;
-	var iAfter = O.elementsFromState(GM, rLocal, vAfter).i;
-	return {
-		vAfter: vAfter,
-		dv: O.vSub(vAfter, vBefore),                       // = geocentric Δv too (translation cancels)
-		dSpeedVec: O.vScale(O.vUnit(vAfter), dSpeed),      // along local prograde; reversed if dSpeed<0
-		burnDv: Math.hypot(burn.pro, burn.nrm, burn.rad) / 1000,
-		planeChange: (iAfter - iBefore) * 180 / Math.PI,
-		progradeDv: dSpeed / 1000
-	};
+	var eff = stateDeltaEffect(GM, rLocal, vBefore, rLocal, vAfter);
+	eff.burnDv = Math.hypot(burn.pro, burn.nrm, burn.rad) / 1000;
+	return eff;
 }
 
 // ---- legs -------------------------------------------------------------------

@@ -484,11 +484,11 @@ or the savings evaporate.
 
 ### WP-9
 
-- [ ] **9.1 Example-mission dropdown.** ★★
+- [x] **9.1 Example-mission dropdown.** ★★
   The top pane's button for opening a mission from a small set of curated
-  examples. (The design reads as though this exists; it does not — only the
-  duplicate-current-mission "+" does.) Includes curating the examples
-  themselves.
+  examples. (~~The design reads as though this exists; it does not — only the
+  duplicate-current-mission "+" does.~~) Includes curating the examples
+  themselves. (This does already exist.)
 - [ ] **9.2 Mission-creation dialog review.** ★
   Naming, standard name, "Create mission tab" — verify against the design's
   description and close any gaps.
@@ -567,17 +567,17 @@ is written.
 
 ### Planner-local patterns to extend
 
-| Source                                            | What it gives                                                                                                                             | Tasks                |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `ui/phase-slider.js`                              | `createSegmentedSlider` (+ `setMarks`), `coastSliderState`, `departureSliderState`, `elapsedStamp` — pure halves are Node-tested          | 1.2, 1.3, 1.4        |
-| `mission-view.js`                                 | `coastSpan` / `departureSpan` / `departureEvents`, `PHASE_FRAME` + `resolveFrameId`'s symbolic tokens, `swapTechStage`, `buildStageViews` | WP-1, 3.2, 5.2, 7.3  |
-| `scene-frames.js`                                 | `buildHelioFrame`, `buildEarthMoonFrame`, `buildBodyFrame`                                                                                | 3.2, 7.5             |
-| `core/freeze.js`                                  | the freeze contract and its timing fields                                                                                                 | 1.1                  |
-| `core/recompute.js`                               | the boundary flag and the warnings/events envelope                                                                                        | 1.5                  |
-| `modules/transfer-leg/transfer-leg.js`            | the module template: pure compute + descriptor + card-building `init` + `draw`; `computeLeg`'s encounter scan and `stateAtElapsed`        | 1.5, 7.1, 8.1        |
-| `modules/platform/` + `modules/skyhook/`          | the platform contract, its two role adapters, and the one platform on it                                                                  | 5.1, 5.2, 7.3, 8.4   |
-| `ui/tech-options.js`                              | the body-tagged option table the dropdowns filter                                                                                         | 5.2, 7.3             |
-| `ephemeris-view.js`                               | the marker/target state machine, Lambert `applyTargeting`, the moon widget                                                                | 4.1, 4.2, question 7 |
+| Source                                   | What it gives                                                                                                                             | Tasks                |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `ui/phase-slider.js`                     | `createSegmentedSlider` (+ `setMarks`), `coastSliderState`, `departureSliderState`, `elapsedStamp` — pure halves are Node-tested          | 1.2, 1.3, 1.4        |
+| `mission-view.js`                        | `coastSpan` / `departureSpan` / `departureEvents`, `PHASE_FRAME` + `resolveFrameId`'s symbolic tokens, `swapTechStage`, `buildStageViews` | WP-1, 3.2, 5.2, 7.3  |
+| `scene-frames.js`                        | `buildHelioFrame`, `buildEarthMoonFrame`, `buildBodyFrame`                                                                                | 3.2, 7.5             |
+| `core/freeze.js`                         | the freeze contract and its timing fields                                                                                                 | 1.1                  |
+| `core/recompute.js`                      | the boundary flag and the warnings/events envelope                                                                                        | 1.5                  |
+| `modules/transfer-leg/transfer-leg.js`   | the module template: pure compute + descriptor + card-building `init` + `draw`; `computeLeg`'s encounter scan and `stateAtElapsed`        | 1.5, 7.1, 8.1        |
+| `modules/platform/` + `modules/skyhook/` | the platform contract, its two role adapters, and the one platform on it                                                                  | 5.1, 5.2, 7.3, 8.4   |
+| `ui/tech-options.js`                     | the body-tagged option table the dropdowns filter                                                                                         | 5.2, 7.3             |
+| `ephemeris-view.js`                      | the marker/target state machine, Lambert `applyTargeting`, the moon widget                                                                | 4.1, 4.2, question 7 |
 
 ### Calculator sources for platforms (WP-8.4)
 

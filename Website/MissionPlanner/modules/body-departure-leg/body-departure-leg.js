@@ -12,10 +12,13 @@
  *
  * HEADLESS (`plainCard`): no title/status header — this stage's health is
  * exactly the flight's (impact/bound/no-handoff diagnostics). Its `init` adds
- * up to 2 waypoint-impulse cards; its visible output is the trajectory
- * polyline in the origin-body frame, its flight events (release, waypoint
- * impulses, body-SOI exit), and each waypoint's gizmo/arrows. Numeric
- * readouts of hand-off/burn results live in the Ephemeris tab, not here.
+ * up to 2 waypoint-impulse cards, each carrying a straddling impulse/
+ * prograde/plane-change readout box (Shared/sim/readout-panes.js) the same
+ * way the Ephemeris tab's own waypoint cards do; its visible output is the
+ * trajectory polyline in the origin-body frame, its flight events (release,
+ * waypoint impulses, body-SOI exit), and each waypoint's gizmo/arrows. The
+ * hand-off's own readouts (not tied to any one waypoint) still live in the
+ * Ephemeris tab only.
  *
  * update() — every recompute is one FORWARD pass, no fixed-point iteration:
  *   1. Read the release-epoch ANCHOR from the frozen plan (releaseAnchorFor) —
@@ -259,6 +262,22 @@ function rememberLeg(world, stageId, leg) {
 	m.set(stageId, leg);
 }
 
+// Each waypoint card's burn-editor host (init, below), by index — draw()
+// needs these to anchor the straddling readout box (Shared/sim/readout-panes.js)
+// on the same card the user is editing. Same WeakMap-per-World pattern as
+// lastByWorld above.
+var wpHostsByWorld = new WeakMap();
+function wpHostsFor(world, stageId) {
+	var m = wpHostsByWorld.get(world);
+	return (m && m.get(stageId)) || [];
+}
+function rememberWpHosts(world, stageId, hosts) {
+	if (!world || typeof world !== "object") { return; }
+	var m = wpHostsByWorld.get(world);
+	if (!m) { m = new Map(); wpHostsByWorld.set(world, m); }
+	m.set(stageId, hosts);
+}
+
 // State (r, v; body-centric m, m/s) at elapsed time t (s) since release
 // (leg.jd0) -- TRUE re-propagation via body-leg's stateAtLegTime, walking
 // leg.segs to find which impulse-to-impulse sub-flight t falls in. Same
@@ -350,6 +369,7 @@ export default {
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
+			var burnHosts = [];
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
 				var head = document.createElement("div"); head.className = "mp-wp-head";
@@ -375,7 +395,9 @@ export default {
 					setParam("waypoints", list);
 				});
 				wpHost.appendChild(card);
+				burnHosts.push(burnHost);
 			});
+			rememberWpHosts(ctx.world, ctx.stageId, burnHosts);
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
 				add.textContent = "+ add waypoint";
@@ -422,6 +444,7 @@ export default {
 			disposeDeep(c);
 		}
 		view.pxScaled = [];
+		view.readoutEntries = [];
 		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
@@ -446,7 +469,12 @@ export default {
 			view.group.add(dot(leg.samples[leg.samples.length - 1].r, 0xe8ecf5, 6));
 		}
 
-		(leg.wpVisuals || []).forEach(function (wv) {
+		// wv.eff (body-leg's re-exported burnEffect) carries the burnDv/
+		// planeChange/progradeDv trio for the straddling readout box, paired
+		// with that waypoint's own card (wpHostsFor, indexed by originalIndex
+		// same as wpVisuals).
+		var wpHosts = wpHostsFor(snap.world, snap.stageId);
+		(leg.wpVisuals || []).forEach(function (wv, i) {
 			if (!wv) { return; }
 			var renderPos = new THREE.Vector3(wv.renderPos[0] / U, wv.renderPos[1] / U, wv.renderPos[2] / U);
 			var giz = createWaypointGizmo(wv.rLocal, wv.vLocal, renderPos);
@@ -456,6 +484,8 @@ export default {
 			var spdArrow = makeBurnArrow(renderPos, wv.eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
 			var dvArrow = makeBurnArrow(renderPos, wv.eff.dv, DV_COLOR, BURN_VEC_SCALE);
 			[spdArrow, dvArrow].forEach(function (a) { if (a) { view.group.add(a); } });
+
+			if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: wv.eff }); }
 		});
 
 		// The ship-marker chevron (2.5) -- see departure-leg.js's sibling code

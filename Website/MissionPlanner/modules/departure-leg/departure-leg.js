@@ -7,11 +7,13 @@
  * health is exactly the flight's (impact/bound/no-handoff diagnostics) — the
  * departure leg covers everything leading up to the hand-off, so a separate
  * status chip would say nothing extra. Its `init` builds up to 2
- * waypoint-impulse cards, alongside the shell's generic diagnostic boxes.
- * Its visible output is the drawn trajectory polyline in the Earth–Moon
- * frame, its flight events (release, waypoint impulses, SOI exits — the
- * Departure slider's marks), and each waypoint's gizmo/arrows. Numeric
- * readouts of hand-off/burn results live in the Ephemeris tab, not here.
+ * waypoint-impulse cards, each with a straddling impulse/prograde/plane-change
+ * readout box (Shared/sim/readout-panes.js), alongside the shell's generic
+ * diagnostic boxes. Its visible output is the drawn trajectory polyline in
+ * the Earth–Moon frame, its flight events (release, waypoint impulses, SOI
+ * exits — the Departure slider's marks), and each waypoint's gizmo/arrows.
+ * The hand-off's own readouts (not tied to any one waypoint) still live in
+ * the Ephemeris tab only.
  *
  * What update() does — every recompute is one FORWARD pass, no fixed-point
  * iteration, no hidden solving:
@@ -293,6 +295,22 @@ function rememberLeg(world, stageId, leg) {
 	m.set(stageId, leg);
 }
 
+// Each waypoint card's burn-editor host (init, below), by index — draw()
+// needs these to anchor the straddling readout box (Shared/sim/readout-panes.js)
+// on the same card the user is editing. Same WeakMap-per-World pattern as
+// lastByWorld above.
+var wpHostsByWorld = new WeakMap();
+function wpHostsFor(world, stageId) {
+	var m = wpHostsByWorld.get(world);
+	return (m && m.get(stageId)) || [];
+}
+function rememberWpHosts(world, stageId, hosts) {
+	if (!world || typeof world !== "object") { return; }
+	var m = wpHostsByWorld.get(world);
+	if (!m) { m = new Map(); wpHostsByWorld.set(world, m); }
+	m.set(stageId, hosts);
+}
+
 // State (r, v; geocentric m, m/s) at elapsed time t (s) since release
 // (leg.jd0) -- TRUE re-propagation via geo-leg's stateAtLegTime, walking
 // leg.segs to find which impulse-to-impulse sub-flight t falls in. Mirrors
@@ -359,9 +377,10 @@ export default {
 	// Up to 2 waypoint-impulse cards (the same per-waypoint pattern as
 	// transfer-leg.js's init — but `t` here is SECONDS after release, presented
 	// as hours, since a departure flight runs hours-to-days rather than the
-	// coast's hundreds of days). Numeric burn/hand-off readouts are the
-	// Ephemeris tab's job, not the mission-plan sidebar's — this card is just
-	// the editing controls.
+	// coast's hundreds of days). Each card's burn-editor host is remembered by
+	// index (rememberWpHosts) so draw() can anchor that waypoint's straddling
+	// impulse/prograde/plane-change readout on it, the same box the Ephemeris
+	// tab shows.
 	init: function (ctx) {
 		var host = ctx.panelHost;
 
@@ -395,6 +414,7 @@ export default {
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
+			var burnHosts = [];
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
 				var head = document.createElement("div"); head.className = "mp-wp-head";
@@ -420,7 +440,9 @@ export default {
 					setParam("waypoints", list);
 				});
 				wpHost.appendChild(card);
+				burnHosts.push(burnHost);
 			});
+			rememberWpHosts(ctx.world, ctx.stageId, burnHosts);
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
 				add.textContent = "+ add waypoint";
@@ -475,6 +497,7 @@ export default {
 			disposeDeep(c);
 		}
 		view.pxScaled = [];
+		view.readoutEntries = [];
 		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
@@ -508,13 +531,18 @@ export default {
 		// alone — the split its own header documents (render position vs.
 		// burn-frame position can differ). Held at a constant on-screen size via
 		// view.pxScaled, the shell's per-frame rescale hook (mission-view.js's
-		// updateChevrons).
-		(leg.wpVisuals || []).forEach(function (wv) {
+		// updateChevrons). wv.eff (geo-leg's burnEffect) already carries the
+		// burnDv/planeChange/progradeDv trio the straddling readout box wants —
+		// paired here with that waypoint's own card (wpHostsFor, indexed the
+		// same way as wpVisuals: by originalIndex).
+		var wpHosts = wpHostsFor(snap.world, snap.stageId);
+		(leg.wpVisuals || []).forEach(function (wv, i) {
 			if (!wv) { return; }
 			var renderPos = new THREE.Vector3(wv.renderPos[0] / U, wv.renderPos[1] / U, wv.renderPos[2] / U);
 			var giz = createWaypointGizmo(wv.rLocal, wv.vLocal, renderPos);
 			view.group.add(giz);
 			view.pxScaled.push({ obj: giz, px: GIZMO_PX });
+			if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: wv.eff }); }
 
 			var spdArrow = makeBurnArrow(renderPos, wv.eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
 			var dvArrow = makeBurnArrow(renderPos, wv.eff.dv, DV_COLOR, BURN_VEC_SCALE);

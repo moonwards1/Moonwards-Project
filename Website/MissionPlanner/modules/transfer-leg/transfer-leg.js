@@ -63,7 +63,7 @@ import { makeDiagnostic } from "../../core/diagnostics.js";
 import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
-import { bodyConstants, integrateEncounter, stateAtLegTime } from "../../../Shared/body-leg.js";
+import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
 import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
 
@@ -678,6 +678,22 @@ function rememberLegs(world, stageId, live, handoff) {
 	m.set(stageId, { live: live, handoff: handoff });
 }
 
+// Each waypoint card's burn-editor host (init, below), by index — draw()
+// needs these to anchor the straddling readout box (Shared/sim/readout-panes.js)
+// on the same card the user is editing. Same WeakMap-per-World pattern as
+// lastByWorld above.
+var wpHostsByWorld = new WeakMap();
+function wpHostsFor(world, stageId) {
+	var m = wpHostsByWorld.get(world);
+	return (m && m.get(stageId)) || [];
+}
+function rememberWpHosts(world, stageId, hosts) {
+	if (!world || typeof world !== "object") { return; }
+	var m = wpHostsByWorld.get(world);
+	if (!m) { m = new Map(); wpHostsByWorld.set(world, m); }
+	m.set(stageId, hosts);
+}
+
 export default {
 	id: "transfer-leg",
 	title: "Transfer leg",
@@ -822,6 +838,7 @@ export default {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
 			var planWps = planWaypointsFor(ctx.world);   // the frozen plan's original waypoints, by index
+			var burnHosts = [];
 			wps.forEach(function (wp, i) {
 				var card = document.createElement("div"); card.className = "mp-card";
 				var head = document.createElement("div"); head.className = "mp-wp-head";
@@ -867,7 +884,9 @@ export default {
 				}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS,
 				     displayDiv: 1, decimals: 1, step: 0.1, unitLabel: "m/s" });
 				wpHost.appendChild(card);
+				burnHosts.push(burnHost);
 			});
+			rememberWpHosts(ctx.world, ctx.stageId, burnHosts);
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
 				add.textContent = "+ add waypoint";
@@ -896,6 +915,7 @@ export default {
 			if (c.material && c.material.map) { c.material.map.dispose(); }
 		}
 		view.pxScaled = [];
+		view.readoutEntries = [];
 		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
@@ -973,13 +993,19 @@ export default {
 			view.group.add(dot(destAtCA.r, 0xe0a84a, 8));
 		}
 
-		// Waypoint gizmos and burn arrows: display each waypoint with three axes
-		// and burn vectors, just like the Ephemeris tab. For each waypoint, get
-		// the exact state at that point using stateAtElapsed, then create the
-		// gizmo and burn arrows. Gizmos are held at constant on-screen size via
-		// view.pxScaled, the shell's per-frame rescale hook.
+		// Waypoint gizmos, burn arrows and readout boxes: display each waypoint
+		// with three axes, burn vectors and a straddling impulse/prograde/plane-
+		// change readout on its own card (Shared/sim/readout-panes.js), just like
+		// the Ephemeris tab. For each waypoint, get the exact state at that point
+		// using stateAtElapsed, then compute the burn's effect there (geo-leg's
+		// burnEffect — the SAME physics the Ephemeris tab's readout uses, here
+		// evaluated at GM_SUN since Coast is heliocentric). Gizmos are held at
+		// constant on-screen size via view.pxScaled, the shell's per-frame
+		// rescale hook; readout boxes are collected in view.readoutEntries for
+		// mission-view.js to render/position.
 		if (params.waypoints && params.waypoints.length) {
-			params.waypoints.forEach(function (wp) {
+			var wpHosts = wpHostsFor(snap.world, snap.stageId);
+			params.waypoints.forEach(function (wp, i) {
 				var wpTimeS = (wp.days || 0) * DAY;
 				var wpState = stateAtElapsed(leg, wpTimeS);
 				if (!wpState) { return; }
@@ -990,22 +1016,22 @@ export default {
 				view.group.add(giz);
 				view.pxScaled.push({ obj: giz, px: GIZMO_PX });
 
-				// Create burn arrows for the waypoint impulse
-				if (wp.burn && (wp.burn.pro || wp.burn.rad || wp.burn.nrm)) {
-					var vAfter = O.applyBurn(wpState.r, wpState.v, wp.burn.pro || 0,
-						wp.burn.nrm || 0, wp.burn.rad || 0);
-					var dSpeed = O.vMag(vAfter) - O.vMag(wpState.v);
-					var dSpeedVec = O.vScale(O.vUnit(vAfter), dSpeed);
+				// Burn arrows for the waypoint impulse, and the straddling
+				// readout (below zero, makeBurnArrow itself no-ops, so this runs
+				// unconditionally — matching the other three leg modules, whose
+				// wpVisuals-based readouts don't gate on burn magnitude either).
+				var eff = burnEffect(GM_SUN, wpState.r, wpState.v,
+					{ pro: wp.burn.pro || 0, rad: wp.burn.rad || 0, nrm: wp.burn.nrm || 0 });
 
-					// Prograde speed change arrow (yellow)
-					var spdArrow = makeBurnArrow(gizPos, dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
-					if (spdArrow) { view.group.add(spdArrow); }
+				// Prograde speed change arrow (yellow)
+				var spdArrow = makeBurnArrow(gizPos, eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
+				if (spdArrow) { view.group.add(spdArrow); }
 
-					// Delta-v arrow (pink)
-					var dvVec = O.vSub(vAfter, wpState.v);
-					var dvArrow = makeBurnArrow(gizPos, dvVec, DV_COLOR, BURN_VEC_SCALE);
-					if (dvArrow) { view.group.add(dvArrow); }
-				}
+				// Delta-v arrow (pink)
+				var dvArrow = makeBurnArrow(gizPos, eff.dv, DV_COLOR, BURN_VEC_SCALE);
+				if (dvArrow) { view.group.add(dvArrow); }
+
+				if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: eff }); }
 			});
 		}
 

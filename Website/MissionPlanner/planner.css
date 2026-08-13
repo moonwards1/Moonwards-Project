@@ -444,6 +444,11 @@ body {
 	gap: 10px; padding: 3px 0; font-size: 13px;
 }
 .mp-inrow label { color: var(--dim); }
+/* Technology cards' own param rows (platform-roles.js's buildPlatformCard):
+   the label sits ~20px off the card's left edge so the card's straddling
+   readout box (mp-readout-compact, poking in from that same edge) doesn't
+   sit on top of it. */
+.mp-tech-row label { margin-left: 20px; }
 .mp-inrow input[type=number], .mp-inrow select, .mp-inrow input[type=date] {
 	background: #0f1424; border: 1px solid var(--line2); color: var(--text);
 	border-radius: 6px; padding: 4px 7px; font: inherit; font-size: 12.5px;
@@ -498,9 +503,9 @@ body {
 .mp-diag .mp-fix { color: var(--dim); margin-top: 3px; }
 
 /* ---------- straddling burn-readout panes (Shared/sim/readout-panes.js with
-   classPrefix "mp"): used by the Ephemeris tab only — departure/arrival/
-   waypoint burn results are reported there, not in the mission-plan
-   sidebar ---------- */
+   classPrefix "mp", opts.compact: true): the Ephemeris tab's departure/
+   waypoint burns AND the mission-plan sidebar's waypoint cards (Coast,
+   Departure, Arrival) all straddle their card's edge with one of these. ---------- */
 .mp-readout-layer { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
 .mp-readout {
 	position: absolute; box-sizing: border-box; min-width: 122px; padding: 7px 11px;
@@ -510,6 +515,10 @@ body {
 .mp-readout-row { display: flex; flex-direction: column; align-items: flex-start; margin: 4px 0; }
 .mp-readout-label { color: var(--dim); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .mp-readout-val { font-size: 13px; font-weight: 600; line-height: 1.2; }
+.mp-readout-title { font-size: 12px; font-weight: 700; color: var(--bright); text-align: center; letter-spacing: 0.02em; }
+.mp-readout-compact { min-width: 68px; padding: 6px 10px; text-align: center; }
+.mp-readout-compact .mp-readout-row { align-items: center; margin: 6px 0 0; }
+.mp-readout-compact .mp-readout-label { line-height: 1.15; }
 
 /* ---------- Ephemeris tab: waypoint snap-to controls ---------- */
 .mp-wp-snaps { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0; }

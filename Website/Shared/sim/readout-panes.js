@@ -20,6 +20,10 @@
  *   DV_COLOR/DSPEED_COLOR burn-arrow constants), but are caller-supplied
  *   rather than baked in, since they're derived from each tool's own colour
  *   constants and could diverge.
+ * - `opts.compact`: Mission Planner's own layout (a "Δv" title over three
+ *   stacked label/value rows — impulse, prograde, plane change — narrower
+ *   than the three tools' original label-beside-row layout). Opt-in and
+ *   false by default, so the three original call sites are unaffected.
  *
  * What's NOT here: `burnReadoutData` (the |Δv| / plane-change / prograde-Δv
  * physics) stays local to each calculator — it reads tool-specific state
@@ -34,9 +38,10 @@
 // (caller keeps this in its own `readoutBoxes`-style variable). Does NOT
 // position them — call `positionReadoutBoxes` after.
 //
-// opts: { classPrefix, dvHex, spdHex, planeChangeLabel }
+// opts: { classPrefix, dvHex, spdHex, planeChangeLabel, compact }
 // classPrefix/dvHex/spdHex are required; planeChangeLabel defaults to
-// "plane change".
+// "plane change" (ignored in compact mode, which always says "plane change");
+// compact defaults false.
 export function renderReadoutBoxes(layer, boxes, entries, opts) {
 	if (!layer) { return boxes; }
 	boxes.forEach(function (b) { layer.removeChild(b.el); });
@@ -46,14 +51,21 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 	entries.forEach(function (en) {
 		if (!en.data || !en.host) { return; }
 		var box = document.createElement("div");
-		box.className = cls + "-readout";
-		box.innerHTML =
-			'<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse Δv</span>'
-			+ '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
-			+ '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + planeChangeLabel + '</span>'
-			+ '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
-			+ '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">prograde Δv</span>'
-			+ '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + fmtSigned(en.data.progradeDv, 2, ' km/s') + '</span></div>';
+		box.className = cls + "-readout" + (opts.compact ? " " + cls + "-readout-compact" : "");
+		box.innerHTML = opts.compact
+			? '<div class="' + cls + '-readout-title">Δv</div>'
+			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse</span>'
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
+			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">prograde</span>'
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + fmtSigned(en.data.progradeDv, 2, ' km/s') + '</span></div>'
+			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">plane<br>change</span>'
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
+			: '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse Δv</span>'
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
+			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + planeChangeLabel + '</span>'
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
+			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">prograde Δv</span>'
+			  + '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + fmtSigned(en.data.progradeDv, 2, ' km/s') + '</span></div>';
 		layer.appendChild(box);
 		next.push({ el: box, host: en.host });
 	});
@@ -62,9 +74,16 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 
 // Place each readout box straddling the panel's left edge, vertically
 // centred on its burn widget's host element. Hidden when its host is
-// scrolled out of the panel's visible range.
-export function positionReadoutBoxes(boxes, mainEl, panelEl) {
+// scrolled out of the panel's visible range (including display:none, whose
+// zero-size rect never satisfies the visibility test below).
+//
+// `edgeOffset` (default 0) shifts the box toward the main pane by that many
+// px, narrowing how far it pokes out over the panel side of the boundary —
+// Mission Planner's callers pass 15 so the box still straddles centred on
+// the edge but sits closer to the main pane than a dead-centre split would.
+export function positionReadoutBoxes(boxes, mainEl, panelEl, edgeOffset) {
 	if (!boxes.length || !mainEl || !panelEl) { return; }
+	var offset = edgeOffset || 0;
 	var mr = mainEl.getBoundingClientRect();
 	var pr = panelEl.getBoundingClientRect();
 	var boundary = pr.left - mr.left;            // panel's left edge in main coords
@@ -74,7 +93,7 @@ export function positionReadoutBoxes(boxes, mainEl, panelEl) {
 		b.el.style.display = visible ? "" : "none";
 		if (!visible) { return; }
 		var w = b.el.offsetWidth, h = b.el.offsetHeight;
-		var left = boundary - w / 2;
+		var left = boundary - w / 2 - offset;
 		if (left < 4) { left = 4; }              // stacked layout: keep on-screen
 		b.el.style.left = left + "px";
 		b.el.style.top  = (hr.top - mr.top + hr.height / 2 - h / 2) + "px";

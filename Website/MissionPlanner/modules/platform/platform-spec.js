@@ -46,7 +46,14 @@
  *                        defaultParams and under the stage's explicit params.
  *   params               the card's controls, declared (see PARAM SPEC below).
  *   note(params, role)   optional one-line description above the controls.
- *   readouts(computed, role)  optional [[key, value], ...] shown under them.
+ *   readouts(computed, role)  optional [[key, value], ...] shown under them,
+ *                        plain rows IN the card — separate from the
+ *                        straddling impulse/prograde/plane-change box on the
+ *                        card's edge (Shared/sim/readout-panes.js), which
+ *                        platform-roles.js fills for EVERY release/capture
+ *                        platform automatically (see release.element and
+ *                        capture.figures below) — no per-platform code needed
+ *                        for that one.
  *
  *   geometry(params)     the platform's own figures, pure. Returns
  *                        { ok: true, ... } or { ok: false, diagnostic }. Both
@@ -60,7 +67,12 @@
  *                          this sits here and not in geometry().
  *     element(geo, anchorJd)  the chain element it contributes —
  *                          `rotorElement` or `impulseElement` from
- *                          Shared/kinematic-chain.js.
+ *                          Shared/kinematic-chain.js. platform-roles.js diffs
+ *                          the kinematic chain just before/after this element
+ *                          (Shared/kinematic-chain.js's evaluateChain) to fill
+ *                          the card's own straddling impulse/prograde/plane-
+ *                          change readout box automatically — no platform-side
+ *                          work needed (see readouts, below).
  *
  *   capture              the arrival half, or null:
  *     kind                 "rendezvous" — the ship meets moving hardware and
@@ -70,7 +82,14 @@
  *                          (aerobrake), so it draws onto the trajectory rather
  *                          than building hardware of its own.
  *     figures(geo, approach, data)  the catch, pure — whatever the readouts,
- *                          warnings and event label need.
+ *                          warnings and event label need. A "rendezvous"
+ *                          platform's figures should include `trimDv` (m/s,
+ *                          signed — positive means the catch needs MORE speed
+ *                          than the hardware already has) so platform-roles.js
+ *                          can fill the card's straddling readout box the same
+ *                          way the release side does (see readouts, below); a
+ *                          "pass-through" platform has no discrete burn to
+ *                          report and simply gets no box.
  *     warnings(figures)    optional platform-specific warnings. The generic
  *                          "did the coast actually reach the body" check is
  *                          the adapter's, not the platform's.

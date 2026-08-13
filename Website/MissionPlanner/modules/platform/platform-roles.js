@@ -28,7 +28,8 @@
 
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
-import { emptyChain, appendElement } from "../../../Shared/kinematic-chain.js";
+import { emptyChain, appendElement, evaluateChain } from "../../../Shared/kinematic-chain.js";
+import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseAnchorFor, arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 import { approachAt, approachFromPass, interceptWarning } from "../arrival-approach.js";
@@ -57,6 +58,11 @@ export function makeCarrier(spec, opts) {
 	assertSpec(spec);
 	if (!spec.release) { throw new Error("platform-roles: " + spec.id + " has no release half"); }
 	var cache = createStageCache();
+	// The straddling readout box (Shared/sim/readout-panes.js) every platform
+	// gets for free — see readoutCache's fill below and drawPlatform/
+	// buildPlatformCard, which read it back generically for any platform.
+	var readoutCache = createStageCache();
+	var hostCache = createStageCache();
 
 	// A platform that must ride something takes a required input; one that may
 	// self-originate takes an optional one; one that must be the base takes none.
@@ -77,6 +83,10 @@ export function makeCarrier(spec, opts) {
 
 		update: function (ctx, input) {
 			var params = resolvePlatformParams(spec, ctx.params);
+			// Cleared up front and only re-filled on the success path at the
+			// bottom, so a stage that starts failing never keeps showing a
+			// readout box computed from its last-good chain.
+			readoutCache.remember(ctx.world, ctx.stageId, null);
 			if (!params.body) {
 				cache.remember(ctx.world, ctx.stageId, null);
 				return noBodyDiagnostic(spec, RELEASE);
@@ -116,7 +126,21 @@ export function makeCarrier(spec, opts) {
 			// Extend the chain it rides, or start a fresh one. The chain's base is
 			// this platform's own body either way.
 			var upstream = (input && input.data) ? input.data : emptyChain(params.body);
-			var chain = appendElement(upstream, spec.release.element(geo, anchorJd));
+			var element = spec.release.element(geo, anchorJd);
+			var chain = appendElement(upstream, element);
+
+			// The straddling readout box's data: diff the chain just before and
+			// just after THIS element (Shared/kinematic-chain.js's evaluateChain),
+			// so "impulse" is exactly what this platform itself contributes — the
+			// Moon's own ~1 km/s (or nothing, self-originating) is the BEFORE
+			// state, never counted as part of this platform's own delivery. Works
+			// for any future release platform unchanged: a rotor, an impulse, or
+			// both, since evaluateChain composes either kind the same way.
+			var before = evaluateChain(upstream, anchorJd);
+			var after = evaluateChain(chain, anchorJd);
+			readoutCache.remember(ctx.world, ctx.stageId,
+				stateDeltaEffect(geo.GM, before.r, before.v, after.r, after.v));
+
 			return { packet: PacketTypes.make("carrier-chain", chain,
 				{ tool: "mission-planner/" + opts.id,
 				  label: params.body + " " + spec.label.toLowerCase() + " carrier chain" }) };
@@ -124,10 +148,10 @@ export function makeCarrier(spec, opts) {
 
 		// ---- view layer (shell-called; never runs in Node) ------------------
 
-		init: function (ctx) { buildPlatformCard(spec, ctx, RELEASE, cache); },
+		init: function (ctx) { buildPlatformCard(spec, ctx, RELEASE, cache, hostCache); },
 
 		draw: function (view, snap) {
-			drawPlatform(spec, view, snap, RELEASE, cache, releaseAnchorFor(snap.world));
+			drawPlatform(spec, view, snap, RELEASE, cache, releaseAnchorFor(snap.world), readoutCache, hostCache);
 		}
 	};
 	if (!isBaseOnly && rides === "*") { desc.inputOptional = true; }
@@ -187,10 +211,25 @@ export function computeCapture(spec, params, data, pass) {
 	                       jd: data.jd, warnings: warnings, figures: figures }, figures);
 }
 
+// The straddling readout box's data for a capture role: a "rendezvous"
+// platform's trimDv (m/s, signed — see platform-spec.js's capture.figures
+// doc) IS the whole burn, and it is by definition along the hardware's own
+// velocity direction (a speed-matching trim, not a targeted 3-axis burn), so
+// there is no separate plane to change. A platform whose figures carry no
+// trimDv (a "pass-through" one, or one that hasn't adopted the convention
+// yet) simply gets no box — same graceful-absence rule as a negligible
+// waypoint burn.
+function captureReadout(figures) {
+	if (!figures || typeof figures.trimDv !== "number" || !isFinite(figures.trimDv)) { return null; }
+	return { burnDv: Math.abs(figures.trimDv) / 1000, planeChange: 0, progradeDv: figures.trimDv / 1000 };
+}
+
 export function makeTerminal(spec, opts) {
 	assertSpec(spec);
 	if (!spec.capture) { throw new Error("platform-roles: " + spec.id + " has no capture half"); }
 	var cache = createStageCache();
+	var readoutCache = createStageCache();
+	var hostCache = createStageCache();
 
 	return {
 		id: opts.id,
@@ -205,6 +244,7 @@ export function makeTerminal(spec, opts) {
 			var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 			var cap = computeCapture(spec, ctx.params, data, arrivalPassOf(ctx.world));
 			cache.remember(ctx.world, ctx.stageId, cap);
+			readoutCache.remember(ctx.world, ctx.stageId, cap.ok ? captureReadout(cap.figures) : null);
 			if (!cap.ok) { return cap.diagnostic; }
 
 			return {
@@ -216,13 +256,13 @@ export function makeTerminal(spec, opts) {
 
 		// ---- view layer (shell-called; never runs in Node) ------------------
 
-		init: function (ctx) { buildPlatformCard(spec, ctx, CATCH, cache); },
+		init: function (ctx) { buildPlatformCard(spec, ctx, CATCH, cache, hostCache); },
 
 		draw: function (view, snap) {
 			var commit = arrivalCommitmentFor(snap.world);
 			var cached = cache.get(snap.world, snap.stageId);
 			var pinJd = commit ? commit.jd : (cached && cached.ok ? cached.jd : null);
-			drawPlatform(spec, view, snap, CATCH, cache, pinJd);
+			drawPlatform(spec, view, snap, CATCH, cache, pinJd, readoutCache, hostCache);
 		}
 	};
 }
@@ -231,9 +271,12 @@ export function makeTerminal(spec, opts) {
 
 // The declared-parameter card: the platform's note, one control per param that
 // applies to this role, and its readouts. A platform adds a control by adding
-// a line to its `params` list.
-function buildPlatformCard(spec, ctx, role, cache) {
+// a line to its `params` list. `hostCache` remembers the card's own content
+// host so drawPlatform can anchor the straddling readout box on it — every
+// platform's card gets the same anchor, no per-platform DOM needed.
+function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 	var host = ctx.panelHost;
+	hostCache.remember(ctx.world, ctx.stageId, host);
 
 	function fullParams() {
 		var stage = ctx.world.getStage(ctx.stageId);
@@ -243,8 +286,12 @@ function buildPlatformCard(spec, ctx, role, cache) {
 		var patch = {}; patch[name] = value;
 		ctx.world.set({ stage: ctx.stageId, params: patch }, setOpts);
 	}
+	// mp-tech-row (planner.css) indents the label ~20px off the card's left
+	// edge — every param row on every technology card, present and future,
+	// straddled by the card's own readout box (drawPlatform, below), which
+	// pokes in from that edge and would otherwise sit right over the label.
 	function row(labelText) {
-		var el = document.createElement("div"); el.className = "mp-inrow";
+		var el = document.createElement("div"); el.className = "mp-inrow mp-tech-row";
 		var lab = document.createElement("label"); lab.textContent = labelText;
 		el.appendChild(lab);
 		return el;
@@ -318,8 +365,17 @@ function buildPlatformCard(spec, ctx, role, cache) {
 }
 
 // The platform's own draw, given everything role-dependent already resolved:
-// which role it is in, and the epoch its chosen phase is pinned to.
-function drawPlatform(spec, view, snap, role, cache, pinJd) {
+// which role it is in, and the epoch its chosen phase is pinned to. Fills
+// view.readoutEntries (the shell's convention — mission-view.js's
+// refreshReadouts, same as every leg module's own draw()) BEFORE the
+// spec.draw() early-return, so the straddling box shows even for a platform
+// with no hardware of its own left to draw.
+function drawPlatform(spec, view, snap, role, cache, pinJd, readoutCache, hostCache) {
+	view.readoutEntries = [];
+	var data = readoutCache.get(snap.world, snap.stageId);
+	var host = hostCache.get(snap.world, snap.stageId);
+	if (data && host) { view.readoutEntries.push({ host: host, data: data }); }
+
 	if (!spec.draw) { return; }
 	spec.draw(view, snap, {
 		role: role,
