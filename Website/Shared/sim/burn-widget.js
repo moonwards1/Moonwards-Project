@@ -118,3 +118,46 @@ export function makeBurnArrow(originPos, vec, colorHex, scale, minKms) {
 	});
 	return arrow;
 }
+
+// Gizmo-relative burn arrow pair: instead of a magnitude-proportional
+// on-screen length (makeBurnArrow/burnArrowPxScale above — the physical
+// dV can dwarf the view when a burn is large), whichever of the prograde-
+// speed-change and net-impulse vectors is LONGER is pinned to the SAME
+// on-screen length as a waypoint gizmo's arms (`gizmoPx`, e.g. GIZMO_PX =
+// 42), and the other is drawn at the length it would have RELATIVE to
+// that pinned one (e.g. a mostly-normal burn pins the net-impulse arrow
+// and shrinks the prograde one, rather than the fixed dSpeed-always-
+// pinned rule stretching net impulse past the gizmo). Both arrows share
+// one THREE.ArrowHelper head size (fixed fraction of the pinned length)
+// so heads stay a constant on-screen size instead of growing with the
+// line.
+//
+// Callers add both arrows to their `view.pxScaled` list at `px: gizmoPx`
+// — the exact same treatment as the gizmo itself — so a single per-frame
+// rescale pins the longer arrow's line to gizmoPx pixels and the other
+// arrow's line scales proportionally alongside it.
+var ARROW_HEAD_LEN_FRAC = 0.32;    // fraction of the PINNED (gizmoPx) length
+var ARROW_HEAD_WIDTH_FRAC = 0.18;  // fixed regardless of either arrow's own length
+export function makeBurnArrowPair(originPos, dSpeedVec, dvVec, dSpeedColorHex, dvColorHex, minKms) {
+	var thresh = minKms == null ? 0.05 : minKms;
+	var dSpeedKms = OrbitalMath.vMag(dSpeedVec) / 1000;
+	var dvKms = OrbitalMath.vMag(dvVec) / 1000;
+	var anchorKms = Math.max(dSpeedKms, dvKms);
+	if (anchorKms < thresh) { return { spdArrow: null, dvArrow: null }; }
+	return {
+		spdArrow: dSpeedKms >= thresh
+			? relativeBurnArrow(originPos, dSpeedVec, dSpeedColorHex, dSpeedKms / anchorKms) : null,
+		dvArrow: dvKms >= thresh
+			? relativeBurnArrow(originPos, dvVec, dvColorHex, dvKms / anchorKms) : null
+	};
+}
+function relativeBurnArrow(originPos, vec, colorHex, lenRatio) {
+	var dir = new THREE.Vector3(vec[0], vec[1], vec[2]).normalize();
+	var arrow = new THREE.ArrowHelper(dir, originPos, lenRatio, colorHex,
+		ARROW_HEAD_LEN_FRAC, ARROW_HEAD_WIDTH_FRAC);
+	[arrow.line, arrow.cone].forEach(function (o) {
+		o.material.depthTest = false; o.material.depthWrite = false;
+		o.material.transparent = true; o.renderOrder = 12;
+	});
+	return arrow;
+}

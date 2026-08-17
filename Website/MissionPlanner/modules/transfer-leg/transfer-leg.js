@@ -64,7 +64,7 @@ import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor, renderVectorGlyph } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
-import { createWaypointGizmo, makeBurnArrow, burnArrowPxScale } from "../../../Shared/sim/burn-widget.js";
+import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
 import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
@@ -73,8 +73,6 @@ var GM_SUN = SUN.GM;
 var AU = 149597870700;   // m
 var DAY = 86400;
 
-// Burn-vector arrows: a fixed physical scale (AU drawn per km/s), matching ephemeris-view.js
-var BURN_VEC_SCALE = 0.03;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var GIZMO_PX = 42;   // constant on-screen size for waypoint gizmos, matching other phases
 
@@ -1115,19 +1113,12 @@ export default {
 				var eff = burnEffect(GM_SUN, wpState.r, wpState.v,
 					{ pro: wp.burn.pro || 0, rad: wp.burn.rad || 0, nrm: wp.burn.nrm || 0 });
 
-				// Prograde speed change arrow (yellow)
-				var spdArrow = makeBurnArrow(gizPos, eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
-				if (spdArrow) {
-					view.group.add(spdArrow);
-					view.pxScaled.push({ obj: spdArrow, px: burnArrowPxScale(BURN_VEC_SCALE) });
-				}
-
-				// Delta-v arrow (pink)
-				var dvArrow = makeBurnArrow(gizPos, eff.dv, DV_COLOR, BURN_VEC_SCALE);
-				if (dvArrow) {
-					view.group.add(dvArrow);
-					view.pxScaled.push({ obj: dvArrow, px: burnArrowPxScale(BURN_VEC_SCALE) });
-				}
+				// Prograde speed change arrow (yellow) and delta-v arrow (pink),
+				// the dV arrow drawn relative to the pinned prograde one
+				var pair = makeBurnArrowPair(gizPos, eff.dSpeedVec, eff.dv, DSPEED_COLOR, DV_COLOR);
+				[pair.spdArrow, pair.dvArrow].forEach(function (a) {
+					if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: GIZMO_PX }); }
+				});
 
 				// The course-correction card's own readout is the EFFECT OF
 				// THE CORRECTION ALONE — wp.burn minus whatever baseline it

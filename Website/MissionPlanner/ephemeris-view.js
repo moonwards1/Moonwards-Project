@@ -82,7 +82,7 @@ import {
 	updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName,
 	soiRadiusAU, projectedRadiusPx
 } from "../Shared/sim/body-renderer.js";
-import { createWaypointGizmo, makeBurnArrow, burnArrowPxScale } from "../Shared/sim/burn-widget.js";
+import { createWaypointGizmo, makeBurnArrowPair } from "../Shared/sim/burn-widget.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
 import { buildVectorEditor } from "../Shared/sim/vector-editor.js";
 import {
@@ -113,10 +113,10 @@ var SPAN_DAYS = 36525;
 var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 var MAX_WAYPOINTS = 2;   // matches transfer-leg's own card and the SST's two "create waypoint" checkboxes
 
-// Burn-vector arrows: a fixed physical scale (AU drawn per km/s), same as
-// the SST, so the dV arrow and the prograde-speed-change arrow stay
-// directly comparable in length.
-var BURN_VEC_SCALE = 0.03;
+// Waypoint gizmo / burn-arrow constant on-screen size: the prograde-speed
+// arrow is pinned to this same length, and the dV arrow drawn relative to
+// it (see burn-widget.js's makeBurnArrowPair).
+var GIZMO_PX = 42;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var dvHex = "#ff5fd0", spdHex = "#ffd24a";
 
@@ -633,17 +633,13 @@ export function createEphemerisView(opts) {
 		};
 	}
 
-	function arrowAt(rM, vec, colorHex) {
-		var origin = new THREE.Vector3(rM[0] / AU, rM[1] / AU, rM[2] / AU);
-		return makeBurnArrow(origin, vec, colorHex, BURN_VEC_SCALE);
-	}
 	function addBurnArrowsAt(r, vBefore, burn) {
 		var vAfter = O.applyBurn(r, vBefore, burn.pro || 0, burn.nrm || 0, burn.rad || 0);
 		var dSpeed = O.vMag(vAfter) - O.vMag(vBefore);
 		var dSpeedVec = O.vScale(O.vUnit(vAfter), dSpeed);
-		var spdArrow = arrowAt(r, dSpeedVec, DSPEED_COLOR);
-		var dvArrow = arrowAt(r, O.vSub(vAfter, vBefore), DV_COLOR);
-		[spdArrow, dvArrow].forEach(function (a) { if (a) { frame.scene.add(a); burnArrows.push(a); } });
+		var origin = new THREE.Vector3(r[0] / AU, r[1] / AU, r[2] / AU);
+		var pair = makeBurnArrowPair(origin, dSpeedVec, O.vSub(vAfter, vBefore), DSPEED_COLOR, DV_COLOR);
+		[pair.spdArrow, pair.dvArrow].forEach(function (a) { if (a) { frame.scene.add(a); burnArrows.push(a); } });
 	}
 	function dot(rM, colorHex, sizePx) {
 		var g = new THREE.BufferGeometry();
@@ -1806,11 +1802,10 @@ export function createEphemerisView(opts) {
 		brUpdateLabels(frame.camera, paneMainEl, frame.labelList);
 
 		wpMarkers.forEach(function (g) {
-			g.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, g.position, 42));
+			g.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, g.position, GIZMO_PX));
 		});
-		var burnArrowPx = burnArrowPxScale(BURN_VEC_SCALE);
 		burnArrows.forEach(function (a) {
-			a.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, a.position, burnArrowPx));
+			a.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, a.position, GIZMO_PX));
 		});
 		if (markerSprite && markerSprite.visible) {
 			markerSprite.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, markerSprite.position, 26));

@@ -60,7 +60,7 @@ import { Frames } from "../../../Shared/frames.js";
 import { evaluateChain, elementCount } from "../../../Shared/kinematic-chain.js";
 import { buildIntegratedLeg, stateAtLegTime, localFrameAt, burnEffect,
          bodySOI } from "../../../Shared/body-leg.js";
-import { createWaypointGizmo, makeBurnArrow, burnArrowPxScale } from "../../../Shared/sim/burn-widget.js";
+import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
@@ -69,7 +69,6 @@ import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
 var O = OrbitalMath;
 var DAY = 86400;
 
-var BURN_VEC_SCALE = 8;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var GIZMO_PX = 42;
 
@@ -481,10 +480,9 @@ export default {
 			view.group.add(giz);
 			view.pxScaled.push({ obj: giz, px: GIZMO_PX });
 
-			var spdArrow = makeBurnArrow(renderPos, wv.eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
-			var dvArrow = makeBurnArrow(renderPos, wv.eff.dv, DV_COLOR, BURN_VEC_SCALE);
-			[spdArrow, dvArrow].forEach(function (a) {
-				if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: burnArrowPxScale(BURN_VEC_SCALE) }); }
+			var pair = makeBurnArrowPair(renderPos, wv.eff.dSpeedVec, wv.eff.dv, DSPEED_COLOR, DV_COLOR);
+			[pair.spdArrow, pair.dvArrow].forEach(function (a) {
+				if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: GIZMO_PX }); }
 			});
 
 			if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: wv.eff }); }
