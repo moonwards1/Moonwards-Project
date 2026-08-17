@@ -82,7 +82,7 @@ splits "state" three ways:
    trigger and never in mission undo.
 3. **Ephemeral** — hover, drag-in-progress, tweens. Never saved.
 
-The membership rule: a value goes in World iff it changes the numbers or is
+The membership rule: a value goes in World if it changes the numbers or is
 needed to reproduce the *meaning* of a shared mission. (An earlier draft of
 this section put "origin body, toggles" in World; with several views each
 having its own origin and toggles, those are workspace state. World got

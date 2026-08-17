@@ -277,13 +277,14 @@ test("carrierReadout: a self-originating platform launches from a mount at rest"
 	var element = SKYHOOK.release.element(geo, JD_ANCHOR);
 	var out = carrierReadout(geo, element, emptyChain("Mars"), JD_ANCHOR);
 
-	assert.equal(out.speedBefore, 0, "Mars is its own frame origin — nothing is moving yet");
+	// Mars is its own frame origin, so the mount is at rest and the speed the
+	// element leaves the payload at IS its whole contribution.
 	assert.ok(Math.abs(out.speedAfter - geo.vRel / 1000) < 1e-9);
 	assert.ok(Math.abs(out.progradeDv - geo.vRel / 1000) < 1e-9);
 	assert.ok(Math.abs(out.burnDv - geo.vRel / 1000) < 1e-9, "impulse is the tip speed");
 });
 
-test("carrierReadout: riding the Moon, the mount's own ~1 km/s is the before speed", function () {
+test("carrierReadout: riding the Moon, the reading is measured off the mount", function () {
 	var params = { body: "Moon", comAlt: 3000e3, topAlt: 5000e3, relAlt: 5000e3 };
 	var geo = tetherGeometry(params);
 	assert.equal(geo.ok, true);
@@ -291,13 +292,13 @@ test("carrierReadout: riding the Moon, the mount's own ~1 km/s is the before spe
 	var out = carrierReadout(geo, element, emptyChain("Moon"), JD_ANCHOR);
 
 	var moon = evaluateChain(emptyChain("Moon"), JD_ANCHOR);
-	assert.ok(Math.abs(out.speedBefore - O.vMag(moon.v) / 1000) < 1e-9);
-	assert.ok(out.speedBefore > 0.9 && out.speedBefore < 1.1, "the Moon's geocentric ~1 km/s");
+	var mountSpeed = O.vMag(moon.v) / 1000;
+	assert.ok(mountSpeed > 0.9 && mountSpeed < 1.1, "the Moon's geocentric ~1 km/s");
 
 	// Impulse stays the hardware's own tip speed — composition is a vector sum,
 	// so what the element is mounted on cannot change its magnitude.
 	assert.ok(Math.abs(out.burnDv - geo.vRel / 1000) < 1e-9);
-	assert.ok(Math.abs(out.progradeDv - (out.speedAfter - out.speedBefore)) < 1e-12);
+	assert.ok(Math.abs(out.progradeDv - (out.speedAfter - mountSpeed)) < 1e-12);
 	assert.notEqual(out.burnDv.toFixed(3), out.progradeDv.toFixed(3),
 		"prograde no longer just restates the impulse");
 });
@@ -327,16 +328,15 @@ test("carrierReadout: a 90° kick off its mount reads its whole impulse, not the
 	var out = carrierReadout({ GM: 4.2828e13 }, kick, mount, JD_ANCHOR);
 
 	assert.ok(Math.abs(out.burnDv - 0.5) < 1e-9, "the impulse row shows the whole 0.5");
-	assert.ok(Math.abs(out.speedBefore - 6) < 1e-9);
 	assert.ok(Math.abs(out.speedAfter - Math.hypot(6, 0.5)) < 1e-9);
-	assert.equal(fmtPrograde(out), "6.00 → 6.02 km/s");
+	assert.equal(fmtPrograde(out), "6.02 km/s", "one figure — the mount's 6.00 is on the mount's own card");
 });
 
-test("fmtPrograde: no speed pair falls back to the signed change", function () {
+test("fmtPrograde: no resulting speed falls back to the signed change", function () {
 	assert.equal(fmtPrograde({ progradeDv: 0.25 }), "+0.25 km/s");
 	assert.equal(fmtPrograde({ progradeDv: -0.04 }), "−0.04 km/s");
-	assert.equal(fmtPrograde({ progradeDv: 0.25, speedBefore: null, speedAfter: null }),
-		"+0.25 km/s", "null speeds must not read as 0.00");
+	assert.equal(fmtPrograde({ progradeDv: 0.25, speedAfter: null }),
+		"+0.25 km/s", "a null speed must not read as 0.00");
 });
 
 test("captureReadout: a catch reads the speed the ship shed to match the tip", function () {
@@ -346,9 +346,9 @@ test("captureReadout: a catch reads the speed the ship shed to match the tip", f
 	assert.equal(cap.ok, true);
 
 	var out = captureReadout(cap.figures, cap.geo);
-	assert.ok(Math.abs(out.speedBefore - cap.vCatch / 1000) < 1e-9);
-	assert.ok(Math.abs(out.speedAfter - cap.geo.vRel / 1000) < 1e-9);
-	assert.ok(out.speedBefore > out.speedAfter, "the ship arrives faster than the tip");
+	assert.ok(Math.abs(out.speedAfter - cap.geo.vRel / 1000) < 1e-9,
+		"the prograde row is the tip speed the ship leaves matched to");
+	assert.ok(cap.vCatch / 1000 > out.speedAfter, "the ship arrives faster than the tip");
 	assert.ok(out.progradeDv < 0, "shedding speed is a negative prograde change");
 	assert.ok(Math.abs(out.burnDv - Math.abs(cap.trimDv) / 1000) < 1e-9);
 

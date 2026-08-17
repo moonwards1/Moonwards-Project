@@ -26,12 +26,14 @@
  *   false by default, so the three original call sites are unaffected.
  *
  * THE PROGRADE ROW HAS TWO FORMS. A burn on an existing trajectory reports
- * the signed change alone ("+0.25 km/s") — the speed it started from is the
- * ship's own and needs no restating. A carrier-chain element instead reports
- * the speeds it moved BETWEEN ("1.02 → 6.09 km/s"), because the speed it
- * started from is its MOUNT's, not the payload's, and is the whole context
- * for what the hardware did. An entry opts into the second form by carrying
- * `speedBefore`/`speedAfter` (km/s) alongside `progradeDv`; without them the
+ * the signed change ("+0.25 km/s") — the speed it started from is the ship's
+ * own and needs no restating. A carrier-chain element instead reports the
+ * speed the payload is left AT ("6.09 km/s"), an absolute figure rather than
+ * a change: the speed it started from is its MOUNT's, and the mount is itself
+ * a card in the same stack, reporting that figure in its own box. A magnitude
+ * difference would be the wrong number here anyway — a kick square to a fast
+ * mount barely moves the speed, which would hide the entire kick. An entry
+ * opts into the second form by carrying `speedAfter` (km/s); without it the
  * signed form is used, so the three original call sites are unaffected.
  *
  * What's NOT here: `burnReadoutData` (the |Δv| / plane-change / prograde-Δv
@@ -117,17 +119,15 @@ function fmtSigned(x, digits, unit) {
 	return (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(digits) + unit;
 }
 
-// isFinite(null) is true (null coerces to 0), so the speed-pair test below
-// needs the type check as well — a missing speed must fall through to the
-// signed form, not read as 0.00.
+// isFinite(null) is true (null coerces to 0), so the speed test below needs
+// the type check as well — a missing speed must fall through to the signed
+// form, not read as 0.00.
 function isNum(x) { return typeof x === "number" && isFinite(x); }
 
-// The prograde row's text: "1.02 → 6.09 km/s" when the entry carries the pair
-// of speeds it moved between, else the signed change on its own. Exported for
-// the Node tests, which check the two forms without a DOM.
+// The prograde row's text: "6.09 km/s" when the entry carries the speed it
+// leaves the payload at, else the signed change. Exported for the Node tests,
+// which check the two forms without a DOM.
 export function fmtPrograde(data) {
-	if (isNum(data.speedBefore) && isNum(data.speedAfter)) {
-		return data.speedBefore.toFixed(2) + " → " + data.speedAfter.toFixed(2) + " km/s";
-	}
+	if (isNum(data.speedAfter)) { return data.speedAfter.toFixed(2) + " km/s"; }
 	return fmtSigned(data.progradeDv, 2, " km/s");
 }

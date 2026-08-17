@@ -56,17 +56,17 @@ function speedKmS(v) { return Math.hypot(v[0], v[1], v[2]) / 1000; }
 //                 is the same whatever the element is mounted on — a rotor's
 //                 tip speed, a driver's kick — and it is the one row that
 //                 stays a property of the hardware alone.
-//   prograde Δv   the speeds the payload moved BETWEEN: the mount's own speed,
-//                 and the speed once this element's contribution is added on.
-//                 A magnitude difference alone would be actively misleading
-//                 here — a 0.5 km/s kick aimed 90° off a 6 km/s mount raises
-//                 the speed by only 21 m/s, and reporting that number would
-//                 hide the entire kick. Reporting the pair shows both what the
-//                 element bought and what it started from; how far it TURNED
-//                 the heading is the release arrows' job, not this box's.
-//                 A mount at rest (a self-originating platform on a body that
-//                 is its own frame origin) simply reads "0.00 → …", which is
-//                 exactly what a launch from rest is.
+//   prograde Δv   the speed the payload is left AT once this element's
+//                 contribution is added onto its mount's state — an absolute
+//                 speed, not a change. A magnitude difference would be
+//                 actively misleading here — a 0.5 km/s kick aimed 90° off a
+//                 6 km/s mount raises the speed by only 21 m/s, and reporting
+//                 that number would hide the entire kick. The speed it
+//                 started from is the MOUNT's, and the mount has a box of its
+//                 own reporting exactly that figure, so this box states one
+//                 number and the stack reads as a running total up the chain.
+//                 How far the element TURNED the heading is the release
+//                 arrows' job, not this box's.
 //   plane change  the element's own inclination against an implicit ecliptic
 //                 reference (Shared/geo-leg.js's stateDeltaEffect), NOT a diff
 //                 against the mount's orbit. A skyhook's rotor is confined to
@@ -77,9 +77,8 @@ export function carrierReadout(geo, element, upstream, anchorJd) {
 	var own = applyElement({ r: [0, 0, 0], v: [0, 0, 0] }, element, anchorJd);
 	var eff = stateDeltaEffect(geo.GM, [0, 0, 0], [0, 0, 0], own.r, own.v);
 	var mount = evaluateChain(upstream, anchorJd);
-	eff.speedBefore = speedKmS(mount.v);
 	eff.speedAfter = speedKmS(applyElement(mount, element, anchorJd).v);
-	eff.progradeDv = eff.speedAfter - eff.speedBefore;
+	eff.progradeDv = eff.speedAfter - speedKmS(mount.v);
 	return eff;
 }
 
@@ -256,18 +255,15 @@ export function computeCapture(spec, params, data, pass) {
 //
 // trimDv is what the SHIP must shed (vCatch − vRel, positive when it arrives
 // faster than the hardware it is matching), so as a prograde change it is
-// that value negated. A platform reporting both speeds gets the same
-// "before → after" prograde row a carrier element does, which is the pair a
-// speed-matching trim is most legible as: the speed the ship came in at, and
-// the tip speed it leaves matched to.
+// that value negated. The prograde row itself takes the same absolute-speed
+// form a carrier element's does: the tip speed the ship leaves matched to.
+// The speed it CAME IN at belongs to the trajectory that brought it there,
+// and is reported there rather than restated here.
 export function captureReadout(figures, geo) {
 	if (!figures || typeof figures.trimDv !== "number" || !isFinite(figures.trimDv)) { return null; }
 	var out = { burnDv: Math.abs(figures.trimDv) / 1000, planeChange: 0,
 	            progradeDv: -figures.trimDv / 1000 };
-	if (geo && isFinite(figures.vCatch) && isFinite(geo.vRel)) {
-		out.speedBefore = figures.vCatch / 1000;
-		out.speedAfter = geo.vRel / 1000;
-	}
+	if (geo && isFinite(geo.vRel)) { out.speedAfter = geo.vRel / 1000; }
 	return out;
 }
 
