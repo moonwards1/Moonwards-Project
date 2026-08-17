@@ -455,6 +455,17 @@ body {
 	width: 110px; color-scheme: dark;
 }
 .mp-inrow select { width: 150px; }
+/* Coast phase's waypoint "at ... degrees" row (transfer-leg.js): number field
+   and fine-tune slider sit right beside the label, not spread across the row
+   the way .mp-inrow's space-between layout would push them. */
+.mp-wp-at-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 13px; }
+.mp-wp-at-row label { color: var(--dim); }
+.mp-wp-at-row input[type=number] {
+	background: #0f1424; border: 1px solid var(--line2); color: var(--text);
+	border-radius: 6px; padding: 4px 7px; font: inherit; font-size: 12.5px;
+	width: 62px; color-scheme: dark;
+}
+.mp-wp-at-slider { width: 64px; margin-left: 4px; accent-color: var(--acc); }
 /* Technology dropdowns (the departure and arrival technology selectors) —
    full-width, not paired with a label the way .mp-inrow's controls are. */
 .mp-tech-select {

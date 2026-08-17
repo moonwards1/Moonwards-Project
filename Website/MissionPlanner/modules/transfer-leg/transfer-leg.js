@@ -833,22 +833,6 @@ export default {
 			ctx.world.set({ stage: ctx.stageId, params: patch });
 		}
 
-		function numRow(parent, label, unit, value, step, commit) {
-			var row = document.createElement("div"); row.className = "mp-inrow";
-			var lab = document.createElement("label"); lab.textContent = label; row.appendChild(lab);
-			var wrap = document.createElement("span");
-			var inp = document.createElement("input");
-			inp.type = "number"; inp.step = step; inp.value = value;
-			wrap.appendChild(inp);
-			var u = document.createElement("span"); u.className = "mp-unit"; u.textContent = unit;
-			wrap.appendChild(u); row.appendChild(wrap); parent.appendChild(row);
-			inp.addEventListener("change", function () {
-				var v = parseFloat(inp.value);
-				if (isFinite(v)) { commit(v); }
-			});
-			return inp;
-		}
-
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
 		// Each waypoint gets ONE outlined card, titled "waypoint N" once at the
 		// top, with two sections inside: the read-only PLAN section (what the
@@ -898,11 +882,51 @@ export default {
 				hint.textContent = "up to ±" + WAYPOINT_AXIS_CAP_MPS + " m/s per axis";
 				card.appendChild(hint);
 
-				var dayInput = numRow(card, "at", "°", degAtDay(legFor(ctx.world, ctx.stageId), wp.days), 1, function (v) {
+				// "at ... degrees": a number field (0.1°-stepped, shown to two
+				// decimals) plus a ±5° fine-tune slider, offset from wherever
+				// the waypoint sits when this card is (re)built — its "initial
+				// location" for the slider's purposes. Slider and field stay
+				// in sync in both directions; setAtBase re-anchors both after
+				// a reset moves the waypoint back to the plan's own day.
+				var atRow = document.createElement("div"); atRow.className = "mp-wp-at-row";
+				var atLab = document.createElement("label"); atLab.textContent = "at"; atRow.appendChild(atLab);
+				var dayInput = document.createElement("input");
+				dayInput.type = "number"; dayInput.step = 0.1;
+				atRow.appendChild(dayInput);
+				var atUnit = document.createElement("span"); atUnit.className = "mp-unit"; atUnit.textContent = "degrees";
+				atRow.appendChild(atUnit);
+				var atSlider = document.createElement("input");
+				atSlider.type = "range"; atSlider.className = "mp-wp-at-slider";
+				atSlider.min = -5; atSlider.max = 5; atSlider.step = 0.1;
+				atRow.appendChild(atSlider);
+				card.appendChild(atRow);
+
+				var atBaseDeg = 0;
+				function setAtBase(deg) {
+					atBaseDeg = deg;
+					dayInput.value = deg.toFixed(2);
+					atSlider.value = 0;
+				}
+				function commitAtDeg(v) {
 					var list = copyWaypoints(stageParams().waypoints);
 					var leg = legFor(ctx.world, ctx.stageId);
 					list[i].days = dayAtDeg(leg, stageParams().legDays, list[i].days, v);
 					commitWaypoints(list);
+				}
+				setAtBase(degAtDay(legFor(ctx.world, ctx.stageId), wp.days));
+				dayInput.addEventListener("change", function () {
+					var v = parseFloat(dayInput.value);
+					if (!isFinite(v)) { return; }
+					commitAtDeg(v);
+					dayInput.value = v.toFixed(2);
+					atSlider.value = Math.max(-5, Math.min(5, v - atBaseDeg));
+				});
+				atSlider.addEventListener("input", function () {
+					var off = parseFloat(atSlider.value);
+					if (!isFinite(off)) { return; }
+					var v = atBaseDeg + off;
+					dayInput.value = v.toFixed(2);
+					commitAtDeg(v);
 				});
 				var burnBaseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
 				var burnHost = document.createElement("div"); card.appendChild(burnHost);
@@ -933,7 +957,7 @@ export default {
 						var list = copyWaypoints(stageParams().waypoints);
 						list[i] = { days: original.days, burn: Object.assign({}, original.burn) };
 						commitWaypoints(list);
-						dayInput.value = Math.round(degAtDay(legFor(ctx.world, ctx.stageId), original.days));
+						setAtBase(degAtDay(legFor(ctx.world, ctx.stageId), original.days));
 						drawBurnEditor(original.burn);
 					});
 				} else {
