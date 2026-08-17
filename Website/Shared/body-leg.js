@@ -130,6 +130,47 @@ export function bodyAccel(name, r, jde) {
 	return a;
 }
 
+// One RK4 stage-4 step (r,v at t0+dt) under `accel(r, jdeDays)` — the same
+// four-stage math both integrators below run inline, factored out so a step
+// that crosses entryR can be re-run at a smaller dt without duplicating it.
+function rk4Sub(accel, r0, v0, jde0Days, dt) {
+	var hd = dt / 2 / 86400;
+	var a1 = accel(r0, jde0Days);
+	var r2 = O.vAdd(r0, O.vScale(v0, dt / 2)), v2 = O.vAdd(v0, O.vScale(a1, dt / 2)), a2 = accel(r2, jde0Days + hd);
+	var r3 = O.vAdd(r0, O.vScale(v2, dt / 2)), v3 = O.vAdd(v0, O.vScale(a2, dt / 2)), a3 = accel(r3, jde0Days + hd);
+	var r4 = O.vAdd(r0, O.vScale(v3, dt)), v4 = O.vAdd(v0, O.vScale(a3, dt)), a4 = accel(r4, jde0Days + dt / 86400);
+	return {
+		r: O.vAdd(r0, O.vScale(O.vAdd(O.vAdd(v0, O.vScale(v2, 2)), O.vAdd(O.vScale(v3, 2), v4)), dt / 6)),
+		v: O.vAdd(v0, O.vScale(O.vAdd(O.vAdd(a1, O.vScale(a2, 2)), O.vAdd(O.vScale(a3, 2), a4)), dt / 6))
+	};
+}
+
+// A step sized off the turn-angle cap (~1° of turn) can still land well past
+// entryR: the cap controls ANGULAR rate, but a near-radial fall (heading
+// almost straight at the body) barely turns at all while closing distance
+// fast, so the step that finally crosses the surface can overshoot deep past
+// it in one gulp. Past entryR the RK4 extrapolation is riding a potential
+// well the real surface would have stopped it from ever reaching, so the
+// state it lands on is fictitious — reported "impact" speed can come out
+// many times the real entry speed. Bisecting THIS step's own dt against
+// entryR (not re-integrating from scratch) finds the true crossing at
+// negligible extra cost. Returns the full (unrefined) step when it doesn't
+// cross entryR at all, so a caller uses this unconditionally in place of a
+// plain rk4Sub call.
+function rk4StepToEntry(accel, r0, v0, jde0Days, dtFull, entryR) {
+	var full = rk4Sub(accel, r0, v0, jde0Days, dtFull);
+	if (Math.hypot(full.r[0], full.r[1], full.r[2]) > entryR) {
+		return { r: full.r, v: full.v, dt: dtFull, hitEntry: false };
+	}
+	var lo = 0, hi = dtFull, best = full;
+	for (var i = 0; i < 40; i++) {
+		var mid = (lo + hi) / 2;
+		var s = rk4Sub(accel, r0, v0, jde0Days, mid);
+		if (Math.hypot(s.r[0], s.r[1], s.r[2]) <= entryR) { hi = mid; best = s; } else { lo = mid; }
+	}
+	return { r: best.r, v: best.v, dt: hi, hitEntry: true };
+}
+
 // Closest approach refined off an RK4 trail: the sampled minimum, plus the
 // vertex of the parabola through it and its two neighbours. The step is
 // turn-angle capped, so a DISTANT pass (low curvature, step pinned at the cap)
@@ -219,18 +260,14 @@ export function integrateTrajectory(name, R0, V0, jd0) {
 		var rNow = Math.hypot(r[0], r[1], r[2]);
 		var dtMax = rNow < c.SOI ? 2160 : 21600;
 		var dt = Math.max(0.05, Math.min(dtMax, 0.02 * vmag / amag));   // ~1 deg of turn, capped
-		var hd = dt / 2 / 86400;
-		var r2 = O.vAdd(r, O.vScale(v, dt / 2)), v2 = O.vAdd(v, O.vScale(a1, dt / 2)), a2 = bodyAccel(name, r2, jde + hd);
-		var r3 = O.vAdd(r, O.vScale(v2, dt / 2)), v3 = O.vAdd(v, O.vScale(a2, dt / 2)), a3 = bodyAccel(name, r3, jde + hd);
-		var r4 = O.vAdd(r, O.vScale(v3, dt)), v4 = O.vAdd(v, O.vScale(a3, dt)), a4 = bodyAccel(name, r4, jde + dt / 86400);
-		r = O.vAdd(r, O.vScale(O.vAdd(O.vAdd(v, O.vScale(v2, 2)), O.vAdd(O.vScale(v3, 2), v4)), dt / 6));
-		v = O.vAdd(v, O.vScale(O.vAdd(O.vAdd(a1, O.vScale(a2, 2)), O.vAdd(O.vScale(a3, 2), a4)), dt / 6));
-		t += dt;
+		var stepped = rk4StepToEntry(function (rr, jj) { return bodyAccel(name, rr, jj); },
+			r, v, jde, dt, entryR);
+		r = stepped.r; v = stepped.v; t += stepped.dt;
 		samples.push({ r: r.slice(), v: v.slice(), t: t });
 		var rmag = Math.hypot(r[0], r[1], r[2]);
 		if (rmag < rmin) { rmin = rmag; }
 		if (rmag > rmax) { rmax = rmag; }
-		if (rmag <= entryR) { entry = entryConditionsFromState(r, v); branch = "entry"; break; }
+		if (stepped.hitEntry) { entry = entryConditionsFromState(r, v); branch = "entry"; break; }
 		if (boundCap != null && t > boundCap) { branch = "body"; break; }
 		var vmagNow = Math.hypot(v[0], v[1], v[2]);
 		var E = vmagNow * vmagNow / 2 - c.GM / rmag;
@@ -368,17 +405,13 @@ export function integrateEncounter(name, rHelio, vHelio, jde0, maxDurS, opts) {
 		var vmag = Math.max(1, Math.hypot(v[0], v[1], v[2]));
 		var dt = Math.max(0.05, Math.min(2160, 0.02 * vmag / amag));   // ~1 deg of turn; SOI-interior cap
 		dt = Math.min(dt, maxDurS - t);
-		var hd = dt / 2 / 86400;
-		var r2 = O.vAdd(r, O.vScale(v, dt / 2)), v2 = O.vAdd(v, O.vScale(a1, dt / 2)), a2 = bodyAccel(name, r2, jde + hd);
-		var r3 = O.vAdd(r, O.vScale(v2, dt / 2)), v3 = O.vAdd(v, O.vScale(a2, dt / 2)), a3 = bodyAccel(name, r3, jde + hd);
-		var r4 = O.vAdd(r, O.vScale(v3, dt)), v4 = O.vAdd(v, O.vScale(a3, dt)), a4 = bodyAccel(name, r4, jde + dt / 86400);
-		r = O.vAdd(r, O.vScale(O.vAdd(O.vAdd(v, O.vScale(v2, 2)), O.vAdd(O.vScale(v3, 2), v4)), dt / 6));
-		v = O.vAdd(v, O.vScale(O.vAdd(O.vAdd(a1, O.vScale(a2, 2)), O.vAdd(O.vScale(a3, 2), a4)), dt / 6));
-		t += dt;
+		var stepped = rk4StepToEntry(function (rr, jj) { return bodyAccel(name, rr, jj); },
+			r, v, jde, dt, c.entryR);
+		r = stepped.r; v = stepped.v; t += stepped.dt;
 		samples.push({ r: r.slice(), v: v.slice(), t: t });
 		var rmag = Math.hypot(r[0], r[1], r[2]);
 		if (rmag < rmin) { rmin = rmag; tmin = t; iMin = samples.length - 1; }
-		if (rmag <= c.entryR) { entry = entryConditionsFromState(r, v); branch = "entry"; break; }
+		if (stepped.hitEntry) { entry = entryConditionsFromState(r, v); branch = "entry"; break; }
 		if (exitEnds && rmag > c.SOI) { branch = "exit"; break; }
 	}
 	if (!entry) {

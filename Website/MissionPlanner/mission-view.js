@@ -1825,11 +1825,25 @@ export function createMissionView(opts) {
 		// means the same thing on both cards. There is only one layer (nothing to
 		// compare the change against), and the net line draws in the bright/white
 		// net colour.
+		//
+		// Both sides are sampled at the SAME elapsed time — the earlier of the
+		// two legs' own ends — rather than each leg's own `.end`. A leg's `.end`
+		// is the surface-impact state when the arc hits the destination and the
+		// full-duration state otherwise; diffing one of each (the moment an edit
+		// crosses the impact/miss boundary) compares two unrelated points on the
+		// orbit and produces a huge, meaningless velocity difference.
+		// stateAtElapsed clamps outside a leg's own span to its nearest end, so
+		// this still reduces to the old `.end` vs `.end` diff whenever both legs
+		// share the same regime (the common case).
 		var end = committed.end, liveEnd = live.end;
-		var dv = O.vSub(liveEnd.v, end.v);
-		var c = O.burnComponents(end.r, end.v, dv);
+		var tCommon = Math.min((end.jd - committed.jd0) * 86400,
+		                        (liveEnd.jd - live.jd0) * 86400);
+		var endState = desc.stateAtElapsed(committed, tCommon) || end;
+		var liveState = desc.stateAtElapsed(live, tCommon) || liveEnd;
+		var dv = O.vSub(liveState.v, endState.v);
+		var c = O.burnComponents(endState.r, endState.v, dv);
 		shipCard.setGizmo({
-			axes: O.burnFrame(end.r, end.v),
+			axes: O.burnFrame(endState.r, endState.v),
 			current: { pro: c.pro, rad: c.rad, nrm: c.nrm, net: O.vMag(dv) },
 			currentDir: unitOf(dv)
 		});
