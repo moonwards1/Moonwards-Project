@@ -381,52 +381,110 @@ export function buildVectorEditor(host, values, onChange, opts) {
 
 export function renderVectorGlyph(host, values) {
 	host.innerHTML = "";
-	var W = 170, H = 190, OX = 85, OY = 100;
 	var axes = [
 		{ key: "pro", name: "prograde", col: "#6fd49a", dx: Math.cos(-Math.PI / 6), dy: Math.sin(-Math.PI / 6) },
 		{ key: "rad", name: "radial",   col: "#ffb45a", dx: Math.cos(Math.PI / 6),  dy: Math.sin(Math.PI / 6) },
 		{ key: "nrm", name: "normal",   col: "#8ab4ff", dx: 0, dy: -1 }
 	];
 	// Auto-fit: AXIS_LEN is what the LARGEST-magnitude axis draws to (a
-	// negligible burn falls back to maxAbs=1 so SCALE stays finite; nothing
-	// draws at that scale anyway, since HIDE_FRAC below hides it).
+	// negligible burn falls back to maxAbs=1 so the fit scale stays finite;
+	// nothing draws at that scale anyway, since HIDE_FRAC below hides it).
+	// But the fit is capped at MAX_SCALE — buildVectorEditor's own top zoom
+	// level (ZMAX=12) applied to its base (unzoomed) scale, AXIS_LEN=112.5
+	// px per its own ±15 km/s range — so a SMALL burn never gets magnified
+	// past what the original interactive widget would ever show it at, even
+	// zoomed all the way in. Below that cap the fit still tightens toward
+	// AXIS_LEN as usual; above it (a small burn), the arrows draw at their
+	// true small size and the tight bounding box (pass 1/2 below) simply
+	// ends up smaller — legibility never costs more space than it needs to.
 	var maxAbs = Math.max(1, Math.abs(values.pro || 0), Math.abs(values.rad || 0), Math.abs(values.nrm || 0));
-	var AXIS_LEN = 55, SCALE = AXIS_LEN / maxAbs;
+	var AXIS_LEN = 55;
+	var MAX_SCALE = (112.5 / 15000) * 12;
+	var SCALE = Math.min(AXIS_LEN / maxAbs, MAX_SCALE);
 	var HIDE_FRAC = 0.008, hideMps = maxAbs * HIDE_FRAC;
 	var STROKE = 2.5, HEAD_LEN = 9, HEAD_HALF = 5;
 	// MIN_TIP_R keeps a near-zero axis's label a little out from the shared
-	// centre point (rather than sitting on top of the other two labels);
+	// origin point (rather than sitting on top of the other two labels);
 	// LABEL_PAD is the gap from an arrow's own tip to its label.
 	var MIN_TIP_R = 14, LABEL_PAD = 12;
+	// Estimated half-extents of a two-line axis label (a bold 12px letter
+	// over a 10px value, e.g. "N" / "-2.73") — sized generously enough not
+	// to clip real text, only used to size the viewBox below.
+	var TEXT_HALF_W = 17, TEXT_UP = 10, TEXT_DOWN = 21;
 
-	var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, "class": "sst-vecwidget" });
-
-	axes.forEach(function (a) {
+	// Pass 1: work out each axis's geometry in a coordinate system centred
+	// on the arrows' shared origin (0,0), and grow a content bounding box
+	// around it — the origin itself, every drawn arrow's tip, and every
+	// label's estimated box. The origin needs no special treatment beyond
+	// being one of the points grown into the box: unlike the old fixed
+	// square canvas, nothing here forces it to sit at the centre of the
+	// final drawing — a burn that only ever points up-right, say, ends up
+	// with the origin down in a corner, and the viewBox is only as big as
+	// whatever got drawn.
+	var minX = 0, maxX = 0, minY = 0, maxY = 0;
+	function grow(x, y) {
+		minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+		minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+	}
+	var drawn = axes.map(function (a) {
 		var v = values[a.key] || 0;
 		var mag = Math.abs(v) * SCALE;
 		var sgn = v < 0 ? -1 : 1;
+		var arrow = null;
 		if (Math.abs(v) > hideMps) {
-			var tx = OX + a.dx * v * SCALE, ty = OY + a.dy * v * SCALE;
+			var tx = a.dx * v * SCALE, ty = a.dy * v * SCALE;
 			var hx = sgn * a.dx, hy = sgn * a.dy, px = -hy, py = hx;
 			var baseLen = Math.min(HEAD_LEN, mag);
 			var bx = tx - hx * baseLen, by = ty - hy * baseLen;
-			svg.appendChild(svgEl("line", {
-				x1: OX, y1: OY, x2: bx, y2: by,
-				stroke: a.col, "stroke-width": STROKE, "stroke-linecap": "round" }));
-			svg.appendChild(svgEl("polygon", { fill: a.col, points:
-				tx + "," + ty + " " + (bx + px * HEAD_HALF) + "," + (by + py * HEAD_HALF) + " " +
-				(bx - px * HEAD_HALF) + "," + (by - py * HEAD_HALF) }));
+			arrow = { tx: tx, ty: ty, bx: bx, by: by, px: px, py: py };
+			grow(tx, ty);
 		}
 		// The label sits AT THE ARROW'S OWN TIP — its actual direction
-		// (sign included), not a fixed per-axis compass point — so the whole
+		// (sign included), not a fixed per-axis compass point — so the
 		// glyph only needs to be as big as the arrows themselves.
 		var tipR = Math.max(mag, MIN_TIP_R);
-		var lx = OX + a.dx * (tipR + LABEL_PAD) * sgn, ly = OY + a.dy * (tipR + LABEL_PAD) * sgn;
-		var t = svgEl("text", { x: lx, y: ly, fill: a.col, "text-anchor": "middle" });
+		var lx = a.dx * (tipR + LABEL_PAD) * sgn, ly = a.dy * (tipR + LABEL_PAD) * sgn;
+		grow(lx - TEXT_HALF_W, ly - TEXT_UP);
+		grow(lx + TEXT_HALF_W, ly + TEXT_DOWN);
+		return { a: a, v: v, arrow: arrow, lx: lx, ly: ly };
+	});
+
+	// Pass 2: draw everything shifted by (OX,OY) = -min, so the tight box
+	// computed above becomes the viewBox exactly (plus a small pad).
+	var PAD = 4;
+	minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+	var OX = -minX, OY = -minY;
+	var vbW = maxX - minX, vbH = maxY - minY;
+	// width/height (not just viewBox) fix the SVG's own on-screen size at
+	// exactly its content, 1 unit = 1 CSS px — unlike buildVectorEditor's
+	// .sst-vecwidget (width:100%; height:auto), which would stretch this
+	// tight, small viewBox to fill the card regardless, blowing up the
+	// "fixed-size" 12px/10px label text right along with it. This is what
+	// actually keeps the text at its stated size: a small burn's small
+	// viewBox now stays small on screen instead of being scaled up to fit.
+	var svg = svgEl("svg", { viewBox: "0 0 " + vbW + " " + vbH, width: vbW, height: vbH, "class": "sst-vecglyph" });
+
+	drawn.forEach(function (d) {
+		if (d.arrow) {
+			var ar = d.arrow;
+			svg.appendChild(svgEl("line", {
+				x1: OX, y1: OY, x2: OX + ar.bx, y2: OY + ar.by,
+				stroke: d.a.col, "stroke-width": STROKE, "stroke-linecap": "round" }));
+			svg.appendChild(svgEl("polygon", { fill: d.a.col, points:
+				(OX + ar.tx) + "," + (OY + ar.ty) + " " +
+				(OX + ar.bx + ar.px * HEAD_HALF) + "," + (OY + ar.by + ar.py * HEAD_HALF) + " " +
+				(OX + ar.bx - ar.px * HEAD_HALF) + "," + (OY + ar.by - ar.py * HEAD_HALF) }));
+		}
+		var lx = OX + d.lx, ly = OY + d.ly;
+		// A precisely-zero axis (no burn on it at all, not just a small one)
+		// dims its whole label — an unused axis reads as background, not one
+		// more thing competing with the two that actually did something.
+		var t = svgEl("text", { x: lx, y: ly, fill: d.a.col, "text-anchor": "middle",
+			opacity: d.v === 0 ? 0.4 : 1 });
 		var letter = svgEl("tspan", { x: lx, dy: 0, "font-size": 12, "font-weight": 700 });
-		letter.textContent = a.name.charAt(0).toUpperCase();
+		letter.textContent = d.a.name.charAt(0).toUpperCase();
 		var val = svgEl("tspan", { x: lx, dy: 13, "font-size": 10, "font-weight": 400, "fill-opacity": 0.85 });
-		val.textContent = (v / 1000).toFixed(2);
+		val.textContent = (d.v / 1000).toFixed(2);
 		t.appendChild(letter); t.appendChild(val);
 		svg.appendChild(t);
 	});

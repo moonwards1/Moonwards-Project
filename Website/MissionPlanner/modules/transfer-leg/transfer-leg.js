@@ -891,31 +891,14 @@ export default {
 				var subHead = document.createElement("div"); subHead.className = "mp-wp-head";
 				subHead.textContent = "course correction";
 				var btn = document.createElement("button"); btn.className = "mp-btn";
-				if (original) {
-					// Part of the committed plan: not removable, only resettable.
-					btn.textContent = "reset";
-					btn.addEventListener("click", function () {
-						var list = copyWaypoints(stageParams().waypoints);
-						list[i] = { days: original.days, burn: Object.assign({}, original.burn) };
-						commitWaypoints(list);
-						rebuildWaypointRows();
-					});
-				} else {
-					btn.textContent = "remove";
-					btn.addEventListener("click", function () {
-						var list = copyWaypoints(stageParams().waypoints);
-						list.splice(i, 1);
-						commitWaypoints(list);
-						rebuildWaypointRows();
-					});
-				}
+				btn.textContent = original ? "reset" : "remove";
 				subHead.appendChild(btn); card.appendChild(subHead);
 
 				var hint = document.createElement("div"); hint.className = "mp-muted";
 				hint.textContent = "up to ±" + WAYPOINT_AXIS_CAP_MPS + " m/s per axis";
 				card.appendChild(hint);
 
-				numRow(card, "at", "°", degAtDay(legFor(ctx.world, ctx.stageId), wp.days), 1, function (v) {
+				var dayInput = numRow(card, "at", "°", degAtDay(legFor(ctx.world, ctx.stageId), wp.days), 1, function (v) {
 					var list = copyWaypoints(stageParams().waypoints);
 					var leg = legFor(ctx.world, ctx.stageId);
 					list[i].days = dayAtDeg(leg, stageParams().legDays, list[i].days, v);
@@ -923,13 +906,49 @@ export default {
 				});
 				var burnBaseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
 				var burnHost = document.createElement("div"); card.appendChild(burnHost);
-				// A COPY of the burn, not the live object — see commitWaypoints.
-				buildVectorEditor(burnHost, Object.assign({}, wp.burn), function (axis, mps) {
-					var list = copyWaypoints(stageParams().waypoints);
-					list[i].burn[axis] = mps;
-					commitWaypoints(list);
-				}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS,
-				     displayDiv: 1, decimals: 1, step: 0.1, unitLabel: "m/s" });
+				function drawBurnEditor(burnVals) {
+					// A COPY of the burn, not the live object — see commitWaypoints.
+					buildVectorEditor(burnHost, Object.assign({}, burnVals), function (axis, mps) {
+						var list = copyWaypoints(stageParams().waypoints);
+						list[i].burn[axis] = mps;
+						commitWaypoints(list);
+					}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS,
+					     displayDiv: 1, decimals: 1, step: 0.1, unitLabel: "m/s" });
+				}
+				drawBurnEditor(wp.burn);
+
+				if (original) {
+					// Part of the committed plan: not removable, only
+					// resettable — and reset touches only THIS waypoint's
+					// course-correction section, in place, rather than
+					// rebuilding the whole card list (rebuildWaypointRows).
+					// The plan section above (and its own readout box's
+					// host) is a SEPARATE, untouched element, both here and
+					// on every other waypoint's card — a full rebuild would
+					// tear down and recreate all of them, leaving every
+					// readout box on the page briefly anchored to a
+					// detached element until the next recompute happens to
+					// run, which is what made them vanish.
+					btn.addEventListener("click", function () {
+						var list = copyWaypoints(stageParams().waypoints);
+						list[i] = { days: original.days, burn: Object.assign({}, original.burn) };
+						commitWaypoints(list);
+						dayInput.value = Math.round(degAtDay(legFor(ctx.world, ctx.stageId), original.days));
+						drawBurnEditor(original.burn);
+					});
+				} else {
+					// Removal changes the list's length/order, which every
+					// other card's index-matching (plan vs. added-later)
+					// depends on, so this one legitimately needs the full
+					// rebuild.
+					btn.addEventListener("click", function () {
+						var list = copyWaypoints(stageParams().waypoints);
+						list.splice(i, 1);
+						commitWaypoints(list);
+						rebuildWaypointRows();
+					});
+				}
+
 				wpHost.appendChild(card);
 				burnHosts.push(burnHost);
 			});
@@ -1053,6 +1072,7 @@ export default {
 		// mission-view.js to render/position.
 		if (params.waypoints && params.waypoints.length) {
 			var wpHosts = wpHostsFor(snap.world, snap.stageId);
+			var planWpsForCorrection = planWaypointsFor(snap.world);
 			params.waypoints.forEach(function (wp, i) {
 				var wpTimeS = (wp.days || 0) * DAY;
 				var wpState = stateAtElapsed(leg, wpTimeS);
@@ -1064,8 +1084,8 @@ export default {
 				view.group.add(giz);
 				view.pxScaled.push({ obj: giz, px: GIZMO_PX });
 
-				// Burn arrows for the waypoint impulse, and the straddling
-				// readout (below zero, makeBurnArrow itself no-ops, so this runs
+				// Burn arrows: the ship's WHOLE burn at this waypoint (below
+				// zero, makeBurnArrow itself no-ops, so this runs
 				// unconditionally — matching the other three leg modules, whose
 				// wpVisuals-based readouts don't gate on burn magnitude either).
 				var eff = burnEffect(GM_SUN, wpState.r, wpState.v,
@@ -1085,7 +1105,23 @@ export default {
 					view.pxScaled.push({ obj: dvArrow, px: burnArrowPxScale(BURN_VEC_SCALE) });
 				}
 
-				if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: eff }); }
+				// The course-correction card's own readout is the EFFECT OF
+				// THE CORRECTION ALONE — wp.burn minus whatever baseline it
+				// started from (the plan's original burn, or zero for a
+				// waypoint added after freezing) — evaluated from the SAME
+				// pre-burn state, not the whole resulting burn (that's the
+				// plan section's own box, and the arrows above).
+				if (wpHosts[i]) {
+					var original = planWpsForCorrection[i] || null;
+					var baseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
+					var deltaBurn = {
+						pro: (wp.burn.pro || 0) - (baseline.pro || 0),
+						rad: (wp.burn.rad || 0) - (baseline.rad || 0),
+						nrm: (wp.burn.nrm || 0) - (baseline.nrm || 0)
+					};
+					var correctionEff = burnEffect(GM_SUN, wpState.r, wpState.v, deltaBurn);
+					view.readoutEntries.push({ host: wpHosts[i], data: correctionEff });
+				}
 			});
 		}
 
