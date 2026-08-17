@@ -60,7 +60,7 @@ import { Frames } from "../../../Shared/frames.js";
 import { evaluateChain, elementCount } from "../../../Shared/kinematic-chain.js";
 import { buildIntegratedLeg, stateAtLegTime, localFrameAt, burnEffect,
          bodySOI } from "../../../Shared/body-leg.js";
-import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
+import { createWaypointGizmo, makeBurnArrow, burnArrowPxScale } from "../../../Shared/sim/burn-widget.js";
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
@@ -483,7 +483,9 @@ export default {
 
 			var spdArrow = makeBurnArrow(renderPos, wv.eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
 			var dvArrow = makeBurnArrow(renderPos, wv.eff.dv, DV_COLOR, BURN_VEC_SCALE);
-			[spdArrow, dvArrow].forEach(function (a) { if (a) { view.group.add(a); } });
+			[spdArrow, dvArrow].forEach(function (a) {
+				if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: burnArrowPxScale(BURN_VEC_SCALE) }); }
+			});
 
 			if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: wv.eff }); }
 		});

@@ -82,7 +82,7 @@ import {
 	updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName,
 	soiRadiusAU, projectedRadiusPx
 } from "../Shared/sim/body-renderer.js";
-import { createWaypointGizmo, makeBurnArrow } from "../Shared/sim/burn-widget.js";
+import { createWaypointGizmo, makeBurnArrow, burnArrowPxScale } from "../Shared/sim/burn-widget.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
 import { buildVectorEditor } from "../Shared/sim/vector-editor.js";
 import {
@@ -1807,6 +1807,10 @@ export function createEphemerisView(opts) {
 
 		wpMarkers.forEach(function (g) {
 			g.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, g.position, 42));
+		});
+		var burnArrowPx = burnArrowPxScale(BURN_VEC_SCALE);
+		burnArrows.forEach(function (a) {
+			a.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, a.position, burnArrowPx));
 		});
 		if (markerSprite && markerSprite.visible) {
 			markerSprite.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, markerSprite.position, 26));

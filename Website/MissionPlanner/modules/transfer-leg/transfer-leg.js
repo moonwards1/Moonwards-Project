@@ -64,7 +64,7 @@ import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
-import { createWaypointGizmo, makeBurnArrow } from "../../../Shared/sim/burn-widget.js";
+import { createWaypointGizmo, makeBurnArrow, burnArrowPxScale } from "../../../Shared/sim/burn-widget.js";
 import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
@@ -1025,11 +1025,17 @@ export default {
 
 				// Prograde speed change arrow (yellow)
 				var spdArrow = makeBurnArrow(gizPos, eff.dSpeedVec, DSPEED_COLOR, BURN_VEC_SCALE);
-				if (spdArrow) { view.group.add(spdArrow); }
+				if (spdArrow) {
+					view.group.add(spdArrow);
+					view.pxScaled.push({ obj: spdArrow, px: burnArrowPxScale(BURN_VEC_SCALE) });
+				}
 
 				// Delta-v arrow (pink)
 				var dvArrow = makeBurnArrow(gizPos, eff.dv, DV_COLOR, BURN_VEC_SCALE);
-				if (dvArrow) { view.group.add(dvArrow); }
+				if (dvArrow) {
+					view.group.add(dvArrow);
+					view.pxScaled.push({ obj: dvArrow, px: burnArrowPxScale(BURN_VEC_SCALE) });
+				}
 
 				if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: eff }); }
 			});

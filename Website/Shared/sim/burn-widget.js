@@ -30,7 +30,12 @@
  * duplicated here — it's the exact same formula as body-renderer.js's
  * `worldSizeAtPointForPx` (already extracted), so callers use that
  * directly: `gizmo.scale.setScalar(worldSizeAtPointForPx(camera, holderEl,
- * gizmo.position, 42))`.
+ * gizmo.position, 42))`. The dV / prograde-speed-change arrows get the same
+ * treatment (MissionPlanner's leg modules and ephemeris-view.js) via
+ * `burnArrowPxScale`, below — since `scale` cancels out of the on-screen
+ * result, this holds the arrow at ARROW_PX_PER_KMS screen pixels per km/s
+ * of magnitude at any camera distance, rather than a fixed size regardless
+ * of magnitude the way the gizmo's arms are.
  *
  * Draggable-gizmo hit-testing (Moon-Skyhook/Mars-Phobos let you grab a
  * waypoint's arms) is not this module's concern either — it stores the
@@ -81,6 +86,19 @@ export function createWaypointGizmo(rLocal, vLocal, renderPos) {
 	];
 	return g;
 }
+
+// Pixels-per-km/s a burn arrow (dV / prograde-Δv) is held to on screen,
+// independent of camera distance — the magnitude-proportional analogue of
+// a waypoint gizmo's fixed GIZMO_PX. A caller adds the arrow to its
+// view.pxScaled list (mission-view.js's per-frame worldSizeAtPointForPx
+// rescale) with `px: burnArrowPxScale(scale)`, `scale` being the same
+// scene-units-per-km/s value passed to makeBurnArrow below — that scale
+// cancels out of the final on-screen length exactly (it only sizes the
+// arrow's local THREE geometry, never its rendered size), so every burn
+// arrow ends up ARROW_PX_PER_KMS screen pixels long per km/s of magnitude,
+// regardless of the view's physical scale or the camera's distance/zoom.
+export var ARROW_PX_PER_KMS = 30;
+export function burnArrowPxScale(scale) { return ARROW_PX_PER_KMS / scale; }
 
 // One arrow for a velocity-like vector (m/s), anchored at a scene-unit
 // position (THREE.Vector3). `scale` is scene-units per km/s — each tool
