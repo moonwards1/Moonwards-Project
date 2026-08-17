@@ -65,6 +65,16 @@
  * Styling comes from the page's own CSS (.sst-vecwidget, .sst-vec-controls,
  * .sst-vec-nums, .sst-vec-num, .sst-vec-num-row, .sst-vec-num-narrow —
  * MissionPlanner/planner.css carries them).
+ *
+ * renderVectorGlyph(host, values): a STATIC, read-only isometric burn glyph
+ * — just the three arrows and their per-axis letter+value legend, drawn once
+ * from a plain { pro, rad, nrm } (m/s) snapshot. No ship glyph, no
+ * background axis rays, no zoom/pan, no numeric input row, no interaction —
+ * for a context display of a burn nobody is dragging (Mission Planner's
+ * read-only "plan waypoint" cards). Auto-scaled so the largest-magnitude
+ * axis fills the view: unlike buildVectorEditor's fixed ±15 km/s / ±maxDelta
+ * range (sized to leave room for dragging to any value), a read-only glyph
+ * has no reason to reserve room the burn never uses.
  */
 
 var SVGNS = "http://www.w3.org/2000/svg";
@@ -367,4 +377,59 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	applyTransform();
 	host._sstRedraw = redraw;
 	redraw();
+}
+
+export function renderVectorGlyph(host, values) {
+	host.innerHTML = "";
+	var W = 170, H = 190, OX = 85, OY = 100;
+	var axes = [
+		{ key: "pro", name: "prograde", col: "#6fd49a", dx: Math.cos(-Math.PI / 6), dy: Math.sin(-Math.PI / 6) },
+		{ key: "rad", name: "radial",   col: "#ffb45a", dx: Math.cos(Math.PI / 6),  dy: Math.sin(Math.PI / 6) },
+		{ key: "nrm", name: "normal",   col: "#8ab4ff", dx: 0, dy: -1 }
+	];
+	// Auto-fit: AXIS_LEN is what the LARGEST-magnitude axis draws to (a
+	// negligible burn falls back to maxAbs=1 so SCALE stays finite; nothing
+	// draws at that scale anyway, since HIDE_FRAC below hides it).
+	var maxAbs = Math.max(1, Math.abs(values.pro || 0), Math.abs(values.rad || 0), Math.abs(values.nrm || 0));
+	var AXIS_LEN = 55, SCALE = AXIS_LEN / maxAbs;
+	var HIDE_FRAC = 0.008, hideMps = maxAbs * HIDE_FRAC;
+	var STROKE = 2.5, HEAD_LEN = 9, HEAD_HALF = 5;
+	// MIN_TIP_R keeps a near-zero axis's label a little out from the shared
+	// centre point (rather than sitting on top of the other two labels);
+	// LABEL_PAD is the gap from an arrow's own tip to its label.
+	var MIN_TIP_R = 14, LABEL_PAD = 12;
+
+	var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, "class": "sst-vecwidget" });
+
+	axes.forEach(function (a) {
+		var v = values[a.key] || 0;
+		var mag = Math.abs(v) * SCALE;
+		var sgn = v < 0 ? -1 : 1;
+		if (Math.abs(v) > hideMps) {
+			var tx = OX + a.dx * v * SCALE, ty = OY + a.dy * v * SCALE;
+			var hx = sgn * a.dx, hy = sgn * a.dy, px = -hy, py = hx;
+			var baseLen = Math.min(HEAD_LEN, mag);
+			var bx = tx - hx * baseLen, by = ty - hy * baseLen;
+			svg.appendChild(svgEl("line", {
+				x1: OX, y1: OY, x2: bx, y2: by,
+				stroke: a.col, "stroke-width": STROKE, "stroke-linecap": "round" }));
+			svg.appendChild(svgEl("polygon", { fill: a.col, points:
+				tx + "," + ty + " " + (bx + px * HEAD_HALF) + "," + (by + py * HEAD_HALF) + " " +
+				(bx - px * HEAD_HALF) + "," + (by - py * HEAD_HALF) }));
+		}
+		// The label sits AT THE ARROW'S OWN TIP — its actual direction
+		// (sign included), not a fixed per-axis compass point — so the whole
+		// glyph only needs to be as big as the arrows themselves.
+		var tipR = Math.max(mag, MIN_TIP_R);
+		var lx = OX + a.dx * (tipR + LABEL_PAD) * sgn, ly = OY + a.dy * (tipR + LABEL_PAD) * sgn;
+		var t = svgEl("text", { x: lx, y: ly, fill: a.col, "text-anchor": "middle" });
+		var letter = svgEl("tspan", { x: lx, dy: 0, "font-size": 12, "font-weight": 700 });
+		letter.textContent = a.name.charAt(0).toUpperCase();
+		var val = svgEl("tspan", { x: lx, dy: 13, "font-size": 10, "font-weight": 400, "fill-opacity": 0.85 });
+		val.textContent = (v / 1000).toFixed(2);
+		t.appendChild(letter); t.appendChild(val);
+		svg.appendChild(t);
+	});
+
+	host.appendChild(svg);
 }

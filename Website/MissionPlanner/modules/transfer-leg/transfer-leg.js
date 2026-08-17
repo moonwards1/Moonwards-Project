@@ -62,7 +62,7 @@ import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
-import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
+import { buildVectorEditor, renderVectorGlyph } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrow, burnArrowPxScale } from "../../../Shared/sim/burn-widget.js";
 import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
@@ -694,6 +694,22 @@ function rememberWpHosts(world, stageId, hosts) {
 	m.set(stageId, hosts);
 }
 
+// The read-only "plan waypoints" cards (init, below) — draw() needs each
+// one's info-line element and card (as the readout box's host) to refresh
+// them every recompute, the same split wpHostsFor/rememberWpHosts keeps for
+// the live course-correction cards. Same WeakMap-per-World pattern.
+var planWpRowsByWorld = new WeakMap();
+function planWpRowsFor(world, stageId) {
+	var m = planWpRowsByWorld.get(world);
+	return (m && m.get(stageId)) || [];
+}
+function rememberPlanWpRows(world, stageId, rows) {
+	if (!world || typeof world !== "object") { return; }
+	var m = planWpRowsByWorld.get(world);
+	if (!m) { m = new Map(); planWpRowsByWorld.set(world, m); }
+	m.set(stageId, rows);
+}
+
 export default {
 	id: "transfer-leg",
 	title: "Transfer leg",
@@ -834,16 +850,46 @@ export default {
 		}
 
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
+		// Each waypoint gets ONE outlined card, titled "waypoint N" once at the
+		// top, with two sections inside: the read-only PLAN section (what the
+		// mission plan, frozen at "Start Mission Plan" on the Ephemeris tab,
+		// authored — the info line plus Shared/sim/vector-editor.js's static
+		// renderVectorGlyph, present only when this index has a plan waypoint
+		// behind it — an index beyond the frozen list is a correction added
+		// after freezing, with no plan section) and the COURSE CORRECTION
+		// section (the editable part: reset/remove, the cap hint, the degree
+		// field, the draggable burn editor). Both sections get their own
+		// straddling Δv/plane-change readout box (Shared/sim/readout-panes.js)
+		// — the plan section's is filled in by draw() every recompute
+		// (planWpRowsFor/rememberPlanWpRows), since only the state AT a
+		// waypoint needs recomputing, not the plan itself, which never
+		// changes after freezing.
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
 			var planWps = planWaypointsFor(ctx.world);   // the frozen plan's original waypoints, by index
 			var burnHosts = [];
+			var planRows = [];
 			wps.forEach(function (wp, i) {
-				var card = document.createElement("div"); card.className = "mp-card";
-				var head = document.createElement("div"); head.className = "mp-wp-head";
-				head.textContent = "waypoint " + (i + 1);
 				var original = planWps[i] || null;
+				var card = document.createElement("div"); card.className = "mp-card";
+				var title = document.createElement("h3"); title.textContent = "waypoint " + (i + 1);
+				card.appendChild(title);
+
+				if (original) {
+					var planSection = document.createElement("div");
+					var info = document.createElement("div"); info.className = "mp-muted";
+					planSection.appendChild(info);
+					var glyphHost = document.createElement("div"); planSection.appendChild(glyphHost);
+					renderVectorGlyph(glyphHost, original.burn);
+					card.appendChild(planSection);
+					planRows.push({ info: info, host: planSection });
+				} else {
+					planRows.push(null);
+				}
+
+				var subHead = document.createElement("div"); subHead.className = "mp-wp-head";
+				subHead.textContent = "course correction";
 				var btn = document.createElement("button"); btn.className = "mp-btn";
 				if (original) {
 					// Part of the committed plan: not removable, only resettable.
@@ -863,17 +909,18 @@ export default {
 						rebuildWaypointRows();
 					});
 				}
-				head.appendChild(btn); card.appendChild(head);
+				subHead.appendChild(btn); card.appendChild(subHead);
+
+				var hint = document.createElement("div"); hint.className = "mp-muted";
+				hint.textContent = "up to ±" + WAYPOINT_AXIS_CAP_MPS + " m/s per axis";
+				card.appendChild(hint);
+
 				numRow(card, "at", "°", degAtDay(legFor(ctx.world, ctx.stageId), wp.days), 1, function (v) {
 					var list = copyWaypoints(stageParams().waypoints);
 					var leg = legFor(ctx.world, ctx.stageId);
 					list[i].days = dayAtDeg(leg, stageParams().legDays, list[i].days, v);
 					commitWaypoints(list);
 				});
-				var hint = document.createElement("div"); hint.className = "mp-muted";
-				hint.textContent = "course correction — up to ±" + WAYPOINT_AXIS_CAP_MPS +
-					" m/s per axis from " + (original ? "the plan" : "zero");
-				card.appendChild(hint);
 				var burnBaseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
 				var burnHost = document.createElement("div"); card.appendChild(burnHost);
 				// A COPY of the burn, not the live object — see commitWaypoints.
@@ -887,6 +934,7 @@ export default {
 				burnHosts.push(burnHost);
 			});
 			rememberWpHosts(ctx.world, ctx.stageId, burnHosts);
+			rememberPlanWpRows(ctx.world, ctx.stageId, planRows);
 			if (wps.length < 2) {
 				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
 				add.textContent = "+ add waypoint";
@@ -1039,6 +1087,36 @@ export default {
 
 				if (wpHosts[i]) { view.readoutEntries.push({ host: wpHosts[i], data: eff }); }
 			});
+		}
+
+		// Plan waypoints card readouts (init built the cards; see their own
+		// comment there). The plan's waypoints never change, but the state AT
+		// each one has to be recomputed like any other draw()-time figure, so
+		// this reruns computeLeg with the PLAN's own waypoints in place of the
+		// live/edited ones — everything else (the coast's start state) is
+		// identical either way, since a course correction never touches where
+		// the coast begins, only what happens at/after a waypoint.
+		var planRows = planWpRowsFor(snap.world, snap.stageId);
+		if (planRows.length) {
+			var coastStart = stateAtElapsed(leg, 0);
+			var planWpsDraw = planWaypointsFor(snap.world);
+			var planLeg = coastStart &&
+				computeLeg(Object.assign({}, params, { waypoints: planWpsDraw }),
+					{ r: coastStart.r, v: coastStart.v, jd: leg.jd0 });
+			if (planLeg && planLeg.ok) {
+				planWpsDraw.forEach(function (wp, i) {
+					var row = planRows[i];
+					if (!row) { return; }
+					var wpState = stateAtElapsed(planLeg, (wp.days || 0) * DAY);
+					if (!wpState) { return; }
+					row.info.textContent = "+" + Math.round(wp.days) + " d, " +
+						(O.vMag(wpState.r) / AU).toFixed(3) + " AU from Sun, coast speed " +
+						(O.vMag(wpState.v) / 1000).toFixed(2) + " km/s.";
+					var planEff = burnEffect(GM_SUN, wpState.r, wpState.v,
+						{ pro: wp.burn.pro || 0, rad: wp.burn.rad || 0, nrm: wp.burn.nrm || 0 });
+					view.readoutEntries.push({ host: row.host, data: planEff });
+				});
+			}
 		}
 
 		// The ship-marker chevron (ported from the Ephemeris tab's marker —
