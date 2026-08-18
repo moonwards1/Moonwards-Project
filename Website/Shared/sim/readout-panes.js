@@ -1,8 +1,7 @@
 /* Shared/sim/readout-panes.js
  *
  * The small "straddling" info card that hangs off a burn widget's host
- * element, poking out past the side panel's edge (see
- * Website/ARCHITECTURE.md, "Step 1: scene kit"). Extracted from three call
+ * element, poking out past the side panel's edge. Extracted from three call
  * sites (Solar-System-Trajectory-Plotter's single scene; Moon-Skyhook's and
  * Mars-Phobos's panels), which agreed on everything except:
  *
@@ -24,17 +23,6 @@
  *   stacked label/value rows — impulse, prograde, plane change — narrower
  *   than the three tools' original label-beside-row layout). Opt-in and
  *   false by default, so the three original call sites are unaffected.
- *
- * THE PROGRADE ROW HAS TWO FORMS. A burn on an existing trajectory reports
- * the signed change ("+0.25 km/s") — the speed it started from is the ship's
- * own and needs no restating. A carrier-chain element instead reports the
- * speed the payload is left AT ("6.09 km/s"), an absolute figure rather than
- * a change: the speed it started from is its MOUNT's, and the mount is itself
- * a card in the same stack, reporting that figure in its own box. A magnitude
- * difference would be the wrong number here anyway — a kick square to a fast
- * mount barely moves the speed, which would hide the entire kick. An entry
- * opts into the second form by carrying `speedAfter` (km/s); without it the
- * signed form is used, so the three original call sites are unaffected.
  *
  * What's NOT here: `burnReadoutData` (the |Δv| / plane-change / prograde-Δv
  * physics) stays local to each calculator — it reads tool-specific state

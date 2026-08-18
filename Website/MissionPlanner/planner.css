@@ -426,6 +426,21 @@ body {
 	background: var(--panel); border: 1px solid #232c44; border-radius: 10px;
 	padding: 10px 12px; flex: none;
 }
+/* Departure phase info strip (mission-view.js's updateDepartureInfo): plain
+   text against the panel background, no card frame -- it's context for the
+   tech cards/waypoints below it, not a stage of its own. */
+.mp-dep-info { flex: none; padding: 2px 4px 8px; }
+.mp-dep-info-head {
+	display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+	padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.mp-dep-info-body { font-size: 21px; font-weight: 600; color: var(--bright); }
+.mp-dep-info-date { font-size: 13px; color: var(--dim); }
+.mp-dep-info-row {
+	display: flex; justify-content: space-between; gap: 10px;
+	font-size: 12.5px; color: var(--dim); padding: 2px 0;
+}
+.mp-dep-info-row span:last-child { color: var(--bright); }
 .mp-card h3 {
 	margin: 0 0 8px; font-size: 13px; color: var(--bright); letter-spacing: 0.3px;
 	display: flex; align-items: center; justify-content: space-between; gap: 8px;

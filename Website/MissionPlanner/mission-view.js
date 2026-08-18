@@ -38,7 +38,7 @@
 
 import { createEngine } from "./core/recompute.js";
 import { computeArrivalSeam } from "./core/arrival-seam.js";
-import { systems } from "../Shared/orbit.js";
+import { systems, constants } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Exchange, encodeFragment } from "../Shared/exchange.js";
 import { packMissionLink } from "./ui/share-link.js";
@@ -55,6 +55,9 @@ import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
+var AU = constants.AU;
+
+function fmtKmS(mps) { return (mps / 1000).toFixed(2); }
 
 // Straddling burn-readout box colours (Shared/sim/readout-panes.js) — matches
 // every leg module's own DV_COLOR/DSPEED_COLOR burn-arrow constants, so a
@@ -879,6 +882,54 @@ export function createMissionView(opts) {
 	// and diagnostics uniformly, so engine- and module-authored ones look alike.
 	var cards = {};   // stageId -> { cardEl, chipEl, diagEl, phase, callbacks: [fn] }
 
+	// ---- departure info strip: context for the phase's tech cards/waypoints
+	// below it -- the launch date and the origin body's own heliocentric state
+	// at that moment. Plain text against the panel background, not a
+	// .mp-card: it isn't a stage or a control, just a header for what follows.
+	var depInfoEl = document.createElement("div"); depInfoEl.className = "mp-dep-info";
+	var depInfoHead = document.createElement("div"); depInfoHead.className = "mp-dep-info-head";
+	var depInfoBody = document.createElement("span"); depInfoBody.className = "mp-dep-info-body";
+	var depInfoDate = document.createElement("span"); depInfoDate.className = "mp-dep-info-date";
+	depInfoHead.appendChild(depInfoBody); depInfoHead.appendChild(depInfoDate);
+	depInfoEl.appendChild(depInfoHead);
+	function depInfoRow(label) {
+		var row = document.createElement("div"); row.className = "mp-dep-info-row";
+		var lab = document.createElement("span"); lab.textContent = label;
+		var val = document.createElement("span");
+		row.appendChild(lab); row.appendChild(val);
+		depInfoEl.appendChild(row);
+		return val;
+	}
+	var depInfoSpeed = depInfoRow("orbital speed:");
+	var depInfoDist = depInfoRow("distance from sun:");
+	var depInfoIncl = depInfoRow("inclination of motion:");
+	panelEl.appendChild(depInfoEl);
+
+	// The origin body's instantaneous heliocentric state at the release
+	// anchor -- NOT the live scrub date (world.jd): this describes the moment
+	// of launch itself, fixed once the frozen plan bakes it. "inclination of
+	// motion" is the angle the velocity vector makes with the ecliptic plane
+	// right then, asin(vz/|v|) straight off the state vector -- exact for any
+	// orbit, no circular assumption: zero at the body's peak ecliptic
+	// latitude, up to the full orbital inclination at a node crossing (a
+	// tangent vector inside a plane tilted by i to the ecliptic only reaches
+	// that full tilt where the plane itself crosses the ecliptic).
+	function updateDepartureInfo() {
+		var anchorJd = releaseAnchorForMission();
+		var show = workspace.phase === "departure" && anchorJd !== null;
+		depInfoEl.style.display = show ? "" : "none";
+		if (!show) { return; }
+		var state = O.bodyStateAtJD(GM_SUN, systems.get(originBody).orbit, anchorJd);
+		var speed = O.vMag(state.v);
+		var incl = Math.asin(Math.max(-1, Math.min(1, state.v[2] / speed))) * 180 / Math.PI;
+		var d = O.dateFromJulian(anchorJd);
+		depInfoBody.textContent = originBody;
+		depInfoDate.textContent = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
+		depInfoSpeed.textContent = fmtKmS(speed) + " km/s";
+		depInfoDist.textContent = (O.vMag(state.r) / AU).toFixed(3) + " AU";
+		depInfoIncl.textContent = (incl >= 0 ? "+" : "−") + Math.abs(incl).toFixed(1) + "°";
+	}
+
 	function stageTitle(stage) {
 		var desc = registry.get(stage.moduleId);
 		return desc ? desc.title : stage.moduleId;
@@ -905,6 +956,7 @@ export function createMissionView(opts) {
 			var show = entry.phase === null || entry.phase === workspace.phase;
 			entry.cardEl.style.display = show ? "" : "none";
 		});
+		updateDepartureInfo();
 	}
 
 	// Separate from the mount-time loop so the technology add/swap paths can
@@ -2029,6 +2081,7 @@ export function createMissionView(opts) {
 		renderPhaseDots(results);
 		renderEventsBar(results);
 		updateShipCard();
+		updateDepartureInfo();
 		var span = coastSpan(results);
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
 		var dep = departureSpan(results);
