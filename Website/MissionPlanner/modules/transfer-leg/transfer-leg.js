@@ -880,6 +880,51 @@ export default {
 				hint.textContent = "up to ±" + WAYPOINT_AXIS_CAP_MPS + " m/s per axis";
 				card.appendChild(hint);
 
+				// One-shot placement helper for the FIRST added waypoint (no plan
+				// waypoint behind it): quick-place on whichever apsis the current
+				// coast is headed toward, or a node against the ecliptic, same
+				// geometry as the Ephemeris tab's snap-to (Shared/math-utils.js's
+				// apsisFromBurn/nodeInfo/snapTau) but resolved once at click time
+				// against the coast's OWN start state (there is no launching burn
+				// within this leg to read a sense from — see the module header —
+				// so the apsis sense comes from the current radial velocity's sign
+				// instead: outbound heads to apoapsis next, inbound to periapsis).
+				// Unlike Ephemeris's live-tracking snap, this just sets `days` once;
+				// the waypoint is then an ordinary day/degree-edited waypoint.
+				if (i === 0 && !original) {
+					var leg0 = legFor(ctx.world, ctx.stageId);
+					var r0 = (leg0 && leg0.ok && leg0.segs.length) ? leg0.segs[0].r0 : null;
+					var v0 = (leg0 && leg0.ok && leg0.segs.length) ? leg0.segs[0].v0 : null;
+					if (r0 && v0) {
+						var synBurn = { pro: O.vDot(r0, v0) >= 0 ? 1 : -1 };
+						var ap0 = O.apsisFromBurn(synBurn);
+						var apsisOK = ap0.available &&
+							!(ap0.label === "apoapsis" && O.elementsFromState(GM_SUN, r0, v0).e >= 1);
+						var ni0 = O.nodeInfo(GM_SUN, r0, v0);
+						var snapRow = document.createElement("div"); snapRow.className = "mp-wp-snaps";
+						[["apsis", apsisOK ? ap0.label : null], ["asc", ni0.ascLabel], ["desc", ni0.descLabel]]
+							.forEach(function (d) {
+								if (!d[1]) { return; }
+								var lab = document.createElement("label"); lab.className = "mp-wp-snap";
+								var cb = document.createElement("input"); cb.type = "checkbox";
+								var txt = document.createElement("span"); txt.textContent = d[1];
+								lab.appendChild(cb); lab.appendChild(txt); snapRow.appendChild(lab);
+								cb.addEventListener("change", function () {
+									if (!cb.checked) { return; }
+									var tauS = O.snapTau(GM_SUN, r0, v0, synBurn, d[0], 0);
+									cb.checked = false;   // a placement action, not a persisted mode
+									if (tauS == null) { return; }
+									var placeList = copyWaypoints(stageParams().waypoints);
+									placeList[i].days = Math.max(0.01,
+										Math.min(stageParams().legDays - 0.01, tauS / DAY));
+									commitWaypoints(placeList);
+									setAtBase(degAtDay(legFor(ctx.world, ctx.stageId), placeList[i].days));
+								});
+							});
+						card.appendChild(snapRow);
+					}
+				}
+
 				// "at ... degrees": a number field (0.1°-stepped, shown to two
 				// decimals) plus a ±5° fine-tune slider, offset from wherever
 				// the waypoint sits when this card is (re)built — its "initial
@@ -981,9 +1026,23 @@ export default {
 				add.textContent = "+ add waypoint";
 				add.addEventListener("click", function () {
 					var list = copyWaypoints(stageParams().waypoints);
-					var half = Math.round(stageParams().legDays / 2);
-					list.push({ days: list.length ? Math.min(list[0].days + 60, stageParams().legDays - 10) : half,
-					            burn: { pro: 0, rad: 0, nrm: 0 } });
+					var legDays = stageParams().legDays;
+					var day;
+					if (!list.length) {
+						// First waypoint: defaults to the leg's midpoint; the card's
+						// apsis/node checkboxes above offer quick placement instead.
+						day = Math.round(legDays / 2);
+					} else {
+						// Second waypoint: placed at the chevron's current location,
+						// provided that falls after the first waypoint -- otherwise
+						// pushed just past it, same fallback as before this existed.
+						var leg = legFor(ctx.world, ctx.stageId);
+						var chevronDay = (leg && leg.ok) ? (ctx.world.jd - leg.jd0) : NaN;
+						day = (isFinite(chevronDay) && chevronDay > list[0].days)
+							? Math.min(chevronDay, legDays - 10)
+							: Math.min(list[0].days + 60, legDays - 10);
+					}
+					list.push({ days: day, burn: { pro: 0, rad: 0, nrm: 0 } });
 					commitWaypoints(list);
 					rebuildWaypointRows();
 				});
