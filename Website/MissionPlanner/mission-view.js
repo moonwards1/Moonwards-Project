@@ -1638,45 +1638,80 @@ export function createMissionView(opts) {
 		var soiExitJd = evs.length ? evs[evs.length - 1].jd : null;
 		var plan = plannedDeparture(results);
 		var def = departureDefaultSpanSeconds(results);
-		var defDays = (def > 0) ? def / 86400 : null;
+		var defDays = (def && isFinite(def) && def > 0) ? def / 86400 : 2;
 
 		var marks = evs.slice();
 		if (plan && isFinite(plan.jd)) {
 			marks.push({ jd: plan.jd, label: "Committed hand-off", cls: "mp-mark-committed" });
 		}
 
-		var start, end;
+		var start, end, useEstimate = false;
+		// Try to build a span with actual data first
 		if (missionOriginBody(world) === "Earth") {
-			start = releaseJd;
-			end = isFinite(soiExitJd) ? soiExitJd
-				: (isFinite(start) && defDays !== null) ? start + defDays : null;
+			// Earth/Moon: PINNED-START. Release anchor is the left edge; float the right edge.
+			if (isFinite(releaseJd)) {
+				start = releaseJd;
+				end = isFinite(soiExitJd) ? soiExitJd : (start + defDays);
+				if (isFinite(start) && isFinite(end) && end > start) {
+					useEstimate = !isFinite(soiExitJd);
+				}
+			}
 		} else {
-			end = plan ? plan.jd : (isFinite(soiExitJd) ? soiExitJd : null);
-			var duration = (isFinite(releaseJd) && isFinite(soiExitJd)) ? (soiExitJd - releaseJd) : defDays;
-			start = (isFinite(end) && duration !== null) ? end - duration
-				: (isFinite(releaseJd) ? releaseJd : null);
+			// Other origins: ANCHORED-END. Committed hand-off is the right edge; float the left edge.
+			if (plan && isFinite(plan.jd)) {
+				end = plan.jd;
+				var duration = (isFinite(releaseJd) && isFinite(soiExitJd)) ? (soiExitJd - releaseJd) : defDays;
+				start = end - duration;
+				if (isFinite(start) && isFinite(end) && end > start) {
+					useEstimate = !(isFinite(releaseJd) && isFinite(soiExitJd));
+				}
+			}
+		}
+
+		// If we don't have a valid span yet, try a fallback estimate
+		if (!isFinite(start) || !isFinite(end) || end <= start) {
+			// Use whatever anchor we have + the estimate duration
+			if (isFinite(releaseJd) && defDays > 0) {
+				// Release anchor exists: use it as start, add estimate to get end
+				start = releaseJd;
+				end = start + defDays;
+				useEstimate = true;
+			} else if (plan && isFinite(plan.jd) && defDays > 0) {
+				// Plan hand-off exists: use it as end, subtract estimate to get start
+				end = plan.jd;
+				start = end - defDays;
+				useEstimate = true;
+			} else {
+				// Truly no data — can't make a span estimate.
+				return null;
+			}
 		}
 
 		if (!(isFinite(start) && isFinite(end) && end > start)) { return null; }
-		return { start: start, end: end, marks: marks, defaulted: !(evs.length && isFinite(soiExitJd)),
-		         releaseJd: releaseJd };
+		return { start: start, end: end, marks: marks, defaulted: useEstimate,
+		         releaseJd: isFinite(releaseJd) ? releaseJd : start };
 	}
 
 	// The default span length: SOI_radius / v∞ — the time to cross the origin
 	// body's SOI at the plan's required departure v∞ out. Falls back to a
 	// Hohmann-transfer dv1 estimate to the chosen destination when no frozen
-	// plan has resolved. Origin is this mission's own origin body
-	// (missionOriginBody()), not necessarily Earth. Seconds, or null.
+	// plan has resolved, then to a conservative 3 km/s v∞ guess when no
+	// destination is set. Origin is this mission's own origin body
+	// (missionOriginBody()), not necessarily Earth. Always returns seconds > 0.
 	function departureDefaultSpanSeconds(results) {
 		var origin = systems.get(missionOriginBody(world));
 		var soi = O.sphereOfInfluence(origin.orbit.a, origin.GM, GM_SUN);   // m
 		var plan = plannedDeparture(results);
 		if (plan && plan.vInf > 0) { return soi / plan.vInf; }
 		var dest = coastDestination();
-		if (!dest) { return null; }
-		var rDest = systems.get(dest).orbit.a;
-		var dv1 = O.hohmann(GM_SUN, origin.orbit.a, rDest).dv1;   // m/s injection burn
-		return (dv1 > 0) ? soi / dv1 : null;
+		if (dest) {
+			var rDest = systems.get(dest).orbit.a;
+			var dv1 = O.hohmann(GM_SUN, origin.orbit.a, rDest).dv1;   // m/s injection burn
+			if (dv1 > 0) { return soi / dv1; }
+		}
+		// No plan data and no destination: use a conservative generic v∞ estimate
+		// (3 km/s is typical for interplanetary missions from Earth/similar bodies)
+		return soi / 3000;
 	}
 
 	// ---- the Arrival slider: the seam window itself --------------------------
