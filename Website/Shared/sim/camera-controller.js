@@ -211,10 +211,17 @@ export function bindCameraControls(rendererEl, getView) {
 			cam.phi = Math.max(0.05, Math.min(Math.PI - 0.05, cam.phi - dy * rSpeed));
 		} else {
 			var panScale = cam.radius * (v.panSpeed || 0.0018);
-			var right = new THREE.Vector3().crossVectors(
-				new THREE.Vector3().subVectors(cam.target, camera.position), camera.up).normalize();
+			var forward = new THREE.Vector3().subVectors(cam.target, camera.position);
+			var right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+			// The true on-screen "up" for panning, not the fixed world-up
+			// `camera.up`: those coincide when the view is edge-on, but
+			// top-down looks nearly straight down world-up, so it's nearly
+			// parallel to `forward` there rather than perpendicular to it —
+			// using it directly would shift the target along the view axis
+			// (reads as a zoom) instead of across the screen.
+			var trueUp = new THREE.Vector3().crossVectors(right, forward).normalize();
 			cam.target.addScaledVector(right, -dx * panScale);
-			cam.target.addScaledVector(camera.up.clone(), dy * panScale);
+			cam.target.addScaledVector(trueUp, dy * panScale);
 			if (v.onPan) { v.onPan(); }
 		}
 	}
