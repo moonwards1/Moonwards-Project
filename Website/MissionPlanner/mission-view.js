@@ -66,7 +66,7 @@ var READOUT_DV_HEX = "#ff5fd0", READOUT_SPD_HEX = "#ffd24a";
 // How far a readout box shifts toward the main pane off dead-centre on the
 // panel's edge (Shared/sim/readout-panes.js's positionReadoutBoxes) — matches
 // the Ephemeris tab's own call.
-var READOUT_EDGE_OFFSET = 15;
+var READOUT_EDGE_OFFSET = 0;
 
 var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 var SPAN_DAYS = 36525;
@@ -972,16 +972,12 @@ export function createMissionView(opts) {
 		card.className = "mp-card";
 
 		// `plainCard` (the legs): no title/status header — the module's own
-		// content IS the card. Diagnostics still render below it; there's just no
-		// chip to update.
-		var chip = null;
+		// content IS the card. Diagnostics still render below it.
 		if (!desc || !desc.plainCard) {
 			var h = document.createElement("h3");
 			var titleSpan = document.createElement("span");
 			titleSpan.textContent = stageTitle(stage);
-			chip = document.createElement("span");
-			chip.className = "mp-chip";
-			h.appendChild(titleSpan); h.appendChild(chip);
+			h.appendChild(titleSpan);
 			card.appendChild(h);
 		}
 
@@ -991,7 +987,7 @@ export function createMissionView(opts) {
 		card.appendChild(diag);
 		panelEl.insertBefore(card, insertBeforeEl || null);
 
-		var entry = { cardEl: card, chipEl: chip, diagEl: diag, phase: stagePhaseOf(stage), callbacks: [] };
+		var entry = { cardEl: card, diagEl: diag, phase: stagePhaseOf(stage), callbacks: [] };
 		cards[stage.id] = entry;
 
 		if (desc && typeof desc.init === "function") {
@@ -1274,21 +1270,8 @@ export function createMissionView(opts) {
 	function updateCard(res) {
 		var entry = cards[res.stageId];
 		if (!entry) { return; }
-		var chip = entry.chipEl, diag = entry.diagEl;
+		var diag = entry.diagEl;
 		diag.innerHTML = "";
-
-		if (!chip) {
-			// plainCard stage: no status chip — diagnostics below still render
-		} else if (res.status === "ok" && res.warnings.length === 0) {
-			chip.className = "mp-chip ok"; chip.textContent = "ok";
-		} else if (res.status === "ok") {
-			chip.className = "mp-chip warn";
-			chip.textContent = res.warnings.length + " warning" + (res.warnings.length > 1 ? "s" : "");
-		} else if (res.status === "diagnostic") {
-			chip.className = "mp-chip err"; chip.textContent = "problem";
-		} else {
-			chip.className = "mp-chip blocked"; chip.textContent = "blocked";
-		}
 
 		if (res.status === "diagnostic") {
 			renderDiagBox(diag, res.diagnostic, "");
