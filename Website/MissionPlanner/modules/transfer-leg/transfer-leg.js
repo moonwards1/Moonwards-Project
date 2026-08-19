@@ -64,7 +64,6 @@ import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor, renderVectorGlyph } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
-import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
 import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
 
@@ -873,13 +872,20 @@ export default {
 
 				var subHead = document.createElement("div"); subHead.className = "mp-wp-head";
 				subHead.textContent = "course correction";
-				var btn = document.createElement("button"); btn.className = "mp-btn";
-				btn.textContent = original ? "reset" : "remove";
-				subHead.appendChild(btn); card.appendChild(subHead);
+				card.appendChild(subHead);
 
-				var hint = document.createElement("div"); hint.className = "mp-muted";
-				hint.textContent = "up to ±" + WAYPOINT_AXIS_CAP_MPS + " m/s per axis";
-				card.appendChild(hint);
+				// Location and impulse are separate levers on a waypoint (an
+				// added waypoint has no plan original, so it has no per-lever
+				// reset -- "remove" drops the whole waypoint instead, next to
+				// the location bullet since that's the lever that placed it).
+				var locHead = document.createElement("div"); locHead.className = "mp-wp-subhead";
+				var locBullet = document.createElement("span"); locBullet.className = "mp-wp-bullet"; locBullet.textContent = "•";
+				var locLabel = document.createElement("span"); locLabel.textContent = "location";
+				locHead.appendChild(locBullet); locHead.appendChild(locLabel);
+				var locBtn = document.createElement("button"); locBtn.className = "mp-btn";
+				locBtn.textContent = original ? "reset" : "remove";
+				locHead.appendChild(locBtn);
+				card.appendChild(locHead);
 
 				// One-shot placement helper for the FIRST added waypoint (no plan
 				// waypoint behind it): quick-place on whichever apsis the current
@@ -939,10 +945,14 @@ export default {
 				atRow.appendChild(dayInput);
 				var atUnit = document.createElement("span"); atUnit.className = "mp-unit"; atUnit.textContent = "degrees";
 				atRow.appendChild(atUnit);
+				var sliderWrap = document.createElement("span"); sliderWrap.className = "mp-wp-slider-wrap";
+				var sliderMin = document.createElement("span"); sliderMin.className = "mp-wp-slider-end"; sliderMin.textContent = "-5";
 				var atSlider = document.createElement("input");
 				atSlider.type = "range"; atSlider.className = "mp-wp-at-slider";
 				atSlider.min = -5; atSlider.max = 5; atSlider.step = 0.1;
-				atRow.appendChild(atSlider);
+				var sliderMax = document.createElement("span"); sliderMax.className = "mp-wp-slider-end"; sliderMax.textContent = "+5";
+				sliderWrap.appendChild(sliderMin); sliderWrap.appendChild(atSlider); sliderWrap.appendChild(sliderMax);
+				atRow.appendChild(sliderWrap);
 				card.appendChild(atRow);
 
 				var atBaseDeg = 0;
@@ -972,6 +982,22 @@ export default {
 					dayInput.value = v.toFixed(2);
 					commitAtDeg(v);
 				});
+				var impHead = document.createElement("div"); impHead.className = "mp-wp-subhead";
+				var impBullet = document.createElement("span"); impBullet.className = "mp-wp-bullet"; impBullet.textContent = "•";
+				var impLabel = document.createElement("span"); impLabel.textContent = "impulse";
+				impHead.appendChild(impBullet); impHead.appendChild(impLabel);
+				var impBtn = null;
+				if (original) {
+					impBtn = document.createElement("button"); impBtn.className = "mp-btn";
+					impBtn.textContent = "reset";
+					impHead.appendChild(impBtn);
+				}
+				card.appendChild(impHead);
+
+				var hint = document.createElement("div"); hint.className = "mp-muted";
+				hint.textContent = "up to ±" + WAYPOINT_AXIS_CAP_MPS + " m/s per axis";
+				card.appendChild(hint);
+
 				var burnBaseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
 				var burnHost = document.createElement("div"); burnHost.className = "mp-pane-host"; card.appendChild(burnHost);
 				function drawBurnEditor(burnVals) {
@@ -987,7 +1013,8 @@ export default {
 
 				if (original) {
 					// Part of the committed plan: not removable, only
-					// resettable — and reset touches only THIS waypoint's
+					// resettable — location and impulse reset independently,
+					// each touching only its own half of THIS waypoint's
 					// course-correction section, in place, rather than
 					// rebuilding the whole card list (rebuildWaypointRows).
 					// The plan section above (and its own readout box's
@@ -997,11 +1024,16 @@ export default {
 					// readout box on the page briefly anchored to a
 					// detached element until the next recompute happens to
 					// run, which is what made them vanish.
-					btn.addEventListener("click", function () {
+					locBtn.addEventListener("click", function () {
 						var list = copyWaypoints(stageParams().waypoints);
-						list[i] = { days: original.days, burn: Object.assign({}, original.burn) };
+						list[i].days = original.days;
 						commitWaypoints(list);
 						setAtBase(degAtDay(legFor(ctx.world, ctx.stageId), original.days));
+					});
+					impBtn.addEventListener("click", function () {
+						var list = copyWaypoints(stageParams().waypoints);
+						list[i].burn = Object.assign({}, original.burn);
+						commitWaypoints(list);
 						drawBurnEditor(original.burn);
 					});
 				} else {
@@ -1009,7 +1041,7 @@ export default {
 					// other card's index-matching (plan vs. added-later)
 					// depends on, so this one legitimately needs the full
 					// rebuild.
-					btn.addEventListener("click", function () {
+					locBtn.addEventListener("click", function () {
 						var list = copyWaypoints(stageParams().waypoints);
 						list.splice(i, 1);
 						commitWaypoints(list);
@@ -1154,10 +1186,8 @@ export default {
 		// mission-view.js to render/position.
 		//
 		// planLeg — the FROZEN PLAN's own waypoints run through the same coast
-		// start — is computed here (not just for the plan cards further down)
-		// because the course-correction boxes need it too: their baseline is
-		// "what would the plan have me doing right now", sampled at THIS
-		// waypoint's live elapsed time, not the plan's own day (see below).
+		// start — feeds the plan section's readouts further down (planLeg is
+		// resampled at each frozen waypoint's own day, which never changes).
 		var coastStart0 = stateAtElapsed(leg, 0);
 		var planWpsDraw = planWaypointsFor(snap.world);
 		var planLeg = coastStart0 &&
@@ -1167,28 +1197,6 @@ export default {
 
 		if (params.waypoints && params.waypoints.length) {
 			var wpHosts = wpHostsFor(snap.world, snap.stageId);
-			var planWpsForCorrection = planWpsDraw;
-			// Each plan waypoint's own post-burn state — position and velocity
-			// right after ITS burn, at its own elapsed time — is the origin of
-			// a continuous two-body reference orbit for the correction boxes
-			// below, propagated (forward OR backward) to whatever time a live,
-			// moved waypoint needs. Resampling planLeg itself instead would
-			// work forward of the plan's own day, but planLeg has a genuine
-			// step AT that day (an impulsive burn is a real instantaneous
-			// velocity jump) — moving a waypoint to the OTHER side of it would
-			// then compare against the plan's un-fired coast, so "correction"
-			// would suddenly read as almost the entire plan burn the instant
-			// the live day crosses the plan's own. A single Kepler propagation
-			// from the post-burn state has no such seam.
-			var planPostBurn = planWpsForCorrection.map(function (pwp) {
-				if (!pwp || !planLeg) { return null; }
-				var t0 = (pwp.days || 0) * DAY;
-				var preState = stateAtElapsed(planLeg, t0);
-				if (!preState) { return null; }
-				var v0 = O.applyBurn(preState.r, preState.v,
-					pwp.burn.pro || 0, pwp.burn.nrm || 0, pwp.burn.rad || 0);
-				return { r0: preState.r, v0: v0, t0: t0 };
-			});
 			params.waypoints.forEach(function (wp, i) {
 				var wpTimeS = (wp.days || 0) * DAY;
 				var wpState = stateAtElapsed(leg, wpTimeS);
@@ -1214,32 +1222,21 @@ export default {
 					if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: GIZMO_PX }); }
 				});
 
-				// The course-correction card's own readout is the ACTUAL
-				// INERTIAL VELOCITY DIFFERENCE between where the edited
-				// waypoint leaves the ship and where the FROZEN PLAN's own
-				// post-burn orbit (planPostBurn, above) would have it AT THIS
-				// SAME CLOCK TIME — not a raw pro/rad/nrm component
-				// subtraction. Components alone only agree when the
-				// waypoint's day is untouched: they're read off whatever
-				// local prograde/radial/normal frame the ship happens to be
-				// in on ITS OWN day, and moving the day rotates that frame —
-				// so an edit that only drags the "at ... degrees" field
-				// (identical components either side) used to read back as
-				// "no correction" while the real trajectory had already
-				// moved by however much the day shift is worth
-				// (Notes-and-Obsolete/decisions.md, 2026-08-18). Comparing
-				// real states at the same moment catches a day edit as
-				// readily as a burn edit, and — since it's read right at the
-				// waypoint rather than propagated to leg end — isn't
-				// inflated by how the two paths later drift out of phase
-				// over the rest of the coast.
+				// The course-correction card's own readout reports the burn
+				// AS CURRENTLY FIRED, right here, full stop — not a
+				// comparison against the frozen plan. Whether the mission is
+				// still on track is the ship card's job (its whole point is
+				// judging the live setup against the mission goals); this
+				// card just states what's actually happening at this
+				// waypoint, so it can't be muddied by an unrelated effect —
+				// pro/rad/nrm axes are local to wherever the ship is, so
+				// relocating the waypoint alone (identical burn numbers)
+				// reinterprets those numbers as a different absolute burn,
+				// which a plan-relative reading would report as spurious
+				// "correction" (Notes-and-Obsolete/decisions.md, 2026-08-18,
+				// since superseded).
 				if (wpHosts[i]) {
-					var ref = planPostBurn[i];
-					var refState = ref ? O.propagateState(GM_SUN, ref.r0, ref.v0, wpTimeS - ref.t0) : null;
-					var correctionEff = refState
-						? stateDeltaEffect(GM_SUN, refState.r, refState.v, wpState.r, eff.vAfter)
-						: eff;
-					view.readoutEntries.push({ host: wpHosts[i], data: correctionEff });
+					view.readoutEntries.push({ host: wpHosts[i], data: eff });
 				}
 			});
 		}

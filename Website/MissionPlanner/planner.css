@@ -501,7 +501,18 @@ body {
 	border-radius: 6px; padding: 4px 7px; font: inherit; font-size: 12.5px;
 	width: 62px; color-scheme: dark;
 }
-.mp-wp-at-slider { width: 64px; margin-left: 4px; accent-color: var(--acc); }
+.mp-wp-at-slider { width: 64px; accent-color: var(--acc); }
+.mp-wp-slider-wrap { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; }
+.mp-wp-slider-end { color: #5f6a82; font-size: 10.5px; }
+/* Waypoint card's "location" / "impulse" sub-labels, each with its own
+   reset button — siblings under the "course correction" head, not a
+   repeat of its border/weight. */
+.mp-wp-subhead {
+	display: flex; align-items: center; gap: 6px;
+	margin-top: 6px; font-size: 12px; color: var(--dim);
+}
+.mp-wp-subhead .mp-btn { margin-left: auto; }
+.mp-wp-bullet { color: var(--dim); }
 /* Technology dropdowns (the departure and arrival technology selectors) —
    full-width, not paired with a label the way .mp-inrow's controls are. */
 .mp-tech-select {
