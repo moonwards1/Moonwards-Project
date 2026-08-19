@@ -64,6 +64,7 @@ import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor, renderVectorGlyph } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
+import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
 import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
 
@@ -1151,9 +1152,43 @@ export default {
 		// constant on-screen size via view.pxScaled, the shell's per-frame
 		// rescale hook; readout boxes are collected in view.readoutEntries for
 		// mission-view.js to render/position.
+		//
+		// planLeg — the FROZEN PLAN's own waypoints run through the same coast
+		// start — is computed here (not just for the plan cards further down)
+		// because the course-correction boxes need it too: their baseline is
+		// "what would the plan have me doing right now", sampled at THIS
+		// waypoint's live elapsed time, not the plan's own day (see below).
+		var coastStart0 = stateAtElapsed(leg, 0);
+		var planWpsDraw = planWaypointsFor(snap.world);
+		var planLeg = coastStart0 &&
+			computeLeg(Object.assign({}, params, { waypoints: planWpsDraw }),
+				{ r: coastStart0.r, v: coastStart0.v, jd: leg.jd0 });
+		if (!(planLeg && planLeg.ok)) { planLeg = null; }
+
 		if (params.waypoints && params.waypoints.length) {
 			var wpHosts = wpHostsFor(snap.world, snap.stageId);
-			var planWpsForCorrection = planWaypointsFor(snap.world);
+			var planWpsForCorrection = planWpsDraw;
+			// Each plan waypoint's own post-burn state — position and velocity
+			// right after ITS burn, at its own elapsed time — is the origin of
+			// a continuous two-body reference orbit for the correction boxes
+			// below, propagated (forward OR backward) to whatever time a live,
+			// moved waypoint needs. Resampling planLeg itself instead would
+			// work forward of the plan's own day, but planLeg has a genuine
+			// step AT that day (an impulsive burn is a real instantaneous
+			// velocity jump) — moving a waypoint to the OTHER side of it would
+			// then compare against the plan's un-fired coast, so "correction"
+			// would suddenly read as almost the entire plan burn the instant
+			// the live day crosses the plan's own. A single Kepler propagation
+			// from the post-burn state has no such seam.
+			var planPostBurn = planWpsForCorrection.map(function (pwp) {
+				if (!pwp || !planLeg) { return null; }
+				var t0 = (pwp.days || 0) * DAY;
+				var preState = stateAtElapsed(planLeg, t0);
+				if (!preState) { return null; }
+				var v0 = O.applyBurn(preState.r, preState.v,
+					pwp.burn.pro || 0, pwp.burn.nrm || 0, pwp.burn.rad || 0);
+				return { r0: preState.r, v0: v0, t0: t0 };
+			});
 			params.waypoints.forEach(function (wp, i) {
 				var wpTimeS = (wp.days || 0) * DAY;
 				var wpState = stateAtElapsed(leg, wpTimeS);
@@ -1179,21 +1214,31 @@ export default {
 					if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: GIZMO_PX }); }
 				});
 
-				// The course-correction card's own readout is the EFFECT OF
-				// THE CORRECTION ALONE — wp.burn minus whatever baseline it
-				// started from (the plan's original burn, or zero for a
-				// waypoint added after freezing) — evaluated from the SAME
-				// pre-burn state, not the whole resulting burn (that's the
-				// plan section's own box, and the arrows above).
+				// The course-correction card's own readout is the ACTUAL
+				// INERTIAL VELOCITY DIFFERENCE between where the edited
+				// waypoint leaves the ship and where the FROZEN PLAN's own
+				// post-burn orbit (planPostBurn, above) would have it AT THIS
+				// SAME CLOCK TIME — not a raw pro/rad/nrm component
+				// subtraction. Components alone only agree when the
+				// waypoint's day is untouched: they're read off whatever
+				// local prograde/radial/normal frame the ship happens to be
+				// in on ITS OWN day, and moving the day rotates that frame —
+				// so an edit that only drags the "at ... degrees" field
+				// (identical components either side) used to read back as
+				// "no correction" while the real trajectory had already
+				// moved by however much the day shift is worth
+				// (Notes-and-Obsolete/decisions.md, 2026-08-18). Comparing
+				// real states at the same moment catches a day edit as
+				// readily as a burn edit, and — since it's read right at the
+				// waypoint rather than propagated to leg end — isn't
+				// inflated by how the two paths later drift out of phase
+				// over the rest of the coast.
 				if (wpHosts[i]) {
-					var original = planWpsForCorrection[i] || null;
-					var baseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
-					var deltaBurn = {
-						pro: (wp.burn.pro || 0) - (baseline.pro || 0),
-						rad: (wp.burn.rad || 0) - (baseline.rad || 0),
-						nrm: (wp.burn.nrm || 0) - (baseline.nrm || 0)
-					};
-					var correctionEff = burnEffect(GM_SUN, wpState.r, wpState.v, deltaBurn);
+					var ref = planPostBurn[i];
+					var refState = ref ? O.propagateState(GM_SUN, ref.r0, ref.v0, wpTimeS - ref.t0) : null;
+					var correctionEff = refState
+						? stateDeltaEffect(GM_SUN, refState.r, refState.v, wpState.r, eff.vAfter)
+						: eff;
 					view.readoutEntries.push({ host: wpHosts[i], data: correctionEff });
 				}
 			});
@@ -1201,32 +1246,23 @@ export default {
 
 		// Plan waypoints card readouts (init built the cards; see their own
 		// comment there). The plan's waypoints never change, but the state AT
-		// each one has to be recomputed like any other draw()-time figure, so
-		// this reruns computeLeg with the PLAN's own waypoints in place of the
-		// live/edited ones — everything else (the coast's start state) is
-		// identical either way, since a course correction never touches where
-		// the coast begins, only what happens at/after a waypoint.
+		// each one has to be recomputed like any other draw()-time figure —
+		// planLeg (computed above, for the correction boxes too) already is
+		// that recompute.
 		var planRows = planWpRowsFor(snap.world, snap.stageId);
-		if (planRows.length) {
-			var coastStart = stateAtElapsed(leg, 0);
-			var planWpsDraw = planWaypointsFor(snap.world);
-			var planLeg = coastStart &&
-				computeLeg(Object.assign({}, params, { waypoints: planWpsDraw }),
-					{ r: coastStart.r, v: coastStart.v, jd: leg.jd0 });
-			if (planLeg && planLeg.ok) {
-				planWpsDraw.forEach(function (wp, i) {
-					var row = planRows[i];
-					if (!row) { return; }
-					var wpState = stateAtElapsed(planLeg, (wp.days || 0) * DAY);
-					if (!wpState) { return; }
-					row.info.textContent = "+" + Math.round(wp.days) + " d, " +
-						(O.vMag(wpState.r) / AU).toFixed(3) + " AU from Sun, coast speed " +
-						(O.vMag(wpState.v) / 1000).toFixed(2) + " km/s.";
-					var planEff = burnEffect(GM_SUN, wpState.r, wpState.v,
-						{ pro: wp.burn.pro || 0, rad: wp.burn.rad || 0, nrm: wp.burn.nrm || 0 });
-					view.readoutEntries.push({ host: row.host, data: planEff });
-				});
-			}
+		if (planRows.length && planLeg) {
+			planWpsDraw.forEach(function (wp, i) {
+				var row = planRows[i];
+				if (!row) { return; }
+				var wpState = stateAtElapsed(planLeg, (wp.days || 0) * DAY);
+				if (!wpState) { return; }
+				row.info.textContent = "+" + Math.round(wp.days) + " d, " +
+					(O.vMag(wpState.r) / AU).toFixed(3) + " AU from Sun, coast speed " +
+					(O.vMag(wpState.v) / 1000).toFixed(2) + " km/s.";
+				var planEff = burnEffect(GM_SUN, wpState.r, wpState.v,
+					{ pro: wp.burn.pro || 0, rad: wp.burn.rad || 0, nrm: wp.burn.nrm || 0 });
+				view.readoutEntries.push({ host: row.host, data: planEff });
+			});
 		}
 
 		// The ship-marker chevron (ported from the Ephemeris tab's marker —
