@@ -1195,12 +1195,14 @@ export default {
 				{ r: coastStart0.r, v: coastStart0.v, jd: leg.jd0 });
 		if (!(planLeg && planLeg.ok)) { planLeg = null; }
 
+		var planRows = planWpRowsFor(snap.world, snap.stageId);
 		if (params.waypoints && params.waypoints.length) {
 			var wpHosts = wpHostsFor(snap.world, snap.stageId);
 			params.waypoints.forEach(function (wp, i) {
 				var wpTimeS = (wp.days || 0) * DAY;
 				var wpState = stateAtElapsed(leg, wpTimeS);
 				if (!wpState) { return; }
+				var original = planWpsDraw[i] || null;
 
 				// Create the waypoint gizmo (three axes: prograde, radial, normal)
 				var gizPos = new THREE.Vector3(wpState.r[0] / U, wpState.r[1] / U, wpState.r[2] / U);
@@ -1222,31 +1224,42 @@ export default {
 					if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: GIZMO_PX }); }
 				});
 
-				// The course-correction card's own readout reports the burn
-				// AS CURRENTLY FIRED, right here, full stop — not a
-				// comparison against the frozen plan. Whether the mission is
-				// still on track is the ship card's job (its whole point is
-				// judging the live setup against the mission goals); this
-				// card just states what's actually happening at this
-				// waypoint, so it can't be muddied by an unrelated effect —
-				// pro/rad/nrm axes are local to wherever the ship is, so
-				// relocating the waypoint alone (identical burn numbers)
-				// reinterprets those numbers as a different absolute burn,
-				// which a plan-relative reading would report as spurious
-				// "correction" (Notes-and-Obsolete/decisions.md, 2026-08-18,
-				// since superseded).
+				// The two readout panes each track ONE lever, live, no
+				// plan-relative diffing (Notes-and-Obsolete/decisions.md,
+				// 2026-08-18, since superseded):
+				//
+				// The WAYPOINT section's pane (up top, beside the frozen
+				// plan's own info) reports the PLAN's own burn fired from
+				// wherever the waypoint currently sits — same fixed burn
+				// numbers every time, but read through whatever local frame
+				// the LIVE (possibly relocated) position puts them in. It
+				// only moves when the location moves.
+				var baselineBurn = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
+				var baseEff = burnEffect(GM_SUN, wpState.r, wpState.v,
+					{ pro: baselineBurn.pro || 0, rad: baselineBurn.rad || 0, nrm: baselineBurn.nrm || 0 });
+				if (original && planRows[i]) {
+					view.readoutEntries.push({ host: planRows[i].host, data: baseEff });
+				}
+
+				// The IMPULSE section's pane reports only what's been added
+				// on top of that baseline — the burn edit itself, isolated
+				// from the location the ship happens to be at when it fires.
+				var deltaBurn = {
+					pro: (wp.burn.pro || 0) - (baselineBurn.pro || 0),
+					rad: (wp.burn.rad || 0) - (baselineBurn.rad || 0),
+					nrm: (wp.burn.nrm || 0) - (baselineBurn.nrm || 0)
+				};
+				var impulseEff = burnEffect(GM_SUN, wpState.r, wpState.v, deltaBurn);
 				if (wpHosts[i]) {
-					view.readoutEntries.push({ host: wpHosts[i], data: eff });
+					view.readoutEntries.push({ host: wpHosts[i], data: impulseEff });
 				}
 			});
 		}
 
-		// Plan waypoints card readouts (init built the cards; see their own
-		// comment there). The plan's waypoints never change, but the state AT
-		// each one has to be recomputed like any other draw()-time figure —
-		// planLeg (computed above, for the correction boxes too) already is
-		// that recompute.
-		var planRows = planWpRowsFor(snap.world, snap.stageId);
+		// The plan section's own descriptive line ("+475 d, 2.966 AU from
+		// Sun...") always describes the FROZEN plan's own day — it never
+		// changes, unlike its readout pane's Δv box (now fed live, above,
+		// from wherever the waypoint currently sits).
 		if (planRows.length && planLeg) {
 			planWpsDraw.forEach(function (wp, i) {
 				var row = planRows[i];
@@ -1256,9 +1269,6 @@ export default {
 				row.info.textContent = "+" + Math.round(wp.days) + " d, " +
 					(O.vMag(wpState.r) / AU).toFixed(3) + " AU from Sun, coast speed " +
 					(O.vMag(wpState.v) / 1000).toFixed(2) + " km/s.";
-				var planEff = burnEffect(GM_SUN, wpState.r, wpState.v,
-					{ pro: wp.burn.pro || 0, rad: wp.burn.rad || 0, nrm: wp.burn.nrm || 0 });
-				view.readoutEntries.push({ host: row.host, data: planEff });
 			});
 		}
 
