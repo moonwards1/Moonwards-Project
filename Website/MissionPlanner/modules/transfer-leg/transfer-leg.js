@@ -855,12 +855,12 @@ export default {
 			var planRows = [];
 			wps.forEach(function (wp, i) {
 				var original = planWps[i] || null;
-				var card = document.createElement("div"); card.className = "mp-card";
+				var card = document.createElement("div"); card.className = "mp-card mp-card-inset";
 				var title = document.createElement("h3"); title.textContent = "waypoint " + (i + 1);
 				card.appendChild(title);
 
 				if (original) {
-					var planSection = document.createElement("div");
+					var planSection = document.createElement("div"); planSection.className = "mp-pane-host";
 					var info = document.createElement("div"); info.className = "mp-muted";
 					planSection.appendChild(info);
 					var glyphHost = document.createElement("div"); planSection.appendChild(glyphHost);
@@ -973,7 +973,7 @@ export default {
 					commitAtDeg(v);
 				});
 				var burnBaseline = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
-				var burnHost = document.createElement("div"); card.appendChild(burnHost);
+				var burnHost = document.createElement("div"); burnHost.className = "mp-pane-host"; card.appendChild(burnHost);
 				function drawBurnEditor(burnVals) {
 					// A COPY of the burn, not the live object — see commitWaypoints.
 					buildVectorEditor(burnHost, Object.assign({}, burnVals), function (axis, mps) {

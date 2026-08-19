@@ -464,6 +464,27 @@ body {
    readout box (mp-readout-compact, poking in from that same edge) doesn't
    sit on top of it. */
 .mp-tech-row label { margin-left: 20px; }
+/* Same 20px clearance as .mp-tech-row's label, for the other text a
+   readout-pane-bearing card carries (Shared/sim/readout-panes.js's box pokes
+   in from the panel's left edge, over whatever the pane's host straddles):
+   .mp-tech-note for a platform card's own note; .mp-host-inset for a nested
+   content host sitting inside an already-padded .mp-card (moon-platform.js);
+   .mp-card-inset for a leg module's own per-waypoint .mp-card (its 12px base
+   padding becomes 32px total, the same net offset as the other two add on
+   top of that same 12px). */
+.mp-tech-note { margin-left: 12px; }
+.mp-host-inset { padding-left: 25px; }
+.mp-card-inset { padding-left: 20px; }
+/* Belt-and-braces for the same overlap: rather than relying on every pane
+   host's content happening to render tall enough, give any host a readout
+   box can anchor a floor height matching the box's own rendered height
+   (.mp-readout-compact measures ~142px) plus a little headroom. Since the
+   box vertically centres ON the host's rect (Shared/sim/readout-panes.js's
+   positionReadoutBoxes), a host at least as tall as the box can never spill
+   above its own top edge — so it can never reach up into the card's title,
+   which always sits directly above the host, whatever the host's own
+   content happens to render at. */
+.mp-pane-host { min-height: 130px; }
 .mp-inrow input[type=number], .mp-inrow select, .mp-inrow input[type=date] {
 	background: #0f1424; border: 1px solid var(--line2); color: var(--text);
 	border-radius: 6px; padding: 4px 7px; font: inherit; font-size: 12.5px;
@@ -697,6 +718,10 @@ body {
 .mp-moonglyph-shadow { fill: #0f1424; }
 .mp-moonglyph-lit { fill: #b08c58; }
 .mp-moonglyph-rim { fill: none; stroke: #b08c58; stroke-width: 1.6px; }
+/* Departure sidebar's Moon card (moon-platform.js): just the glyph, centred,
+   above its distance/inclination-of-motion rows -- no title/bars, unlike the
+   Ephemeris tab's mp-moonwidget. */
+.mp-moon-card-glyph { display: flex; justify-content: center; margin: 2px 0 8px; }
 .mp-moonbars { display: flex; gap: 14px; flex: 1; min-width: 0; }
 .mp-moonbar-group { flex: 1; min-width: 0; }
 .mp-moonbar-label { color: var(--dim); font-size: 11px; margin-bottom: 3px; white-space: nowrap; }

@@ -84,6 +84,7 @@ import {
 } from "../Shared/sim/body-renderer.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../Shared/sim/burn-widget.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
+import { buildMoonGlyph } from "../Shared/sim/moon-glyph.js";
 import { buildVectorEditor } from "../Shared/sim/vector-editor.js";
 import {
 	makeShipSprite, makeXMarkSprite, orientMarkerSprite,
@@ -282,20 +283,7 @@ export function createEphemerisView(opts) {
 		var body = document.createElement("div"); body.className = "mp-moonwidget-body";
 		box.appendChild(body);
 
-		var NS = "http://www.w3.org/2000/svg";
-		var svg = document.createElementNS(NS, "svg");
-		svg.setAttribute("viewBox", "0 0 40 40");
-		svg.setAttribute("class", "mp-moonglyph");
-		var shadow = document.createElementNS(NS, "circle");
-		shadow.setAttribute("cx", "20"); shadow.setAttribute("cy", "20"); shadow.setAttribute("r", "17");
-		shadow.setAttribute("class", "mp-moonglyph-shadow");
-		var lit = document.createElementNS(NS, "path");
-		lit.setAttribute("class", "mp-moonglyph-lit");
-		var rim = document.createElementNS(NS, "circle");
-		rim.setAttribute("cx", "20"); rim.setAttribute("cy", "20"); rim.setAttribute("r", "17");
-		rim.setAttribute("class", "mp-moonglyph-rim");
-		svg.appendChild(shadow); svg.appendChild(lit); svg.appendChild(rim);
-		body.appendChild(svg);
+		var glyph = buildMoonGlyph(body);
 
 		var bars = document.createElement("div"); bars.className = "mp-moonbars";
 		body.appendChild(bars);
@@ -322,32 +310,13 @@ export function createEphemerisView(opts) {
 
 		parent.appendChild(box);
 
-		// The lit shape: bounded by the outer limb on the lit side and the
-		// terminator — a half-ellipse whose semi-axis is R|cos e| — so the
-		// glyph sweeps full -> gibbous -> half -> crescent -> new continuously.
-		// Waxing (sin e > 0) lights the right side. SVG sweep flags: on the
-		// bottom->top return leg, 0 bulges right, 1 bulges left.
-		function glyphPath(elongDeg) {
-			var R = 17, cx = 20, top = 3, bot = 37;
-			var e = ((elongDeg % 360) + 360) % 360;
-			if (e < 1 || e > 359) { return ""; }               // new moon — nothing lit
-			var c = Math.cos(e * Math.PI / 180);
-			var rx = Math.max(0.4, R * Math.abs(c));           // 0 collapses the arc; keep a hairline
-			var right = Math.sin(e * Math.PI / 180) >= 0;
-			var limbSweep = right ? 1 : 0;
-			var termSweep = right ? (c > 0 ? 0 : 1) : (c > 0 ? 1 : 0);
-			return "M " + cx + " " + top +
-				" A " + R + " " + R + " 0 0 " + limbSweep + " " + cx + " " + bot +
-				" A " + rx.toFixed(2) + " " + R + " 0 0 " + termSweep + " " + cx + " " + top + " Z";
-		}
-
 		return {
 			hide: function () { box.style.display = "none"; },
 			// info = { elong (deg), rel (m/s), days (d, or null when there is
 			//          no impulse to time), note (days-bar tooltip suffix) }
 			show: function (info) {
 				box.style.display = "";
-				lit.setAttribute("d", glyphPath(info.elong));
+				glyph.setPhase(info.elong);
 				var v = Math.max(-1, Math.min(1, (info.rel || 0) / 1000));
 				var half = Math.abs(v) * 40;                    // ±1 km/s maps to the 10%/90% ticks
 				relBar.fill.style.left = (v < 0 ? 50 - half : 50) + "%";

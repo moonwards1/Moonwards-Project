@@ -370,7 +370,7 @@ export default {
 			var wps = stageParams().waypoints.slice();
 			var burnHosts = [];
 			wps.forEach(function (wp, i) {
-				var card = document.createElement("div"); card.className = "mp-card";
+				var card = document.createElement("div"); card.className = "mp-card mp-card-inset";
 				var head = document.createElement("div"); head.className = "mp-wp-head";
 				head.textContent = "waypoint " + (i + 1);
 				var del = document.createElement("button"); del.className = "mp-btn"; del.textContent = "remove";
@@ -385,7 +385,7 @@ export default {
 					var list = stageParams().waypoints.slice(); list[i].t = v * 3600;
 					setParam("waypoints", list);
 				});
-				var burnHost = document.createElement("div"); card.appendChild(burnHost);
+				var burnHost = document.createElement("div"); burnHost.className = "mp-pane-host"; card.appendChild(burnHost);
 				var burnObj = Object.assign({ pro: 0, rad: 0, nrm: 0 }, wp.burn);
 				buildVectorEditor(burnHost, burnObj, function (axis, mps) {
 					var list = stageParams().waypoints.slice();

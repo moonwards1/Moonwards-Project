@@ -320,6 +320,7 @@ export function makeTerminal(spec, opts) {
 // platform's card gets the same anchor, no per-platform DOM needed.
 function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 	var host = ctx.panelHost;
+	host.classList.add("mp-pane-host");
 	hostCache.remember(ctx.world, ctx.stageId, host);
 
 	function fullParams() {
@@ -346,7 +347,7 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 	}
 
 	if (spec.note) {
-		var note = document.createElement("div"); note.className = "mp-muted";
+		var note = document.createElement("div"); note.className = "mp-muted mp-tech-note";
 		note.textContent = spec.note(fullParams(), role);
 		host.appendChild(note);
 	}
