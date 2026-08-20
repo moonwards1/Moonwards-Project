@@ -29,6 +29,14 @@
  * by X AU" check — with no defined arrival time, "did you arrive on time" is not
  * yet a coherent question. Judging an encounter is the ship marker's job.
  *
+ * THE FLIGHT STARTS AT THE SOI EDGE. The leg is a patched-conic heliocentric
+ * arc, so it is propagated from the origin body's own position — but the ship
+ * is not on an interplanetary flight until it is clear of the origin. The
+ * crossing point is found on the arc itself (soiExitTime), the drawn polyline
+ * and the start dot begin there, and every flight time reads from it. Only the
+ * zero of "time of flight" moves: absolute epochs along the arc, and so the
+ * arrival date and everything frozen from it, are unchanged.
+ *
  * THE SHIP MARKER is a slidable probe on the drawn path with Free / Target
  * modes, plus the destination-at-arrival "×" and the
  * temporal-proximity ring (both inside updateDestinationMarker). The
@@ -98,7 +106,7 @@ import { buildHelioFrame, HELIO_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
 import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
 import {
-	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed
+	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed, originSoiRadius
 } from "./core/departure-estimate.js";
 import { deserializeWorld } from "./core/world.js";
 import { decodeFragment } from "../Shared/exchange.js";
@@ -222,6 +230,8 @@ export function createEphemerisView(opts) {
 	var trajTotalT = 0;       // total drawn-leg duration (s)
 	var trajSampleCount = 0;  // polyline sample count (sets followCrossing's search window)
 	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input
+	var soiExitT = 0;         // global time (s) at which the arc reaches the origin's SOI edge — the flight's start
+	var soiExitState = null;  // { r, v } there, or null while no arc is drawn
 	var markerSprite = null, destSprite = null, destSoi = null, tempRing = null;
 	var orbitApproachMarks = [];   // hollow-ring sprites where the path nears a body's orbit
 	var markerVelDir = null;  // THREE.Vector3 — ship heading, for the sprite's per-frame orientation
@@ -348,6 +358,8 @@ export function createEphemerisView(opts) {
 	});
 	originRow.appendChild(originSel); depHost.appendChild(originRow);
 	var originInfo = muted(depHost, "");
+	// Where the flight's clock starts — the SOI-edge crossing (see soiExitTime).
+	var soiInfo = muted(depHost, "");
 	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
 
 	// Departure-course override. Near the edge of the dive wedge both courses
@@ -664,11 +676,81 @@ export function createEphemerisView(opts) {
 		return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
 	}
 
-	// Heliocentric angle (deg, 0–360) swept around the Sun from the departure
-	// point to r (m) — Shared/sim/marker-card.js's sweepAngleFrom.
+	// Heliocentric angle (deg, 0–360) swept around the Sun from the flight's
+	// start (the SOI-edge point) to r (m) — Shared/sim/marker-card.js's
+	// sweepAngleFrom.
 	function sweptFromOrigin(r) {
 		if (!trajSegs.length) { return 0; }
-		return sweepAngleFrom(trajSegs[0].r0, trajSegs[0].v0, r);
+		var s = soiExitState || { r: trajSegs[0].r0, v: trajSegs[0].v0 };
+		return sweepAngleFrom(s.r, s.v, r);
+	}
+
+	// ==== where the flight actually starts: the SOI edge ---------------------
+	// The drawn arc is a patched-conic heliocentric leg, so it begins at the
+	// origin body's own position — a point the ship is not yet free of. The
+	// flight this tab reports is the interplanetary part: it starts where the
+	// arc first reaches the origin's sphere of influence (both the ship and the
+	// body moving), and every flight time is measured from there. The arc's
+	// absolute epochs are untouched — only the zero of "time of flight" moves,
+	// so an arrival date still reads the same.
+	//
+	// Bracket-then-bisect on separation − R_soi, over the arc itself rather
+	// than a straight-line approximation, so solar curvature over the crossing
+	// (weeks, at an outer planet's SOI) is included. The first scan window is
+	// sized from the naive crossing time R_soi/v∞; if the crossing isn't in it
+	// (a strongly curved or barely-escaping arc) a second pass scans the rest
+	// of the drawn leg. A ship that never gets out — v∞ ≈ 0, or an arc that
+	// stays inside for the whole drawn leg — reports no offset, so the flight
+	// simply reads from the burn as before.
+	var SOI_SCAN_STEPS = 48;
+	function soiExitTime(originName, jd0, vInf) {
+		var R = originSoiRadius(originName);
+		if (!(R > 0) || !trajSegs.length || !(trajTotalT > 0)) { return 0; }
+		var orbit = systems.get(originName).orbit;
+		function sep(t) {
+			var s = stateAtGlobalTime(t);
+			if (!s) { return Infinity; }
+			var b = O.bodyStateAtJD(GM_SUN, orbit, jd0 + t / DAY);
+			return O.vMag(O.vSub(s.r, b.r)) - R;
+		}
+		if (sep(0) >= 0) { return 0; }                 // already outside (a tiny-SOI origin)
+		function scan(t0, t1) {
+			var step = (t1 - t0) / SOI_SCAN_STEPS;
+			if (!(step > 0)) { return null; }
+			var prev = t0;
+			for (var i = 1; i <= SOI_SCAN_STEPS; i++) {
+				var t = t0 + i * step;
+				if (sep(t) >= 0) {
+					var lo = prev, hi = t;
+					for (var k = 0; k < 40; k++) {
+						var mid = (lo + hi) / 2;
+						if (sep(mid) < 0) { lo = mid; } else { hi = mid; }
+					}
+					return hi;
+				}
+				prev = t;
+			}
+			return null;
+		}
+		var guess = vInf > 1 ? Math.min(6 * R / vInf, trajTotalT) : trajTotalT;
+		var hit = scan(0, guess);
+		if (hit == null && guess < trajTotalT) { hit = scan(guess, trajTotalT); }
+		return hit == null ? 0 : hit;
+	}
+
+	// The departure card's "the flight starts here" line, from the crossing
+	// refresh() just found.
+	function updateSoiInfo() {
+		var R = originSoiRadius(state.origin);
+		if (!soiExitState || !(R > 0)) {
+			soiInfo.textContent = "Flight time runs from the burn — this arc never clears " +
+				state.origin + "'s sphere of influence.";
+			return;
+		}
+		var days = soiExitT / DAY;
+		soiInfo.textContent = "Flight time runs from " + state.origin + "'s SOI edge (" +
+			(R / AU).toFixed(4) + " AU), reached " + days.toFixed(2) + " d after the burn, on " +
+			fmtDate(dateState.jd + days) + ".";
 	}
 
 	// The burn Target mode re-solves: the departure burn if there are no
@@ -1333,6 +1415,11 @@ export function createEphemerisView(opts) {
 		}
 
 		var f = mcMarkerFraction(state.marker.f0, state.marker.angle);
+		// The marker probes the FLIGHT, so it can't sit inside the origin's SOI
+		// (where there is no drawn path either) — a slider drag, or an origin
+		// change that pushes the SOI edge past it, parks it at the flight's start.
+		var minF = trajTotalT > 0 ? Math.min(1, soiExitT / trajTotalT) : 0;
+		if (f < minF) { state.marker.f0 = minF; state.marker.angle = 0; f = minF; }
 		var tof = f * trajTotalT;
 		var s = stateAtGlobalTime(tof);
 		if (!s) {
@@ -1362,7 +1449,11 @@ export function createEphemerisView(opts) {
 		mk.vals.spd.textContent = (O.vMag(s.v) / 1000).toFixed(2) + " km/s";
 		mk.vals.lat.textContent = (lat >= 0 ? "+" : "−") + Math.abs(lat).toFixed(1) + "°";
 		mk.vals.deg.textContent = sweptFromOrigin(s.r).toFixed(1) + "°";
-		mk.vals.tof.textContent = fmtTof(tof);
+		// Flight time is measured from the SOI edge, not the burn (soiExitTime);
+		// the arrival date is absolute and so unaffected by where the clock starts.
+		mk.vals.tof.textContent = fmtTof(Math.max(0, tof - soiExitT));
+		mk.vals.tof.title = "From the origin's SOI edge" +
+			(soiExitT > 0 ? ", " + (soiExitT / DAY).toFixed(2) + " d after the departure burn." : ".");
 		mk.vals.arr.textContent = fmtDate(dateState.jd + tof / DAY);
 
 		updateDestinationMarker(s.r, s.v, tof);
@@ -1425,7 +1516,7 @@ export function createEphemerisView(opts) {
 	// below whenever a click resolves to a nearest trajectory sample, and by
 	// loadFrozenPlanIntoState to restore a pasted mission's rendezvous.
 	function placeMarkerAtGlobalTime(t) {
-		var f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, t / trajTotalT)) : 0;
+		var f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, Math.max(t, soiExitT) / trajTotalT)) : 0;
 		var budget = (state.marker && state.marker.dvBudget != null) ? state.marker.dvBudget : 10000;
 		// if we were targeting, restore the manual terminal burn before re-placing
 		if (state.marker && state.marker.mode === "target" && state.marker._baseBurn) {
@@ -1520,6 +1611,8 @@ export function createEphemerisView(opts) {
 
 		if (!leg.ok) {
 			trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
+			soiExitT = 0; soiExitState = null;
+			soiInfo.textContent = "";
 			clearApproachMarks();
 			setStatus("err", leg.diagnostic.message);
 		} else {
@@ -1551,17 +1644,31 @@ export function createEphemerisView(opts) {
 			trajSampleCount = leg.samples.length;
 			trajSamples = leg.samples;
 
+			// Where the interplanetary flight begins (see soiExitTime): the arc
+			// is drawn, and every flight time measured, from the SOI edge — the
+			// stub between the origin body and that point is the departure's
+			// business, not this leg's.
+			soiExitT = soiExitTime(state.origin, dateState.jd, O.vMag(O.vSub(vDep, dep.v)));
+			soiExitState = soiExitT > 0 ? stateAtGlobalTime(soiExitT) : null;
+			updateSoiInfo();
+
 			var U = AU;
-			var pts = leg.samples.map(function (s) { return new THREE.Vector3(s.r[0] / U, s.r[1] / U, s.r[2] / U); });
+			var pts = leg.samples.filter(function (s) { return s.t >= soiExitT; })
+				.map(function (s) { return new THREE.Vector3(s.r[0] / U, s.r[1] / U, s.r[2] / U); });
+			if (soiExitState) {
+				pts.unshift(new THREE.Vector3(soiExitState.r[0] / U, soiExitState.r[1] / U, soiExitState.r[2] / U));
+			}
 			trajLine = new THREE.Line(
 				new THREE.BufferGeometry().setFromPoints(pts),
 				new THREE.LineBasicMaterial({ color: 0x66f0ff }));
 			frame.scene.add(trajLine);
 
-			// Just the leg's own start — no "arrival" dot: with no mission
-			// duration, leg.end is wherever the loop/escape naturally runs out,
-			// not a rendezvous attempt (that judgment is the marker's job, D3).
-			if (leg.samples.length) { frame.scene.add(dot(leg.samples[0].r, 0xff5fd0, 6)); }
+			// Just the flight's own start, at the SOI edge — no "arrival" dot:
+			// with no mission duration, leg.end is wherever the loop/escape
+			// naturally runs out, not a rendezvous attempt (that judgment is
+			// the marker's job, D3).
+			var startR = soiExitState ? soiExitState.r : (leg.samples.length ? leg.samples[0].r : null);
+			if (startR) { frame.scene.add(dot(startR, 0xff5fd0, 6)); }
 
 			rw.entries.forEach(function (e) {
 				var giz = createWaypointGizmo(e.preR, e.preV,
@@ -1699,9 +1806,11 @@ export function createEphemerisView(opts) {
 
 		// otherwise place/move the marker at the nearest trajectory sample
 		// (trajSamples is in metres, so each candidate is converted to scene
-		// units before projecting)
+		// units before projecting). Samples before the SOI edge aren't drawn
+		// and aren't part of the flight, so they're not pickable either.
 		var best = -1, bestD = 14;        // pixel threshold
 		for (var i = 0; i < trajSamples.length; i++) {
+			if (trajSamples[i].t < soiExitT) { continue; }
 			var s = trajSamples[i].r;
 			var v = new THREE.Vector3(s[0] / AU, s[1] / AU, s[2] / AU).project(frame.camera);
 			if (v.z > 1) { continue; }
