@@ -32,10 +32,14 @@
  * THE FLIGHT STARTS AT THE SOI EDGE. The leg is a patched-conic heliocentric
  * arc, so it is propagated from the origin body's own position — but the ship
  * is not on an interplanetary flight until it is clear of the origin. The
- * crossing point is found on the arc itself (soiExitTime), the drawn polyline
- * and the start dot begin there, and every flight time reads from it. Only the
- * zero of "time of flight" moves: absolute epochs along the arc, and so the
- * arrival date and everything frozen from it, are unchanged.
+ * crossing point comes from core/departure-estimate.js's soiExitOnArc; the
+ * drawn polyline and the start dot begin there, and every flight time reads
+ * from it. Only the zero of "time of flight" moves — absolute epochs along
+ * the arc, and so the arrival date, are untouched. THE TAB'S CLOCK STAYS THE
+ * BURN'S: the date bar sets when the departure impulse happens, and the
+ * crossing is reported relative to it. core/freeze.js commits that same
+ * crossing as the mission's Departure→Coast hand-off, so a frozen mission's
+ * coast starts exactly where the flight was drawn starting.
  *
  * THE SHIP MARKER is a slidable probe on the drawn path with Free / Target
  * modes, plus the destination-at-arrival "×" and the
@@ -106,7 +110,8 @@ import { buildHelioFrame, HELIO_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
 import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
 import {
-	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed, originSoiRadius
+	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
+	originSoiRadius, soiExitOnArc
 } from "./core/departure-estimate.js";
 import { deserializeWorld } from "./core/world.js";
 import { decodeFragment } from "../Shared/exchange.js";
@@ -694,52 +699,21 @@ export function createEphemerisView(opts) {
 	// absolute epochs are untouched — only the zero of "time of flight" moves,
 	// so an arrival date still reads the same.
 	//
-	// Bracket-then-bisect on separation − R_soi, over the arc itself rather
-	// than a straight-line approximation, so solar curvature over the crossing
-	// (weeks, at an outer planet's SOI) is included. The first scan window is
-	// sized from the naive crossing time R_soi/v∞; if the crossing isn't in it
-	// (a strongly curved or barely-escaping arc) a second pass scans the rest
-	// of the drawn leg. A ship that never gets out — v∞ ≈ 0, or an arc that
-	// stays inside for the whole drawn leg — reports no offset, so the flight
-	// simply reads from the burn as before.
-	var SOI_SCAN_STEPS = 48;
-	function soiExitTime(originName, jd0, vInf) {
-		var R = originSoiRadius(originName);
-		if (!(R > 0) || !trajSegs.length || !(trajTotalT > 0)) { return 0; }
-		var orbit = systems.get(originName).orbit;
-		function sep(t) {
-			var s = stateAtGlobalTime(t);
-			if (!s) { return Infinity; }
-			var b = O.bodyStateAtJD(GM_SUN, orbit, jd0 + t / DAY);
-			return O.vMag(O.vSub(s.r, b.r)) - R;
-		}
-		if (sep(0) >= 0) { return 0; }                 // already outside (a tiny-SOI origin)
-		function scan(t0, t1) {
-			var step = (t1 - t0) / SOI_SCAN_STEPS;
-			if (!(step > 0)) { return null; }
-			var prev = t0;
-			for (var i = 1; i <= SOI_SCAN_STEPS; i++) {
-				var t = t0 + i * step;
-				if (sep(t) >= 0) {
-					var lo = prev, hi = t;
-					for (var k = 0; k < 40; k++) {
-						var mid = (lo + hi) / 2;
-						if (sep(mid) < 0) { lo = mid; } else { hi = mid; }
-					}
-					return hi;
-				}
-				prev = t;
-			}
-			return null;
-		}
-		var guess = vInf > 1 ? Math.min(6 * R / vInf, trajTotalT) : trajTotalT;
-		var hit = scan(0, guess);
-		if (hit == null && guess < trajTotalT) { hit = scan(guess, trajTotalT); }
-		return hit == null ? 0 : hit;
+	// The crossing itself comes from core/departure-estimate.js's soiExitOnArc,
+	// the same solver core/freeze.js commits as the mission's Departure→Coast
+	// hand-off, so what the planner is shown here is exactly what gets frozen.
+	// It solves the conic from the departure state, so a waypoint burn inside
+	// the SOI (pathological — waypoints belong on the interplanetary arc) is
+	// not felt. A ship that never gets out (v∞ ≈ 0) reports no crossing, and
+	// the flight simply reads from the burn.
+	function soiExitFor(r, v) {
+		var e = soiExitOnArc({ origin: state.origin, r: r, v: v, jd: dateState.jd });
+		return e.ok ? e : null;
 	}
 
 	// The departure card's "the flight starts here" line, from the crossing
-	// refresh() just found.
+	// refresh() just found. This epoch is also the mission's committed
+	// Departure→Coast hand-off once the plan is frozen.
 	function updateSoiInfo() {
 		var R = originSoiRadius(state.origin);
 		if (!soiExitState || !(R > 0)) {
@@ -840,13 +814,15 @@ export function createEphemerisView(opts) {
 		if (term.isDeparture && state.origin === "Earth") {
 			var proL = c.pro;
 			var vDepRaw = O.applyBurn(r1, v1, c.pro, c.nrm, c.rad);
+			var exitRaw = soiExitFor(r1, vDepRaw);
 			var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, v1),
-				jdHandoff: dateState.jd, profile: state.depProfile });
+				jdHandoff: exitRaw ? exitRaw.jd : dateState.jd, profile: state.depProfile });
 			if (est.ok) {
 				c.pro = proL - moonProgradeSpeed(est.jdLaunch, v1);
 				var vDepCorr = O.applyBurn(r1, v1, c.pro, c.nrm, c.rad);
+				var exitCorr = soiExitFor(r1, vDepCorr);
 				var est2 = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepCorr, v1),
-					jdHandoff: dateState.jd, profile: state.depProfile });
+					jdHandoff: exitCorr ? exitCorr.jd : dateState.jd, profile: state.depProfile });
 				if (est2.ok) { c.pro = proL - moonProgradeSpeed(est2.jdLaunch, v1); }
 			}
 		}
@@ -1195,7 +1171,9 @@ export function createEphemerisView(opts) {
 	// resolved waypoint days (snaps made concrete — the same resolveWaypoints
 	// pass refresh() draws from), and the marker's rendezvous — its time along
 	// the path as the arrival epoch, its velocity against the destination body's
-	// as the arrival v∞. Returns { ok: false, reason } if the gate's
+	// as the arrival v∞. Freeze re-solves the SOI-edge hand-off itself, from
+	// these same numbers, so the mission's coast starts exactly where this tab
+	// drew the flight starting. Returns { ok: false, reason } if the gate's
 	// preconditions somehow aren't met.
 	function buildFreezeSpec() {
 		var dn = state.leg.destination;
@@ -1269,11 +1247,22 @@ export function createEphemerisView(opts) {
 		if (!originSys) { return { ok: false, reason: "Unknown origin body \"" + p.origin + "\"." }; }
 
 		state.origin = p.origin;
-		dateBar.setJd(p.departure.jd);
+		// The plan's hand-off sits at the origin's SOI edge, one crossing after
+		// the burn it was authored with; the tab's clock is the BURN's, so it
+		// opens at the recorded injection epoch and the hand-off state is
+		// back-propagated to it — exactly reversing core/freeze.js. Saves from
+		// before the hand-off moved to the SOI edge carry no injectionJd: for
+		// them the hand-off epoch IS the burn epoch and the crossing is zero.
+		var injectionJd = isFinite(p.injectionJd) ? p.injectionJd : p.departure.jd;
+		var crossingS = (p.departure.jd - injectionJd) * DAY;
+		dateBar.setJd(injectionJd);
 		frame.place(dateState.jd);
 
+		var atBurn = crossingS > 0
+			? O.propagateState(GM_SUN, p.departure.r, p.departure.v, -crossingS)
+			: { r: p.departure.r, v: p.departure.v };
 		var natural = O.bodyStateAtJD(GM_SUN, originSys.orbit, dateState.jd);
-		var dv = O.vSub(p.departure.v, natural.v);
+		var dv = O.vSub(atBurn.v, natural.v);
 		var burn = O.vMag(dv) > 1e-6
 			? O.burnComponents(natural.r, natural.v, dv)
 			: { pro: 0, rad: 0, nrm: 0 };
@@ -1288,12 +1277,12 @@ export function createEphemerisView(opts) {
 		if (state.origin === "Earth" && O.vMag(dv) > 1e-6) {
 			var proL = burn.pro;
 			var est = estimateDeparture({ origin: "Earth", vInfVec: dv,
-				jdHandoff: dateState.jd, profile: state.depProfile });
+				jdHandoff: p.departure.jd, profile: state.depProfile });
 			if (est.ok) {
 				burn.pro = proL - moonProgradeSpeed(est.jdLaunch, natural.v);
 				var vDepCorr = O.applyBurn(natural.r, natural.v, burn.pro, burn.nrm, burn.rad);
 				var est2 = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepCorr, natural.v),
-					jdHandoff: dateState.jd, profile: state.depProfile });
+					jdHandoff: p.departure.jd, profile: state.depProfile });
 				if (est2.ok) { burn.pro = proL - moonProgradeSpeed(est2.jdLaunch, natural.v); }
 			}
 		}
@@ -1307,9 +1296,11 @@ export function createEphemerisView(opts) {
 		state.leg.burn.pro = burn.pro;
 		state.leg.burn.rad = burn.rad;
 		state.leg.burn.nrm = burn.nrm;
+		// Frozen waypoint days count from the coast's start (the hand-off);
+		// this tab's count from the burn, so add the crossing back on.
 		state.leg.waypoints = (lp.waypoints || []).map(function (wp) {
 			var b = wp.burn || {};
-			return { days: wp.days, burn: { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 },
+			return { days: wp.days + crossingS / DAY, burn: { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 },
 			         snap: null, snapOffset: 0 };
 		});
 		state.marker = null;
@@ -1644,12 +1635,13 @@ export function createEphemerisView(opts) {
 			trajSampleCount = leg.samples.length;
 			trajSamples = leg.samples;
 
-			// Where the interplanetary flight begins (see soiExitTime): the arc
+			// Where the interplanetary flight begins (see soiExitFor): the arc
 			// is drawn, and every flight time measured, from the SOI edge — the
 			// stub between the origin body and that point is the departure's
 			// business, not this leg's.
-			soiExitT = soiExitTime(state.origin, dateState.jd, O.vMag(O.vSub(vDep, dep.v)));
-			soiExitState = soiExitT > 0 ? stateAtGlobalTime(soiExitT) : null;
+			var exit = soiExitFor(dep.r, vDep);
+			soiExitT = exit ? Math.min(exit.seconds, trajTotalT) : 0;
+			soiExitState = exit ? { r: exit.r, v: exit.v } : null;
 			updateSoiInfo();
 
 			var U = AU;
@@ -1706,8 +1698,12 @@ export function createEphemerisView(opts) {
 		var raw = state.leg.burn;
 		if (state.origin !== "Earth") { return raw; }
 		var vDepRaw = O.applyBurn(dep.r, dep.v, raw.pro || 0, raw.nrm || 0, raw.rad || 0);
+		// The release leads the HAND-OFF — the SOI-edge crossing, not the burn
+		// epoch — so the tentative estimate is anchored there too, on the raw
+		// burn's own crossing (this pass runs before the final arc exists).
+		var exitRaw = soiExitFor(dep.r, vDepRaw);
 		var est = estimateDeparture({ origin: "Earth", vInfVec: O.vSub(vDepRaw, dep.v),
-			jdHandoff: dateState.jd, profile: state.depProfile });
+			jdHandoff: exitRaw ? exitRaw.jd : dateState.jd, profile: state.depProfile });
 		if (!est.ok) { return raw; }
 		var rel = moonProgradeSpeed(est.jdLaunch, dep.v);
 		return { pro: (raw.pro || 0) + rel, rad: raw.rad || 0, nrm: raw.nrm || 0 };
@@ -1725,10 +1721,13 @@ export function createEphemerisView(opts) {
 	// speed is counted.
 	function updateMoonWidgets(dep, vDep) {
 		if (state.origin === "Earth") {
+			// Anchored at the plan's hand-off — the SOI-edge crossing this
+			// refresh just solved — which is the epoch core/freeze.js leads the
+			// release from, so the Moon shown here is the Moon the mission gets.
 			var est = estimateDeparture({
 				origin: "Earth",
 				vInfVec: O.vSub(vDep, dep.v),
-				jdHandoff: dateState.jd,
+				jdHandoff: dateState.jd + soiExitT / DAY,
 				profile: state.depProfile
 			});
 			var jdAt = est.ok ? est.jdLaunch : dateState.jd;

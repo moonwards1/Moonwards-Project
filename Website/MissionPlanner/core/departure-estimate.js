@@ -48,6 +48,12 @@
  * Non-Earth origins have no Moon model and use the naive estimate
  * (SOI radius / v∞).
  *
+ * Also exports soiExitOnArc — where a heliocentric departure arc reaches the
+ * origin's SOI. That crossing is the Ephemeris tab's flight start and the
+ * epoch core/freeze.js commits as the Departure→Coast hand-off, so the
+ * estimate above and the plan it anchors both name the same moment: the
+ * release leads the SOI EXIT, and the crossing is counted once.
+ *
  * Also exports the Moon readouts the widget shows beside the estimate:
  * elongation (phase) and the Moon's speed along EARTH'S OWN heliocentric
  * prograde — the same prograde axis the waypoint gizmo uses, so the sign
@@ -88,6 +94,71 @@ export function originSoiRadius(origin) {
 	var sys = systems.get(origin);
 	if (!sys || !sys.orbit || sys.orbit.system !== SUN) { return null; }
 	return O.sphereOfInfluence(semiMajor(sys.orbit), sys.GM, GM_SUN);
+}
+
+// WHERE A HELIOCENTRIC DEPARTURE ARC LEAVES THE ORIGIN'S SOI.
+//
+// A patched-conic departure arc is propagated from the origin body's own
+// position, but the interplanetary flight only starts where the ship is clear
+// of the origin: this finds the first point on the arc whose separation from
+// the (also moving) origin body reaches the SOI radius. That point is the
+// Ephemeris tab's flight start and the epoch core/freeze.js commits as the
+// Departure→Coast hand-off, so both read the same number from here.
+//
+// Bracket-then-bisect on the arc itself rather than R_soi/v∞, so the body's
+// own motion and the solar curvature over the crossing count — at an outer
+// planet the crossing takes months. The first window is sized from the naive
+// crossing time; a second pass covers the rest of the budget for a strongly
+// curved or barely-escaping arc.
+//
+// spec = { origin, r, v, jd, maxSeconds } — r/v the ship's POST-injection
+// heliocentric state (m, m/s) at epoch jd, maxSeconds an optional search
+// budget (default: ten naive crossings).
+// Returns { ok: true, seconds, jd, r, v } — the crossing — or
+// { ok: false, reason } for "unknown-origin", "no-vinf" (the ship is not
+// leaving), or "no-exit" (not within the budget: a bound arc that stays in
+// the body's vicinity).
+var SOI_SCAN_STEPS = 48;
+export function soiExitOnArc(spec) {
+	var R = originSoiRadius(spec.origin);
+	if (R == null) { return { ok: false, reason: "unknown-origin" }; }
+	var orbit = systems.get(spec.origin).orbit;
+	function at(t) {
+		var s = O.propagateState(GM_SUN, spec.r, spec.v, t);
+		var b = O.bodyStateAtJD(GM_SUN, orbit, spec.jd + t / DAY);
+		return { s: s, sep: O.vMag(O.vSub(s.r, b.r)) - R };
+	}
+	var vInf = O.vMag(O.vSub(spec.v, O.bodyStateAtJD(GM_SUN, orbit, spec.jd).v));
+	if (!(vInf >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
+	var naive = R / vInf;
+	var budget = (isFinite(spec.maxSeconds) && spec.maxSeconds > 0) ? spec.maxSeconds : 10 * naive;
+	function found(t) {
+		var e = at(t);
+		return { ok: true, seconds: t, jd: spec.jd + t / DAY, r: e.s.r, v: e.s.v };
+	}
+	if (at(0).sep >= 0) { return found(0); }              // already outside (a tiny-SOI origin)
+	function scan(t0, t1) {
+		var step = (t1 - t0) / SOI_SCAN_STEPS;
+		if (!(step > 0)) { return null; }
+		var prev = t0;
+		for (var i = 1; i <= SOI_SCAN_STEPS; i++) {
+			var t = t0 + i * step;
+			if (at(t).sep >= 0) {
+				var lo = prev, hi = t;
+				for (var k = 0; k < 40; k++) {
+					var mid = (lo + hi) / 2;
+					if (at(mid).sep < 0) { lo = mid; } else { hi = mid; }
+				}
+				return hi;
+			}
+			prev = t;
+		}
+		return null;
+	}
+	var first = Math.min(2 * naive, budget);
+	var hit = scan(0, first);
+	if (hit == null && first < budget) { hit = scan(first, budget); }
+	return hit == null ? { ok: false, reason: "no-exit" } : found(hit);
 }
 
 // Moon–Sun elongation (deg, 0..360; 0 new, 90 first quarter, 180 full,

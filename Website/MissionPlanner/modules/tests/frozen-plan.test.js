@@ -20,7 +20,7 @@ import frozenPlan, { computeCompliance, complianceWarnings, planSummary,
 	releaseAnchorFor, windowDaysOf,
 	VINF_TOL, AIM_TOL_DEG, DEFAULT_WINDOW_DAYS } from "../frozen-plan/frozen-plan.js";
 import { defaultMission } from "../../presets/default-mission.js";
-import { estimateDeparture } from "../../core/departure-estimate.js";
+import { estimateDeparture, originSoiRadius } from "../../core/departure-estimate.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";
 
@@ -226,12 +226,15 @@ test("comply: the shipped preset's skyhook alone falls short of the full departu
 	assert.equal(rPlan.status, "ok");
 	assert.deepEqual(rPlan.warnings.map(function (w) { return w.code; }).sort(),
 		["aim-mismatch", "vinf-mismatch"]);
-	assert.equal(rPlan.output.data.jd, JD);
+	// the plan's own committed epochs — the SOI-edge hand-off and the
+	// rendezvous, read off the preset rather than restated here
+	var presetPlan = defaultMission.stages[3].params;
+	assert.equal(rPlan.output.data.jd, presetPlan.departure.jd);
 	// plan endpoints on the events channel (the coast slider's future span)
 	assert.equal(rPlan.events.length, 2);
 	assert.match(rPlan.events[0].label, /Exit origin SOI/);
 	assert.match(rPlan.events[1].label, /Plan arrival — Ceres/);
-	assert.equal(rPlan.events[1].jd, JD + 750);
+	assert.equal(rPlan.events[1].jd, presetPlan.arrival.jd);
 
 	// The coast still flies the FROZEN plan's state, not the tech's
 	// shortfall — so it still rendezvouses clean, the comply rule's whole point.
@@ -358,14 +361,23 @@ test("update: a damaged plan fails hard (diagnostic), not as a warning", functio
 test("the baked preset plan is internally consistent: v∞, anchor, window", function () {
 	// Guards the preset's frozen numbers. The committed departure state is baked
 	// data, not something any live code re-derives, so what is checkable is its
-	// own internal consistency: the required v∞ it encodes, and that the timing
-	// fields were baked exactly the way core/freeze.js bakes them — anchor =
-	// hand-off − core/departure-estimate.js's estimate for that same v∞.
+	// own internal consistency: the required v∞ it encodes, that the hand-off
+	// really sits on Earth's SOI edge (where a departure leg delivers, and where
+	// core/freeze.js commits), and that the timing fields were baked exactly the
+	// way core/freeze.js bakes them — anchor = hand-off −
+	// core/departure-estimate.js's estimate for that same v∞.
 	var planStage = defaultMission.stages[3];
 	assert.equal(planStage.moduleId, "frozen-plan");
 	var p = planStage.params;
-	var vInfVec = O.vSub(p.departure.v, Frames.bodyHelioState("Earth", p.departure.jd).v);
-	assert.ok(Math.abs(O.vMag(vInfVec) - 6548.4) < 1, "required v∞ ~6.55 km/s, got " + O.vMag(vInfVec));
+	var earthAt = Frames.bodyHelioState("Earth", p.departure.jd);
+	var vInfVec = O.vSub(p.departure.v, earthAt.v);
+	assert.ok(Math.abs(O.vMag(vInfVec) - 6545.7) < 1, "required v∞ ~6.55 km/s, got " + O.vMag(vInfVec));
+
+	var sep = O.vMag(O.vSub(p.departure.r, earthAt.r));
+	assert.ok(Math.abs(sep / originSoiRadius("Earth") - 1) < 1e-6,
+		"hand-off sits on Earth's SOI edge, got " + (sep / 1000).toFixed(0) + " km");
+	// and the injection it was authored from is one crossing earlier
+	assert.ok(p.injectionJd < p.departure.jd && p.departure.jd - p.injectionJd < 5);
 
 	assert.equal(p.handoffWindowDays, 1);
 	var est = estimateDeparture({ origin: "Earth", vInfVec: vInfVec, jdHandoff: p.departure.jd });

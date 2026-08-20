@@ -32,6 +32,16 @@
 //             from a near-Jupiter-distance start means whatever falls this
 //             deep arrives very fast, no matter how gently it started
 //
+// INJECTION EPOCH: this plan's hand-off is the REAL departure leg's
+// Jupiter-SOI exit, so — unlike a plan frozen from the Ephemeris tab — it
+// never was an impulse at the body's centre. injectionJd below is the
+// back-solved epoch where the hand-off arc, run backwards, passes closest
+// to Jupiter: 23.6097 d before the hand-off, clearing it by 491,000 km
+// (0.01 SOI radii) — the release geometry's own offset. That epoch is what
+// "Paste mission link…" opens this plan on, so re-authoring it there is
+// approximate: the tab rebuilds the arc as a centre-of-body burn, which
+// this one is not.
+//
 // This is a SERIALIZED WORLD (core/world.js `serialize()` shape, current
 // WORLD_VERSION), loaded through the same deserializeWorld path a share link
 // uses. Pure data, so Node tests can verify it actually loads, integrates,
@@ -71,6 +81,7 @@ export var jupiterMercuryMission = {
 					v: [3008.671132521057, -9635.621244072072, 106.48324217748035],
 					jd: 2464502.7503403076
 				},
+				injectionJd: 2464479.140623,
 				arrival: { body: "Mercury", jd: 2466002.7503403076, vInf: 74872.5234714629 },
 				handoffWindowDays: 1,
 				releaseAnchorJd: 2464479.5,

@@ -29,11 +29,11 @@ import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH } from "../../../Shared/geo-leg.js";
 
-// The shipped preset's release anchor (2031-12-17 ~19:07 UT — the frozen
+// The shipped preset's release anchor (2031-12-19 ~16:20 UT — the frozen
 // plan's baked releaseAnchorJd; presets/default-mission.js's header records
-// the bake) and its committed hand-off epoch.
-var JD_ANCHOR = 2463218.546734214;
-var JD_HANDOFF = 2463220.75;
+// the bake) and its committed hand-off epoch, at Earth's SOI edge.
+var JD_ANCHOR = 2463220.180402478;
+var JD_HANDOFF = 2463222.384503543;
 var DAY = 86400;
 
 // The worked-example lunar skyhook geometry (the shipped preset's own values),
@@ -127,10 +127,10 @@ function presetChainData() {
 test("departure flight: the preset chain escapes to a hand-off at Earth-SOI exit", function () {
 	var leg = computeDepartureLeg({ waypoints: [] }, presetChainData(), JD_ANCHOR);
 	assert.equal(leg.ok, true);
-	// The shipped chain's own figures: v∞ ≈ 4.93 km/s asymptotic,
-	// SOI exit ≈ 2.72 d after release — 0.51 d late against the committed
+	// The shipped chain's own figures: v∞ ≈ 5.32 km/s asymptotic,
+	// SOI exit ≈ 2.68 d after release — 0.47 d late against the committed
 	// hand-off, inside the ±1 d window.
-	assert.ok(leg.vinfEarth > 4500 && leg.vinfEarth < 5500, "v∞ ~4.9 km/s, got " + leg.vinfEarth);
+	assert.ok(leg.vinfEarth > 4900 && leg.vinfEarth < 5800, "v∞ ~5.3 km/s, got " + leg.vinfEarth);
 	var flightDays = leg.handoff.tSoi / DAY;
 	assert.ok(flightDays > 2 && flightDays < 3.5, "flight ~2.7 d, got " + flightDays);
 	assert.ok(Math.abs(leg.handoff.jd - JD_HANDOFF) < 1, "hand-off inside the ±1 d window, off by " +

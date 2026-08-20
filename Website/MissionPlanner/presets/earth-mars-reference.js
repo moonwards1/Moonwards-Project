@@ -49,6 +49,16 @@
 // the real module chain (see modules/tests/ — same registry/engine
 // machinery, not reimplemented physics) before being shipped here.
 //
+// INJECTION EPOCH: this plan's hand-off is the REAL departure leg's
+// Earth-SOI exit, so — unlike a plan frozen from the Ephemeris tab — it
+// never was an impulse at the body's centre. injectionJd below is the
+// back-solved epoch where the hand-off arc, run backwards, passes closest
+// to Earth: 2.0647 d before the hand-off, clearing it by 320,000 km
+// (0.35 SOI radii) — the release geometry's own offset. That epoch is what
+// "Paste mission link…" opens this plan on, so re-authoring it there is
+// approximate: the tab rebuilds the arc as a centre-of-body burn, which
+// this one is not.
+//
 // This is a SERIALIZED WORLD (core/world.js `serialize()` shape, current
 // WORLD_VERSION), loaded through the same deserializeWorld path a share
 // link uses. Pure data, so Node tests can verify it actually loads,
@@ -95,6 +105,7 @@ export var earthMarsReferenceMission = {
 					v: [-27527.926707411603, -16220.510078668216, -68.4829236571825],
 					jd: 2463610.059797283
 				},
+				injectionJd: 2463607.995127,
 				arrival: { body: "Mars", jd: 2463870.059797283, vInf: 4856.648803943818 },
 				handoffWindowDays: 1,
 				releaseAnchorJd: 2463607.5,

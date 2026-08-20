@@ -30,6 +30,16 @@
 //             Mercury's is most of the depth of the inner solar system's
 //             potential well
 //
+// INJECTION EPOCH: this plan's hand-off is the REAL departure leg's
+// Mars-SOI exit, so — unlike a plan frozen from the Ephemeris tab — it
+// never was an impulse at the body's centre. injectionJd below is the
+// back-solved epoch where the hand-off arc, run backwards, passes closest
+// to Mars: 3.2066 d before the hand-off, clearing it by 22,000 km
+// (0.04 SOI radii) — the release geometry's own offset. That epoch is what
+// "Paste mission link…" opens this plan on, so re-authoring it there is
+// approximate: the tab rebuilds the arc as a centre-of-body burn, which
+// this one is not.
+//
 // This is a SERIALIZED WORLD (core/world.js `serialize()` shape, current
 // WORLD_VERSION), loaded through the same deserializeWorld path a share link
 // uses. Pure data, so Node tests can verify it actually loads, integrates,
@@ -69,6 +79,7 @@ export var marsMercuryMission = {
 					v: [-14931.949183460785, -13416.610756130991, 97.27008525638203],
 					jd: 2463479.5958245187
 				},
+				injectionJd: 2463476.389247,
 				arrival: { body: "Mercury", jd: 2463699.5958245187, vInf: 16128.24344031587 },
 				handoffWindowDays: 1,
 				releaseAnchorJd: 2463476.5,

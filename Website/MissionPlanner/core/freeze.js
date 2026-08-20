@@ -27,13 +27,29 @@
  *   the coast's own live readouts (the ship card) are what tell the user
  *   whether the flight actually reaches the destination.
  *
- * THE HAND-OFF IS POST-BURN: the frozen departure state is the origin body's
- * position with the DEPARTURE BURN ALREADY APPLIED — the ship sitting on the
- * coast trajectory itself. So the plan's required v-infinity is exactly the
- * speed the authored departure burn demanded (the injection), which is the
- * thing a departure technology exists to deliver, and the aim-direction
- * comparison points along a real asymptote. A plan authored with NO departure
- * burn — waypoints only — legitimately freezes to a required v∞ of 0.
+ * THE HAND-OFF IS AT THE ORIGIN'S SOI EDGE. The authored plan is a burn at the
+ * origin body's own position, but that is not where a departure technology can
+ * hand a ship over: a departure leg flies until it exits the origin's SOI and
+ * delivers the ship THERE (departure-leg.js step 4, body-departure-leg.js the
+ * same). So freeze applies the burn, follows the resulting arc out to the SOI
+ * edge (departure-estimate.js's soiExitOnArc — the same crossing the Ephemeris
+ * tab drew the flight starting from), and commits THAT state and epoch as the
+ * plan's hand-off. The coast starts clear of the origin, the release anchor
+ * leads the SOI exit rather than the burn, and the crossing is counted once
+ * instead of both by the departure estimate and again by the coast.
+ *
+ * Waypoint days, and the coast's own duration, are therefore measured from the
+ * SOI-edge epoch — shifted here from the burn-relative days the tab hands in,
+ * so every waypoint keeps its absolute epoch. `injectionJd` records the burn
+ * epoch the plan was authored at, which is what ephemeris-view.js's "Paste
+ * mission link…" needs to put the plan back on its authoring clock.
+ *
+ * The plan's required v-infinity is the ship's velocity against the origin
+ * body's at the hand-off (frozen-plan.js derives it from the frozen state), so
+ * it is the same measurement the departure tech's own delivered hand-off is
+ * judged by. A plan authored with NO departure burn — waypoints only — never
+ * leaves the SOI at all: it keeps the burn epoch as its hand-off and freezes
+ * to a required v∞ of 0.
  *
  * Neither output stage carries a `burn` field: the frozen departure state
  * above already IS the coast's starting point, full stop. There is no burn to
@@ -43,12 +59,15 @@
  * spec: {
  *   origin,                       // "Earth" — HELIO_BODIES name
  *   destination,                  // "Ceres" — the marker's rendezvous body
- *   jd,                           // departure epoch (the tab's clock)
+ *   jd,                           // INJECTION epoch (the tab's clock) — where
+ *                                 //   the burn happens, not the hand-off
  *   departure: { r, v },          // origin body's helio state at jd (m, m/s),
- *                                 //   PRE-burn — spec.burn is applied here to
- *                                 //   get the frozen POST-burn hand-off state
+ *                                 //   PRE-burn — spec.burn is applied here and
+ *                                 //   the arc followed to the SOI edge to get
+ *                                 //   the frozen hand-off state
  *   burn: { pro, rad, nrm },      // the authored departure burn (m/s)
- *   waypoints: [{ days, burn }],  // resolved days (snaps already concrete)
+ *   waypoints: [{ days, burn }],  // resolved days (snaps already concrete),
+ *                                 //   measured from spec.jd — re-based here
  *   arrivalJd,                    // the marker's rendezvous epoch
  *   arrivalVInf,                  // |ship v − destination v| there (m/s)
  *   windowDays,                   // optional — hand-off window half-width
@@ -65,6 +84,12 @@
  * whose duration is the rendezvous would flag them as past its end.
  *
  * TIMING FIELDS on the frozen-plan stage:
+ *   injectionJd — the epoch the plan's departure burn was authored at, which
+ *     the hand-off leads by the SOI crossing. Provenance only: nothing in a
+ *     mission flies from it; ephemeris-view.js reads it back to re-author a
+ *     pasted plan on the clock it was written on. Saves frozen before the
+ *     hand-off moved to the SOI edge carry no such field, and for them the
+ *     hand-off epoch IS the injection epoch.
  *   handoffWindowDays — half-width (d) of the hand-off WINDOW around
  *     departure.jd (default ±1); the compliance epoch row checks the
  *     integrated departure leg's delivered hand-off against it.
@@ -80,11 +105,16 @@
 
 import { WORLD_KIND, WORLD_VERSION } from "./world.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
-import { estimateDeparture } from "./departure-estimate.js";
+import { Frames } from "../../Shared/frames.js";
+import { estimateDeparture, soiExitOnArc } from "./departure-estimate.js";
 
 var O = OrbitalMath;
 
 export var DEFAULT_WINDOW_DAYS = 1;
+
+// The origin body's heliocentric velocity at an epoch — the reference the
+// plan's v∞ is measured against, read the same way frozen-plan.js reads it.
+function bodyHelioV(origin, jd) { return Frames.bodyHelioState(origin, jd).v; }
 
 function copyBurn(b) {
 	b = b || {};
@@ -92,29 +122,42 @@ function copyBurn(b) {
 }
 
 export function freezeMissionWorld(spec) {
-	var legDays = spec.arrivalJd - spec.jd;
+	// The injection: departure burn applied to the origin body's state (same
+	// call, same argument order, as computeLeg's own injection).
+	var b = copyBurn(spec.burn);
+	var vInject = O.applyBurn(spec.departure.r, spec.departure.v, b.pro, b.nrm, b.rad);
+
+	// The hand-off: where that arc leaves the origin's SOI (see header). A plan
+	// with no departure burn never gets there and hands over at the injection
+	// point itself.
+	var exit = soiExitOnArc({ origin: spec.origin, r: spec.departure.r, v: vInject, jd: spec.jd });
+	var handoff = exit.ok
+		? { r: exit.r, v: exit.v, jd: exit.jd }
+		: { r: spec.departure.r, v: vInject, jd: spec.jd };
+	var crossingDays = handoff.jd - spec.jd;
+
+	// Waypoint days are authored from the injection; the coast now starts at
+	// the hand-off, so re-base them onto it (an absolute epoch never moves).
+	// Any that fall inside the SOI, or at/after the rendezvous, drop out.
+	var legDays = spec.arrivalJd - handoff.jd;
 	var waypoints = (spec.waypoints || [])
+		.map(function (wp) { return { days: wp.days - crossingDays, burn: wp.burn }; })
 		.filter(function (wp) { return isFinite(wp.days) && wp.days > 0 && wp.days < legDays; })
-		.sort(function (a, b) { return a.days - b.days; })
+		.sort(function (a, b2) { return a.days - b2.days; })
 		.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; });
 
-	// The hand-off state: departure burn applied to the origin body's state
-	// (same call, same argument order, as computeLeg's own injection), so
-	// the frozen requirement IS the coast trajectory's starting state.
-	var b = copyBurn(spec.burn);
-	var vHandoff = O.applyBurn(spec.departure.r, spec.departure.v, b.pro, b.nrm, b.rad);
-
 	// Timing fields (see header): the release anchor leads the hand-off by the
-	// departure-duration estimate; the window half-width defaults to ±1 d.
+	// departure-duration estimate — both epochs now name the SOI exit, so the
+	// crossing is counted once. The window half-width defaults to ±1 d.
 	var est = estimateDeparture({
 		origin: spec.origin,
-		vInfVec: O.vSub(vHandoff, spec.departure.v),
-		jdHandoff: spec.jd,
+		vInfVec: O.vSub(handoff.v, bodyHelioV(spec.origin, handoff.jd)),
+		jdHandoff: handoff.jd,
 		profile: spec.depProfile
 	});
 	var windowDays = (isFinite(spec.windowDays) && spec.windowDays > 0)
 		? spec.windowDays : DEFAULT_WINDOW_DAYS;
-	var releaseAnchorJd = est.ok ? est.jdLaunch : spec.jd;
+	var releaseAnchorJd = est.ok ? est.jdLaunch : handoff.jd;
 
 	// Assemble the profile with sequential stage ids. The DEPARTURE SCAFFOLD
 	// comes first, with an EMPTY carrier slot the mission view's departure-
@@ -136,7 +179,8 @@ export function freezeMissionWorld(spec) {
 	}
 	add("frozen-plan", {
 		origin: spec.origin,
-		departure: { r: spec.departure.r.slice(), v: vHandoff.slice(), jd: spec.jd },
+		departure: { r: handoff.r.slice(), v: handoff.v.slice(), jd: handoff.jd },
+		injectionJd: spec.jd,
 		arrival: { body: spec.destination, jd: spec.arrivalJd, vInf: spec.arrivalVInf },
 		handoffWindowDays: windowDays,
 		releaseAnchorJd: releaseAnchorJd,
@@ -162,7 +206,7 @@ export function freezeMissionWorld(spec) {
 		// nothing on interplanetary timeframes. The arrival seam has the same
 		// looseness (frozen-plan.js's handoffWindowFor also backs the ship
 		// card's Coast-phase timing bar).
-		jd: spec.jd,
+		jd: handoff.jd,
 		nextStage: n,
 		stages: stages
 	};

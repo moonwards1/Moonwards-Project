@@ -37,6 +37,16 @@
 //             approachAt) — still climbing out of Saturn's deep well at
 //             that point, not yet down to the asymptotic figure
 //
+// INJECTION EPOCH: this plan's hand-off is the REAL departure leg's
+// Venus-SOI exit, so — unlike a plan frozen from the Ephemeris tab — it
+// never was an impulse at the body's centre. injectionJd below is the
+// back-solved epoch where the hand-off arc, run backwards, passes closest
+// to Venus: 1.7039 d before the hand-off, clearing it by 41,000 km
+// (0.07 SOI radii) — the release geometry's own offset. That epoch is what
+// "Paste mission link…" opens this plan on, so re-authoring it there is
+// approximate: the tab rebuilds the arc as a centre-of-body burn, which
+// this one is not.
+//
 // This is a SERIALIZED WORLD (core/world.js `serialize()` shape, current
 // WORLD_VERSION), loaded through the same deserializeWorld path a share link
 // uses. Pure data, so Node tests can verify it actually loads, integrates,
@@ -76,6 +86,7 @@ export var venusSaturnMission = {
 					v: [-9757.102206391384, 37821.09161834681, 982.6728206505492],
 					jd: 2464024.126766075
 				},
+				injectionJd: 2464022.422908,
 				arrival: { body: "Saturn", jd: 2466221.626766075, vInf: 9754.537416938687 },
 				handoffWindowDays: 1,
 				releaseAnchorJd: 2464022.5,

@@ -3,15 +3,18 @@
 // (planner.js's initialMissions). Also the first entry in the example-mission
 // dropdown (presets/examples-catalog.js).
 //
-//   release   2031-12-17 ~19:07 UT (jd 2463218.5467 — the plan's frozen
+//   release   2031-12-19 ~16:20 UT (jd 2463220.1804 — the plan's frozen
 //             release ANCHOR; see TIMING below) — lunar skyhook, CoM 275 km,
 //             release from the tether top at 6000 km, phase 92 deg
-//   hand-off  2031-12-20 06:00 UT (jd 2463220.75) — the plan's committed
-//             Departure→Coast hand-off, required departure v∞ 6.55 km/s,
-//             hand-off window ±1 d
-//   waypoint  day 475 of the coast, at 2.97 AU moving 12.25 km/s —
+//   injection 2031-12-20 06:00 UT (jd 2463220.75) — the epoch the plan's
+//             departure impulse is authored at, one SOI crossing before the
+//             hand-off (injectionJd; see THE HAND-OFF below)
+//   hand-off  2031-12-21 ~21:14 UT (jd 2463222.3845) — the plan's committed
+//             Departure→Coast hand-off, at EARTH'S SOI EDGE, required
+//             departure v∞ 6.55 km/s, hand-off window ±1 d
+//   waypoint  day 473.365 of the coast, at 2.97 AU moving 12.25 km/s —
 //             P 2.14 / R -1.18 / N -2.73 km/s  (net 3.66)
-//   arrival   2034-01-08 (750 days after hand-off), miss 0.0001 AU,
+//   arrival   2034-01-08 (748.365 days after hand-off), miss 0.0001 AU,
 //             3.78 km/s relative to Ceres
 //
 // THE CHAIN:
@@ -28,14 +31,25 @@
 // departure-tech slot (both are filled from the mission view's technology
 // cards).
 //
+// THE HAND-OFF IS AT EARTH'S SOI EDGE, where the departure leg above actually
+// delivers its ship, and where core/freeze.js commits a plan authored on the
+// Ephemeris tab (see that file's header). The plan's departure state is the
+// authored injection — a 6.55 km/s impulse on Earth's own state at
+// injectionJd — followed out along its own arc to the SOI crossing 1.6345 d
+// later; the coast's duration and its waypoint day are measured from there, so
+// every absolute epoch (the waypoint burn, the Ceres rendezvous) is exactly
+// where it was before the hand-off moved out.
+//
 // TIMING: releaseAnchorJd below is baked the way core/freeze.js bakes it —
 // the hand-off epoch minus core/departure-estimate.js's estimate for the plan's
-// own required v∞ (6.55 km/s → dive-in profile, 2.2033 d) = 2463220.75 − 2.2033
-// = 2463218.546734214. The anchor is read-only plan data.
+// own required v∞ (6.55 km/s → dive-in profile, 2.2041 d) = 2463222.3845 −
+// 2.2041 = 2463220.180402478. Both epochs name the SOI exit, so the crossing is
+// counted once, not once by the estimate and again by the coast. The anchor is
+// read-only plan data.
 //
 // THE DELIBERATE GAP: released at the anchor with phase 92, the chain delivers
-// v∞ ≈ 5.02 km/s against the committed 6.55, aimed ≈ 9.6° off, with the
-// hand-off ≈ 0.51 d late but INSIDE the ±1 d window. So this mission opens
+// v∞ ≈ 5.41 km/s against the committed 6.55, aimed ≈ 23.9° off, with the
+// hand-off ≈ 0.47 d late but INSIDE the ±1 d window. So this mission opens
 // showing vinf-mismatch and aim-mismatch warnings against a compliant epoch —
 // on purpose. Closing that gap (a low-perigee Oberth impulse on the departure
 // leg, say) is the mission-planning exercise this preset teaches, and it is the
@@ -54,7 +68,7 @@
 export var defaultMission = {
 	kind: "moonwards-world",
 	version: 4,
-	jd: 2463218.546734214,   // the clock opens at the release anchor
+	jd: 2463220.180402478,   // the clock opens at the release anchor
 	nextStage: 7,
 	stages: [
 		{
@@ -83,32 +97,34 @@ export var defaultMission = {
 		{
 			// The frozen flight plan: the mission's commitment, shaped exactly
 			// as core/freeze.js would have written it had this tab been spawned
-			// from the Ephemeris tab. departure.r/v are the baked hand-off state
-			// (release physics plus the folded-in injection — see this file's
-			// header); arrival vInf is the leg's speed relative to Ceres at
-			// hand-off + 750 d; releaseAnchorJd/handoffWindowDays are the timing
-			// fields whose bake is recorded in the header.
+			// from the Ephemeris tab. departure.r/v/jd are the SOI-edge hand-off
+			// the authored injection reaches (see this file's header);
+			// injectionJd is that injection's own epoch; arrival vInf is the
+			// leg's speed relative to Ceres at the rendezvous;
+			// releaseAnchorJd/handoffWindowDays are the timing fields whose bake
+			// is recorded in the header.
 			id: "stg-4",
 			moduleId: "frozen-plan",
 			params: {
 				origin: "Earth",
 				departure: {
-					r: [5856642340.899307, 147066185880.355, 0],
-					v: [-36785.2006878309, 1422.8029976413443, 236.73516629337746],
-					jd: 2463220.75
+					r: [660083682.164505, 147206054850.250427, 33427377.406683],
+					v: [-36804.3535975916, 557.9835955893, 236.6369368047],
+					jd: 2463222.384503543
 				},
+				injectionJd: 2463220.75,
 				arrival: { body: "Ceres", jd: 2463970.75, vInf: 3776.34 },
 				handoffWindowDays: 1,
-				releaseAnchorJd: 2463218.546734214,
-				waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }]
+				releaseAnchorJd: 2463220.180402478,
+				waypoints: [{ days: 473.365496, burn: { pro: 2140, rad: -1180, nrm: -2730 } }]
 			}
 		},
 		{
 			id: "stg-5",
 			moduleId: "transfer-leg",
 			params: {
-				waypoints: [{ days: 475, burn: { pro: 2140, rad: -1180, nrm: -2730 } }],
-				legDays: 750,
+				waypoints: [{ days: 473.365496, burn: { pro: 2140, rad: -1180, nrm: -2730 } }],
+				legDays: 748.365496,
 				destination: "Ceres"
 			}
 		},

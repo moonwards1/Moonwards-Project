@@ -29,11 +29,20 @@
  *                              v-infinity is measured against its heliocentric
  *                              velocity at the departure epoch
  *   departure: { r, v, jd }  — the frozen heliocentric hand-off state the
- *                              departure tech must deliver (m, m/s, jd) —
- *                              THE COAST'S OWN STARTING STATE, full stop. No
- *                              burn happens at this seam (see
+ *                              departure tech must deliver (m, m/s, jd), AT
+ *                              THE ORIGIN'S SOI EDGE, where a departure leg
+ *                              ends — THE COAST'S OWN STARTING STATE, full
+ *                              stop. No burn happens at this seam (see
  *                              transfer-leg.js's header for the reasoning the
  *                              two modules share)
+ *   injectionJd:              — provenance: the epoch the plan's departure
+ *                              burn was authored at, which the hand-off leads
+ *                              by the SOI crossing. Nothing in a mission flies
+ *                              from it; the Ephemeris tab reads it back to
+ *                              re-author a pasted plan on its own clock.
+ *                              Absent on saves frozen before the hand-off
+ *                              moved to the SOI edge — for those, the hand-off
+ *                              epoch is the injection epoch
  *   arrival:   { body, jd, vInf } — the plan's arrival commitment: body name,
  *                              epoch, and approach v-infinity (m/s) the
  *                              arrival tech must be able to catch. Read back
@@ -95,6 +104,7 @@ export var DEFAULT_WINDOW_DAYS = 1;   // days  — hand-off window half-width fa
 export var defaultParams = {
 	origin: "Earth",
 	departure: { r: null, v: null, jd: null },
+	injectionJd: null,         // provenance: the authored burn epoch; null → the hand-off's own
 	arrival: { body: "", jd: null, vInf: null },
 	handoffWindowDays: null,   // half-width (d); null → DEFAULT_WINDOW_DAYS
 	releaseAnchorJd: null,     // read-only release epoch; null → departure.jd
