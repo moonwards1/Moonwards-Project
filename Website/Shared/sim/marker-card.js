@@ -317,7 +317,12 @@ function makeCardDraggable(card, handle) {
 //                                // whose key is "rad" gets an extra
 //                                // ".km" sub-line appended right after it
 //                                // (both tools show "0.xxx AU" + "N,NNN km")
-//   getAngle,                    // () -> current precise angle (for the drag binder)
+//   getAngle,                    // () -> current precise angle (for the drag binder;
+//                                  // ignored when sliderAbsolute is set)
+//   sliderAbsolute,              // true -> plain absolute slider (thumb = opts value,
+//                                  // no relative-drag click-recentring); Mission Planner's
+//                                  // Ephemeris tab only -- see its degAtTime/timeAtDeg
+//   sliderMin, sliderMax, sliderStep,  // absolute-mode range bounds/step (default 0/360/0.1)
 //   removeLabel, removeTitle,    // optional text/tooltip for the head-bar
 //                                // remove button (default "✕" / "remove marker")
 //   onSliderChange(angleDeg), onRemove(), onModeClick(mode),
@@ -344,9 +349,23 @@ export function buildMarkerCard(opts) {
 	var slider = document.createElement("input");
 	slider.type = "range"; slider.className = cls + "-marker-slider";
 	var MARK_STEP = 1 / 3;                 // keyboard step: 3x finer than 1deg/step
-	slider.min = -180; slider.max = 180; slider.step = MARK_STEP; slider.value = 0;
-	slider.title = opts.sliderTitle;
-	bindRelativeDragSlider(slider, MARK_STEP, opts.getAngle, opts.onSliderChange);
+	if (opts.sliderAbsolute) {
+		// Plain absolute range: the thumb sits at the caller's own value
+		// (e.g. swept degrees, left = start, right = finish) instead of the
+		// relative-drag click-recentring scheme below. The caller owns
+		// min/max/value entirely (Mission Planner's Ephemeris tab -- see
+		// ephemeris-view.js's degAtTime/timeAtDeg).
+		slider.min = opts.sliderMin != null ? opts.sliderMin : 0;
+		slider.max = opts.sliderMax != null ? opts.sliderMax : 360;
+		slider.step = opts.sliderStep != null ? opts.sliderStep : 0.1;
+		slider.value = 0;
+		slider.title = opts.sliderTitle;
+		slider.addEventListener("input", function () { opts.onSliderChange(parseFloat(slider.value)); });
+	} else {
+		slider.min = -180; slider.max = 180; slider.step = MARK_STEP; slider.value = 0;
+		slider.title = opts.sliderTitle;
+		bindRelativeDragSlider(slider, MARK_STEP, opts.getAngle, opts.onSliderChange);
+	}
 	card.appendChild(slider);
 
 	var modeRow = document.createElement("div"); modeRow.className = cls + "-marker-mode";

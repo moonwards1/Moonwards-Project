@@ -242,6 +242,72 @@ export function createEphemerisView(opts) {
 	var markerVelDir = null;  // THREE.Vector3 — ship heading, for the sprite's per-frame orientation
 	var mk = null;            // the built marker card's refs (Shared/sim/marker-card.js)
 
+	// ==== marker slider domain: swept degrees, not time --------------------
+	// The slider shows one full orbit's worth of RADIAL (swept-angle) progress,
+	// left = the flight's start (0°, the SOI edge) to right = the drawn arc's
+	// end, whatever it sweeps (up to ~360° when bound, less for an escape).
+	// angleTable is built fresh each refresh() from trajSamples, unwrapped so
+	// deg increases monotonically with t (assumes prograde motion throughout —
+	// good enough for a first pass; a burn that reverses the sweep direction
+	// would need a real fix, not attempted here). degAtTime/timeAtDeg
+	// interpolate linearly between table entries.
+	var angleTable = [];   // [{ t (s, global), deg (unwrapped) }]
+
+	function buildAngleTable() {
+		angleTable = [];
+		if (!trajSamples.length) { return; }
+		var prevRaw = null, deg = 0, started = false;
+		trajSamples.forEach(function (s) {
+			if (s.t < soiExitT - 1e-6) { return; }
+			var raw = sweptFromOrigin(s.r);
+			if (!started) { deg = raw; started = true; }
+			else {
+				var d = raw - prevRaw;
+				while (d < -180) { d += 360; }
+				while (d > 180) { d -= 360; }
+				deg += d;
+			}
+			prevRaw = raw;
+			angleTable.push({ t: s.t, deg: deg });
+		});
+		if (angleTable.length && angleTable[0].t > soiExitT + 1e-6) {
+			angleTable.unshift({ t: soiExitT, deg: 0 });
+		}
+	}
+
+	// Swept degrees at global time t, interpolated from angleTable.
+	function degAtTime(t) {
+		if (!angleTable.length) { return 0; }
+		var n = angleTable.length;
+		if (t <= angleTable[0].t) { return angleTable[0].deg; }
+		if (t >= angleTable[n - 1].t) { return angleTable[n - 1].deg; }
+		var lo = 0, hi = n - 1;
+		while (hi - lo > 1) {
+			var mid = (lo + hi) >> 1;
+			if (angleTable[mid].t <= t) { lo = mid; } else { hi = mid; }
+		}
+		var a = angleTable[lo], b = angleTable[hi];
+		var frac = (b.t - a.t) > 1e-9 ? (t - a.t) / (b.t - a.t) : 0;
+		return a.deg + frac * (b.deg - a.deg);
+	}
+
+	// Inverse of degAtTime: global time at which the swept angle reaches deg.
+	function timeAtDeg(deg) {
+		if (!angleTable.length) { return 0; }
+		var n = angleTable.length;
+		deg = Math.max(angleTable[0].deg, Math.min(angleTable[n - 1].deg, deg));
+		if (deg <= angleTable[0].deg) { return angleTable[0].t; }
+		if (deg >= angleTable[n - 1].deg) { return angleTable[n - 1].t; }
+		var lo = 0, hi = n - 1;
+		while (hi - lo > 1) {
+			var mid = (lo + hi) >> 1;
+			if (angleTable[mid].deg <= deg) { lo = mid; } else { hi = mid; }
+		}
+		var a = angleTable[lo], b = angleTable[hi];
+		var frac = (b.deg - a.deg) > 1e-9 ? (deg - a.deg) / (b.deg - a.deg) : 0;
+		return a.t + frac * (b.t - a.t);
+	}
+
 	// ==== the clock: same date-bar widget and epoch/span every plotter
 	// uses, its own plain state (no World to write jd into). ------------------
 	function shortDate(jd) { var d = O.dateFromJulian(jd); return MONTHS[d.Mo - 1] + " " + d.Y; }
@@ -1062,9 +1128,9 @@ export function createEphemerisView(opts) {
 		mk = mcBuildMarkerCard({
 			classPrefix: "mp",
 			hostEl: markerHost,
-			sliderTitle: "drag to slide the marker along the whole path (0° = where it was placed); "
-				+ "~10× more mouse travel than the track for fine control, ×4 finer again with Shift. "
-				+ "Arrow keys nudge by ⅓° (¹⁄₁₂° with Shift) when focused.",
+			sliderTitle: "drag to slide the marker along the whole path — left is the flight's start, "
+				+ "right is the drawn arc's end, mapped by swept degrees around the Sun.",
+			sliderAbsolute: true, sliderMin: 0, sliderMax: 360,
 			modes: [["free", "Free"], ["target", "Target"]],   // no Track mode here (WP-4.1)
 			modeTitles: {
 				free: "slide the marker freely",
@@ -1081,10 +1147,15 @@ export function createEphemerisView(opts) {
 				{ key: "closeApproach", label: "closest approach" },
 				{ key: "captureIncl", label: "capture inclination" }
 			],
-			getAngle: function () { return state.marker ? state.marker.angle : 0; },
 			removeLabel: "Reset",
 			removeTitle: "Delete marker and start fresh",
-			onSliderChange: function (a) { if (state.marker) { state.marker.angle = a; updateMarker(); } },
+			onSliderChange: function (deg) {
+				if (!state.marker) { return; }
+				var t = timeAtDeg(deg);
+				state.marker.f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, t / trajTotalT)) : 0;
+				state.marker.angle = 0;
+				updateMarker();
+			},
 			onRemove: function () { removeMarker(); },
 			onModeClick: function (mode, e) { setMarkerMode(mode, !!(e && e.shiftKey)); },
 			onBudgetChange: function (dvBudget) { if (state.marker) { state.marker.dvBudget = dvBudget; refresh(); } }
@@ -1450,7 +1521,8 @@ export function createEphemerisView(opts) {
 		updateDestinationMarker(s.r, s.v, tof);
 
 		mk.slider.disabled = (state.marker.mode !== "free");      // position driven in Target mode
-		if (document.activeElement !== mk.slider) { mk.slider.value = state.marker.angle; }
+		mk.slider.max = angleTable.length ? angleTable[angleTable.length - 1].deg : 360;
+		if (document.activeElement !== mk.slider) { mk.slider.value = degAtTime(tof); }
 
 		// Target-mode controls/readouts (budget input + solved Δv); hidden otherwise
 		var isTarget = state.marker.mode === "target";
@@ -1602,7 +1674,7 @@ export function createEphemerisView(opts) {
 
 		if (!leg.ok) {
 			trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
-			soiExitT = 0; soiExitState = null;
+			soiExitT = 0; soiExitState = null; angleTable = [];
 			soiInfo.textContent = "";
 			clearApproachMarks();
 			setStatus("err", leg.diagnostic.message);
@@ -1643,6 +1715,7 @@ export function createEphemerisView(opts) {
 			soiExitT = exit ? Math.min(exit.seconds, trajTotalT) : 0;
 			soiExitState = exit ? { r: exit.r, v: exit.v } : null;
 			updateSoiInfo();
+			buildAngleTable();
 
 			var U = AU;
 			var pts = leg.samples.filter(function (s) { return s.t >= soiExitT; })
