@@ -411,16 +411,34 @@ export function buildMarkerCard(opts) {
 	});
 	card.appendChild(modeRow);
 
+	// A row whose `hold` value is set gets a radio button (all sharing one
+	// group, so only one can be checked) to its left -- the caller's way of
+	// letting a reader pick which readout stays fixed while the timeline
+	// scrubs (e.g. Mission Planner's Ephemeris tab: radial-from-origin vs.
+	// time-of-flight). opts.holdMode names the initially-checked value;
+	// opts.onHoldChange(value) fires when the reader picks a different one.
 	var vals = {};
-	function row(key, label) {
+	var holdRadios = {};
+	function row(key, label, holdValue) {
 		var r = document.createElement("div"); r.className = cls + "-marker-row";
+		var left = document.createElement("span"); left.className = cls + "-marker-left";
+		if (holdValue) {
+			var rad = document.createElement("input");
+			rad.type = "radio"; rad.name = cls + "-marker-hold"; rad.className = cls + "-marker-hold-radio";
+			rad.checked = holdValue === opts.holdMode;
+			rad.title = "hold this steady while the timeline scrubs";
+			rad.addEventListener("change", function () { if (rad.checked) { opts.onHoldChange(holdValue); } });
+			left.appendChild(rad);
+			holdRadios[holdValue] = rad;
+		}
 		var l = document.createElement("span"); l.className = cls + "-marker-label"; l.textContent = label;
+		left.appendChild(l);
 		var v = document.createElement("span"); v.className = cls + "-marker-val";
-		r.appendChild(l); r.appendChild(v); card.appendChild(r);
+		r.appendChild(left); r.appendChild(v); card.appendChild(r);
 		vals[key] = v;
 	}
 	opts.rows.forEach(function (r) {
-		row(r.key, r.label);
+		row(r.key, r.label, r.hold);
 		if (r.key === "rad") {
 			var km = document.createElement("div"); km.className = cls + "-marker-km";
 			card.appendChild(km);
@@ -447,7 +465,7 @@ export function buildMarkerCard(opts) {
 
 	opts.hostEl.appendChild(card);
 
-	return { el: card, slider: slider, modeBtns: modeBtns, vals: vals,
+	return { el: card, slider: slider, modeBtns: modeBtns, vals: vals, holdRadios: holdRadios,
 		budgetRow: budgetRow, budgetInput: budgetInput, tdvRow: tdvRow, valTdv: valTdv };
 }
 

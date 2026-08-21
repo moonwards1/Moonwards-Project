@@ -1140,8 +1140,8 @@ export function createEphemerisView(opts) {
 				{ key: "rad", label: "radius" },
 				{ key: "spd", label: "prograde velocity" },
 				{ key: "lat", label: "ecliptic latitude" },
-				{ key: "deg", label: "radial from origin" },
-				{ key: "tof", label: "time of flight" },
+				{ key: "deg", label: "radial from origin", hold: "deg" },
+				{ key: "tof", label: "time of flight", hold: "tof" },
 				{ key: "arr", label: "arrival date" },
 				{ key: "phase", label: "phasing" },
 				{ key: "closeApproach", label: "closest approach" },
@@ -1149,6 +1149,8 @@ export function createEphemerisView(opts) {
 			],
 			removeLabel: "Reset",
 			removeTitle: "Delete marker and start fresh",
+			holdMode: (state.marker && state.marker.holdMode) || "deg",
+			onHoldChange: function (mode) { if (state.marker) { state.marker.holdMode = mode; } },
 			onSliderChange: function (deg) {
 				if (!state.marker) { return; }
 				var t = timeAtDeg(deg);
@@ -1581,12 +1583,13 @@ export function createEphemerisView(opts) {
 	function placeMarkerAtGlobalTime(t) {
 		var f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, Math.max(t, soiExitT) / trajTotalT)) : 0;
 		var budget = (state.marker && state.marker.dvBudget != null) ? state.marker.dvBudget : 10000;
+		var holdMode = (state.marker && state.marker.holdMode) || "deg";
 		// if we were targeting, restore the manual terminal burn before re-placing
 		if (state.marker && state.marker.mode === "target" && state.marker._baseBurn) {
 			var tb = terminalBurnRef().burn;
 			tb.pro = state.marker._baseBurn.pro; tb.rad = state.marker._baseBurn.rad; tb.nrm = state.marker._baseBurn.nrm;
 		}
-		state.marker = { f0: f0, angle: 0, mode: "free", dvBudget: budget };
+		state.marker = { f0: f0, angle: 0, mode: "free", dvBudget: budget, holdMode: holdMode };
 		refresh();                        // redraw (restored burn included) + updateMarker
 		focusMarker();
 	}
@@ -1613,12 +1616,26 @@ export function createEphemerisView(opts) {
 		// holding f0 fixed across such a change silently retargets the marker
 		// to a different absolute time. Snapshot the marker's current absolute
 		// time-of-flight now, under the OLD trajTotalT, and re-derive f0 from
-		// it once the new trajTotalT is known (below), so the marker — and the
-		// slider, which reads its angle — stays put unless the path actually
-		// reshaped under it.
+		// it once the new trajTotalT is known (below), so the marker stays put
+		// unless the path actually reshaped under it.
+		//
+		// That absolute-time-of-flight hold is state.marker.holdMode "tof". The
+		// other mode, "deg" (the default — the marker card's radio next to
+		// "radial from origin"), holds the marker's SWEPT ANGLE fixed instead:
+		// also snapshot degAtTime(markerAbsTof) now, under the OLD angleTable,
+		// and once the new leg's angleTable is built (buildAngleTable(), below)
+		// re-solve timeAtDeg(markerDeg) on it to override the tof-based f0.
+		// Swept angle is the more physically stable quantity to hold across a
+		// scrub — e.g. dragging the departure date reshapes the whole leg (the
+		// origin's own heliocentric position moves, sharply for the Moon), and
+		// "the ship is this far around its arc" keeps meaning the same thing
+		// where a fixed elapsed time can land somewhere very different once
+		// the origin has moved out from under it.
 		var prevTotalT = trajTotalT;
 		var markerAbsTof = (state.marker && prevTotalT > 0)
 			? mcMarkerFraction(state.marker.f0, state.marker.angle) * prevTotalT : null;
+		var markerDeg = (state.marker && state.marker.holdMode === "deg" && markerAbsTof != null)
+			? degAtTime(markerAbsTof) : null;
 
 		var originSys = systems.get(state.origin);
 		var dep = O.bodyStateAtJD(GM_SUN, originSys.orbit, dateState.jd);
@@ -1697,7 +1714,9 @@ export function createEphemerisView(opts) {
 			// Re-anchor the marker to the SAME absolute time-of-flight it had
 			// before this recompute (see the note at the top of refresh()),
 			// rather than leaving it at the same fraction of a total that may
-			// have just moved. Target mode overrides f0 from its own absolute
+			// have just moved. This is the "tof" hold mode outright, and the
+			// "deg" hold mode's fallback for when there was no prior swept
+			// angle to match. Target mode overrides f0 from its own absolute
 			// _encT right after this (updateMarker), so this only has lasting
 			// effect on Free/released-Target marker positions.
 			if (state.marker && markerAbsTof != null) {
@@ -1716,6 +1735,18 @@ export function createEphemerisView(opts) {
 			soiExitState = exit ? { r: exit.r, v: exit.v } : null;
 			updateSoiInfo();
 			buildAngleTable();
+
+			// "deg" hold mode: override the tof-based re-anchor above with the
+			// time-of-flight where the NEW leg's angleTable reaches the SAME
+			// swept angle the marker had before this recompute (markerDeg, see
+			// the note at the top of refresh()). timeAtDeg clamps to the new
+			// table's own range, so a leg that no longer reaches that angle
+			// just settles at whichever end is closest — never a NaN or an
+			// out-of-range fraction.
+			if (state.marker && markerDeg != null && trajTotalT > 0) {
+				state.marker.f0 = Math.max(0, Math.min(1, timeAtDeg(markerDeg) / trajTotalT));
+				state.marker.angle = 0;
+			}
 
 			var U = AU;
 			var pts = leg.samples.filter(function (s) { return s.t >= soiExitT; })
