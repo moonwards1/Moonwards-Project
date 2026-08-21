@@ -1021,7 +1021,7 @@ export function createEphemerisView(opts) {
 			if (tempRing) { tempRing.visible = false; }
 			if (mk) {
 				mk.vals.phase.textContent = "—"; mk.vals.closeApproach.textContent = "—";
-				mk.vals.captureIncl.textContent = "—";
+				mk.vals.captureIncl.textContent = "—"; mk.vals.arr.textContent = "—";
 			}
 			updateStartMissionButton({ hasDest: false });
 			return;
@@ -1060,6 +1060,10 @@ export function createEphemerisView(opts) {
 
 		var distToOrbit = orbit.e < 1 ? O.distanceToOrbit(orbit, markerR) : Infinity;
 		var nearOrbit = distToOrbit < APPROACH_FAR;
+		// timeOk (below) can only go true once nearOrbit already has, so
+		// "inside at least one of the two closest-approach rings" reduces to
+		// nearOrbit alone.
+		if (nearOrbit) { mk.vals.arr.textContent = fmtDate(arrJd); }
 		var timeOk = false, dtDays = null;
 		if (nearOrbit) {
 			var dt = mcPhasingDays(GM_SUN, orbit, markerR, arrJd);
@@ -1518,7 +1522,12 @@ export function createEphemerisView(opts) {
 		mk.vals.tof.textContent = fmtTof(Math.max(0, tof - soiExitT));
 		mk.vals.tof.title = "From the origin's SOI edge" +
 			(soiExitT > 0 ? ", " + (soiExitT / DAY).toFixed(2) + " d after the departure burn." : ".");
-		mk.vals.arr.textContent = fmtDate(dateState.jd + tof / DAY);
+		// A date here means "the ship arrives" -- only worth stating once the
+		// marker is actually near enough to the destination to call it an
+		// arrival (updateDestinationMarker's nearOrbit, one of the two
+		// closest-approach rings). Default to "—"; overwritten below once
+		// that's confirmed.
+		mk.vals.arr.textContent = "—";
 
 		updateDestinationMarker(s.r, s.v, tof);
 
