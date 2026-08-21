@@ -361,6 +361,38 @@ export function buildMarkerCard(opts) {
 		slider.value = 0;
 		slider.title = opts.sliderTitle;
 		slider.addEventListener("input", function () { opts.onSliderChange(parseFloat(slider.value)); });
+
+		// Custom drag: 1:1 with the mouse normally, 1/3 speed with Shift held,
+		// 1/12 with Ctrl held (for finer positioning; Ctrl wins if both are
+		// down) -- native range dragging has no such modifier, so pointerdown
+		// suppresses the native jump-to-click and this drives slider.value
+		// itself, same sensitivity-scaling convention as bindRelativeDragSlider
+		// above.
+		var absDragging = false, absLastX = 0, absDegPerPx = 1;
+		slider.addEventListener("pointerdown", function (e) {
+			e.preventDefault();
+			absDragging = true; absLastX = e.clientX;
+			var range = (parseFloat(slider.max) - parseFloat(slider.min)) || 360;
+			absDegPerPx = range / (slider.clientWidth || 174);
+			try { slider.setPointerCapture(e.pointerId); } catch (_) {}
+			slider.focus();
+		});
+		slider.addEventListener("pointermove", function (e) {
+			if (!absDragging) { return; }
+			var dx = e.clientX - absLastX; absLastX = e.clientX;
+			var sens = absDegPerPx * (e.ctrlKey ? 1 / 12 : (e.shiftKey ? 1 / 3 : 1));
+			var v = Math.max(parseFloat(slider.min), Math.min(parseFloat(slider.max),
+				parseFloat(slider.value) + dx * sens));
+			slider.value = v;
+			opts.onSliderChange(v);
+		});
+		function endAbsDrag(e) {
+			if (!absDragging) { return; }
+			absDragging = false;
+			try { slider.releasePointerCapture(e.pointerId); } catch (_) {}
+		}
+		slider.addEventListener("pointerup", endAbsDrag);
+		slider.addEventListener("pointercancel", endAbsDrag);
 	} else {
 		slider.min = -180; slider.max = 180; slider.step = MARK_STEP; slider.value = 0;
 		slider.title = opts.sliderTitle;

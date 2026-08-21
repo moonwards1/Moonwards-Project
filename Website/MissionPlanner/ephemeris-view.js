@@ -1496,7 +1496,7 @@ export function createEphemerisView(opts) {
 			return;
 		}
 
-		frame.place(dateState.jd + tof / DAY);   // bodies track the marker's implied time, not just the date bar
+		frame.place(dateState.jd);   // the scene always shows the timeline's own date, not the marker's implied one
 
 		markerSprite.visible = true;
 		setCardEmpty(false);
