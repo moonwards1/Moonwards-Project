@@ -242,6 +242,15 @@ export function createEphemerisView(opts) {
 	var markerVelDir = null;  // THREE.Vector3 — ship heading, for the sprite's per-frame orientation
 	var mk = null;            // the built marker card's refs (Shared/sim/marker-card.js)
 
+	// The trajectory's actual closest approach to the current destination —
+	// the ship's own state where its distance to the body's real (moving)
+	// position is smallest, found once per refresh() over the whole drawn
+	// path. This is what the card's arrival/phasing/closest-approach/capture
+	// rows report: a property of the trajectory itself, not of wherever the
+	// marker happens to be scrubbed to (see computeDestinationApproach).
+	// null when there's no destination or no valid trajectory.
+	var destApproach = null;
+
 	// ==== marker slider domain: swept degrees, not time --------------------
 	// The slider shows one full orbit's worth of RADIAL (swept-angle) progress,
 	// left = the flight's start (0°, the SOI edge) to right = the drawn arc's
@@ -1007,22 +1016,116 @@ export function createEphemerisView(opts) {
 		return out;
 	}
 
-	// Position the destination "×" (body at arrival), the temporal ring and
-	// the phasing readout, given the meeting point markerR (m) and TOF (s).
-	// Also drives the "Start Mission Plan" gate: enabled only when the marker
-	// sits inside BOTH closest-approach rings — space (nearOrbit, the same
-	// APPROACH_FAR threshold as the space-ring tiers) and time (the temporal
-	// ring's own tier >= 0). See updateStartMissionButton.
-	function updateDestinationMarker(markerR, markerV, tofSec) {
+	// The trajectory's genuine closest approach to the current destination:
+	// scan trajSamples for the global minimum of distance-to-the-BODY'S-OWN
+	// position (not its orbit ellipse — the body is moving too, so this tracks
+	// actual separation at matching times), then refine with a golden-section
+	// search over the true Kepler arc so the result isn't limited by polyline
+	// spacing. Unlike computeOrbitApproaches (which flags every candidate
+	// body's orbit ring for the scene), this is a single global minimum for
+	// one named destination, used for the card's readouts.
+	// Returns { r, v (ship, m/m/s), bodyR, bodyV, t (global s), jd, dist (m) }
+	// or null when there's no destination or no valid trajectory.
+	function computeDestinationApproach() {
+		var dn = state.leg.destination;
+		if (!dn || trajSamples.length < 2 || !(trajTotalT > 0)) { return null; }
+		var orbit = systems.get(dn).orbit;
+		function distAt(t) {
+			var s = stateAtGlobalTime(t);
+			if (!s) { return null; }
+			var b = O.bodyStateAtJD(GM_SUN, orbit, dateState.jd + t / DAY);
+			return { s: s, b: b, d: O.vMag(O.vSub(s.r, b.r)) };
+		}
+		var bestI = -1, bestD = Infinity;
+		for (var i = 0; i < trajSamples.length; i++) {
+			var t = trajSamples[i].t;
+			if (t < soiExitT) { continue; }
+			var b = O.bodyStateAtJD(GM_SUN, orbit, dateState.jd + t / DAY);
+			var d = O.vMag(O.vSub(trajSamples[i].r, b.r));
+			if (d < bestD) { bestD = d; bestI = i; }
+		}
+		if (bestI < 0) { return null; }
+		var tA = bestI > 0 ? trajSamples[bestI - 1].t : soiExitT;
+		var tB = bestI < trajSamples.length - 1 ? trajSamples[bestI + 1].t : trajTotalT;
+		var gr = (Math.sqrt(5) - 1) / 2, a = tA, b2 = tB;
+		function f(t) { var r = distAt(t); return r ? r.d : Infinity; }
+		var c = b2 - gr * (b2 - a), d = a + gr * (b2 - a), fc = f(c), fd = f(d);
+		for (var k = 0; k < 48 && (b2 - a) > 1; k++) {
+			if (fc < fd) { b2 = d; d = c; fd = fc; c = b2 - gr * (b2 - a); fc = f(c); }
+			else { a = c; c = d; fc = fd; d = a + gr * (b2 - a); fd = f(d); }
+		}
+		var tm = (a + b2) / 2, res = distAt(tm);
+		if (!res) { return null; }
+		return { r: res.s.r, v: res.s.v, bodyR: res.b.r, bodyV: res.b.v, t: tm,
+			jd: dateState.jd + tm / DAY, dist: res.d };
+	}
+
+	// Refresh the card's arrival date / phasing / closest approach / capture
+	// inclination rows from destApproach (computeDestinationApproach) — the
+	// trajectory's own closest pass to the destination, a fixed property of
+	// the drawn path that does not move when the marker is scrubbed.
+	//
+	// closeApproach alone is unconditional (it IS the "how close does this
+	// trajectory ever get" answer, worth stating even for a wide miss). The
+	// other three stay gated exactly as they were under marker-scrub-driven
+	// values: arrival date only once the approach is within the space ring
+	// (nearOrbit — the pass is close enough to call an encounter), phasing's
+	// tier only once that pass is also timed close enough (timeOk), and
+	// capture inclination only once both hold — short of that, "the plane
+	// this capture would carry in" isn't describing an actual encounter.
+	// "—" across all four when there's no destination or fix at all.
+	function updateApproachReadouts() {
+		if (!mk) { return; }
+		if (!destApproach) {
+			mk.vals.arr.textContent = "—"; mk.vals.phase.textContent = "—";
+			mk.vals.closeApproach.textContent = "—"; mk.vals.captureIncl.textContent = "—";
+			return;
+		}
+		var destSys = systems.get(state.leg.destination);
+		var orbit = destSys.orbit;
+		var altitude = destApproach.dist - (destSys.radius || 0);
+		mk.vals.closeApproach.textContent = altitude >= 0
+			? fmtKm(altitude)
+			: "impact (" + fmtKm(-altitude) + " below surface)";
+
+		var distToOrbit = orbit.e < 1 ? O.distanceToOrbit(orbit, destApproach.r) : Infinity;
+		var nearOrbit = distToOrbit < APPROACH_FAR;
+		mk.vals.arr.textContent = nearOrbit ? fmtDate(destApproach.jd) : "—";
+
+		var timeOk = false;
+		if (nearOrbit) {
+			var dt = mcPhasingDays(GM_SUN, orbit, destApproach.r, destApproach.jd);
+			mk.vals.phase.textContent = (dt >= 0 ? "+" : "−") + Math.abs(dt).toFixed(1) + " d";
+			timeOk = pickProximityTier(Math.abs(dt), TEMP_FAR, TEMP_NEAR, TEMP_CLOSE) >= 0;
+		} else {
+			mk.vals.phase.textContent = "—";
+		}
+
+		if (nearOrbit && timeOk) {
+			var rRel = O.vSub(destApproach.r, destApproach.bodyR);
+			var vRel = O.vSub(destApproach.v, destApproach.bodyV);
+			var inclDeg = O.relativeInclination(rRel, vRel, orbit) * 180 / Math.PI;
+			mk.vals.captureIncl.textContent = inclDeg.toFixed(1) + "°" + (inclDeg > 90 ? " (retrograde)" : "");
+		} else {
+			mk.vals.captureIncl.textContent = "—";
+		}
+	}
+
+	// Position the destination "×" (body at the marker's implied arrival) and
+	// the temporal ring, given the meeting point markerR (m) and TOF (s) —
+	// these track wherever the marker is scrubbed to, the manual side of
+	// choosing a rendezvous. Also drives the "Start Mission Plan" gate:
+	// enabled only when the marker sits inside BOTH closest-approach rings —
+	// space (nearOrbit, the same APPROACH_FAR threshold as the space-ring
+	// tiers) and time (the temporal ring's own tier >= 0). See
+	// updateStartMissionButton. The card's arrival/phasing/closest-approach/
+	// capture rows are NOT set here — see updateApproachReadouts.
+	function updateDestinationMarker(markerR, tofSec) {
 		var dn = state.leg.destination;
 		if (!dn) {
 			if (destSprite) { destSprite.visible = false; }
 			if (destSoi) { destSoi.visible = false; }
 			if (tempRing) { tempRing.visible = false; }
-			if (mk) {
-				mk.vals.phase.textContent = "—"; mk.vals.closeApproach.textContent = "—";
-				mk.vals.captureIncl.textContent = "—"; mk.vals.arr.textContent = "—";
-			}
 			updateStartMissionButton({ hasDest: false });
 			return;
 		}
@@ -1030,12 +1133,6 @@ export function createEphemerisView(opts) {
 		var orbit = destSys.orbit;
 		var arrJd = dateState.jd + tofSec / DAY;
 		var b = O.bodyStateAtJD(GM_SUN, orbit, arrJd);
-		var rRel = [markerR[0] - b.r[0], markerR[1] - b.r[1], markerR[2] - b.r[2]];
-		var missDist = O.vMag(rRel);
-		var altitude = missDist - (destSys.radius || 0);
-		mk.vals.closeApproach.textContent = altitude >= 0
-			? fmtKm(altitude)
-			: "impact (" + fmtKm(-altitude) + " below surface)";
 
 		if (!destSprite) { destSprite = makeXMarkSprite(); destSprite.renderOrder = 13; frame.scene.add(destSprite); }
 		destSprite.visible = true;
@@ -1063,12 +1160,10 @@ export function createEphemerisView(opts) {
 		// timeOk (below) can only go true once nearOrbit already has, so
 		// "inside at least one of the two closest-approach rings" reduces to
 		// nearOrbit alone.
-		if (nearOrbit) { mk.vals.arr.textContent = fmtDate(arrJd); }
 		var timeOk = false, dtDays = null;
 		if (nearOrbit) {
 			var dt = mcPhasingDays(GM_SUN, orbit, markerR, arrJd);
 			dtDays = dt;
-			mk.vals.phase.textContent = (dt >= 0 ? "+" : "−") + Math.abs(dt).toFixed(1) + " d";
 			var tier = pickProximityTier(Math.abs(dt), TEMP_FAR, TEMP_NEAR, TEMP_CLOSE);
 			timeOk = tier >= 0;
 			if (tier >= 0) {
@@ -1077,21 +1172,7 @@ export function createEphemerisView(opts) {
 				tempRing.visible = true;
 				if (markerSprite) { tempRing.position.copy(markerSprite.position); }
 			} else if (tempRing) { tempRing.visible = false; }
-		} else {
-			mk.vals.phase.textContent = "—";
-			if (tempRing) { tempRing.visible = false; }
-		}
-
-		// Only meaningful once the marker is at least within the outer
-		// proximity rings (both space and time) — outside that, "the plane
-		// this capture would carry in" isn't describing an actual encounter.
-		if (nearOrbit && timeOk) {
-			var vRel = [markerV[0] - b.v[0], markerV[1] - b.v[1], markerV[2] - b.v[2]];
-			var inclDeg = O.relativeInclination(rRel, vRel, orbit) * 180 / Math.PI;
-			mk.vals.captureIncl.textContent = inclDeg.toFixed(1) + "°" + (inclDeg > 90 ? " (retrograde)" : "");
-		} else {
-			mk.vals.captureIncl.textContent = "—";
-		}
+		} else if (tempRing) { tempRing.visible = false; }
 
 		updateStartMissionButton({ hasDest: true, spaceOk: nearOrbit, timeOk: timeOk,
 			distToOrbit: distToOrbit, dtDays: dtDays, destName: dn });
@@ -1522,14 +1603,8 @@ export function createEphemerisView(opts) {
 		mk.vals.tof.textContent = fmtTof(Math.max(0, tof - soiExitT));
 		mk.vals.tof.title = "From the origin's SOI edge" +
 			(soiExitT > 0 ? ", " + (soiExitT / DAY).toFixed(2) + " d after the departure burn." : ".");
-		// A date here means "the ship arrives" -- only worth stating once the
-		// marker is actually near enough to the destination to call it an
-		// arrival (updateDestinationMarker's nearOrbit, one of the two
-		// closest-approach rings). Default to "—"; overwritten below once
-		// that's confirmed.
-		mk.vals.arr.textContent = "—";
 
-		updateDestinationMarker(s.r, s.v, tof);
+		updateDestinationMarker(s.r, tof);
 
 		mk.slider.disabled = (state.marker.mode !== "free");      // position driven in Target mode
 		mk.slider.max = angleTable.length ? angleTable[angleTable.length - 1].deg : 360;
@@ -1786,6 +1861,14 @@ export function createEphemerisView(opts) {
 			rebuildApproachMarks();
 			setStatus("ok", "ok");
 		}
+
+		// The trajectory's own closest approach to the destination — a
+		// property of the drawn path and the destination alone, so it's
+		// recomputed here (once per trajectory/destination change) rather
+		// than on every marker scrub. null when leg.ok is false: trajSamples
+		// was just cleared above.
+		destApproach = computeDestinationApproach();
+		updateApproachReadouts();
 
 		readoutBoxes = renderReadoutBoxes(readoutLayer, readoutBoxes, entries,
 			{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex, compact: true });
