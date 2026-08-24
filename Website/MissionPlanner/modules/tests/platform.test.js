@@ -107,8 +107,8 @@ test("canRideOn: the add-on rule set — base-only, free, and must-ride platform
 test("paramsForRole: role filtering and per-role labels", function () {
 	var release = paramsForRole(SKYHOOK, RELEASE).map(function (p) { return p.name; });
 	var catchRole = paramsForRole(SKYHOOK, CATCH).map(function (p) { return p.name; });
-	assert.deepEqual(release, ["comAlt", "topAlt", "relAlt", "releasePhaseDeg"]);
-	assert.deepEqual(catchRole, ["comAlt", "topAlt", "relAlt"],
+	assert.deepEqual(release, ["comAlt", "relAlt", "releasePhaseDeg"]);
+	assert.deepEqual(catchRole, ["comAlt", "relAlt"],
 		"the release-phase slider is the carrier's aiming control alone");
 
 	var relLabel = paramsForRole(SKYHOOK, RELEASE).filter(function (p) { return p.name === "relAlt"; })[0];

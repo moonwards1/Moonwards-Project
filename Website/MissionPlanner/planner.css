@@ -521,9 +521,13 @@ body {
 	font-size: 12.5px; color-scheme: dark;
 }
 .mp-tech-select option:disabled { color: #5f6a82; }
-/* In-card aiming slider (the skyhook's release phase). */
-.mp-phase-wrap { display: inline-flex; align-items: center; gap: 6px; }
-.mp-phase-wrap input[type=range] { width: 96px; accent-color: var(--acc); }
+/* In-card aiming slider (the skyhook's release phase): a full-width row of
+   its own underneath the label/number row. Left edge shares the 20px
+   clearance .mp-tech-row gives its label, so the card's straddling readout
+   box doesn't sit on top of the slider's own left end; the right edge still
+   runs to the card's own edge. */
+.mp-phase-slider-row { padding: 2px 0 6px; margin-left: 20px; }
+.mp-phase-slider-row input[type=range] { width: 100%; accent-color: var(--acc); }
 .mp-unit { color: #5f6a82; font-size: 11.5px; margin-left: 4px; }
 
 .mp-readouts { border-top: 1px dashed var(--line2); margin-top: 8px; padding-top: 6px; }

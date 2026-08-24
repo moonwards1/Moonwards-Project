@@ -311,6 +311,43 @@ export function makeTerminal(spec, opts) {
 	};
 }
 
+// A range input's native drag jumps the handle to wherever the pointer lands,
+// which is too coarse for a control whose step is a fraction of a degree.
+// Holding Shift or Ctrl while dragging switches to a relative mode instead:
+// the handle moves at a fraction of the pointer's own travel, so the same
+// swipe across the card dials in a much smaller change. Ctrl is the finer of
+// the two. A plain drag (no modifier) is untouched — the browser's own,
+// jump-to-pointer behaviour.
+function attachFineDrag(slider) {
+	var dragging = false, startX = 0, startVal = 0, mult = 1;
+	slider.addEventListener("pointerdown", function (e) {
+		if (!e.shiftKey && !e.ctrlKey) { return; }
+		e.preventDefault();
+		dragging = true;
+		mult = e.ctrlKey ? (1 / 12) : (1 / 3);
+		startX = e.clientX;
+		startVal = parseFloat(slider.value);
+		slider.setPointerCapture(e.pointerId);
+	});
+	slider.addEventListener("pointermove", function (e) {
+		if (!dragging) { return; }
+		var min = parseFloat(slider.min), max = parseFloat(slider.max);
+		var step = parseFloat(slider.step) || 1;
+		var valuePerPixel = (max - min) / slider.getBoundingClientRect().width;
+		var v = startVal + (e.clientX - startX) * valuePerPixel * mult;
+		v = Math.round(Math.min(max, Math.max(min, v)) / step) * step;
+		if (v !== parseFloat(slider.value)) {
+			slider.value = v;
+			slider.dispatchEvent(new Event("input", { bubbles: true }));
+		}
+	});
+	slider.addEventListener("pointerup", function () {
+		if (!dragging) { return; }
+		dragging = false;
+		slider.dispatchEvent(new Event("change", { bubbles: true }));
+	});
+}
+
 // ---- the shared card and draw plumbing ------------------------------------
 
 // The declared-parameter card: the platform's note, one control per param that
@@ -357,26 +394,47 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 		var wrap = document.createElement("span");
 
 		if (p.kind === "slider") {
-			wrap.className = "mp-phase-wrap";
+			// Two-line control: the label's row carries a number field for
+			// precise entry; a second, full-width row underneath carries the
+			// slider for coarse aiming by eye.
+			var num = document.createElement("input");
+			num.type = "number"; num.step = p.step;
+			num.value = paramToDisplay(p, fullParams()[p.name]);
+			wrap.appendChild(num);
+			wrap.appendChild(unitSpan(p.unit || ""));
+
+			var sliderRow = document.createElement("div"); sliderRow.className = "mp-phase-slider-row";
 			var slider = document.createElement("input");
 			slider.type = "range";
 			slider.min = p.min; slider.max = p.max; slider.step = p.step;
 			slider.value = paramToDisplay(p, fullParams()[p.name]);
-			wrap.appendChild(slider);
-			var readout = unitSpan(paramToDisplay(p, fullParams()[p.name]) + (p.unit || ""));
-			wrap.appendChild(readout);
-			// Dragging issues transient sets (live redraft, coalescible by a future
-			// undo); releasing the handle commits.
+			sliderRow.appendChild(slider);
+			attachFineDrag(slider);
+
+			// Dragging the slider issues transient sets (live redraft, coalescible
+			// by a future undo); releasing the handle commits. The number field
+			// always commits straight away, and each control's moves sync the other.
 			slider.addEventListener("input", function () {
 				var v = parseFloat(slider.value);
 				if (!isFinite(v)) { return; }
-				readout.textContent = v + (p.unit || "");
+				num.value = v;
 				setParam(p.name, paramFromDisplay(p, v), { transient: true });
 			});
 			slider.addEventListener("change", function () {
 				var v = parseFloat(slider.value);
 				if (isFinite(v)) { setParam(p.name, paramFromDisplay(p, v)); }
 			});
+			num.addEventListener("change", function () {
+				var v = parseFloat(num.value);
+				if (!isFinite(v)) { return; }
+				slider.value = v;
+				setParam(p.name, paramFromDisplay(p, v));
+			});
+
+			el.appendChild(wrap);
+			host.appendChild(el);
+			host.appendChild(sliderRow);
+			return;
 		} else {
 			var inp = document.createElement("input");
 			inp.type = "number"; inp.step = p.step;

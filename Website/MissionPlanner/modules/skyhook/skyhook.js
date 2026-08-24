@@ -246,19 +246,13 @@ export var SKYHOOK = {
 
 	params: [
 		{ name: "comAlt", label: "CoM altitude", unit: "km", scale: 1e3, step: 25 },
-		{ name: "topAlt", label: "top altitude", unit: "km", scale: 1e3, step: 100 },
 		{ name: "relAlt", label: "release altitude", labelFor: { catch: "catch altitude" },
 		  unit: "km", scale: 1e3, step: 25 },
 		// The carrier's aiming control. The catch's own phasing is set at the
 		// capture point instead, so this control is the release role's alone.
 		{ name: "releasePhaseDeg", label: "release phase", unit: "°", kind: "slider",
-		  min: 0, max: 360, step: 1, roles: [RELEASE] }
+		  min: 0, max: 360, step: 0.1, decimals: 1, roles: [RELEASE] }
 	],
-
-	note: function (params, role) {
-		return "Skyhook orbiting " + (params.body || "—") +
-			(role === RELEASE ? "." : ", catching at the tip.");
-	},
 
 	geometry: tetherGeometry,
 
