@@ -856,7 +856,14 @@ export function createEphemerisView(opts) {
 		var r1, v1, t1g;
 		if (term.isDeparture) { r1 = dep.r; v1 = dep.v; t1g = 0; }
 		else {
-			var rw = resolveWaypoints(dep.r, dep.v, state.leg);
+			// The leg this walks must be the one that will actually be DRAWN,
+			// so the waypoint's pre-burn state matches where the ship really
+			// is: with an Earth origin the departure burn carries the Moon's
+			// free prograde speed (assistedBurn), and walking the raw burn
+			// instead puts r1/v1 far enough off after a coast that the Lambert
+			// solve aims from a point the ship never occupies.
+			var rw = resolveWaypoints(dep.r, dep.v,
+				Object.assign({}, state.leg, { burn: assistedBurn(dep) }));
 			var e = rw.entries[term.index];
 			if (!e || !e.preR) { hardFail("no leg"); return; }
 			r1 = e.preR; v1 = e.preV; t1g = (e.days || 0) * DAY;
@@ -926,7 +933,17 @@ export function createEphemerisView(opts) {
 		}
 		if (mode === "target") {
 			m._savedF0 = m.f0; m._savedAngle = m.angle;      // restore here on leaving Target
-			var tof = mcMarkerFraction(m.f0, m.angle) * trajTotalT;
+			// The date to hold is the trajectory's OWN closest approach to the
+			// destination (destApproach) — the same fixed point the card's
+			// arrival / phasing / capture rows report. Taking it from the
+			// marker's scrub position instead would ask Lambert to put the ship
+			// at the body wherever the chevron happens to sit, so a plan whose
+			// proximity is already satisfied could still solve to an absurd Δv
+			// and release. Only with no approach at all (no destination, no
+			// valid path) does the marker's own time stand in.
+			var tof = (destApproach && destApproach.t != null)
+				? destApproach.t
+				: mcMarkerFraction(m.f0, m.angle) * trajTotalT;
 			m.targetArrJd = dateState.jd + tof / DAY;        // hold this arrival date
 			m._baseBurn = { pro: term.pro || 0, rad: term.rad || 0, nrm: term.nrm || 0 };
 			if (m.dvBudget == null) { m.dvBudget = 10000; }
