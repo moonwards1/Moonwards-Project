@@ -36,11 +36,13 @@
  *      apples-to-apples). frozen-plan, downstream, measures this INTEGRATED
  *      hand-off against the plan's window.
  *
- * A flight that never escapes (bound to the Moon or Earth) or that impacts
- * a body is a hard diagnostic: there is no hand-off to emit. The USER closes
- * the timing/energy loop — the compliance check reports the gap; fixing it
- * means adjusting the carriers, the waypoint impulses, or re-planning from the
- * Ephemeris tab. Nothing here ever solves backwards.
+ * A flight that never escapes (bound to the Moon or Earth) or that impacts a
+ * body still draws — `samples` just runs to wherever the integration
+ * stopped — but emits no hand-off packet (`handoff: null`), so there is
+ * nothing for the coast to pick up. The USER closes the timing/energy loop —
+ * the compliance check reports the gap; fixing it means adjusting the
+ * carriers, the waypoint impulses, or re-planning from the Ephemeris tab.
+ * Nothing here ever solves backwards.
  *
  * Params:
  *   waypoints: [{ t, burn: { pro, rad, nrm } }] — up to 2 impulses, t in
@@ -213,20 +215,19 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 	}
 
 	var finalLeg = segs[segs.length - 1].leg;
-	if (finalLeg.impact) {
-		return { ok: false, diagnostic: makeDiagnostic("impact",
-			"The departure flight impacts the " + finalLeg.impact + " — no hand-off.",
-			{ values: { impact: finalLeg.impact },
-			  fix: "Adjust the release phase, the waypoint impulses, or the carrier geometry." }) };
-	}
-	if (finalLeg.primary !== "Sun" || !(finalLeg.vinfEarth > 0)) {
-		var where = finalLeg.primary === "Moon" ? "the Moon" : "Earth";
-		return { ok: false, diagnostic: makeDiagnostic("bound-no-handoff",
-			"The flight stays bound to " + where + " — it never escapes to a hand-off.",
-			{ values: { primary: finalLeg.primary },
-			  fix: "Add speed: raise the release altitude, aim the release phase with the " +
-			       "Moon's own motion, or boost at a waypoint (a low-perigee prograde " +
-			       "impulse buys the most)." }) };
+	events.unshift({ jd: anchorJd, label: "Release — carrier chain lets go" });
+
+	// A flight that impacts a body or never escapes Earth has no hand-off to
+	// offer — draw whatever was integrated (already all in `samples`) and
+	// leave the coast with nothing to pick up.
+	if (finalLeg.impact || finalLeg.primary !== "Sun" || !(finalLeg.vinfEarth > 0)) {
+		events.sort(function (a, b) { return a.jd - b.jd; });
+		return {
+			ok: true, jd0: anchorJd,
+			samples: samples, segs: segs, wpVisuals: wpVisuals,
+			handoff: null, vinfEarth: 0,
+			events: events, totalDv: totalDv
+		};
 	}
 
 	// The hand-off: first outward Earth-SOI crossing. The integrator ran on
@@ -258,7 +259,6 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 	for (var c = 0; c < samples.length && samples[c].t <= tSoi; c++) { cut.push(samples[c]); }
 	cut.push({ r: handoffState.r, v: handoffState.v, t: tSoi });
 
-	events.unshift({ jd: anchorJd, label: "Release — carrier chain lets go" });
 	if (tMoonSoi !== null && tMoonSoi < tSoi) {
 		events.push({ jd: anchorJd + tMoonSoi / DAY, label: "Moon SOI exit" });
 	}
@@ -319,7 +319,8 @@ function rememberWpHosts(world, stageId, hosts) {
 // running past it.
 export function stateAtElapsed(leg, t) {
 	if (!leg || !leg.segs || !leg.segs.length) { return null; }
-	var tc = Math.max(0, Math.min(leg.handoff.tSoi, t));
+	var tEnd = leg.handoff ? leg.handoff.tSoi : leg.samples[leg.samples.length - 1].t;
+	var tc = Math.max(0, Math.min(tEnd, t));
 	var segs = leg.segs;
 	var seg = segs[segs.length - 1];
 	for (var i = 0; i < segs.length; i++) {
@@ -358,6 +359,7 @@ export default {
 		var leg = computeDepartureLeg(params, input.data, anchorJd);
 		rememberLeg(ctx.world, ctx.stageId, leg);
 		if (!leg.ok) { return leg.diagnostic; }
+		if (!leg.handoff) { return { packet: null, events: leg.events }; }
 
 		var lifted = Frames.localToHelio("Earth", leg.handoff.jd, leg.handoff.r, leg.handoff.v);
 		var packet = PacketTypes.make("ship-state",

@@ -107,7 +107,7 @@ export function satelliteOrbitRadius(body) {
 }
 
 // Sensible default geometry for a body: CoM at a candidate satellite's orbit
-// radius (else a low fallback orbit at 3× the body radius), release/top at 1.5×
+// radius (else a low fallback orbit at 3× the body radius), release at 1.5×
 // the CoM radius — comfortably above the tether's own escape radius
 // (cbrt(2)·rCom ≈ 1.26·rCom), so the default trajectory escapes with margin.
 // Altitudes are metres above the surface. Exported for the shell's add-carrier
@@ -120,7 +120,6 @@ export function defaultGeometryFor(body) {
 	var rRel = 1.5 * rCom;
 	return {
 		comAlt: rCom - R,
-		topAlt: rRel - R,
 		relAlt: rRel - R,
 		releasePhaseDeg: 0
 	};
@@ -144,26 +143,18 @@ export function tetherGeometry(params) {
 			  fix: "Set the body this skyhook orbits." }) };
 	}
 	var GM = phys.GM, R = phys.R;
-	var comAlt = p.comAlt, topAlt = p.topAlt, relAlt = p.relAlt;
+	var comAlt = p.comAlt, relAlt = p.relAlt;
 	var phaseDeg = (p.releasePhaseDeg === undefined || p.releasePhaseDeg === null) ? 0 : p.releasePhaseDeg;
 
-	if (!(isFinite(comAlt) && comAlt > 0 && isFinite(topAlt) && isFinite(relAlt) && isFinite(phaseDeg))) {
+	if (!(isFinite(comAlt) && comAlt > 0 && isFinite(relAlt) && relAlt > 0 && isFinite(phaseDeg))) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The skyhook needs finite CoM / top / release altitudes and a release phase.",
-			{ values: { comAlt: comAlt, topAlt: topAlt, relAlt: relAlt, releasePhaseDeg: p.releasePhaseDeg } }) };
-	}
-	if (topAlt <= comAlt) {
-		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The tether top must be above the centre of mass.",
-			{ values: { comAlt_km: comAlt / 1e3, topAlt_km: topAlt / 1e3 } }) };
-	}
-	if (relAlt <= 0 || relAlt > topAlt) {
-		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The release point must lie on the tether (between the surface and the top).",
-			{ values: { relAlt_km: relAlt / 1e3, topAlt_km: topAlt / 1e3 } }) };
+			"The skyhook needs finite CoM / release altitudes and a release phase.",
+			{ values: { comAlt: comAlt, relAlt: relAlt, releasePhaseDeg: p.releasePhaseDeg } }) };
 	}
 
-	var rCom = R + comAlt, rRel = R + relAlt, rTop = R + topAlt;
+	// The release point is assumed to lie within the tether's reach — the
+	// tether itself is not modelled as a separate structural length.
+	var rCom = R + comAlt, rRel = R + relAlt;
 	var omega = O.angularVelocity(GM, rCom);           // rad/s — tether rotation rate
 	var vRel = omega * rRel;                            // m/s — inertial release speed
 	var vEscBody = O.escapeVelocity(GM, rRel);
@@ -172,7 +163,7 @@ export function tetherGeometry(params) {
 	return {
 		ok: true, body: p.body, GM: GM, R: R,
 		omega: omega, period: 2 * Math.PI / omega,
-		rCom: rCom, rRel: rRel, rTop: rTop,
+		rCom: rCom, rRel: rRel,
 		vRel: vRel, vEscBody: vEscBody, vInfBody: vInfBody,
 		releasePhaseDeg: phaseDeg
 	};
@@ -273,7 +264,7 @@ export var SKYHOOK = {
 		}
 	},
 
-	// Tether hardware in the role's own body-centric frame: the CoM and top
+	// Tether hardware in the role's own body-centric frame: the CoM and release
 	// circles, the arm at its phase, and a constant-pixel dot at the release or
 	// catch point. The arm sits at the platform's chosen phase on `pinJd` (the
 	// release anchor, or the committed arrival) and turns at ω away from it, so
@@ -286,11 +277,10 @@ export var SKYHOOK = {
 		var R = phys.R, GM = phys.GM;
 		var U = view.metresPerUnit;
 		var rCom = (R + params.comAlt) / U;
-		var rTop = (R + params.topAlt) / U;
 		var rPoint = (R + params.relAlt) / U;
 		var rBase = (R + 20e3) / U;
 
-		view.group.add(circleLine(rTop, 0x9fb6ff, 0.8));
+		view.group.add(circleLine(rPoint, 0x9fb6ff, 0.8));
 		view.group.add(circleLine(rCom, 0xffd24a, 0.8));
 
 		// Ecliptic plane — the body's axial tilt is a visual nicety the shell
@@ -301,7 +291,7 @@ export var SKYHOOK = {
 		var dir = new THREE.Vector3(Math.cos(phase), Math.sin(phase), 0);
 		view.group.add(new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints(
-				[dir.clone().multiplyScalar(rBase), dir.clone().multiplyScalar(rTop)]),
+				[dir.clone().multiplyScalar(rBase), dir.clone().multiplyScalar(rPoint)]),
 			new THREE.LineBasicMaterial({ color: 0xeaf0ff })));
 
 		// Release/catch point: magenta when the chain computes, red when this

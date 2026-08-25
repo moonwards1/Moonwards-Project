@@ -77,7 +77,6 @@ export var earthVenusOvershootMission = {
 			params: {
 				body: "Moon",
 				comAlt: 275e3,
-				topAlt: 6000e3,
 				relAlt: 6000e3,
 				releasePhaseDeg: 120
 			}

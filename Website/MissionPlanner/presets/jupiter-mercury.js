@@ -59,7 +59,6 @@ export var jupiterMercuryMission = {
 			params: {
 				body: "Jupiter",
 				comAlt: 139822000,
-				topAlt: 244688500,
 				relAlt: 244688500,
 				releasePhaseDeg: 180
 			}

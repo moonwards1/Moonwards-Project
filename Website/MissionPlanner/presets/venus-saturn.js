@@ -64,7 +64,6 @@ export var venusSaturnMission = {
 			params: {
 				body: "Venus",
 				comAlt: 12103600,
-				topAlt: 21181300,
 				relAlt: 21181300,
 				releasePhaseDeg: 345
 			}

@@ -64,7 +64,7 @@ test("computeCatch: a sub-escape tip is a legitimate catch (only a RELEASE deman
 	// refuses this geometry, the catch accepts it.
 	var phys = bodyPhysics("Mars");
 	var comAlt = 9376e3 - phys.R;
-	var params = { body: "Mars", comAlt: comAlt, topAlt: comAlt + 100e3, relAlt: comAlt + 100e3 };
+	var params = { body: "Mars", comAlt: comAlt, relAlt: comAlt + 100e3 };
 	assert.equal(tetherKinematics(params).ok, false);
 	assert.equal(tetherKinematics(params).diagnostic.code, "bound-at-body");
 	var cat = computeCatch(params, arrivingAt("Mars", 2500, 0));
@@ -76,7 +76,7 @@ test("computeCatch: a sub-escape tip is a legitimate catch (only a RELEASE deman
 test("computeCatch: no body / bad geometry diagnose like the departure skyhook", function () {
 	var data = arrivingAt("Mars", 2500, 0);
 	assert.equal(computeCatch({}, data).diagnostic.code, "no-body");
-	var bad = computeCatch({ body: "Mars", comAlt: 9000e3, topAlt: 8000e3, relAlt: 8000e3 }, data);
+	var bad = computeCatch({ body: "Mars", comAlt: 9000e3, relAlt: -1 }, data);
 	assert.equal(bad.ok, false);
 	assert.equal(bad.diagnostic.code, "bad-params");
 });

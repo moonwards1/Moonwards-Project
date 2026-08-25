@@ -32,10 +32,12 @@
  *      heliocentric state there (Frames.localToHelio(body, …)). frozen-plan,
  *      downstream, measures this integrated hand-off against the plan's window.
  *
- * A flight that never escapes (bound to the body) or impacts it is a hard
- * diagnostic — there is no hand-off to emit. The USER closes the loop: the
- * compliance check reports the gap; fixing it means adjusting the carrier, the
- * waypoint impulses, or re-planning from the Ephemeris tab.
+ * A flight that never escapes (bound to the body) or impacts it still draws —
+ * `samples` just runs to wherever the integration stopped — but emits no
+ * hand-off packet (`handoff: null`), so there is nothing for the coast to
+ * pick up. The USER closes the loop: the compliance check reports the gap;
+ * fixing it means adjusting the carrier, the waypoint impulses, or
+ * re-planning from the Ephemeris tab.
  *
  * Params: waypoints: [{ t, burn: { pro, rad, nrm } }] — up to 2, t in SECONDS
  * after release, each strictly inside the flight as integrated so far.
@@ -201,18 +203,19 @@ export function computeBodyDepartureLeg(params, chainData, anchorJd) {
 	}
 
 	var finalLeg = segs[segs.length - 1].leg;
-	if (finalLeg.impact) {
-		return { ok: false, diagnostic: makeDiagnostic("impact",
-			"The departure flight impacts " + finalLeg.impact + " — no hand-off.",
-			{ values: { impact: finalLeg.impact },
-			  fix: "Adjust the release phase, the waypoint impulses, or the carrier geometry." }) };
-	}
-	if (finalLeg.primary !== "Sun" || !(finalLeg.vinfBody > 0)) {
-		return { ok: false, diagnostic: makeDiagnostic("bound-no-handoff",
-			"The flight stays bound to " + body + " — it never escapes to a hand-off.",
-			{ values: { primary: finalLeg.primary },
-			  fix: "Add speed: raise the release altitude, aim the release phase with the " +
-			       "body's own motion, or boost at a waypoint (a low-perigee prograde impulse buys the most)." }) };
+	events.unshift({ jd: anchorJd, label: "Release — carrier chain lets go" });
+
+	// A flight that impacts the body or never escapes it has no hand-off to
+	// offer — draw whatever was integrated (already all in `samples`) and
+	// leave the coast with nothing to pick up.
+	if (finalLeg.impact || finalLeg.primary !== "Sun" || !(finalLeg.vinfBody > 0)) {
+		events.sort(function (a, b) { return a.jd - b.jd; });
+		return {
+			ok: true, jd0: anchorJd, body: body,
+			samples: samples, segs: segs, wpVisuals: wpVisuals,
+			handoff: null, vinfBody: 0,
+			events: events, totalDv: totalDv
+		};
 	}
 
 	// The hand-off: first outward body-SOI crossing. The integrator ran on to
@@ -232,7 +235,6 @@ export function computeBodyDepartureLeg(params, chainData, anchorJd) {
 	for (var c = 0; c < samples.length && samples[c].t <= tSoi; c++) { cut.push(samples[c]); }
 	cut.push({ r: handoffState.r, v: handoffState.v, t: tSoi });
 
-	events.unshift({ jd: anchorJd, label: "Release — carrier chain lets go" });
 	events.push({ jd: jdHandoff,
 	              label: body + " SOI exit — hand-off at v∞ " + (finalLeg.vinfBody / 1000).toFixed(2) + " km/s" });
 	events.sort(function (a, b) { return a.jd - b.jd; });
@@ -289,7 +291,8 @@ function rememberWpHosts(world, stageId, hosts) {
 // end rather than running past it.
 export function stateAtElapsed(leg, t) {
 	if (!leg || !leg.segs || !leg.segs.length) { return null; }
-	var tc = Math.max(0, Math.min(leg.handoff.tSoi, t));
+	var tEnd = leg.handoff ? leg.handoff.tSoi : leg.samples[leg.samples.length - 1].t;
+	var tc = Math.max(0, Math.min(tEnd, t));
 	var segs = leg.segs;
 	var seg = segs[segs.length - 1];
 	for (var i = 0; i < segs.length; i++) {
@@ -323,6 +326,7 @@ export default {
 		var leg = computeBodyDepartureLeg(params, input.data, anchorJd);
 		rememberLeg(ctx.world, ctx.stageId, leg);
 		if (!leg.ok) { return leg.diagnostic; }
+		if (!leg.handoff) { return { packet: null, events: leg.events }; }
 
 		var lifted = Frames.localToHelio(leg.body, leg.handoff.jd, leg.handoff.r, leg.handoff.v);
 		var packet = PacketTypes.make("ship-state",

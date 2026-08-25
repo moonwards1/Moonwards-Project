@@ -70,7 +70,7 @@ test("resolvePlatformParams: static defaults, then per-body, then the stage's ow
 	// An explicit param beats the body default.
 	var explicit = resolvePlatformParams(SKYHOOK, { body: "Mars", comAlt: 1234e3 });
 	assert.equal(explicit.comAlt, 1234e3);
-	assert.equal(explicit.topAlt, perBody.topAlt, "the rest still come from the body");
+	assert.equal(explicit.relAlt, perBody.relAlt, "the rest still come from the body");
 
 	// Resolving twice is idempotent — the adapters resolve, and a platform's own
 	// geometry() may defensively resolve again.
@@ -199,7 +199,7 @@ test("makeCarrier: a boost platform contributes a Δv element, not a rotor", fun
 
 test("makeCarrier: a boost platform stacks onto the chain it rides", function () {
 	var tug = makeCarrier(tugSpec({ ridesOn: "*" }), { id: "t-stack", title: "Stack" });
-	var geo = tetherGeometry({ body: "Mars", comAlt: 9000e3, topAlt: 14000e3, relAlt: 13000e3 });
+	var geo = tetherGeometry({ body: "Mars", comAlt: 9000e3, relAlt: 13000e3 });
 	var upstream = { base: "Mars", rotors: [SKYHOOK.release.element(geo, JD_ANCHOR)] };
 	var res = tug.update({ world: plannedWorld(), stageId: "s1",
 		params: { body: "Mars", dv: 400 } }, { data: upstream });
@@ -245,7 +245,7 @@ test("makeCarrier: no body set is diagnosed in the role's own words", function (
 test("the release and the catch read the SAME tether geometry", function () {
 	// The point of the shared spec: a skyhook configured once reports the same
 	// hardware whichever end of the mission it is on.
-	var params = { body: "Mars", comAlt: 9000e3, topAlt: 12000e3, relAlt: 11000e3 };
+	var params = { body: "Mars", comAlt: 9000e3, relAlt: 11000e3 };
 	var direct = tetherGeometry(params);
 	var arriving = { r: [2.2e11, 0, 0], v: [0, 2.5e4, 0], jd: 2463400.5, frame: "helio" };
 	var cap = computeCapture(SKYHOOK, params, arriving);
@@ -257,7 +257,7 @@ test("the release and the catch read the SAME tether geometry", function () {
 
 test("the release gate is the departure role's alone — a bound tip still catches", function () {
 	// A slow tether: the tip never reaches Mars escape speed.
-	var params = { body: "Mars", comAlt: 9000e3, topAlt: 9400e3, relAlt: 9300e3 };
+	var params = { body: "Mars", comAlt: 9000e3, relAlt: 9300e3 };
 	var geo = tetherGeometry(params);
 	assert.equal(geo.ok, true);
 	assert.equal(geo.vInfBody, 0, "the tip is bound");
@@ -272,7 +272,7 @@ test("the release gate is the departure role's alone — a bound tip still catch
 // ---- the straddling readout box -------------------------------------------
 
 test("carrierReadout: a self-originating platform launches from a mount at rest", function () {
-	var params = { body: "Mars", comAlt: 9000e3, topAlt: 14000e3, relAlt: 13000e3 };
+	var params = { body: "Mars", comAlt: 9000e3, relAlt: 13000e3 };
 	var geo = tetherGeometry(params);
 	var element = SKYHOOK.release.element(geo, JD_ANCHOR);
 	var out = carrierReadout(geo, element, emptyChain("Mars"), JD_ANCHOR);
@@ -285,7 +285,7 @@ test("carrierReadout: a self-originating platform launches from a mount at rest"
 });
 
 test("carrierReadout: riding the Moon, the reading is measured off the mount", function () {
-	var params = { body: "Moon", comAlt: 3000e3, topAlt: 5000e3, relAlt: 5000e3 };
+	var params = { body: "Moon", comAlt: 3000e3, relAlt: 5000e3 };
 	var geo = tetherGeometry(params);
 	assert.equal(geo.ok, true);
 	var element = SKYHOOK.release.element(geo, JD_ANCHOR);
@@ -304,7 +304,7 @@ test("carrierReadout: riding the Moon, the reading is measured off the mount", f
 });
 
 test("carrierReadout: the release phase moves the prograde reading, not the impulse", function () {
-	var base = { body: "Moon", comAlt: 3000e3, topAlt: 5000e3, relAlt: 5000e3 };
+	var base = { body: "Moon", comAlt: 3000e3, relAlt: 5000e3 };
 	var speeds = [0, 90, 180, 270].map(function (deg) {
 		var geo = tetherGeometry(Object.assign({}, base, { releasePhaseDeg: deg }));
 		var out = carrierReadout(geo, SKYHOOK.release.element(geo, JD_ANCHOR),
@@ -340,7 +340,7 @@ test("fmtPrograde: no resulting speed falls back to the signed change", function
 });
 
 test("captureReadout: a catch reads the speed the ship shed to match the tip", function () {
-	var params = { body: "Mars", comAlt: 9000e3, topAlt: 12000e3, relAlt: 11000e3 };
+	var params = { body: "Mars", comAlt: 9000e3, relAlt: 11000e3 };
 	var arriving = { r: [2.2e11, 0, 0], v: [0, 2.5e4, 0], jd: 2463400.5, frame: "helio" };
 	var cap = computeCapture(SKYHOOK, params, arriving);
 	assert.equal(cap.ok, true);
@@ -356,7 +356,7 @@ test("captureReadout: a catch reads the speed the ship shed to match the tip", f
 });
 
 test("the carrier's chain element reproduces the tether tip at the release anchor", function () {
-	var params = { body: "Mars", comAlt: 9000e3, topAlt: 14000e3, relAlt: 13000e3 };
+	var params = { body: "Mars", comAlt: 9000e3, relAlt: 13000e3 };
 	var geo = tetherGeometry(params);
 	var chain = { base: "Mars", rotors: [SKYHOOK.release.element(geo, JD_ANCHOR)] };
 	assert.equal(elementCount(chain), 1);

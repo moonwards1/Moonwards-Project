@@ -38,7 +38,7 @@ var DAY = 86400;
 
 // The worked-example lunar skyhook geometry (the shipped preset's own values),
 // now carried on the unified orbital-skyhook with its `body` named explicitly.
-var MOON_SKYHOOK = { body: "Moon", comAlt: 275e3, topAlt: 6000e3, relAlt: 6000e3, releasePhaseDeg: 92 };
+var MOON_SKYHOOK = { body: "Moon", comAlt: 275e3, relAlt: 6000e3, releasePhaseDeg: 92 };
 
 function makeRegistry() {
 	var reg = createRegistry();
@@ -88,12 +88,6 @@ test("tetherKinematics: a low release point is bound at the Moon, with a fix", f
 	assert.equal(kin.ok, false);
 	assert.equal(kin.diagnostic.code, "bound-at-body");
 	assert.ok(kin.diagnostic.fix.indexOf("km") !== -1);
-});
-
-test("tetherKinematics: rejects a release point beyond the tether top", function () {
-	var kin = tetherKinematics(Object.assign({}, MOON_SKYHOOK, { relAlt: 7000e3 }));
-	assert.equal(kin.ok, false);
-	assert.equal(kin.diagnostic.code, "bad-params");
 });
 
 test("rotorFor: the kinematic-chain rotor pins the release phase at the anchor", function () {
@@ -167,7 +161,7 @@ test("departure flight: a waypoint outside the integrated flight is a diagnostic
 	assert.equal(leg.diagnostic.code, "waypoint-outside-leg");
 });
 
-test("departure flight: a Moon-bound release has no hand-off", function () {
+test("departure flight: a Moon-bound release draws but has no hand-off", function () {
 	// A slow rotor: 900 m/s at the release radius is below lunar escape, so
 	// the integrated flight stays a lunar orbit — bound, no hand-off. (The
 	// skyhook module itself diagnoses this earlier via tetherKinematics; this
@@ -176,9 +170,9 @@ test("departure flight: a Moon-bound release has no hand-off", function () {
 	var slow = { base: "Moon", rotors: [Object.assign({}, rotorFor(kin, JD_ANCHOR),
 		{ rate: 900 / kin.rRel })] };
 	var leg = computeDepartureLeg({ waypoints: [] }, slow, JD_ANCHOR);
-	assert.equal(leg.ok, false);
-	assert.equal(leg.diagnostic.code, "bound-no-handoff");
-	assert.match(leg.diagnostic.message, /Moon/);
+	assert.equal(leg.ok, true, leg.diagnostic && leg.diagnostic.message);
+	assert.equal(leg.handoff, null);
+	assert.ok(leg.samples.length > 1, "the bound arc is still drawn");
 });
 
 test("departure flight: a chain with no releasing carrier is a diagnostic", function () {

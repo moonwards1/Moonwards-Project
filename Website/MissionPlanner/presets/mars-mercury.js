@@ -57,7 +57,6 @@ export var marsMercuryMission = {
 			params: {
 				body: "Mars",
 				comAlt: 5986500,
-				topAlt: 10674500,
 				relAlt: 10674500,
 				releasePhaseDeg: 285
 			}

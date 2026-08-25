@@ -176,25 +176,25 @@ test("computeBodyDepartureLeg: a non-heliocentric base is a bad-origin diagnosti
 	assert.equal(leg.diagnostic.code, "bad-origin");
 });
 
-test("computeBodyDepartureLeg: a low, slow release stays bound (bound-no-handoff)", function () {
+test("computeBodyDepartureLeg: a low, slow release stays bound (bound-at-body)", function () {
 	// A release just barely above escape at a very low altitude that curves
 	// back and impacts, or a clearly bound one — either way, no hand-off.
-	var params = { body: "Mars", comAlt: 500e3, topAlt: 900e3, relAlt: 900e3, releasePhaseDeg: 0 };
+	var params = { body: "Mars", comAlt: 500e3, relAlt: 900e3, releasePhaseDeg: 0 };
 	var kin = tetherKinematics(params);
 	// This geometry is below escape → tetherKinematics itself refuses it.
 	assert.equal(kin.ok, false);
 	assert.equal(kin.diagnostic.code, "bound-at-body");
 });
 
-test("computeBodyDepartureLeg: an impacting release is caught", function () {
+test("computeBodyDepartureLeg: an impacting release still draws, with no hand-off", function () {
 	// Hand-build a chain that releases low and slow enough to fall into Mars.
 	var chain = { base: "Mars", rotors: [
 		{ normal: [0, 0, 1], ref: [1, 0, 0], radius: systems.get("Mars").radius + 150e3,
 		  rate: 1e-5, phase0: Math.PI, epoch: JD_ANCHOR } ] };
 	var leg = computeBodyDepartureLeg({ waypoints: [] }, chain, JD_ANCHOR);
-	assert.equal(leg.ok, false);
-	assert.ok(leg.diagnostic.code === "impact" || leg.diagnostic.code === "bound-no-handoff",
-		"low slow release fails to hand off (" + leg.diagnostic.code + ")");
+	assert.equal(leg.ok, true, leg.diagnostic && leg.diagnostic.message);
+	assert.equal(leg.handoff, null, "low slow release never hands off");
+	assert.ok(leg.samples.length > 1, "the doomed arc is still drawn");
 });
 
 // ---- engine integration: skyhook → leg → frozen-plan -----------------------
