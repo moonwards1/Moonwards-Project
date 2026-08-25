@@ -457,8 +457,6 @@ export function createEphemerisView(opts) {
 	});
 	originRow.appendChild(originSel); depHost.appendChild(originRow);
 	var originInfo = muted(depHost, "");
-	// The hand-off this tab is authoring (see updateSoiInfo).
-	var soiInfo = muted(depHost, "");
 	// Only meaningful while an exit point is ADOPTED from a pasted mission:
 	// drops back to deriving it from the current heading (departureState).
 	var handoffResetBtn = document.createElement("button");
@@ -842,35 +840,19 @@ export function createEphemerisView(opts) {
 
 	// The departure estimate read BACKWARDS from the hand-off: how long before
 	// it the departure chain must release, and by which Earth course. Nothing
-	// here shapes the arc — it feeds the Moon widget, the profile row and the
-	// hand-off readout only.
+	// here shapes the arc — it feeds the Moon widget and the profile row only.
 	function departureEstimateFor(hand) {
 		return estimateDeparture({ origin: state.origin, vInfVec: hand.vInfVec,
 			jdHandoff: dateState.jd, profile: state.depProfile });
 	}
 
-	// The departure card's "the flight starts here" line: the hand-off this
-	// tab is authoring, which is verbatim what core/freeze.js commits as the
-	// mission's Departure→Coast boundary.
-	function updateSoiInfo(hand, est) {
+	// The card carries no hand-off prose — the numbers it would have stated are
+	// already on the card itself (the vector), the date bar (the epoch) and the
+	// Moon widget (the release lead). All that is left to keep in sync is the
+	// re-derive control, which only means anything while an exit point is
+	// ADOPTED from a pasted mission.
+	function updateHandoffControls(hand) {
 		handoffResetBtn.style.display = hand.adopted ? "" : "none";
-		var R = originSoiRadius(state.origin);
-		if (!(hand.vInf > 1e-6)) {
-			soiInfo.textContent = "No departure yet — give the ship a heading and speed above " +
-				state.origin + "'s own motion, and the flight starts at the SOI edge.";
-			return;
-		}
-		var txt = "Flight starts at " + state.origin + "'s SOI edge" +
-			(R > 0 ? " (" + (R / AU).toFixed(4) + " AU)" : "") +
-			" on " + fmtDate(dateState.jd) + ", at v∞ " + fmtKmS(hand.vInf) + " km/s.";
-		if (est && est.ok) {
-			txt += " The departure must release about " + est.days.toFixed(2) + " d earlier, on " +
-				fmtDate(est.jdLaunch) + ".";
-		}
-		txt += hand.adopted
-			? " Exit geometry adopted from a pasted mission's departure chain."
-			: " Exit point derived from the heading.";
-		soiInfo.textContent = txt;
 	}
 
 	// The burn Target mode re-solves: the departure burn if there are no
@@ -1826,7 +1808,7 @@ export function createEphemerisView(opts) {
 		if (!leg.ok) {
 			trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
 			angleTable = [];
-			updateSoiInfo(hand, depEst);
+			updateHandoffControls(hand);
 			clearApproachMarks();
 			setStatus("err", leg.diagnostic.message);
 		} else {
@@ -1860,7 +1842,7 @@ export function createEphemerisView(opts) {
 			trajSampleCount = leg.samples.length;
 			trajSamples = leg.samples;
 
-			updateSoiInfo(hand, depEst);
+			updateHandoffControls(hand);
 			buildAngleTable();
 
 			// "deg" hold mode: override the tof-based re-anchor above with the
