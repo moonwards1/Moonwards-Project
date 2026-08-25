@@ -126,6 +126,10 @@ import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
 	originSoiRadius
 } from "./core/departure-estimate.js";
+import {
+	APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE, TEMP_FAR, TEMP_NEAR, TEMP_CLOSE,
+	checkProximity, proximityReason
+} from "./core/proximity.js";
 import { deserializeWorld } from "./core/world.js";
 import { decodeFragment } from "../Shared/exchange.js";
 import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
@@ -147,17 +151,21 @@ var GIZMO_PX = 42;
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var dvHex = "#ff5fd0", spdHex = "#ffd24a";
 
-// Marker proximity thresholds. APPROACH_FAR doubles as released Target mode's
-// "inside an encounter ring" engagement distance, and as the space ring's own
-// farthest tier (just below).
-var APPROACH_FAR = 0.004 * AU;   // m
+// The proximity THRESHOLDS live in core/proximity.js — one definition shared
+// with mission-view.js's "adopt delivered" gate, so the standard that lets a
+// mission be created is the same one that lets its departure be re-pointed.
+// APPROACH_FAR doubles as released Target mode's "inside an encounter ring"
+// engagement distance.
+//
+// The ring TIER TABLES below stay here: they are colours and pixel sizes for
+// this view's sprites, not standards.
+//
 // Orbit-approach ring tiers: distance from the drawn path to a candidate body's
 // orbit *ring*, independent of whether the body is there
 // then (same table as the SST). Size/thickness DECREASE with proximity (the
 // far ring is the big, bold one); worldR (AU, scene units here) is the true
 // physical size each tier marks, so the ring grows once the camera is close
 // enough for that to read larger than the fixed on-screen size.
-var APPROACH_NEAR = 0.001 * AU, APPROACH_CLOSE = 0.0002 * AU;   // m
 var SPACE_TIERS = [
 	{ color: 0xb9842a, opacity: 0.42, px: 26, lw: 10, worldR: 0.004  },  // 0: far   — faint, largest, thickest
 	{ color: 0xd6a02f, opacity: 0.70, px: 17, lw: 7,  worldR: 0.001  },  // 1: near  — brighter, medium
@@ -165,7 +173,6 @@ var SPACE_TIERS = [
 ];
 // Temporal-proximity tiers: how close (in days) the destination body is to
 // the meeting point at the ship's arrival time (same table as the SST).
-var TEMP_FAR = 30, TEMP_NEAR = 10, TEMP_CLOSE = 3;   // days
 var TEMPORAL_TIERS = [
 	{ color: 0x3a6fd0, opacity: 0.50, px: 30 },   // 0: <30 d — faint blue
 	{ color: 0x5aa9ff, opacity: 0.80, px: 34 },   // 1: <10 d — brighter
@@ -1236,34 +1243,27 @@ export function createEphemerisView(opts) {
 		destSoi.position.copy(destSprite.position);
 		destSoi.scale.setScalar(soiRadiusAU(destSys, SUN.mass, AU));
 
-		var distToOrbit = orbit.e < 1 ? O.distanceToOrbit(orbit, markerR) : Infinity;
-		var nearOrbit = distToOrbit < APPROACH_FAR;
-		// timeOk (below) can only go true once nearOrbit already has, so
-		// "inside at least one of the two closest-approach rings" reduces to
-		// nearOrbit alone.
-		var timeOk = false, dtDays = null;
-		if (nearOrbit) {
-			var dt = mcPhasingDays(GM_SUN, orbit, markerR, arrJd);
-			dtDays = dt;
-			var tier = pickProximityTier(Math.abs(dt), TEMP_FAR, TEMP_NEAR, TEMP_CLOSE);
-			timeOk = tier >= 0;
-			if (tier >= 0) {
-				if (!tempRing) { tempRing = makeTempRing(); frame.scene.add(tempRing); }
-				applyTierToSprite(tempRing, TEMPORAL_TIERS[tier]);
-				tempRing.visible = true;
-				if (markerSprite) { tempRing.position.copy(markerSprite.position); }
-			} else if (tempRing) { tempRing.visible = false; }
+		// The gate itself is core/proximity.js — the same predicate, and the
+		// same two thresholds, mission-view.js gates "adopt delivered" on.
+		// The ring SPRITES below are this view's own rendering of the tiers.
+		var prox = checkProximity(GM_SUN, orbit, markerR, arrJd);
+		var tier = prox.timeOk
+			? pickProximityTier(Math.abs(prox.dtDays), TEMP_FAR, TEMP_NEAR, TEMP_CLOSE) : -1;
+		if (tier >= 0) {
+			if (!tempRing) { tempRing = makeTempRing(); frame.scene.add(tempRing); }
+			applyTierToSprite(tempRing, TEMPORAL_TIERS[tier]);
+			tempRing.visible = true;
+			if (markerSprite) { tempRing.position.copy(markerSprite.position); }
 		} else if (tempRing) { tempRing.visible = false; }
 
-		updateStartMissionButton({ hasDest: true, spaceOk: nearOrbit, timeOk: timeOk,
-			distToOrbit: distToOrbit, dtDays: dtDays, destName: dn });
+		updateStartMissionButton({ hasDest: true, prox: prox, destName: dn });
 	}
 
 	// Enable/disable the marker card's "Start Mission Plan" button and set its
 	// explanatory note — which always says why, whether enabled or not. info:
-	// { noMarker } or { hasDest, spaceOk, timeOk, distToOrbit (m), dtDays,
-	// destName }. The no-marker case exists because the card is always visible,
-	// so the gate has to explain itself before anything is placed too.
+	// { noMarker } or { hasDest, prox (core/proximity.js's verdict), destName }.
+	// The no-marker case exists because the card is always visible, so the gate
+	// has to explain itself before anything is placed too.
 	function updateStartMissionButton(info) {
 		if (!mk || !mk.startBtn) { return; }
 		var reason;
@@ -1272,18 +1272,10 @@ export function createEphemerisView(opts) {
 				"inside both closest-approach rings (space and time).";
 		} else if (!info.hasDest) {
 			reason = "Select a destination to enable — no destination chosen for this leg.";
-		} else if (!info.spaceOk) {
-			reason = isFinite(info.distToOrbit)
-				? "Marker is " + (info.distToOrbit / AU).toFixed(4) + " AU from " + info.destName +
-					"'s orbit — needs to be within " + (APPROACH_FAR / AU).toFixed(3) + " AU."
-				: "Marker isn't near " + info.destName + "'s orbit.";
-		} else if (!info.timeOk) {
-			reason = "Marker's timing is off by " + Math.abs(info.dtDays).toFixed(1) + " d — needs to be within " +
-				TEMP_FAR + " d of " + info.destName + " passing this point.";
 		} else {
-			reason = "Marker sits inside both closest-approach rings (space and time).";
+			reason = proximityReason(info.prox, "Marker", info.destName);
 		}
-		mk.startBtn.disabled = !(info.hasDest && info.spaceOk && info.timeOk);
+		mk.startBtn.disabled = !(info.hasDest && info.prox && info.prox.ok);
 		mk.startNote.textContent = reason;
 	}
 

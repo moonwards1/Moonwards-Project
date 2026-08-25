@@ -52,8 +52,9 @@ import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, spee
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
-import { Frames } from "../Shared/frames.js";
-import { estimateDeparture } from "./core/departure-estimate.js";
+// aliased: this file has its own fmtKm (altitude, unitless) further down,
+// which would otherwise shadow the import inside the view factory.
+import { solveDepartureTarget, rebaseWaypoints, fmtKm as fmtMissKm } from "./core/retarget.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
@@ -1334,60 +1335,81 @@ export function createMissionView(opts) {
 		complianceBarEl.appendChild(m);
 	}
 
-	// "ADOPT DELIVERED": rewrite the plan's departure to the hand-off the
-	// departure chain actually produced, so the mission flies from the real
-	// thing instead of the estimate it was authored with. This is the ONE way
-	// the tech's state reaches the plan, and it is always a deliberate click:
-	// frozen-plan stays a boundary that COMPARES (its own header's rule), so
-	// the gap remains visible and meaningful until someone decides to close it.
+	// Is there anything to re-target? "On course" only means the delivered
+	// hand-off sits inside the compliance TOLERANCES — a real difference in
+	// position, velocity or epoch can still be sitting there, and on this seam
+	// position is the one that matters most and the one compliance never checks.
+	// These floors are just "not the same state": a kilometre out of an AU, a
+	// tenth of a m/s out of tens of km/s, a second out of a coast measured in
+	// years.
+	function handoffDiffers(planDep, st) {
+		if (!planDep || !st) { return false; }
+		return O.vMag(O.vSub(planDep.r, st.r)) > 1e3 ||
+		       O.vMag(O.vSub(planDep.v, st.v)) > 0.1 ||
+		       Math.abs(planDep.jd - st.jd) * 86400 > 1;
+	}
+
+	// RE-TARGET DEPARTURE: move the plan's committed hand-off to the point the
+	// technology actually leaves from, and re-solve the heading and speed it has
+	// to deliver FROM there (core/retarget.js). The plan's arrival stays
+	// committed; the waypoints keep their absolute epochs.
 	//
-	// Adopting moves the hand-off epoch, so everything downstream is re-based
-	// to keep its own ABSOLUTE epoch: waypoint days shift by the same amount
-	// the hand-off did (any that fall at or before the new hand-off are
-	// dropped — they would fire before the ship exists), and legDays stretches
-	// or shrinks so the arrival still lands on the date the plan committed to.
-	// The arrival commitment itself is untouched: whether the flight still
-	// meets it is the arrival boundary's question, not this one's.
-	function adoptDeliveredHandoff(planStageId, delivered) {
-		var stage = world.getStage(planStageId);
-		if (!stage || !delivered || !delivered.state) { return; }
-		var oldJd = stage.params.departure ? stage.params.departure.jd : null;
-		var st = delivered.state;
-		if (!isFinite(st.jd) || !isFinite(oldJd)) { return; }
-		var shift = st.jd - oldJd;   // days the hand-off moved
-
-		function rebase(list) {
-			return (list || [])
-				.map(function (wp) {
-					return { days: wp.days - shift,
-					         burn: Object.assign({}, wp.burn) };
-				})
-				.filter(function (wp) { return isFinite(wp.days) && wp.days > 0; });
+	// This does NOT take the delivered velocity. Taking it would hand the coast
+	// a systematic aiming error to absorb, and a coast waypoint is a trim
+	// (+/-100 m/s per axis) whose job is drift. Re-stating the requirement
+	// instead keeps the boundary a boundary: after this the technology reads
+	// honestly off-target against a target that is now actually reachable, and
+	// tuning it moves the exit point a little, which re-targets a little — a
+	// loop that closes on something the technology can really fly.
+	function retargetSolveFor(planParams, delivered) {
+		if (!delivered || !delivered.state) { return { ok: false, reason: "No hand-off delivered." }; }
+		var arr = planParams.arrival || {};
+		if (!arr.body || !isFinite(arr.jd)) {
+			return { ok: false, reason: "This plan commits to no destination, so there is " +
+				"nothing to re-target towards." };
 		}
+		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		return solveDepartureTarget({
+			origin: planParams.origin,
+			destination: arr.body,
+			delivered: delivered.state,
+			planDeparture: planParams.departure,
+			planWaypoints: (legStage && legStage.params.waypoints) || [],
+			arrivalJd: arr.jd
+		});
+	}
 
+	// Apply a solved re-target. The hand-off epoch moves, so everything
+	// downstream is re-based to keep its own ABSOLUTE epoch: waypoint days shift
+	// by the same amount the hand-off did, and legDays stretches or shrinks so
+	// the arrival still lands on the date the plan committed to. The arrival
+	// commitment itself is untouched — whether the flight meets it is the
+	// arrival boundary's question, not this one's.
+	function applyRetarget(planStageId, sol) {
+		var stage = world.getStage(planStageId);
+		if (!stage || !sol || !sol.ok) { return; }
 		var arrJd = stage.params.arrival ? stage.params.arrival.jd : null;
+		var shift = sol.jd - stage.params.departure.jd;
+
+		// releaseAnchorJd is deliberately NOT touched. It is when the departure
+		// chain actually lets go, so re-deriving it here would change what the
+		// technology delivers — and re-targeting would then be chasing a hand-off
+		// that moves every time it is clicked, instead of stating a fixed
+		// requirement for a fixed delivery. The anchor is the plan's baked
+		// provenance (frozen-plan.js's header) and stays that way.
 		world.set({ stage: planStageId, params: {
-			departure: { r: st.r.slice(), v: st.v.slice(), jd: st.jd },
-			releaseAnchorJd: releaseAnchorForState(stage.params.origin, st),
-			waypoints: rebase(stage.params.waypoints)
+			departure: { r: sol.r.slice(), v: sol.v.slice(), jd: sol.jd },
+			waypoints: rebaseWaypoints(stage.params.waypoints, shift, sol.legDays)
 		} });
 
 		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
 		if (legStage) {
-			var patch = { waypoints: rebase(legStage.params.waypoints) };
-			if (isFinite(arrJd)) { patch.legDays = arrJd - st.jd; }
+			var patch = { waypoints: sol.waypoints.map(function (w) {
+				return { days: w.days, burn: Object.assign({}, w.burn) };
+			}) };
+			if (isFinite(arrJd)) { patch.legDays = arrJd - sol.jd; }
 			world.set({ stage: legStage.id, params: patch });
 		}
-	}
-
-	// The release anchor for an adopted hand-off — the same estimate
-	// core/freeze.js bakes at freeze time, re-run on the new state so the
-	// mission's release epoch keeps leading its actual hand-off.
-	function releaseAnchorForState(origin, st) {
-		var body = Frames.bodyHelioState(origin, st.jd);
-		var est = estimateDeparture({ origin: origin, vInfVec: O.vSub(st.v, body.v),
-			jdHandoff: st.jd });
-		return est.ok ? est.jdLaunch : st.jd;
 	}
 
 	function renderComplianceBar(results) {
@@ -1457,22 +1479,43 @@ export function createMissionView(opts) {
 			appendCbarMetric("arrival", cbarDate(summary.arrivalJd), null, null);
 		}
 
-		// Offered only when a tech IS delivering a hand-off and it differs from
-		// the plan's — with nothing delivered there is nothing to adopt, and
-		// on course there is nothing to change.
-		if (comp.delivered && comp.delivered.state && !met) {
-			var adopt = document.createElement("button");
-			adopt.type = "button";
-			adopt.className = "mp-btn mp-cbar-adopt";
-			adopt.textContent = "adopt delivered";
-			adopt.title = "Make the hand-off this departure technology actually delivers " +
-				"the plan's own departure — v∞ " + cbarKms(comp.delivered.vInf) + " on " +
-				cbarDate(comp.delivered.jd) + ". Waypoints keep their dates and the " +
-				"arrival epoch holds; the coast re-flies from the real state.";
-			adopt.addEventListener("click", function () {
-				adoptDeliveredHandoff(planRes.stageId, comp.delivered);
+		// Offered whenever a technology IS delivering a hand-off that DIFFERS
+		// from the plan's — including while the mission reads "on course", since
+		// that only means the delivered state is inside the compliance
+		// TOLERANCES. On this seam the difference that matters most is POSITION,
+		// which compliance never checks at all: a chain can exit a fifth of a
+		// million kilometres from the plan's assumed point, read fully on course,
+		// and miss the destination by two million.
+		//
+		// The button always REPORTS what the current delivery achieves. It is
+		// enabled when a reachable requirement can be solved from the real exit
+		// point; when it cannot, the departure is too far off base to re-target
+		// and the reason says to author a fresh mission instead.
+		if (comp.delivered && comp.delivered.state && stage &&
+				handoffDiffers(stage.params.departure, comp.delivered.state)) {
+			var sol = retargetSolveFor(stage.params, comp.delivered);
+			var btn = document.createElement("button");
+			btn.type = "button";
+			btn.className = "mp-btn mp-cbar-adopt";
+			btn.textContent = "re-target departure";
+			btn.disabled = !sol.ok;
+			var now = "As delivered, the flight passes " + fmtMissKm(sol.missBefore) + " from " +
+				(stage.params.arrival || {}).body + ". ";
+			btn.title = sol.ok
+				? now + "Re-target: keep the exit point the technology actually reaches, and " +
+					"require v∞ " + cbarKms(sol.vInf) + " there instead — a " +
+					sol.turnDeg.toFixed(2) + "° turn and " +
+					(sol.dSpeed >= 0 ? "+" : "−") + Math.abs(Math.round(sol.dSpeed)) + " m/s from " +
+					"what it delivers now (" + Math.round(sol.askWorst) + " m/s on its largest axis), " +
+					"bringing the pass to " + fmtMissKm(sol.missAfter) + ". " +
+					"Then re-tune the departure towards the new target; the arrival epoch and " +
+					"the waypoints' own dates hold."
+				: now + sol.reason;
+			btn.addEventListener("click", function () {
+				if (!sol.ok) { return; }
+				applyRetarget(planRes.stageId, sol);
 			});
-			complianceBarEl.appendChild(adopt);
+			complianceBarEl.appendChild(btn);
 		}
 	}
 
