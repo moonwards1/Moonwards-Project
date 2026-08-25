@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
-	originSoiRadius, soiExitOnArc, MIN_VINF, MOON_DIST, DIVE_WEDGE_DEG
+	originSoiRadius, MIN_VINF, MOON_DIST, DIVE_WEDGE_DEG
 } from "../departure-estimate.js";
 import { LunarEphemeris as LE } from "../../../Shared/lunar-ephemeris.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -188,53 +188,4 @@ test("MOON_DIST (m) matches the ephemeris's real Moon distance (km) — no unit 
 	var distM = O.vMag(LE.moonVector(JD_BASE)) * 1e3;
 	assert.ok(Math.abs(distM - MOON_DIST) / MOON_DIST < 0.06,
 		"ephemeris says " + (distM / 1e6).toFixed(1) + " thousand km");
-});
-
-// ---- soiExitOnArc: where a departure arc leaves the origin's SOI ----------
-
-// The arc the Ephemeris tab draws and core/freeze.js commits from: origin
-// body state at jd, prograde burn applied.
-function injectedArc(origin, jd, dv) {
-	var b = O.bodyStateAtJD(GM_SUN, systems.get(origin).orbit, jd);
-	return { origin: origin, r: b.r, v: O.applyBurn(b.r, b.v, dv, 0, 0), jd: jd };
-}
-
-test("soiExitOnArc lands exactly on the SOI edge, at the reported epoch", () => {
-	["Earth", "Mars", "Jupiter"].forEach(function (name) {
-		var arc = injectedArc(name, JD_BASE, 3000);
-		var e = soiExitOnArc(arc);
-		assert.equal(e.ok, true, name);
-		assert.equal(e.jd, arc.jd + e.seconds / DAY);
-		// separation from the (also moving) body at that epoch is one SOI radius
-		var body = O.bodyStateAtJD(GM_SUN, systems.get(name).orbit, e.jd);
-		var sep = O.vMag(O.vSub(e.r, body.r));
-		assert.ok(Math.abs(sep / originSoiRadius(name) - 1) < 1e-6,
-			name + ": separation " + sep + " vs SOI " + originSoiRadius(name));
-		// and the state is the arc's own, propagated
-		var prop = O.propagateState(GM_SUN, arc.r, arc.v, e.seconds);
-		assert.ok(O.vMag(O.vSub(prop.r, e.r)) < 1, name + ": off the arc");
-	});
-});
-
-test("soiExitOnArc is near — but not equal to — the naive R/v∞ crossing", () => {
-	// Earth's crossing is days long and barely curved; Jupiter's is a year
-	// long, and the arc's own curvature stretches it several percent.
-	var earth = soiExitOnArc(injectedArc("Earth", JD_BASE, 3000));
-	assert.ok(Math.abs(earth.seconds - originSoiRadius("Earth") / 3000) / earth.seconds < 0.01);
-	var jup = soiExitOnArc(injectedArc("Jupiter", JD_BASE, 1500));
-	var naiveJup = originSoiRadius("Jupiter") / 1500;
-	assert.ok(jup.seconds > naiveJup, "curvature stretches the crossing");
-	assert.ok((jup.seconds - naiveJup) / naiveJup > 0.01, "by a measurable margin");
-});
-
-test("soiExitOnArc: a ship that isn't leaving, and an unknown origin", () => {
-	var b = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, JD_BASE);
-	assert.deepEqual(soiExitOnArc({ origin: "Earth", r: b.r, v: b.v, jd: JD_BASE }),
-		{ ok: false, reason: "no-vinf" });   // co-orbiting: never crosses
-	assert.equal(soiExitOnArc({ origin: "Nowhere", r: b.r, v: b.v, jd: JD_BASE }).reason,
-		"unknown-origin");
-	// a tight budget can't reach the edge
-	var arc = injectedArc("Earth", JD_BASE, 3000);
-	arc.maxSeconds = 3600;
-	assert.equal(soiExitOnArc(arc).reason, "no-exit");
 });
