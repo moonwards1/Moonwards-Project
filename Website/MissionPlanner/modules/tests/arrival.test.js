@@ -13,6 +13,7 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import { freezeMissionWorld } from "../../core/freeze.js";
+import { originSoiRadius } from "../../core/departure-estimate.js";
 import moonPlatform from "../moon-platform/moon-platform.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
@@ -284,12 +285,16 @@ test("arrivalCommitmentFor: the plan's arrival { body, jd, vInf }, else null", f
 // ---- through the real engine: freeze → coast → capture, then the tech swap --
 
 function makeFrozenMission() {
+	// jd IS the hand-off epoch, and `handoff` the coast's starting state at
+	// Earth's SOI edge — the shape ephemeris-view.js's buildFreezeSpec hands
+	// over (a 2.94 km/s v∞ on an exit point one SOI radius along its heading).
 	var jd = O.julianDate(2031, 3, 1, 0, 0, 0);
-	var dep = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, jd);
+	var body = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, jd);
+	var vh = O.applyBurn(body.r, body.v, 2940, 0, 0);
+	var off = O.vScale(O.vUnit(O.vSub(vh, body.v)), originSoiRadius("Earth"));
 	var data = freezeMissionWorld({
 		origin: "Earth", destination: "Mars", jd: jd,
-		departure: { r: dep.r, v: dep.v },
-		burn: { pro: 2940, rad: 0, nrm: 0 },
+		handoff: { r: O.vAdd(body.r, off), v: vh },
 		waypoints: [],
 		arrivalJd: jd + 260,
 		arrivalVInf: 2650

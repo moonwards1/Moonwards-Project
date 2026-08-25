@@ -30,15 +30,15 @@
 //             Mercury's is most of the depth of the inner solar system's
 //             potential well
 //
-// INJECTION EPOCH: this plan's hand-off is the REAL departure leg's
-// Mars-SOI exit, so — unlike a plan frozen from the Ephemeris tab — it
-// never was an impulse at the body's centre. injectionJd below is the
-// back-solved epoch where the hand-off arc, run backwards, passes closest
-// to Mars: 3.2066 d before the hand-off, clearing it by 22,000 km
-// (0.04 SOI radii) — the release geometry's own offset. That epoch is what
-// "Paste mission link…" opens this plan on, so re-authoring it there is
-// approximate: the tab rebuilds the arc as a centre-of-body burn, which
-// this one is not.
+// THE HAND-OFF IS THIS PLAN'S DEPARTURE, VERBATIM. `departure` below is
+// the REAL departure leg's Mars-SOI exit — a state a genuine carrier
+// chain delivered, not an impulse at the body's centre. Both the Ephemeris
+// tab and core/freeze.js now treat that state as the thing itself, so
+// "Paste mission link…" reproduces this plan EXACTLY: it opens on the
+// hand-off epoch, reads the v-infinity off the state, and adopts the exit
+// point's own offset from Mars rather than re-deriving it.
+// `injectionJd` below is a legacy field from when the tab authored a
+// centre-of-body burn and freeze followed the arc out; nothing reads it.
 //
 // This is a SERIALIZED WORLD (core/world.js `serialize()` shape, current
 // WORLD_VERSION), loaded through the same deserializeWorld path a share link

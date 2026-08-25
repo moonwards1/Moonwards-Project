@@ -35,14 +35,12 @@
  *                              stop. No burn happens at this seam (see
  *                              transfer-leg.js's header for the reasoning the
  *                              two modules share)
- *   injectionJd:              — provenance: the epoch the plan's departure
- *                              burn was authored at, which the hand-off leads
- *                              by the SOI crossing. Nothing in a mission flies
- *                              from it; the Ephemeris tab reads it back to
- *                              re-author a pasted plan on its own clock.
- *                              Absent on saves frozen before the hand-off
- *                              moved to the SOI edge — for those, the hand-off
- *                              epoch is the injection epoch
+ *   injectionJd:              — LEGACY, ignored. Older saves recorded a
+ *                              centre-of-body burn epoch here, from when the
+ *                              Ephemeris tab authored an impulse and freeze
+ *                              followed the arc out to the SOI edge. The tab's
+ *                              clock IS the hand-off now, so nothing reads it
+ *                              and freeze no longer writes it
  *   arrival:   { body, jd, vInf } — the plan's arrival commitment: body name,
  *                              epoch, and approach v-infinity (m/s) the
  *                              arrival tech must be able to catch. Read back
@@ -104,7 +102,7 @@ export var DEFAULT_WINDOW_DAYS = 1;   // days  — hand-off window half-width fa
 export var defaultParams = {
 	origin: "Earth",
 	departure: { r: null, v: null, jd: null },
-	injectionJd: null,         // provenance: the authored burn epoch; null → the hand-off's own
+	injectionJd: null,         // legacy, ignored (see header)
 	arrival: { body: "", jd: null, vInf: null },
 	handoffWindowDays: null,   // half-width (d); null → DEFAULT_WINDOW_DAYS
 	releaseAnchorJd: null,     // read-only release epoch; null → departure.jd
@@ -298,7 +296,12 @@ export function computeCompliance(params, data) {
 	// Delivered: the same measurement on the tech's hand-off state, against
 	// the origin's velocity at the TECH's epoch (it releases when it releases).
 	var delVec = O.vSub(data.v, Frames.bodyHelioState(p.origin, data.jd).v);
-	var delivered = { vInf: O.vMag(delVec), vInfVec: delVec, jd: data.jd };
+	// `state` is the delivered hand-off itself, carried through so a view can
+	// offer to ADOPT it as the plan's new departure (mission-view.js's
+	// compliance bar). Comparing is still all this module does — adopting is a
+	// deliberate user action elsewhere, never something the boundary performs.
+	var delivered = { vInf: O.vMag(delVec), vInfVec: delVec, jd: data.jd,
+	                  state: { r: data.r.slice(), v: data.v.slice(), jd: data.jd } };
 
 	// A ~zero v∞ vector has no direction to compare (vUnit of it is NaN), and
 	// that is legitimate: a waypoint-only plan freezes to required v∞ 0. The

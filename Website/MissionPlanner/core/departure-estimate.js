@@ -49,10 +49,11 @@
  * (SOI radius / v∞).
  *
  * Also exports soiExitOnArc — where a heliocentric departure arc reaches the
- * origin's SOI. That crossing is the Ephemeris tab's flight start and the
- * epoch core/freeze.js commits as the Departure→Coast hand-off, so the
- * estimate above and the plan it anchors both name the same moment: the
- * release leads the SOI EXIT, and the crossing is counted once.
+ * origin's SOI. It has NO production caller now: the Ephemeris tab authors
+ * the hand-off directly and core/freeze.js commits it verbatim (both take the
+ * crossing as given), and the integrated departure legs find their own in the
+ * body frame. It stays as a tested utility for anything that needs to ask the
+ * question of a bare heliocentric arc.
  *
  * Also exports the Moon readouts the widget shows beside the estimate:
  * elongation (phase) and the Moon's speed along EARTH'S OWN heliocentric

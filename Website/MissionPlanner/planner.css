@@ -83,6 +83,10 @@ body {
 .mp-cbar-metric .mp-cbar-value { text-align: center; }
 .mp-cbar-metric.ok .mp-cbar-value { color: var(--ok); }
 .mp-cbar-metric.warn .mp-cbar-value { color: var(--warn); }
+/* Compliance bar: close the plan-vs-tech gap by adopting what the departure
+   chain actually delivers. Only rendered while there IS a gap. */
+.mp-cbar-adopt { font-size: 12px; padding: 3px 9px; white-space: nowrap; border-color: var(--warn); color: var(--warn); }
+.mp-cbar-adopt:hover { background: var(--warn); color: #14161c; }
 
 .mp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--dim); }
 .mp-dot.ok { background: var(--ok); }

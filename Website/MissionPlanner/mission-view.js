@@ -52,6 +52,8 @@ import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, spee
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
+import { Frames } from "../Shared/frames.js";
+import { estimateDeparture } from "./core/departure-estimate.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
@@ -1332,6 +1334,62 @@ export function createMissionView(opts) {
 		complianceBarEl.appendChild(m);
 	}
 
+	// "ADOPT DELIVERED": rewrite the plan's departure to the hand-off the
+	// departure chain actually produced, so the mission flies from the real
+	// thing instead of the estimate it was authored with. This is the ONE way
+	// the tech's state reaches the plan, and it is always a deliberate click:
+	// frozen-plan stays a boundary that COMPARES (its own header's rule), so
+	// the gap remains visible and meaningful until someone decides to close it.
+	//
+	// Adopting moves the hand-off epoch, so everything downstream is re-based
+	// to keep its own ABSOLUTE epoch: waypoint days shift by the same amount
+	// the hand-off did (any that fall at or before the new hand-off are
+	// dropped — they would fire before the ship exists), and legDays stretches
+	// or shrinks so the arrival still lands on the date the plan committed to.
+	// The arrival commitment itself is untouched: whether the flight still
+	// meets it is the arrival boundary's question, not this one's.
+	function adoptDeliveredHandoff(planStageId, delivered) {
+		var stage = world.getStage(planStageId);
+		if (!stage || !delivered || !delivered.state) { return; }
+		var oldJd = stage.params.departure ? stage.params.departure.jd : null;
+		var st = delivered.state;
+		if (!isFinite(st.jd) || !isFinite(oldJd)) { return; }
+		var shift = st.jd - oldJd;   // days the hand-off moved
+
+		function rebase(list) {
+			return (list || [])
+				.map(function (wp) {
+					return { days: wp.days - shift,
+					         burn: Object.assign({}, wp.burn) };
+				})
+				.filter(function (wp) { return isFinite(wp.days) && wp.days > 0; });
+		}
+
+		var arrJd = stage.params.arrival ? stage.params.arrival.jd : null;
+		world.set({ stage: planStageId, params: {
+			departure: { r: st.r.slice(), v: st.v.slice(), jd: st.jd },
+			releaseAnchorJd: releaseAnchorForState(stage.params.origin, st),
+			waypoints: rebase(stage.params.waypoints)
+		} });
+
+		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		if (legStage) {
+			var patch = { waypoints: rebase(legStage.params.waypoints) };
+			if (isFinite(arrJd)) { patch.legDays = arrJd - st.jd; }
+			world.set({ stage: legStage.id, params: patch });
+		}
+	}
+
+	// The release anchor for an adopted hand-off — the same estimate
+	// core/freeze.js bakes at freeze time, re-run on the new state so the
+	// mission's release epoch keeps leading its actual hand-off.
+	function releaseAnchorForState(origin, st) {
+		var body = Frames.bodyHelioState(origin, st.jd);
+		var est = estimateDeparture({ origin: origin, vInfVec: O.vSub(st.v, body.v),
+			jdHandoff: st.jd });
+		return est.ok ? est.jdLaunch : st.jd;
+	}
+
 	function renderComplianceBar(results) {
 		complianceBarEl.innerHTML = "";
 		var planRes = null;
@@ -1397,6 +1455,24 @@ export function createMissionView(opts) {
 		}
 		if (summary && summary.arrivalJd != null) {
 			appendCbarMetric("arrival", cbarDate(summary.arrivalJd), null, null);
+		}
+
+		// Offered only when a tech IS delivering a hand-off and it differs from
+		// the plan's — with nothing delivered there is nothing to adopt, and
+		// on course there is nothing to change.
+		if (comp.delivered && comp.delivered.state && !met) {
+			var adopt = document.createElement("button");
+			adopt.type = "button";
+			adopt.className = "mp-btn mp-cbar-adopt";
+			adopt.textContent = "adopt delivered";
+			adopt.title = "Make the hand-off this departure technology actually delivers " +
+				"the plan's own departure — v∞ " + cbarKms(comp.delivered.vInf) + " on " +
+				cbarDate(comp.delivered.jd) + ". Waypoints keep their dates and the " +
+				"arrival epoch holds; the coast re-flies from the real state.";
+			adopt.addEventListener("click", function () {
+				adoptDeliveredHandoff(planRes.stageId, comp.delivered);
+			});
+			complianceBarEl.appendChild(adopt);
 		}
 	}
 

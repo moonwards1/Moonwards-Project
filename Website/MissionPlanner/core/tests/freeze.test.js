@@ -10,21 +10,35 @@ import { deserializeWorld } from "../world.js";
 import { computeCompliance } from "../../modules/frozen-plan/frozen-plan.js";
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
+import { originSoiRadius } from "../departure-estimate.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
 
-// A realistic spec: departure = Earth's own helio state (exactly what the
-// Ephemeris tab hands over), 260-day leg to Mars.
+// A realistic spec, shaped exactly as ephemeris-view.js's buildFreezeSpec
+// hands it over: jd IS the hand-off epoch, `handoff` IS the coast's starting
+// state at the origin's SOI edge, and waypoint days already count from it.
+// 260-day leg to Mars.
+//
+// The hand-off is built the way departureState does: v-infinity applied to the
+// origin body's own motion, at an exit point one SOI radius along the outbound
+// heading. VINF below is the v-infinity that state carries, for assertions.
+var VINF = { pro: 2940, rad: 0, nrm: 0 };
+function handoffFor(jd, origin, vinf) {
+	var body = O.bodyStateAtJD(GM_SUN, systems.get(origin).orbit, jd);
+	var v = O.applyBurn(body.r, body.v, vinf.pro || 0, vinf.nrm || 0, vinf.rad || 0);
+	var vInfVec = O.vSub(v, body.v), mag = O.vMag(vInfVec);
+	var R = originSoiRadius(origin);
+	var off = (R > 0 && mag > 1e-6) ? O.vScale(O.vUnit(vInfVec), R) : [0, 0, 0];
+	return { r: O.vAdd(body.r, off), v: v };
+}
 function makeSpec() {
 	var jd = O.julianDate(2031, 3, 1, 0, 0, 0);
-	var dep = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, jd);
 	return {
 		origin: "Earth",
 		destination: "Mars",
 		jd: jd,
-		departure: { r: dep.r, v: dep.v },
-		burn: { pro: 2940, rad: 0, nrm: 0 },
+		handoff: handoffFor(jd, "Earth", VINF),
 		waypoints: [{ days: 130, burn: { pro: 0, rad: 0, nrm: 500 } }],
 		arrivalJd: jd + 260,
 		arrivalVInf: 2650
@@ -62,11 +76,9 @@ test("freeze output deserializes into a working World with the E2 profile (Earth
 
 test("freeze from a non-Earth origin scaffolds just the generic departure leg", () => {
 	var jd = O.julianDate(2033, 6, 1, 0, 0, 0);
-	var dep = O.bodyStateAtJD(GM_SUN, systems.get("Mars").orbit, jd);
 	var data = freezeMissionWorld({
 		origin: "Mars", destination: "Ceres", jd: jd,
-		departure: { r: dep.r, v: dep.v },
-		burn: { pro: 1800, rad: 0, nrm: 0 },
+		handoff: handoffFor(jd, "Mars", { pro: 1800, rad: 0, nrm: 0 }),
 		waypoints: [], arrivalJd: jd + 300, arrivalVInf: 3000
 	});
 	var res = deserializeWorld(data);
@@ -86,41 +98,36 @@ test("frozen-plan and transfer-leg carry matching waypoint copies, not shared re
 	var plan = paramsOf(data, "frozen-plan"), leg = paramsOf(data, "transfer-leg");
 	assert.deepEqual(plan.waypoints, leg.waypoints);
 	assert.notEqual(plan.waypoints[0], leg.waypoints[0]);       // copies
-	assert.notEqual(plan.departure.r, spec.departure.r);        // nor the live input
-	// the coast runs from the SOI-edge hand-off, not the burn, so it is the
-	// crossing shorter than the 260 days between burn and rendezvous
-	var crossingDays = plan.departure.jd - spec.jd;
-	assert.ok(crossingDays > 1 && crossingDays < 10, "crossing " + crossingDays.toFixed(2) + " d");
-	assert.ok(Math.abs(leg.legDays - (260 - crossingDays)) < 1e-9);
+	assert.notEqual(plan.departure.r, spec.handoff.r);          // nor the live input
+	// the clock IS the hand-off, so the coast is the full span the marker set
+	assert.equal(plan.departure.jd, spec.jd);
+	assert.ok(Math.abs(leg.legDays - 260) < 1e-9);
 	assert.equal(leg.destination, "Mars");
 	assert.equal(plan.arrival.body, "Mars");
 	assert.equal(plan.arrival.vInf, 2650);
 });
 
-test("the hand-off is the SOI-edge crossing of the post-burn arc, and carries no burn field", async () => {
+test("the hand-off is committed verbatim, carries no burn field, and re-derives nothing", () => {
 	var spec = makeSpec();
 	var data = freezeMissionWorld(spec);
 	var plan = paramsOf(data, "frozen-plan"), leg = paramsOf(data, "transfer-leg");
-	// no burn field at all — the injection is baked into the arc the frozen
-	// state sits on, not recorded separately anywhere in the chain
+	// no burn field at all — the hand-off state IS the coast's start, and
+	// nothing at that seam is recorded as an impulse anywhere in the chain
 	assert.equal("burn" in leg, false);
 	assert.equal("burn" in plan, false);
-	// the frozen state is where the injected arc reaches Earth's SOI edge —
-	// the same crossing the Ephemeris tab draws the flight starting from
-	var DE = await import("../departure-estimate.js");
-	var injected = O.applyBurn(spec.departure.r, spec.departure.v,
-		spec.burn.pro, spec.burn.nrm, spec.burn.rad);
-	var exit = DE.soiExitOnArc({ origin: "Earth", r: spec.departure.r, v: injected, jd: spec.jd });
-	assert.equal(exit.ok, true);
-	assert.deepEqual(plan.departure.r, exit.r);
-	assert.deepEqual(plan.departure.v, exit.v);
-	assert.equal(plan.departure.jd, exit.jd);
-	// one SOI radius out from Earth, a few days after the burn it was authored at
+	// EXACT copies of what the tab handed in — this is the whole contract:
+	// whatever produced the hand-off (an authored heading, or a real carrier
+	// chain's delivered state) survives the freeze bit for bit, so pasting
+	// the plan back into the Ephemeris tab reproduces it exactly.
+	assert.deepEqual(plan.departure.r, spec.handoff.r);
+	assert.deepEqual(plan.departure.v, spec.handoff.v);
+	assert.equal(plan.departure.jd, spec.jd);
+	// and it sits one SOI radius out from Earth, where this spec put it
 	var earth = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, plan.departure.jd);
 	var sep = O.vMag(O.vSub(plan.departure.r, earth.r));
-	assert.ok(Math.abs(sep / DE.originSoiRadius("Earth") - 1) < 1e-6, "sep " + sep);
-	assert.equal(plan.injectionJd, spec.jd);                    // the authored burn epoch, for re-authoring
-	assert.ok(plan.departure.jd > spec.jd);
+	assert.ok(Math.abs(sep / originSoiRadius("Earth") - 1) < 1e-9, "sep " + sep);
+	// the legacy injection epoch is gone: the clock IS the hand-off now
+	assert.equal("injectionJd" in plan, false);
 });
 
 test("waypoints are sorted chronologically and post-arrival ones dropped", () => {
@@ -151,14 +158,14 @@ test("required v∞ is the injection the departure burn demanded, read at the SO
 	// SOI crossing later instead, where differential solar gravity has bent
 	// the two apart by a little — the same measurement, and the same place,
 	// the departure tech's delivered hand-off is judged at.
-	var expect = Math.hypot(spec.burn.pro, spec.burn.rad, spec.burn.nrm);
+	var expect = Math.hypot(VINF.pro, VINF.rad, VINF.nrm);
 	assert.ok(Math.abs(comp.required.vInf - expect) < 0.005 * expect,
 		"required v∞ should be near " + expect + ", got " + comp.required.vInf);
 });
 
 test("a waypoint-only plan (no departure burn) freezes to required v∞ 0", () => {
 	var spec = makeSpec();
-	spec.burn = { pro: 0, rad: 0, nrm: 0 };
+	spec.handoff = handoffFor(spec.jd, "Earth", { pro: 0, rad: 0, nrm: 0 });
 	var data = freezeMissionWorld(spec);
 	var comp = computeCompliance(paramsOf(data, "frozen-plan"), null);
 	assert.equal(comp.ok, true);
@@ -199,23 +206,23 @@ test("a custom windowDays is honoured; a waypoint-only plan anchors at the hand-
 	assert.equal(paramsOf(freezeMissionWorld(spec), "frozen-plan").handoffWindowDays, 2.5);
 
 	var spec2 = makeSpec();
-	spec2.burn = { pro: 0, rad: 0, nrm: 0 };       // no injection: v∞ ~ 0, nothing to time
+	spec2.handoff = handoffFor(spec2.jd, "Earth", { pro: 0, rad: 0, nrm: 0 });   // v∞ ~ 0, nothing to time
 	var plan2 = paramsOf(freezeMissionWorld(spec2), "frozen-plan");
 	assert.equal(plan2.releaseAnchorJd, spec2.jd);
 	assert.equal(plan2.handoffWindowDays, 1);
 });
 
-test("re-basing onto the hand-off keeps every waypoint's ABSOLUTE epoch, and drops any inside the SOI", () => {
+test("waypoint days are already hand-off-relative and pass through untouched", () => {
 	var spec = makeSpec();
 	spec.waypoints = [
-		{ days: 2, burn: { pro: 10 } },       // still inside Earth's SOI — dropped
 		{ days: 60, burn: { pro: 120 } },
 		{ days: 190, burn: { nrm: -80 } }
 	];
 	var data = freezeMissionWorld(spec);
 	var plan = paramsOf(data, "frozen-plan"), leg = paramsOf(data, "transfer-leg");
 	assert.deepEqual(leg.waypoints.map(w => Math.round(w.burn.pro)), [120, 0]);
-	// each surviving waypoint fires at the epoch it was authored for
+	assert.deepEqual(leg.waypoints.map(w => w.days), [60, 190]);
+	// each waypoint fires at the epoch it was authored for
 	leg.waypoints.forEach(function (wp, i) {
 		var authored = spec.jd + [60, 190][i];
 		assert.ok(Math.abs((plan.departure.jd + wp.days) - authored) < 1e-9);
