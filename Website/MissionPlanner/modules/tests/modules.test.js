@@ -412,13 +412,14 @@ test("chain: a transfer leg with nothing upstream is missing-input", function ()
 	assert.equal(r.diagnostic.code, "missing-input");
 });
 
-test("chain: moving the clock recomputes but does not change the mission", function () {
+test("chain: moving the clock leaves the mission exactly as it was", function () {
 	var c = makeChain(MOON_SKYHOOK,
 		{ waypoints: [], legDays: 480, destination: "" }, JD_ANCHOR);
-	var before = c.engine.resultFor(c.ids.leg).output.data.r.slice();
+	var before = c.engine.resultFor(c.ids.leg).output;
 	c.world.set({ jd: JD_ANCHOR + 100 });   // the viewing clock, not the release epoch
-	var after = c.engine.resultFor(c.ids.leg).output.data.r;
-	assert.deepEqual(after, before);
+	// Not merely equal — the SAME packet. The clock moves what the views draw
+	// and reruns no update() at all (recompute.js's subscriber).
+	assert.equal(c.engine.resultFor(c.ids.leg).output, before);
 });
 
 // ---- the shipped worked-example preset (step 4.4, reshaped by I3) -----------

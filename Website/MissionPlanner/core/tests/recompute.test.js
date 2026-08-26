@@ -77,11 +77,32 @@ test("initial pass: whole chain computes, packets flow downstream", function () 
 	assert.equal(t.engine.resultFor(t.b).output.data.jd, JD);
 });
 
-test("jd change recomputes every stage (one clock feeds all)", function () {
+// The clock decides what a stage DRAWS, never what it COMPUTES — no module's
+// update() reads it (see the subscriber in recompute.js). Views still need
+// their pass, so the listeners fire on the results as they stand.
+test("moving the clock recomputes nothing, but still fires a pass at the views", function () {
+	var t = fixture();
+	var seen = [];
+	t.engine.onRecompute(function (rs) { seen.push(rs); });
+	var srcOutBefore = t.engine.resultFor(t.a).output;
+
+	t.w.set({ jd: JD + 30 });
+
+	assert.deepEqual(t.calls, { src: 1, leg: 1, sink: 1 });          // no update() rerun
+	assert.equal(seen.length, 1, "the views still get their pass");
+	assert.deepEqual(seen[0].map(function (r) { return r.status; }), ["ok", "ok", "ok"]);
+	assert.equal(t.engine.resultFor(t.a).output, srcOutBefore);     // same object, untouched
+	// This fixture's modules stamp ctx.jd into their packets — a real module
+	// does not — so this holding at JD is the proof that none of them reran.
+	assert.equal(t.engine.resultFor(t.b).output.data.jd, JD);
+});
+
+test("a param change after a clock move still recomputes from that stage", function () {
 	var t = fixture();
 	t.w.set({ jd: JD + 30 });
-	assert.deepEqual(t.calls, { src: 2, leg: 2, sink: 2 });
-	assert.equal(t.engine.resultFor(t.b).output.data.jd, JD + 30);
+	t.w.set({ stage: t.b, params: { dv: 900 } });
+	assert.deepEqual(t.calls, { src: 1, leg: 2, sink: 2 });          // src still not rerun
+	assert.equal(t.engine.resultFor(t.b).output.data.v[0], 1900);
 });
 
 test("a mid-chain param change recomputes downstream only", function () {
@@ -301,8 +322,8 @@ test("dispose() detaches the engine from the World", function () {
 
 test("transient sets (mid-gesture) still recompute live", function () {
 	var t = fixture();
-	t.w.set({ jd: JD + 0.25 }, { transient: true });
-	assert.equal(t.engine.resultFor(t.a).output.data.jd, JD + 0.25);
+	t.w.set({ stage: t.b, params: { dv: 700 } }, { transient: true });
+	assert.equal(t.engine.resultFor(t.b).output.data.v[0], 1700);
 });
 
 test("inputOptional: a consumer with nothing upstream runs with input null", function () {

@@ -210,16 +210,33 @@ term):
 Each stage's input is the upstream stage's output packet plus its own user
 parameters. The recompute rule is deliberately boring:
 
-1. Any change (date, a parameter, a module swapped in or out) marks that stage
-   **dirty**.
+1. Any change to a stage (a parameter, a module swapped in or out) marks that
+   stage **dirty**.
 2. The shell recomputes from the dirtiest stage **downstream, in order,
    synchronously**.
+3. **Moving the clock recomputes nothing.** Views still get a pass, carrying
+   the results as they stand, so everything redraws at the new date — but no
+   `update()` runs.
 
-All the physics is analytic two-body work (Kepler propagation, Lambert,
-impulsive burns), so a full-chain recompute costs microseconds — no reactive
-framework, no async, no caching subtleties. This is the waypoint behaviour the
-plotters already have ("downstream arcs recompute automatically"), generalized
-to whole missions.
+Rule 3 holds because no module's `update()` reads the clock. The clock decides
+what a stage **draws** (where a chevron sits along its leg, the speed under it,
+where the bodies are), never what it **computes**; every `world.jd` in a module
+is inside `draw()` or a card renderer. A stage that needed the clock in
+`update()` would break this, and would be depending on something the chain has
+no reason to depend on.
+
+The rule matters because a recompute is not free. Most of the physics is
+analytic two-body work (Kepler propagation, Lambert, impulsive burns), but a
+leg that passes through a body's sphere of influence is RK4-integrated, and
+that dominates: the shipped Moon→Ceres coast costs 4.4 ms per pass, doubling
+whenever a waypoint edit is pending and both the live and hand-off arcs fly.
+Multiplied by a slider drag's tick rate, recomputing for the clock was the
+single largest cost in the app.
+
+Beyond that there is still no reactive framework, no async, and no caching
+subtleties — a dirty stage and everything downstream of it simply reruns. This
+is the waypoint behaviour the plotters already have ("downstream arcs recompute
+automatically"), generalized to whole missions.
 
 ### Infeasibility is a diagnostic, not an error
 

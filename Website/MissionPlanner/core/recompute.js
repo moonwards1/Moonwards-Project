@@ -6,12 +6,14 @@
 // See Website/ARCHITECTURE.md, "Mission profiles and recompute rules". The
 // rule is deliberately boring:
 //
-//   1. Any world.set() marks a stage dirty (the change record's `index` is
-//      the earliest chain position it can affect; jd marks index 0, since
-//      one clock feeds every stage).
+//   1. A world.set() that changes a stage marks it dirty (the change record's
+//      `index` is the earliest chain position it can affect).
 //   2. The engine recomputes from there DOWNSTREAM, IN ORDER, SYNCHRONOUSLY.
 //      Stages upstream of the dirty index keep their previous outputs —
 //      nothing upstream changed, so nothing upstream reruns.
+//   3. A world.set() that moves the CLOCK recomputes nothing. It still fires a
+//      pass at the listeners, carrying the results as they stand, so every
+//      view redraws — but no update() runs. See the subscriber below.
 //
 // Each stage's input is the upstream stage's output packet plus its own
 // params from World. A stage's update() returns its output packet, or null
@@ -333,10 +335,34 @@ export function createEngine(world, registry) {
 		byId = {};
 		for (var r = 0; r < results.length; r++) { byId[results[r].stageId] = results[r]; }
 
+		notify();
+	}
+
+	// A pass at the listeners on the results as they stand — no stage rerun.
+	// The listener call is identical to the one that ends a recompute, so a
+	// view cannot tell the two apart and needs no branch of its own.
+	function notify() {
 		for (var l = 0; l < listeners.length; l++) { listeners[l](results.slice()); }
 	}
 
 	var unsubscribe = world.onChange(function (info) {
+		// THE CLOCK RECOMPUTES NOTHING. Moving it changes what the views DRAW —
+		// where a chevron sits along a leg, the speed under it, where the bodies
+		// are — and nothing any module COMPUTES: no update() reads the clock.
+		// (The engine passes `ctx.jd` and no module touches it; every
+		// `world.jd` in a module is inside draw() or a card renderer.)
+		//
+		// Recomputing for it re-integrated the whole chain on every tick of a
+		// slider drag — on the shipped Moon->Ceres plan, 4.4 ms of leg
+		// integration in transfer-leg alone, doubled to 8.9 ms whenever a
+		// waypoint edit is pending and both the live and hand-off arcs fly.
+		// Dozens of times a second, for an answer that could not have changed.
+		//
+		// Listeners still get their pass, so everything clock-shaped downstream
+		// redraws exactly as it did. A module that genuinely needs the clock
+		// inside update() would have to change this — none does, and one that
+		// did would be reading a value the chain has no reason to depend on.
+		if (info.change.jd !== undefined) { notify(); return; }
 		recompute(info.index);
 	});
 
