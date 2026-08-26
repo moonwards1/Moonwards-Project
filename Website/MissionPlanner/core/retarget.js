@@ -27,19 +27,27 @@
  * which re-targets a little: a loop that closes on something the technology can
  * really fly, instead of on a point no chain was ever going to hit.
  *
- * Pure: plain values in, plain values out. Imports computeLeg to VERIFY its own
- * answer by flying it — a solve that doesn't actually arrive is not an answer.
+ * WHAT IT AIMS FOR is a PASS — closest approach at proximity.js's
+ * AIM_PASS_ALTITUDE above the destination's surface, on the side the flight
+ * already goes by — not the arrival POINT the plan was authored with. A plan's
+ * own flyby offset is whatever the Ephemeris tab happened to be pointed at;
+ * once a real departure is flying the mission, what matters is arriving close
+ * enough for the arrival phase to take over.
+ *
+ * Pure: plain values in, plain values out. Every answer is VERIFIED by flying
+ * it through core/delivered-flight.js — a solve that doesn't actually arrive
+ * is not an answer.
  */
 
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Frames } from "../../Shared/frames.js";
 import { systems } from "../../Shared/orbit.js";
-import { computeLeg, WAYPOINT_AXIS_CAP_MPS } from "../modules/transfer-leg/transfer-leg.js";
-import { MAX_ADOPT_MISS } from "./proximity.js";
+import { WAYPOINT_AXIS_CAP_MPS } from "../modules/transfer-leg/transfer-leg.js";
+import { MAX_PASS_ALTITUDE, AIM_PASS_ALTITUDE } from "./proximity.js";
+import { deliveredFlight, rebaseWaypoints } from "./delivered-flight.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
-var AU = 149597870700;
 
 function GM_SUN() { return systems.get("Sun").GM; }
 
@@ -48,31 +56,20 @@ export function fmtKm(m) {
 	return Math.round(m / 1000).toLocaleString("en-US") + " km";
 }
 
-// Waypoints re-based onto a new hand-off epoch, keeping every ABSOLUTE epoch.
-// Any that would fall at or before the new hand-off, or at/after the arrival,
-// drop out — they cannot shape a flight that has not started or has ended.
-export function rebaseWaypoints(list, shiftDays, legDays) {
-	return (list || [])
-		.map(function (wp) {
-			return { days: wp.days - shiftDays, burn: Object.assign({}, wp.burn) };
-		})
-		.filter(function (wp) { return isFinite(wp.days) && wp.days > 0 && wp.days < legDays; });
-}
+// Re-exported so callers that re-base a plan's waypoints onto a new hand-off
+// reach it here, alongside the solve that moves the hand-off. One definition,
+// in core/delivered-flight.js.
+export { rebaseWaypoints };
 
-// How close does the flight come to the destination, flown from `from` with
-// `waypoints` (already re-based) out to `arrivalJd`? Returns metres, 0 for an
-// outright interception, Infinity when there is no encounter or the leg won't
-// compute. This is `leg.miss` — the CLOSEST the flight ever comes, searched
-// across the leg and its overrun — never the state at the leg's end, which
-// routinely falls before the closest approach.
-export function missFrom(from, waypoints, arrivalJd, destination) {
-	var legDays = arrivalJd - from.jd;
-	if (!(legDays > 0)) { return Infinity; }
-	var leg = computeLeg({ waypoints: waypoints, legDays: legDays, destination: destination },
-		{ r: from.r, v: from.v, jd: from.jd });
-	if (!leg.ok) { return Infinity; }
-	if (leg.impact && leg.impact.body === destination) { return 0; }
-	return isFinite(leg.miss) ? leg.miss * AU : Infinity;
+// How high above the destination does the flight pass, flown from `from` with
+// `waypoints` (already re-based) out to `arrivalJd`? Metres above the SURFACE,
+// 0 for an outright impact, Infinity when there is no encounter or the leg
+// won't compute. Measured at the CLOSEST APPROACH, never at the leg's end,
+// which routinely falls before it.
+export function passAltitudeFrom(from, waypoints, arrivalJd, destination) {
+	var f = deliveredFlight({ origin: null, destination: destination, delivered: from,
+		waypoints: waypoints, arrivalJd: arrivalJd });
+	return (f.ok && f.pass) ? f.pass.altitude : Infinity;
 }
 
 // The flight as a piecewise conic: coast, burn, coast, ... — the same shape
@@ -173,12 +170,12 @@ export function solveArrivalVelocity(r0, v0Guess, waypoints, tDays, target) {
  *     vInfVec, vInf,             // what the technology must now deliver
  *     turnDeg, dSpeed,           // how far that is from the current delivery
  *     waypoints, legDays,        // the coast, re-based onto the new epoch
- *     missBefore, missAfter }    // closest approach, delivered vs re-solved
- * or { ok: false, reason, missBefore }.
+ *     passBefore, passAfter }    // pass altitude, delivered vs re-solved
+ * or { ok: false, reason, passBefore }.
  */
 export function solveDepartureTarget(spec) {
 	var d = spec.delivered, p = spec.planDeparture;
-	var out = { ok: false, missBefore: Infinity };
+	var out = { ok: false, passBefore: Infinity };
 	if (!d || !p || !isFinite(spec.arrivalJd)) {
 		out.reason = "The plan has no hand-off to re-target.";
 		return out;
@@ -196,34 +193,69 @@ export function solveDepartureTarget(spec) {
 	var wps = rebaseWaypoints(spec.planWaypoints, shift, legDays);
 
 	// What the technology delivers RIGHT NOW, flown with the plan's own burns.
-	out.missBefore = missFrom(d, wps, spec.arrivalJd, spec.destination);
+	var now = deliveredFlight({ origin: spec.origin, destination: spec.destination,
+		delivered: d, waypoints: wps, arrivalJd: spec.arrivalJd });
+	out.passBefore = (now.ok && now.pass) ? now.pass.altitude : Infinity;
 
-	// THE TARGET is where the PLAN's own flight is at the committed arrival
-	// epoch — its intended arrival POINT, not the body's centre. Aiming at the
-	// centre would be a collision orbit, and would throw away the flyby offset
-	// these plans are deliberately built around.
-	var target = propagateWithWaypoints(p.r, p.v, spec.planWaypoints, spec.arrivalJd - p.jd).r;
+	// THE AIM IS A PASS, NOT A POINT: closest approach at AIM_PASS_ALTITUDE
+	// above the destination's surface. The solver targets a POSITION at the
+	// committed arrival epoch, so the aim point is the body's own position
+	// there, pushed out along the side the flight already passes on.
+	//
+	// Keeping the side matters — flipping to the other face of the body would
+	// be a different encounter geometry for no reason — but the DISTANCE is
+	// deliberately standardised. A plan authored in the Ephemeris tab carries
+	// whatever flyby offset it was built with (the Earth->Mars reference aims
+	// at ~50,000 km), and once a real departure is flying the mission that
+	// offset is no longer a commitment worth preserving: what matters is
+	// arriving close enough for the arrival phase to take over.
+	//
+	// Closest approach does not fall exactly at the arrival epoch, so one solve
+	// does not land on the aim. The loop corrects the offset by the altitude
+	// error it measures and re-solves — a few passes, each one a Newton solve
+	// plus a real integrated flight, which is affordable on a button.
+	var aimDir = passOffsetDir(now, spec, p, wps);
+	if (!aimDir) {
+		out.reason = "The flight from the delivered hand-off never comes near " +
+			spec.destination + ", so there is no approach to re-aim. This departure is " +
+			"too far off base to re-target; author a fresh mission in the Ephemeris tab.";
+		return out;
+	}
+	var bodyR = Frames.bodyHelioState(spec.destination, spec.arrivalJd).r;
+	var offset = destSys.radius + AIM_PASS_ALTITUDE;
+	var sol = null, solved = null, passAfter = Infinity;
 
-	// A first guess good enough for Newton to close on: the straight transfer
-	// from the delivered exit point to the target, ignoring the burns.
-	var guess = O.lambert(GM_SUN(), d.r, target, legDays * DAY, true);
-	var sol = solveArrivalVelocity(d.r, guess ? guess.v1 : d.v, wps, legDays, target);
+	for (var pass = 0; pass < 4; pass++) {
+		var target = O.vAdd(bodyR, O.vScale(aimDir, offset));
+		var guess = O.lambert(GM_SUN(), d.r, target, legDays * DAY, true);
+		sol = solveArrivalVelocity(d.r, guess ? guess.v1 : d.v, wps, legDays, target);
+		solved = { r: d.r, v: sol.v, jd: d.jd };
+
+		// Verified by flying it for real — the solve above is conic-only, and
+		// the leg that actually gets flown integrates SOI encounters.
+		var flown = deliveredFlight({ origin: spec.origin, destination: spec.destination,
+			delivered: solved, waypoints: wps, arrivalJd: spec.arrivalJd });
+		if (!flown.ok || !flown.pass) { passAfter = Infinity; break; }
+		passAfter = flown.pass.altitude;
+		if (Math.abs(passAfter - AIM_PASS_ALTITUDE) < 0.02 * AIM_PASS_ALTITUDE) { break; }
+
+		// Push the aim out (or pull it in) by the altitude error, and re-point
+		// it at the side the flight just passed on.
+		offset = Math.max(destSys.radius * 1.05, offset + (AIM_PASS_ALTITUDE - passAfter));
+		if (flown.pass.rRel) { aimDir = O.vUnit(flown.pass.rRel); }
+	}
+
+	if (!(passAfter < MAX_PASS_ALTITUDE)) {
+		out.reason = "Re-solved from the delivered exit point the flight still passes " +
+			fmtKm(passAfter) + " above " + spec.destination + " — needs to be within " +
+			fmtKm(MAX_PASS_ALTITUDE) + ". This departure is too far off base to re-target; " +
+			"author a fresh mission in the Ephemeris tab.";
+		out.passAfter = passAfter;
+		return out;
+	}
 
 	var bodyV = Frames.bodyHelioState(spec.origin, d.jd).v;
 	var vInfVec = O.vSub(sol.v, bodyV);
-	var solved = { r: d.r, v: sol.v, jd: d.jd };
-
-	// Verify by flying it for real — the solve above is conic-only, and the leg
-	// that actually gets flown integrates SOI encounters.
-	var missAfter = missFrom(solved, wps, spec.arrivalJd, spec.destination);
-	if (!(missAfter < MAX_ADOPT_MISS)) {
-		out.reason = "Re-solved from the delivered exit point the flight still passes " +
-			fmtKm(missAfter) + " from " + spec.destination + " — needs to be within " +
-			fmtKm(MAX_ADOPT_MISS) + ". This departure is too far off base to re-target; " +
-			"author a fresh mission in the Ephemeris tab.";
-		out.missAfter = missAfter;
-		return out;
-	}
 
 	// HOW FAR THE TECHNOLOGY HAS TO MOVE, and the limit on it. Re-targeting
 	// compensates for the exit point sitting elsewhere on the SOI sphere, which
@@ -243,7 +275,7 @@ export function solveDepartureTarget(spec) {
 			" m/s on one axis, past the " + WAYPOINT_AXIS_CAP_MPS + " m/s correction limit. " +
 			"This departure is too far off base to re-point; author a fresh mission in the " +
 			"Ephemeris tab.";
-		out.missAfter = missAfter;
+		out.passAfter = passAfter;
 		return out;
 	}
 	var mA = O.vMag(curVInf), mB = O.vMag(vInfVec);
@@ -255,5 +287,20 @@ export function solveDepartureTarget(spec) {
 	         vInfVec: vInfVec, vInf: mB, turnDeg: turnDeg, dSpeed: mB - mA,
 	         ask: ask, askWorst: worst,
 	         waypoints: wps, legDays: legDays,
-	         missBefore: out.missBefore, missAfter: missAfter };
+	         passBefore: out.passBefore, passAfter: passAfter };
+}
+
+// Which side of the destination to aim past. The flight as delivered already
+// passes on one side, and that is the side to keep. When it has no encounter
+// at all to take a bearing from, the PLAN's own intended arrival point stands
+// in — it was built to pass somewhere sensible, even if the technology is not
+// flying it. Null when neither yields a usable direction.
+function passOffsetDir(now, spec, planDeparture, wps) {
+	if (now.ok && now.pass && now.pass.rRel && O.vMag(now.pass.rRel) > 0) {
+		return O.vUnit(now.pass.rRel);
+	}
+	var planEnd = propagateWithWaypoints(planDeparture.r, planDeparture.v,
+		spec.planWaypoints, spec.arrivalJd - planDeparture.jd).r;
+	var rel = O.vSub(planEnd, Frames.bodyHelioState(spec.destination, spec.arrivalJd).r);
+	return O.vMag(rel) > 0 ? O.vUnit(rel) : null;
 }

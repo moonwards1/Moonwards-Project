@@ -19,12 +19,12 @@
  * a plausible rendezvous to build a mission around? It is a scrubbable marker
  * against a body's ring, so ring-scale tolerances are the right question.
  *
- * ADOPTION ASKS A DIFFERENT, STRICTER QUESTION — see MAX_ADOPT_MISS below.
- * Once a mission exists, re-pointing its departure is a refinement, not a
- * re-plan: the coast flown from the delivered hand-off has to actually REACH
- * the destination, not merely cross its orbit somewhere near the right month.
- * Experimentation that throws the flight further off than that is a new
- * mission to author in the Ephemeris tab, not a plan to rewrite in place.
+ * A FLOWN MISSION ASKS A DIFFERENT, STRICTER QUESTION — see MAX_PASS_ALTITUDE
+ * below. Once a mission exists, the coast flown from the delivered hand-off
+ * has to actually REACH the destination, not merely cross its orbit somewhere
+ * near the right month, and how close it comes is the mission's headline
+ * number. Experimentation that throws the flight further off than that is a
+ * new mission to author in the Ephemeris tab, not a plan to rewrite in place.
  *
  * Both standards live here so the numbers have one home and can be compared
  * at a glance, even though they answer different questions.
@@ -78,41 +78,54 @@ export function checkProximity(GM, orbit, r, jd) {
 // routinely ends before its own closest approach, so its end separation says
 // little about whether the destination was reached (transfer-leg.js makes the
 // same point where it computes the figure).
-export var MAX_ADOPT_MISS = 0.0002 * AU;   // m — ~29,920 km
+// MEASURED AS ALTITUDE ABOVE THE DESTINATION'S SURFACE, never as a distance
+// from its centre, and at the flight's CLOSEST APPROACH, never at the leg's
+// end (a leg routinely ends before its own closest approach, so its end
+// separation says little about whether the destination was reached —
+// transfer-leg.js makes the same point where it computes the figure).
+//
+// Altitude because that is what the arrival phase deals in: an arrival
+// technology catches at some height above a surface, and a dead-centre aim is
+// a collision orbit, not an arrival. It is also the figure the reader already
+// sees everywhere else the pass is quoted.
+export var MAX_PASS_ALTITUDE = 30e6;    // m — 30,000 km: close enough to arrive
+export var AIM_PASS_ALTITUDE = 15e6;    // m — 15,000 km: what a re-target aims for
 
-// PROVISIONAL, and known to be tight. Missions here are routinely designed to
-// FLY PAST the destination at an offset rather than at its centre — a
-// dead-centre aim is a collision orbit, and an arrival technology catches at
-// some altitude — so a well-built plan's own closest approach can sit well
-// outside this. The shipped Earth->Mars reference deliberately aims at a
-// 50,000 km flyby offset and passes ~47,900 km from Mars, so nothing on that
-// mission is adoptable under this figure. Tying the bound to the destination's
-// SOI, or to what the arrival technology can actually catch, would fit how the
-// missions are really built; this flat distance is a first cut.
+// AIM INSIDE THE BOUND, deliberately. A re-target cannot land exactly on its
+// own answer: solving moves the departure requirement, re-tuning the technology
+// towards it moves the exit point, and the next flight starts somewhere new.
+// Aiming at half the bound leaves that residual somewhere to land, so an
+// iteration that overshoots is still inside the standard.
+//
+// BOTH ARE PROVISIONAL. The honest bound is whatever the arrival technology can
+// actually catch — a cone of approach vectors and a maximum speed — and it
+// should come from the arrival module once that exists, per destination and per
+// technology, rather than being one flat number for every body from Mars to
+// Psyche. Until then these are a first cut, and re-targeting standardises a
+// mission's pass on AIM_PASS_ALTITUDE rather than preserving whatever flyby
+// offset it was authored with.
 
-// Does a re-flown coast reach the destination closely enough to adopt its
-// departure? `missM` is the closest approach in METRES (transfer-leg's
-// `leg.miss` is in AU — convert before calling), or 0 for a trajectory that
-// actually intercepts the body. Returns { ok, missM }.
-export function checkAdoptable(missM) {
-	var ok = isFinite(missM) && missM >= 0 && missM < MAX_ADOPT_MISS;
-	return { ok: ok, missM: missM };
+// Does a flight come close enough to call this an arrival? `altitudeM` is the
+// closest approach in METRES ABOVE THE SURFACE (transfer-leg's nearestApproach
+// reports exactly this as `altitude`), or 0 for a trajectory that actually
+// intercepts the body. Returns { ok, altitudeM }.
+export function checkPassAltitude(altitudeM) {
+	var ok = isFinite(altitudeM) && altitudeM >= 0 && altitudeM < MAX_PASS_ALTITUDE;
+	return { ok: ok, altitudeM: altitudeM };
 }
 
-// That verdict as one sentence, for the adopt button's title.
-export function adoptableReason(res, destName) {
-	if (!isFinite(res.missM)) {
+// That verdict as one sentence, for a button's title or the message area.
+export function passAltitudeReason(res, destName) {
+	function km(m) { return Math.round(m / 1000).toLocaleString("en-US") + " km"; }
+	if (!isFinite(res.altitudeM)) {
 		return "Flown from the delivered hand-off, the flight never comes near " + destName + ".";
 	}
 	if (res.ok) {
-		return "Flown from the delivered hand-off the ship still reaches " + destName +
-			", passing within " + Math.round(res.missM / 1000).toLocaleString("en-US") + " km.";
+		return "Flown from the delivered hand-off the ship reaches " + destName +
+			", passing " + km(res.altitudeM) + " above it.";
 	}
-	return "Flown from the delivered hand-off the ship passes " +
-		Math.round(res.missM / 1000).toLocaleString("en-US") + " km from " + destName +
-		" — needs to be within " + Math.round(MAX_ADOPT_MISS / 1000).toLocaleString("en-US") +
-		" km. A departure that far off is a new mission to author in the Ephemeris tab, " +
-		"not a plan to re-point here.";
+	return "Flown from the delivered hand-off the ship passes " + km(res.altitudeM) +
+		" above " + destName + " — needs to be within " + km(MAX_PASS_ALTITUDE) + ".";
 }
 
 // The RINGS' verdict as one sentence, for a button's title or a card's note.

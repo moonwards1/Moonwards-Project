@@ -9,8 +9,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { checkProximity, proximityReason, checkAdoptable, adoptableReason,
-	APPROACH_FAR, TEMP_FAR, MAX_ADOPT_MISS } from "../proximity.js";
+import { checkProximity, proximityReason, checkPassAltitude, passAltitudeReason,
+	APPROACH_FAR, TEMP_FAR, MAX_PASS_ALTITUDE, AIM_PASS_ALTITUDE } from "../proximity.js";
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 
@@ -95,42 +95,49 @@ test("proximityReason names the failing test, and the subject it was given", () 
 	assert.match(proximityReason(late, "The ship", "Mars"), /timing is off by .* d/);
 });
 
-// ---- adoption's standard: the flight has to actually REACH the body --------
+// ---- the flown standard: the flight has to actually REACH the body --------
 
-test("checkAdoptable: inside MAX_ADOPT_MISS passes, outside fails", () => {
-	assert.equal(checkAdoptable(0.5 * MAX_ADOPT_MISS).ok, true);
-	assert.equal(checkAdoptable(MAX_ADOPT_MISS - 1).ok, true);
-	assert.equal(checkAdoptable(MAX_ADOPT_MISS).ok, false, "the threshold itself is out");
-	assert.equal(checkAdoptable(2 * MAX_ADOPT_MISS).ok, false);
+test("checkPassAltitude: inside MAX_PASS_ALTITUDE passes, outside fails", () => {
+	assert.equal(checkPassAltitude(0.5 * MAX_PASS_ALTITUDE).ok, true);
+	assert.equal(checkPassAltitude(MAX_PASS_ALTITUDE - 1).ok, true);
+	assert.equal(checkPassAltitude(MAX_PASS_ALTITUDE).ok, false, "the threshold itself is out");
+	assert.equal(checkPassAltitude(2 * MAX_PASS_ALTITUDE).ok, false);
 });
 
-test("checkAdoptable: an interception (miss 0) counts as reaching it", () => {
-	assert.equal(checkAdoptable(0).ok, true);
+test("checkPassAltitude: an impact (altitude 0) counts as reaching it", () => {
+	assert.equal(checkPassAltitude(0).ok, true);
 });
 
-test("checkAdoptable: no encounter at all is not adoptable", () => {
-	assert.equal(checkAdoptable(Infinity).ok, false);
-	assert.equal(checkAdoptable(NaN).ok, false);
-	assert.equal(checkAdoptable(-1).ok, false);   // nonsense in, refusal out
+test("checkPassAltitude: no encounter at all does not reach it", () => {
+	assert.equal(checkPassAltitude(Infinity).ok, false);
+	assert.equal(checkPassAltitude(NaN).ok, false);
+	assert.equal(checkPassAltitude(-1).ok, false);   // nonsense in, refusal out
 });
 
-test("adoption's standard is far stricter than the rings' — that is the point", () => {
+test("a re-target aims well inside the bound, leaving the residual room to land", () => {
+	// Aiming AT the bound would mean every iteration that overshoots by a
+	// kilometre reads as a failure. Half of it is the margin.
+	assert.ok(AIM_PASS_ALTITUDE < MAX_PASS_ALTITUDE,
+		"the aim must sit inside the standard it is aiming to satisfy");
+	assert.equal(checkPassAltitude(AIM_PASS_ALTITUDE).ok, true);
+});
+
+test("the flown standard is far stricter than the rings' — that is the point", () => {
 	// A pass that clears the ring test comfortably can still be nowhere near
-	// the body: 0.004 AU from the ORBIT is twenty times MAX_ADOPT_MISS.
-	assert.ok(MAX_ADOPT_MISS < APPROACH_FAR / 10,
-		"adoption should be at least an order tighter than the ring gate");
-	assert.equal(checkAdoptable(0.5 * APPROACH_FAR).ok, false);
+	// the body: 0.004 AU from the ORBIT is twenty times MAX_PASS_ALTITUDE.
+	assert.ok(MAX_PASS_ALTITUDE < APPROACH_FAR / 10,
+		"the flown standard should be at least an order tighter than the ring gate");
+	assert.equal(checkPassAltitude(0.5 * APPROACH_FAR).ok, false);
 });
 
-test("adoptableReason states the figure, the limit, and where to go instead", () => {
-	var ok = checkAdoptable(0.5 * MAX_ADOPT_MISS);
-	assert.match(adoptableReason(ok, "Ceres"), /still reaches Ceres, passing within [\d,]+ km/);
+test("passAltitudeReason states the figure and the limit", () => {
+	var ok = checkPassAltitude(0.5 * MAX_PASS_ALTITUDE);
+	assert.match(passAltitudeReason(ok, "Ceres"), /reaches Ceres, passing [\d,]+ km above it/);
 
-	var bad = checkAdoptable(50 * MAX_ADOPT_MISS);
-	var msg = adoptableReason(bad, "Ceres");
-	assert.match(msg, /passes [\d,]+ km from Ceres/);
+	var bad = checkPassAltitude(50 * MAX_PASS_ALTITUDE);
+	var msg = passAltitudeReason(bad, "Ceres");
+	assert.match(msg, /passes [\d,]+ km above Ceres/);
 	assert.match(msg, /needs to be within [\d,]+ km/);
-	assert.match(msg, /Ephemeris tab/);
 
-	assert.match(adoptableReason(checkAdoptable(Infinity), "Ceres"), /never comes near Ceres/);
+	assert.match(passAltitudeReason(checkPassAltitude(Infinity), "Ceres"), /never comes near Ceres/);
 });

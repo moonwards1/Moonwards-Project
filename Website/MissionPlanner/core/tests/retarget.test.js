@@ -4,17 +4,19 @@
 //
 // The cases are built on the SHIPPED Moon->Ceres plan rather than a synthetic
 // one, so the solver is exercised against a real flight with a real mid-course
-// waypoint. That plan passes 17,184 km from Ceres, inside MAX_ADOPT_MISS; the
-// Earth->Mars reference deliberately flies a ~47,900 km flyby offset and so is
-// NOT re-targetable under the current bound — asserted at the bottom, because
-// it is a real consequence of that number and worth pinning down.
+// waypoint. That plan passes 17,185 km above Ceres as authored; the Earth->Mars
+// reference was authored around a ~44,100 km flyby offset. BOTH re-target,
+// because the solve aims for a PASS (proximity.js's AIM_PASS_ALTITUDE) rather
+// than preserving whatever offset a plan happened to be built with — asserted
+// at the bottom, because that is a real consequence worth pinning down.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { solveDepartureTarget, propagateWithWaypoints, solveArrivalVelocity,
-	missFrom, rebaseWaypoints } from "../retarget.js";
-import { MAX_ADOPT_MISS } from "../proximity.js";
+	passAltitudeFrom, rebaseWaypoints } from "../retarget.js";
+import { MAX_PASS_ALTITUDE, AIM_PASS_ALTITUDE } from "../proximity.js";
+import { deliveredFlight } from "../delivered-flight.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { earthMarsReferenceMission } from "../../presets/earth-mars-reference.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -26,7 +28,7 @@ function planOf(mission) {
 	var st = (mission || defaultMission).stages;
 	var fp = st.filter(function (s) { return s.moduleId === "frozen-plan"; })[0].params;
 	var tl = st.filter(function (s) { return s.moduleId === "transfer-leg"; })[0].params;
-	return { dep: fp.departure, arr: fp.arrival, wps: tl.waypoints };
+	return { origin: fp.origin, dep: fp.departure, arr: fp.arrival, wps: tl.waypoints };
 }
 
 // A delivered hand-off that leaves from a DIFFERENT point on the SOI sphere,
@@ -45,9 +47,9 @@ function specFor(delivered, mission) {
 
 test("the plan's own hand-off already arrives — that is the control", () => {
 	var pl = planOf();
-	var miss = missFrom(pl.dep, pl.wps, pl.arr.jd, pl.arr.body);
-	assert.ok(miss < MAX_ADOPT_MISS,
-		"the shipped plan should reach Ceres inside the bound, got " + Math.round(miss / 1000) + " km");
+	var alt = passAltitudeFrom(pl.dep, pl.wps, pl.arr.jd, pl.arr.body);
+	assert.ok(alt < MAX_PASS_ALTITUDE,
+		"the shipped plan should reach Ceres inside the bound, got " + Math.round(alt / 1000) + " km");
 });
 
 // 200,000 km is the scale of a real difference: the shipped Moon->Ceres chain
@@ -56,11 +58,13 @@ test("a 200,000 km offset exit point wrecks the arrival, and the solve recovers 
 	var res = solveDepartureTarget(specFor(deliveredOffsetBy(2e8)));   // 2e8 m = 200,000 km
 	assert.equal(res.ok, true, res.reason);
 	// flown as delivered it misses by many times the bound...
-	assert.ok(res.missBefore > 10 * MAX_ADOPT_MISS,
-		"as delivered should miss badly, got " + Math.round(res.missBefore / 1000) + " km");
-	// ...and re-solved from that same point it arrives as well as the plan does
-	assert.ok(res.missAfter < MAX_ADOPT_MISS,
-		"re-solved should arrive, got " + Math.round(res.missAfter / 1000) + " km");
+	assert.ok(res.passBefore > 10 * MAX_PASS_ALTITUDE,
+		"as delivered should miss badly, got " + Math.round(res.passBefore / 1000) + " km");
+	// ...and re-solved from that same point it lands on the AIM, not merely
+	// inside the bound — the margin between the two is what the next
+	// iteration's residual gets to spend
+	assert.ok(Math.abs(res.passAfter - AIM_PASS_ALTITUDE) < 0.05 * AIM_PASS_ALTITUDE,
+		"re-solved should pass at the aim, got " + Math.round(res.passAfter / 1000) + " km");
 	// the correction the technology has to make is small — that is what makes
 	// the tune/re-target loop converge instead of thrashing, and what keeps the
 	// course-correction budget free for the drift it is meant for
@@ -141,4 +145,41 @@ test("rebaseWaypoints holds absolute epochs and drops what falls outside", () =>
 	assert.deepEqual(out[0].burn, { pro: 2 });
 	// and the burns are copies, not shared references
 	assert.notEqual(out[0].burn, wps[1].burn);
+});
+
+// ---- the aim is a pass, not the plan's own arrival point -------------------
+
+test("the solve lands on AIM_PASS_ALTITUDE, whatever offset the plan was built with", () => {
+	// The Earth->Mars reference was authored around a ~44,100 km flyby offset —
+	// outside MAX_PASS_ALTITUDE, so under a bound that preserved a plan's own
+	// aim point this mission could never be re-targeted at all. Aiming for a
+	// PASS instead standardises it, and that is the point of the change.
+	var pl = planOf(earthMarsReferenceMission);
+	var authored = passAltitudeFrom(pl.dep, pl.wps, pl.arr.jd, pl.arr.body);
+	assert.ok(authored > MAX_PASS_ALTITUDE,
+		"the reference should sit outside the bound as authored, got " +
+		Math.round(authored / 1000) + " km");
+
+	var res = solveDepartureTarget(specFor(deliveredOffsetBy(2e8, earthMarsReferenceMission),
+		earthMarsReferenceMission));
+	assert.equal(res.ok, true, res.reason);
+	assert.ok(Math.abs(res.passAfter - AIM_PASS_ALTITUDE) < 0.05 * AIM_PASS_ALTITUDE,
+		"re-solved should pass at the aim, got " + Math.round(res.passAfter / 1000) + " km");
+});
+
+test("re-targeting keeps the side of the body the flight already passes on", () => {
+	var pl = planOf();
+	var d = deliveredOffsetBy(2e8);
+	var before = deliveredFlight({ origin: pl.origin || "Earth", destination: pl.arr.body,
+		delivered: d, waypoints: rebaseWaypoints(pl.wps, d.jd - pl.dep.jd, pl.arr.jd - d.jd),
+		arrivalJd: pl.arr.jd });
+	var res = solveDepartureTarget(specFor(d));
+	assert.equal(res.ok, true, res.reason);
+	var after = deliveredFlight({ origin: pl.origin || "Earth", destination: pl.arr.body,
+		delivered: { r: res.r, v: res.v, jd: res.jd }, waypoints: res.waypoints,
+		arrivalJd: pl.arr.jd });
+	// Same hemisphere of the approach: the offset is pulled in from 463,000 km
+	// to 15,000 km, but not flipped to the far face of the body.
+	var dot = O.vDot(O.vUnit(before.pass.rRel), O.vUnit(after.pass.rRel));
+	assert.ok(dot > 0, "the pass should stay on the same side, dot " + dot.toFixed(3));
 });

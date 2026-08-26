@@ -1988,6 +1988,53 @@ port source for this package.
   not just Earth. Console clean throughout; harness view disposed and its
   workspace-store slot removed after verification.
 
+### WP-K — The mission bar and the re-target loop
+
+Reworks the top bar so it states the flight the ship is ACTUALLY on, and
+splits the old one-click "re-target departure" into a read (Check) and a
+write (Update) with a message area to report into.
+
+- [x] **K1. One source for every figure in the bar.** ★★
+  `core/delivered-flight.js`: fly the delivered hand-off through the
+  waypoints and report v-infinity out, coast Δv, closest approach and
+  v-infinity in from that one flight. Memoized on `signatureOf` — the
+  hand-off and the waypoints, never the clock — so scrubbing is free.
+  **Done 2026-08-26.**
+
+- [x] **K2. Aim for a pass, not the plan’s arrival point.** ★★
+  `AIM_PASS_ALTITUDE` 15,000 km / `MAX_PASS_ALTITUDE` 30,000 km, both
+  altitude above the surface, replacing `MAX_ADOPT_MISS`. Keeps the side
+  the flight already passes on; standardises the distance. Unblocks the
+  Earth->Mars reference, which could not be re-targeted before.
+  **Done 2026-08-26.**
+
+- [x] **K3. Bar layout: a group per phase, then the mission’s own half.** ★★
+  Phase button + its figure, left of a divider; closest approach, Check,
+  Update and the Mission report menu right of it. The spacer between them
+  is the squeeze budget; below it the right half wraps to its own line.
+  Phase dots become hard-fault lights only. **Done 2026-08-26.**
+
+- [x] **K4. Check reads, Update writes.** ★★★
+  Check re-solves at the real exit point and reports, writing nothing; its
+  answer is a provisional target the Departure card’s Needed column steers
+  at. Update re-solves from the CURRENT delivery and commits it.
+  **Done 2026-08-26.**
+
+- [x] **K5. Message area beside the flight timeline.** ★
+  Timeline left, messages right, wrapping below on a narrow window. Carries
+  whatever the last of Check / Update / Mission report produced.
+  **Done 2026-08-26.**
+
+- [ ] **K6. Flesh out the mission report.** ★★
+  First cut is a per-iteration table (flown vs plan-aims-at, v-infinity out,
+  coast Δv, v-infinity in) plus the gap between the two columns. Kim to say
+  what else belongs once the loop has been used on a real mission.
+
+- [ ] **K7. Tie the pass standard to the arrival technology.** ★★★
+  K2’s two flat numbers should come from what the arrival tech can actually
+  catch — a cone of approach vectors and a maximum speed — per destination
+  and per technology. Blocked on the arrival phase being built out.
+
 ## Inventory: existing code to adapt
 
 ### Already shared — use as-is (import from `Shared/`)

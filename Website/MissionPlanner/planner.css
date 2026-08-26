@@ -60,8 +60,17 @@ body {
 
 /* ---------- phase bar + plan-compliance readout ---------- */
 .mp-phasebar {
-	display: flex; align-items: center; gap: 10px; flex: none;
+	display: flex; align-items: center; gap: 10px; flex: none; flex-wrap: wrap;
+	row-gap: 8px;
 	padding: 8px 14px; background: #0f1322; border-bottom: 1px solid var(--line);
+}
+/* Wrapped onto its own line, the divider between the halves is the wrap
+   itself — the left rule would then read as a stray mark. The breakpoint sits
+   a little above where the bar actually wraps (~960px for the widest figures),
+   so the rule is gone before the wrap rather than lingering after it. */
+.mp-phasebar > .mp-bar-mission:not(:first-child) { margin-left: auto; }
+@media (max-width: 1000px) {
+	.mp-bar-mission { border-left: none; padding-left: 0; }
 }
 .mp-phase {
 	padding: 6px 18px; border-radius: 8px; background: #151b2b;
@@ -72,29 +81,78 @@ body {
 .mp-phase.active { background: #22304e; border-color: #3c5788; color: var(--bright); }
 .mp-phase:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* The frozen-plan comparison, above the timeline — not phase-gated, same as
-   the shared clock below it. This is frozen-plan's ONLY view surface
-   (sidebarCard: false), so it also carries flight time / v∞ in / plan Δv and
-   the hard-diagnostic/blocked states; it flexes to take whatever width the
-   phase buttons and the share button leave. */
-.mp-compliance-bar { display: flex; align-items: center; gap: 14px; margin-left: 18px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
+/* Each phase's group: its selector button and the one figure that matters in
+   that phase, side by side. The groups never break internally — a button
+   stranded from its own number would be worse than a wrap. */
+.mp-bar-phases { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.mp-phasegroup {
+	display: flex; align-items: center; gap: 9px; flex: none;
+	padding: 2px 10px 2px 2px; border: 1px solid var(--line2); border-radius: 10px;
+}
 .mp-cbar-metric { display: flex; flex-direction: column; align-items: center; font-size: 12.5px; color: var(--text); white-space: nowrap; }
+.mp-cbar-metric:empty { display: none; }
 .mp-cbar-metric b { color: var(--dim); font-weight: 400; }
 .mp-cbar-metric .mp-cbar-value { text-align: center; }
 .mp-cbar-metric.ok .mp-cbar-value { color: var(--ok); }
 .mp-cbar-metric.warn .mp-cbar-value { color: var(--warn); }
-/* Compliance bar: close the plan-vs-tech gap by adopting what the departure
-   chain actually delivers. Only rendered while there IS a gap. */
-.mp-cbar-adopt { font-size: 12px; padding: 3px 9px; white-space: nowrap; border-color: var(--warn); color: var(--warn); }
-.mp-cbar-adopt:hover { background: var(--warn); color: #14161c; }
 
-.mp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--dim); }
-.mp-dot.ok { background: var(--ok); }
-.mp-dot.warn { background: var(--warn); }
+/* The squeeze budget. This is the ONLY thing between the two halves, so it
+   absorbs every spare pixel first and collapses to nothing before the bar is
+   forced to wrap. */
+.mp-bar-spacer { flex: 1 1 0; min-width: 0; }
+
+/* The mission's own half: the headline number and the controls that move it. */
+.mp-bar-mission {
+	display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+	padding-left: 14px; border-left: 1px solid var(--line2);
+}
+.mp-approach { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.mp-approach-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.mp-approach-chip {
+	font-size: 14px; font-weight: 600; white-space: nowrap;
+	padding: 3px 12px; border-radius: 6px;
+	background: var(--panel2); color: var(--text);
+}
+.mp-approach-chip.ok { background: var(--ok); color: #101613; }
+.mp-approach-chip.warn { background: var(--warn); color: #14161c; }
+
+.mp-bar-mission .mp-btn {
+	font-size: 12.5px; padding: 7px 14px; border-radius: 999px; white-space: nowrap;
+}
+.mp-bar-mission .mp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mp-check:not(:disabled) { border-color: #3c5788; color: var(--bright); }
+.mp-update:not(:disabled) { border-color: var(--ok); color: var(--ok); }
+.mp-update:not(:disabled):hover { background: var(--ok); color: #101613; }
+.mp-report { line-height: 1.15; border-radius: 14px !important; }
+
+/* The mission menu. Anchored to its button; the bar itself must not clip it. */
+.mp-report-wrap { position: relative; }
+.mp-report-menu {
+	display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+	min-width: 190px; padding: 5px; border-radius: 8px;
+	background: #151b2b; border: 1px solid var(--line2);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.mp-report-wrap.open .mp-report-menu { display: block; }
+.mp-report-menu button {
+	display: block; width: 100%; text-align: left; font: inherit; font-size: 12.5px;
+	padding: 7px 10px; border: none; border-radius: 6px;
+	background: none; color: var(--text); cursor: pointer;
+}
+.mp-report-menu button:hover { background: #22304e; color: var(--bright); }
+
+/* A hard-fault light, not a compliance light: a stage that failed or is
+   blocked. Anything softer is the colour of the figure beside it. */
+.mp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: transparent; }
 .mp-dot.err { background: var(--err); }
 .mp-dot.blocked { background: #5a6478; }
 
-.mp-brand { margin-left: auto; font-size: 13px; color: var(--bright); display: flex; align-items: center; gap: 12px; }
+/* frozen-plan's hard states — its only home, since it has no sidebar card. */
+.mp-planstate {
+	flex: none; padding: 6px 14px; font-size: 12.5px;
+	background: #241a20; color: var(--warn); border-bottom: 1px solid #6b5226;
+}
+.mp-planstate:empty { display: none; }
 
 #mp-banner {
 	flex: none; padding: 6px 14px; font-size: 12.5px; cursor: pointer;
@@ -118,9 +176,47 @@ body {
 .mp-slider-line input[type=range] { flex: 1; accent-color: var(--acc); }
 .mp-slider-end { font-size: 11px; color: var(--dim); min-width: 64px; text-align: center; }
 
+/* ---------- flight timeline + message area ---------- */
+/* Timeline left, messages right. Both are flex-basis floors rather than a
+   fixed split: the timeline is the scrub control and gets whatever is spare,
+   the message area keeps enough width to read a sentence, and below their
+   combined floor the messages wrap underneath instead of crushing the track. */
+/* Tall enough that a Check or Update report fits without scrolling — the
+   timeline alone is shorter than that, and messages that have to be scrolled
+   to be read mostly go unread. */
+.mp-timelinerow {
+	flex: none; display: flex; flex-wrap: wrap; align-items: stretch;
+	min-height: 104px;
+	background: #0e1220; border-bottom: 1px solid var(--line);
+}
+/* The timeline takes the lion's share of any slack — it is the scrub control,
+   and its resolution is its usefulness. The message area grows slowly from a
+   floor wide enough to read a sentence at. */
+.mp-timelines { flex: 3 1 460px; min-width: 0; }
+.mp-messages {
+	flex: 1 1 320px; min-width: 0; max-height: 148px; overflow-y: auto;
+	padding: 8px 14px; border-left: 1px solid var(--line);
+	font-size: 12px; line-height: 1.5; color: var(--dim);
+}
+.mp-messages:empty::before {
+	content: "Check, Update and the mission report write here.";
+	color: #4c5568; font-style: italic;
+}
+.mp-msg-head { color: var(--bright); font-size: 12.5px; margin-bottom: 4px; }
+.mp-msg p { margin: 0 0 5px; }
+.mp-msg p:last-child { margin-bottom: 0; }
+.mp-msg b { color: var(--text); font-weight: 600; }
+.mp-msg .ok { color: var(--ok); }
+.mp-msg .warn { color: var(--warn); }
+.mp-msg table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.mp-msg th, .mp-msg td { text-align: right; padding: 2px 8px 2px 0; white-space: nowrap; }
+.mp-msg th { color: var(--dim); font-weight: 400; border-bottom: 1px solid var(--line2); }
+.mp-msg th:first-child, .mp-msg td:first-child { text-align: left; color: var(--dim); }
+.mp-msg tr.now td { color: var(--text); }
+
 /* ---------- phase sliders (ui/phase-slider.js) ---------- */
 .mp-sliderzone {
-	flex: none; background: #0e1220; border-bottom: 1px solid var(--line);
+	flex: none; background: #0e1220;
 	padding: 8px 14px 36px;
 }
 .mp-timeline { position: relative; }

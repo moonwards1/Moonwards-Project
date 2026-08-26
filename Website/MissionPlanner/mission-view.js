@@ -52,9 +52,9 @@ import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, spee
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
-// aliased: this file has its own fmtKm (altitude, unitless) further down,
-// which would otherwise shadow the import inside the view factory.
-import { solveDepartureTarget, rebaseWaypoints, fmtKm as fmtMissKm } from "./core/retarget.js";
+import { solveDepartureTarget, rebaseWaypoints } from "./core/retarget.js";
+import { deliveredFlight, signatureOf } from "./core/delivered-flight.js";
+import { checkPassAltitude, passAltitudeReason } from "./core/proximity.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
@@ -226,7 +226,23 @@ export function createMissionView(opts) {
 	var floatsEl = q(".mp-floats");
 	var panelEl = q(".mp-panel");
 	var mainEl = q(".mp-main");
-	var complianceBarEl = q(".mp-compliance-bar");
+	var planStateEl = q(".mp-planstate");
+	var messagesEl = q(".mp-messages");
+	var metricEls = {
+		vInfOut: q(".mp-m-vinfout"),
+		coastDv: q(".mp-m-coastdv"),
+		vInfIn: q(".mp-m-vinfin")
+	};
+	// setMetric rewrites className to colour the figure, so each element's own
+	// marker class is stashed where a rewrite cannot lose it.
+	metricEls.vInfOut.dataset.marker = "mp-m-vinfout";
+	metricEls.coastDv.dataset.marker = "mp-m-coastdv";
+	metricEls.vInfIn.dataset.marker = "mp-m-vinfin";
+	var approachChipEl = q(".mp-approach-chip");
+	var checkBtn = q(".mp-check");
+	var updateBtn = q(".mp-update");
+	var reportWrapEl = q(".mp-report-wrap");
+	var reportMenuEl = q(".mp-report-menu");
 
 	// Straddling burn-readout boxes (Shared/sim/readout-panes.js) — the same
 	// mechanism the Ephemeris tab uses for its departure/waypoint burns, poking
@@ -659,18 +675,19 @@ export function createMissionView(opts) {
 	// ui/share-link.js's envelope carries the shell-level TITLE along with the
 	// World, so an import arrives with its real name; getTitle is a live lookup
 	// into planner.js's mission list, not a snapshot.
-	var shareBtn = q(".mp-share");
-	shareBtn.addEventListener("click", function () {
+	// Called from the mission menu (the bar's "Mission report" dropdown).
+	function shareMission() {
 		var payload = packMissionLink(opts.getTitle ? opts.getTitle() : null, world.serialize());
 		var url = location.origin + location.pathname + "#mission=" + encodeFragment(payload);
 		navigator.clipboard.writeText(url).then(function () {
-			shareBtn.textContent = "Copied!";
-			setTimeout(function () { shareBtn.textContent = "Copy mission link"; }, 1600);
+			showMessage("Mission link copied", function (wrap) {
+				msgPara(wrap, "A link that opens this exact mission is on the clipboard.");
+			});
 		}, function () {
 			// clipboard blocked: show the link so it can be copied by hand
 			window.prompt("Copy the mission link:", url);
 		});
-	});
+	}
 
 	// ---- click-to-focus picking (3.5). A body or a leg's chevron becomes the
 	// orbit/zoom pivot on a plain click in the main pane; a click on empty
@@ -1290,90 +1307,132 @@ export function createMissionView(opts) {
 		entry.callbacks.forEach(function (cb) { cb(res); });
 	}
 
-	// ---- plan-compliance bar + events bar (fed by the envelope's events
-	// channel) ------------------------------------------------------------
-	// The compliance bar shows frozen-plan's comparison: a compact "PLAN
-	// REQUIRES -> TECH DELIVERS" readout, always visible (not phase-gated, like
-	// the shared clock below it), reached via the registry rather than a static
-	// import so frozen-plan stays a dynamically-loaded module like any other.
+	// ---- the mission bar ---------------------------------------------------
+	// ONE RULE: every figure here describes the flight the ship is ACTUALLY on
+	// — flown from what the departure technology delivers, through the
+	// waypoints as they currently stand (core/delivered-flight.js). Not the
+	// plan's commitments, not its requirements. There is only one closest
+	// approach, one v∞ out, one v∞ in; the drawn coast is a stale estimate of
+	// them until a re-target has closed the gap, and this is the honest read.
 	//
-	// frozen-plan has no sidebar card (sidebarCard: false), so this bar is its
-	// ONLY view surface: it also covers the hard-diagnostic and blocked statuses
-	// a generic card would render, plus the plan's own facts (flight time, v∞ in,
-	// plan Δv — planSummary).
+	// Left of the divider the figures sit with the phase they matter in: v∞ out
+	// with Departure (what the ship leaves with), Δv with Coast (what its
+	// waypoints spend), v∞ in with Arrival (what it shows up carrying). Only
+	// v∞ out is graded — against the plan's requirement — because only it has a
+	// standard to be graded against. Right of it, the mission's headline
+	// number and the two controls that move it.
 	//
-	// Layout: [compliance met/unmet chip] then the plan's figures in a fixed
-	// order — v∞ out, v∞ in, plan Δv, Exit origin SOI, flight time, arrival. v∞
-	// in/out are named from the SHIP's point of view: "out" is the ship
-	// departing (leaving the origin's SOI — the required departure v∞), "in" is
-	// the ship arriving (reaching the destination's SOI — the arrival
-	// commitment); see planSummary. The demand figures (v∞ out, v∞ in, plan Δv)
-	// are amber while compliance is unmet — they are what no technology is
-	// delivering yet — and green once met; Exit origin SOI/flight time/arrival are
-	// plain facts already fixed by the chosen timing, never coloured. The aim
-	// deviation is not shown here; its warning still flows through the envelope
-	// to the departure stage's own card.
+	// frozen-plan has no sidebar card (sidebarCard: false), so its hard states
+	// (a diagnostic, or blocked on an upstream failure) also land here, in the
+	// strip above the bar.
 	function cbarDate(jd) {
 		var d = O.dateFromJulian(jd);
 		return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
 	}
-	function cbarKms(v) { return (v / 1000).toFixed(2) + " km/s"; }
-	function appendCbarChip(cls, text, title) {
-		var chip = document.createElement("span");
-		chip.className = "mp-chip " + cls;
-		chip.textContent = text;
-		if (title) { chip.title = title; }
-		complianceBarEl.appendChild(chip);
+	function cbarKms(v) { return isFinite(v) ? (v / 1000).toFixed(2) + " km/s" : "—"; }
+	function cbarKm(m) {
+		return isFinite(m) ? Math.round(m / 1000).toLocaleString("en-US") + " km" : "—";
 	}
-	function appendCbarMetric(label, text, cls, title) {
-		var m = document.createElement("span");
-		m.className = "mp-cbar-metric" + (cls ? " " + cls : "");
-		var b = document.createElement("b"); b.textContent = label; m.appendChild(b);
+	function setMetric(el, label, text, cls, title) {
+		el.innerHTML = "";
+		// Rebuilt from the element's own marker class, never replacing it — the
+		// marker is how this element is found again next pass.
+		el.className = "mp-cbar-metric " + el.dataset.marker + (cls ? " " + cls : "");
+		var b = document.createElement("b"); b.textContent = label; el.appendChild(b);
 		var v = document.createElement("span");
-		v.className = "mp-cbar-value"; v.textContent = text; m.appendChild(v);
-		if (title) { m.title = title; }
-		complianceBarEl.appendChild(m);
+		v.className = "mp-cbar-value"; v.textContent = text; el.appendChild(v);
+		el.title = title || "";
 	}
 
-	// Is there anything to re-target? "On course" only means the delivered
-	// hand-off sits inside the compliance TOLERANCES — a real difference in
-	// position, velocity or epoch can still be sitting there, and on this seam
-	// position is the one that matters most and the one compliance never checks.
-	// These floors are just "not the same state": a kilometre out of an AU, a
-	// tenth of a m/s out of tens of km/s, a second out of a coast measured in
-	// years.
-	function handoffDiffers(planDep, st) {
-		if (!planDep || !st) { return false; }
-		return O.vMag(O.vSub(planDep.r, st.r)) > 1e3 ||
-		       O.vMag(O.vSub(planDep.v, st.v)) > 0.1 ||
-		       Math.abs(planDep.jd - st.jd) * 86400 > 1;
+	// ---- the flight as delivered, memoized ---------------------------------
+	// The answer depends on the delivered hand-off and the waypoints, never on
+	// the clock, so scrubbing reuses it and only an edit pays for it (about one
+	// leg integration). See core/delivered-flight.js.
+	var flightCache = { sig: null, value: null };
+	function flightSpecNow() {
+		var planStage = frozenPlanStage();
+		var desc = registry.get("frozen-plan");
+		var comp = (planStage && desc && typeof desc.complianceFor === "function")
+			? desc.complianceFor(world, planStage.id) : null;
+		if (!planStage || !comp || !comp.ok || !comp.delivered || !comp.delivered.state) { return null; }
+
+		var p = planStage.params;
+		var arr = p.arrival || {};
+		if (!isFinite(arr.jd)) { return null; }
+		var d = comp.delivered.state;
+		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		var wps = (legStage && legStage.params.waypoints) || [];
+		return { origin: p.origin, destination: arr.body, delivered: d,
+		         waypoints: rebaseWaypoints(wps, d.jd - p.departure.jd, arr.jd - d.jd),
+		         arrivalJd: arr.jd };
+	}
+	function flightAsDelivered() {
+		var spec = flightSpecNow();
+		if (!spec) { flightCache = { sig: null, value: null }; return null; }
+		var sig = signatureOf(spec);
+		if (sig !== flightCache.sig) {
+			flightCache = { sig: sig, value: deliveredFlight(spec) };
+		}
+		return flightCache.value;
 	}
 
-	// RE-TARGET DEPARTURE: move the plan's committed hand-off to the point the
-	// technology actually leaves from, and re-solve the heading and speed it has
-	// to deliver FROM there (core/retarget.js). The plan's arrival stays
-	// committed; the waypoints keep their absolute epochs.
+	// ---- the message area --------------------------------------------------
+	// Whatever the last of Check / Update / Mission report produced. Plain
+	// prose for the two buttons, a table for the report.
+	function showMessage(head, buildBody) {
+		messagesEl.innerHTML = "";
+		var wrap = document.createElement("div");
+		wrap.className = "mp-msg";
+		if (head) {
+			var h = document.createElement("div");
+			h.className = "mp-msg-head"; h.textContent = head;
+			wrap.appendChild(h);
+		}
+		buildBody(wrap);
+		messagesEl.appendChild(wrap);
+	}
+	function msgPara(wrap, html) {
+		var p = document.createElement("p");
+		p.innerHTML = html;
+		wrap.appendChild(p);
+		return p;
+	}
+
+	// ---- Check and Update --------------------------------------------------
+	// CHECK reads. It re-solves the departure requirement at the point the
+	// technology actually leaves from (core/retarget.js) and reports what that
+	// would buy, WITHOUT touching the plan: the answer becomes a provisional
+	// target the Departure card's Needed column steers at, and nothing redraws.
 	//
-	// This does NOT take the delivered velocity. Taking it would hand the coast
-	// a systematic aiming error to absorb, and a coast waypoint is a trim
-	// (+/-100 m/s per axis) whose job is drift. Re-stating the requirement
-	// instead keeps the boundary a boundary: after this the technology reads
-	// honestly off-target against a target that is now actually reachable, and
-	// tuning it moves the exit point a little, which re-targets a little — a
-	// loop that closes on something the technology can really fly.
-	function retargetSolveFor(planParams, delivered) {
-		if (!delivered || !delivered.state) { return { ok: false, reason: "No hand-off delivered." }; }
-		var arr = planParams.arrival || {};
+	// UPDATE writes. It re-solves from the CURRENT delivery — not from Check's
+	// stored answer, which is already stale the moment the technology is
+	// re-tuned — and commits it, so the drawn trajectory becomes the new one.
+	//
+	// The loop closes because each pass is smaller than the last: committing
+	// moves the requirement, re-tuning towards it moves the exit point, and
+	// re-solving from the new exit point asks for less than it did before.
+	var checked = null;        // the provisional target, or null
+
+	function retargetSolveNow() {
+		var planStage = frozenPlanStage();
+		var desc = registry.get("frozen-plan");
+		var comp = (planStage && desc && typeof desc.complianceFor === "function")
+			? desc.complianceFor(world, planStage.id) : null;
+		if (!planStage || !comp || !comp.ok || !comp.delivered || !comp.delivered.state) {
+			return { ok: false, reason: "No hand-off delivered." };
+		}
+		var p = planStage.params;
+		var arr = p.arrival || {};
 		if (!arr.body || !isFinite(arr.jd)) {
 			return { ok: false, reason: "This plan commits to no destination, so there is " +
 				"nothing to re-target towards." };
 		}
 		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
 		return solveDepartureTarget({
-			origin: planParams.origin,
+			origin: p.origin,
 			destination: arr.body,
-			delivered: delivered.state,
-			planDeparture: planParams.departure,
+			delivered: comp.delivered.state,
+			planDeparture: p.departure,
 			planWaypoints: (legStage && legStage.params.waypoints) || [],
 			arrivalJd: arr.jd
 		});
@@ -1412,116 +1471,262 @@ export function createMissionView(opts) {
 		}
 	}
 
+	// How a solve reads as prose. `verb` distinguishes what has happened from
+	// what would: Check proposes, Update reports.
+	function solveMessage(wrap, sol, destName, applied) {
+		// Where the flight goes today leads either way — a refusal that only
+		// says "no" leaves the reader without the number they came for.
+		if (isFinite(sol.passBefore)) {
+			msgPara(wrap, "As the departure stands, the flight passes <b>" +
+				cbarKm(sol.passBefore) + "</b> above " + escapeText(destName) + ".");
+		}
+		if (!sol.ok) {
+			msgPara(wrap, "<span class='warn'>" + escapeText(sol.reason) + "</span>");
+			return;
+		}
+		msgPara(wrap, "Re-solved at the point it actually leaves from: v∞ <b>" +
+			cbarKms(sol.vInf) + "</b>, a " + sol.turnDeg.toFixed(2) + "° turn and " +
+			(sol.dSpeed >= 0 ? "+" : "−") + Math.abs(Math.round(sol.dSpeed)) +
+			" m/s from now, " + (applied ? "bringing" : "which would bring") +
+			" the pass to <b class='ok'>" + cbarKm(sol.passAfter) + "</b>.");
+		msgPara(wrap, applied
+			? "Redrawn, and the Needed column now states this. Re-tune towards it, " +
+				"then Check again — each pass asks less than the last."
+			: "Nothing written. Re-tune towards the new Needed figures, then Update.");
+	}
+
+	function escapeText(s) {
+		var d = document.createElement("div");
+		d.textContent = String(s == null ? "" : s);
+		return d.innerHTML;
+	}
+
+	checkBtn.addEventListener("click", function () {
+		var sol = retargetSolveNow();
+		var dest = (frozenPlanStage() && (frozenPlanStage().params.arrival || {}).body) || "the destination";
+		checked = sol.ok ? sol : null;
+		showMessage("Check — nothing written", function (wrap) {
+			solveMessage(wrap, sol, dest, false);
+		});
+		// The Needed column and the buttons both read `checked`; nothing in the
+		// World moved, so ask for a view pass rather than a recompute.
+		refreshViews();
+	});
+
+	updateBtn.addEventListener("click", function () {
+		var planStage = frozenPlanStage();
+		if (!planStage) { return; }
+		var sol = retargetSolveNow();           // from the CURRENT delivery, not Check's
+		var dest = (planStage.params.arrival || {}).body || "the destination";
+		if (sol.ok) {
+			history.push(snapshotForReport(sol));
+			applyRetarget(planStage.id, sol);   // this recomputes and redraws
+			checked = null;
+		}
+		showMessage("Update — the plan has changed", function (wrap) {
+			solveMessage(wrap, sol, dest, sol.ok);
+		});
+		refreshViews();
+	});
+
+	// ---- the mission report ------------------------------------------------
+	// Preliminary: the figures the bar shows, per iteration, so the improvement
+	// each Update bought is visible as a column of numbers rather than a
+	// remembered impression. Transient — it belongs to this session, not to the
+	// mission, so it is neither saved nor carried in a mission link.
+	var history = [];
+
+	// The drawn plan's own pass — what the committed trajectory achieves, as
+	// opposed to what the technology currently flies. The two are the whole
+	// point of the table: an Update moves the PLAN immediately, and re-tuning
+	// the technology then walks the delivered flight towards it.
+	function planPassAltitude() {
+		var stage = coastStage();
+		var desc = registry.get("transfer-leg");
+		var dest = coastDestination();
+		if (!stage || !desc || !dest) { return Infinity; }
+		var leg = desc.legFor(world, stage.id);
+		var ca = leg && desc.nearestApproach(leg, dest);
+		return ca ? ca.altitude : Infinity;
+	}
+
+	// One row. `sol` is the solve an Update is about to commit, absent for the
+	// live "now" row; `aims` is where the plan will pass once it is committed.
+	function snapshotForReport(sol) {
+		var f = flightAsDelivered();
+		return {
+			flown: (f && f.pass) ? f.pass.altitude : Infinity,
+			aims: (sol && sol.ok) ? sol.passAfter : planPassAltitude(),
+			vInfOut: f ? f.vInfOut : NaN,
+			coastDv: f ? f.coastDv : NaN,
+			vInfIn: (f && f.pass) ? f.pass.vInf : NaN,
+			ask: (sol && sol.ok) ? sol.askWorst : NaN
+		};
+	}
+	function renderReport() {
+		var f = flightAsDelivered();
+		var planStage = frozenPlanStage();
+		var dest = (planStage && (planStage.params.arrival || {}).body) || "—";
+		showMessage("Mission report — " + dest, function (wrap) {
+			if (!f) {
+				msgPara(wrap, "No departure technology is delivering a hand-off yet, so " +
+					"there is no flight to report on.");
+				return;
+			}
+			var rows = history.concat([snapshotForReport(null)]);
+			var t = document.createElement("table");
+			t.innerHTML = "<tr><th>update</th><th>flown</th><th>plan aims at</th>" +
+				"<th>v∞ out</th><th>Δv coast</th><th>v∞ in</th></tr>";
+			rows.forEach(function (r, i) {
+				var last = i === rows.length - 1;
+				var tr = document.createElement("tr");
+				if (last) { tr.className = "now"; }
+				tr.innerHTML = "<td>" + (last ? "now" : String(i + 1)) + "</td>" +
+					"<td>" + cbarKm(r.flown) + "</td><td>" + cbarKm(r.aims) + "</td>" +
+					"<td>" + cbarKms(r.vInfOut) + "</td>" +
+					"<td>" + cbarKms(r.coastDv) + "</td><td>" + cbarKms(r.vInfIn) + "</td>";
+				t.appendChild(tr);
+			});
+			wrap.appendChild(t);
+
+			// FLOWN is the flight the technology actually produces; PLAN AIMS AT
+			// is where the committed trajectory goes. An Update moves the second
+			// one at once; the first only follows when the technology is re-tuned
+			// towards the new requirement. The gap between the two columns is the
+			// work still outstanding.
+			var now = rows[rows.length - 1];
+			var gap = Math.abs(now.flown - now.aims);
+			msgPara(wrap, isFinite(gap) && gap > 1e6
+				? "The flight is <b class='warn'>" + cbarKm(gap) + "</b> off what the plan " +
+					"now aims for — re-tune the departure towards the Needed column to close it."
+				: "The flight and the plan agree to within <b class='ok'>" + cbarKm(gap) +
+					"</b>.");
+			if (history.length > 1) {
+				msgPara(wrap, "Across " + history.length + " updates, the flown pass has " +
+					"moved from <b>" + cbarKm(history[0].flown) + "</b> to <b>" +
+					cbarKm(now.flown) + "</b>.");
+			}
+		});
+	}
+
+	// The mission menu: the report, and the mission-level action that used to
+	// sit at the far right of this bar.
+	function closeReportMenu() { reportWrapEl.classList.remove("open"); }
+	(function buildReportMenu() {
+		[["Show mission report", renderReport],
+		 ["Copy mission link", function () { shareMission(); }]].forEach(function (item) {
+			var b = document.createElement("button");
+			b.type = "button";
+			b.textContent = item[0];
+			b.addEventListener("click", function () { closeReportMenu(); item[1](); });
+			reportMenuEl.appendChild(b);
+		});
+	})();
+	q(".mp-report").addEventListener("click", function (ev) {
+		ev.stopPropagation();
+		reportWrapEl.classList.toggle("open");
+	});
+	document.addEventListener("click", closeReportMenu);
+
+	// ---- rendering the bar --------------------------------------------------
 	function renderComplianceBar(results) {
-		complianceBarEl.innerHTML = "";
 		var planRes = null;
 		for (var i = 0; i < results.length; i++) {
 			if (results[i].moduleId === "frozen-plan") { planRes = results[i]; break; }
 		}
-		if (!planRes) { return; }   // this mission carries no frozen plan
+		planStateEl.textContent = "";
+		function blankBar(note) {
+			planStateEl.textContent = note || "";
+			setMetric(metricEls.vInfOut, "v∞ out", "—", null, null);
+			setMetric(metricEls.coastDv, "Δv", "—", null, null);
+			setMetric(metricEls.vInfIn, "v∞ in", "—", null, null);
+			approachChipEl.className = "mp-approach-chip";
+			approachChipEl.textContent = "—";
+			checkBtn.disabled = true;
+			updateBtn.disabled = true;
+		}
+		if (!planRes) { blankBar(); return; }       // this mission carries no frozen plan
 
-		// No sidebar card exists for this stage, so its hard-diagnostic and
-		// blocked statuses need a home here.
+		// No sidebar card exists for this stage, so its hard states need a home.
 		if (planRes.status === "diagnostic") {
-			appendCbarChip("err", "plan: " + planRes.diagnostic.message, planRes.diagnostic.message);
+			blankBar("plan: " + planRes.diagnostic.message);
 			return;
 		}
 		if (planRes.status === "blocked") {
 			var up = world.getStage(planRes.blockedOn);
-			appendCbarChip("blocked", "plan: blocked — waiting on " + (up ? stageTitle(up) : planRes.blockedOn));
+			blankBar("plan: blocked — waiting on " +
+				(up ? stageTitle(up) : planRes.blockedOn));
 			return;
 		}
 
 		var desc = registry.get("frozen-plan");
-		var comp = desc && typeof desc.complianceFor === "function" ? desc.complianceFor(world, planRes.stageId) : null;
-		if (!comp || !comp.ok) { return; }
+		var comp = desc && typeof desc.complianceFor === "function"
+			? desc.complianceFor(world, planRes.stageId) : null;
+		if (!comp || !comp.ok) { blankBar(); return; }
 
 		var stage = world.getStage(planRes.stageId);
-		var summary = desc && typeof desc.planSummary === "function" && stage ? desc.planSummary(stage.params) : null;
+		var destName = (stage && (stage.params.arrival || {}).body) || null;
+		var f = flightAsDelivered();
 
-		// Unmet covers both "no tech is delivering anything" and "a tech is
-		// delivering the wrong thing" — either way the demands stand open.
-		var rowsByKey = {};
-		(comp.rows || []).forEach(function (r) { rowsByKey[r.key] = r; });
-		var met = !!comp.delivered && comp.rows.every(function (r) { return r.ok; });
-		var demandCls = met ? "ok" : "warn";
-		appendCbarChip(met ? "ok" : "warn", met ? "on course" : "off course");
-
-		function fixTitleFor(key) {
-			var w = (planRes.warnings || []).filter(function (x) { return x.code === key + "-mismatch"; })[0];
-			return w && w.fix ? w.fix : null;
+		if (!f) {
+			blankBar(comp.delivered ? "" : "plan: no departure technology is delivering a hand-off yet");
+			return;
 		}
 
-		// The plan's own figure, with "required → delivered" when a tech is
-		// delivering something off (the warning's fix text as hover title).
-		var rV = rowsByKey.vinf;
-		appendCbarMetric("v∞ out",
-			(rV && !rV.ok) ? cbarKms(rV.required) + " → " + cbarKms(rV.delivered) : cbarKms(comp.required.vInf),
-			demandCls, (rV && !rV.ok) ? fixTitleFor("vinf") : null);
+		// v∞ OUT is the only graded figure: it is what the ship leaves with, and
+		// the plan states what it should be. Graded against the provisional
+		// target while a Check is standing, so the reader steers at the number
+		// the Needed column is showing them rather than the superseded one.
+		var wantVInf = checked ? checked.vInf : comp.required.vInf;
+		var rV = (comp.rows || []).filter(function (r) { return r.key === "vinf"; })[0];
+		var met = checked
+			? Math.abs(f.vInfOut - wantVInf) < 1
+			: (!!comp.delivered && comp.rows.every(function (r) { return r.ok; }));
+		setMetric(metricEls.vInfOut, "v∞ out", cbarKms(f.vInfOut), met ? "ok" : "warn",
+			"What the ship actually leaves with. " +
+			(checked ? "The Check target is " : "The plan requires ") + cbarKms(wantVInf) +
+			(rV && !rV.ok && !checked ? " — " + (planRes.warnings || []).map(function (w) {
+				return w.code === "vinf-mismatch" ? w.fix : "";
+			}).join("") : ""));
 
-		if (summary && summary.vInfOut != null) {
-			appendCbarMetric("v∞ in", cbarKms(summary.vInfOut), demandCls, null);
-		}
-		if (summary) {
-			appendCbarMetric("plan Δv", cbarKms(summary.dv), demandCls,
-				"v∞ in + v∞ out + waypoint impulses");
-		}
+		// Neither of the other two has a standard to be graded against, so
+		// neither is coloured.
+		setMetric(metricEls.coastDv, "Δv", cbarKms(f.coastDv), null,
+			"What the coast's waypoint burns spend, added as magnitudes");
+		setMetric(metricEls.vInfIn, "v∞ in",
+			f.pass ? cbarKms(f.pass.vInf) : "—", null,
+			f.pass ? "The excess speed the ship still carries at closest approach"
+			       : "This flight never reaches " + (destName || "the destination"));
 
-		var rE = rowsByKey.epoch;
-		appendCbarMetric("Exit origin SOI",
-			(rE && !rE.ok) ? cbarDate(rE.required) + " → " + cbarDate(rE.delivered) : cbarDate(comp.required.jd),
-			null, (rE && !rE.ok) ? fixTitleFor("epoch") : null);
+		// THE HEADLINE. Graded, because this one does have a standard.
+		var alt = f.pass ? f.pass.altitude : Infinity;
+		var passOk = checkPassAltitude(alt).ok;
+		approachChipEl.className = "mp-approach-chip " + (passOk ? "ok" : "warn");
+		approachChipEl.textContent = cbarKm(alt);
+		approachChipEl.title = destName
+			? passAltitudeReason(checkPassAltitude(alt), destName)
+			: "This mission commits to no destination.";
 
-		if (summary && summary.flightDays != null) {
-			appendCbarMetric("flight time", Math.round(summary.flightDays) + " d", null, null);
-		}
-		if (summary && summary.arrivalJd != null) {
-			appendCbarMetric("arrival", cbarDate(summary.arrivalJd), null, null);
-		}
-
-		// Offered whenever a technology IS delivering a hand-off that DIFFERS
-		// from the plan's — including while the mission reads "on course", since
-		// that only means the delivered state is inside the compliance
-		// TOLERANCES. On this seam the difference that matters most is POSITION,
-		// which compliance never checks at all: a chain can exit a fifth of a
-		// million kilometres from the plan's assumed point, read fully on course,
-		// and miss the destination by two million.
-		//
-		// The button always REPORTS what the current delivery achieves. It is
-		// enabled when a reachable requirement can be solved from the real exit
-		// point; when it cannot, the departure is too far off base to re-target
-		// and the reason says to author a fresh mission instead.
-		if (comp.delivered && comp.delivered.state && stage &&
-				handoffDiffers(stage.params.departure, comp.delivered.state)) {
-			var sol = retargetSolveFor(stage.params, comp.delivered);
-			var btn = document.createElement("button");
-			btn.type = "button";
-			btn.className = "mp-btn mp-cbar-adopt";
-			btn.textContent = "re-target departure";
-			btn.disabled = !sol.ok;
-			var now = "As delivered, the flight passes " + fmtMissKm(sol.missBefore) + " from " +
-				(stage.params.arrival || {}).body + ". ";
-			btn.title = sol.ok
-				? now + "Re-target: keep the exit point the technology actually reaches, and " +
-					"require v∞ " + cbarKms(sol.vInf) + " there instead — a " +
-					sol.turnDeg.toFixed(2) + "° turn and " +
-					(sol.dSpeed >= 0 ? "+" : "−") + Math.abs(Math.round(sol.dSpeed)) + " m/s from " +
-					"what it delivers now (" + Math.round(sol.askWorst) + " m/s on its largest axis), " +
-					"bringing the pass to " + fmtMissKm(sol.missAfter) + ". " +
-					"Then re-tune the departure towards the new target; the arrival epoch and " +
-					"the waypoints' own dates hold."
-				: now + sol.reason;
-			btn.addEventListener("click", function () {
-				if (!sol.ok) { return; }
-				applyRetarget(planRes.stageId, sol);
-			});
-			complianceBarEl.appendChild(btn);
-		}
+		// CHECK is read-only, so it is offered whenever there is a delivery to
+		// measure — its report is worth having even while the departure is still
+		// off course. UPDATE writes, so it waits until a Check has shown what
+		// the write would do.
+		checkBtn.disabled = !destName;
+		checkBtn.title = destName
+			? "Re-solve what the departure has to deliver from the point it actually " +
+				"leaves from, and report what that would buy. Writes nothing."
+			: "This mission commits to no destination, so there is nothing to re-target towards.";
+		updateBtn.disabled = !checked;
+		updateBtn.title = checked
+			? "Commit the re-solved departure requirement and redraw the trajectory."
+			: "Press Check first — Update commits what it finds.";
 	}
-
-	// Phase-button dots: the worst status among a phase's stages (err worse than
-	// blocked worse than warn worse than ok). A phase with no stages mapped to
-	// it keeps the neutral default dot.
+	// Phase-button dots: a HARD-FAULT LIGHT, showing the worst status among a
+	// phase's stages only when that status is err or blocked — a stage that
+	// failed to compute, or one waiting on an upstream failure. Compliance is
+	// deliberately NOT a dot: it is the colour of the figure beside the button,
+	// where the number it grades can be read at the same time. A phase with
+	// nothing wrong shows no dot at all.
 	function renderPhaseDots(results) {
 		var worst = {};
 		results.forEach(function (res) {
@@ -1529,6 +1734,7 @@ export function createMissionView(opts) {
 			var phase = stage && stagePhaseOf(stage);
 			if (!phase) { return; }
 			var cls = dotClassFor(res);
+			if (cls !== "err" && cls !== "blocked") { return; }
 			if (!worst[phase] || PHASE_DOT_RANK[cls] < PHASE_DOT_RANK[worst[phase]]) { worst[phase] = cls; }
 		});
 		PHASES.forEach(function (p) {
@@ -2080,16 +2286,23 @@ export function createMissionView(opts) {
 		function better(now2, was) {
 			return (was == null || !isFinite(was) || !isFinite(now2)) ? null : now2 < was;
 		}
-		shipCard.setApproach([
+		// THE PASS, WHILE AN EDIT IS PENDING — and only then. The standing
+		// figure lives in the mission bar, measured on the flight the ship is
+		// really on rather than on this drawn arc, so repeating it here would
+		// be the same quantity quoted twice off two different bases. What the
+		// bar cannot show is the DIRECTION a pending waypoint edit moved it,
+		// which is what the reader is steering by while dragging, so that is
+		// what stays: was-to-now, and nothing when nothing is pending.
+		shipCard.setApproach(refPass ? [
 			{ label: livePass.insideSoi ? "Closest approach" : "Closest approach (outside SOI)",
 			  value: fmtKm(livePass.altitude), unit: "km",
-			  ref: refPass ? "was " + fmtKm(refPass.altitude) : null,
-			  better: refPass ? better(livePass.altitude, refPass.altitude) : null },
+			  ref: "was " + fmtKm(refPass.altitude),
+			  better: better(livePass.altitude, refPass.altitude) },
 			{ label: "Arrival speed",
 			  value: livePass.speed == null ? "—" : (livePass.speed / 1000).toFixed(3), unit: "km/s",
-			  ref: (refPass && refPass.speed != null) ? "was " + (refPass.speed / 1000).toFixed(3) : null,
-			  better: refPass ? better(livePass.speed, refPass.speed) : null }
-		]);
+			  ref: refPass.speed != null ? "was " + (refPass.speed / 1000).toFixed(3) : null,
+			  better: better(livePass.speed, refPass.speed) }
+		] : null);
 
 		// Timing: how far the pending edit has moved arrival from the coast's
 		// own last-committed arrival — nothing to show once nothing is pending.
@@ -2132,17 +2345,26 @@ export function createMissionView(opts) {
 			return;
 		}
 
-		var needed = vInfComponents(dep.r, dep.v, comp.required.vInfVec);
+		// NEEDED is the provisional target while a Check is standing, and the
+		// plan{A}s own requirement otherwise. Check writes nothing to the plan,
+		// so this column is the only place its answer lands — which is the
+		// point: it is the figure the user tunes towards before Update commits
+		// it. See the Check/Update block above.
+		var wantVec = checked ? checked.vInfVec : comp.required.vInfVec;
+		var wantMag = checked ? checked.vInf : comp.required.vInf;
+		var needed = vInfComponents(dep.r, dep.v, wantVec);
 		var current = comp.delivered ? vInfComponents(dep.r, dep.v, comp.delivered.vInfVec) : null;
 		shipCard.setGizmo({
 			axes: O.burnFrame(dep.r, dep.v),
 			needed: needed,
 			current: current,
-			neededDir: unitOf(comp.required.vInfVec),
+			neededDir: unitOf(wantVec),
 			currentDir: comp.delivered ? unitOf(comp.delivered.vInfVec) : null
 		});
 		shipCard.setComponents(needed, current);
-		shipCard.setOnCourse(!!comp.delivered && comp.rows.every(function (r) { return r.ok; }));
+		shipCard.setOnCourse(checked
+			? (!!comp.delivered && Math.abs(O.vMag(comp.delivered.vInfVec) - wantMag) < 1)
+			: (!!comp.delivered && comp.rows.every(function (r) { return r.ok; })));
 
 		// The speed section reads the flown arc, not the hand-off packet: the
 		// bar's right edge is the flight's own peak speed, so it rescales with
@@ -2156,8 +2378,7 @@ export function createMissionView(opts) {
 		var peak = peakSpeed(leg.samples);
 		var rHandoff = O.vMag(leg.handoff.r);
 		var neededSpeed = rHandoff > 0
-			? Math.sqrt(comp.required.vInf * comp.required.vInf +
-				2 * systems.get(originBody).GM / rHandoff)
+			? Math.sqrt(wantMag * wantMag + 2 * systems.get(originBody).GM / rHandoff)
 			: null;
 		shipCard.setSpeed(speedModel(
 			currentSpeed == null ? NaN : currentSpeed / 1000,
@@ -2173,6 +2394,14 @@ export function createMissionView(opts) {
 	var unWorld = world.onChange(function (info) {
 		if (info.change.jd !== undefined) { placeAll(world.jd); }
 	});
+
+	// A view pass with no recompute behind it: Check writes nothing to the
+	// World, so there is no chain to re-run — only the bar and the Departure
+	// card's Needed column, both of which read the provisional target.
+	function refreshViews() {
+		renderComplianceBar(engine.results());
+		updateShipCard();
+	}
 
 	var unRecompute = engine.onRecompute(function (results) {
 		results.forEach(function (res) {

@@ -272,7 +272,11 @@ export function createShipCard(opts) {
 	var commitWrap = el("span", "mp-ship-commit");
 	var updateBtn = document.createElement("button");
 	updateBtn.className = "mp-btn mp-ship-update";
-	updateBtn.textContent = "Update";
+	// Named for what it does, not "Update": the mission bar has an Update of
+	// its own that commits a re-targeted departure, and two buttons a screen
+	// apart both reading "Update" would be two different commitments wearing
+	// the same word.
+	updateBtn.textContent = "Hand off to Arrival";
 	updateBtn.style.display = "none";
 	commitWrap.appendChild(badge);
 	commitWrap.appendChild(updateBtn);

@@ -105,22 +105,57 @@
 	<template id="mp-mission-template">
 		<div class="mp-mission">
 
-			<!-- Phase buttons: the mission's phase selectors. Each dot
-			     aggregates that phase's stage results (mission-view.js's
-			     renderPhaseDots). Arrival ships disabled and is enabled by
+			<!-- The mission bar. Left of the divider, one group per phase: the
+			     phase's selector button and the figure that matters IN that
+			     phase. Right of it, the mission's headline number and the
+			     controls that move it. Everything here describes the flight the
+			     ship is ACTUALLY on — see core/delivered-flight.js — so the row
+			     reads left to right as one account of that flight.
+
+			     The dot on each button is a hard-fault light only (error or
+			     blocked); compliance is not a dot, it is the colour of the
+			     figure beside it. Arrival ships disabled and is enabled by
 			     mission-view.js when the frozen plan commits to an arrival
-			     body, since only then does that phase have a frame. -->
+			     body, since only then does that phase have a frame.
+
+			     The spacer between the two halves is the first thing to be
+			     squeezed; when even that is gone the right half wraps to its
+			     own line rather than the figures being cut off. -->
 			<div class="mp-phasebar">
-				<button class="mp-phase mp-phase-dep" type="button"><span class="mp-dot"></span>Departure</button>
-				<button class="mp-phase mp-phase-coast" type="button"><span class="mp-dot"></span>Coast</button>
-				<button class="mp-phase mp-phase-arr" type="button" disabled
-					title="This mission commits to no arrival body"><span class="mp-dot"></span>Arrival</button>
-				<div class="mp-compliance-bar"></div>
-				<div class="mp-brand">
-					<button class="mp-btn mp-share" type="button"
-						title="Copy a link that opens this exact mission">Copy mission link</button>
+				<div class="mp-bar-phases">
+					<div class="mp-phasegroup">
+						<button class="mp-phase mp-phase-dep" type="button"><span class="mp-dot"></span>Departure</button>
+						<span class="mp-cbar-metric mp-m-vinfout"></span>
+					</div>
+					<div class="mp-phasegroup">
+						<button class="mp-phase mp-phase-coast" type="button"><span class="mp-dot"></span>Coast</button>
+						<span class="mp-cbar-metric mp-m-coastdv"></span>
+					</div>
+					<div class="mp-phasegroup">
+						<button class="mp-phase mp-phase-arr" type="button" disabled
+							title="This mission commits to no arrival body"><span class="mp-dot"></span>Arrival</button>
+						<span class="mp-cbar-metric mp-m-vinfin"></span>
+					</div>
+				</div>
+				<div class="mp-bar-spacer"></div>
+				<div class="mp-bar-mission">
+					<div class="mp-approach">
+						<span class="mp-approach-label">Closest approach</span>
+						<span class="mp-approach-chip">—</span>
+					</div>
+					<button class="mp-btn mp-check" type="button">Check</button>
+					<button class="mp-btn mp-update" type="button">Update</button>
+					<div class="mp-report-wrap">
+						<button class="mp-btn mp-report" type="button">Mission<br>report ▾</button>
+						<div class="mp-report-menu"></div>
+					</div>
 				</div>
 			</div>
+
+			<!-- frozen-plan has no sidebar card, so its hard states (a
+			     diagnostic, or blocked-on-upstream) have no home of their own;
+			     they take this strip above the bar when they happen. -->
+			<div class="mp-planstate"></div>
 
 			<!-- Ephemeris date bar: the mission's one clock -->
 			<div class="mp-datebar">
@@ -142,15 +177,26 @@
 				</div>
 			</div>
 
-			<!-- Per-phase clock sliders, built by ui/phase-slider.js; exactly
-			     one shows at a time (mission-view.js's syncSliderVisibility).
-			     Departure: linear over the ship's flight. Coast: date-scaled,
-			     ending at the arrival seam. Arrival: the seam window itself,
-			     both edges sliding with closest approach. The date bar above is
-			     only a fallback for a phase with no resolvable span. -->
-			<div class="mp-sliderzone mp-dep-slider"></div>
-			<div class="mp-sliderzone mp-coast-slider"></div>
-			<div class="mp-sliderzone mp-arr-slider"></div>
+			<!-- Flight timeline on the left, message area on the right. The
+			     timelines are the per-phase clock sliders built by
+			     ui/phase-slider.js; exactly one shows at a time
+			     (mission-view.js's syncSliderVisibility). Departure: linear over
+			     the ship's flight. Coast: date-scaled, ending at the arrival
+			     seam. Arrival: the seam window itself, both edges sliding with
+			     closest approach. The date bar above is only a fallback for a
+			     phase with no resolvable span.
+
+			     The message area carries whatever the last of Check / Update /
+			     Mission report produced. On a narrow window it wraps below the
+			     timeline rather than squeezing it further. -->
+			<div class="mp-timelinerow">
+				<div class="mp-timelines">
+					<div class="mp-sliderzone mp-dep-slider"></div>
+					<div class="mp-sliderzone mp-coast-slider"></div>
+					<div class="mp-sliderzone mp-arr-slider"></div>
+				</div>
+				<div class="mp-messages"></div>
+			</div>
 
 			<div class="mp-main">
 				<!-- The shell's one canvas is re-parented in here while this

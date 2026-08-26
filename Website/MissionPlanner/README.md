@@ -36,8 +36,9 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 | `freeze.js`              | (see header — assembles a serialized World)                       | The "Start Mission Plan" contract: turns a plan authored on the Ephemeris tab into a fresh serialized World — `[ departure scaffold ] → [ frozen-plan ] → [ transfer-leg ] → [ arrival-leg ]` — with the departure carrier slot and the arrival-technology slot both left empty for the mission tab to fill in. The hand-off it commits is `spec.handoff` verbatim — the state the Ephemeris tab authored at the origin's SOI edge, where a departure leg actually delivers a ship — and `spec.jd` is that hand-off's own epoch, so waypoint days and the coast's duration need no re-basing. Nothing is re-derived across this seam, which is what makes the freeze/paste round trip exact. Pure; the caller resolves every view-side number first and hands in plain data. |
 | `departure-estimate.js`  | (see header — estimates the departure leg's duration)              | How long the departure leg lasts, estimated from the frozen plan alone (before any departure tech is chosen): the required v∞, the hand-off epoch, and — for Earth — where the Moon is, via the dive-in/direct-out wedge rule. Feeds the read-only release anchor `freeze.js` bakes into the plan, the Ephemeris tab's Moon-phase widget, and the Departure slider's default span. |
 | `arrival-seam.js`        | `computeArrivalSeam`                                               | The Coast→Arrival seam derivation: a window `[closest approach − Δt, closest approach + ~1 day]` around the coast's own closest-approach event, `Δt = clamp(R_SOI/v∞, 2 d, 5 d)`. Nothing is stored — recomputed live from `transfer-leg`'s emitted events every recompute, so the window moves as the coast is tuned. No encounter at all: the window collapses to a point at the plan's committed arrival epoch. |
-| `proximity.js`           | `checkProximity`, `checkAdoptable`                                  | The arrival standards, in one place. `checkProximity` is the EPHEMERIS TAB's gate on "Start Mission Plan": the marker within `APPROACH_FAR` (0.004 AU) of the destination's orbit ELLIPSE, and the destination passing through that point within `TEMP_FAR` (30 d) — ring-scale tolerances, right for judging a scrubbable marker. `MAX_ADOPT_MISS` (0.0002 AU) is the stricter bound a RE-TARGETED flight has to reach the body itself by. The ring tier TABLES stay with the views that draw them — those are colours and pixel sizes, not standards. Pure. |
-| `retarget.js`            | `solveDepartureTarget`                                             | Re-states the departure REQUIREMENT at the point a technology actually leaves from: keep the real exit point and epoch, re-solve the velocity that reaches the plan's destination from there. A damped Newton differential correction across the coast's waypoint burns, targeting the plan's own intended arrival POINT (not the body's centre, which would be a collision orbit), then verified by flying it through `computeLeg`. The ASK is bounded by `WAYPOINT_AXIS_CAP_MPS` — a re-target that would demand more than normal course-correction scale is a new mission for the Ephemeris tab, not a plan to re-point. Feeds `mission-view.js`'s "re-target departure" button. Pure. |
+| `proximity.js`           | `checkProximity`, `checkPassAltitude`                              | The arrival standards, in one place. `checkProximity` is the EPHEMERIS TAB's gate on "Start Mission Plan": the marker within `APPROACH_FAR` (0.004 AU) of the destination's orbit ELLIPSE, and the destination passing through that point within `TEMP_FAR` (30 d) — ring-scale tolerances, right for judging a scrubbable marker. `MAX_PASS_ALTITUDE` (30,000 km) is the stricter bound a FLOWN mission has to pass the body within, and `AIM_PASS_ALTITUDE` (15,000 km) is what a re-target aims for — deliberately inside the bound, so an iteration's residual has room to land. Both measured as altitude ABOVE THE SURFACE, at closest approach; both provisional until the arrival technology can state what it can actually catch. The ring tier TABLES stay with the views that draw them — those are colours and pixel sizes, not standards. Pure. |
+| `delivered-flight.js`    | `deliveredFlight`, `signatureOf`, `waypointDv`                     | The flight the ship is ACTUALLY on: flown from what the departure technology delivers, through the waypoints as they stand. `frozen-plan` emits the PLAN's departure state downstream by design, so the drawn coast is the plan's flight, not the ship's — until a re-target has closed the gap they arrive in different places. One call yields every figure the mission bar shows (v∞ out, coast Δv, closest approach, v∞ in). The answer never depends on the clock, so `signatureOf` gives the view a key to memoize on across scrubbing; one call costs about one leg integration. Pure. |
+| `retarget.js`            | `solveDepartureTarget`                                             | Re-states the departure REQUIREMENT at the point a technology actually leaves from: keep the real exit point and epoch, re-solve the velocity that reaches the plan's destination from there. A damped Newton differential correction across the coast's waypoint burns, aiming for a PASS at `AIM_PASS_ALTITUDE` above the destination's surface, on the side the flight already goes by — not the arrival POINT the plan was authored with, since a plan's own flyby offset stops being a commitment worth preserving once a real departure is flying the mission. Each solve is verified by flying it through `delivered-flight.js`, and the aim iterates on the altitude error it measures. The ASK is bounded by `WAYPOINT_AXIS_CAP_MPS` — a re-target that would demand more than normal course-correction scale is a new mission for the Ephemeris tab, not a plan to re-point. Feeds the mission bar's Check and Update. Pure. |
 
 Engine-generated diagnostic codes: `unknown-module`, `missing-input`,
 `input-type-mismatch`, `module-error` (an `update()` that threw),
@@ -196,11 +197,35 @@ resolvable span:
 
 The Departure→Coast seam is a **compliance boundary**, reached via the
 registry so the shell stays dynamically loaded rather than statically
-importing a module: `frozen-plan`'s `complianceFor` (v∞, epoch, aim) feeds
-`.mp-compliance-bar` — a chip plus compact per-row PLAN REQUIRES → TECH
-DELIVERS metrics, not phase-gated. The Coast→Arrival seam has no such
-boundary or bar; the coast's own live readouts (the ship card) are what tell
-the user whether the flight reaches the destination. A one-line events readout
+importing a module: `frozen-plan`'s `complianceFor` (v∞, epoch, aim) grades
+the mission bar's v∞ out.
+
+**The mission bar** (`.mp-phasebar`) runs across the top, not phase-gated.
+Left of the divider, one group per phase — the phase's selector button and the
+one figure that matters in it: v∞ out with Departure, coast Δv with Coast, v∞
+in with Arrival. Right of it, the mission's headline closest approach and the
+controls that move it. **Every figure describes the flight the ship is
+actually on** (`core/delivered-flight.js`), never the plan's commitments — the
+drawn coast is the plan's flight, and until a re-target has closed the gap the
+two arrive in different places. Only v∞ out and closest approach are graded,
+because only they have a standard to be graded against. The dot on each phase
+button is a hard-fault light (error or blocked) and nothing softer; compliance
+is the colour of the figure beside it, where the number it grades can be read
+at the same time.
+
+**Check and Update** drive the re-target loop. Check re-solves the departure
+requirement at the point the technology actually leaves from and reports what
+that would buy, writing nothing: its answer becomes a provisional target that
+the Departure card's Needed column steers at. Update re-solves from the
+*current* delivery — not Check's stored answer, already stale once the
+technology is re-tuned — and commits it, redrawing the trajectory. The loop
+closes because each pass asks for less than the last. **Mission report** opens
+a menu carrying the per-iteration table and the mission link. All three write
+into the **message area** beside the flight timeline.
+
+The Coast→Arrival seam has no such boundary; the coast's ship card reports
+which way a pending waypoint edit moved the pass, while the standing figure
+lives in the bar. A one-line events readout
 (top-left of the main pane) shows the event at the clock's current position
 and opens a dropdown, fed by the envelope's `events` channel, to jump the
 clock to another one — filtered to `display !== false`, since some emitted
