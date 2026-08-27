@@ -207,7 +207,7 @@ export function solveDepartureTarget(spec) {
 	// deliberately standardised. A plan authored in the Ephemeris tab carries
 	// whatever flyby offset it was built with (the Earth->Mars reference aims
 	// at ~50,000 km), and once a real departure is flying the mission that
-	// offset is no longer a commitment worth preserving: what matters is
+	// offset is not a commitment worth preserving: what matters is
 	// arriving close enough for the arrival phase to take over.
 	//
 	// Closest approach does not fall exactly at the arrival epoch, so one solve

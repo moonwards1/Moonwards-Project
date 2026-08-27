@@ -1,27 +1,31 @@
 # Website/MissionPlanner — the integrated mission simulator
 
 This folder is where the standalone calculators compose into one mission
-simulator — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md) for the general
-model (modules, packets, the recompute chain) and `MissionPlannerDesign_v2.md`
-in this folder for Kim's UI design (the current design doc — it supersedes
-`MissionPlannerDesign.md`). Settled architectural rules that cut across
-several files (phase seams, timelines, waypoint controls, the technology-
-platform shape) live in
-[`../../Notes-and-Obsolete/decisions.md`](../../Notes-and-Obsolete/decisions.md)
-under "Mission Planner", not here. `MissionPlannerTasks_v2.md` in this folder
-is the forward-looking task list.
+simulator. Three other documents carry the rest of the picture:
+
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — the general model shared with
+  the calculators: modules, packets, the recompute chain, frames.
+- `MissionPlannerDesign_v2.md` in this folder — Kim's UI design, what the app
+  is meant to become.
+- [`../../Notes-and-Obsolete/decisions.md`](../../Notes-and-Obsolete/decisions.md)
+  — settled rules that cut across several files (phase seams, timelines,
+  waypoint controls, the technology-platform shape), stated once there rather
+  than restated here.
+
+This README describes what the code does **now**.
 
 **Current status:** a mission runs end to end — Departure, Coast and Arrival
-are all real phases, each with its own timeline slider, and both phase seams
-(Departure→Coast, Coast→Arrival) are comply-mode boundaries that measure a
-delivered state against a frozen plan without ever silently re-planning it.
-`core/` is pure logic with Node tests, so the recompute/blocked/comply
-semantics are verified independent of any UI; `planner.js` + `mission-view.js`
-+ `ephemeris-view.js` + `scene-frames.js` are the browser shell over it;
-`modules/` holds the mission-profile stages; `ui/` holds shell-local widgets;
-`presets/` holds the shipped mission and the example-mission catalog.
-`mockups/` is a leftover disposable artifact from before the real shell
-existed and describes neither the current UI nor the current design doc.
+are all real phases, each with its own timeline slider. The Departure→Coast
+seam is a comply-mode boundary: it measures the technology's delivered
+hand-off against the frozen plan without ever silently re-planning it. The
+Coast→Arrival seam is an editing and display division only, with no boundary
+stage — the coast targets the real destination and reports the actual
+approach live, so there is nothing to grade it against. `core/` is pure logic
+with Node tests, so the recompute/blocked/comply semantics are verified
+independent of any UI; `planner.js` + `mission-view.js` + `ephemeris-view.js`
++ `scene-frames.js` are the browser shell over it; `modules/` holds the
+mission-profile stages; `ui/` holds shell-local widgets; `presets/` holds the
+shipped mission and the example-mission catalog.
 
 ## core/ — the headless mission core
 
@@ -29,7 +33,7 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 
 | File                     | Named exports                                                    | Purpose                                                                                                                                                                                                                                                    |
 | ------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `world.js`               | `createWorld`, `deserializeWorld`, `WORLD_KIND`, `WORLD_VERSION`  | World — the single source of truth: `jd` (one clock) + the mission profile (ordered stages with stable, never-reused ids). Every mutation goes through the one choke point, `world.set(change)`; listeners get `{ change, index, id, transient }` where `index` is where "dirty" starts. Versioned serialization (current version 4, with a v1→v2→v3→v4 migration chain); a save is **always storable**, feasible or not, known modules or not. |
+| `world.js`               | `createWorld`, `deserializeWorld`, `WORLD_KIND`, `WORLD_VERSION`  | World — the single source of truth: `jd` (one clock) + the mission profile (ordered stages with stable, never-reused ids). Every mutation goes through the one choke point, `world.set(change)`; listeners get `{ change, index, id, transient }` where `index` is where "dirty" starts. Versioned serialization (current version 4; a version that isn't exactly current is refused, never migrated); a save is **always storable**, feasible or not, known modules or not. |
 | `diagnostics.js`         | `makeDiagnostic`, `isDiagnostic`, `DIAGNOSTIC_KIND`               | The structured-diagnostic model: `{ kind, stageId, code, message, values, fix? }` — what a stage's `update()` returns instead of a packet when the mission is infeasible. Plain and JSON-able, distinguishable from a packet by `kind`.                    |
 | `registry.js`            | `createRegistry`, `validateDescriptor`                            | The module registry. Validates a descriptor's `id`/`title`/`accepts`/`emits`/`update` at registration (packet types checked against `PacketTypes`, so typos fail loud and early); view-facing fields (`rendersIn`, `init`, …) are optional and unexamined here. An *unregistered* id in a profile is user data, not an error — the engine reports it as a diagnostic. |
 | `recompute.js`           | `createEngine`                                                    | The chain-recompute engine. Subscribes to the World; on any change recomputes from the dirty index **downstream, in order, synchronously**. Per-stage results keyed by stage id: `ok` (with the output packet), `diagnostic`, or `blocked` (waiting on the failed stage, `update()` not called, params intact); results also carry `warnings` and `events` arrays (see the module contract below). Locks the World during a pass, so modules cannot `set()` from `update()`. |
@@ -348,6 +352,7 @@ re-derived).
 | File               | Named exports (partial)                                                                        | Purpose                                                                                                                                                                        |
 | ------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `phase-slider.js`  | `createSegmentedSlider`, `coastSliderState`, `departureSliderState`, `arrivalSliderState`, …      | The segmented-timeline widget behind each phase's slider: a DOM primitive (a track of flex-sized segments plus a playhead, `.mp-` classes styled in `planner.css`) plus three pure state functions (segments + playhead fraction + pinned flag + marks from a span, a jd, a tick count and a formatter) that `mission-view.js`'s `departureSpan`/`coastSpan`/`arrivalSpan` feed. |
+| `ship-card.js`     | `createShipCard`, `SHIP_COLORS`, `vInfComponents`, `speedModel`, `timingModel`, `bearingPoint`, … | The floating card that reports on the ship the chevron marks: a scissored three.js gizmo off the shared renderer, a numeric summary, a speed bar, and — only where a phase fills them — an approach readout, a timing line, a B-plane square and a commit button. Phase-agnostic: every section renders nothing until its setter is called, so Departure takes the plan-vs-delivered comparison gizmo and on-course state, Coast takes the pending-edit vector and Update. The pure model functions are Node-tested. |
 | `share-link.js`    | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope wrapping `{ title, world }` under its own kind stamp (a bare serialized World has no title). Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button.                          |
 | `tech-options.js`  | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                 | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add/swap a stage; unbuilt entries show disabled with a "(future)" label.                                  |
 
@@ -406,10 +411,17 @@ at the copy's root.)
 
 ## What's next
 
-`MissionPlannerTasks_v2.md` in this folder is the current, forward-looking
-task list (the ship-card gizmo and per-phase context, pane/camera work, the
-Ephemeris tab's remaining fixes, the platform-library shape and
-calculator-linking, and further doc work), with its own open design questions
-section. `../../Notes-and-Obsolete/decisions.md` holds the settled rules those
-tasks build on. `../ARCHITECTURE.md` covers the general module/packet model
-this folder implements.
+There is no task document. Work is driven from Kim's own running list,
+`../../Notes-and-Obsolete/ToDo-MissionPlanner.md` — bugs, design wants and
+open questions in the order they occur to him, not a build order. Broadly,
+the outstanding work is: the six technology platforms still to be written
+(space elevator, tug, ring mass driver, linear mass driver, tip spin
+launcher, aerobrake) onto the shape in `modules/platform/`; linking cards to
+their calculators through the exchange; fleshing out the Arrival phase, which
+is what would let the pass standard in `core/proximity.js` come from what the
+arrival technology can actually catch instead of two flat numbers; and the
+message bar explaining why the mission bar's figures move.
+
+`../../Notes-and-Obsolete/decisions.md` holds the settled rules that work
+builds on; `../ARCHITECTURE.md` covers the general module/packet model this
+folder implements.

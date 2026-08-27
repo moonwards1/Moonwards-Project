@@ -1,32 +1,24 @@
 # Moonwards Project — working notes for Claude
 
-## The two views of the files
+## Touching files
 
-There are two ways to touch files, and they are not always in sync:
+The shell (Bash / PowerShell) and the Read / Write / Edit tools see the same
+filesystem, immediately and consistently. Use whichever fits the job:
 
-- **Read / Write / Edit tools** — the **authoritative** view. Never stale, never truncated. Treat these as the source of truth for what is actually on disk.
-- **The bash shell (`mcp__workspace__bash`)** — sees the project through a **separate mount that is only eventually-consistent.** Right after a write, and during bursts of edits, the shell may read a file as empty, truncated, or out of date — usually for seconds, but observed (2026-07-06) persisting for several minutes, and in one case **across sessions/hours, surviving a commit** (a fresh session's mount still served stale copies of files edited the session before). A stale read serves the file's **new content forced to its old byte length**: if the file grew, the tail is cut mid-word; if it shrank, the real content is followed by **NUL-byte padding** (`^@^@…`). Both are recoverable — strip trailing NULs, or stitch the missing tail from an authoritative Read (see the snapshot pattern below). While the mount is stale, even **read-only git can fail** ("unknown error occurred while reading the configuration files"). (Testing showed this lag is intermittent and **not** tied to the C:/D: drive split — it is a property of the sync bridge.) The shell also **cannot delete** project files (a safety guard).
+- **Bulk moves — copying, slicing, concatenating, relocating** — belong in the
+  shell (`cp`, `sed -n '165,1257p' src > new.js`, `awk`). Do not re-emit
+  thousands of lines through the Write tool when a shell command will do it.
+- **Targeted content edits** belong in the **Edit** tool: it matches exactly
+  and fails loudly rather than silently mangling, which `sed` will not.
+- **Leave the original in place** until whatever replaced it is verified, so a
+  bad write can be restored rather than reconstructed.
+- Deleting a project file is possible from the shell, but check with Kim
+  first — he usually wants to see the change in GitHub Desktop anyway.
 
-Rule of thumb: **decide truth with the Read tool; use the shell for muscle (copying, slicing, computing, testing).**
-
-## Shell file operations are allowed — just verify, because of the lag
-
-Earlier notes forbade shell writes entirely. That was too strict. Copying, moving, slicing, and concatenating files in the shell is fine and is the **preferred** way to relocate or extract content — do **not** re-emit thousands of lines through the Write tool when `cp`/`sed`/`awk` will do it. The only real hazard is the sync lag, so:
-
-- **Creating a new file** (e.g. `cp a b`, or `sed -n '165,1257p' src > new.js`): allowed. There is no existing content to clobber. **Verify the result with the Read tool afterward** (right first/last lines, sane length) before relying on it or deleting any original.
-- **Reading/slicing FROM a file in the shell**: the source can be served truncated/stale. Before trusting it, **confirm the shell's copy is complete and current** — e.g. it ends with the expected last line, the line count is sane, or it contains a known-recent edit. If it looks short, wait a few seconds and re-copy.
-- **Overwriting an existing file** from the shell: allowed, but it carries the only genuine clobber risk — if the destination changed since you last saw it (see Concurrency), a stale-based overwrite loses that change. So overwrite from a freshly-verified source, and **Read-tool the destination afterward** to confirm.
-- **Targeted content edits**: still prefer the **Edit** tool. It is authoritative and diff-safe, and avoids the verify dance.
-- **Deleting** project files: not possible from the shell. Ask the user to delete (and they may want to review the change anyway).
-
-### The efficient "snapshot → slice → verify" pattern
-
-To split or relocate a large file (e.g. pull an inline `<script>` into a sibling `.js`):
-
-1. Copy the source to the sandbox and **confirm it is complete** (tail matches the real last line; if the mount truncated it, wait/re-copy, and stitch the known tail from an authoritative Read if needed).
-2. Slice / transform with `sed`/`awk` into the new file(s).
-3. **Verify with the Read tool** that each new file is intact, then wire up references.
-4. Leave the original in place until the new files are verified, so nothing can be lost.
+(Older versions of these notes described an eventually-consistent mount that
+served truncated or NUL-padded reads. That was a property of a previous shell
+tool and does not apply now. If shell reads ever start disagreeing with the
+Read tool again, say so rather than working around it silently.)
 
 ## Running tests / harnesses in the shell
 
@@ -47,6 +39,7 @@ To split or relocate a large file (e.g. pull an inline `<script>` into a sibling
   - `three.min.js` → **the one classic-script exception**: vendored Three.js, loaded with a plain `<script src>` tag ahead of the page module, provides the global `THREE`.
 - A calculator that imports from `Shared/` references it as `../../Shared/...` and **breaks if its folder is moved without `Website/Shared/` coming along.** Each calculator's README states whether it has this dependency.
 - `Website/Shared/README.md` is the canonical description of the libraries and conventions. New calculators start by copying `Website/Calculators/_template/`.
+- **`Website/MissionPlanner/`** is where the calculators compose into one mission simulator. Its own `README.md` describes what the code does now; `MissionPlannerDesign_v2.md` beside it is Kim's design for what it should become. `Website/ARCHITECTURE.md` covers the model both rest on (World, modules, packets, the recompute chain).
 
 ## Documentation: three tiers, one home each
 
@@ -59,10 +52,13 @@ and a history of how it got that way:
 - **Current-state docs** — READMEs, design docs, and code comments. Always
   describe things as they are today; rewritten in place when something
   changes, never appended to with superseded alternatives or chronology.
-- **Decisions log** — `Notes-and-Obsolete/decisions.md`. Permanent, terse,
-  dated entries for settled architecture decisions that are load-bearing for
-  more than one file or task (a formula, a clamp, a structural rule). States
-  the decision and the one-line why; not a narrative of how it was debated.
+- **Decisions log** — `Notes-and-Obsolete/decisions.md`. Terse, dated entries
+  for settled architecture decisions that are load-bearing for more than one
+  file (a formula, a clamp, a structural rule). States the decision and the
+  one-line why; not a narrative of how it was debated. **When a decision is
+  replaced, rewrite or remove its entry — never leave it standing beside its
+  replacement.** A log holding several versions of one rule is worse than no
+  log, and it will be read as current.
 - **Changelog** — `Notes-and-Obsolete/changelog.md`. Transient, plain-language
   notes for Kim after a natural chunk of work, ending in a suggested commit
   message. Cleared once the change is committed — git log is the permanent
@@ -72,7 +68,15 @@ Code comments state the current invariant only — no chronology, no rejected
 alternatives, no narrating the conversation that produced them. If a comment
 is tempted to explain "why we changed this," that content belongs in the
 decisions log (if it's a lasting rule) or nowhere (if it was just
-deliberation) — not in the comment.
+deliberation) — not in the comment. In practice the tell is the phrase "used
+to", "no longer", "originally", or "the old X": rewrite as a statement about
+what is true now. Explaining why an *obvious alternative* is wrong is fair
+game and often valuable — that is a live invariant, not history.
+
+**There is no task doc.** The Mission Planner's work list is Kim's own
+`Notes-and-Obsolete/ToDo-MissionPlanner.md`, in his words and his order. Don't
+start a parallel one; a task doc that tracks completed work becomes a second,
+stale account of the code within weeks.
 
 ## Conventions for shared code
 
@@ -82,10 +86,15 @@ deliberation) — not in the comment.
 - Prefer the namespaced APIs (`OrbitalMath.*`, `Fmt.*`) in new code.
 - When adding orbital-mechanics maths, put it in `math-utils.js` with a Node test, rather than inlining it in a calculator.
 
-## Git: never run write operations against the mount
+## Git: Kim commits, Claude doesn't
 
-- **Git cannot operate on the mounted project from the shell.** Every git write goes through lock files that must be renamed/unlinked, and the mount's no-delete guard blocks that. A `git init` attempt (2026-07-06) died on `.git/config.lock` and left a corrupt half-created `.git` that Kim had to delete by hand. Do not run `git init`/`add`/`commit`/`checkout` against the mount — and be wary of `git status`, which opportunistically rewrites the index.
-- **The repo is operated from Kim's side (GitHub Desktop):** Claude edits files with the file tools; Kim reviews the diff in Desktop, commits, and pushes. Read-only commands (`git log`, `git show`, `git diff`) from the shell are fine once `.git` exists.
+- **The repo is operated from Kim's side (GitHub Desktop):** Claude edits
+  files; Kim reviews the diff in Desktop, commits, and pushes. This is a
+  review workflow, not a technical limit — do not run `git add`/`commit`/
+  `checkout`/`branch` unless Kim asks for it in so many words.
+- Read-only commands (`git log`, `git show`, `git diff`, `git status`) from
+  the shell are fine and useful — `git log -S` is often the fastest way to
+  date when a behaviour changed.
 - The repo is `https://github.com/moonwards1/Moonwards-Project` (org `moonwards1`), default branch **`master`**. The published site is `Website/` via GitHub Pages (workflow: `.github/workflows/deploy-pages.yml`, deploys on push). `Notes-and-Obsolete/` is untracked by `.gitignore`.
 
 ## Concurrency: more than one job may touch a file
@@ -96,15 +105,14 @@ deliberation) — not in the comment.
 
 ## Before large edits to important files
 
-- Keep the previous content recoverable (a copy, or the original left in place) so a bad write can be **restored** rather than reconstructed from a possibly-stale view.
+- Keep the previous content recoverable (a copy, or the original left in place) so a bad write can be **restored** rather than reconstructed.
 - After finishing, verify the file ends as expected: a self-running calculator `.js` ends with its tool's run call (e.g. `skyhookTool(document.getElementById("insertItHere"));`) or its init wiring (`calc();` / `if (document.readyState === "loading") …`); the tether-tool modules end with the closing `}` of their exported function (the embed page calls it); the `.html` ends with `</body></html>` and carries the right `<link>` and `<script type="module">` references.
 
 ## Notes
 
 - **Verifying pages in a browser.** Claude has an integrated Browser pane (`preview_start`, `navigate`, `read_page`, `computer`, etc.) that persists within the session and needs no external tab management. For **local** checking during development, Kim runs `serve.bat` and Claude can `preview_start` with `name: "serve.bat"` or `navigate` straight to `http://localhost:8000/...` — **the served root is `Website/`** (mirroring GitHub Pages), so local URLs carry no `Website/` prefix: e.g. `http://localhost:8000/MissionPlanner/...`, not `/Website/MissionPlanner/...`. For **deployed** checking, Claude can navigate to <https://moonwards1.github.io/Moonwards-Project/...> directly. The full verification loop — navigate, `read_page` for structure, `read_console_messages` for errors, `computer` to interact and test — is the standard approach. Note: `serve.bat` prints its "Serving…" banner *before* Python starts, so check for a line like `Serving HTTP on :: port 8000` to confirm the server is actually up; remember the root URL renders blank while `index.html` is a stub — test a calculator URL instead.
 - **The browser caches ES modules, and this WILL produce false negatives.** After editing a module, a plain reload can keep running the old copy — the page's module graph comes from the HTTP cache. This once made a correct change look like it had no effect for several rounds of debugging. Two traps: fetching the file and finding the new content proves only what the **server** has, not what the page **loaded**; and `fetch(url, {cache: "no-store"})` deliberately does *not* update the cache, so it fixes nothing. What works: `fetch(url, {cache: "reload"})` for each changed module (this refills the cache from the network), then reload the page. When a verified-correct change appears to do nothing, suspect this before suspecting the code.
-- A browser tab merely **viewing** a local file does not write to it and cannot truncate it; it only shows a stale render until reloaded. It is not a cause of file-corruption issues.
-- The session **outputs** scratch folder (under `C:\Users\…\local_…\outputs`) is ephemeral and separate from the project; files there don't need cleanup and won't travel with the repo.
+- The session scratchpad folder (under `%LOCALAPPDATA%\Temp\claude\…`) is ephemeral and separate from the project; files there need no cleanup and won't travel with the repo.
 
 # Workflows and Skillsets
 

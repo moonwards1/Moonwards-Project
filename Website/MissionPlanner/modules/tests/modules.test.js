@@ -422,7 +422,7 @@ test("chain: moving the clock leaves the mission exactly as it was", function ()
 	assert.equal(c.engine.resultFor(c.ids.leg).output, before);
 });
 
-// ---- the shipped worked-example preset (step 4.4, reshaped by I3) -----------
+// ---- the shipped worked-example preset -------------------------------------
 
 test("preset: deserializes to the carrier-chain profile; the coast genuinely rendezvouses", function () {
 	// The integrated departure honestly under-delivers the committed 6.55

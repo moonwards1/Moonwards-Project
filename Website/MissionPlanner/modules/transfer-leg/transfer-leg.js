@@ -1224,9 +1224,9 @@ export default {
 					if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: GIZMO_PX }); }
 				});
 
-				// The two readout panes each track ONE lever, live, no
-				// plan-relative diffing (Notes-and-Obsolete/decisions.md,
-				// 2026-08-18, since superseded):
+				// The two readout panes each track ONE lever, live, with no
+				// plan-relative diffing between them
+				// (Notes-and-Obsolete/decisions.md, 2026-08-19):
 				//
 				// The WAYPOINT section's pane (up top, beside the frozen
 				// plan's own info) reports the PLAN's own burn fired from

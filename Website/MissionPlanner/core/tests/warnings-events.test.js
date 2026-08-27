@@ -1,5 +1,5 @@
 // Node tests for the { packet, warnings, events } envelope return added to
-// recompute.js for the Mission Planner's comply mode (MissionPlannerDesign.md):
+// recompute.js for the Mission Planner's comply mode:
 // warnings are diagnostics that do NOT block downstream, events feed the
 // phase sliders / stage strip. Hard-failure blocking semantics must be
 // unchanged — that is asserted here too.

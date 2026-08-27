@@ -171,7 +171,7 @@ export function buildBodyFrame(name) {
 	var zoomMax = Math.max(20000, radiusU * 3000);
 
 	// The star sphere must sit well outside zoomMax, or fully zooming out (a
-	// Jupiter/Saturn-sized zoomMax exceeds the old fixed 120000) puts the
+	// Jupiter/Saturn-sized zoomMax exceeds the 120000 floor) puts the
 	// camera past the near side of the star shell, which then renders in
 	// front of the body it's supposed to be a backdrop for.
 	scene.add(makeStars(Math.max(120000, zoomMax * 1.5), 900));

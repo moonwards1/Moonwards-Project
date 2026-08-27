@@ -463,8 +463,8 @@ export default {
 			return inp;
 		}
 
-		// The window is no longer a fixed two days, so its width and where the
-		// pass falls inside it are what a waypoint's "at hour" is measured
+		// The window's width varies with the encounter, so that width and where
+		// the pass falls inside it are what a waypoint's "at hour" is measured
 		// against — say so, or the field has no scale.
 		var windowNote = document.createElement("div");
 		windowNote.className = "mp-muted";

@@ -81,16 +81,16 @@ export function findClosestApproach(events, destination) {
 //                        // encounter to derive a window from
 // }
 //
-// WHY A MEASURED PASS RATHER THAN THE EMITTED EVENT. The window used to be hung
-// on transfer-leg's closest-approach EVENT, which is emitted per SOI encounter
-// and measured inside the leg's own span. Both properties fail at the worst
-// moment: a pass sitting near the leg's end reports the leg boundary instead of
-// the periapsis, and a pass whose encounter falls past the leg end emits no
-// event at all — so the window silently collapsed to the plan's committed epoch
-// and the whole Arrival phase was placed on the wrong days, discontinuously, as
-// a coast waypoint was tuned. nearestApproach measures the same thing
-// continuously across the leg AND its overrun, so the seam moves smoothly with
-// the coast instead of jumping between branches.
+// WHY A MEASURED PASS RATHER THAN THE EMITTED EVENT. The obvious source would
+// be transfer-leg's closest-approach EVENT, but that is emitted per SOI
+// encounter and measured inside the leg's own span. Both properties fail at the
+// worst moment: a pass sitting near the leg's end reports the leg boundary
+// instead of the periapsis, and a pass whose encounter falls past the leg end
+// emits no event at all — either way the window collapses to the plan's
+// committed epoch and the Arrival phase lands on the wrong days,
+// discontinuously, as a coast waypoint is tuned. nearestApproach measures the
+// same thing continuously across the leg AND its overrun, so the seam moves
+// smoothly with the coast instead of jumping between branches.
 //
 // `insideSoi` is what makes it an encounter: a coast that merely comes closest
 // half an AU away has a measurable pass but no arrival to open a window around.

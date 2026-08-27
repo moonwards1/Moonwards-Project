@@ -31,7 +31,7 @@
  * the inclination-of-motion figure above — the Moon's motion is already
  * tilted off the ecliptic before any carrier tech adds its own plane change.
  *
- * A missing anchor (no frozen plan and no legacy release date anywhere in
+ * A missing anchor (no frozen plan and no release date anywhere in
  * the profile) is diagnosed HERE, at the top of the chain, so the one clear
  * message blocks the stack instead of each stage failing its own way.
  *

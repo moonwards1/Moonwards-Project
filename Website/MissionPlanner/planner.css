@@ -1,6 +1,6 @@
 /* Mission Planner — deliberately plain styling for the whole app: the tab bar,
  * the Ephemeris tab, and the per-mission chrome cloned from planner.html's
- * <template>. Palette follows mockups/mock-a-phases.html. */
+ * <template>. */
 
 :root {
 	--bg: #0b0e14; --pane: #0d111c; --panel: #141a2a;
@@ -802,9 +802,8 @@ body {
 .mp-paste-btn { display: block; width: 100%; margin-top: 9px; }
 
 /* ---------- modal dialog: name-your-mission + paste-a-link ----------
-   Lifted from mockups/mock-a-phases.html's .dialog-wrap/.dialog, mp- prefixed
-   and mapped onto the shell's palette vars. One instance, built by
-   ephemeris-view.js and appended to <body>. */
+   Class names are mp- prefixed and mapped onto the shell's palette vars. One
+   instance, built by ephemeris-view.js and appended to <body>. */
 .mp-dialog-wrap {
 	position: fixed; inset: 0; background: rgba(5, 8, 14, 0.6);
 	display: none; align-items: center; justify-content: center; z-index: 20;

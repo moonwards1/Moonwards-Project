@@ -1,5 +1,5 @@
 // Node tests for recompute.js — the recompute/blocked semantics that
-// ARCHITECTURE.md step 4.1 says must be verified before any UI exists.
+// must hold independent of any UI, and are asserted here without one.
 // Run with:  node --test
 import { test } from "node:test";
 import assert from "node:assert/strict";

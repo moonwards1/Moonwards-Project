@@ -474,8 +474,8 @@ export function createMissionView(opts) {
 		return handle;
 	}
 
-	// Default stacking mirrors the old flex-column layout (top-right, 12px
-	// margin, 10px gaps), expressed as CSS right/top offsets rather than
+	// Default stacking is a plain column (top-right, 12px margin, 10px gaps),
+	// expressed as CSS right/top offsets rather than
 	// computed left pixels — the container may not be laid out yet (this runs
 	// while building a background or not-yet-shown mission tab), so anything
 	// depending on sceneEl.clientWidth here would see zero. right/top resolve
@@ -1609,8 +1609,7 @@ export function createMissionView(opts) {
 		});
 	}
 
-	// The mission menu: the report, and the mission-level action that used to
-	// sit at the far right of this bar.
+	// The mission menu: the report, and the bar's other mission-level actions.
 	function closeReportMenu() { reportWrapEl.classList.remove("open"); }
 	(function buildReportMenu() {
 		[["Show mission report", renderReport],
@@ -2228,8 +2227,8 @@ export function createMissionView(opts) {
 		// crosses the impact/miss boundary) compares two unrelated points on the
 		// orbit and produces a huge, meaningless velocity difference.
 		// stateAtElapsed clamps outside a leg's own span to its nearest end, so
-		// this still reduces to the old `.end` vs `.end` diff whenever both legs
-		// share the same regime (the common case).
+		// this reduces to a plain `.end` vs `.end` diff whenever both legs share
+		// the same regime (the common case).
 		var end = committed.end, liveEnd = live.end;
 		var tCommon = Math.min((end.jd - committed.jd0) * 86400,
 		                        (liveEnd.jd - live.jd0) * 86400);
@@ -2441,10 +2440,10 @@ export function createMissionView(opts) {
 	// has no ancestor stacking context to stay confined to, so it's compared
 	// globally against .mp-floats' z-index (still correctly below it) rather
 	// than clipped to "wherever the main pane is visually uncovered". A float
-	// sitting on top used to hide this by being opaque; now that a float shows
-	// its own real scene through a transparent box (see the .mp-float CSS
-	// comment), nothing stops the main pane's text from showing through
-	// wherever a float's rect happens to overlap it. Punching float-shaped
+	// shows its own real scene through a TRANSPARENT box (see the .mp-float CSS
+	// comment), so it cannot hide the main pane's text by sitting on top of it —
+	// that text shows through wherever a float's rect overlaps. Punching
+	// float-shaped
 	// holes in the main pane's clip-path hides its overlay content there
 	// without touching the shared canvas (a sibling, unaffected by this
 	// element's clip-path) — the float's own scissor-rendered scene comes
