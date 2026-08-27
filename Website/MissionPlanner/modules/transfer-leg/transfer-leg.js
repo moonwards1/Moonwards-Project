@@ -1226,7 +1226,7 @@ export default {
 
 				// The two readout panes each track ONE lever, live, with no
 				// plan-relative diffing between them
-				// (Notes-and-Obsolete/decisions.md, 2026-08-19):
+				// (Notes/decisions.md, 2026-08-19):
 				//
 				// The WAYPOINT section's pane (up top, beside the frozen
 				// plan's own info) reports the PLAN's own burn fired from

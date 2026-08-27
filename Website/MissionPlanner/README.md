@@ -7,7 +7,7 @@ simulator. Three other documents carry the rest of the picture:
   the calculators: modules, packets, the recompute chain, frames.
 - `MissionPlannerDesign_v2.md` in this folder — Kim's UI design, what the app
   is meant to become.
-- [`../../Notes-and-Obsolete/decisions.md`](../../Notes-and-Obsolete/decisions.md)
+- [`../../Notes/decisions.md`](../../Notes/decisions.md)
   — settled rules that cut across several files (phase seams, timelines,
   waypoint controls, the technology-platform shape), stated once there rather
   than restated here.
@@ -383,7 +383,7 @@ across tabs.
 `core/world.js`'s `WORLD_VERSION` is 4; `deserializeWorld` refuses (politely,
 `{ ok:false, reason }`) anything that isn't exactly the current version — no
 migration (saved missions are disposable test data, not something a schema
-change promises to carry forward; see `Notes-and-Obsolete/decisions.md`,
+change promises to carry forward; see `Notes/decisions.md`,
 2026-08-11). A save is always storable regardless of feasibility or whether
 its module ids are currently registered — feasibility is the recompute
 engine's diagnostic, not a data-layer validity condition.
@@ -411,10 +411,9 @@ at the copy's root.)
 
 ## What's next
 
-There is no task document. Work is driven from Kim's own running list,
-`../../Notes-and-Obsolete/ToDo-MissionPlanner.md` — bugs, design wants and
-open questions in the order they occur to him, not a build order. Broadly,
-the outstanding work is: the six technology platforms still to be written
+There is no task document, and no build order. Work comes from Kim directly,
+a request at a time. Broadly, the outstanding work is: the six technology
+platforms still to be written
 (space elevator, tug, ring mass driver, linear mass driver, tip spin
 launcher, aerobrake) onto the shape in `modules/platform/`; linking cards to
 their calculators through the exchange; fleshing out the Arrival phase, which
@@ -422,6 +421,6 @@ is what would let the pass standard in `core/proximity.js` come from what the
 arrival technology can actually catch instead of two flat numbers; and the
 message bar explaining why the mission bar's figures move.
 
-`../../Notes-and-Obsolete/decisions.md` holds the settled rules that work
+`../../Notes/decisions.md` holds the settled rules that work
 builds on; `../ARCHITECTURE.md` covers the general module/packet model this
 folder implements.

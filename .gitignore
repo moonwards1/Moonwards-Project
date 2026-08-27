@@ -1,5 +1,12 @@
-# Private working notes — not part of the public repo
+# Kim's own working material — sketches, mockups, screenshots, running
+# to-do lists. Not part of the public repo, and Claude does not read it
+# unless pointed at a specific file.
 /Notes-and-Obsolete/
+
+# Notes/ IS tracked — it holds decisions.md, the architecture-decision log
+# the READMEs link to. The changelog is the exception: its entries are
+# commit-message drafts, deleted once used, so tracking them is pure churn.
+/Notes/changelog.md
 
 # OS cruft
 Thumbs.db

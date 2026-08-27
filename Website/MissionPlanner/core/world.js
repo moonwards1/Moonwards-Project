@@ -23,7 +23,7 @@
 //     `deserializeWorld()` refuses (politely, { ok:false, reason }) anything
 //     that isn't exactly the current version — no migration. Saved missions
 //     are disposable test data, not something a schema change promises to
-//     carry forward (Notes-and-Obsolete/decisions.md, 2026-08-11).
+//     carry forward (Notes/decisions.md, 2026-08-11).
 //   - ALWAYS STORABLE. A World may describe a physically infeasible mission
 //     — even an unknown moduleId round-trips through save/load untouched.
 //     Feasibility is the recompute engine's diagnostic, not a data-layer

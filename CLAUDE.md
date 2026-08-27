@@ -11,7 +11,9 @@ filesystem, immediately and consistently. Use whichever fits the job:
 - **Targeted content edits** belong in the **Edit** tool: it matches exactly
   and fails loudly rather than silently mangling, which `sed` will not.
 - **Leave the original in place** until whatever replaced it is verified, so a
-  bad write can be restored rather than reconstructed.
+  bad write can be restored rather than reconstructed. Before a large edit to
+  an important file, keep the previous content recoverable — a copy, or the
+  original untouched.
 - Deleting a project file is possible from the shell, but check with Kim
   first — he usually wants to see the change in GitHub Desktop anyway.
 
@@ -20,26 +22,23 @@ served truncated or NUL-padded reads. That was a property of a previous shell
 tool and does not apply now. If shell reads ever start disagreeing with the
 Read tool again, say so rather than working around it silently.)
 
-## Running tests / harnesses in the shell
+## Project structure
 
-- **Pure logic** (`Shared/math-utils.js`, `format-utils.js`, `constants.js`, `lunar-ephemeris.js`, `orbit.js`) is ESM — unit-test it **directly in Node** with `import` — no DOM, no jsdom, no mount games. This is the fastest, most reliable check and should be the default for orbital-mechanics maths. The repo root's `package.json` sets `"type": "module"`; when snapshotting files to `/tmp` for testing, drop a `{"type":"module"}` `package.json` next to them or Node parses `.js` as CommonJS and rejects `import`.
-- `node --check` (on a `/tmp` snapshot under a `type:module` package.json) catches syntax errors; `eslint` with `no-undef` + browser env + `THREE` as a global catches strict-mode hazards (undeclared variables) that only explode at runtime. Both proved their worth during the ESM conversion.
-- **DOM / calculator behavior**: jsdom does **not** execute `<script type="module">`, so the old jsdom page harness no longer works on the calculator pages. Page-level checks happen in a real browser — `serve.bat` locally or the deployed Pages site (see Notes for how Claude reaches each). jsdom remains usable only for hand-driving isolated DOM logic that you import yourself.
+**The site is live** at <https://moonwards1.github.io/Moonwards-Project/>
+(GitHub Pages serves `Website/` as committed, no build step). Local viewing
+goes through **`serve.bat`** at the repo root — ES modules do not load over
+`file://`, so double-clicking an `.html` does not work.
 
-## Project structure (current)
+`Website/` has three areas, each with its own detailed rules in
+`.claude/rules/`, which load when you touch files there:
 
-- **The site is live** at <https://moonwards1.github.io/Moonwards-Project/> (GitHub Pages serves `Website/` as committed, no build step). Local viewing goes through **`serve.bat`** at the repo root (`http://localhost:8000/`) — ES modules do not load over `file://`, so double-clicking an `.html` no longer works.
-- Calculators live in `Website/Calculators/<name>/`, each split into **`name.html` + `name.css` + `name.js`** (no inline `<style>`/`<script>` blocks; the tether-tool embeds keep a small inline module that imports and starts the tool).
-- Shared libraries live in `Website/Shared/`, as **ES modules with named exports** (see convention below):
-  - `orbit.js` → `systems` (a `Map` of bodies: `GM`, `radius`, `orbit`, …) — the planetary-system data; also exports `System`, `Orbit`, `Vector`, `Time`, `Transfer`, `Atmosphere`, `Geology`, `constants`.
-  - `math-utils.js` → `OrbitalMath` — pure orbital mechanics (circular/escape/vis-viva speed, hyperbolic excess, period, Hohmann, SOI, Hill radius, synodic period, Tsiolkovsky, tether taper integral/ratio, …).
-  - `format-utils.js` → `Fmt` (plus legacy aliases `fmtForce`, `myRound`, … as named exports) — number/unit formatting.
-  - `ui-components.js` → `create` — the DOM builder.
-  - `animation.js` → `SkyAnim` — SVG reveal / viewBox-tween helpers.
-  - `three.min.js` → **the one classic-script exception**: vendored Three.js, loaded with a plain `<script src>` tag ahead of the page module, provides the global `THREE`.
-- A calculator that imports from `Shared/` references it as `../../Shared/...` and **breaks if its folder is moved without `Website/Shared/` coming along.** Each calculator's README states whether it has this dependency.
-- `Website/Shared/README.md` is the canonical description of the libraries and conventions. New calculators start by copying `Website/Calculators/_template/`.
-- **`Website/MissionPlanner/`** is where the calculators compose into one mission simulator. Its own `README.md` describes what the code does now; `MissionPlannerDesign_v2.md` beside it is Kim's design for what it should become. `Website/ARCHITECTURE.md` covers the model both rest on (World, modules, packets, the recompute chain).
+- **`Calculators/`** — the standalone tools, one folder each.
+- **`Shared/`** — the common ES-module libraries every tool imports.
+- **`MissionPlanner/`** — where those calculators compose into one mission
+  simulator. This is where nearly all current work happens.
+
+`Website/ARCHITECTURE.md` covers the model they rest on: World, modules,
+packets, the recompute chain, frames.
 
 ## Documentation: three tiers, one home each
 
@@ -52,17 +51,17 @@ and a history of how it got that way:
 - **Current-state docs** — READMEs, design docs, and code comments. Always
   describe things as they are today; rewritten in place when something
   changes, never appended to with superseded alternatives or chronology.
-- **Decisions log** — `Notes-and-Obsolete/decisions.md`. Terse, dated entries
-  for settled architecture decisions that are load-bearing for more than one
-  file (a formula, a clamp, a structural rule). States the decision and the
-  one-line why; not a narrative of how it was debated. **When a decision is
-  replaced, rewrite or remove its entry — never leave it standing beside its
+- **Decisions log** — `Notes/decisions.md`. Terse, dated entries for settled
+  architecture decisions that are load-bearing for more than one file (a
+  formula, a clamp, a structural rule). States the decision and the one-line
+  why; not a narrative of how it was debated. **When a decision is replaced,
+  rewrite or remove its entry — never leave it standing beside its
   replacement.** A log holding several versions of one rule is worse than no
-  log, and it will be read as current.
-- **Changelog** — `Notes-and-Obsolete/changelog.md`. Transient, plain-language
-  notes for Kim after a natural chunk of work, ending in a suggested commit
-  message. Cleared once the change is committed — git log is the permanent
-  record after that.
+  log, and it will be read as current. Tracked in git: the READMEs link to it.
+- **Changelog** — `Notes/changelog.md`. Transient, plain-language notes for
+  Kim after a natural chunk of work, ending in a suggested commit message.
+  Cleared once the change is committed — git log is the permanent record after
+  that. Gitignored, since tracking drafts that get deleted is pure churn.
 
 Code comments state the current invariant only — no chronology, no rejected
 alternatives, no narrating the conversation that produced them. If a comment
@@ -73,18 +72,49 @@ to", "no longer", "originally", or "the old X": rewrite as a statement about
 what is true now. Explaining why an *obvious alternative* is wrong is fair
 game and often valuable — that is a live invariant, not history.
 
-**There is no task doc.** The Mission Planner's work list is Kim's own
-`Notes-and-Obsolete/ToDo-MissionPlanner.md`, in his words and his order. Don't
-start a parallel one; a task doc that tracks completed work becomes a second,
-stale account of the code within weeks.
+**There is no task doc, and don't start one.** Work comes from Kim directly,
+a request at a time; a task doc that tracks completed work becomes a second,
+stale account of the code within weeks, which is why the Mission Planner's
+were retired.
 
-## Conventions for shared code
+### The two notes folders
 
-- **ES modules throughout** (converted 2026-07) — `import`/`export` with **named exports**, one `<script type="module">` per page. `Shared/three.min.js` (global `THREE`) is the sole classic script left; pages that use Three.js load it with a plain tag before their module.
-- **Module code runs in strict mode** — assigning to an undeclared variable throws at runtime. The old tether-tool-derived calculators relied on implicit globals; they now carry explicit `var` declarations near the top. Declare everything in new code.
-- **Keep pure logic pure** — maths and formatting take/return plain values, no DOM, so they stay Node-testable (root `package.json` is `"type": "module"`).
-- Prefer the namespaced APIs (`OrbitalMath.*`, `Fmt.*`) in new code.
-- When adding orbital-mechanics maths, put it in `math-utils.js` with a Node test, rather than inlining it in a calculator.
+- **`Notes/`** is mine to maintain and Kim's to read — `decisions.md` and
+  `changelog.md`, nothing else. Anything I write for the project that isn't a
+  README, a code comment, or the design doc belongs here.
+- **`Notes-and-Obsolete/`** is **Kim's own working material** — sketches,
+  SVG and Blender mockups, bug screenshots, and running to-do lists he keeps
+  for himself. His description: disorganized, half-baked, highly provisional.
+  **Do not read it, search it, cite it, or write into it unless Kim points at
+  a specific file.** In particular `ToDo-MissionPlanner.md` is a scratchpad,
+  never a spec — quoting an item back at him as though it were settled work
+  wastes his time correcting the premise.
+
+Repo-wide greps sweep everything, so when searching for how something works,
+exclude that folder rather than reading what comes back.
+
+## Where the rest of this lives
+
+Area-specific guidance is in `.claude/rules/`, scoped by path so each file
+loads only when you touch the code it covers: `mission-planner.md`,
+`shared-libraries.md`, `calculators.md`. Put new area-specific guidance there
+rather than growing this file, which loads in full every session.
+
+## Code conventions
+
+- **ES modules throughout** — `import`/`export` with **named exports**, one
+  `<script type="module">` per page. `Shared/three.min.js` (global `THREE`) is
+  the sole classic script; pages using Three.js load it with a plain tag
+  before their module.
+- **Module code runs in strict mode**, so assigning to an undeclared variable
+  throws at runtime. Declare everything.
+- **Keep pure logic pure** — maths and formatting take and return plain
+  values, no DOM, so they stay Node-testable. Test them directly in Node with
+  `import`; the root `package.json` is `"type": "module"`.
+- **One responsibility per file**, one folder per module or calculator, CSS
+  class prefixes per tool.
+- New orbital-mechanics maths goes in `Shared/math-utils.js` with a Node test,
+  never inline.
 
 ## Git: Kim commits, Claude doesn't
 
@@ -103,47 +133,46 @@ stale account of the code within weeks.
 - Before editing a file that another job may have touched, **re-Read it immediately** so the edit is based on current content. Don't rely on a remembered version after a gap.
 - Prefer to edit any given file from **one thread at a time**.
 
-## Before large edits to important files
+## Verifying in a browser
 
-- Keep the previous content recoverable (a copy, or the original left in place) so a bad write can be **restored** rather than reconstructed.
-- After finishing, verify the file ends as expected: a self-running calculator `.js` ends with its tool's run call (e.g. `skyhookTool(document.getElementById("insertItHere"));`) or its init wiring (`calc();` / `if (document.readyState === "loading") …`); the tether-tool modules end with the closing `}` of their exported function (the embed page calls it); the `.html` ends with `</body></html>` and carries the right `<link>` and `<script type="module">` references.
+The integrated Browser pane (`preview_start`, `navigate`, `read_page`,
+`read_console_messages`, `computer`) persists within a session and needs no
+external tab management. Locally, `preview_start` with `name: "serve.bat"` or
+navigate straight to `http://localhost:8000/…` — **the served root is
+`Website/`**, mirroring GitHub Pages, so local URLs carry no `Website/`
+prefix. For the deployed site, navigate to
+<https://moonwards1.github.io/Moonwards-Project/…>.
 
-## Notes
+Two traps:
 
-- **Verifying pages in a browser.** Claude has an integrated Browser pane (`preview_start`, `navigate`, `read_page`, `computer`, etc.) that persists within the session and needs no external tab management. For **local** checking during development, Kim runs `serve.bat` and Claude can `preview_start` with `name: "serve.bat"` or `navigate` straight to `http://localhost:8000/...` — **the served root is `Website/`** (mirroring GitHub Pages), so local URLs carry no `Website/` prefix: e.g. `http://localhost:8000/MissionPlanner/...`, not `/Website/MissionPlanner/...`. For **deployed** checking, Claude can navigate to <https://moonwards1.github.io/Moonwards-Project/...> directly. The full verification loop — navigate, `read_page` for structure, `read_console_messages` for errors, `computer` to interact and test — is the standard approach. Note: `serve.bat` prints its "Serving…" banner *before* Python starts, so check for a line like `Serving HTTP on :: port 8000` to confirm the server is actually up; remember the root URL renders blank while `index.html` is a stub — test a calculator URL instead.
-- **The browser caches ES modules, and this WILL produce false negatives.** After editing a module, a plain reload can keep running the old copy — the page's module graph comes from the HTTP cache. This once made a correct change look like it had no effect for several rounds of debugging. Two traps: fetching the file and finding the new content proves only what the **server** has, not what the page **loaded**; and `fetch(url, {cache: "no-store"})` deliberately does *not* update the cache, so it fixes nothing. What works: `fetch(url, {cache: "reload"})` for each changed module (this refills the cache from the network), then reload the page. When a verified-correct change appears to do nothing, suspect this before suspecting the code.
-- The session scratchpad folder (under `%LOCALAPPDATA%\Temp\claude\…`) is ephemeral and separate from the project; files there need no cleanup and won't travel with the repo.
+- `serve.bat` prints its "Serving…" banner *before* Python starts, so check
+  for a line like `Serving HTTP on :: port 8000` to confirm the server is
+  really up. The root URL renders blank while `index.html` is a stub — open a
+  tool's URL instead.
+- **The browser caches ES modules, and this WILL produce false negatives.**
+  After editing a module a plain reload can keep running the old copy, because
+  the page's module graph comes from the HTTP cache. This once made a correct
+  change look inert for several rounds of debugging. Fetching the file and
+  seeing the new content proves only what the *server* has, not what the page
+  *loaded*; and `fetch(url, {cache: "no-store"})` deliberately does not update
+  the cache, so it fixes nothing. What works: `fetch(url, {cache: "reload"})`
+  for each changed module, then reload the page. When a verified-correct
+  change appears to do nothing, suspect this before suspecting the code.
 
-# Workflows and Skillsets
+## Who does what
 
-## Kim
+**Kim** — founder and owner, years into this project. Does the design side:
+worldbuilding, artwork, writing, working in Blender with some Unreal. Has real
+knowledge of planetary science, space development and orbital mechanics, and
+researches realistic infrastructure and logistics together with Claude. **Does
+not write code** — so explain in terms of what the app does and why, not in
+terms of the diff.
 
-- Founder and owner of project, has worked on it for a number of years
+**Claude** — writes all the code, and has primary responsibility for keeping
+the architecture organized, subject to Kim's review. Free to advise and make
+suggestions on anything, and is consulted on engineering, materials science
+and orbital mechanics as much as on software.
 
-- Does design - worldbuilding, artwork, writing
-
-  - Works in Blender and has some knowledge of Unreal
-
-- Has some knowledge in planetary science, space development, and orbital mechanics
-
-- Researches together with Claude to find realistic approaches to the world's infrastructure and logistics
-
-- Does not know how to write code
-
-## Claude
-
-- Advises on all matters and is free to make suggestions
-
-- Writes all code
-
-- Has primary responsibility for keeping the project architecture well organized, subject to Kim's review
-
-- Is consulted on technical matters such as engineering, materials science, orbital mechanics, et cetera
-
-## ToughSF
-
-- Is consulted to do technical review of material on the website, once live
-
-- Kim has been active with them in the past
-
-- Communication is through their Discord server
+**ToughSF** — consulted for technical review of website material once live.
+Kim has been active with them in the past; communication is through their
+Discord server.

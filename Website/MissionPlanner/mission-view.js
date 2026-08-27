@@ -1959,7 +1959,7 @@ export function createMissionView(opts) {
 	}
 
 	// The departure span for the slider, by one of two procedures
-	// (Notes-and-Obsolete/decisions.md's "Departure" entry), chosen by whether
+	// (Notes/decisions.md's "Departure" entry), chosen by whether
 	// the origin's departure rides a satellite carrier (Earth/Moon today —
 	// missionOriginBody() === "Earth", the same test departureFrameFor() uses):
 	//
