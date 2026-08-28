@@ -313,3 +313,77 @@ test("bPlane: mirroring the pass through the ecliptic swaps above for below", ()
 	assert.ok(Math.abs(mir.angleDeg - want) < 1e-6,
 		"mirrored " + mir.angleDeg + " vs expected " + want);
 });
+
+// sweptTrueAnomaly / timeAtSweptTrueAnomaly — the marker card's "hold radial
+// from origin" hold (MissionPlanner/ephemeris-view.js) derives the swept
+// angle from these rather than by sampling the drawn trajectory, so a
+// recompute that reshapes the leg can never leave a held angle outside
+// whatever range happened to get sampled (Notes/decisions.md, marker hold).
+
+function wrap2pi(x) { return ((x % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); }
+
+test("sweptTrueAnomaly: zero at dt=0, for any starting true anomaly", () => {
+	[0, 0.5, 1, Math.PI, 4, 6.1].forEach((nu0) => {
+		assert.ok(Math.abs(O.sweptTrueAnomaly(GM_SUN, AU, 0.4, nu0, 0)) < 1e-9, "nu0=" + nu0);
+	});
+});
+
+test("sweptTrueAnomaly: one full period sweeps exactly 2*PI, whatever the eccentricity", () => {
+	[0, 0.2, 0.5, 0.8].forEach((e) => {
+		var period = O.ellipticalPeriod(GM_SUN, AU);
+		var swept = O.sweptTrueAnomaly(GM_SUN, AU, e, 1.1, period);
+		assert.ok(Math.abs(swept - 2 * Math.PI) < 1e-6, "e=" + e + " swept=" + swept);
+	});
+});
+
+test("sweptTrueAnomaly: matches propagateState/elementsFromState ground truth mid-period", () => {
+	var a = AU, e = 0.6, nu0 = 0.8;
+	var period = O.ellipticalPeriod(GM_SUN, a);
+	[0.1, 0.37, 0.63, 0.9].forEach((frac) => {
+		var dt = frac * period;
+		var s0 = O.stateFromElements(GM_SUN, a, e, 0, 0, 0, nu0);
+		var s1 = O.propagateState(GM_SUN, s0.r, s0.v, dt);
+		var truthNu = O.elementsFromState(GM_SUN, s1.r, s1.v).nu;
+		var mine = wrap2pi(nu0 + O.sweptTrueAnomaly(GM_SUN, a, e, nu0, dt));
+		var diff = Math.abs(mine - truthNu);
+		if (diff > Math.PI) { diff = 2 * Math.PI - diff; }
+		assert.ok(diff < 1e-6, "frac=" + frac + " mine=" + mine + " truth=" + truthNu);
+	});
+});
+
+test("sweptTrueAnomaly: keeps growing past 2*PI on a second lap, unwrapped", () => {
+	var period = O.ellipticalPeriod(GM_SUN, AU);
+	var swept = O.sweptTrueAnomaly(GM_SUN, AU, 0.3, 0.5, 1.5 * period);
+	assert.ok(swept > 2 * Math.PI, "expected more than one lap, got " + swept);
+	assert.ok(Math.abs(swept - 3 * Math.PI) < 1, "expected close to 1.5 laps, got " + swept);
+});
+
+test("sweptTrueAnomaly: monotonically increasing with dt across several laps", () => {
+	var period = O.ellipticalPeriod(GM_SUN, AU);
+	var prev = -Infinity;
+	for (var t = -2 * period; t <= 2 * period; t += period / 29) {
+		var swept = O.sweptTrueAnomaly(GM_SUN, AU, 0.5, 1.2, t);
+		assert.ok(swept > prev, "not increasing at t=" + t);
+		prev = swept;
+	}
+});
+
+test("timeAtSweptTrueAnomaly: exact inverse of sweptTrueAnomaly, forward and backward laps", () => {
+	var a = AU, e = 0.45, nu0 = 2.1;
+	var period = O.ellipticalPeriod(GM_SUN, a);
+	[-1.4, -0.3, 0, 0.6, 1.8, 2.5].forEach((laps) => {
+		var dt = laps * period;
+		var swept = O.sweptTrueAnomaly(GM_SUN, a, e, nu0, dt);
+		var back = O.timeAtSweptTrueAnomaly(GM_SUN, a, e, nu0, swept);
+		assert.ok(Math.abs(back - dt) < 1e-4, "laps=" + laps + " back=" + back + " dt=" + dt);
+	});
+});
+
+test("sweptTrueAnomaly/timeAtSweptTrueAnomaly: hyperbolic branch round-trips with no lap wrapping", () => {
+	var a = AU, e = 1.6, nu0 = 0.3;
+	[0, 2e5, -1.5e5, 7e5].forEach((dt) => {
+		var swept = O.sweptTrueAnomaly(GM_SUN, a, e, nu0, dt);
+		var back = O.timeAtSweptTrueAnomaly(GM_SUN, a, e, nu0, swept);
+		assert.ok(Math.abs(back - dt) < 1e-3, "dt=" + dt + " back=" + back);
+	});
+});

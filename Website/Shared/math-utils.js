@@ -760,6 +760,59 @@ export const OrbitalMath = {
 			return OrbitalMath.stateFromElements(GM, el.a, el.e, el.i, el.Omega, el.omega, nu1);
 		},
 
+		// ---- unwrapped swept true anomaly (the reference/auxiliary circle) ----
+		// True anomaly swept since a reference point (a, e, nu0) on the SAME
+		// conic, CONTINUOUS past +-2*PI on a later lap rather than wrapping back
+		// into true anomaly's own range. Derived from the MEAN anomaly, which by
+		// definition sweeps at the exact constant rate meanMotion(GM,a) — the
+		// angle on the circle that circumscribes the ellipse, moving uniformly,
+		// unlike true anomaly itself (Kepler's second law: faster at periapsis,
+		// slower at apoapsis). That makes it the natural quantity to hold fixed
+		// across a recompute that reshapes the orbit: exact for any dt, forward
+		// or backward, any number of laps, with no dependency on how far a
+		// trajectory happens to be drawn or sampled.
+		//
+		// Elliptical (e < 1): mean anomaly is periodic, so recovering the
+		// unwrapped answer needs one lap-count (floor division) after solving
+		// the wrapped Kepler equation — trueAnomalyFromMean always returns a
+		// value in (-PI, PI], never the lap number itself.
+		// Hyperbolic (e >= 1): mean anomaly is already a monotonic bijection
+		// over all reals, so no wrap/lap bookkeeping applies at all.
+		sweptTrueAnomaly: function (GM, a, e, nu0, dt) {
+			var O = OrbitalMath;
+			var n = O.meanMotion(GM, a);
+			if (e >= 1) { return O.trueAnomalyFromMean(O.meanAnomalyFromTrue(nu0, e) + n * dt, e) - nu0; }
+			var TWO_PI = 2 * Math.PI;
+			var nu0w = ((nu0 % TWO_PI) + TWO_PI) % TWO_PI;
+			var M0 = O.meanAnomalyFromTrue(nu0w, e);
+			var M1 = M0 + n * dt;
+			var k = Math.floor(M1 / TWO_PI);
+			var nuw = O.trueAnomalyFromMean(M1 - k * TWO_PI, e);
+			if (nuw < 0) { nuw += TWO_PI; }
+			return (nuw + k * TWO_PI) - nu0w;
+		},
+
+		// Inverse of sweptTrueAnomaly: dt (s) at which the swept true anomaly
+		// since (a, e, nu0) reaches deltaNu (rad, may exceed +-2*PI for a later
+		// lap, or be negative). See sweptTrueAnomaly for why this is exact
+		// rather than sampled.
+		timeAtSweptTrueAnomaly: function (GM, a, e, nu0, deltaNu) {
+			var O = OrbitalMath;
+			var n = O.meanMotion(GM, a);
+			if (e >= 1) {
+				var M0h = O.meanAnomalyFromTrue(nu0, e);
+				var M1h = O.meanAnomalyFromTrue(nu0 + deltaNu, e);
+				return (M1h - M0h) / n;
+			}
+			var TWO_PI = 2 * Math.PI;
+			var nu0w = ((nu0 % TWO_PI) + TWO_PI) % TWO_PI;
+			var M0 = O.meanAnomalyFromTrue(nu0w, e);
+			var nuTarget = nu0w + deltaNu;
+			var k = Math.floor(nuTarget / TWO_PI);
+			var Mw = O.meanAnomalyFromTrue(nuTarget - k * TWO_PI, e);
+			return ((Mw + k * TWO_PI) - M0) / n;
+		},
+
 		// Heliocentric state of a body at Julian date jd, given an orbit record
 		// carrying {a, e, inclination, longitude, argument, epoch, meanAnomaly}.
 		// gm is the central body's GM (Sun). Falls back to the orbit's own

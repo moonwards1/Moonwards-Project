@@ -596,3 +596,31 @@ THE FIX IS NOT A FOURTH COMPLIANCE ROW. A position readout reports a number
 the user cannot act on — no control sets an exit point, and aiming at one
 would not improve the arrival. The explanation belongs in the message bar,
 whose job is to say why the figures are changing.
+
+### 2026-08-28 — The marker card's swept-angle hold is analytic, not sampled
+
+The Ephemeris tab's marker card can hold the ship's "radial from origin"
+(swept true anomaly) fixed while the departure impulse or timeline is edited.
+That hold is computed from `Shared/math-utils.js`'s `sweptTrueAnomaly` /
+`timeAtSweptTrueAnomaly` — closed-form functions of the leg's own conic
+(a, e, nu at the hand-off), NOT by sampling the drawn polyline and unwrapping
+its discrete true-anomaly differences.
+
+WHY: the true anomaly does not sweep at a uniform rate (Kepler's second law),
+but the MEAN anomaly does — it is the angle on the ellipse's own reference
+(auxiliary) circle, moving at the exact constant rate `meanMotion(a)`. Solving
+through mean anomaly gives an EXACT, unbounded-lap inverse for any dt, with no
+sampling error and no artificial range.
+
+THE SAMPLED APPROACH FAILED SILENTLY: its usable degree range was however far
+the leg happened to be drawn (`legDays`, sample density), which could shrink
+between recomputes for reasons unrelated to the marker's own position.
+`timeAtDeg()` clamped an out-of-range hold to the table's nearest edge, so a
+plain burn edit or timeline scrub could snap the marker to the start or end of
+the drawn arc and leave it stuck there — never reaching back the angle it was
+actually holding once the range recovered.
+
+Elliptical (e<1) needs one lap-count (`floor`) after solving the wrapped
+Kepler equation, since `trueAnomalyFromMean` always returns a value in
+`(-PI, PI]`; hyperbolic (e>=1) needs none, being already a monotonic bijection
+over all reals. See the functions' own headers for the exact bookkeeping.

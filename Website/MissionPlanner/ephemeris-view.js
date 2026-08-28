@@ -275,65 +275,27 @@ export function createEphemerisView(opts) {
 	var destApproach = null;
 
 	// ==== marker slider domain: swept degrees, not time --------------------
-	// The slider shows one full orbit's worth of RADIAL (swept-angle) progress,
-	// left = the flight's start (0°, the SOI edge) to right = the drawn arc's
-	// end, whatever it sweeps (up to ~360° when bound, less for an escape).
-	// angleTable is built fresh each refresh() from trajSamples, unwrapped so
-	// deg increases monotonically with t (assumes prograde motion throughout —
-	// good enough for a first pass; a burn that reverses the sweep direction
-	// would need a real fix, not attempted here). degAtTime/timeAtDeg
-	// interpolate linearly between table entries.
-	var angleTable = [];   // [{ t (s, global), deg (unwrapped) }]
-
-	function buildAngleTable() {
-		angleTable = [];
-		if (!trajSamples.length) { return; }
-		var prevRaw = null, deg = 0, started = false;
-		trajSamples.forEach(function (s) {
-			var raw = sweptFromOrigin(s.r);
-			if (!started) { deg = raw; started = true; }
-			else {
-				var d = raw - prevRaw;
-				while (d < -180) { d += 360; }
-				while (d > 180) { d -= 360; }
-				deg += d;
-			}
-			prevRaw = raw;
-			angleTable.push({ t: s.t, deg: deg });
-		});
+	// The slider shows RADIAL (swept-angle) progress from the flight's start
+	// (0°, the SOI edge) to the drawn arc's end, whatever it sweeps (up to
+	// ~360° when bound, less for an escape). degAtTime/timeAtDeg are exact,
+	// analytic functions of the leg's start state (trajSegs[0]) via
+	// Shared/math-utils.js's sweptTrueAnomaly/timeAtSweptTrueAnomaly, not a
+	// table sampled from the drawn polyline — see Notes/decisions.md,
+	// 2026-08-28, for why sampling doesn't work here.
+	function startElements() {
+		return trajSegs.length ? O.elementsFromState(GM_SUN, trajSegs[0].r0, trajSegs[0].v0) : null;
 	}
 
-	// Swept degrees at global time t, interpolated from angleTable.
+	// Swept degrees at global time t.
 	function degAtTime(t) {
-		if (!angleTable.length) { return 0; }
-		var n = angleTable.length;
-		if (t <= angleTable[0].t) { return angleTable[0].deg; }
-		if (t >= angleTable[n - 1].t) { return angleTable[n - 1].deg; }
-		var lo = 0, hi = n - 1;
-		while (hi - lo > 1) {
-			var mid = (lo + hi) >> 1;
-			if (angleTable[mid].t <= t) { lo = mid; } else { hi = mid; }
-		}
-		var a = angleTable[lo], b = angleTable[hi];
-		var frac = (b.t - a.t) > 1e-9 ? (t - a.t) / (b.t - a.t) : 0;
-		return a.deg + frac * (b.deg - a.deg);
+		var el = startElements();
+		return el ? O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, t) * 180 / Math.PI : 0;
 	}
 
 	// Inverse of degAtTime: global time at which the swept angle reaches deg.
 	function timeAtDeg(deg) {
-		if (!angleTable.length) { return 0; }
-		var n = angleTable.length;
-		deg = Math.max(angleTable[0].deg, Math.min(angleTable[n - 1].deg, deg));
-		if (deg <= angleTable[0].deg) { return angleTable[0].t; }
-		if (deg >= angleTable[n - 1].deg) { return angleTable[n - 1].t; }
-		var lo = 0, hi = n - 1;
-		while (hi - lo > 1) {
-			var mid = (lo + hi) >> 1;
-			if (angleTable[mid].deg <= deg) { lo = mid; } else { hi = mid; }
-		}
-		var a = angleTable[lo], b = angleTable[hi];
-		var frac = (b.deg - a.deg) > 1e-9 ? (deg - a.deg) / (b.deg - a.deg) : 0;
-		return a.t + frac * (b.t - a.t);
+		var el = startElements();
+		return el ? O.timeAtSweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, deg * Math.PI / 180) : 0;
 	}
 
 	// ==== the clock: same date-bar widget and epoch/span every plotter
@@ -1637,7 +1599,7 @@ export function createEphemerisView(opts) {
 		updateDestinationMarker(s.r, tof);
 
 		mk.slider.disabled = (state.marker.mode !== "free");      // position driven in Target mode
-		mk.slider.max = angleTable.length ? angleTable[angleTable.length - 1].deg : 360;
+		mk.slider.max = trajTotalT > 0 ? degAtTime(trajTotalT) : 360;
 		if (document.activeElement !== mk.slider) { mk.slider.value = degAtTime(tof); }
 
 		// Target-mode controls/readouts (budget input + solved Δv); hidden otherwise
@@ -1736,15 +1698,18 @@ export function createEphemerisView(opts) {
 		// That absolute-time-of-flight hold is state.marker.holdMode "tof". The
 		// other mode, "deg" (the default — the marker card's radio next to
 		// "radial from origin"), holds the marker's SWEPT ANGLE fixed instead:
-		// also snapshot degAtTime(markerAbsTof) now, under the OLD angleTable,
-		// and once the new leg's angleTable is built (buildAngleTable(), below)
-		// re-solve timeAtDeg(markerDeg) on it to override the tof-based f0.
-		// Swept angle is the more physically stable quantity to hold across a
-		// scrub — e.g. dragging the departure date reshapes the whole leg (the
-		// origin's own heliocentric position moves, sharply for the Moon), and
-		// "the ship is this far around its arc" keeps meaning the same thing
-		// where a fixed elapsed time can land somewhere very different once
-		// the origin has moved out from under it.
+		// snapshot degAtTime(markerAbsTof) now, under the OLD leg's start state,
+		// and re-solve timeAtDeg(markerDeg) once the new leg's start state is in
+		// place (below) to override the tof-based f0. degAtTime/timeAtDeg are
+		// exact for any degree (Notes/decisions.md, 2026-08-28), so this can
+		// only land beyond the CURRENT trajTotalT — handled by the same f0
+		// clamp a "tof" hold past the end already needs. Swept angle is the
+		// more physically stable quantity to hold across a scrub — e.g.
+		// dragging the departure date reshapes the whole leg (the origin's own
+		// heliocentric position moves, sharply for the Moon), and "the ship is
+		// this far around its arc" keeps meaning the same thing where a fixed
+		// elapsed time can land somewhere very different once the origin has
+		// moved out from under it.
 		var prevTotalT = trajTotalT;
 		var markerAbsTof = (state.marker && prevTotalT > 0)
 			? mcMarkerFraction(state.marker.f0, state.marker.angle) * prevTotalT : null;
@@ -1807,7 +1772,6 @@ export function createEphemerisView(opts) {
 
 		if (!leg.ok) {
 			trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
-			angleTable = [];
 			updateHandoffControls(hand);
 			clearApproachMarks();
 			setStatus("err", leg.diagnostic.message);
@@ -1843,15 +1807,14 @@ export function createEphemerisView(opts) {
 			trajSamples = leg.samples;
 
 			updateHandoffControls(hand);
-			buildAngleTable();
 
 			// "deg" hold mode: override the tof-based re-anchor above with the
-			// time-of-flight where the NEW leg's angleTable reaches the SAME
+			// time-of-flight where the NEW leg's own conic reaches the SAME
 			// swept angle the marker had before this recompute (markerDeg, see
-			// the note at the top of refresh()). timeAtDeg clamps to the new
-			// table's own range, so a leg that no longer reaches that angle
-			// just settles at whichever end is closest — never a NaN or an
-			// out-of-range fraction.
+			// the note at the top of refresh()). timeAtDeg is exact for any
+			// degree — there's no table range to fall outside of — so this can
+			// only land beyond trajTotalT when the leg is genuinely too short
+			// to have gotten there yet, which the f0 clamp below handles.
 			if (state.marker && markerDeg != null && trajTotalT > 0) {
 				state.marker.f0 = Math.max(0, Math.min(1, timeAtDeg(markerDeg) / trajTotalT));
 				state.marker.angle = 0;
