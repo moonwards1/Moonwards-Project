@@ -18,7 +18,8 @@ import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed 
 	from "../departure-leg/departure-leg.js";
 import frozenPlan from "../frozen-plan/frozen-plan.js";
 import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_AU,
-	handoffPending, commitHandoff, sameWaypoints, copyWaypoints, legFor, nearestApproach }
+	handoffPending, commitHandoff, sameWaypoints, copyWaypoints, legFor, nearestApproach,
+	sweptAnglesOf, placeAtSweptAngles }
 	from "../transfer-leg/transfer-leg.js";
 import { findClosestApproach as findClosestApproachEvent,
 	computeArrivalSeam as computeArrivalSeamFor } from "../../core/arrival-seam.js";
@@ -326,6 +327,52 @@ test("dayAtDeg: inverts degAtDay back to (about) the same day", function () {
 	});
 });
 
+// ---- sweptAnglesOf / placeAtSweptAngles (holding waypoints as the arc moves)
+
+test("swept-angle hold: a waypoint keeps its angle when the hand-off changes", function () {
+	// The same waypoint list on two different coasts — the second flown from a
+	// faster hand-off, so every day-count along it reaches farther round the
+	// Sun. Held by swept angle, the burns land back on the same points of the
+	// new arc, at DIFFERENT days.
+	var wps = [{ days: 100, burn: { pro: 20, rad: 0, nrm: 0 } },
+	           { days: 300, burn: { pro: 0, rad: 15, nrm: 0 } }];
+	var slow = computeLeg({ waypoints: wps, legDays: 480, destination: "" }, HELIO_START);
+	var degs = sweptAnglesOf(slow, wps);
+
+	var fast = computeLeg({ waypoints: wps, legDays: 480, destination: "" },
+		boosted(HELIO_START, 2000));
+	var moved = placeAtSweptAngles(fast, 480, wps, degs);
+
+	assert.equal(moved.length, 2);
+	moved.forEach(function (wp, i) {
+		assert.ok(Math.abs(degAtDay(fast, wp.days) - degs[i]) < 0.05,
+			"waypoint " + i + " should sit at " + degs[i] + "deg, got " + degAtDay(fast, wp.days));
+		// A higher-energy coast sweeps angle more slowly, so holding the angle
+		// pushes each waypoint LATER. The direction is not the point — that the
+		// day genuinely moved, while the angle did not, is.
+		assert.ok(wp.days > wps[i].days + 1,
+			"waypoint " + i + " should have moved in time, " + wps[i].days + " -> " + wp.days);
+		assert.deepEqual(wp.burn, wps[i].burn);   // the burn itself is untouched
+	});
+});
+
+test("swept-angle hold: nothing is dropped, so plan index-matching survives", function () {
+	// A waypoint whose angle the new leg never reaches clamps to that leg's end
+	// rather than vanishing — a hole here would mis-pair every plan waypoint
+	// after it (frozen-plan's planWaypointsFor is index-matched against this).
+	var wps = [{ days: 50, burn: { pro: 5, rad: 0, nrm: 0 } },
+	           { days: 460, burn: { pro: 5, rad: 0, nrm: 0 } }];
+	var leg = computeLeg({ waypoints: wps, legDays: 480, destination: "" }, HELIO_START);
+	var degs = sweptAnglesOf(leg, wps);
+	var short = computeLeg({ waypoints: [], legDays: 120, destination: "" }, HELIO_START);
+	var moved = placeAtSweptAngles(short, 120, wps, degs);
+	assert.equal(moved.length, 2);
+	moved.forEach(function (wp) {
+		assert.ok(isFinite(wp.days) && wp.days > 0 && wp.days <= 120,
+			"clamped into the new leg, got " + wp.days);
+	});
+});
+
 test("dayAtDeg: a small degree nudge near a waypoint moves it a small number of days", function () {
 	var leg = computeLeg({ waypoints: [], legDays: 480, destination: "" }, HELIO_START);
 	var deg = degAtDay(leg, 200);
@@ -448,6 +495,38 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	assert.equal(rPlan.status, "ok");
 	assert.deepEqual(rPlan.warnings.map(function (w) { return w.code; }).sort(),
 		["aim-mismatch", "vinf-mismatch"]);   // epoch is INSIDE the window — no epoch-mismatch
+	// THE FLOWN FLIGHT IS THE CLOCK, so that shortfall is no longer hidden
+	// behind an arc drawn from the plan: the coast goes where the skyhook
+	// actually sends it, and that is nowhere near Ceres. Closing the gap is
+	// what Check and Update are for.
+	assert.equal(rLeg.status, "ok");
+	assert.deepEqual(rLeg.warnings.map(function (w) { return w.code; }),
+		["misses-destination"]);
+});
+
+// The same preset with its departure stack removed, so nothing is delivered
+// and the coast falls back to the plan's own frozen state (frozen-plan.js's
+// boundary fallback). That is the plan AS FROZEN — the flight the Ephemeris
+// tab authored — and it is the fixture for everything below that needs a
+// coast which genuinely reaches Ceres.
+function planFlownPreset() {
+	var res = deserializeWorld(defaultMission);
+	assert.equal(res.ok, true, res.reason);
+	["moon-platform", "orbital-skyhook", "departure-leg"].forEach(function (moduleId) {
+		var s = res.world.stages().filter(function (x) { return x.moduleId === moduleId; })[0];
+		if (s) { res.world.set({ removeStage: s.id }); }
+	});
+	return res.world;
+}
+
+test("preset flying its own plan: the coast rendezvouses and the arrival leg pins to the pass", function () {
+	var world = planFlownPreset();
+	var engine = createEngine(world, makeRegistry());
+	var stages = world.stages();     // frozen-plan, transfer-leg, arrival-leg
+	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
+		["frozen-plan", "transfer-leg", "arrival-leg"]);
+	var res = { world: world };
+	var rLeg = engine.resultFor(stages[1].id);
 	assert.equal(rLeg.status, "ok");
 	assert.deepEqual(rLeg.warnings, []);
 
@@ -458,12 +537,12 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	// the terminal stage: the arrival flyby leg, pinned at the
 	// delivered arrival epoch, hand-off a day before, end a day after; closest
 	// approach at half Ceres's SOI (the reference construction).
-	var rArr = engine.resultFor(stages[5].id);
+	var rArr = engine.resultFor(stages[2].id);
 	assert.equal(rArr.status, "ok");
 	// The arrival leg ends ARRIVAL_TAIL_DAYS past the measured pass — not past
 	// the coast's leg end, which merely happens to sit near it. The pass is the
 	// true periapsis and falls a few minutes INSIDE the coast leg.
-	var coastPass = nearestApproach(legFor(res.world, stages[4].id), "Ceres");
+	var coastPass = nearestApproach(legFor(res.world, stages[1].id), "Ceres");
 	assert.ok(coastPass && coastPass.insideSoi, "the shipped coast must reach Ceres");
 	assert.ok(Math.abs(rArr.output.data.jd - (coastPass.jd + 1)) < 1e-9);
 	assert.ok(coastPass.jd < rLeg.output.data.jd, "closest approach should precede the leg's end");
@@ -474,7 +553,7 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	// body frame and finds the pass for itself. Two independent routes over
 	// different physics must land on the same event, or the phases are once
 	// again describing two different passes.
-	var aLeg = arrivalLegFor(res.world, stages[5].id);
+	var aLeg = arrivalLegFor(res.world, stages[2].id);
 	assert.ok(aLeg && aLeg.ok, "the arrival leg must have flown");
 	assert.equal(aLeg.caAtEdge, false, "the pass must not sit on a window edge");
 	var arrCaJd = aLeg.jd0 + aLeg.ca.t / DAY;
@@ -683,9 +762,11 @@ test("handoff: the arrival phase runs on the committed coast, not the pending on
 // is hundreds of thousands of km apart.
 
 function ceresLeg(deltaPro) {
-	var res = deserializeWorld(defaultMission);
-	assert.equal(res.ok, true, res.reason);
-	var world = res.world;
+	// planFlownPreset, so the coast starts from the plan's frozen hand-off and
+	// genuinely reaches Ceres — what these tests are measuring. Flown from the
+	// shipped skyhook's real delivery it misses by over an AU, which is the
+	// subject of the preset test above, not of this one.
+	var world = planFlownPreset();
 	var coast = world.stages().filter(function (s) { return s.moduleId === "transfer-leg"; })[0];
 	var wps = JSON.parse(JSON.stringify(coast.params.waypoints));
 	wps[0].burn.pro += deltaPro;

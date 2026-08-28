@@ -99,7 +99,9 @@ test("a hand-off flung far enough off base is refused, and says where to go", ()
 	var res = solveDepartureTarget(specFor(deliveredOffsetBy(0.25 * 149597870700)));
 	assert.equal(res.ok, false);
 	assert.match(res.reason, /correction limit/);
-	assert.match(res.reason, /Ephemeris tab/);
+	// A gap this size is a departure that has not been built up yet, so the
+	// refusal points at the technology — not at authoring a different mission.
+	assert.match(res.reason, /add to the departure/);
 });
 
 test("a hand-off at or after the arrival has no coast to solve", () => {

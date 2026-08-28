@@ -21,9 +21,10 @@
  *   THE ARRIVAL-TECH SLOT is empty too: arrival-leg is simply the terminal
  *   stage until an arrival technology is loaded. The departure slot being
  *   empty is safe because frozen-plan is a compliance BOUNDARY
- *   (recompute.js): an empty or half-built departure never blanks the
- *   committed coast — the mission still flies and arrives while its
- *   departure slot is filled in. The arrival phase has no such boundary —
+ *   (recompute.js): an empty or half-built departure never blanks the coast —
+ *   with nothing delivered the plan's own frozen state is what the coast
+ *   flies from, so the mission still flies and arrives while its departure
+ *   slot is filled in. The arrival phase has no such boundary —
  *   the coast's own live readouts (the ship card) are what tell the user
  *   whether the flight actually reaches the destination.
  *
@@ -178,17 +179,15 @@ export function freezeMissionWorld(spec) {
 		kind: WORLD_KIND,
 		version: WORLD_VERSION,
 		// The clock opens at the HAND-OFF — the coast's own start — because a
-		// spawned mission opens on the coast phase.
+		// spawned mission opens on the coast phase, and a mission with no
+		// departure technology yet coasts from the plan's own frozen state.
 		//
-		// PHASE CLOCKS ARE ONLY CONSISTENT WITHIN A PHASE. Departure and arrival
-		// span a user-designed series of events whose duration can only be
-		// ESTIMATED, so the clock jumps a little at each hand-off seam rather
-		// than lining up exactly with the plan's committed epoch. Being up to a
-		// day out is deliberately allowed: that tolerance is what makes
-		// estimating a departure's duration tractable at all, and a few hours is
-		// nothing on interplanetary timeframes. The arrival seam has the same
-		// looseness (frozen-plan.js's handoffWindowFor also backs the ship
-		// card's Coast-phase timing bar).
+		// ONE CLOCK, ONE SEAM EPOCH. Once a technology delivers, the coast
+		// starts from what it really delivered (frozen-plan.js), so the
+		// Departure timeline's end and the Coast timeline's start are the same
+		// instant, not two that a window has to reconcile. The plan's committed
+		// hand-off becomes a mark on those timelines and the epoch the
+		// compliance row grades against — a requirement, never a second clock.
 		jd: handoff.jd,
 		nextStage: n,
 		stages: stages

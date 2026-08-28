@@ -637,6 +637,37 @@ export function dayAtDeg(leg, legDays, dayGuess, targetDeg) {
 	return day;
 }
 
+// ---- holding waypoints by swept angle --------------------------------------
+// When the trajectory beneath a waypoint moves — the departure technology
+// delivers a different hand-off, and Update commits it — the burn should stay
+// at the POINT OF THE ARC the user put it at, not at the number of days it
+// happened to sit at. So a waypoint is re-placed by the heliocentric angle it
+// sweeps from the hand-off, which is the same hold the Ephemeris tab's marker
+// uses ("deg" hold mode, ephemeris-view.js).
+//
+// The conversion is two-sided by necessity, and this is why it is two
+// functions rather than one: a swept angle can only be read off the leg the
+// waypoint is currently on, and only inverted on the leg it is moving to. So
+// the caller reads the angles BEFORE the change and places them AFTER it,
+// with the recompute in between (mission-view.js's applyRetarget).
+//
+// Nothing is dropped. dayAtDeg clamps into the new leg's own span, so a
+// waypoint whose angle the shortened leg never reaches lands at its end
+// rather than disappearing — the plan's reference copy is index-matched
+// against this list (planWaypointsFor), and a hole in it would mis-pair every
+// waypoint after it.
+export function sweptAnglesOf(leg, waypoints) {
+	return (waypoints || []).map(function (wp) { return degAtDay(leg, wp.days); });
+}
+
+export function placeAtSweptAngles(leg, legDays, waypoints, degs) {
+	return (waypoints || []).map(function (wp, i) {
+		var deg = degs ? degs[i] : null;
+		var days = isFinite(deg) ? dayAtDeg(leg, legDays, wp.days, deg) : wp.days;
+		return { days: days, burn: Object.assign({ pro: 0, rad: 0, nrm: 0 }, wp.burn) };
+	});
+}
+
 // Last computed legs per (World, stage), for the card readouts and the
 // polyline. Keyed by World first because N missions coexist and their Worlds
 // reuse stage ids like "stg-2" — a stageId-only cache would let one mission's
@@ -731,6 +762,8 @@ export default {
 	nearestApproach: nearestApproach,
 	handoffPending: handoffPending,
 	commitHandoff: commitHandoff,
+	sweptAnglesOf: sweptAnglesOf,
+	placeAtSweptAngles: placeAtSweptAngles,
 
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);

@@ -6,14 +6,22 @@
  * ARCHITECTURE.md's "Phases are chains; compliance is a boundary check, not
  * a reconciliation" for the general shape — and enforces the comply rule:
  *
- *   THE PLAN IS AUTHORITATIVE. update() always emits the plan's own frozen
- *   departure ship-state downstream — never the tech's — so the coast
- *   trajectory everyone sees is the committed plan. When the tech's delivered
- *   state deviates from the plan, the deviation is reported through the
- *   envelope's WARNINGS channel (v-infinity out, epoch, aim direction), each
- *   carrying the required/delivered numbers so mission-view.js's compliance
- *   bar can render its PLAN REQUIRES / TECH DELIVERS readout. The plan never
- *   re-solves to follow the tech.
+ *   THE FLOWN FLIGHT IS THE CLOCK. update() emits the state the departure
+ *   technology actually DELIVERED — position, velocity and epoch — so the
+ *   coast everyone sees is the flight the ship is really on, starting exactly
+ *   where and when the departure phase ended. There is one mission clock and
+ *   one seam epoch on it. The plan's own frozen state is the fallback for
+ *   when nothing is delivered (an empty tech slot, or a departure whose
+ *   flight fails), so a mission with no departure yet still flies its plan.
+ *
+ *   THE PLAN IS THE REQUIREMENT, NOT THE FLIGHT. What it commits to is
+ *   reported through the envelope's WARNINGS channel (v-infinity out, epoch,
+ *   aim direction), each carrying the required/delivered numbers so
+ *   mission-view.js's compliance bar can render its PLAN REQUIRES / TECH
+ *   DELIVERS readout, and the committed hand-off is drawn as a MARK on the
+ *   timelines beside the real one. The plan never re-solves to follow the
+ *   tech: moving it is the Update button's deliberate, user-asked commit
+ *   (core/retarget.js), never something this boundary performs.
  *
  * `computeCompliance`'s `data` argument is a SINGLE, OPAQUE end result —
  * whatever the departure phase's own stage chain (a platform, any carriers,
@@ -39,10 +47,11 @@
  *   departure: { r, v, jd }  — the frozen heliocentric hand-off state the
  *                              departure tech must deliver (m, m/s, jd), AT
  *                              THE ORIGIN'S SOI EDGE, where a departure leg
- *                              ends — THE COAST'S OWN STARTING STATE, full
- *                              stop. No burn happens at this seam (see
- *                              transfer-leg.js's header for the reasoning the
- *                              two modules share)
+ *                              ends. A REQUIREMENT, and the coast's starting
+ *                              state only while no tech delivers one. No burn
+ *                              happens at this seam (see transfer-leg.js's
+ *                              header for the reasoning the two modules
+ *                              share)
  *   arrival:   { body, jd, vInf } — the plan's arrival commitment: body name,
  *                              epoch, and approach v-infinity (m/s) the
  *                              arrival tech must be able to catch. Read back
@@ -404,19 +413,30 @@ export default {
 		rememberCompliance(ctx.world, ctx.stageId, comp);
 		if (!comp.ok) { return comp.diagnostic; }
 
-		// THE COMPLY RULE: the plan's own frozen state flows downstream,
-		// regardless of what the tech delivered. Δv spent so far is a fact of
-		// the tech, so that passes through.
-		var dep = params.departure;
+		// THE FLOWN FLIGHT IS THE CLOCK: the state that flows downstream is the
+		// one the departure technology actually delivered — position, velocity
+		// AND epoch — so the coast drawn below this seam starts exactly where
+		// and when the departure phase ended. The plan's own frozen state is
+		// the FALLBACK, used when nothing is delivered (an empty tech slot, or
+		// a departure whose flight fails); a mission with no departure yet
+		// still flies its plan. Δv spent so far is a fact of the tech, so that
+		// passes through.
+		var src = comp.delivered ? comp.delivered.state : params.departure;
+		var flown = comp.delivered ? comp.delivered.vInf : comp.required.vInf;
 		var packet = PacketTypes.make("ship-state",
-			{ r: dep.r.slice(), v: dep.v.slice(), jd: dep.jd, frame: "helio",
+			{ r: src.r.slice(), v: src.v.slice(), jd: src.jd, frame: "helio",
 			  dvUsed: data ? (data.dvUsed || 0) : 0 },
-			{ tool: "mission-planner/frozen-plan", label: "plan departure", iso: isoOf(dep.jd) });
+			{ tool: "mission-planner/frozen-plan",
+			  label: comp.delivered ? "delivered hand-off" : "plan departure",
+			  iso: isoOf(src.jd) });
 
-		// The plan's endpoint dates — the span mission-view.js's coastSpan reads
-		// for the Coast slider.
-		var events = [{ jd: dep.jd,
-		                label: "Exit origin SOI — v∞ " + (comp.required.vInf / 1000).toFixed(2) + " km/s" }];
+		// The flight's own hand-off, then the plan's committed arrival — the
+		// span mission-view.js's coastSpan reads for the Coast slider. The
+		// hand-off event is the REAL one, so the Coast timeline begins where
+		// the Departure timeline ends; the plan's committed hand-off is a mark
+		// beside it, not an event (mission-view.js's plannedDeparture).
+		var events = [{ jd: src.jd,
+		                label: "Exit origin SOI — v∞ " + (flown / 1000).toFixed(2) + " km/s" }];
 		var arr = params.arrival || {};
 		if (arr.body && isFinite(arr.jd)) {
 			events.push({ jd: arr.jd,

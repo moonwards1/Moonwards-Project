@@ -217,8 +217,9 @@ export function solveDepartureTarget(spec) {
 	var aimDir = passOffsetDir(now, spec, p, wps);
 	if (!aimDir) {
 		out.reason = "The flight from the delivered hand-off never comes near " +
-			spec.destination + ", so there is no approach to re-aim. This departure is " +
-			"too far off base to re-target; author a fresh mission in the Ephemeris tab.";
+			spec.destination + ", so there is no approach to re-aim. Build the departure " +
+			"technology up until it delivers something near what the plan asks for, " +
+			"then Check again.";
 		return out;
 	}
 	var bodyR = Frames.bodyHelioState(spec.destination, spec.arrivalJd).r;
@@ -248,8 +249,8 @@ export function solveDepartureTarget(spec) {
 	if (!(passAfter < MAX_PASS_ALTITUDE)) {
 		out.reason = "Re-solved from the delivered exit point the flight still passes " +
 			fmtKm(passAfter) + " above " + spec.destination + " — needs to be within " +
-			fmtKm(MAX_PASS_ALTITUDE) + ". This departure is too far off base to re-target; " +
-			"author a fresh mission in the Ephemeris tab.";
+			fmtKm(MAX_PASS_ALTITUDE) + ". Build the departure technology up until it " +
+			"delivers something near what the plan asks for, then Check again.";
 		out.passAfter = passAfter;
 		return out;
 	}
@@ -263,8 +264,9 @@ export function solveDepartureTarget(spec) {
 	// 400,000 km offset on the shipped Moon->Ceres plan asks for 1.1 degrees and
 	// 3.2 m/s). A Lambert solve will happily answer for a hand-off flung an AU
 	// away too — at a 115 degree turn and 14 km/s — but that is not a departure
-	// being refined, it is a different mission, and it belongs in the Ephemeris
-	// tab. So the required change is held to the same per-axis bound a course
+	// being refined, it is a departure that has not been built yet: the answer
+	// is more technology, not a re-aim. So the required change is held to the
+	// same per-axis bound a course
 	// correction gets (transfer-leg's WAYPOINT_AXIS_CAP_MPS): normal correction
 	// scale, in the frame the departure card states its own vector in.
 	var curVInf = O.vSub(d.v, bodyV);
@@ -273,8 +275,9 @@ export function solveDepartureTarget(spec) {
 	if (worst > WAYPOINT_AXIS_CAP_MPS) {
 		out.reason = "Re-targeting would ask the departure for " + Math.round(worst) +
 			" m/s on one axis, past the " + WAYPOINT_AXIS_CAP_MPS + " m/s correction limit. " +
-			"This departure is too far off base to re-point; author a fresh mission in the " +
-			"Ephemeris tab.";
+			"That gap is a missing or under-built departure technology, not an aiming " +
+			"error — add to the departure until it delivers close to the plan, then " +
+			"Check again.";
 		out.passAfter = passAfter;
 		return out;
 	}

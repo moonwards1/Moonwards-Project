@@ -38,10 +38,13 @@ restate its content in code comments — cite the entry and its date.
 
 ## Invariants worth knowing before you start
 
-- **`frozen-plan` is authoritative.** It always emits the PLAN's departure
-  state downstream, so the drawn coast is the plan's flight, not the ship's.
-  The mission bar (`core/delivered-flight.js`) is the honest read of what the
-  technology actually delivers. The two disagreeing is the point.
+- **The flown flight is the clock.** `frozen-plan` emits what the departure
+  technology actually DELIVERED — position, velocity and epoch — so the drawn
+  coast is the ship's flight and the Coast timeline starts where the Departure
+  timeline ends. The plan's frozen state is the REQUIREMENT (and the fallback
+  when nothing is delivered), never a second flight on a second clock. Moving
+  the plan onto what is flown is the Update button's deliberate commit
+  (`core/retarget.js`), never something the boundary does by itself.
 - **A phase is a labeled sub-range of the one ordered stage list.** Stages
   compose in sequence; compliance at a seam is ONE boundary comparison. Never
   "reconcile" events within or across a phase.

@@ -18,8 +18,10 @@ Entries are chronological within each section.
 
 ### 2026-07-25 — Phase seams
 
-- **Departure→Coast hand-off** — the epoch frozen at mission creation, which
-  is also the coast's own start. Fixed for the life of the mission.
+- **Departure→Coast hand-off** — the epoch the departure technology actually
+  delivers, which is also the coast's own start. It moves as the technology is
+  tuned. The epoch frozen at mission creation is the REQUIREMENT graded
+  against it, not a second date the coast runs on. See "One clock" below.
 
 - **Coast→Arrival hand-off (the seam)** — **a window around the encounter,
   not a fixed date**: `closest approach − Δt` to `closest approach + ~1 day`,
@@ -540,16 +542,16 @@ across scrubbing.
 ### 2026-08-26 — The mission bar states the flight the ship is actually on
 
 EVERY FIGURE IN THE BAR — v∞ out, coast Δv, closest approach, v∞ in —
-describes the flight flown from what the departure technology delivers,
+describes the flight flown from what the departure technology is delivering according to the latest update,
 through the waypoints as they currently stand (`core/delivered-flight.js`).
 Not the plan's commitments and not its requirements.
 
-WHY THIS IS ONE RULE AND NOT FOUR CHOICES: `frozen-plan` is authoritative by
-design and always emits the PLAN's departure state downstream, so the drawn
-coast is the plan's flight, not the ship's. There is only ONE closest
-approach, one v∞ out, one v∞ in; the drawn coast is a stale estimate of them
-and the bar is the honest read. The two disagreeing between updates is the
-point — that gap is what the user is working to close.
+WHY THIS IS ONE RULE AND NOT FOUR CHOICES: there is only ONE closest approach,
+one v∞ out, one v∞ in, and the bar states them. Since the flown flight became
+the clock the drawn coast flies from the same delivered hand-off, so the bar
+and the trajectory agree by construction. What they still measure differently
+is their HORIZON: the bar flies out to the plan's committed arrival date, the
+drawn leg to its own `legDays`.
 
 GRADED: v∞ out (against the plan's requirement, or a standing Check's target)
 and closest approach (against `MAX_PASS_ALTITUDE`). Coast Δv and v∞ in are
@@ -624,3 +626,59 @@ Elliptical (e<1) needs one lap-count (`floor`) after solving the wrapped
 Kepler equation, since `trueAnomalyFromMean` always returns a value in
 `(-PI, PI]`; hyperbolic (e>=1) needs none, being already a monotonic bijection
 over all reals. See the functions' own headers for the exact bookkeeping.
+
+### 2026-08-28 — One clock: the flown flight is what the coast flies
+
+`frozen-plan.update()` emits the state the departure technology ACTUALLY
+DELIVERED — position, velocity and epoch. The coast therefore begins exactly
+where and when the departure phase ended: one mission clock, one epoch at the
+seam. The plan's frozen `departure` is the REQUIREMENT the compliance rows
+grade against and a mark on the timelines, never a second flight.
+
+FALLBACK: with nothing delivered — an empty technology slot, or a departure
+whose flight fails — the plan's own frozen state is what the coast flies. That
+is what keeps a freshly frozen mission flying while its departure is built,
+and it is the whole of the `boundary` carve-out's remaining job.
+
+WHAT THIS REPLACED: the plan used to be authoritative for the drawn coast, so
+the seam carried two epochs a ±1 d window had to reconcile — the tech's real
+SOI exit and the plan's committed hand-off — with the ship parked at both ends
+of the gap at once. Every figure that mattered then had to be computed twice,
+once for what was drawn and once for what was flown
+(`core/delivered-flight.js`).
+
+THE VISIBLE COST, ACCEPTED: the shipped Moon→Ceres preset's skyhook does not
+deliver its committed hand-off (its injection has no modelled tech yet), so
+the preset's coast now misses Ceres by 1.2 AU instead of drawing a clean
+arrival. That was always the truth; only its hiding place has changed.
+
+### 2026-08-28 — Waypoints are held by swept angle when the arc moves
+
+When the trajectory under a waypoint changes, the burn keeps the HELIOCENTRIC
+ANGLE it sweeps from the hand-off, not the number of days it sat at. A
+waypoint belongs to a point on the arc, and days are only how that point is
+addressed. Same hold the Ephemeris tab's marker uses ("deg" mode).
+
+The conversion is two-sided by necessity — an angle can only be read off the
+leg the waypoint is on and only inverted on the leg it is moving to — so it is
+two functions, `transfer-leg.js`'s `sweptAnglesOf` and `placeAtSweptAngles`,
+with the recompute in between (`mission-view.js`'s `applyRetarget`).
+
+NOTHING IS DROPPED: a waypoint whose angle a shortened leg never reaches
+clamps to that leg's end. The plan's reference copy is index-matched against
+this list (`planWaypointsFor`), and a hole would mis-pair every waypoint after
+it.
+
+### 2026-08-28 — Update is a full commit
+
+Update re-solves the departure requirement at the real exit point and writes
+it, and then leaves nothing downstream stale: `legDays` is reset so the
+arrival still lands on the committed date, the plan's reference waypoints are
+re-based to keep their absolute epochs, the working waypoints are re-placed by
+swept angle on the new arc, and the coast is handed to Arrival
+(`commitHandoff`). An Update is a commitment, so the arrival phase runs on the
+trajectory it commits to.
+
+Check still writes nothing. The release epoch is still untouched — it lives on
+the departure leg, and moving it would leave it chasing a hand-off that shifts
+every time the button is pressed.

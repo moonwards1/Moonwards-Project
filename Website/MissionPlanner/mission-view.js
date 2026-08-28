@@ -1313,8 +1313,13 @@ export function createMissionView(opts) {
 	// — flown from what the departure technology delivers, through the
 	// waypoints as they currently stand (core/delivered-flight.js). Not the
 	// plan's commitments, not its requirements. There is only one closest
-	// approach, one v∞ out, one v∞ in; the drawn coast is a stale estimate of
-	// them until a re-target has closed the gap, and this is the honest read.
+	// approach, one v∞ out, one v∞ in.
+	//
+	// The drawn coast now flies from that same delivered hand-off
+	// (frozen-plan.js), so the bar and the trajectory agree by construction
+	// rather than by the user's diligence. What they still measure differently
+	// is the horizon: the bar flies out to the plan's committed arrival date,
+	// the drawn leg to its own legDays.
 	//
 	// Left of the divider the figures sit with the phase they matter in: v∞ out
 	// with Departure (what the ship leaves with), Δv with Coast (what its
@@ -1363,9 +1368,13 @@ export function createMissionView(opts) {
 		var d = comp.delivered.state;
 		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
 		var wps = (legStage && legStage.params.waypoints) || [];
+		// Waypoint days are counted from the coast's own start, which IS the
+		// delivered hand-off (frozen-plan.js emits it), so they need no
+		// re-basing here. The one difference left between this flight and the
+		// drawn one is its horizon: this measures out to the plan's committed
+		// arrival date, the drawn leg to its own legDays.
 		return { origin: p.origin, destination: arr.body, delivered: d,
-		         waypoints: rebaseWaypoints(wps, d.jd - p.departure.jd, arr.jd - d.jd),
-		         arrivalJd: arr.jd };
+		         waypoints: wps, arrivalJd: arr.jd };
 	}
 	function flightAsDelivered() {
 		var spec = flightSpecNow();
@@ -1439,17 +1448,37 @@ export function createMissionView(opts) {
 		});
 	}
 
-	// Apply a solved re-target. The hand-off epoch moves, so everything
-	// downstream is re-based to keep its own ABSOLUTE epoch: waypoint days shift
-	// by the same amount the hand-off did, and legDays stretches or shrinks so
-	// the arrival still lands on the date the plan committed to. The arrival
-	// commitment itself is untouched — whether the flight meets it is the
-	// arrival boundary's question, not this one's.
+	// Apply a solved re-target — the whole of Update's write, leaving nothing
+	// downstream stale.
+	//
+	// The hand-off epoch moves, so the plan's own reference waypoints are
+	// re-based to keep their ABSOLUTE epochs and legDays stretches or shrinks
+	// so the arrival still lands on the date the plan committed to. The
+	// arrival commitment itself is untouched — whether the flight meets it is
+	// the arrival boundary's question, not this one's.
+	//
+	// THE WORKING WAYPOINTS ARE RE-PLACED BY SWEPT ANGLE, not by time: a burn
+	// belongs to the point of the arc the user put it on, and the arc beneath
+	// it has just moved. The angles are read off the leg as it stands, the
+	// re-target is written (which recomputes the chain synchronously), and the
+	// days are then solved on the NEW leg for those same angles — the
+	// two-sided conversion transfer-leg's sweptAnglesOf/placeAtSweptAngles
+	// exist for, and the same hold the Ephemeris tab's marker uses.
+	//
+	// Finally the coast is handed to Arrival. An Update is a commitment, so
+	// the arrival phase runs on the trajectory it commits to; leaving the
+	// snapshot behind would have Arrival still flying the pre-Update coast.
 	function applyRetarget(planStageId, sol) {
 		var stage = world.getStage(planStageId);
 		if (!stage || !sol || !sol.ok) { return; }
 		var arrJd = stage.params.arrival ? stage.params.arrival.jd : null;
 		var shift = sol.jd - stage.params.departure.jd;
+
+		var legDesc = registry.get("transfer-leg");
+		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		var degs = (legStage && legDesc && legDesc.legFor(world, legStage.id))
+			? legDesc.sweptAnglesOf(legDesc.legFor(world, legStage.id), legStage.params.waypoints)
+			: null;
 
 		// The release epoch is untouched — by construction, since it lives on
 		// the departure leg and this only writes the plan. That is the point:
@@ -1461,14 +1490,33 @@ export function createMissionView(opts) {
 			waypoints: rebaseWaypoints(stage.params.waypoints, shift, sol.legDays)
 		} });
 
-		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
-		if (legStage) {
-			var patch = { waypoints: sol.waypoints.map(function (w) {
+		if (!legStage) { return; }
+		var legDays = isFinite(arrJd) ? (arrJd - sol.jd) : legStage.params.legDays;
+		world.set({ stage: legStage.id, params: {
+			legDays: legDays,
+			waypoints: sol.waypoints.map(function (w) {
 				return { days: w.days, burn: Object.assign({}, w.burn) };
-			}) };
-			if (isFinite(arrJd)) { patch.legDays = arrJd - sol.jd; }
-			world.set({ stage: legStage.id, params: patch });
+			})
+		} });
+
+		// Now the new leg exists (world.set recomputes synchronously), so the
+		// angles captured above can be inverted on it. Skipped when the solve
+		// dropped a waypoint (one whose absolute epoch fell outside the new
+		// coast): the angles are index-matched to the list they were read off,
+		// and a shorter list would pair every one of them with the wrong burn.
+		//
+		// The solve's own reported pass was computed with the time-rebased
+		// waypoints written just above, so it is a hair off what the re-placed
+		// ones fly. The drawn coast and the mission bar are the authority after
+		// this point, and both read the real arc.
+		var newLeg = legDesc && legDesc.legFor(world, legStage.id);
+		if (degs && newLeg && sol.waypoints.length === degs.length) {
+			world.set({ stage: legStage.id, params: {
+				waypoints: legDesc.placeAtSweptAngles(newLeg, legDays,
+					world.getStage(legStage.id).params.waypoints, degs)
+			} });
 		}
+		if (legDesc) { legDesc.commitHandoff(world, legStage.id); }
 	}
 
 	// How a solve reads as prose. `verb` distinguishes what has happened from
@@ -1489,9 +1537,15 @@ export function createMissionView(opts) {
 			(sol.dSpeed >= 0 ? "+" : "−") + Math.abs(Math.round(sol.dSpeed)) +
 			" m/s from now, " + (applied ? "bringing" : "which would bring") +
 			" the pass to <b class='ok'>" + cbarKm(sol.passAfter) + "</b>.");
+		// The drawn coast flies what the TECHNOLOGY delivers, and an Update does
+		// not touch the technology — so this does not move the trajectory. It
+		// moves the requirement the trajectory is steered towards, and the
+		// waypoints and dates that hang off it.
 		msgPara(wrap, applied
-			? "Redrawn, and the Needed column now states this. Re-tune towards it, " +
-				"then Check again — each pass asks less than the last."
+			? "The Needed column now states this, and the coast's waypoints have " +
+				"moved with it. The trajectory changes when you re-tune the technology " +
+				"towards those figures — then Check again, and each pass asks less " +
+				"than the last."
 			: "Nothing written. Re-tune towards the new Needed figures, then Update.");
 	}
 
@@ -1869,13 +1923,15 @@ export function createMissionView(opts) {
 	}
 	function committedCoastPass(stageId) { return coastPass(stageId, false); }
 
-	// The coast span. When a frozen-plan stage is emitting, the coast phase IS
-	// the plan's committed dates (its departure/arrival events) — the beginning
-	// to end of the dates set up when the mission was created — so live edits (a
-	// longer leg, a moved waypoint) do NOT stretch the slider; they show up as
-	// deviations instead. Without a plan (or while it's blocked/broken), fall
-	// back to the envelope of events emitted by departure/coast-phase stages this
-	// recompute pass. The RIGHT edge is the arrival seam, not the raw committed
+	// The coast span. Its LEFT edge is the real Departure→Coast hand-off —
+	// frozen-plan's own hand-off event, which since the flown flight became
+	// the clock is the epoch the technology actually delivers. So the Coast
+	// timeline begins exactly where the Departure timeline ends, and it moves
+	// as the technology is tuned. Waypoint edits still do not stretch it: they
+	// change nothing about either end. Without a plan (or while it's
+	// blocked/broken), fall back to the envelope of events emitted by
+	// departure/coast-phase stages this recompute pass. The RIGHT edge is the
+	// arrival seam, not the raw committed
 	// arrival date: it moves with closest approach as the coast is tuned, ending
 	// the phase early enough to leave the Arrival phase its own window.
 	function coastSpan(results) {

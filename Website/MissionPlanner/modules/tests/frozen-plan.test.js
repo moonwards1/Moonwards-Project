@@ -202,8 +202,8 @@ test("planSummary: a damaged plan degrades to nulls, not a throw", function () {
 // ---- the comply rule through the real engine --------------------------------
 
 // The shipped preset IS the comply-mode chain; deviations are dialled on the
-// skyhook and observed on the plan stage, while the leg's output must not
-// move (the plan's frozen state feeds it, not the tech's).
+// skyhook and observed on the plan stage, and on the coast, which flies from
+// what the skyhook really delivers.
 function presetChain() {
 	var res = deserializeWorld(defaultMission);
 	assert.equal(res.ok, true, res.reason);
@@ -227,24 +227,34 @@ test("comply: the shipped preset's skyhook alone falls short of the full departu
 	assert.equal(rPlan.status, "ok");
 	assert.deepEqual(rPlan.warnings.map(function (w) { return w.code; }).sort(),
 		["aim-mismatch", "vinf-mismatch"]);
-	// the plan's own committed epochs — the SOI-edge hand-off and the
-	// rendezvous, read off the preset rather than restated here
+	// ONE CLOCK: the emitted hand-off is the epoch the DEPARTURE LEG really
+	// delivers, not the plan's committed one, so the Coast timeline starts
+	// where the Departure timeline ends. The plan's own epoch is what the
+	// compliance rows grade against, and it is NOT this.
 	var presetPlan = defaultMission.stages[3].params;
-	assert.equal(rPlan.output.data.jd, presetPlan.departure.jd);
-	// plan endpoints on the events channel (the coast slider's future span)
+	var delivered = c.engine.resultFor(c.dep).output.data;
+	assert.equal(rPlan.output.data.jd, delivered.jd);
+	assert.deepEqual(rPlan.output.data.r, delivered.r);
+	assert.notEqual(rPlan.output.data.jd, presetPlan.departure.jd);
+
+	// endpoints on the events channel (the coast slider's span): the real
+	// hand-off, then the plan's committed arrival
 	assert.equal(rPlan.events.length, 2);
 	assert.match(rPlan.events[0].label, /Exit origin SOI/);
+	assert.equal(rPlan.events[0].jd, delivered.jd);
 	assert.match(rPlan.events[1].label, /Plan arrival — Ceres/);
 	assert.equal(rPlan.events[1].jd, presetPlan.arrival.jd);
 
-	// The coast still flies the FROZEN plan's state, not the tech's
-	// shortfall — so it still rendezvouses clean, the comply rule's whole point.
+	// The coast flies that delivered hand-off, so the shipped shortfall is
+	// visible as a real miss rather than hidden behind a clean drawn arc —
+	// the whole point of making the flown flight the clock.
 	var rLeg = c.engine.resultFor(c.leg);
 	assert.equal(rLeg.status, "ok");
-	assert.deepEqual(rLeg.warnings, []);
+	assert.ok(rLeg.warnings.length >= 1,
+		"the shortfall should show as a miss on the coast, not a clean arrival");
 });
 
-test("comply: detuning the tech warns on the plan but does NOT move the coast", function () {
+test("comply: detuning the tech warns on the plan AND moves the coast with it", function () {
 	var c = presetChain();
 	var legBefore = c.engine.resultFor(c.leg).output.data;
 
@@ -259,10 +269,37 @@ test("comply: detuning the tech warns on the plan but does NOT move the coast", 
 	var codes = rPlan.warnings.map(function (w) { return w.code; });
 	assert.ok(codes.indexOf("vinf-mismatch") !== -1, "expected vinf-mismatch, got " + codes);
 
+	// THE FLOWN FLIGHT IS THE CLOCK: a weaker release is a different flight, so
+	// the coast the user sees is a different coast. Under the old comply rule
+	// this arc was pinned to the plan and stayed put while the warning
+	// accumulated beside it.
 	assert.equal(rLeg.status, "ok");                 // downstream unblocked...
-	assert.deepEqual(rLeg.output.data.r, legBefore.r);   // ...and UNCHANGED: the
-	assert.deepEqual(rLeg.output.data.v, legBefore.v);   // frozen plan feeds it
-	assert.deepEqual(rLeg.warnings, []);             // still rendezvouses
+	assert.notDeepEqual(rLeg.output.data.r, legBefore.r);
+	assert.notDeepEqual(rLeg.output.data.v, legBefore.v);
+	// ...and the coast's own start is the delivered hand-off, one epoch shared
+	// with the departure leg that produced it
+	assert.equal(rPlan.output.data.jd, c.engine.resultFor(c.dep).output.data.jd);
+});
+
+test("boundary fallback: with nothing delivered the coast flies the PLAN's own state", function () {
+	// The other half of the one-clock rule. A mission whose departure stack is
+	// absent has no delivered epoch to start from, so the plan's frozen state
+	// is what the coast flies — which is also every freshly frozen mission,
+	// before a technology is chosen.
+	var c = presetChain();
+	c.world.set({ removeStage: c.dep });
+	c.world.set({ removeStage: c.sky });
+	c.world.set({ removeStage: c.moon });
+
+	var presetPlan = defaultMission.stages[3].params;
+	var rPlan = c.engine.resultFor(c.plan);
+	assert.equal(rPlan.status, "ok");
+	assert.equal(rPlan.output.data.jd, presetPlan.departure.jd);
+	assert.deepEqual(rPlan.output.data.r, presetPlan.departure.r);
+	assert.deepEqual(rPlan.output.data.v, presetPlan.departure.v);
+	assert.equal(rPlan.events[0].jd, presetPlan.departure.jd);
+	// and it still arrives clean, because that is the plan it was frozen from
+	assert.deepEqual(c.engine.resultFor(c.leg).warnings, []);
 });
 
 test("comply: a mission with NO departure system still shows its whole plan", function () {

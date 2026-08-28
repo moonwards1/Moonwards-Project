@@ -280,16 +280,24 @@ chain, it's the spec the chain upstream of it is measured against.
 **Compliance is a single comparison at that one seam.** Whatever the upstream
 chain actually composed to is an opaque end result — `computeCompliance`
 never looks inside it, and doesn't care whether one stage produced it or a
-thousand — compared once to the one frozen target. Match, and downstream
-flies the target unmodified (the comply rule); miss, and that is one warning
+thousand — compared once to the one frozen target. A miss is one warning
 naming the gap, not a reconciliation of individual upstream events against
 each other or against anything else.
 
+**What flows downstream is what the chain actually delivered, not the
+target.** There is one mission clock and one epoch at this seam: the coast
+begins exactly where and when the departure phase ended, so the trajectory
+drawn is the flight the ship is on. The frozen target is the requirement
+graded against, and a mark beside the real hand-off on the timelines — never
+a second flight running on a second clock. Only when nothing is delivered at
+all (an empty technology slot, or a departure whose flight fails) does the
+plan's own state stand in, which is what keeps a mission flying while its
+departure is still being built.
+
 This mechanism exists because departure hardware is otherwise blind to the
 destination: a skyhook doesn't know where Ceres is, it just delivers a
-velocity, so it needs a fixed target to be judged against, and the frozen
-plan is what lets the coast keep flying even while that target isn't being
-met yet. The Coast→Arrival seam has no equivalent boundary, because neither
+velocity, so it needs a fixed target to be judged against. The Coast→Arrival
+seam has no equivalent boundary, because neither
 justification holds there: `transfer-leg` already targets the real
 destination directly and reports its actual approach live as waypoints are
 tuned (the ship card), so there is no blind design problem needing a

@@ -41,7 +41,7 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 | `departure-estimate.js`  | (see header — estimates the departure leg's duration)              | How long the departure leg lasts, estimated from the frozen plan alone (before any departure tech is chosen): the required v∞, the hand-off epoch, and — for Earth — where the Moon is, via the dive-in/direct-out wedge rule. Feeds the read-only release anchor `freeze.js` bakes into the plan, the Ephemeris tab's Moon-phase widget, and the Departure slider's default span. |
 | `arrival-seam.js`        | `computeArrivalSeam`                                               | The Coast→Arrival seam derivation: a window `[closest approach − Δt, closest approach + ~1 day]` around the coast's own closest-approach event, `Δt = clamp(R_SOI/v∞, 2 d, 5 d)`. Nothing is stored — recomputed live from `transfer-leg`'s emitted events every recompute, so the window moves as the coast is tuned. No encounter at all: the window collapses to a point at the plan's committed arrival epoch. |
 | `proximity.js`           | `checkProximity`, `checkPassAltitude`                              | The arrival standards, in one place. `checkProximity` is the EPHEMERIS TAB's gate on "Start Mission Plan": the marker within `APPROACH_FAR` (0.004 AU) of the destination's orbit ELLIPSE, and the destination passing through that point within `TEMP_FAR` (30 d) — ring-scale tolerances, right for judging a scrubbable marker. `MAX_PASS_ALTITUDE` (30,000 km) is the stricter bound a FLOWN mission has to pass the body within, and `AIM_PASS_ALTITUDE` (15,000 km) is what a re-target aims for — deliberately inside the bound, so an iteration's residual has room to land. Both measured as altitude ABOVE THE SURFACE, at closest approach; both provisional until the arrival technology can state what it can actually catch. The ring tier TABLES stay with the views that draw them — those are colours and pixel sizes, not standards. Pure. |
-| `delivered-flight.js`    | `deliveredFlight`, `signatureOf`, `waypointDv`                     | The flight the ship is ACTUALLY on: flown from what the departure technology delivers, through the waypoints as they stand. `frozen-plan` emits the PLAN's departure state downstream by design, so the drawn coast is the plan's flight, not the ship's — until a re-target has closed the gap they arrive in different places. One call yields every figure the mission bar shows (v∞ out, coast Δv, closest approach, v∞ in). The answer never depends on the clock, so `signatureOf` gives the view a key to memoize on across scrubbing; one call costs about one leg integration. Pure. |
+| `delivered-flight.js`    | `deliveredFlight`, `signatureOf`, `waypointDv`                     | The flight the ship is ACTUALLY on: flown from what the departure technology delivers, through the waypoints as they stand. The drawn coast now flies from that same delivered hand-off, so the two agree; what this still measures differently is the horizon — out to the plan's committed arrival date rather than to the leg's own `legDays` — and it stays the one place a hypothetical hand-off can be flown, which is what `core/retarget.js` verifies its solves with. One call yields every figure the mission bar shows (v∞ out, coast Δv, closest approach, v∞ in). The answer never depends on the clock, so `signatureOf` gives the view a key to memoize on across scrubbing; one call costs about one leg integration. Pure. |
 | `retarget.js`            | `solveDepartureTarget`                                             | Re-states the departure REQUIREMENT at the point a technology actually leaves from: keep the real exit point and epoch, re-solve the velocity that reaches the plan's destination from there. A damped Newton differential correction across the coast's waypoint burns, aiming for a PASS at `AIM_PASS_ALTITUDE` above the destination's surface, on the side the flight already goes by — not the arrival POINT the plan was authored with, since a plan's own flyby offset stops being a commitment worth preserving once a real departure is flying the mission. Each solve is verified by flying it through `delivered-flight.js`, and the aim iterates on the altitude error it measures. The ASK is bounded by `WAYPOINT_AXIS_CAP_MPS` — a re-target that would demand more than normal course-correction scale is a new mission for the Ephemeris tab, not a plan to re-point. Feeds the mission bar's Check and Update. Pure. |
 
 Engine-generated diagnostic codes: `unknown-module`, `missing-input`,
@@ -209,9 +209,10 @@ Left of the divider, one group per phase — the phase's selector button and the
 one figure that matters in it: v∞ out with Departure, coast Δv with Coast, v∞
 in with Arrival. Right of it, the mission's headline closest approach and the
 controls that move it. **Every figure describes the flight the ship is
-actually on** (`core/delivered-flight.js`), never the plan's commitments — the
-drawn coast is the plan's flight, and until a re-target has closed the gap the
-two arrive in different places. Only v∞ out and closest approach are graded,
+actually on** (`core/delivered-flight.js`), never the plan's commitments — and
+since the flown flight became the clock, the drawn coast is that same flight,
+so the bar and the trajectory agree by construction rather than by the user's
+diligence. Only v∞ out and closest approach are graded,
 because only they have a standard to be graded against. The dot on each phase
 button is a hard-fault light (error or blocked) and nothing softer; compliance
 is the colour of the figure beside it, where the number it grades can be read
@@ -290,12 +291,14 @@ never when it started.
 - **`modules/frozen-plan/`** — the frozen flight plan (comply mode): its
   params ARE the plan captured at mission creation (origin, the frozen
   heliocentric departure state/epoch, the arrival commitment, a reference copy
-  of the plan's waypoint burns). `update()` **always emits the plan's own
-  departure state** downstream — the coast everyone sees is the commitment,
-  never a re-solve — and reports the tech's deviations (v∞ / epoch / aim)
-  through the warnings channel; an empty departure-tech slot is itself a
-  warning, not a block (`inputOptional`). `computeCompliance`/`complianceFor`
-  expose the full required-vs-delivered rows for the compliance bar.
+  of the plan's waypoint burns). `update()` **emits what the departure
+  technology actually delivered** — position, velocity and epoch — so the
+  coast everyone sees is the flight the ship is on and there is one clock
+  across the seam; the plan's own state is the fallback for when nothing is
+  delivered. The tech's deviations from the plan (v∞ / epoch / aim) go through
+  the warnings channel; an empty departure-tech slot is itself a warning, not
+  a block (`inputOptional`). `computeCompliance`/`complianceFor` expose the
+  full required-vs-delivered rows for the compliance bar.
 
 **Coast:**
 
