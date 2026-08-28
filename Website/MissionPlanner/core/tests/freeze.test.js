@@ -64,14 +64,17 @@ test("freeze output deserializes into a working World with the E2 profile (Earth
 	assert.equal(data.nextStage, 6);
 	// the departure leg starts with no waypoints; the flyby leg carries the
 	// destination explicitly (body convention) and is the terminal stage.
-	assert.deepEqual(paramsOf(data, "departure-leg"), { waypoints: [] });
+	assert.deepEqual(Object.keys(paramsOf(data, "departure-leg")).sort(), ["releaseJd", "waypoints"]);
+	assert.deepEqual(paramsOf(data, "departure-leg").waypoints, []);
 	assert.deepEqual(paramsOf(data, "arrival-leg"), { body: "Mars", waypoints: [] });
 	// The clock opens at the hand-off — the coast's own start, since a spawned
 	// mission opens on the coast phase. Phase clocks are only consistent WITHIN
 	// a phase; the departure's estimated span leaves a gap at this seam.
 	assert.equal(data.jd, paramsOf(data, "frozen-plan").departure.jd);
-	assert.ok(paramsOf(data, "frozen-plan").releaseAnchorJd < data.jd,
-		"the release anchor leads the hand-off the clock opens at");
+	assert.ok(paramsOf(data, "departure-leg").releaseJd < data.jd,
+		"release leads the hand-off the clock opens at");
+	// the plan states the boundary requirement only — release is not its business
+	assert.equal("releaseAnchorJd" in paramsOf(data, "frozen-plan"), false);
 });
 
 test("freeze from a non-Earth origin scaffolds just the generic departure leg", () => {
@@ -177,13 +180,15 @@ test("defaultMissionTitle names origin → destination + departure year", () => 
 	assert.equal(defaultMissionTitle("Earth", "Ceres", jd), "Earth → Ceres 2031");
 });
 
-// ---- timing fields: the hand-off window + release anchor ------------------
+// ---- timing fields: the plan's window + the leg's release epoch ------------
 
-test("freeze bakes a hand-off window (default ±1 d) and a release anchor ahead of the hand-off", async () => {
+test("freeze bakes a hand-off window (default ±1 d) and seeds release ahead of the hand-off", async () => {
 	var spec = makeSpec();
-	var plan = paramsOf(freezeMissionWorld(spec), "frozen-plan");
+	var world = freezeMissionWorld(spec);
+	var plan = paramsOf(world, "frozen-plan");
+	var releaseJd = paramsOf(world, "departure-leg").releaseJd;
 	assert.equal(plan.handoffWindowDays, 1);
-	// the anchor leads departure.jd by the departure-estimate module's own
+	// release leads departure.jd by the departure-estimate module's own
 	// figure for this spec — same source, so they must agree exactly
 	var DE = await import("../departure-estimate.js");
 	var earth = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, plan.departure.jd);
@@ -193,23 +198,23 @@ test("freeze bakes a hand-off window (default ±1 d) and a release anchor ahead 
 		jdHandoff: plan.departure.jd
 	});
 	assert.ok(est.ok);
-	assert.ok(Math.abs(plan.releaseAnchorJd - est.jdLaunch) < 1e-9);
-	assert.ok(plan.releaseAnchorJd < plan.departure.jd);
+	assert.ok(Math.abs(releaseJd - est.jdLaunch) < 1e-9);
+	assert.ok(releaseJd < plan.departure.jd);
 	// a 2.94 km/s injection is day-scale, not hour- or month-scale
-	var leadDays = plan.departure.jd - plan.releaseAnchorJd;
+	var leadDays = plan.departure.jd - releaseJd;
 	assert.ok(leadDays > 1 && leadDays < 10, "lead " + leadDays.toFixed(2) + " d");
 });
 
-test("a custom windowDays is honoured; a waypoint-only plan anchors at the hand-off itself", () => {
+test("a custom windowDays is honoured; a waypoint-only plan releases at the hand-off itself", () => {
 	var spec = makeSpec();
 	spec.windowDays = 2.5;
 	assert.equal(paramsOf(freezeMissionWorld(spec), "frozen-plan").handoffWindowDays, 2.5);
 
 	var spec2 = makeSpec();
 	spec2.handoff = handoffFor(spec2.jd, "Earth", { pro: 0, rad: 0, nrm: 0 });   // v∞ ~ 0, nothing to time
-	var plan2 = paramsOf(freezeMissionWorld(spec2), "frozen-plan");
-	assert.equal(plan2.releaseAnchorJd, spec2.jd);
-	assert.equal(plan2.handoffWindowDays, 1);
+	var world2 = freezeMissionWorld(spec2);
+	assert.equal(paramsOf(world2, "departure-leg").releaseJd, spec2.jd);
+	assert.equal(paramsOf(world2, "frozen-plan").handoffWindowDays, 1);
 });
 
 test("waypoint days are already hand-off-relative and pass through untouched", () => {

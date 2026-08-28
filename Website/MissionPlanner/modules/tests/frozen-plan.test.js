@@ -17,8 +17,9 @@ import departureLeg from "../departure-leg/departure-leg.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";
 import frozenPlan, { computeCompliance, complianceWarnings, planSummary,
-	releaseAnchorFor, windowDaysOf,
+	windowDaysOf,
 	VINF_TOL, AIM_TOL_DEG, DEFAULT_WINDOW_DAYS } from "../frozen-plan/frozen-plan.js";
+import { releaseEpochFor } from "../../core/release-epoch.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { estimateDeparture, originSoiRadius } from "../../core/departure-estimate.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -376,33 +377,39 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 	var sep = O.vMag(O.vSub(p.departure.r, earthAt.r));
 	assert.ok(Math.abs(sep / originSoiRadius("Earth") - 1) < 1e-6,
 		"hand-off sits on Earth's SOI edge, got " + (sep / 1000).toFixed(0) + " km");
-	// and the injection it was authored from is one crossing earlier
-	assert.ok(p.injectionJd < p.departure.jd && p.departure.jd - p.injectionJd < 5);
+	// the plan carries no release epoch of its own — that is the departure
+	// leg's, and it leads the hand-off by the freeze-time estimate
+	assert.equal("releaseAnchorJd" in p, false);
+	assert.equal("injectionJd" in p, false);
 
 	assert.equal(p.handoffWindowDays, 1);
 	var est = estimateDeparture({ origin: "Earth", vInfVec: vInfVec, jdHandoff: p.departure.jd });
 	assert.equal(est.ok, true);
-	assert.ok(Math.abs(p.releaseAnchorJd - (p.departure.jd - est.days)) < 1e-6,
-		"anchor = hand-off − the freeze-time estimate (" + est.profile + ", " +
+	var legParams = defaultMission.stages
+		.filter(function (s) { return s.moduleId === "departure-leg"; })[0].params;
+	assert.ok(Math.abs(legParams.releaseJd - (p.departure.jd - est.days)) < 1e-6,
+		"release = hand-off − the freeze-time estimate (" + est.profile + ", " +
 		est.days.toFixed(4) + " d)");
 });
 
-// ---- releaseAnchorFor: the read-only anchor's one lookup -------------------
+// ---- releaseEpochFor: the departure phase's own epoch, one lookup ----------
 
-test("releaseAnchorFor: plan anchor → plan departure.jd → null", function () {
+test("releaseEpochFor: the departure leg's releaseJd → null", function () {
 	function worldWith(stages) {
 		var w = createWorld({ jd: JD });
 		stages.forEach(function (s) { w.set({ addStage: s }); });
 		return w;
 	}
-	// 1. a post-D7 plan: its baked anchor wins
-	var w1 = worldWith([{ moduleId: "frozen-plan",
-		params: { departure: { jd: JD }, releaseAnchorJd: JD - 2.2 } }]);
-	assert.equal(releaseAnchorFor(w1), JD - 2.2);
-	// 2. a pre-D7 plan: no anchor recorded — the hand-off epoch stands in
-	var w2 = worldWith([{ moduleId: "frozen-plan", params: { departure: { jd: JD } } }]);
-	assert.equal(releaseAnchorFor(w2), JD);
-	// 3. no plan at all → null (and a null/bare world is null too)
-	assert.equal(releaseAnchorFor(worldWith([{ moduleId: "transfer-leg", params: {} }])), null);
-	assert.equal(releaseAnchorFor(null), null);
+	// 1. the geocentric leg carries it
+	var w1 = worldWith([{ moduleId: "departure-leg", params: { releaseJd: JD - 2.2 } }]);
+	assert.equal(releaseEpochFor(w1), JD - 2.2);
+	// 2. so does the generic one
+	var w2 = worldWith([{ moduleId: "body-departure-leg", params: { releaseJd: JD - 1.1 } }]);
+	assert.equal(releaseEpochFor(w2), JD - 1.1);
+	// 3. a leg with no epoch recorded, no leg at all, and a null world → null.
+	//    The plan is NOT consulted: it never owned this.
+	assert.equal(releaseEpochFor(worldWith([{ moduleId: "departure-leg", params: {} }])), null);
+	assert.equal(releaseEpochFor(worldWith([{ moduleId: "frozen-plan",
+		params: { departure: { jd: JD } } }])), null);
+	assert.equal(releaseEpochFor(null), null);
 });

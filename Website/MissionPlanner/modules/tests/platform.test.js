@@ -176,12 +176,12 @@ test("makeCarrier: a platform missing the role it is asked for throws at authori
 	}, /no capture half/);
 });
 
-// A stand-in World carrying just enough frozen plan for releaseAnchorFor.
+// A stand-in World carrying just enough departure leg for releaseEpochFor.
 function plannedWorld() {
 	return {
 		jd: JD_ANCHOR,
 		stages: function () {
-			return [{ id: "fp", moduleId: "frozen-plan", params: { releaseAnchorJd: JD_ANCHOR } }];
+			return [{ id: "dep", moduleId: "body-departure-leg", params: { releaseJd: JD_ANCHOR } }];
 		}
 	};
 }

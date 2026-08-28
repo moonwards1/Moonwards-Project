@@ -29,9 +29,9 @@ import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH } from "../../../Shared/geo-leg.js";
 
-// The shipped preset's release anchor (2031-12-19 ~16:20 UT — the frozen
-// plan's baked releaseAnchorJd; presets/default-mission.js's header records
-// the bake) and its committed hand-off epoch, at Earth's SOI edge.
+// The shipped preset's release epoch (2031-12-19 ~16:20 UT — the departure
+// leg's own releaseJd; presets/default-mission.js's header records how it is
+// seeded) and its committed hand-off epoch, at Earth's SOI edge.
 var JD_ANCHOR = 2463220.180402478;
 var JD_HANDOFF = 2463222.384503543;
 var DAY = 86400;
@@ -52,22 +52,19 @@ function makeRegistry() {
 	return reg;
 }
 
-// A departure chain + coast. When anchorJd is given, a bare frozen-plan stage
-// carrying only releaseAnchorJd is appended after the coast — off the end of
-// the pipeline, so it neither feeds nor consumes the chain's own packets,
-// existing solely for releaseAnchorFor to find (it scans world.stages() by
-// moduleId, not pipeline position). Omit anchorJd to test the no-anchor path.
+// A departure chain + coast. When anchorJd is given it goes on the departure
+// leg itself as its `releaseJd` — the release epoch is the departure phase's
+// own (core/release-epoch.js), which everything upstream reads back through
+// releaseEpochFor. Omit anchorJd to test the no-epoch path.
 function makeChain(skyhookParams, legParams, anchorJd) {
 	var world = createWorld({ jd: JD_ANCHOR });
 	var ids = {};
 	ids.moon = world.set({ addStage: { moduleId: "moon-platform", params: {} } });
 	ids.skyhook = world.set({ addStage: { moduleId: "orbital-skyhook",
 		params: Object.assign({ body: "Moon" }, skyhookParams) } });
-	ids.dep = world.set({ addStage: { moduleId: "departure-leg", params: {} } });
+	ids.dep = world.set({ addStage: { moduleId: "departure-leg",
+		params: anchorJd === undefined ? {} : { releaseJd: anchorJd } } });
 	ids.leg = world.set({ addStage: { moduleId: "transfer-leg", params: legParams } });
-	if (anchorJd !== undefined) {
-		world.set({ addStage: { moduleId: "frozen-plan", params: { releaseAnchorJd: anchorJd } } });
-	}
 	var engine = createEngine(world, makeRegistry());
 	return { world: world, engine: engine, ids: ids };
 }
@@ -392,13 +389,13 @@ test("chain: a bound-at-moon skyhook blocks the flight, params intact", function
 	assert.equal(c.engine.resultFor(c.ids.leg).status, "ok");
 });
 
-test("chain: no anchor anywhere → moon-platform diagnoses at the top of the stack", function () {
+test("chain: no release epoch anywhere → moon-platform diagnoses at the top of the stack", function () {
 	var c = makeChain(
-		{},   // no frozen plan in this profile — anchorJd omitted
+		{},   // the departure leg records no releaseJd — anchorJd omitted
 		{ waypoints: [], legDays: 480, destination: "" });
 	var rMoon = c.engine.resultFor(c.ids.moon);
 	assert.equal(rMoon.status, "diagnostic");
-	assert.equal(rMoon.diagnostic.code, "no-release-anchor");
+	assert.equal(rMoon.diagnostic.code, "no-release-epoch");
 	assert.equal(c.engine.resultFor(c.ids.skyhook).status, "blocked");
 	assert.equal(c.engine.resultFor(c.ids.dep).status, "blocked");
 });

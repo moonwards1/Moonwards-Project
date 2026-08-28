@@ -53,7 +53,7 @@
 // from inside update()" is enforced rather than merely documented.
 
 export const WORLD_KIND = "moonwards-world";
-export const WORLD_VERSION = 4;
+export const WORLD_VERSION = 5;
 
 export function createWorld(opts) {
 	var o = opts || {};

@@ -209,14 +209,15 @@ test("engine: orbital-skyhook → body-departure-leg emits a heliocentric ship-s
 	var world = createWorld({ jd: JD_ANCHOR });
 	var skId = world.set({ addStage: { moduleId: "orbital-skyhook",
 		params: { body: "Mars", releasePhaseDeg: 40 } } });
-	var legId = world.set({ addStage: { moduleId: "body-departure-leg", params: {} } });
-	// Minimal frozen plan carrying only the release anchor (releaseAnchorFor
-	// reads it); Mars departure/arrival stubs keep it from throwing.
+	// The release epoch is the leg's own (core/release-epoch.js) — the skyhook
+	// upstream reads it back from here through releaseEpochFor.
+	var legId = world.set({ addStage: { moduleId: "body-departure-leg",
+		params: { releaseJd: JD_ANCHOR } } });
+	// Mars departure/arrival stubs keep the plan from throwing.
 	world.set({ addStage: { moduleId: "frozen-plan", params: {
 		origin: "Mars",
 		departure: { r: mars.r.slice(), v: mars.v.slice(), jd: JD_ANCHOR },
-		arrival: { body: "Earth", jd: JD_ANCHOR + 200, vInf: 3000 },
-		releaseAnchorJd: JD_ANCHOR
+		arrival: { body: "Earth", jd: JD_ANCHOR + 200, vInf: 3000 }
 	} } });
 
 	var engine = createEngine(world, reg);

@@ -276,26 +276,22 @@ export function createCoastSlider(container, opts) {
 // launch on the LEFT to the moment the ship must be on course for the coast
 // phase (origin-SOI exit) on the RIGHT.
 //
-// Which edge is the fixed one depends on mission-view.js's departureSpan,
-// which picks between two procedures by whether the origin's departure rides
-// a satellite carrier (Earth/Moon today): PINNED-START — the LEFT edge is the
-// frozen plan's read-only release anchor (`releaseAnchorJd`, baked by
-// core/freeze.js from core/departure-estimate.js's estimateDeparture(), read
-// back via frozen-plan.js's releaseAnchorFor()) — or ANCHORED-END — the RIGHT
-// edge is the plan's committed hand-off epoch. Either way the OTHER edge
-// floats: the live flight's own event once a departure tech resolves one, else
-// departureSpan's own default estimate (SOI_radius / required v∞). Both the
-// committed hand-off and the predicted SOI exit are handed over as marks
-// regardless of which one also frames an edge — see departureSpan's own
-// header for the full rule.
+// PINNED-START for every origin (mission-view.js's departureSpan): the LEFT
+// edge is the release epoch — the departure leg's own `releaseJd`, seeded by
+// core/freeze.js from core/departure-estimate.js's estimateDeparture() and
+// read via core/release-epoch.js. The RIGHT edge floats: the flight's own
+// predicted SOI exit once a departure tech resolves one, else departureSpan's
+// default estimate (SOI_radius / required v∞), stretched when needed to keep
+// the plan's committed hand-off on the track. That hand-off and the predicted
+// SOI exit both arrive as marks — see departureSpan's own header.
 //
-// Either way the caller hands over two edge jds plus event marks; the widget is
-// a plain linear scrubber over them, identical in feel to the Coast slider —
-// except the caller also hands over the release event's own jd, which under
-// ANCHORED-END/FLOATING-START can land short of the track's geometric left
-// edge (nothing happened before release). createDepartureSlider floors
-// scrubbing at that jd rather than the track's edge, and it — not the edge —
-// is the "0 d" zero point for the playhead readout.
+// The caller hands over two edge jds plus event marks; the widget is a plain
+// linear scrubber over them, identical in feel to the Coast slider — except
+// the caller also hands over the release event's own jd, which
+// createDepartureSlider floors scrubbing at and uses as the "0 d" zero point
+// for the playhead readout. Under PINNED-START that floor coincides with the
+// left edge; the floor is kept because release, not the geometric edge, is
+// what "0 d" means.
 // Everything about which times mean what lives in mission-view.js.
 
 // Pure: even time ticks across [start, end] for the linear scale, plus the
@@ -330,10 +326,9 @@ export function departureSliderState(opts) {
 		: pinnedAt === "end" ? 1
 		: (jd - start) / span;
 	// The zero point is the actual release event, not the track's geometric
-	// left edge — the two coincide under PINNED-START but can differ under
-	// ANCHORED-END/FLOATING-START (see mission-view.js's departureSpan), where
-	// the track can run a little short of release. "0 d" always means "at
-	// release", wherever its mark sits on the track.
+	// left edge. The two coincide as mission-view.js's departureSpan builds
+	// the track, but "0 d" means "at release" by definition, not "at the
+	// left edge".
 	var stampVal = elapsedStamp(jd, releaseJd);
 	return { empty: false, segments: segments, marks: marks,
 	         playheadFrac: playheadFrac, pinnedAt: pinnedAt,
@@ -353,10 +348,8 @@ export function createDepartureSlider(container, opts) {
 	var releaseJd = NaN;   // the scrub floor — see departureSliderState's stamp epoch
 
 	var slider = createSegmentedSlider(container, {
-		// Scrubbing can't reach a time before release even when the track's
-		// geometric left edge sits earlier than that (ANCHORED-END/FLOATING-START
-		// — see mission-view.js's departureSpan): nothing happened before release,
-		// so there's nothing to scrub to there.
+		// Scrubbing can't reach a time before release: nothing happened before
+		// it, so there's nothing to scrub to there.
 		onScrub: function (fraction) {
 			if (!span) { return; }
 			var jd = span.start + fraction * (span.end - span.start);

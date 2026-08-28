@@ -38,6 +38,7 @@
 
 import { createEngine } from "./core/recompute.js";
 import { computeArrivalSeam } from "./core/arrival-seam.js";
+import { releaseEpochFor } from "./core/release-epoch.js";
 import { systems, constants } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Exchange, encodeFragment } from "../Shared/exchange.js";
@@ -926,8 +927,8 @@ export function createMissionView(opts) {
 	panelEl.appendChild(depInfoEl);
 
 	// The origin body's instantaneous heliocentric state at the release
-	// anchor -- NOT the live scrub date (world.jd): this describes the moment
-	// of launch itself, fixed once the frozen plan bakes it. "inclination of
+	// epoch -- NOT the live scrub date (world.jd): this describes the moment
+	// of launch itself, fixed by the departure leg's own release epoch. "inclination of
 	// motion" is the angle the velocity vector makes with the ecliptic plane
 	// right then, asin(vz/|v|) straight off the state vector -- exact for any
 	// orbit, no circular assumption: zero at the body's peak ecliptic
@@ -935,7 +936,7 @@ export function createMissionView(opts) {
 	// tangent vector inside a plane tilted by i to the ecliptic only reaches
 	// that full tilt where the plane itself crosses the ecliptic).
 	function updateDepartureInfo() {
-		var anchorJd = releaseAnchorForMission();
+		var anchorJd = releaseEpochFor(world);
 		var show = workspace.phase === "departure" && anchorJd !== null;
 		depInfoEl.style.display = show ? "" : "none";
 		if (!show) { return; }
@@ -1450,12 +1451,11 @@ export function createMissionView(opts) {
 		var arrJd = stage.params.arrival ? stage.params.arrival.jd : null;
 		var shift = sol.jd - stage.params.departure.jd;
 
-		// releaseAnchorJd is deliberately NOT touched. It is when the departure
-		// chain actually lets go, so re-deriving it here would change what the
-		// technology delivers — and re-targeting would then be chasing a hand-off
-		// that moves every time it is clicked, instead of stating a fixed
-		// requirement for a fixed delivery. The anchor is the plan's baked
-		// provenance (frozen-plan.js's header) and stays that way.
+		// The release epoch is untouched — by construction, since it lives on
+		// the departure leg and this only writes the plan. That is the point:
+		// re-targeting states a new fixed requirement for the delivery the
+		// technology already makes. Moving release too would leave it chasing a
+		// hand-off that shifts every time the button is clicked.
 		world.set({ stage: planStageId, params: {
 			departure: { r: sol.r.slice(), v: sol.v.slice(), jd: sol.jd },
 			waypoints: rebaseWaypoints(stage.params.waypoints, shift, sol.legDays)
@@ -1949,51 +1949,35 @@ export function createMissionView(opts) {
 		return (comp && comp.ok) ? { vInf: comp.required.vInf, jd: comp.required.jd } : null;
 	}
 
-	// The mission's read-only release anchor (frozen-plan.js's
-	// releaseAnchorFor, reached the same dynamic-registry way plannedDeparture
-	// reaches complianceFor) — fixed the instant the plan is baked, well before
-	// any departure tech resolves a real flight. null with no frozen plan yet.
-	function releaseAnchorForMission() {
-		var desc = registry.get("frozen-plan");
-		return desc && typeof desc.releaseAnchorFor === "function" ? desc.releaseAnchorFor(world) : null;
-	}
-
-	// The departure span for the slider, by one of two procedures
-	// (Notes/decisions.md's "Departure" entry), chosen by whether
-	// the origin's departure rides a satellite carrier (Earth/Moon today —
-	// missionOriginBody() === "Earth", the same test departureFrameFor() uses):
+	// The departure span for the slider: the departure phase's OWN flight,
+	// PINNED-START / FLOATING-END, for every origin alike.
 	//
-	//   - Earth/Moon: PINNED-START / FLOATING-END. The release anchor is fixed
-	//     the moment the plan is baked (moon-platform's card shows it read-only
-	//     from mission creation), so the LEFT edge is that anchor outright. The
-	//     RIGHT edge is the live flight's predicted origin-SOI exit once a
-	//     departure tech resolves one, else the default flight-time estimate
-	//     forward from the anchor — it floats as the tech/course is tuned.
-	//   - bodies without a satellite carrier: ANCHORED-END / FLOATING-START. The
-	//     RIGHT edge is the plan's own committed hand-off epoch outright (fixed
-	//     regardless of what any tech currently delivers). The LEFT edge floats
-	//     back from it by the best known flight duration — the resolved
-	//     release-to-SOI-exit span once a tech resolves one, else the default
-	//     estimate.
+	// The LEFT edge is the release epoch — the departure leg's own `releaseJd`
+	// (core/release-epoch.js), or the first resolved flight event once a tech
+	// produces one. The RIGHT edge is where the phase ends: the live flight's
+	// predicted origin-SOI exit once a tech resolves one, else the default
+	// flight-time estimate forward from release. It floats as the tech/course
+	// is tuned.
 	//
-	// Either way BOTH the committed hand-off and the predicted SOI exit render
-	// as marks (decisions.md: "the committed hand-off is always a fixed mark on
-	// the track; the predicted SOI exit is a separate, moving mark" — on course
-	// means the two fall within a day of each other). Whichever one also frames
-	// an edge is simply not drawn twice: departureSliderState only marks
-	// interior fractions, so a mark sitting exactly at an edge drops out on its
-	// own, the same rule every other slider mark follows.
+	// The plan does NOT frame either edge. It states a requirement at the
+	// boundary — be on course by this epoch — and the COMMITTED HAND-OFF is
+	// therefore a MARK on this track, never its end. When the flight finishes
+	// early the mark sits past the SOI exit, so the track is extended to reach
+	// it: a departure that beats its deadline should show the slack, not clip
+	// it off. When the flight overruns, the mark sits inside the track and the
+	// overrun is visible the same way. Either way release is always on the
+	// timeline (decisions.md, "Departure timeline").
 	//
-	// The returned `releaseJd` is the actual release event's own jd, which the
-	// ANCHORED-END/FLOATING-START procedure can leave short of `start` (the
-	// track still runs its full computed length, but nothing before release
-	// happened). createDepartureSlider uses it as the scrub floor — dragging
-	// can't reach a time before release even if the track geometrically starts
-	// earlier — and as the "0 d" zero point for the playhead readout, so T+0
-	// always lands on release itself rather than on the track's left edge.
+	// The predicted SOI exit renders as a mark too. Whichever mark coincides
+	// with an edge is simply not drawn twice: departureSliderState only marks
+	// interior fractions, so a mark sitting exactly at an edge drops out on
+	// its own, the same rule every other slider mark follows.
+	//
+	// The returned `releaseJd` equals `start` by construction now; the slider
+	// still takes it as the "0 d" zero point for the playhead readout.
 	function departureSpan(results) {
 		var evs = departureEvents(results);
-		var releaseJd = evs.length ? evs[0].jd : releaseAnchorForMission();
+		var releaseJd = evs.length ? evs[0].jd : releaseEpochFor(world);
 		var soiExitJd = evs.length ? evs[evs.length - 1].jd : null;
 		var plan = plannedDeparture(results);
 		var def = departureDefaultSpanSeconds(results);
@@ -2004,51 +1988,24 @@ export function createMissionView(opts) {
 			marks.push({ jd: plan.jd, label: "Committed hand-off", cls: "mp-mark-committed" });
 		}
 
-		var start, end, useEstimate = false;
-		// Try to build a span with actual data first
-		if (missionOriginBody(world) === "Earth") {
-			// Earth/Moon: PINNED-START. Release anchor is the left edge; float the right edge.
-			if (isFinite(releaseJd)) {
-				start = releaseJd;
-				end = isFinite(soiExitJd) ? soiExitJd : (start + defDays);
-				if (isFinite(start) && isFinite(end) && end > start) {
-					useEstimate = !isFinite(soiExitJd);
-				}
-			}
-		} else {
-			// Other origins: ANCHORED-END. Committed hand-off is the right edge; float the left edge.
-			if (plan && isFinite(plan.jd)) {
-				end = plan.jd;
-				var duration = (isFinite(releaseJd) && isFinite(soiExitJd)) ? (soiExitJd - releaseJd) : defDays;
-				start = end - duration;
-				if (isFinite(start) && isFinite(end) && end > start) {
-					useEstimate = !(isFinite(releaseJd) && isFinite(soiExitJd));
-				}
-			}
-		}
+		// With no release epoch at all there is nothing to anchor a track to —
+		// a mission whose departure leg records none (a damaged save).
+		if (!isFinite(releaseJd)) { return null; }
 
-		// If we don't have a valid span yet, try a fallback estimate
-		if (!isFinite(start) || !isFinite(end) || end <= start) {
-			// Use whatever anchor we have + the estimate duration
-			if (isFinite(releaseJd) && defDays > 0) {
-				// Release anchor exists: use it as start, add estimate to get end
-				start = releaseJd;
-				end = start + defDays;
-				useEstimate = true;
-			} else if (plan && isFinite(plan.jd) && defDays > 0) {
-				// Plan hand-off exists: use it as end, subtract estimate to get start
-				end = plan.jd;
-				start = end - defDays;
-				useEstimate = true;
-			} else {
-				// Truly no data — can't make a span estimate.
-				return null;
-			}
+		var start = releaseJd;
+		var end = isFinite(soiExitJd) ? soiExitJd : (start + defDays);
+		var useEstimate = !isFinite(soiExitJd);
+
+		// Extend past the phase's own end to keep the committed hand-off on the
+		// track when the flight finishes ahead of it, with a little room after
+		// so the mark isn't jammed against the right edge.
+		if (plan && isFinite(plan.jd) && plan.jd > end) {
+			end = plan.jd + 0.05 * (plan.jd - start);
 		}
 
 		if (!(isFinite(start) && isFinite(end) && end > start)) { return null; }
 		return { start: start, end: end, marks: marks, defaulted: useEstimate,
-		         releaseJd: isFinite(releaseJd) ? releaseJd : start };
+		         releaseJd: releaseJd };
 	}
 
 	// The default span length: SOI_radius / v∞ — the time to cross the origin

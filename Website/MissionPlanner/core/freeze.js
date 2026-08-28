@@ -73,7 +73,7 @@
  *                                 //   override ("dive-in"/"direct-out";
  *                                 //   absent/"auto" = the wedge rule), passed
  *                                 //   through to estimateDeparture so the
- *                                 //   baked release anchor matches the course
+ *                                 //   seeded release epoch matches the course
  *                                 //   the planner was shown
  * }
  *
@@ -81,18 +81,20 @@
  * dropped — they never shaped the flight up to arrival, and a frozen leg
  * whose duration is the rendezvous would flag them as past its end.
  *
- * TIMING FIELDS on the frozen-plan stage:
- *   handoffWindowDays — half-width (d) of the hand-off WINDOW around
- *     departure.jd (default ±1); the compliance epoch row checks the
- *     integrated departure leg's delivered hand-off against it.
- *   releaseAnchorJd — the READ-ONLY release epoch: departure.jd minus the
- *     departure-duration estimate (core/departure-estimate.js — the same
- *     figure the Ephemeris tab's Moon widget presented while planning), so
- *     the Moon a user planned around is the Moon the mission shows. A plan
- *     with no meaningful v∞ (waypoints-only) anchors at departure.jd
- *     itself — there is no flight to lead it.
- * Older saves may lack both fields; consumers default them (window 1, anchor
- * departure.jd — see frozen-plan.js's windowDaysOf/releaseAnchorFor).
+ * TWO TIMING FIELDS, ON TWO DIFFERENT STAGES, because they answer to two
+ * different owners:
+ *   handoffWindowDays, on the PLAN — half-width (d) of the hand-off WINDOW
+ *     around departure.jd (default ±1). This is a requirement: the compliance
+ *     epoch row checks the integrated departure leg's delivered hand-off
+ *     against it.
+ *   releaseJd, on the DEPARTURE LEG — when the carrier chain lets go, seeded
+ *     here at departure.jd minus core/departure-estimate.js's flight-time
+ *     estimate (the same figure the Ephemeris tab's Moon widget presented
+ *     while planning, so the Moon a user planned around is the Moon the
+ *     mission shows). The plan does NOT own this: it states where the ship
+ *     must be when the departure phase ends, never when that phase started.
+ *     A plan with no meaningful v∞ (waypoints-only) seeds at departure.jd
+ *     itself — there is no flight to lead it. See core/release-epoch.js.
  */
 
 import { WORLD_KIND, WORLD_VERSION } from "./world.js";
@@ -128,9 +130,10 @@ export function freezeMissionWorld(spec) {
 		.sort(function (a, b2) { return a.days - b2.days; })
 		.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; });
 
-	// Timing fields (see header): the release anchor leads the hand-off by the
-	// departure-duration estimate — both epochs now name the SOI exit, so the
-	// crossing is counted once. The window half-width defaults to ±1 d.
+	// Timing fields (see header): the departure leg's seeded release epoch
+	// leads the hand-off by the departure-duration estimate — both epochs name
+	// the SOI exit, so the crossing is counted once. The plan's own window
+	// half-width defaults to ±1 d.
 	var est = estimateDeparture({
 		origin: spec.origin,
 		vInfVec: O.vSub(handoff.v, bodyHelioV(spec.origin, handoff.jd)),
@@ -139,7 +142,7 @@ export function freezeMissionWorld(spec) {
 	});
 	var windowDays = (isFinite(spec.windowDays) && spec.windowDays > 0)
 		? spec.windowDays : DEFAULT_WINDOW_DAYS;
-	var releaseAnchorJd = est.ok ? est.jdLaunch : handoff.jd;
+	var releaseJd = est.ok ? est.jdLaunch : handoff.jd;
 
 	// Assemble the profile with sequential stage ids. The DEPARTURE SCAFFOLD
 	// comes first, with an EMPTY carrier slot the mission view's departure-
@@ -155,16 +158,15 @@ export function freezeMissionWorld(spec) {
 
 	if (spec.origin === "Earth") {
 		add("moon-platform", {});
-		add("departure-leg", { waypoints: [] });
+		add("departure-leg", { waypoints: [], releaseJd: releaseJd });
 	} else {
-		add("body-departure-leg", { waypoints: [] });
+		add("body-departure-leg", { waypoints: [], releaseJd: releaseJd });
 	}
 	add("frozen-plan", {
 		origin: spec.origin,
 		departure: { r: handoff.r.slice(), v: handoff.v.slice(), jd: handoff.jd },
 		arrival: { body: spec.destination, jd: spec.arrivalJd, vInf: spec.arrivalVInf },
 		handoffWindowDays: windowDays,
-		releaseAnchorJd: releaseAnchorJd,
 		waypoints: waypoints.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; })
 	});
 	add("transfer-leg", { waypoints: waypoints, legDays: legDays, destination: spec.destination });

@@ -11,7 +11,7 @@
  * self-originates; see core/freeze.js's scaffold.
  *
  * READ-ONLY by design: there is no release-date knob here. The release epoch
- * is the plan's frozen anchor (frozen-plan.js's releaseAnchorFor), baked at
+ * is the departure leg's own release epoch (core/release-epoch.js), seeded at
  * mission creation from core/departure-estimate.js's flight-time estimate and
  * never re-derived, so this card always shows ONE unchanging state: exactly the
  * Moon the user planned around (and already dated by the Departure info strip
@@ -50,7 +50,7 @@ import { baseState, emptyChain } from "../../../Shared/kinematic-chain.js";
 import { buildMoonGlyph } from "../../../Shared/sim/moon-glyph.js";
 import { moonElongationDeg, moonProgradeSpeed } from "../../core/departure-estimate.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
+import { releaseEpochFor } from "../../core/release-epoch.js";
 
 var O = OrbitalMath;
 
@@ -115,13 +115,13 @@ export default {
 	rendersIn: ["body:Earth-Moon"],
 
 	update: function (ctx) {
-		var anchorJd = releaseAnchorFor(ctx.world);
+		var anchorJd = releaseEpochFor(ctx.world);
 		if (anchorJd === null) {
 			rememberFigures(ctx.world, ctx.stageId, null);
-			return makeDiagnostic("no-release-anchor",
-				"This mission has no release anchor — no frozen flight plan (or legacy " +
-				"release date) fixes when the carrier chain releases.",
-				{ fix: "Start missions from the Ephemeris tab (Start Mission Plan bakes the anchor)." });
+			return makeDiagnostic("no-release-epoch",
+				"This mission has no release epoch — no departure leg fixes when the " +
+				"carrier chain lets go.",
+				{ fix: "Start missions from the Ephemeris tab (Start Mission Plan seeds the epoch)." });
 		}
 
 		rememberFigures(ctx.world, ctx.stageId, moonFigures(anchorJd));

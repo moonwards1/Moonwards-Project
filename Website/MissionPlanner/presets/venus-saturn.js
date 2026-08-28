@@ -44,9 +44,6 @@
 // "Paste mission link…" reproduces this plan EXACTLY: it opens on the
 // hand-off epoch, reads the v-infinity off the state, and adopts the exit
 // point's own offset from Venus rather than re-deriving it.
-// `injectionJd` below is a legacy field from when the tab authored a
-// centre-of-body burn and freeze followed the arc out; nothing reads it.
-//
 // This is a SERIALIZED WORLD (core/world.js `serialize()` shape, current
 // WORLD_VERSION), loaded through the same deserializeWorld path a share link
 // uses. Pure data, so Node tests can verify it actually loads, integrates,
@@ -54,7 +51,7 @@
 
 export var venusSaturnMission = {
 	kind: "moonwards-world",
-	version: 4,
+	version: 5,
 	jd: 2464022.5,   // the clock opens at the release anchor
 	nextStage: 7,
 	stages: [
@@ -71,7 +68,7 @@ export var venusSaturnMission = {
 		{
 			id: "stg-2",
 			moduleId: "body-departure-leg",
-			params: { waypoints: [] }
+			params: { releaseJd: 2464022.5, waypoints: [] }
 		},
 		{
 			// Compliant by construction (see header): departure/arrival copied
@@ -85,10 +82,8 @@ export var venusSaturnMission = {
 					v: [-9757.102206391384, 37821.09161834681, 982.6728206505492],
 					jd: 2464024.126766075
 				},
-				injectionJd: 2464022.422908,
 				arrival: { body: "Saturn", jd: 2466221.626766075, vInf: 9754.537416938687 },
 				handoffWindowDays: 1,
-				releaseAnchorJd: 2464022.5,
 				waypoints: [{ days: 660, burn: { pro: 7432.959774971017, rad: 12753.660047286197, nrm: 1529.2755250152884 } }]
 			}
 		},

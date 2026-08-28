@@ -8,23 +8,19 @@
  * origin body's), the hand-off epoch, and — for Earth — where the Moon is.
  * The estimate feeds two things: the Ephemeris tab's "Moon phase at launch"
  * widget (ephemeris-view.js's buildMoonWidget/updateMoonWidgets), and the
- * read-only release anchor core/freeze.js bakes into the plan as
- * frozen-plan's releaseAnchorJd. The ±1 d hand-off window absorbs the
- * estimate's error.
+ * SEED for the departure leg's own releaseJd, which core/freeze.js writes at
+ * mission creation. The ±1 d hand-off window absorbs the estimate's error.
  *
- * That anchor is read back through frozen-plan.js's releaseAnchorFor(), and
- * consumed by frozen-plan.js's own epoch-compliance row, and — for every
- * origin, not just Earth — moon-platform.js, departure-leg.js and
- * body-departure-leg.js, which stamp
- * their Release flight event at exactly this epoch. mission-view.js's
- * departureSpan reads it directly too: for a satellite-carrier origin
- * (Earth/Moon), it is the Departure slider's pinned LEFT edge outright, even
- * before any departure tech resolves a real flight; other origins anchor the
- * RIGHT edge at the plan's committed hand-off instead and derive the LEFT edge
- * from it, so this anchor there only sets the pre-resolution floating edge's
- * starting guess (departureDefaultSpanSeconds re-derives its own estimate
- * rather than reading it, so that edge can sit slightly away from where a
- * resolved flight's own Release/SOI-exit events will land).
+ * It is only a seed. The epoch belongs to the DEPARTURE PHASE from then on
+ * (core/release-epoch.js) — the frozen plan neither stores it nor imposes it.
+ * It is read back through releaseEpochFor() by moon-platform.js and the
+ * platform roles, stamped as the Release flight event by departure-leg.js and
+ * body-departure-leg.js, and used by mission-view.js's departureSpan as the
+ * Departure slider's pinned LEFT edge, for every origin alike. The slider's
+ * floating right edge uses departureDefaultSpanSeconds, which re-derives its
+ * own estimate rather than reading this one, so before a tech resolves a real
+ * flight that edge can sit slightly away from where the SOI-exit event will
+ * actually land.
  *
  * Earth departures (this project's carriers all start near the Moon) use an
  * exact two-body SOI-exit time from the Moon's mean distance, choosing

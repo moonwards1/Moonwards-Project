@@ -31,7 +31,8 @@ import { Frames } from "../../../Shared/frames.js";
 import { emptyChain, appendElement, applyElement, evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { releaseAnchorFor, arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
+import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
+import { releaseEpochFor } from "../../core/release-epoch.js";
 import { approachAt, approachFromPass, interceptWarning } from "../arrival-approach.js";
 import { passFor as arrivalPassFor } from "../arrival-leg/arrival-leg.js";
 import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
@@ -151,15 +152,16 @@ export function makeCarrier(spec, opts) {
 			var gated = spec.release.gate ? spec.release.gate(geo) : null;
 			if (gated) { return gated; }
 
-			// The release epoch is the plan's read-only anchor. An upstream base
-			// platform diagnoses a missing one too; a self-originating platform is
-			// the top of the chain and carries the same check.
-			var anchorJd = releaseAnchorFor(ctx.world);
+			// The release epoch is the departure leg's own (core/release-epoch.js).
+			// An upstream base platform diagnoses a missing one too; a
+			// self-originating platform is the top of the chain and carries the
+			// same check.
+			var anchorJd = releaseEpochFor(ctx.world);
 			if (anchorJd === null) {
-				return makeDiagnostic("no-release-anchor",
-					"This mission has no release anchor — no frozen flight plan (or legacy " +
-					"release date) fixes when the carrier chain releases.",
-					{ fix: "Start missions from the Ephemeris tab (Start Mission Plan bakes the anchor)." });
+				return makeDiagnostic("no-release-epoch",
+					"This mission has no release epoch — no departure leg fixes when the " +
+					"carrier chain lets go.",
+					{ fix: "Start missions from the Ephemeris tab (Start Mission Plan seeds the epoch)." });
 			}
 
 			// Extend the chain it rides, or start a fresh one. The chain's base is
@@ -184,7 +186,7 @@ export function makeCarrier(spec, opts) {
 		init: function (ctx) { buildPlatformCard(spec, ctx, RELEASE, cache, hostCache); },
 
 		draw: function (view, snap) {
-			drawPlatform(spec, view, snap, RELEASE, cache, releaseAnchorFor(snap.world), readoutCache, hostCache);
+			drawPlatform(spec, view, snap, RELEASE, cache, releaseEpochFor(snap.world), readoutCache, hostCache);
 		}
 	};
 	if (!isBaseOnly && rides === "*") { desc.inputOptional = true; }

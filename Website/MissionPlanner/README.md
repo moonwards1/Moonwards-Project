@@ -248,16 +248,18 @@ origin or destination `body` explicitly — the project's "body" convention
 
 **Departure** — a carrier chain (`Shared/kinematic-chain.js`, carried in
 `carrier-chain` packets) composes at an origin, then a headless leg integrates
-the released flight with restricted N-body gravity. The release **epoch** is
-never a stage param: it is the plan's read-only release anchor
-(`frozen-plan.js`'s `releaseAnchorFor`, baked at mission creation, never
-re-derived).
+the released flight with restricted N-body gravity. The release **epoch**
+belongs to this phase: it is the departure leg's own `releaseJd`, seeded at
+mission creation from `core/departure-estimate.js` and read back by everything
+upstream through `core/release-epoch.js`'s `releaseEpochFor`. The frozen plan
+does not own it — the plan states where the ship must be when this phase ENDS,
+never when it started.
 
 - **`modules/moon-platform/`** — the Moon as the departure stack's read-only
   top card, for Earth-origin missions only. Emits the chain base
   (`emptyChain("Moon")`) and shows the Moon's heading/impulse contribution at
-  the release anchor. No knobs — plan around the Moon in the Ephemeris tab. A
-  mission with no release anchor at all is diagnosed here, at the top of the
+  the release epoch. No knobs — plan around the Moon in the Ephemeris tab. A
+  mission with no release epoch at all is diagnosed here, at the top of the
   chain.
 - **`modules/skyhook/`** — the skyhook TECHNOLOGY PLATFORM (see
   `modules/platform/` below), serving every body and both ends of a mission

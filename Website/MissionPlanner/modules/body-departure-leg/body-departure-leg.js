@@ -21,8 +21,8 @@
  * Ephemeris tab only.
  *
  * update() — every recompute is one FORWARD pass, no fixed-point iteration:
- *   1. Read the release-epoch ANCHOR from the frozen plan (releaseAnchorFor) —
- *      READ-ONLY, never re-derived.
+ *   1. Take the RELEASE EPOCH from this stage's own `releaseJd` param — a
+ *      departure-phase decision, seeded at freeze (core/release-epoch.js).
  *   2. Evaluate the incoming carrier-chain packet there
  *      (Shared/kinematic-chain.js) — the released ship's body-centric state.
  *   3. Integrate FORWARD with body + Sun gravity (Shared/body-leg.js RK4),
@@ -39,8 +39,11 @@
  * fixing it means adjusting the carrier, the waypoint impulses, or
  * re-planning from the Ephemeris tab.
  *
- * Params: waypoints: [{ t, burn: { pro, rad, nrm } }] — up to 2, t in SECONDS
- * after release, each strictly inside the flight as integrated so far.
+ * Params: releaseJd — when the carrier chain lets go (the frozen plan does
+ * not own this: it states where the ship must be when the departure phase
+ * ENDS, never when that phase started); waypoints: [{ t, burn: { pro, rad,
+ * nrm } }] — up to 2, t in SECONDS after release, each strictly inside the
+ * flight as integrated so far.
  *
  * RENDER FRAME: rendersIn declares "body:origin", which mission-view.js's
  * resolveFrameId aliases to the mission's own origin frame
@@ -50,8 +53,8 @@
  * waypoint cards, gizmo/arrow draw); only the vector editor is genuinely
  * shared, via Shared/sim/vector-editor.js. update() is pure and Node-testable.
  *
- * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this folder
- * breaks if moved without them coming along.
+ * Imports from ../../../Shared/ and ../../core/ — this folder breaks if
+ * moved without them coming along.
  */
 /* global THREE */
 
@@ -66,7 +69,6 @@ import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { releaseAnchorFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -75,7 +77,8 @@ var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var GIZMO_PX = 42;
 
 export var defaultParams = {
-	waypoints: []   // up to 2: { t (s after release), burn: { pro, rad, nrm } }
+	releaseJd: null,  // when the carrier chain lets go — see core/release-epoch.js
+	waypoints: []     // up to 2: { t (s after release), burn: { pro, rad, nrm } }
 };
 
 function isoOf(jd) {
@@ -314,13 +317,17 @@ export default {
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
 
-		var anchorJd = releaseAnchorFor(ctx.world);
-		if (anchorJd === null) {
+		// The release epoch — this stage's OWN param, seeded at freeze and owned
+		// by the departure phase (core/release-epoch.js). Upstream carriers read
+		// the same value through releaseEpochFor and diagnose a missing one too;
+		// this stage may also be exercised bare (tests), so it carries the check.
+		var anchorJd = params.releaseJd;
+		if (!isFinite(anchorJd)) {
 			rememberLeg(ctx.world, ctx.stageId, null);
-			return makeDiagnostic("no-release-anchor",
-				"This mission has no release anchor — no frozen flight plan (or legacy " +
-				"release date) fixes when the carrier chain releases.",
-				{ fix: "Start missions from the Ephemeris tab (Start Mission Plan bakes the anchor)." });
+			return makeDiagnostic("no-release-epoch",
+				"This departure leg has no release epoch — nothing fixes when the " +
+				"carrier chain lets go.",
+				{ fix: "Start missions from the Ephemeris tab (Start Mission Plan seeds the epoch)." });
 		}
 
 		var leg = computeBodyDepartureLeg(params, input.data, anchorJd);

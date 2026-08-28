@@ -23,6 +23,14 @@
  * one boundary. A gap is a warning naming the boundary mismatch itself, never
  * a reconciliation of whatever steps produced either side.
  *
+ * THE PLAN'S SCOPE IS THE COAST AND ITS TWO ENDS, NOTHING ELSE: where and
+ * when the mission starts (the hand-off at the origin's SOI edge), where and
+ * when it is going (the arrival commitment), and the trajectory between (the
+ * waypoints). It states a REQUIREMENT at the Departure→Coast boundary and
+ * imposes nothing on how the departure phase meets it — in particular it does
+ * not own the release epoch, which is a departure-phase decision living on the
+ * departure leg stage (core/release-epoch.js).
+ *
  * The param schema (what core/freeze.js writes):
  *
  *   origin:    "Earth"       — the departure system's primary; the required
@@ -35,12 +43,6 @@
  *                              stop. No burn happens at this seam (see
  *                              transfer-leg.js's header for the reasoning the
  *                              two modules share)
- *   injectionJd:              — LEGACY, ignored. Older saves recorded a
- *                              centre-of-body burn epoch here, from when the
- *                              Ephemeris tab authored an impulse and freeze
- *                              followed the arc out to the SOI edge. The tab's
- *                              clock IS the hand-off now, so nothing reads it
- *                              and freeze no longer writes it
  *   arrival:   { body, jd, vInf } — the plan's arrival commitment: body name,
  *                              epoch, and approach v-infinity (m/s) the
  *                              arrival tech must be able to catch. Read back
@@ -49,9 +51,6 @@
  *                              departure.jd; the epoch compliance row checks
  *                              against it, and so does the arrival seam's
  *                              (handoffWindowFor below)
- *   releaseAnchorJd:          — the READ-ONLY release anchor: the epoch the
- *                              departure chain releases at, baked at freeze
- *                              and never re-derived (see releaseAnchorFor)
  *   waypoints: [{ days, burn }]  — reference copy of the plan's waypoint
  *                              burns, for readouts and comparison (the
  *                              WORKING copy lives on the transfer-leg stage,
@@ -102,10 +101,8 @@ export var DEFAULT_WINDOW_DAYS = 1;   // days  — hand-off window half-width fa
 export var defaultParams = {
 	origin: "Earth",
 	departure: { r: null, v: null, jd: null },
-	injectionJd: null,         // legacy, ignored (see header)
 	arrival: { body: "", jd: null, vInf: null },
 	handoffWindowDays: null,   // half-width (d); null → DEFAULT_WINDOW_DAYS
-	releaseAnchorJd: null,     // read-only release epoch; null → departure.jd
 	waypoints: []
 };
 
@@ -116,33 +113,9 @@ export function windowDaysOf(params) {
 	return (isFinite(w) && w > 0) ? w : DEFAULT_WINDOW_DAYS;
 }
 
-// The mission's READ-ONLY release anchor: the epoch the departure chain
-// releases at, frozen into the plan when the mission was created
-// (core/freeze.js bakes it from core/departure-estimate.js's flight-time
-// estimate) and never re-derived — so the Moon card shows exactly the Moon the
-// user planned around in the Ephemeris tab. Resolution order:
-//   1. the frozen-plan stage's releaseAnchorJd,
-//   2. its departure.jd (a save with no flight-time lead recorded),
-//   3. null — no plan, or no anchor recorded; the departure chain reports it
-//      as a diagnostic.
-// Lives here because the plan owns the anchor; moon-platform, orbital-skyhook,
-// departure-leg and body-departure-leg all read it through this one function.
-export function releaseAnchorFor(world) {
-	if (!world || typeof world.stages !== "function") { return null; }
-	var stages = world.stages();
-	var i, p;
-	for (i = 0; i < stages.length; i++) {
-		if (stages[i].moduleId !== "frozen-plan") { continue; }
-		p = stages[i].params || {};
-		if (isFinite(p.releaseAnchorJd)) { return p.releaseAnchorJd; }
-		if (p.departure && isFinite(p.departure.jd)) { return p.departure.jd; }
-	}
-	return null;
-}
-
-// The mission's ARRIVAL COMMITMENT: the plan's { body, jd, vInf }, read the
-// same way releaseAnchorFor reads the release anchor — the plan owns both
-// mission endpoints, so the arrival technologies (arrival-skyhook) and
+// The mission's ARRIVAL COMMITMENT: the plan's { body, jd, vInf } — one of
+// the two mission endpoints the plan owns, so the arrival technologies
+// (arrival-skyhook) and
 // mission-view.js's seam fallback and ship-card timing bar all read the
 // catch epoch through this one function rather than each groping through
 // the stages themselves. Returns null when the mission has no frozen plan
@@ -161,8 +134,8 @@ export function arrivalCommitmentFor(world) {
 }
 
 // The mission's ORIGINAL waypoint burns — the reference copy frozen at plan
-// creation (core/freeze.js), read the same way releaseAnchorFor and
-// arrivalCommitmentFor read their fields. transfer-leg's sidebar card uses
+// creation (core/freeze.js), read the same way arrivalCommitmentFor reads
+// its field. transfer-leg's sidebar card uses
 // this to tell an original plan waypoint (part of the committed mission,
 // not removable — only resettable to these values) from one added later as
 // a course correction during Coast (freely removable). Index-matched against
@@ -182,7 +155,7 @@ export function planWaypointsFor(world) {
 }
 
 // The mission's hand-off window half-width (days), read off the plan the same
-// way releaseAnchorFor and arrivalCommitmentFor read their fields: this
+// way arrivalCommitmentFor reads its field: this
 // module's own epoch row, and the ship card's Coast-phase timing bar.
 // DEFAULT_WINDOW_DAYS when the mission has no plan at all.
 export function handoffWindowFor(world) {
@@ -455,14 +428,13 @@ export default {
 	},
 
 	// No view layer: no init (see sidebarCard above) and no draw hook (the
-	// plan owns no hardware). complianceFor/planSummary/releaseAnchorFor are
+	// plan owns no hardware). complianceFor/planSummary/arrivalCommitmentFor are
 	// exposed on the descriptor (not just the named export) so the shell can
 	// reach them via `registry.get("frozen-plan")` without a static import —
 	// modules stay dynamically loaded (planner.js's MODULE_URLS), only the
 	// registry is a shared/known handle.
 	complianceFor: complianceFor,
 	planSummary: planSummary,
-	releaseAnchorFor: releaseAnchorFor,
 	arrivalCommitmentFor: arrivalCommitmentFor,
 	handoffWindowFor: handoffWindowFor,
 	planWaypointsFor: planWaypointsFor
