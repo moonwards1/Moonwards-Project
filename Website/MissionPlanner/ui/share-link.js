@@ -1,14 +1,21 @@
 /* MissionPlanner/ui/share-link.js — the mission-link envelope.
  *
  * Pure (no DOM), Node-testable. A "Copy mission link" URL carries a mission in
- * its #mission= fragment. The envelope wraps { title, world } under its own
- * kind stamp, because a mission's TITLE lives at the shell level (planner.js's
- * mission list), not in the World — a bare serialized World would lose it and
- * every import would arrive as "Imported mission". unpackMissionLink also
- * accepts a bare serialized World, so older links keep working.
+ * its #mission= fragment. The envelope wraps { title, world, plan } under its
+ * own kind stamp, because a mission's TITLE lives at the shell level
+ * (planner.js's mission list), not in the World — a bare serialized World would
+ * lose it and every import would arrive as "Imported mission".
+ * unpackMissionLink also accepts a v1 envelope and a bare serialized World, so
+ * older links keep working.
+ *
+ * `plan` is the two-set history from core/revisions.js: the mission as
+ * originally frozen, plus its latest commit when it has one. Two sets is the
+ * whole budget — a user's intermediate updates are their own working record,
+ * and a link has to fit in a chat message.
  *
  * The writing side is mission-view.js's share button (packMissionLink +
- * Shared/exchange.js's encodeFragment); the reading sides are planner.js's
+ * Shared/exchange.js's encodeFragmentZ — links are compressed, which is what
+ * keeps two sets inside a Discord message); the reading sides are planner.js's
  * initialMissions and ephemeris-view.js's "Paste mission link…".
  *
  * missionFragmentFrom() is the paste-side helper: the user may paste the
@@ -26,30 +33,42 @@
  */
 
 export var MISSION_LINK_KIND = "moonwards-mission-link";
-export var MISSION_LINK_VERSION = 1;
+export var MISSION_LINK_VERSION = 2;
 
-// The fragment payload for a share link: title (may be null) + serialized
-// World. Kind-stamped and versioned like the World itself, so a future
-// format change can be refused politely rather than misread.
-export function packMissionLink(title, worldData) {
-	return {
+// The fragment payload for a share link: title (may be null), the World the
+// receiving TAB should open with, and — at v2 — the two-set `plan`
+// core/revisions.js's packSets produced: the mission as originally frozen, and
+// the latest commit if there is one. Kind-stamped and versioned like the World
+// itself, so a future format change can be refused politely rather than
+// misread.
+//
+// `world` and `plan` are not redundant. `world` is what opens in a tab;
+// `plan.original` is what the Ephemeris tab reconstructs so the plan can be
+// revised from where it started. A link with no `plan` (v1, or a mission whose
+// history was lost) still opens a tab — the receiving side falls back to the
+// old single-World behaviour rather than refusing.
+export function packMissionLink(title, worldData, planSets) {
+	var out = {
 		kind: MISSION_LINK_KIND,
 		version: MISSION_LINK_VERSION,
 		title: (typeof title === "string" && title.trim()) ? title.trim() : null,
 		world: worldData
 	};
+	if (planSets && planSets.original) { out.plan = planSets; }
+	return out;
 }
 
-// Decoded fragment -> { ok: true, title: string|null, world } or
-// { ok: false, reason }. Accepts both the envelope and a bare serialized-World
-// (kind "moonwards-world"); world content itself is NOT validated here — that
-// stays core/world.js's deserializeWorld's job.
+// Decoded fragment -> { ok: true, title: string|null, world, plan: object|null }
+// or { ok: false, reason }. Accepts the v2 envelope, the v1 envelope (no
+// `plan`), and a bare serialized-World (kind "moonwards-world"). World content
+// itself is NOT validated here — that stays core/world.js's deserializeWorld's
+// job, and the plan sets stay core/revisions.js's readSets'.
 export function unpackMissionLink(decoded) {
 	if (!decoded || typeof decoded !== "object") {
 		return { ok: false, reason: "not a mission link" };
 	}
 	if (decoded.kind === "moonwards-world") {           // a bare world, no envelope
-		return { ok: true, title: null, world: decoded };
+		return { ok: true, title: null, world: decoded, plan: null };
 	}
 	if (decoded.kind !== MISSION_LINK_KIND) {
 		return { ok: false, reason: "unrecognised link kind" };
@@ -63,7 +82,8 @@ export function unpackMissionLink(decoded) {
 	}
 	var title = (typeof decoded.title === "string" && decoded.title.trim())
 		? decoded.title.trim() : null;
-	return { ok: true, title: title, world: decoded.world };
+	var plan = (decoded.plan && typeof decoded.plan === "object") ? decoded.plan : null;
+	return { ok: true, title: title, world: decoded.world, plan: plan };
 }
 
 // Pasted text -> the base64url fragment string, or null if none is found.

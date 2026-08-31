@@ -41,8 +41,9 @@ import { computeArrivalSeam } from "./core/arrival-seam.js";
 import { releaseEpochFor } from "./core/release-epoch.js";
 import { systems, constants } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
-import { Exchange, encodeFragment } from "../Shared/exchange.js";
+import { Exchange, encodeFragmentZ } from "../Shared/exchange.js";
 import { packMissionLink } from "./ui/share-link.js";
+import { createHistory, recordUpdate, packSets, entriesOf, changesBetween } from "./core/revisions.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
@@ -204,9 +205,14 @@ export function deleteWorkspaceSlot(missionId) {
 //    getTitle   — optional () -> the mission's current shell-level title
 //                 (titles live in planner.js, not the World); the share
 //                 link embeds it so imports keep the name
+//    plan       — optional core/revisions.js history for this mission
+//                 (restored from storage or a link); one is created from
+//                 the opening World when absent
+//    onPlanRecorded — optional () called after an Update appends a set, so
+//                 the shell can persist the history without polling
 //
-//  Returns { world, engine, root, missionId, show, hide, render, resize,
-//  dispose }. Only the active (shown) view should have render()/resize()
+//  Returns { world, engine, root, missionId, planHistory, show, hide, render,
+//  resize, dispose }. Only the active (shown) view should have render()/resize()
 //  called; the shell must show() another view (or park the canvas) before
 //  disposing the one that holds it.
 // =======================================================================
@@ -216,6 +222,14 @@ export function createMissionView(opts) {
 	var renderer = opts.renderer;
 	var missionId = opts.missionId;
 	var active = false;
+
+	// ---- the plan history (core/revisions.js): the mission as first frozen,
+	// plus a set per Update. A mission arriving without one — the shipped
+	// preset, a pre-history save, a v1 link — takes the World it opens with as
+	// its original, which is the honest reading: that IS the earliest plan this
+	// build can account for. The shell persists it and puts two of its sets in
+	// a share link; nothing here recomputes from it.
+	var planHistory = opts.plan || createHistory(world.serialize());
 
 	// ---- DOM: clone the per-mission chrome from the template ----------------
 	var root = opts.template.content.firstElementChild.cloneNode(true);
@@ -671,22 +685,35 @@ export function createMissionView(opts) {
 	syncPhaseButtons();
 	syncSliderVisibility();
 
-	// ---- share link: THIS mission's World, through the same fragment encoding
-	// the load path reads. Copying, not navigating — the URL is the artifact.
-	// ui/share-link.js's envelope carries the shell-level TITLE along with the
-	// World, so an import arrives with its real name; getTitle is a live lookup
-	// into planner.js's mission list, not a snapshot.
+	// ---- share link: THIS mission's World plus two sets of its plan history,
+	// through the same fragment encoding the load path reads. Copying, not
+	// navigating — the URL is the artifact. ui/share-link.js's envelope carries
+	// the shell-level TITLE along with the World, so an import arrives with its
+	// real name; getTitle is a live lookup into planner.js's mission list, not
+	// a snapshot.
+	//
+	// Compressed (encodeFragmentZ), because the two sets roughly double a
+	// link's length and a Discord message stops at 2,000 characters. Async for
+	// the same reason — there is no synchronous deflate — so the clipboard
+	// write is chained rather than immediate.
 	// Called from the mission menu (the bar's "Mission report" dropdown).
 	function shareMission() {
-		var payload = packMissionLink(opts.getTitle ? opts.getTitle() : null, world.serialize());
-		var url = location.origin + location.pathname + "#mission=" + encodeFragment(payload);
-		navigator.clipboard.writeText(url).then(function () {
-			showMessage("Mission link copied", function (wrap) {
-				msgPara(wrap, "A link that opens this exact mission is on the clipboard.");
+		var payload = packMissionLink(opts.getTitle ? opts.getTitle() : null,
+			world.serialize(), packSets(planHistory));
+		encodeFragmentZ(payload).then(function (frag) {
+			var url = location.origin + location.pathname + "#mission=" + frag;
+			var sets = packSets(planHistory);
+			var note = (sets && sets.latest)
+				? "A link that opens this exact mission is on the clipboard. It also " +
+					"carries the plan as originally frozen, so pasting it into the " +
+					"Ephemeris tab starts from where this mission began."
+				: "A link that opens this exact mission is on the clipboard.";
+			return navigator.clipboard.writeText(url).then(function () {
+				showMessage("Mission link copied", function (wrap) { msgPara(wrap, note); });
+			}, function () {
+				// clipboard blocked: show the link so it can be copied by hand
+				window.prompt("Copy the mission link:", url);
 			});
-		}, function () {
-			// clipboard blocked: show the link so it can be copied by hand
-			window.prompt("Copy the mission link:", url);
 		});
 	}
 
@@ -1578,6 +1605,10 @@ export function createMissionView(opts) {
 		if (sol.ok) {
 			history.push(snapshotForReport(sol));
 			applyRetarget(planStage.id, sol);   // this recomputes and redraws
+			// Recorded AFTER the retarget, so the set is the plan as committed
+			// rather than the one it replaced.
+			planHistory = recordUpdate(planHistory, world.serialize());
+			if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
 			checked = null;
 		}
 		showMessage("Update — the plan has changed", function (wrap) {
@@ -1628,6 +1659,7 @@ export function createMissionView(opts) {
 			if (!f) {
 				msgPara(wrap, "No departure technology is delivering a hand-off yet, so " +
 					"there is no flight to report on.");
+				renderOriginals(wrap);   // the stored plan exists either way
 				return;
 			}
 			var rows = history.concat([snapshotForReport(null)]);
@@ -1663,7 +1695,67 @@ export function createMissionView(opts) {
 					"moved from <b>" + cbarKm(history[0].flown) + "</b> to <b>" +
 					cbarKm(now.flown) + "</b>.");
 			}
+			renderOriginals(wrap);
 		});
+	}
+
+	// ---- what the plan STORED, then and now ---------------------------------
+	// The table above is what the mission ACHIEVES, recomputed live. This is
+	// the other half, and the reason the plan history exists: the values the
+	// plan actually holds, as first frozen beside as they stand. Read straight
+	// off two serialized Worlds (core/revisions.js's planSummaryOf), so the
+	// original's column costs nothing however long ago it was written and
+	// cannot drift from what was really committed.
+	function summaryValueText(row, value) {
+		if (value === null || value === undefined) { return "—"; }
+		if (row.unit === "jd") { return cbarDate(value) + " (" + Number(value).toFixed(3) + ")"; }
+		if (row.unit === "m/s") { return Math.round(value).toLocaleString("en-US") + " m/s"; }
+		if (row.unit === "d") { return Number(value).toFixed(2) + " d"; }
+		// A technology's own dials carry no unit here — core/revisions.js reads
+		// them off whatever params a module happens to hold, and only the module
+		// knows what they mean. Grouped digits at least keep 275000 legible.
+		if (typeof value === "number") {
+			return Number.isInteger(value) ? value.toLocaleString("en-US") : String(value);
+		}
+		return String(value);
+	}
+
+	function renderOriginals(wrap) {
+		var sets = entriesOf(planHistory);
+		var changes = changesBetween(planHistory.original, world.serialize());
+		var moved = changes.filter(function (c) { return c.changed; });
+
+		var h = document.createElement("h4");
+		h.textContent = "The plan as stored";
+		wrap.appendChild(h);
+
+		if (!moved.length) {
+			msgPara(wrap, "Nothing stored in the plan has changed since it was frozen — " +
+				"this is the mission exactly as it came from the Ephemeris tab.");
+			return;
+		}
+
+		var t = document.createElement("table");
+		t.className = "mp-originals";
+		t.innerHTML = "<tr><th>value</th><th>as frozen</th><th>now</th></tr>";
+		moved.forEach(function (c) {
+			var tr = document.createElement("tr");
+			tr.innerHTML = "<td>" + escapeText(c.label) + "</td>" +
+				"<td class='was'>" + escapeText(summaryValueText(c, c.was)) + "</td>" +
+				"<td>" + escapeText(summaryValueText(c, c.now)) + "</td>";
+			t.appendChild(tr);
+		});
+		wrap.appendChild(t);
+
+		var commits = sets.length - 1;
+		msgPara(wrap, commits
+			? escapeText(String(moved.length)) + " stored value" + (moved.length > 1 ? "s have" : " has") +
+				" moved across " + commits + " commit" + (commits > 1 ? "s" : "") +
+				". A mission link carries the frozen column as well as the current one, so " +
+				"pasting it into the Ephemeris tab reopens the plan this mission started from."
+			: escapeText(String(moved.length)) + " stored value" + (moved.length > 1 ? "s differ" : " differs") +
+				" from the frozen plan without an Update having been committed — these are " +
+				"live edits the plan has not been moved onto yet.");
 	}
 
 	// The mission menu: the report, and the bar's other mission-level actions.
@@ -2638,6 +2730,11 @@ export function createMissionView(opts) {
 		engine: engine,
 		root: root,
 		missionId: missionId,
+		// The plan history, for the shell to persist. A getter rather than the
+		// object itself: core/revisions.js returns a NEW history per commit, so
+		// a reference handed out at construction would go stale on the first
+		// Update.
+		planHistory: function () { return planHistory; },
 		show: show,
 		hide: hide,
 		render: render,

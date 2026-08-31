@@ -712,3 +712,48 @@ flight's true closest approach can sit far earlier (the shipped preset's is
 the arrival would drag the arrival phase back into mid-cruise. Closest
 approach is the arrival date when the flight actually reaches the body; short
 of that, the end of the coast is the only honest anchor.
+
+### 2026-08-31 — A mission carries a plan history; a link carries two sets of it
+
+A mission's plan is not only what it holds now — it is also what it held when
+it was frozen. `core/revisions.js` keeps that: an ORIGINAL (the serialized
+World `core/freeze.js` wrote) plus a STEP per commit. Each entry is a whole
+serialized World, never a diff, because a World already is the complete
+description of a mission and there is no smaller thing a plan can be rebuilt
+from.
+
+TWO SCOPES, DIFFERENT SIZES. Locally the whole run of steps is kept — it costs
+about a kilobyte a commit and it is what the mission report reads. A LINK
+carries exactly two: the original, and the latest step if there is one.
+Intermediate steps are the author's working record and nobody else's, and a
+link has to fit in a chat message.
+
+MARKING A MISSION FINISHED COMPACTS to original + finished, discarding the
+steps between — the same shape a link carries. `markFinished` exists and is
+tested; the control that calls it belongs to the arrival phase and is not
+built yet. Finishing does not lock: a later edit simply starts accumulating
+steps again.
+
+LINKS ARE DEFLATE-COMPRESSED (`Shared/exchange.js`'s `encodeFragmentZ`, marked
+with a leading "z"; plain fragments always start "ey"). Two sets do not fit in
+a Discord message uncompressed — 2,768 characters against a 2,000 limit — and
+compress to about 717, because the sets are near-copies of each other. The
+sync `encodeFragment`/`decodeFragment` are untouched and remain the
+calculators' `#pkt=` transport. There is no synchronous inflate, so the
+planner's start-up and the paste dialog are async.
+
+PASTING SPLITS THE TWO SETS BY WHAT THEY ARE. The original loads into the
+Ephemeris scratchpad, which is where a plan is authored and revised; the
+latest opens as its own mission tab, because a committed plan with a
+technology stack behind it is a mission, not a sketch. A link with one set
+does what paste always did. The scratchpad is a singleton with no undo, so the
+paste dialog carries a standing warning to use another browser window to keep
+what is there.
+
+THE REPORT'S ORIGINALS TABLE IS STORED VALUES ONLY (`planSummaryOf`) —
+read off two serialized Worlds with no physics, so the frozen column costs
+nothing however old it is and cannot drift from what was committed. Derived
+figures stay in the report's flight table, which is recomputed live. A
+technology's dials are enumerated from whatever params its stage holds, keyed
+by module and occurrence rather than chain position: a technology added above
+another must not make the other's dials read as changed.

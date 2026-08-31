@@ -213,6 +213,12 @@ body {
 .mp-msg th { color: var(--dim); font-weight: 400; border-bottom: 1px solid var(--line2); }
 .mp-msg th:first-child, .mp-msg td:first-child { text-align: left; color: var(--dim); }
 .mp-msg tr.now td { color: var(--text); }
+/* The mission report's originals table: what the plan STORED when it was
+   frozen beside what it holds now (core/revisions.js). The "as frozen"
+   column is dimmed — it is the reference, not the live figure. */
+.mp-msg h4 { margin: 10px 0 4px; font-size: 12px; color: var(--bright); font-weight: 600; }
+.mp-msg table.mp-originals td.was { color: var(--dim); }
+
 
 /* ---------- phase sliders (ui/phase-slider.js) ---------- */
 .mp-sliderzone {
@@ -814,6 +820,11 @@ body {
 	padding: 18px 20px; width: 340px;
 }
 .mp-dialog h3 { margin: 0 0 10px; font-size: 15px; color: var(--bright); }
+/* The paste dialog's standing warning: the Ephemeris scratchpad is a
+   singleton and loading a link overwrites it. */
+.mp-dialog-note { margin: -4px 0 10px; font-size: 11.5px; color: var(--dim); line-height: 1.4; }
+.mp-dialog-note[hidden] { display: none; }
+
 .mp-dialog input[type=text] {
 	width: 100%; background: #0f1424; border: 1px solid var(--line2); color: var(--text);
 	border-radius: 6px; padding: 7px 9px; font: inherit; margin-bottom: 12px;

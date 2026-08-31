@@ -87,6 +87,86 @@ export function decodeFragment(str) {
 	return JSON.parse(json);
 }
 
+// ---- pure: the COMPRESSED fragment, for payloads a chat message must carry --
+//
+// A mission link is pasted into Discord as often as into a browser, and a
+// Discord message is cut off at 2,000 characters. Plain base64url of JSON runs
+// past that as soon as a link carries more than one plan; deflate brings it
+// back well under, because the sets in a mission link are near-copies of each
+// other and that is exactly what DEFLATE is good at (measured on the shipped
+// Moon->Ceres mission: 1,351 chars plain, 639 deflated; twenty plans, 26,051
+// plain, 814 deflated).
+//
+// COMPRESSED FRAGMENTS ARE MARKED, not sniffed. A plain fragment is base64 of
+// JSON, so it always begins "ey" ('{' encodes there and a packet is always an
+// object); deflated bytes begin with anything. Rather than rest on that, a
+// compressed fragment carries a literal "z" in front. The marker is inside the
+// base64url alphabet, so the paste-side cleanup in MissionPlanner/ui/
+// share-link.js carries it through untouched.
+//
+// These are async because CompressionStream is — there is no synchronous
+// deflate in either the browser or Node. The sync encodeFragment/decodeFragment
+// above are untouched and remain what the calculators' "#pkt=" transport uses.
+
+export var FRAGMENT_Z_PREFIX = "z";
+
+function bytesToBase64url(bytes) {
+	var bin = "";
+	for (var i = 0; i < bytes.length; i++) { bin += String.fromCharCode(bytes[i]); }
+	var b64 = (typeof btoa === "function") ? btoa(bin) : Buffer.from(bytes).toString("base64");
+	return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64urlToBytes(str) {
+	var b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+	while (b64.length % 4) { b64 += "="; }
+	if (typeof atob === "function") {
+		var bin = atob(b64);
+		var out = new Uint8Array(bin.length);
+		for (var i = 0; i < bin.length; i++) { out[i] = bin.charCodeAt(i); }
+		return out;
+	}
+	return new Uint8Array(Buffer.from(b64, "base64"));
+}
+
+async function through(stream, bytes) {
+	var w = stream.writable.getWriter();
+	w.write(bytes);
+	w.close();
+	var chunks = [], total = 0;
+	var r = stream.readable.getReader();
+	for (;;) {
+		var step = await r.read();
+		if (step.done) { break; }
+		chunks.push(step.value);
+		total += step.value.length;
+	}
+	var out = new Uint8Array(total), at = 0;
+	chunks.forEach(function (c) { out.set(c, at); at += c.length; });
+	return out;
+}
+
+// Packet -> a compressed fragment string. Falls back to the plain encoding
+// where CompressionStream is missing, so an old browser still produces a
+// readable (if longer) link rather than nothing.
+export async function encodeFragmentZ(packet) {
+	if (typeof CompressionStream !== "function") { return encodeFragment(packet); }
+	var json = new TextEncoder().encode(JSON.stringify(packet));
+	var bytes = await through(new CompressionStream("deflate-raw"), json);
+	return FRAGMENT_Z_PREFIX + bytesToBase64url(bytes);
+}
+
+// Fragment string -> packet, accepting either form. Rejects by throwing, the
+// same way decodeFragment does, so callers keep one try/catch.
+export async function decodeFragmentAny(str) {
+	if (str.charAt(0) !== FRAGMENT_Z_PREFIX) { return decodeFragment(str); }
+	if (typeof DecompressionStream !== "function") {
+		throw new Error("this browser cannot read a compressed mission link");
+	}
+	var bytes = await through(new DecompressionStream("deflate-raw"), base64urlToBytes(str.slice(1)));
+	return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 // A short, non-cryptographic id stamped on each packet at send() time so
 // consume() can identify one specific delivery rather than "whatever is in
 // the slot right now" (which could have raced with a newer send).

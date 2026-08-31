@@ -34,8 +34,9 @@ import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
 import { defaultMission, defaultWorkspaceMain } from "./presets/default-mission.js";
 import { EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
-import { decodeFragment } from "../Shared/exchange.js";
+import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink } from "./ui/share-link.js";
+import { readHistory, readSets } from "./core/revisions.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
 import { createEphemerisView } from "./ephemeris-view.js";
 
@@ -89,7 +90,12 @@ function saveMissionsStore() {
 		version: 1,
 		activeId: activeTabId === "eph" ? null : activeTabId,
 		missions: missions.map(function (m) {
-			return { id: m.id, title: m.title, world: m.view.world.serialize() };
+			// `plan` is the full local run of sets (core/revisions.js) — every
+			// Update, not the two a link carries. It is this user's working
+			// record and costs about a kilobyte a commit, so there is no reason
+			// to trim it here; the trimming happens at the link and at Finish.
+			return { id: m.id, title: m.title, world: m.view.world.serialize(),
+			         plan: m.view.planHistory() };
 		})
 	};
 	try { localStorage.setItem(MISSIONS_KEY, JSON.stringify(store)); }
@@ -104,7 +110,13 @@ function deserializeStoredList(list) {
 	(list || []).forEach(function (m) {
 		if (!m || typeof m !== "object" || typeof m.id !== "string") { failures++; return; }
 		var res = deserializeWorld(m.world);
-		if (res.ok) { restored.push({ id: m.id, title: typeof m.title === "string" ? m.title : m.id, world: res.world }); }
+		// A missing or corrupt plan history is not a failed mission — the view
+		// starts a fresh one from the World it opens with (readHistory returns
+		// null, which createMissionView reads as "no history yet").
+		if (res.ok) {
+			restored.push({ id: m.id, title: typeof m.title === "string" ? m.title : m.id,
+			                world: res.world, plan: readHistory(m.plan) });
+		}
 		else { failures++; }
 	});
 	return { restored: restored, failures: failures };
@@ -124,15 +136,20 @@ function nextMissionId(existing) {
 // data; refusals are polite).
 var loadNotice = null;
 
-function initialMissions() {
+// Async because a mission link is DEFLATE-compressed (Shared/exchange.js's
+// decodeFragmentAny) and there is no synchronous inflate. Only the fragment
+// branch actually awaits anything; a plain start-up still resolves in one
+// microtask.
+async function initialMissions() {
 	var hashMatch = /[#&]mission=([^&]+)/.exec(location.hash || "");
 	var hashFailReason = null;
 
 	if (hashMatch) {
 		var saved = null;
-		try { saved = decodeFragment(hashMatch[1]); } catch (e) { /* not base64url JSON */ }
-		// Links may carry the E2 title envelope or a pre-E2 bare world —
-		// unpackMissionLink accepts both (ui/share-link.js).
+		try { saved = await decodeFragmentAny(hashMatch[1]); } catch (e) { /* not a readable fragment */ }
+		// Links may carry the v2 envelope (title + world + plan sets), the v1
+		// envelope, or a pre-E2 bare world — unpackMissionLink accepts all
+		// three (ui/share-link.js).
 		var unp = saved ? unpackMissionLink(saved) : { ok: false, reason: "the link's mission data is unreadable" };
 		var res = unp.ok ? deserializeWorld(unp.world) : { ok: false, reason: unp.reason };
 		if (res.ok) {
@@ -140,7 +157,8 @@ function initialMissions() {
 			var d0 = deserializeStoredList(stored0 && stored0.missions);
 			var id0 = nextMissionId(d0.restored);
 			return {
-				missions: d0.restored.concat([{ id: id0, title: unp.title || "Imported mission", world: res.world }]),
+				missions: d0.restored.concat([{ id: id0, title: unp.title || "Imported mission",
+				                               world: res.world, plan: readSets(unp.plan) }]),
 				activeId: id0
 			};
 		}
@@ -205,9 +223,11 @@ function titleFor(missionId) {
 // The one place a mission view is built (initial load, E2 spawn, paste
 // import). getTitle looks the title up live so the share link always
 // carries the current name.
-function makeMissionView(world, missionId, defaultMainId) {
+function makeMissionView(world, missionId, defaultMainId, plan) {
 	return createMissionView({
 		world: world,
+		plan: plan || null,
+		onPlanRecorded: saveMissionsStore,
 		registry: registry,
 		renderer: renderer,
 		container: viewsEl,
@@ -223,9 +243,9 @@ function makeMissionView(world, missionId, defaultMainId) {
 // Plan" on the Ephemeris tab's marker card, the "+" duplicate button, the
 // example-mission dropdown). defaultMainId picks the pane/phase the tab opens
 // on.
-function spawnMissionTab(world, title, defaultMainId) {
+function spawnMissionTab(world, title, defaultMainId, plan) {
 	var id = nextMissionId(missions);
-	addMissionTab(makeMissionView(world, id, defaultMainId), title);
+	addMissionTab(makeMissionView(world, id, defaultMainId, plan), title);
 	selectTab(id);
 	saveMissionsStore();   // capture the new activeId, not just the new mission
 	return id;
@@ -240,13 +260,24 @@ var ephView = createEphemerisView({
 	// Opens on the helio pane — a spawned mission has no departure tech yet, so
 	// the frozen coast is what there is to see.
 	//
-	// This is the tab's ONLY spawn callback. "Paste mission link…" is handled
-	// entirely inside ephemeris-view.js: it loads the plan's parameters back
-	// into that tab's own scratchpad for revision, rather than spawning a tab.
 	onStartMission: function (worldData, title) {
 		var res = deserializeWorld(worldData);
 		if (!res.ok) { return { ok: false, reason: res.reason }; }
 		spawnMissionTab(res.world, title, "helio");
+		return { ok: true };
+	},
+
+	// "Paste mission link…" with a link that carries a LATER plan than the one
+	// it was frozen with. The original goes into the Ephemeris scratchpad
+	// (ephemeris-view.js does that itself); this opens the later plan as its
+	// own tab, so a pasted mission arrives as both the place it started and
+	// the place it got to. A link with no later set never calls this — it
+	// loads into the scratchpad alone, exactly as before.
+	onOpenPastedMission: function (worldData, title, planSets) {
+		var res = deserializeWorld(worldData);
+		if (!res.ok) { return { ok: false, reason: res.reason }; }
+		spawnMissionTab(res.world, nextUniqueTitle(title || "Imported mission"),
+			null, readSets(planSets));
 		return { ok: true };
 	}
 });
@@ -318,7 +349,9 @@ function duplicateActiveMission() {
 	if (!src) { return; }
 	var res = deserializeWorld(src.view.world.serialize());
 	if (!res.ok) { return; }   // shouldn't happen: we just serialized it ourselves
-	spawnMissionTab(res.world, nextCopyTitle(src.title));
+	// The copy inherits the source's plan history: it is the same mission's
+	// lineage, so its report still compares against the plan first frozen.
+	spawnMissionTab(res.world, nextCopyTitle(src.title), null, src.view.planHistory());
 }
 tabPlusEl.addEventListener("click", duplicateActiveMission);
 
@@ -399,9 +432,12 @@ function addMissionTab(view, title) {
 
 ephTabEl.addEventListener("click", function () { selectTab("eph"); });
 
-var initial = initialMissions();
+// Top-level await: initialMissions may have to inflate a compressed share
+// link. Everything below waits on it, which is what the old synchronous call
+// already guaranteed — the render loop starts after the tabs exist.
+var initial = await initialMissions();
 initial.missions.forEach(function (m) {
-	addMissionTab(makeMissionView(m.world, m.id), m.title);
+	addMissionTab(makeMissionView(m.world, m.id, null, m.plan), m.title);
 });
 selectTab(initial.activeId);
 saveMissionsStore();   // normalizes the store right away (accurate activeId,

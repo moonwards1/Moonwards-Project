@@ -131,8 +131,9 @@ import {
 	checkProximity, proximityReason
 } from "./core/proximity.js";
 import { deserializeWorld } from "./core/world.js";
-import { decodeFragment } from "../Shared/exchange.js";
+import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
+import { readSets, latestOf } from "./core/revisions.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -188,9 +189,14 @@ function fmtKmS(mps) { return (mps / 1000).toFixed(2); }
 //    onStartMission(worldData, title) — spawn a mission tab from a
 //                          frozen serialized World; returns { ok } or
 //                          { ok: false, reason } (shown in the dialog)
+//    onOpenPastedMission(worldData, title, planSets) — same, for the LATER
+//                          plan a pasted link carries when the mission has
+//                          been updated since it was frozen
 //  }
-//  "Paste mission link…" is handled entirely locally (loadFrozenPlanIntoState)
-//  — it loads a shared link's plan into THIS tab rather than spawning one.
+//  "Paste mission link…" loads a link's ORIGINAL plan into this tab's own
+//  scratchpad (loadFrozenPlanIntoState). When the link also carries a later
+//  commit, that one opens as its own mission tab through onOpenPastedMission —
+//  see loadPastedMission.
 //  Returns { show, hide, render, resize }.
 // =======================================================================
 export function createEphemerisView(opts) {
@@ -1300,13 +1306,13 @@ export function createEphemerisView(opts) {
 		mk.startNote = muted(mk.el, "");
 
 		// "Paste mission link…": a link copied with a mission tab's "Copy mission
-		// link" loads its frozen plan back into THIS tab's own scratchpad
-		// (loadFrozenPlanIntoState) rather than spawning a tab, so it can be
-		// revised before Start Mission Plan is clicked — the same freeze/spawn
-		// path as anything authored from scratch. Decode/deserialize is entirely
-		// local; planner.js is not involved. The dialog's input auto-fills from
-		// the OS clipboard as soon as it opens (best-effort — silently stays
-		// blank if the browser withholds clipboard-read permission).
+		// link" loads its ORIGINAL plan back into THIS tab's own scratchpad
+		// (loadPastedMission), so it can be revised before Start Mission Plan is
+		// clicked — the same freeze/spawn path as anything authored from
+		// scratch. A link that also carries a later commit opens that as a
+		// mission tab at the same time. The dialog's input auto-fills from the
+		// OS clipboard as soon as it opens (best-effort — silently stays blank
+		// if the browser withholds clipboard-read permission).
 		mk.pasteBtn = document.createElement("button");
 		mk.pasteBtn.type = "button";
 		mk.pasteBtn.className = "mp-btn mp-ghost mp-paste-btn";
@@ -1315,19 +1321,21 @@ export function createEphemerisView(opts) {
 		mk.pasteBtn.addEventListener("click", function () {
 			openDialog({
 				title: "Paste a mission link",
+				note: "This replaces whatever is sketched on this tab. There is only one " +
+					"Ephemeris scratchpad and no undo for it — if you want to keep what is " +
+					"here, open the planner in another browser window or tab and paste there " +
+					"instead.",
 				value: "",
 				placeholder: "https://…#mission=… (or just the fragment)",
 				okLabel: "Load into Ephemeris tab",
 				onOk: function (text) {
 					var frag = missionFragmentFrom(text);
-					if (!frag) { return { ok: false, reason: "That doesn't look like a mission link." }; }
-					var decoded = null;
-					try { decoded = decodeFragment(frag); } catch (e) { /* not base64url JSON */ }
-					var unp = decoded ? unpackMissionLink(decoded) : { ok: false, reason: "the link's mission data is unreadable" };
-					if (!unp.ok) { return { ok: false, reason: "Couldn't read the link: " + unp.reason + "." }; }
-					var res = deserializeWorld(unp.world);
-					if (!res.ok) { return { ok: false, reason: "Couldn't load the mission: " + res.reason + "." }; }
-					return loadFrozenPlanIntoState(res.world);
+					if (!frag) { return Promise.resolve({ ok: false, reason: "That doesn't look like a mission link." }); }
+					return decodeFragmentAny(frag).catch(function () { return null; }).then(function (decoded) {
+						var unp = decoded ? unpackMissionLink(decoded) : { ok: false, reason: "the link's mission data is unreadable" };
+						if (!unp.ok) { return { ok: false, reason: "Couldn't read the link: " + unp.reason + "." }; }
+						return loadPastedMission(unp);
+					});
 				}
 			});
 			// Best-effort clipboard autofill — arrives async, so it lands
@@ -1474,6 +1482,42 @@ export function createEphemerisView(opts) {
 		return { ok: true };
 	}
 
+	// A pasted link, unpacked (ui/share-link.js), turned into whatever it
+	// describes. A mission link carries up to two plans — the ORIGINAL as it
+	// was first frozen, and the LATEST commit if the mission has been updated
+	// since — and each has a different destination here:
+	//
+	//   - the ORIGINAL loads into this scratchpad, because this tab is where a
+	//     plan is authored and revised. Starting from where the mission began
+	//     is the useful place to pick it up from.
+	//   - the LATEST opens as its own mission tab, because a committed plan
+	//     with a technology stack behind it is a mission, not a sketch.
+	//
+	// A link with no plan sets (v1, or a mission never updated) has only one
+	// thing to do with, and does exactly what paste has always done: loads it
+	// here and spawns nothing.
+	function loadPastedMission(unp) {
+		var sets = readSets(unp.plan);
+		var latest = latestOf(sets);
+		var sketchWorld = sets ? sets.original : unp.world;
+
+		var res = deserializeWorld(sketchWorld);
+		if (!res.ok) { return { ok: false, reason: "Couldn't load the mission: " + res.reason + "." }; }
+		var loaded = loadFrozenPlanIntoState(res.world);
+		if (!loaded.ok) { return loaded; }
+
+		if (latest && opts.onOpenPastedMission) {
+			var spawned = opts.onOpenPastedMission(latest.world, unp.title, unp.plan);
+			// The scratchpad already holds the original; a tab that won't open
+			// is worth saying so about, but not worth undoing that for.
+			if (spawned && spawned.ok === false) {
+				return { ok: false, reason: "Loaded the original plan here, but couldn't open the " +
+					"later one as a mission: " + spawned.reason + "." };
+			}
+		}
+		return { ok: true };
+	}
+
 	// ---- the one modal dialog, shared by name-your-mission and
 	// paste-a-link. onOk(value) returns { ok } or
 	// { ok: false, reason } — a failure keeps the dialog open with the
@@ -1483,6 +1527,7 @@ export function createEphemerisView(opts) {
 		var wrap = document.createElement("div"); wrap.className = "mp-dialog-wrap";
 		var box = document.createElement("div"); box.className = "mp-dialog";
 		var head = document.createElement("h3");
+		var note = document.createElement("p"); note.className = "mp-dialog-note";
 		var input = document.createElement("input"); input.type = "text";
 		var err = document.createElement("div"); err.className = "mp-dialog-err";
 		var row = document.createElement("div"); row.className = "mp-dialog-btnrow";
@@ -1491,15 +1536,32 @@ export function createEphemerisView(opts) {
 		var okBtn = document.createElement("button");
 		okBtn.type = "button"; okBtn.className = "mp-btn mp-big";
 		row.appendChild(cancelBtn); row.appendChild(okBtn);
-		box.appendChild(head); box.appendChild(input); box.appendChild(err); box.appendChild(row);
+		box.appendChild(head); box.appendChild(note); box.appendChild(input);
+		box.appendChild(err); box.appendChild(row);
 		wrap.appendChild(box);
 		document.body.appendChild(wrap);
 
 		var onOk = null;
 		function close() { wrap.classList.remove("on"); onOk = null; }
+		// onOk may return a result or a promise of one — reading a mission link
+		// has to inflate it, and there is no synchronous inflate. The dialog
+		// stays open and the OK button disables while a promise is in flight,
+		// so a slow read can't be double-submitted.
 		function submit() {
 			if (!onOk) { return; }
 			var res = onOk(input.value);
+			if (res && typeof res.then === "function") {
+				okBtn.disabled = true;
+				res.then(function (r) {
+					okBtn.disabled = false;
+					if (r && r.ok === false) { err.textContent = r.reason || "That didn't work."; return; }
+					close();
+				}, function () {
+					okBtn.disabled = false;
+					err.textContent = "That didn't work.";
+				});
+				return;
+			}
 			if (res && res.ok === false) { err.textContent = res.reason || "That didn't work."; return; }
 			close();
 		}
@@ -1514,9 +1576,12 @@ export function createEphemerisView(opts) {
 		return {
 			open: function (o) {
 				head.textContent = o.title;
+				note.textContent = o.note || "";
+				note.hidden = !o.note;
 				input.value = o.value || "";
 				input.placeholder = o.placeholder || "";
 				okBtn.textContent = o.okLabel || "OK";
+				okBtn.disabled = false;
 				err.textContent = "";
 				onOk = o.onOk;
 				wrap.classList.add("on");

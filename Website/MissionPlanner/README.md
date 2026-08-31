@@ -33,7 +33,7 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 
 | File                     | Named exports                                                    | Purpose                                                                                                                                                                                                                                                    |
 | ------------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `world.js`               | `createWorld`, `deserializeWorld`, `WORLD_KIND`, `WORLD_VERSION`  | World — the single source of truth: `jd` (one clock) + the mission profile (ordered stages with stable, never-reused ids). Every mutation goes through the one choke point, `world.set(change)`; listeners get `{ change, index, id, transient }` where `index` is where "dirty" starts. Versioned serialization (current version 4; a version that isn't exactly current is refused, never migrated); a save is **always storable**, feasible or not, known modules or not. |
+| `world.js`               | `createWorld`, `deserializeWorld`, `WORLD_KIND`, `WORLD_VERSION`  | World — the single source of truth: `jd` (one clock) + the mission profile (ordered stages with stable, never-reused ids). Every mutation goes through the one choke point, `world.set(change)`; listeners get `{ change, index, id, transient }` where `index` is where "dirty" starts. Versioned serialization (current version 5; a version that isn't exactly current is refused, never migrated); a save is **always storable**, feasible or not, known modules or not. |
 | `diagnostics.js`         | `makeDiagnostic`, `isDiagnostic`, `DIAGNOSTIC_KIND`               | The structured-diagnostic model: `{ kind, stageId, code, message, values, fix? }` — what a stage's `update()` returns instead of a packet when the mission is infeasible. Plain and JSON-able, distinguishable from a packet by `kind`.                    |
 | `registry.js`            | `createRegistry`, `validateDescriptor`                            | The module registry. Validates a descriptor's `id`/`title`/`accepts`/`emits`/`update` at registration (packet types checked against `PacketTypes`, so typos fail loud and early); view-facing fields (`rendersIn`, `init`, …) are optional and unexamined here. An *unregistered* id in a profile is user data, not an error — the engine reports it as a diagnostic. |
 | `recompute.js`           | `createEngine`                                                    | The chain-recompute engine. Subscribes to the World; on any change recomputes from the dirty index **downstream, in order, synchronously**. Per-stage results keyed by stage id: `ok` (with the output packet), `diagnostic`, or `blocked` (waiting on the failed stage, `update()` not called, params intact); results also carry `warnings` and `events` arrays (see the module contract below). Locks the World during a pass, so modules cannot `set()` from `update()`. |
@@ -43,6 +43,7 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 | `proximity.js`           | `checkProximity`, `checkPassAltitude`                              | The arrival standards, in one place. `checkProximity` is the EPHEMERIS TAB's gate on "Start Mission Plan": the marker within `APPROACH_FAR` (0.004 AU) of the destination's orbit ELLIPSE, and the destination passing through that point within `TEMP_FAR` (30 d) — ring-scale tolerances, right for judging a scrubbable marker. `MAX_PASS_ALTITUDE` (30,000 km) is the stricter bound a FLOWN mission has to pass the body within, and `AIM_PASS_ALTITUDE` (15,000 km) is what a re-target aims for — deliberately inside the bound, so an iteration's residual has room to land. Both measured as altitude ABOVE THE SURFACE, at closest approach; both provisional until the arrival technology can state what it can actually catch. The ring tier TABLES stay with the views that draw them — those are colours and pixel sizes, not standards. Pure. |
 | `delivered-flight.js`    | `deliveredFlight`, `signatureOf`, `waypointDv`                     | The flight the ship is ACTUALLY on: flown from what the departure technology delivers, through the waypoints as they stand. The drawn coast now flies from that same delivered hand-off, so the two agree; and both now fly the coast's own `legDays`, no arrival date being committed. It stays the one place a hypothetical hand-off can be flown, which is what `core/retarget.js` verifies its solves with. One call yields every figure the mission bar shows (v∞ out, coast Δv, closest approach, v∞ in). The answer never depends on the clock, so `signatureOf` gives the view a key to memoize on across scrubbing; one call costs about one leg integration. Pure. |
 | `retarget.js`            | `solveDepartureTarget`                                             | Re-states the departure REQUIREMENT at the point a technology actually leaves from: keep the real exit point and epoch, re-solve the velocity that reaches the plan's destination from there. A damped Newton differential correction across the coast's waypoint burns, aiming for a PASS at `AIM_PASS_ALTITUDE` above the destination's surface, on the side the flight already goes by — not the arrival POINT the plan was authored with, since a plan's own flyby offset stops being a commitment worth preserving once a real departure is flying the mission. Each solve is verified by flying it through `delivered-flight.js`, and the aim iterates on the altitude error it measures. The ASK is bounded by `WAYPOINT_AXIS_CAP_MPS` — a re-target that would demand more than normal course-correction scale is a new mission for the Ephemeris tab, not a plan to re-point. Feeds the mission bar's Check and Update. Pure. |
+| `revisions.js`           | `createHistory`, `recordUpdate`, `markFinished`, `packSets`, `planSummaryOf`, `changesBetween` | The mission's PLAN HISTORY: the plan as `freeze.js` first wrote it, plus a whole serialized World per commit (never a diff — a World already is the complete description of a mission). Locally the full run of commits is kept; a share LINK carries exactly two sets, the original and the latest, because intermediate commits are the author's working record and a link has to fit in a chat message. `markFinished` compacts to those same two — the control that calls it belongs to the unbuilt arrival phase. `planSummaryOf` reads a plan's STORED values off a serialized World with no physics involved (the frozen-plan commitment, the coast horizon, the release epoch, and every technology stage's own dials, keyed by module and occurrence rather than chain position); `changesBetween` merges two summaries by key, which is what the mission report's "as frozen / now" table draws. Pure. |
 
 Engine-generated diagnostic codes: `unknown-module`, `missing-input`,
 `input-type-mismatch`, `module-error` (an `update()` that threw),
@@ -123,15 +124,19 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   ONE renderer/canvas (browsers cap live WebGL contexts, so only the active
   mission's view renders), the initial mission load (persisted missions
   merged with a share-link fragment, or the shipped preset) with its failure
-  banner, the tab bar (the Ephemeris tab + one tab per mission, active
+  banner — ASYNC, because a share link is compressed and there is no
+  synchronous inflate — the per-mission plan history it persists alongside
+  each World, the tab bar (the Ephemeris tab + one tab per mission, active
   highlight, confirm-then-close, a "+" duplicate button, and the
   example-mission dropdown), and the render loop.
 - **`mission-view.js`** exports `createMissionView({ world, registry,
-  renderer, container, template, missionId, defaultMain })` — everything that
-  belongs to one mission: its World + engine, frames, panes, sidebar cards,
-  phase buttons and sliders, compliance bar, events readout, share button, and
-  its slice of workspace persistence. Returns `{ world, engine, root, show, hide,
-  render, resize, dispose }`; N instances coexist, one per mission tab. Its
+  renderer, container, template, missionId, defaultMain, plan })` — everything
+  that belongs to one mission: its World + engine, frames, panes, sidebar cards,
+  phase buttons and sliders, compliance bar, events readout, share button, its
+  plan history (`core/revisions.js`: appended on Update, two of its sets put in
+  a share link, and drawn as the mission report's "as frozen / now" table), and
+  its slice of workspace persistence. Returns `{ world, engine, root,
+  planHistory, show, hide, render, resize, dispose }`; N instances coexist, one per mission tab. Its
   DOM is cloned from `planner.html`'s `<template id="mp-mission-template">`,
   addressed by class, never id (ids can't repeat across instances).
 - **`ephemeris-view.js`** — the Ephemeris tab: a scratchpad for authoring a
@@ -151,7 +156,14 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   Moon-phase widget and the release anchor, never a change to the drawn arc.
   Physics is not forked — the actual leg goes through
   `transfer-leg.js`'s exported `computeLeg`, the same function the frozen
-  Coast phase uses.
+  Coast phase uses. **"Paste mission link…" splits a link's two sets by what
+  they are:** the ORIGINAL plan loads into this scratchpad, because this is
+  where a plan is authored and revised, and a LATER commit opens as its own
+  mission tab (`onOpenPastedMission`), because a committed plan with a
+  technology stack behind it is a mission and not a sketch. A one-set link
+  loads here alone, as paste always did. The scratchpad is a singleton with no
+  undo, so the dialog carries a standing warning to paste in another browser
+  window if what is here is worth keeping.
 - **`scene-frames.js`** — Three.js frame factories shared by both
   `mission-view.js` and `ephemeris-view.js`: `"helio"` (the whole solar
   system), `"body:Earth-Moon"` (geocentric), and a generic `"body:<name>"` for
@@ -358,7 +370,7 @@ never when it started.
 | ------------------ | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `phase-slider.js`  | `createSegmentedSlider`, `coastSliderState`, `departureSliderState`, `arrivalSliderState`, …      | The segmented-timeline widget behind each phase's slider: a DOM primitive (a track of flex-sized segments plus a playhead, `.mp-` classes styled in `planner.css`) plus three pure state functions (segments + playhead fraction + pinned flag + marks from a span, a jd, a tick count and a formatter) that `mission-view.js`'s `departureSpan`/`coastSpan`/`arrivalSpan` feed. |
 | `ship-card.js`     | `createShipCard`, `SHIP_COLORS`, `vInfComponents`, `speedModel`, `timingModel`, `bearingPoint`, … | The floating card that reports on the ship the chevron marks: a scissored three.js gizmo off the shared renderer, a numeric summary, a speed bar, and — only where a phase fills them — an approach readout, a timing line, a B-plane square and a commit button. Phase-agnostic: every section renders nothing until its setter is called, so Departure takes the plan-vs-delivered comparison gizmo and on-course state, Coast takes the pending-edit vector and Update. The pure model functions are Node-tested. |
-| `share-link.js`    | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope wrapping `{ title, world }` under its own kind stamp (a bare serialized World has no title). Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button.                          |
+| `share-link.js`    | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope (v2) wrapping `{ title, world, plan }` under its own kind stamp — a bare serialized World has no title, and `plan` is `core/revisions.js`'s two sets: the mission as first frozen, plus its latest commit when it has one. `world` is what opens in a tab; `plan.original` is what the Ephemeris tab reconstructs. v1 envelopes and bare Worlds still load, with no plan. Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button, through `Shared/exchange.js`'s **compressed** `encodeFragmentZ` — two sets don't fit in a Discord message otherwise. |
 | `tech-options.js`  | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                 | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add/swap a stage; unbuilt entries show disabled with a "(future)" label.                                  |
 
 ## presets/ — the shipped mission and example catalog
@@ -385,7 +397,7 @@ across tabs.
 
 ## Save format
 
-`core/world.js`'s `WORLD_VERSION` is 4; `deserializeWorld` refuses (politely,
+`core/world.js`'s `WORLD_VERSION` is 5; `deserializeWorld` refuses (politely,
 `{ ok:false, reason }`) anything that isn't exactly the current version — no
 migration (saved missions are disposable test data, not something a schema
 change promises to carry forward; see `Notes/decisions.md`,
