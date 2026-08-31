@@ -22,9 +22,10 @@
  * With no encounter at all against the destination (a coast that misses, or
  * a destination this leg's arc never dips inside the SOI of), there is no
  * v∞ to measure — the window collapses to a single point at the plan's own
- * committed arrival epoch (frozen-plan's arrival.jd, read via
- * frozen-plan.js's arrivalCommitmentFor). That is the whole of the
- * no-encounter fallback: no Δt, no window, just the plan's date.
+ * coast's own END — there is no committed arrival date to fall back to,
+ * because the mission arrives at whatever closest approach it measures. That
+ * is the whole of the no-encounter fallback: no Δt, no window, just the end
+ * of the span that failed to reach anything.
  *
  * Pure (no DOM, no THREE) — Node-testable.
  *
@@ -76,9 +77,9 @@ export function findClosestApproach(events, destination) {
 //   pass,                // the MEASURED pass at that body — transfer-leg's
 //                        // nearestApproach({ jd, vInf, rmin, insideSoi }) — or
 //                        // null when the coast has none
-//   fallbackArrivalJd    // the plan's committed arrival epoch (frozen-plan's
-//                        // arrival.jd) — used verbatim when there's no
-//                        // encounter to derive a window from
+//   fallbackArrivalJd    // the coast's own end — used verbatim when there's
+//                        // no encounter to derive a window from. NOT a
+//                        // committed arrival date; there is no such thing
 // }
 //
 // WHY A MEASURED PASS RATHER THAN THE EMITTED EVENT. The obvious source would

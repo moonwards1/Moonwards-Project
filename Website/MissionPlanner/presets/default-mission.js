@@ -111,7 +111,7 @@ export var defaultMission = {
 					v: [-36804.3535975916, 557.9835955893, 236.6369368047],
 					jd: 2463222.384503543
 				},
-				arrival: { body: "Ceres", jd: 2463970.75, vInf: 3776.34 },
+				arrival: { body: "Ceres", vInf: 3776.34 },
 				handoffWindowDays: 1,
 				waypoints: [{ days: 473.365496, burn: { pro: 2140, rad: -1180, nrm: -2730 } }]
 			}

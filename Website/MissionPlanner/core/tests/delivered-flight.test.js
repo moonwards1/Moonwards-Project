@@ -18,13 +18,16 @@ function planOf(mission) {
 	var st = (mission || defaultMission).stages;
 	var fp = st.filter(function (s) { return s.moduleId === "frozen-plan"; })[0].params;
 	var tl = st.filter(function (s) { return s.moduleId === "transfer-leg"; })[0].params;
-	return { origin: fp.origin, dep: fp.departure, arr: fp.arrival, wps: tl.waypoints };
+	// The coast's own horizon: no arrival date is committed any more, so the
+	// flight is flown over the duration the coast owns.
+	return { origin: fp.origin, dep: fp.departure, arr: fp.arrival, wps: tl.waypoints,
+	         horizon: fp.departure.jd + tl.legDays };
 }
 
 function specFor(delivered, mission) {
 	var pl = planOf(mission);
 	return { origin: pl.origin, destination: pl.arr.body, delivered: delivered,
-	         waypoints: pl.wps, arrivalJd: pl.arr.jd };
+	         waypoints: pl.wps, horizonJd: pl.horizon };
 }
 
 test("the shipped plan's own hand-off flies its own mission", function () {
@@ -57,7 +60,7 @@ test("an offset exit point flies somewhere else entirely", function () {
 test("v-inf out needs no flight, and survives a coast that will not compute", function () {
 	var pl = planOf();
 	// a hand-off after the arrival: there is no coast to fly at all
-	var f = deliveredFlight(specFor({ r: pl.dep.r, v: pl.dep.v, jd: pl.arr.jd + 1 }));
+	var f = deliveredFlight(specFor({ r: pl.dep.r, v: pl.dep.v, jd: pl.horizon + 1 }));
 	assert.equal(f.ok, false);
 	assert.match(f.reason, /no coast left/);
 	// Still a real figure: v-inf out is the hand-off measured against the
@@ -72,7 +75,7 @@ test("v-inf out needs no flight, and survives a coast that will not compute", fu
 test("a mission with no destination flies, and simply has no pass", function () {
 	var pl = planOf();
 	var f = deliveredFlight({ origin: pl.origin, destination: "", delivered: pl.dep,
-		waypoints: pl.wps, arrivalJd: pl.arr.jd });
+		waypoints: pl.wps, horizonJd: pl.horizon });
 	assert.equal(f.ok, true, f.reason);
 	assert.equal(f.pass, null);
 	assert.ok(isFinite(f.vInfOut) && isFinite(f.coastDv));

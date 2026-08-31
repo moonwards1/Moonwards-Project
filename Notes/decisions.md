@@ -35,16 +35,16 @@ Entries are chronological within each section.
   Arrival phase the right stretch of arc for final approach, and that stretch
   is defined relative to the encounter, not to the calendar. Derived live at
   recompute from `transfer-leg`'s measured pass — no stored field. With no
-  encounter at all, fall back to the plan's arrival epoch.
+  encounter at all, fall back to the coast's own end.
 
   The lower clamp keeps small bodies workable (crossing Ceres' SOI takes only
   ~0.24 d). The upper clamp is presentation, not physics: uncapped, a Jupiter
   arrival would run ~100 days, which is cruise, not approach.
 
-- **The seam is not the committed arrival.** The commitment (body, epoch,
-  approach v∞) is frozen at mission creation and never moves. The seam is an
-  editing and display division. They coincide at mission creation and
-  separate as tuning shifts the encounter.
+- **There is no committed arrival date.** The commitment is a BODY and an
+  approach v∞ — where the mission is going and how fast it may show up — and
+  it arrives at whatever closest approach it measures. See "The arrival date
+  is measured" below.
 
 - Compliance at a seam is **one boundary comparison**, non-blocking — never a
   reconciliation of events within or across a phase.
@@ -508,7 +508,7 @@ answer: solving moves the requirement, re-tuning moves the exit point, and the
 next flight starts somewhere new. Aiming at half the bound leaves that
 residual room to land in.
 
-Closest approach does not fall at the committed arrival epoch, so one solve
+Closest approach does not fall at the coast’s horizon, so one solve
 does not hit the aim. The solve iterates: target the body's position at that
 epoch pushed out along the pass's own direction, fly it for real, correct by
 the altitude error, repeat — converging in 2–3 passes, 8–16 ms.
@@ -550,8 +550,8 @@ WHY THIS IS ONE RULE AND NOT FOUR CHOICES: there is only ONE closest approach,
 one v∞ out, one v∞ in, and the bar states them. Since the flown flight became
 the clock the drawn coast flies from the same delivered hand-off, so the bar
 and the trajectory agree by construction. What they still measure differently
-is their HORIZON: the bar flies out to the plan's committed arrival date, the
-drawn leg to its own `legDays`.
+was their HORIZON, and since no arrival date is committed any more both fly
+the coast's own `legDays`.
 
 GRADED: v∞ out (against the plan's requirement, or a standing Check's target)
 and closest approach (against `MAX_PASS_ALTITUDE`). Coast Δv and v∞ in are
@@ -682,3 +682,33 @@ trajectory it commits to.
 Check still writes nothing. The release epoch is still untouched — it lives on
 the departure leg, and moving it would leave it chasing a hand-off that shifts
 every time the button is pressed.
+
+### 2026-08-28 — The arrival date is measured, not committed
+
+A frozen plan commits to a DESTINATION and an APPROACH v∞ — where the mission
+is going and how fast it may show up, the two things an arrival technology has
+to be built for. It commits to no DATE. The mission arrives at the coast's own
+measured closest approach (`transfer-leg`'s `nearestApproach`), which moves as
+the flight is tuned, exactly as the departure epoch is whatever the technology
+delivers.
+
+`frozen-plan`'s `arrival` is therefore `{ body, vInf }`, and it emits no
+arrival event: the coast measures the pass and emits it, so there is one
+arrival epoch rather than a measured one competing with a committed one.
+
+THE HORIZON IS NOT AN ARRIVAL DATE. Flying an arc still needs an end, and that
+is `transfer-leg`'s own `legDays` — a duration the coast owns, seeded at
+freeze from the epoch the Ephemeris tab's marker was scrubbed to. The
+re-target solve aims at where the destination will be at that horizon
+(`retarget.js`'s `horizonJd`, named for what it is), and closest approach
+falls wherever it falls inside the span. `Update` no longer stretches
+`legDays`, there being no committed date left to stretch it to.
+
+WITH NO ENCOUNTER there is no arrival to date. The seam collapses to the
+coast's own end and the Arrival phase places a standard-width window there —
+the same fallback the arrival leg and the sliders use, so they agree. The
+flight's true closest approach can sit far earlier (the shipped preset's is
+182 million km out, twenty months before its coast ends), and using THAT as
+the arrival would drag the arrival phase back into mid-cruise. Closest
+approach is the arrival date when the flight actually reaches the body; short
+of that, the end of the coast is the only honest anchor.

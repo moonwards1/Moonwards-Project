@@ -28,7 +28,10 @@ function planOf(mission) {
 	var st = (mission || defaultMission).stages;
 	var fp = st.filter(function (s) { return s.moduleId === "frozen-plan"; })[0].params;
 	var tl = st.filter(function (s) { return s.moduleId === "transfer-leg"; })[0].params;
-	return { origin: fp.origin, dep: fp.departure, arr: fp.arrival, wps: tl.waypoints };
+	// The coast's HORIZON — its own duration, which is what the solve aims
+	// over now that no arrival date is committed.
+	return { origin: fp.origin, dep: fp.departure, arr: fp.arrival, wps: tl.waypoints,
+	         legDays: tl.legDays, horizon: fp.departure.jd + tl.legDays };
 }
 
 // A delivered hand-off that leaves from a DIFFERENT point on the SOI sphere,
@@ -42,12 +45,12 @@ function deliveredOffsetBy(metres, mission) {
 function specFor(delivered, mission) {
 	var pl = planOf(mission);
 	return { origin: "Earth", destination: pl.arr.body, delivered: delivered,
-	         planDeparture: pl.dep, planWaypoints: pl.wps, arrivalJd: pl.arr.jd };
+	         planDeparture: pl.dep, planWaypoints: pl.wps, horizonJd: pl.horizon };
 }
 
 test("the plan's own hand-off already arrives — that is the control", () => {
 	var pl = planOf();
-	var alt = passAltitudeFrom(pl.dep, pl.wps, pl.arr.jd, pl.arr.body);
+	var alt = passAltitudeFrom(pl.dep, pl.wps, pl.horizon, pl.arr.body);
 	assert.ok(alt < MAX_PASS_ALTITUDE,
 		"the shipped plan should reach Ceres inside the bound, got " + Math.round(alt / 1000) + " km");
 });
@@ -104,9 +107,9 @@ test("a hand-off flung far enough off base is refused, and says where to go", ()
 	assert.match(res.reason, /add to the departure/);
 });
 
-test("a hand-off at or after the arrival has no coast to solve", () => {
+test("a hand-off at or after the coast's own end has no coast to solve", () => {
 	var pl = planOf();
-	var res = solveDepartureTarget(specFor({ r: pl.dep.r, v: pl.dep.v, jd: pl.arr.jd + 1 }));
+	var res = solveDepartureTarget(specFor({ r: pl.dep.r, v: pl.dep.v, jd: pl.horizon + 1 }));
 	assert.equal(res.ok, false);
 	assert.match(res.reason, /no coast left/);
 });
@@ -128,7 +131,7 @@ test("propagateWithWaypoints applies each burn at its own day, in order", () => 
 
 test("solveArrivalVelocity hits a target it is given, across the burns", () => {
 	var pl = planOf();
-	var tDays = pl.arr.jd - pl.dep.jd;
+	var tDays = pl.legDays;
 	var target = propagateWithWaypoints(pl.dep.r, pl.dep.v, pl.wps, tDays).r;
 	// start from a deliberately wrong guess and let Newton close on it
 	var guess = O.vAdd(pl.dep.v, [30, -20, 10]);
@@ -157,7 +160,7 @@ test("the solve lands on AIM_PASS_ALTITUDE, whatever offset the plan was built w
 	// aim point this mission could never be re-targeted at all. Aiming for a
 	// PASS instead standardises it, and that is the point of the change.
 	var pl = planOf(earthMarsReferenceMission);
-	var authored = passAltitudeFrom(pl.dep, pl.wps, pl.arr.jd, pl.arr.body);
+	var authored = passAltitudeFrom(pl.dep, pl.wps, pl.horizon, pl.arr.body);
 	assert.ok(authored > MAX_PASS_ALTITUDE,
 		"the reference should sit outside the bound as authored, got " +
 		Math.round(authored / 1000) + " km");
@@ -173,13 +176,13 @@ test("re-targeting keeps the side of the body the flight already passes on", () 
 	var pl = planOf();
 	var d = deliveredOffsetBy(2e8);
 	var before = deliveredFlight({ origin: pl.origin || "Earth", destination: pl.arr.body,
-		delivered: d, waypoints: rebaseWaypoints(pl.wps, d.jd - pl.dep.jd, pl.arr.jd - d.jd),
-		arrivalJd: pl.arr.jd });
+		delivered: d, waypoints: rebaseWaypoints(pl.wps, d.jd - pl.dep.jd, pl.horizon - d.jd),
+		horizonJd: pl.horizon });
 	var res = solveDepartureTarget(specFor(d));
 	assert.equal(res.ok, true, res.reason);
 	var after = deliveredFlight({ origin: pl.origin || "Earth", destination: pl.arr.body,
 		delivered: { r: res.r, v: res.v, jd: res.jd }, waypoints: res.waypoints,
-		arrivalJd: pl.arr.jd });
+		horizonJd: pl.horizon });
 	// Same hemisphere of the approach: the offset is pulled in from 463,000 km
 	// to 15,000 km, but not flipped to the far face of the body.
 	var dot = O.vDot(O.vUnit(before.pass.rRel), O.vUnit(after.pass.rRel));

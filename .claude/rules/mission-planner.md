@@ -45,6 +45,10 @@ restate its content in code comments — cite the entry and its date.
   when nothing is delivered), never a second flight on a second clock. Moving
   the plan onto what is flown is the Update button's deliberate commit
   (`core/retarget.js`), never something the boundary does by itself.
+- **The arrival date is measured.** The plan commits to a destination body and
+  an approach v∞, never to a date; the mission arrives at the coast's own
+  measured closest approach. `transfer-leg`'s `legDays` is the coast's
+  HORIZON, not an arrival date, and is what a re-target aims over.
 - **A phase is a labeled sub-range of the one ordered stage list.** Stages
   compose in sequence; compliance at a seam is ONE boundary comparison. Never
   "reconcile" events within or across a phase.

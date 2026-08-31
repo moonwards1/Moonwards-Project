@@ -31,7 +31,6 @@ import { Frames } from "../../../Shared/frames.js";
 import { emptyChain, appendElement, applyElement, evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 import { releaseEpochFor } from "../../core/release-epoch.js";
 import { approachAt, approachFromPass, interceptWarning } from "../arrival-approach.js";
 import { passFor as arrivalPassFor } from "../arrival-leg/arrival-leg.js";
@@ -305,9 +304,11 @@ export function makeTerminal(spec, opts) {
 		init: function (ctx) { buildPlatformCard(spec, ctx, CATCH, cache, hostCache); },
 
 		draw: function (view, snap) {
-			var commit = arrivalCommitmentFor(snap.world);
+			// Pinned at the catch this stage computed, which sits on the coast's
+			// measured closest approach. There is no committed arrival date to
+			// pin to instead — the mission arrives when it arrives.
 			var cached = cache.get(snap.world, snap.stageId);
-			var pinJd = commit ? commit.jd : (cached && cached.ok ? cached.jd : null);
+			var pinJd = (cached && cached.ok) ? cached.jd : null;
 			drawPlatform(spec, view, snap, CATCH, cache, pinJd, readoutCache, hostCache);
 		}
 	};

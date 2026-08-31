@@ -1467,7 +1467,7 @@ export function createEphemerisView(opts) {
 		// Place the marker back at the frozen rendezvous — trajTotalT is now
 		// current (the refresh() just above), so the fraction this resolves
 		// to is against the freshly-restored trajectory, not a stale one.
-		var tof = (p.arrival.jd - dateState.jd) * DAY;
+		var tof = (lp.legDays || 0) * DAY;
 		if (isFinite(tof) && tof > 0 && trajTotalT > 0) {
 			placeMarkerAtGlobalTime(Math.min(tof, trajTotalT));
 		}

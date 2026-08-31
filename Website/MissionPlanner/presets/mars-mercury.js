@@ -75,7 +75,7 @@ export var marsMercuryMission = {
 					v: [-14931.949183460785, -13416.610756130991, 97.27008525638203],
 					jd: 2463479.5958245187
 				},
-				arrival: { body: "Mercury", jd: 2463699.5958245187, vInf: 16128.24344031587 },
+				arrival: { body: "Mercury", vInf: 16128.24344031587 },
 				handoffWindowDays: 1,
 				waypoints: [{ days: 77, burn: { pro: -5464.7864681775045, rad: 2425.545260281457, nrm: -1731.5463029351615 } }]
 			}

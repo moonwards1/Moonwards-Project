@@ -71,7 +71,7 @@ export function vInfOf(GM, rRel, vRel) {
 export function signatureOf(spec) {
 	var d = spec.delivered;
 	if (!d) { return "none"; }
-	return [spec.origin, spec.destination, spec.arrivalJd,
+	return [spec.origin, spec.destination, spec.horizonJd,
 	        d.r.join(","), d.v.join(","), d.jd,
 	        (spec.waypoints || []).map(function (w) {
 	        	var b = w.burn || {};
@@ -87,7 +87,7 @@ export function signatureOf(spec) {
  *   delivered,     // { r, v, jd } — where the technology ACTUALLY hands over
  *   waypoints,     // the coast's waypoints, in the DELIVERED hand-off's own
  *                  // day-numbering (rebaseWaypoints if they are the plan's)
- *   arrivalJd      // the plan's committed arrival epoch
+ *   horizonJd      // the epoch the coast's own duration runs to
  * }
  *
  * Returns:
@@ -115,14 +115,14 @@ export function deliveredFlight(spec) {
 		out.vInfOut = O.vMag(O.vSub(d.v, Frames.bodyHelioState(spec.origin, d.jd).v));
 	}
 
-	if (!isFinite(spec.arrivalJd)) {
-		out.reason = "This plan commits to no arrival epoch.";
+	if (!isFinite(spec.horizonJd)) {
+		out.reason = "The coast has no horizon to fly to.";
 		return out;
 	}
-	out.legDays = spec.arrivalJd - d.jd;
+	out.legDays = spec.horizonJd - d.jd;
 	if (!(out.legDays > 0)) {
-		out.reason = "The delivered hand-off is at or after the plan's arrival date — " +
-			"there is no coast left to fly.";
+		out.reason = "The delivered hand-off is at or after the end of the coast's own " +
+			"duration — there is no coast left to fly.";
 		return out;
 	}
 

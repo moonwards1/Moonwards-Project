@@ -1190,7 +1190,7 @@ export default {
 		// structure the interface (the hand-off clamp, the miss-distance
 		// warning), not to be looked at. seam.jd (computed above) already IS
 		// this epoch: the real closest-approach date for an encountered
-		// destination, or the plan's committed arrival epoch as a stand-in
+		// destination, or the coast's own end as a stand-in
 		// when the coast never actually reaches its SOI.
 		function dot(rM, colorHex, sizePx) {
 			var g = new THREE.BufferGeometry();

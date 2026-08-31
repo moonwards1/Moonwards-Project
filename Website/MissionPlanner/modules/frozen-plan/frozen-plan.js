@@ -52,10 +52,21 @@
  *                              happens at this seam (see transfer-leg.js's
  *                              header for the reasoning the two modules
  *                              share)
- *   arrival:   { body, jd, vInf } — the plan's arrival commitment: body name,
- *                              epoch, and approach v-infinity (m/s) the
- *                              arrival tech must be able to catch. Read back
- *                              by arrivalCommitmentFor below
+ *   arrival:   { body, vInf } — the plan's arrival commitment: the body, and
+ *                              the approach v-infinity (m/s) the arrival tech
+ *                              must be able to catch. Read back by
+ *                              arrivalCommitmentFor below.
+ *
+ *                              THERE IS NO COMMITTED ARRIVAL DATE. The
+ *                              mission arrives when it arrives: the arrival
+ *                              epoch is the coast's own measured closest
+ *                              approach (transfer-leg's nearestApproach),
+ *                              which moves as the flight is tuned, the same
+ *                              way the departure epoch is whatever the
+ *                              technology delivers. The coast's HORIZON — how
+ *                              far it is flown — is its own `legDays`, a
+ *                              duration the coast owns, not a date the plan
+ *                              imposes.
  *   handoffWindowDays:        — half-width (d) of the hand-off WINDOW around
  *                              departure.jd; the epoch compliance row checks
  *                              against it, and so does the arrival seam's
@@ -110,7 +121,7 @@ export var DEFAULT_WINDOW_DAYS = 1;   // days  — hand-off window half-width fa
 export var defaultParams = {
 	origin: "Earth",
 	departure: { r: null, v: null, jd: null },
-	arrival: { body: "", jd: null, vInf: null },
+	arrival: { body: "", vInf: null },
 	handoffWindowDays: null,   // half-width (d); null → DEFAULT_WINDOW_DAYS
 	waypoints: []
 };
@@ -122,21 +133,23 @@ export function windowDaysOf(params) {
 	return (isFinite(w) && w > 0) ? w : DEFAULT_WINDOW_DAYS;
 }
 
-// The mission's ARRIVAL COMMITMENT: the plan's { body, jd, vInf } — one of
-// the two mission endpoints the plan owns, so the arrival technologies
-// (arrival-skyhook) and
-// mission-view.js's seam fallback and ship-card timing bar all read the
-// catch epoch through this one function rather than each groping through
-// the stages themselves. Returns null when the mission has no frozen plan
-// or the plan commits to no arrival body.
+// The mission's ARRIVAL COMMITMENT: the plan's { body, vInf } — WHERE it is
+// going and HOW FAST it may show up, the two things an arrival technology has
+// to be built for. The arrival technologies and mission-view.js read it
+// through this one function rather than each groping through the stages.
+// Returns null when the mission has no frozen plan or commits to no body.
+//
+// NO EPOCH. When the mission arrives is measured, not committed — the coast's
+// own closest approach (see the param schema above) — so there is no date
+// here to read and nothing to reconcile a measured one against.
 export function arrivalCommitmentFor(world) {
 	if (!world || typeof world.stages !== "function") { return null; }
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
 		if (stages[i].moduleId !== "frozen-plan") { continue; }
 		var arr = (stages[i].params && stages[i].params.arrival) || {};
-		if (typeof arr.body === "string" && arr.body !== "" && isFinite(arr.jd)) {
-			return { body: arr.body, jd: arr.jd, vInf: isFinite(arr.vInf) ? arr.vInf : null };
+		if (typeof arr.body === "string" && arr.body !== "") {
+			return { body: arr.body, vInf: isFinite(arr.vInf) ? arr.vInf : null };
 		}
 	}
 	return null;
@@ -202,11 +215,15 @@ function copyBurn(b) {
 // the mission's total demand: v∞ in + v∞ out + the waypoint burns. The
 // injection and the capture are the endpoint techs' jobs; the waypoint burns
 // are the ship's own.
+//
+// NO ARRIVAL DATE OR FLIGHT TIME HERE. Both are properties of the flown coast,
+// not of the plan's params — the arrival epoch is the measured closest
+// approach — so a pure function of the plan cannot state them, and should not
+// pretend to.
 export function planSummary(params) {
 	var p = Object.assign({}, defaultParams, params);
 	var arr = p.arrival || {};
 	var dep = p.departure || {};
-	var hasArrival = !!(arr.body && isFinite(arr.jd));
 	var origin = systems.get(p.origin);
 
 	var vInfIn = null;
@@ -219,8 +236,6 @@ export function planSummary(params) {
 
 	return {
 		epochJd: isFinite(dep.jd) ? dep.jd : null,
-		arrivalJd: hasArrival ? arr.jd : null,
-		flightDays: (hasArrival && isFinite(dep.jd)) ? (arr.jd - dep.jd) : null,
 		vInfIn: vInfIn,
 		vInfOut: vInfOut,
 		waypointDv: waypointDv,
@@ -261,12 +276,6 @@ export function computeCompliance(params, data) {
 			"The frozen plan's arrival body '" + arr.body + "' is unknown.",
 			{ values: { body: arr.body } }) };
 	}
-	if (arr.body && !(isFinite(arr.jd) && arr.jd > dep.jd)) {
-		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The frozen plan's arrival epoch must fall after its departure epoch.",
-			{ values: { departureJd: dep.jd, arrivalJd: arr.jd } }) };
-	}
-
 	// Required: the plan's v-infinity out, measured against the origin's
 	// heliocentric velocity at the plan's departure epoch. Derived from the
 	// frozen state rather than stored, so the two can never disagree.
@@ -430,20 +439,18 @@ export default {
 			  label: comp.delivered ? "delivered hand-off" : "plan departure",
 			  iso: isoOf(src.jd) });
 
-		// The flight's own hand-off, then the plan's committed arrival — the
-		// span mission-view.js's coastSpan reads for the Coast slider. The
-		// hand-off event is the REAL one, so the Coast timeline begins where
-		// the Departure timeline ends; the plan's committed hand-off is a mark
-		// beside it, not an event (mission-view.js's plannedDeparture).
+		// One event: the flight's own hand-off, which is where the Coast
+		// timeline begins — the same instant the Departure timeline ends. The
+		// plan's committed hand-off is a mark beside it, not an event
+		// (mission-view.js's plannedDeparture).
+		//
+		// The coast's other end is NOT emitted here. The mission arrives at its
+		// measured closest approach, which only transfer-leg can measure, and
+		// it emits that itself (its "closest approach" event, the one the seam
+		// and the sliders read). A "plan arrival" event here would be a second
+		// arrival date competing with the real one.
 		var events = [{ jd: src.jd,
 		                label: "Exit origin SOI — v∞ " + (flown / 1000).toFixed(2) + " km/s" }];
-		var arr = params.arrival || {};
-		if (arr.body && isFinite(arr.jd)) {
-			events.push({ jd: arr.jd,
-			              label: "Plan arrival — " + arr.body +
-			                     (isFinite(arr.vInf) ? " at v∞ " + (arr.vInf / 1000).toFixed(2) + " km/s" : "") });
-		}
-
 		return { packet: packet, warnings: complianceWarnings(comp), events: events };
 	},
 

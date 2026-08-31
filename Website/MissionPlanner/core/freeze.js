@@ -67,7 +67,11 @@
  *   waypoints: [{ days, burn }],  // resolved days (snaps already concrete),
  *                                 //   measured from spec.jd, which is already
  *                                 //   the hand-off — nothing is re-based
- *   arrivalJd,                    // the marker's rendezvous epoch
+ *   arrivalJd,                    // the marker's rendezvous epoch — this
+ *                                 //   SEEDS THE COAST'S HORIZON (transfer-
+ *                                 //   leg's legDays) and is not committed as
+ *                                 //   an arrival date: the mission arrives at
+ *                                 //   whatever closest approach it measures
  *   arrivalVInf,                  // |ship v − destination v| there (m/s)
  *   windowDays,                   // optional — hand-off window half-width
  *   depProfile                    // optional — the tab's Earth-course
@@ -166,7 +170,7 @@ export function freezeMissionWorld(spec) {
 	add("frozen-plan", {
 		origin: spec.origin,
 		departure: { r: handoff.r.slice(), v: handoff.v.slice(), jd: handoff.jd },
-		arrival: { body: spec.destination, jd: spec.arrivalJd, vInf: spec.arrivalVInf },
+		arrival: { body: spec.destination, vInf: spec.arrivalVInf },
 		handoffWindowDays: windowDays,
 		waypoints: waypoints.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; })
 	});

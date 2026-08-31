@@ -101,7 +101,7 @@ export var earthMarsReferenceMission = {
 					v: [-27527.926707411603, -16220.510078668216, -68.4829236571825],
 					jd: 2463610.059797283
 				},
-				arrival: { body: "Mars", jd: 2463870.059797283, vInf: 4856.648803943818 },
+				arrival: { body: "Mars", vInf: 4856.648803943818 },
 				handoffWindowDays: 1,
 				waypoints: [{ days: 91, burn: { pro: -316.9993726441208, rad: -3044.1368693226227, nrm: -1132.4501990653685 } }]
 			}

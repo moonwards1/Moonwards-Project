@@ -47,7 +47,7 @@ function planParams(vInf) {
 	return {
 		origin: "Earth",
 		departure: { r: e.r.slice(), v: O.vAdd(e.v, [vInf, 0, 0]), jd: JD },
-		arrival: { body: "Ceres", jd: JD + 750, vInf: 3776 },
+		arrival: { body: "Ceres", vInf: 3776 },
 		waypoints: []
 	};
 }
@@ -164,16 +164,19 @@ test("compliance: a plan without a departure state is a hard bad-params", functi
 	assert.match(comp.diagnostic.message, /no departure state/);
 });
 
-test("compliance: unknown origin / arrival bodies and inverted epochs are bad-params", function () {
+test("compliance: unknown origin / arrival bodies are bad-params", function () {
 	var p = planParams(3420);
 	assert.equal(computeCompliance(Object.assign({}, p, { origin: "Krypton" }), null).diagnostic.code, "bad-params");
 	assert.equal(computeCompliance(Object.assign({}, p,
-		{ arrival: { body: "Krypton", jd: JD + 1, vInf: 0 } }), null).diagnostic.code, "bad-params");
+		{ arrival: { body: "Krypton", vInf: 0 } }), null).diagnostic.code, "bad-params");
+	// There is no arrival EPOCH to be inverted against the departure: the
+	// mission arrives at its measured closest approach, so the plan has no
+	// date here to validate.
 	assert.equal(computeCompliance(Object.assign({}, p,
-		{ arrival: { body: "Ceres", jd: JD - 1, vInf: 0 } }), null).diagnostic.code, "bad-params");
+		{ arrival: { body: "Ceres", vInf: 0 } }), null).ok, true);
 });
 
-test("planSummary: v∞ in/out, epoch, flight time, and the plan Δv formula", function () {
+test("planSummary: v∞ in/out, epoch, and the plan Δv formula", function () {
 	// plan Δv = v∞ in (leaving the origin's SOI) + v∞ out (reaching the
 	// destination's) + the waypoint burns. A frozen leg carries no burn of its
 	// own — the hand-off is post-burn — so there is no leg-burn term.
@@ -183,8 +186,10 @@ test("planSummary: v∞ in/out, epoch, flight time, and the plan Δv formula", f
 	assert.ok(Math.abs(s.vInfIn - 3420) < 1e-6, "v∞ in should be 3420, got " + s.vInfIn);
 	assert.equal(s.vInfOut, 3776);
 	assert.equal(s.epochJd, JD);
-	assert.equal(s.arrivalJd, JD + 750);
-	assert.equal(s.flightDays, 750);
+	// no arrivalJd/flightDays: both are properties of the flown coast, not of
+	// the plan, so a pure function of the params cannot state them
+	assert.equal(s.arrivalJd, undefined);
+	assert.equal(s.flightDays, undefined);
 	assert.ok(Math.abs(s.waypointDv - 500) < 1e-9);
 	assert.ok(Math.abs(s.dv - (s.vInfIn + 3776 + 500)) < 1e-9);
 });
@@ -194,8 +199,8 @@ test("planSummary: a damaged plan degrades to nulls, not a throw", function () {
 	assert.equal(s.vInfIn, null);
 	assert.equal(s.vInfOut, null);
 	assert.equal(s.epochJd, null);
-	assert.equal(s.arrivalJd, null);
-	assert.equal(s.flightDays, null);
+	assert.equal(s.arrivalJd, undefined);
+	assert.equal(s.flightDays, undefined);
 	assert.equal(s.dv, 0);
 });
 
@@ -237,13 +242,14 @@ test("comply: the shipped preset's skyhook alone falls short of the full departu
 	assert.deepEqual(rPlan.output.data.r, delivered.r);
 	assert.notEqual(rPlan.output.data.jd, presetPlan.departure.jd);
 
-	// endpoints on the events channel (the coast slider's span): the real
-	// hand-off, then the plan's committed arrival
-	assert.equal(rPlan.events.length, 2);
+	// ONE event on the channel: the real hand-off. The coast's other end is not
+	// the plan's to state — the mission arrives at the closest approach
+	// transfer-leg measures, and emits.
+	assert.equal(rPlan.events.length, 1);
 	assert.match(rPlan.events[0].label, /Exit origin SOI/);
 	assert.equal(rPlan.events[0].jd, delivered.jd);
-	assert.match(rPlan.events[1].label, /Plan arrival — Ceres/);
-	assert.equal(rPlan.events[1].jd, presetPlan.arrival.jd);
+	assert.equal(presetPlan.arrival.jd, undefined,
+		"the shipped plan commits to a destination and a catch speed, not a date");
 
 	// The coast flies that delivered hand-off, so the shipped shortfall is
 	// visible as a real miss rather than hidden behind a clean drawn arc —

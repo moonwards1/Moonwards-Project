@@ -202,7 +202,7 @@ test("computeArrivalLeg: diagnostics — no body, unknown body, an empty window"
 
 test("arrivalWindow: with no coast leg, the window brackets the delivered epoch by Kepler", function () {
 	var data = arrivingAt("Ceres", 3776, 0);
-	var win = arrivalWindow("Ceres", null, data, null);
+	var win = arrivalWindow("Ceres", null, data);
 	assert.equal(win.hasEncounter, false);
 	assert.equal(win.fromCoast, false);
 	assert.ok(Math.abs(win.jd0 - (JD - SEAM_MIN_DAYS)) < 1e-9);
@@ -212,10 +212,14 @@ test("arrivalWindow: with no coast leg, the window brackets the delivered epoch 
 	assert.ok(O.vMag(O.vSub(fwd.r, data.r)) < 1, "round-trips to the delivered position");
 });
 
-test("arrivalWindow: the plan's committed epoch is the no-encounter anchor, not the delivered one", function () {
+test("arrivalWindow: with no encounter the anchor is the coast's own end, there being no committed date", function () {
+	// The plan commits to no arrival epoch, so a coast that never reaches the
+	// destination has only its own end to hang a window on.
 	var data = arrivingAt("Ceres", 3776, 0);
-	var win = arrivalWindow("Ceres", null, data, JD + 3);
-	assert.ok(Math.abs(win.jd0 - (JD + 3 - SEAM_MIN_DAYS)) < 1e-9);
+	var win = arrivalWindow("Ceres", null, data);
+	assert.equal(win.hasEncounter, false);
+	assert.ok(Math.abs(win.jd0 - (data.jd - SEAM_MIN_DAYS)) < 1e-9);
+	assert.ok(Math.abs(win.jdEnd - (data.jd + ARRIVAL_TAIL_DAYS)) < 1e-9);
 });
 
 // ---- stateAtElapsed (2.5's chevron position source) ------------------------
@@ -270,15 +274,21 @@ test("arrivalTechOptionsFor: generic techs for any body, the elevator only at Ce
 
 // ---- arrivalCommitmentFor (the plan's arrival endpoint, one lookup) ---------
 
-test("arrivalCommitmentFor: the plan's arrival { body, jd, vInf }, else null", function () {
+test("arrivalCommitmentFor: the plan's arrival { body, vInf } — no epoch — else null", function () {
 	var w = createWorld({ jd: JD });
 	assert.equal(arrivalCommitmentFor(w), null);
 	w.set({ addStage: { moduleId: "frozen-plan",
+		params: { arrival: { body: "Ceres", vInf: 3776 } } } });
+	// WHERE it is going and HOW FAST it may show up. WHEN is measured, not
+	// committed, so a stale save's leftover jd is ignored rather than read.
+	assert.deepEqual(arrivalCommitmentFor(w), { body: "Ceres", vInf: 3776 });
+	var w3 = createWorld({ jd: JD });
+	w3.set({ addStage: { moduleId: "frozen-plan",
 		params: { arrival: { body: "Ceres", jd: JD, vInf: 3776 } } } });
-	assert.deepEqual(arrivalCommitmentFor(w), { body: "Ceres", jd: JD, vInf: 3776 });
+	assert.deepEqual(arrivalCommitmentFor(w3), { body: "Ceres", vInf: 3776 });
 	// a destination-less plan commits to nothing
 	var w2 = createWorld({ jd: JD });
-	w2.set({ addStage: { moduleId: "frozen-plan", params: { arrival: { body: "", jd: null } } } });
+	w2.set({ addStage: { moduleId: "frozen-plan", params: { arrival: { body: "" } } } });
 	assert.equal(arrivalCommitmentFor(w2), null);
 });
 

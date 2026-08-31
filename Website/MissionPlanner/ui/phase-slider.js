@@ -397,7 +397,7 @@ export function createDepartureSlider(container, opts) {
 //   - The playhead readout is signed time relative to that mark
 //     (approachStamp) rather than "T+" since the phase started.
 //   - With no encounter at all, the seam collapses to a single point at the
-//     plan's committed arrival epoch (core/arrival-seam.js's fallback). A
+//     coast's own end (core/arrival-seam.js's fallback). A
 //     zero-length span is the empty state here, not an error —
 //     mission-view.js falls back to the raw date bar for the clock while that
 //     holds.

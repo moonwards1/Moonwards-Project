@@ -95,7 +95,7 @@ export var earthVenusOvershootMission = {
 					v: [-33918.082188770226, -8439.468796011004, -86.246699961888],
 					jd: 2464695.6110198037
 				},
-				arrival: { body: "Venus", jd: 2465775.6110198037, vInf: 51950.43974646683 },
+				arrival: { body: "Venus", vInf: 51950.43974646683 },
 				handoffWindowDays: 1,
 				waypoints: [
 					{ days: 60, burn: { pro: 3000, rad: 0, nrm: 0 } },

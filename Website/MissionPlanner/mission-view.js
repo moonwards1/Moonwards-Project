@@ -89,7 +89,7 @@ var FLOAT_ZOOM = 0.5;
 // PHASE_FRAME.departure from its own frozen plan's `origin` body
 // (missionOriginBody/departureFrameFor below) — "body:Earth-Moon" for an Earth
 // origin, or a generic buildBodyFrame(origin) for any other HELIO_BODIES
-// origin — and PHASE_FRAME.arrival from the plan's committed arrival body, if
+// origin — and PHASE_FRAME.arrival from the plan's arrival body, if
 // it commits to one. A mission with no arrival commitment (a destination-less
 // plan) keeps the Arrival phase button disabled.
 //
@@ -1318,8 +1318,8 @@ export function createMissionView(opts) {
 	// The drawn coast now flies from that same delivered hand-off
 	// (frozen-plan.js), so the bar and the trajectory agree by construction
 	// rather than by the user's diligence. What they still measure differently
-	// is the horizon: the bar flies out to the plan's committed arrival date,
-	// the drawn leg to its own legDays.
+	// is the horizon, and since neither is a committed date any more they are
+	// the same span: the coast's own legDays.
 	//
 	// Left of the divider the figures sit with the phase they matter in: v∞ out
 	// with Departure (what the ship leaves with), Δv with Coast (what its
@@ -1364,17 +1364,18 @@ export function createMissionView(opts) {
 
 		var p = planStage.params;
 		var arr = p.arrival || {};
-		if (!isFinite(arr.jd)) { return null; }
 		var d = comp.delivered.state;
 		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
-		var wps = (legStage && legStage.params.waypoints) || [];
+		if (!legStage) { return null; }
+		var wps = legStage.params.waypoints || [];
 		// Waypoint days are counted from the coast's own start, which IS the
 		// delivered hand-off (frozen-plan.js emits it), so they need no
-		// re-basing here. The one difference left between this flight and the
-		// drawn one is its horizon: this measures out to the plan's committed
-		// arrival date, the drawn leg to its own legDays.
+		// re-basing here. The horizon is the coast's own duration — there is no
+		// committed arrival date to fly to, and the arrival is wherever closest
+		// approach falls inside it — so this and the drawn leg are now the same
+		// flight over the same span.
 		return { origin: p.origin, destination: arr.body, delivered: d,
-		         waypoints: wps, arrivalJd: arr.jd };
+		         waypoints: wps, horizonJd: d.jd + legStage.params.legDays };
 	}
 	function flightAsDelivered() {
 		var spec = flightSpecNow();
@@ -1433,18 +1434,21 @@ export function createMissionView(opts) {
 		}
 		var p = planStage.params;
 		var arr = p.arrival || {};
-		if (!arr.body || !isFinite(arr.jd)) {
+		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		if (!arr.body || !legStage) {
 			return { ok: false, reason: "This plan commits to no destination, so there is " +
 				"nothing to re-target towards." };
 		}
-		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
 		return solveDepartureTarget({
 			origin: p.origin,
 			destination: arr.body,
 			delivered: comp.delivered.state,
 			planDeparture: p.departure,
-			planWaypoints: (legStage && legStage.params.waypoints) || [],
-			arrivalJd: arr.jd
+			planWaypoints: legStage.params.waypoints || [],
+			// The aim epoch is the coast's own horizon, not a committed arrival
+			// date: fly for as long as the coast lasts, and arrive wherever
+			// closest approach falls inside that.
+			horizonJd: comp.delivered.state.jd + legStage.params.legDays
 		});
 	}
 
@@ -1452,10 +1456,11 @@ export function createMissionView(opts) {
 	// downstream stale.
 	//
 	// The hand-off epoch moves, so the plan's own reference waypoints are
-	// re-based to keep their ABSOLUTE epochs and legDays stretches or shrinks
-	// so the arrival still lands on the date the plan committed to. The
-	// arrival commitment itself is untouched — whether the flight meets it is
-	// the arrival boundary's question, not this one's.
+	// re-based to keep their ABSOLUTE epochs. The coast's DURATION is not
+	// touched: it is the coast's own horizon, and there is no committed
+	// arrival date left for it to be stretched to meet — the mission arrives
+	// at whatever closest approach it measures inside that span. The arrival
+	// commitment (body and catch speed) is untouched too.
 	//
 	// THE WORKING WAYPOINTS ARE RE-PLACED BY SWEPT ANGLE, not by time: a burn
 	// belongs to the point of the arc the user put it on, and the arc beneath
@@ -1471,7 +1476,6 @@ export function createMissionView(opts) {
 	function applyRetarget(planStageId, sol) {
 		var stage = world.getStage(planStageId);
 		if (!stage || !sol || !sol.ok) { return; }
-		var arrJd = stage.params.arrival ? stage.params.arrival.jd : null;
 		var shift = sol.jd - stage.params.departure.jd;
 
 		var legDesc = registry.get("transfer-leg");
@@ -1491,9 +1495,8 @@ export function createMissionView(opts) {
 		} });
 
 		if (!legStage) { return; }
-		var legDays = isFinite(arrJd) ? (arrJd - sol.jd) : legStage.params.legDays;
+		var legDays = legStage.params.legDays;
 		world.set({ stage: legStage.id, params: {
-			legDays: legDays,
 			waypoints: sol.waypoints.map(function (w) {
 				return { days: w.days, burn: Object.assign({}, w.burn) };
 			})
@@ -1879,11 +1882,9 @@ export function createMissionView(opts) {
 	// The Coast->Arrival seam (core/arrival-seam.js), derived from transfer-leg's
 	// own emitted events: its destination's structured closest-approach event
 	// (kind/body/vInf/rmin — see transfer-leg.js's coastStretch) plus a fallback
-	// epoch for a coast that never actually encounters the destination. The
-	// fallback is the frozen plan's own committed arrival epoch when one exists;
-	// absent that, the leg's own latest event, mirroring coastSpan's fallback
-	// below. null with no transfer-leg stage, no destination, or nothing to
-	// derive a fallback from either.
+	// epoch for a coast that never actually encounters the destination — the
+	// end of the coast's own span, mirroring coastSpan's fallback below. null
+	// with no transfer-leg stage, no destination, or no events to take it from.
 	function coastSeam(results) {
 		var dest = coastDestination();
 		if (!dest) { return null; }
@@ -1895,15 +1896,12 @@ export function createMissionView(opts) {
 		}
 		if (!legRes || legRes.status !== "ok") { return null; }
 
-		var desc = registry.get("frozen-plan");
-		var commit = desc && typeof desc.arrivalCommitmentFor === "function"
-			? desc.arrivalCommitmentFor(world) : null;
-		var fallbackJd = (commit && commit.body === dest) ? commit.jd : null;
-		if (fallbackJd == null) {
-			var jds = legRes.events.map(function (e) { return e.jd; });
-			if (!jds.length) { return null; }
-			fallbackJd = Math.max.apply(null, jds);
-		}
+		// A coast that never reaches the destination has no arrival to place a
+		// window around, and no committed date to fall back on either — so the
+		// stand-in is the end of the coast's own span, the last thing it emits.
+		var jds = legRes.events.map(function (e) { return e.jd; });
+		if (!jds.length) { return null; }
+		var fallbackJd = Math.max.apply(null, jds);
 		// The phase structure follows the COMMITTED coast — the one the Arrival
 		// phase is running on — so a pending waypoint edit moves the drawn arc
 		// without dragging the sliders and the arrival window with it.
@@ -1935,24 +1933,34 @@ export function createMissionView(opts) {
 	// arrival date: it moves with closest approach as the coast is tuned, ending
 	// the phase early enough to leave the Arrival phase its own window.
 	function coastSpan(results) {
-		var jds = [];
+		// The LEFT edge: the real hand-off, frozen-plan's own single event.
+		var start = null;
 		results.forEach(function (res) {
 			if (res.moduleId !== "frozen-plan") { return; }
-			res.events.forEach(function (e) { jds.push(e.jd); });
+			res.events.forEach(function (e) {
+				if (start === null || e.jd < start) { start = e.jd; }
+			});
 		});
-		if (!jds.length) {
+
+		// The RIGHT edge: the arrival seam — closest approach minus Δt — since
+		// that is where the Arrival phase takes over. With no plan stage or no
+		// seam yet, fall back to the envelope of what the departure and coast
+		// stages emit, which is the widest thing honestly known.
+		var seam = coastSeam(results);
+		var end = seam ? seam.start : null;
+		if (start === null || end === null) {
+			var jds = [];
 			results.forEach(function (res) {
 				var stage = world.getStage(res.stageId);
 				var phase = stage && stagePhaseOf(stage);
 				if (phase !== "departure" && phase !== "coast") { return; }
 				res.events.forEach(function (e) { jds.push(e.jd); });
 			});
+			if (!jds.length) { return null; }
+			if (start === null) { start = Math.min.apply(null, jds); }
+			if (end === null) { end = Math.max.apply(null, jds); }
 		}
-		if (!jds.length) { return null; }
-		var start = Math.min.apply(null, jds);
-		var end = Math.max.apply(null, jds);
-		var seam = coastSeam(results);
-		if (seam) { end = seam.start; }
+		if (!(end > start)) { return null; }
 		return { start: start, end: end };
 	}
 
@@ -2114,8 +2122,8 @@ export function createMissionView(opts) {
 
 	// null when there is no window to scrub: no transfer-leg/destination at all,
 	// or a coast that never encounters the destination — core/arrival-seam.js
-	// then collapses the seam to a single point at the plan's committed arrival
-	// epoch, which is not a span. The slider shows its empty state and
+	// then collapses the seam to a single point at the coast's own end, which is
+	// not a span. The slider shows its empty state and
 	// syncSliderVisibility hands the clock back to the date bar.
 	function arrivalSpan(results) {
 		var seam = coastSeam(results);

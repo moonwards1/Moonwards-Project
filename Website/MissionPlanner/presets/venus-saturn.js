@@ -82,7 +82,7 @@ export var venusSaturnMission = {
 					v: [-9757.102206391384, 37821.09161834681, 982.6728206505492],
 					jd: 2464024.126766075
 				},
-				arrival: { body: "Saturn", jd: 2466221.626766075, vInf: 9754.537416938687 },
+				arrival: { body: "Saturn", vInf: 9754.537416938687 },
 				handoffWindowDays: 1,
 				waypoints: [{ days: 660, burn: { pro: 7432.959774971017, rad: 12753.660047286197, nrm: 1529.2755250152884 } }]
 			}

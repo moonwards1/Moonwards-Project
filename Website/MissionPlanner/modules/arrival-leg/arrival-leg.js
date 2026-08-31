@@ -74,7 +74,6 @@ import { computeArrivalSeam, SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core
 import { handoffLegFor as coastLegFor, stateAtElapsed as coastStateAtElapsed,
 	nearestApproach as coastNearestApproach }
 	from "../transfer-leg/transfer-leg.js";
-import { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
@@ -101,22 +100,22 @@ function kmOf(m) { return Math.round(m / 1000).toLocaleString("en-US"); }
 
 // The seam window and the state the coast is in at its left edge, in
 // heliocentric terms. `coastLeg` is transfer-leg's own last computed leg (or
-// null); `data` the delivered helio ship-state payload; `commitJd` the plan's
-// committed arrival epoch (or null) — the no-encounter fallback core/
-// arrival-seam.js uses, kept the same here as in mission-view.js's coastSeam so
-// the leg and the Arrival slider agree on where the window sits.
+// null); `data` the delivered helio ship-state payload.
+//
+// THE ARRIVAL EPOCH IS THE COAST'S MEASURED CLOSEST APPROACH — there is no
+// committed date to take it from, and none to reconcile it against. With no
+// encounter at all the stand-in is the coast's own end (`data.jd`), which is
+// the same fallback mission-view.js's coastSeam uses, so the leg and the
+// Arrival slider agree on where the window sits.
 //
 // Returns { jd0, jdEnd, r, v, ca, deltaDays, hasEncounter, fromCoast }.
 // `fromCoast` records whether the start state was read off the coast leg or
 // back-propagated from the delivered state (see the header).
-export function arrivalWindow(body, coastLeg, data, commitJd) {
-	// isFinite(null) is true (null coerces to 0), so "is there a committed
-	// epoch at all?" needs the type check, not just finiteness.
-	var fallbackJd = (typeof commitJd === "number" && isFinite(commitJd)) ? commitJd : data.jd;
+export function arrivalWindow(body, coastLeg, data) {
 	var seam = computeArrivalSeam({
 		destination: body,
 		pass: (coastLeg && coastLeg.ok) ? coastNearestApproach(coastLeg, body) : null,
-		fallbackArrivalJd: fallbackJd
+		fallbackArrivalJd: data.jd
 	});
 	// With no encounter the seam collapses to a point (arrival-seam's fallback);
 	// the phase still needs a window to work in, so one of the standard width is
@@ -416,10 +415,11 @@ export default {
 				}
 			}
 		}
-		var commit = ctx.world ? arrivalCommitmentFor(ctx.world) : null;
-		var commitJd = (commit && commit.body === params.body) ? commit.jd : null;
-
-		var win = arrivalWindow(params.body, coastLeg, data, commitJd);
+		// No committed arrival epoch is passed, because there is none: the
+		// arrival is the coast's measured closest approach, which arrivalWindow
+		// derives for itself. With no encounter at all it falls back to the
+		// coast's own end (`data.jd`), so the phase always has a window.
+		var win = arrivalWindow(params.body, coastLeg, data);
 		var leg = computeArrivalLeg(params, win);
 		rememberLeg(ctx.world, ctx.stageId, leg);
 		if (!leg.ok) { return leg.diagnostic; }
