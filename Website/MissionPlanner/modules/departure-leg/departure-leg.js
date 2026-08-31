@@ -456,6 +456,7 @@ export default {
 					var t = (leg && leg.ok)
 						? Math.max(1, Math.min(leg.handoff.tSoi - 1, (ctx.world.jd - leg.jd0) * DAY))
 						: 6 * 3600;
+					t = Math.round(t / 36) * 36; // round to nearest .01 hour (36s)
 					list.push({ t: t, burn: { pro: 0, rad: 0, nrm: 0 } });
 					rebuildWaypointRowsFor(list);
 					setParam("waypoints", list);
