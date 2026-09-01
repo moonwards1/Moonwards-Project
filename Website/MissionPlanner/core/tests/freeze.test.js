@@ -11,6 +11,7 @@ import { computeCompliance } from "../../modules/frozen-plan/frozen-plan.js";
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { originSoiRadius } from "../departure-estimate.js";
+import { Frames } from "../../../Shared/frames.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
@@ -23,9 +24,11 @@ var GM_SUN = systems.get("Sun").GM;
 // The hand-off is built the way departureState does: v-infinity applied to the
 // origin body's own motion, at an exit point one SOI radius along the outbound
 // heading. VINF below is the v-infinity that state carries, for assertions.
+// The reference is the ESCAPE body, which is Earth for a Moon origin — a lunar
+// departure hands over at Earth's SOI edge (Shared/frames.js).
 var VINF = { pro: 2940, rad: 0, nrm: 0 };
 function handoffFor(jd, origin, vinf) {
-	var body = O.bodyStateAtJD(GM_SUN, systems.get(origin).orbit, jd);
+	var body = Frames.bodyHelioState(Frames.escapeReferenceFor(origin), jd);
 	var v = O.applyBurn(body.r, body.v, vinf.pro || 0, vinf.nrm || 0, vinf.rad || 0);
 	var vInfVec = O.vSub(v, body.v), mag = O.vMag(vInfVec);
 	var R = originSoiRadius(origin);
@@ -35,10 +38,10 @@ function handoffFor(jd, origin, vinf) {
 function makeSpec() {
 	var jd = O.julianDate(2031, 3, 1, 0, 0, 0);
 	return {
-		origin: "Earth",
+		origin: "Moon",
 		destination: "Mars",
 		jd: jd,
-		handoff: handoffFor(jd, "Earth", VINF),
+		handoff: handoffFor(jd, "Moon", VINF),
 		waypoints: [{ days: 130, burn: { pro: 0, rad: 0, nrm: 500 } }],
 		arrivalJd: jd + 260,
 		arrivalVInf: 2650
@@ -52,12 +55,12 @@ function paramsOf(data, moduleId) {
 	return s ? s.params : null;
 }
 
-test("freeze output deserializes into a working World with the E2 profile (Earth scaffold)", () => {
-	var data = freezeMissionWorld(makeSpec());   // origin Earth
+test("freeze output deserializes into a working World with the E2 profile (Moon scaffold)", () => {
+	var data = freezeMissionWorld(makeSpec());   // origin Moon
 	var res = deserializeWorld(data);
 	assert.equal(res.ok, true, res.reason);
 	var stages = res.world.serialize().stages;
-	// Earth: the fixed Moon platform + the geocentric leg (empty carrier slot),
+	// Moon: the fixed Moon platform + the geocentric leg (empty carrier slot),
 	// then the plan, coast, and the flyby leg (empty arrival-tech slot).
 	assert.deepEqual(stages.map(s => s.moduleId),
 		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
@@ -77,22 +80,25 @@ test("freeze output deserializes into a working World with the E2 profile (Earth
 	assert.equal("releaseAnchorJd" in paramsOf(data, "frozen-plan"), false);
 });
 
-test("freeze from a non-Earth origin scaffolds just the generic departure leg", () => {
+test("every origin but the Moon scaffolds just the generic departure leg", () => {
+	// Earth is one of them now: a mission from Earth departs from Earth, the
+	// same way one from Mars departs from Mars. Only the Moon rides a platform.
 	var jd = O.julianDate(2033, 6, 1, 0, 0, 0);
-	var data = freezeMissionWorld({
-		origin: "Mars", destination: "Ceres", jd: jd,
-		handoff: handoffFor(jd, "Mars", { pro: 1800, rad: 0, nrm: 0 }),
-		waypoints: [], arrivalJd: jd + 300, arrivalVInf: 3000
+	[["Mars", "Ceres"], ["Earth", "Mars"]].forEach(function ([origin, dest]) {
+		var data = freezeMissionWorld({
+			origin: origin, destination: dest, jd: jd,
+			handoff: handoffFor(jd, origin, { pro: 1800, rad: 0, nrm: 0 }),
+			waypoints: [], arrivalJd: jd + 300, arrivalVInf: 3000
+		});
+		var res = deserializeWorld(data);
+		assert.equal(res.ok, true, res.reason);
+		// no platform stage — the generic leg's skyhook, when added,
+		// self-originates — then the plan, coast, and the flyby.
+		assert.deepEqual(res.world.serialize().stages.map(s => s.moduleId),
+			["body-departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"], origin);
+		assert.equal(data.nextStage, 5);
+		assert.equal(paramsOf(data, "frozen-plan").origin, origin);
 	});
-	var res = deserializeWorld(data);
-	assert.equal(res.ok, true, res.reason);
-	// no Moon platform for a non-Earth origin — just the generic leg (its
-	// skyhook, when added, self-originates), then the plan, coast, and the
-	// flyby.
-	assert.deepEqual(res.world.serialize().stages.map(s => s.moduleId),
-		["body-departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
-	assert.equal(data.nextStage, 5);
-	assert.equal(paramsOf(data, "frozen-plan").origin, "Mars");
 });
 
 test("frozen-plan and transfer-leg carry matching waypoint copies, not shared refs", () => {
@@ -168,7 +174,7 @@ test("required v∞ is the injection the departure burn demanded, read at the SO
 
 test("a waypoint-only plan (no departure burn) freezes to required v∞ 0", () => {
 	var spec = makeSpec();
-	spec.handoff = handoffFor(spec.jd, "Earth", { pro: 0, rad: 0, nrm: 0 });
+	spec.handoff = handoffFor(spec.jd, "Moon", { pro: 0, rad: 0, nrm: 0 });
 	var data = freezeMissionWorld(spec);
 	var comp = computeCompliance(paramsOf(data, "frozen-plan"), null);
 	assert.equal(comp.ok, true);
@@ -191,10 +197,10 @@ test("freeze bakes a hand-off window (default ±1 d) and seeds release ahead of 
 	// release leads departure.jd by the departure-estimate module's own
 	// figure for this spec — same source, so they must agree exactly
 	var DE = await import("../departure-estimate.js");
-	var earth = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, plan.departure.jd);
+	var ref = Frames.bodyHelioState(Frames.escapeReferenceFor(spec.origin), plan.departure.jd);
 	var est = DE.estimateDeparture({
 		origin: spec.origin,
-		vInfVec: O.vSub(plan.departure.v, earth.v),
+		vInfVec: O.vSub(plan.departure.v, ref.v),
 		jdHandoff: plan.departure.jd
 	});
 	assert.ok(est.ok);
@@ -211,7 +217,7 @@ test("a custom windowDays is honoured; a waypoint-only plan releases at the hand
 	assert.equal(paramsOf(freezeMissionWorld(spec), "frozen-plan").handoffWindowDays, 2.5);
 
 	var spec2 = makeSpec();
-	spec2.handoff = handoffFor(spec2.jd, "Earth", { pro: 0, rad: 0, nrm: 0 });   // v∞ ~ 0, nothing to time
+	spec2.handoff = handoffFor(spec2.jd, "Moon", { pro: 0, rad: 0, nrm: 0 });   // v∞ ~ 0, nothing to time
 	var world2 = freezeMissionWorld(spec2);
 	assert.equal(paramsOf(world2, "departure-leg").releaseJd, spec2.jd);
 	assert.equal(paramsOf(world2, "frozen-plan").handoffWindowDays, 1);

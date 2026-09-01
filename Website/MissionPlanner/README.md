@@ -38,7 +38,8 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 | `registry.js`            | `createRegistry`, `validateDescriptor`                            | The module registry. Validates a descriptor's `id`/`title`/`accepts`/`emits`/`update` at registration (packet types checked against `PacketTypes`, so typos fail loud and early); view-facing fields (`rendersIn`, `init`, …) are optional and unexamined here. An *unregistered* id in a profile is user data, not an error — the engine reports it as a diagnostic. |
 | `recompute.js`           | `createEngine`                                                    | The chain-recompute engine. Subscribes to the World; on any change recomputes from the dirty index **downstream, in order, synchronously**. Per-stage results keyed by stage id: `ok` (with the output packet), `diagnostic`, or `blocked` (waiting on the failed stage, `update()` not called, params intact); results also carry `warnings` and `events` arrays (see the module contract below). Locks the World during a pass, so modules cannot `set()` from `update()`. |
 | `freeze.js`              | (see header — assembles a serialized World)                       | The "Start Mission Plan" contract: turns a plan authored on the Ephemeris tab into a fresh serialized World — `[ departure scaffold ] → [ frozen-plan ] → [ transfer-leg ] → [ arrival-leg ]` — with the departure carrier slot and the arrival-technology slot both left empty for the mission tab to fill in. The hand-off it commits is `spec.handoff` verbatim — the state the Ephemeris tab authored at the origin's SOI edge, where a departure leg actually delivers a ship — and `spec.jd` is that hand-off's own epoch, so waypoint days and the coast's duration need no re-basing. Nothing is re-derived across this seam, which is what makes the freeze/paste round trip exact. Pure; the caller resolves every view-side number first and hands in plain data. |
-| `departure-estimate.js`  | (see header — estimates the departure leg's duration)              | How long the departure leg lasts, estimated from the frozen plan alone (before any departure tech is chosen): the required v∞, the hand-off epoch, and — for Earth — where the Moon is, via the dive-in/direct-out wedge rule. Feeds the read-only release anchor `freeze.js` bakes into the plan, the Ephemeris tab's Moon-phase widget, and the Departure slider's default span. |
+| `departure-estimate.js`  | (see header — estimates the departure leg's duration)              | How long the departure leg lasts, estimated from the frozen plan alone (before any departure tech is chosen): the SOI radius over the TRUE hyperbolic excess behind the hand-off's edge speed. Every origin but the Moon uses that estimate, Earth included; a Moon origin is handed to `lunar-departure.js` and solved instead. Feeds the read-only release anchor `freeze.js` bakes into the plan, the Ephemeris tab's Moon-phase widget, and the Departure slider's default span. |
+| `lunar-departure.js`     | `solveLunarDeparture`, `searchCourses`, `releaseSpeedFor`, `flyFromMoon` | The departure flight from the Moon to Earth's SOI edge, INTEGRATED (Earth + Moon + Sun, `Shared/geo-leg.js`) rather than constructed. A Moon origin is the one origin whose departure leaves a different body's sphere of influence than the one it started from, and three terms decide where it comes out — the Moon's 1 km/s orbital velocity, the Moon's own well, Earth's remaining well — each worth 0.9 to 2.2 km/s at the hand-off. Given the card's hand-off velocity and epoch it solves for the release (a damped Newton with Broyden updates: ~15 integrations cold, ~4 warm), and `searchCourses` enumerates the several distinct flights that reach the same hand-off, cheapest release first. Pure. |
 | `arrival-seam.js`        | `computeArrivalSeam`                                               | The Coast→Arrival seam derivation: a window `[closest approach − Δt, closest approach + ~1 day]` around the coast's own closest-approach event, `Δt = clamp(R_SOI/v∞, 2 d, 5 d)`. Nothing is stored — recomputed live from `transfer-leg`'s emitted events every recompute, so the window moves as the coast is tuned. No encounter at all: the window collapses to a point at the coast's own end — there is no committed arrival date, the mission arriving at whatever closest approach it measures. |
 | `proximity.js`           | `checkProximity`, `checkPassAltitude`                              | The arrival standards, in one place. `checkProximity` is the EPHEMERIS TAB's gate on "Start Mission Plan": the marker within `APPROACH_FAR` (0.004 AU) of the destination's orbit ELLIPSE, and the destination passing through that point within `TEMP_FAR` (30 d) — ring-scale tolerances, right for judging a scrubbable marker. `MAX_PASS_ALTITUDE` (30,000 km) is the stricter bound a FLOWN mission has to pass the body within, and `AIM_PASS_ALTITUDE` (15,000 km) is what a re-target aims for — deliberately inside the bound, so an iteration's residual has room to land. Both measured as altitude ABOVE THE SURFACE, at closest approach; both provisional until the arrival technology can state what it can actually catch. The ring tier TABLES stay with the views that draw them — those are colours and pixel sizes, not standards. Pure. |
 | `delivered-flight.js`    | `deliveredFlight`, `signatureOf`, `waypointDv`                     | The flight the ship is ACTUALLY on: flown from what the departure technology delivers, through the waypoints as they stand. The drawn coast now flies from that same delivered hand-off, so the two agree; and both now fly the coast's own `legDays`, no arrival date being committed. It stays the one place a hypothetical hand-off can be flown, which is what `core/retarget.js` verifies its solves with. One call yields every figure the mission bar shows (v∞ out, coast Δv, closest approach, v∞ in). The answer never depends on the clock, so `signatureOf` gives the view a key to memoize on across scrubbing; one call costs about one leg integration. Pure. |
@@ -149,11 +150,14 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   the date bar is that hand-off's epoch, and the drawn flight starts there —
   the same state, verbatim, that the freeze commits as the mission's
   Departure→Coast boundary, so a plan frozen here and pasted back is exact.
-  Where on the SOI sphere the ship exits is either derived from the heading
-  (authoring) or adopted from a pasted mission's own departure chain. How
-  much impulse that hand-off costs, and when the launch must happen, are read
-  BACKWARDS from it by `core/departure-estimate.js` — information for the
-  Moon-phase widget and the release anchor, never a change to the drawn arc.
+  Where on the SOI sphere the ship exits is derived from the heading
+  (authoring), adopted from a pasted mission's own departure chain, or — for a
+  **Moon origin** — FLOWN: `core/lunar-departure.js` integrates the real
+  Earth+Moon+Sun escape and the exit point is wherever that crossing lands, up
+  to 440,000 km from where a straight ray would put it. How much impulse that
+  hand-off costs, and when the launch must happen, are read BACKWARDS from it
+  by `core/departure-estimate.js` — information for the Moon-phase widget, the
+  release anchor and the departure-course row, never a change to the drawn arc.
   Physics is not forked — the actual leg goes through
   `transfer-leg.js`'s exported `computeLeg`, the same function the frozen
   Coast phase uses. **"Paste mission link…" splits a link's two sets by what
@@ -166,11 +170,19 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   window if what is here is worth keeping.
 - **`scene-frames.js`** — Three.js frame factories shared by both
   `mission-view.js` and `ephemeris-view.js`: `"helio"` (the whole solar
-  system), `"body:Earth-Moon"` (geocentric), and a generic `"body:<name>"` for
-  any other origin/destination, so the Ephemeris tab and a mission tab render
-  the identical scene rather than two forks of it. (Not to be confused with
-  `Shared/frames.js`, which converts ship-state *vectors* between frames —
-  this file builds the renderable *scene*.)
+  system), `"body:Earth-Moon"` (geocentric, and the departure frame for both an
+  Earth and a Moon origin), and a generic `"body:<name>"` for any other
+  origin/destination, so the Ephemeris tab and a mission tab render the
+  identical scene rather than two forks of it. Also the home of the three body
+  ROLE lists: `HELIO_BODIES` (drawn from a Sun-centred ellipse, each with an
+  orbit ring), `DESTINATION_BODIES` (the same set — an arrival is judged
+  against an orbit ellipse, which only these have), and `ORIGIN_BODIES` (those
+  plus the Moon). The Moon is drawn here from the lunar ephemeris with no orbit
+  ring, and stays invisible until it is at least `MOON_MIN_SEPARATION_PX` (15)
+  from Earth on screen — below that it is not a body the camera can resolve,
+  only a second dot on the first. (Not to be confused with `Shared/frames.js`,
+  which converts ship-state *vectors* between frames — this file builds the
+  renderable *scene*.)
 
 Frames are per-mission (each view builds its own scenes/cameras from
 `scene-frames.js`; only the renderer/canvas is shared — `show()` re-parents
@@ -199,8 +211,8 @@ Each phase has its own timeline slider (`ui/phase-slider.js`), one visible at
 a time — the raw Ephemeris date bar is only a fallback for a phase with no
 resolvable span:
 
-- **Departure** — spans from release to the Departure→Coast hand-off. For an
-  Earth origin (a satellite carries the departure impulse) the left edge is
+- **Departure** — spans from release to the Departure→Coast hand-off. For a
+  Moon origin (a satellite carries the departure impulse) the left edge is
   pinned at the release anchor and the right edge floats at the predicted
   SOI-exit; for any other origin the right edge is pinned at the plan's
   committed hand-off and the left edge floats back by the flight's own
@@ -269,7 +281,7 @@ does not own it — the plan states where the ship must be when this phase ENDS,
 never when it started.
 
 - **`modules/moon-platform/`** — the Moon as the departure stack's read-only
-  top card, for Earth-origin missions only. Emits the chain base
+  top card, for Moon-origin missions only. Emits the chain base
   (`emptyChain("Moon")`) and shows the Moon's heading/impulse contribution at
   the release epoch. No knobs — plan around the Moon in the Ephemeris tab. A
   mission with no release epoch at all is diagnosed here, at the top of the
@@ -287,7 +299,7 @@ never when it started.
   aiming slider.
 - **`modules/departure-leg/`** — HEADLESS (`plainCard`): the integrated
   geocentric flight (Earth + Moon + Sun, real ephemerides, RK4) from carrier
-  release to Earth-SOI exit, for Earth-origin missions. Applies up to 2
+  release to Earth-SOI exit, for Moon-origin missions. Applies up to 2
   waypoint impulses in each leg's own local dynamical frame — the low-perigee
   Oberth pattern a patched-conic model can't express — and emits the hand-off
   `ship-state` plus flight events (release, impulses, Moon/Earth SOI exits).
@@ -411,7 +423,7 @@ engine's diagnostic, not a data-layer validity condition.
 `node:test` suites covering World mutations/serialization, registry validation,
 the recompute/diagnostic/blocked/
 boundary/comply semantics, the carrier chain and integrated legs (departure
-and arrival, Earth-origin and generic-origin), the frozen-plan compliance
+and arrival, Moon-origin and generic-origin), the frozen-plan compliance
 rows, the phase-slider state functions, and the shipped preset plus every
 catalog entry end to end (deserialize, recompute, survive the share-link
 round trip). Run from the repo root:

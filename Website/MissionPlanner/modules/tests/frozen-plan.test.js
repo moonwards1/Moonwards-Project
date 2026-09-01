@@ -408,8 +408,8 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 	// own internal consistency: the required v∞ it encodes, that the hand-off
 	// really sits on Earth's SOI edge (where a departure leg delivers, and where
 	// core/freeze.js commits), and that the timing fields were baked exactly the
-	// way core/freeze.js bakes them — anchor = hand-off −
-	// core/departure-estimate.js's estimate for that same v∞.
+	// way core/freeze.js bakes them — anchor = hand-off − the departure flight
+	// core/lunar-departure.js solves for that same v∞.
 	var planStage = defaultMission.stages[3];
 	assert.equal(planStage.moduleId, "frozen-plan");
 	var p = planStage.params;
@@ -426,7 +426,8 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 	assert.equal("injectionJd" in p, false);
 
 	assert.equal(p.handoffWindowDays, 1);
-	var est = estimateDeparture({ origin: "Earth", vInfVec: vInfVec, jdHandoff: p.departure.jd });
+	// Origin Moon: the seed is a solved lunar departure, not a naive estimate.
+	var est = estimateDeparture({ origin: p.origin, vInfVec: vInfVec, jdHandoff: p.departure.jd });
 	assert.equal(est.ok, true);
 	var legParams = defaultMission.stages
 		.filter(function (s) { return s.moduleId === "departure-leg"; })[0].params;

@@ -119,13 +119,15 @@ import {
 	fmtKm, fmtTof, fmtDate
 } from "../Shared/sim/marker-card.js";
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
-import { buildHelioFrame, HELIO_BODIES } from "./scene-frames.js";
+import { buildHelioFrame, HELIO_BODIES, ORIGIN_BODIES, DESTINATION_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
 import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
 import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
 	originSoiRadius
 } from "./core/departure-estimate.js";
+import { solveLunarDeparture, searchCourses, RELEASE_ALTITUDE } from "./core/lunar-departure.js";
+import { Frames } from "../Shared/frames.js";
 import {
 	APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE, TEMP_FAR, TEMP_NEAR, TEMP_CLOSE,
 	checkProximity, proximityReason
@@ -236,9 +238,11 @@ export function createEphemerisView(opts) {
 	// real duration only becomes meaningful at freeze, where core/freeze.js
 	// decides legDays from the marker's resolved rendezvous.
 	var state = {
-		origin: "Earth",
-		depProfile: "auto",   // Earth-course override fed to every estimateDeparture call:
-		                      // "auto" (the wedge rule) | "dive-in" | "direct-out"
+		origin: "Moon",
+		// Which of the lunar departure's several courses (core/lunar-departure.js
+		// searchCourses) the drawn arc follows, as an index into the last search,
+		// cheapest release first. Only meaningful for a Moon origin.
+		lunarCourse: 0,
 		leg: {
 			burn: { pro: 0, rad: 0, nrm: 0 },
 			waypoints: [],
@@ -254,6 +258,22 @@ export function createEphemerisView(opts) {
 		markerFocused: false,  // camera pivots on the marker
 		destFocused: false     // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
 	};
+
+	// The last converged lunar departure, carried between refreshes so a
+	// keystroke re-solves in ~4 integrations instead of ~15 and, more
+	// importantly, keeps following the SAME course rather than letting the
+	// drawn arc jump to another one mid-edit. Dropped whenever the origin
+	// changes or a solve fails. `lunarCourses` is the last deliberate
+	// enumeration of alternatives, for the course row.
+	var lunarWarm = null;
+	var lunarCourses = null;
+	// What `lunarCourses` was solved FOR. A course list belongs to one hand-off;
+	// once the card or the date moves it describes a mission that is no longer
+	// on screen, so it is dropped rather than left reading as current.
+	var lunarCoursesKey = null;
+	function lunarKeyFor(hand) {
+		return hand.vInfVec.map(function (c) { return c.toFixed(3); }).join(",") + "@" + dateState.jd;
+	}
 
 	var trajLine = null, endDots = [], wpMarkers = [], burnArrows = [];
 	var depBurnHost = null;             // wraps the departure burn's vector editor (readout anchor)
@@ -418,7 +438,7 @@ export function createEphemerisView(opts) {
 	var originRow = document.createElement("div"); originRow.className = "mp-inrow";
 	var originLab = document.createElement("label"); originLab.textContent = "origin"; originRow.appendChild(originLab);
 	var originSel = document.createElement("select");
-	HELIO_BODIES.forEach(function (name) {
+	ORIGIN_BODIES.forEach(function (name) {
 		var opt = document.createElement("option"); opt.value = name; opt.textContent = name;
 		if (name === state.origin) { opt.selected = true; }
 		originSel.appendChild(opt);
@@ -441,42 +461,88 @@ export function createEphemerisView(opts) {
 	depHost.appendChild(handoffResetBtn);
 	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
 
-	// Departure-course override. Near the edge of the dive wedge both courses
-	// are genuinely viable, and the auto rule's flip moves the estimated launch
-	// date by about a day — which visibly reshapes the drawn arc mid-keystroke,
-	// via the Moon speed assistedBurn folds in. Pinning the profile makes that
-	// flip an informed choice instead. Earth-only, like the Moon widget it sits
-	// under; the "auto" option's label names the course the wedge rule is
-	// currently choosing.
-	var profileRow = document.createElement("div"); profileRow.className = "mp-inrow";
-	profileRow.style.display = "none";
-	var profileLab = document.createElement("label"); profileLab.textContent = "departure course";
-	profileRow.appendChild(profileLab);
-	var profileSel = document.createElement("select");
-	profileSel.title = "How the departure leg leaves Earth's system: with flyby drops to a low-perigee " +
-		"Oberth pass first, direct-out climbs straight out. Auto picks by where the Moon sits " +
-		"(dive when it's within the 75° wedge opposite the exit heading).";
-	[["auto", "auto"], ["dive-in", "with flyby"], ["direct-out", "direct-out"]].forEach(function (d) {
-		var opt = document.createElement("option"); opt.value = d[0]; opt.textContent = d[1];
-		profileSel.appendChild(opt);
+	// Departure course, for a Moon origin. More than one flight can deliver the
+	// same hand-off — a short course and a longer one, differing by days of
+	// release lead and by hundreds of m/s of what the release has to supply —
+	// so the choice is the planner's, not the solver's. The list is filled by
+	// "find courses" rather than on every keystroke, because enumerating them
+	// costs one full solve per candidate; between searches the drawn arc tracks
+	// whichever course is selected, which is what stops it jumping mid-edit.
+	var courseRow = document.createElement("div"); courseRow.className = "mp-inrow";
+	courseRow.style.display = "none";
+	var courseLab = document.createElement("label"); courseLab.textContent = "departure course";
+	courseRow.appendChild(courseLab);
+	var courseSel = document.createElement("select");
+	courseSel.title = "Which flight from the Moon delivers this hand-off. Each entry is a real " +
+		"integrated course: how many days before the hand-off the ship is released, and how fast " +
+		"the release has to be at " + Math.round(RELEASE_ALTITUDE / 1e3) + " km above the surface.";
+	courseRow.appendChild(courseSel);
+	var courseFindBtn = document.createElement("button");
+	courseFindBtn.type = "button";
+	courseFindBtn.className = "mp-btn mp-ghost";
+	courseFindBtn.textContent = "find courses";
+	courseFindBtn.title = "Search for every course that reaches this hand-off, cheapest release first.";
+	courseRow.appendChild(courseFindBtn);
+	depHost.appendChild(courseRow);
+
+	courseSel.addEventListener("change", function () {
+		var i = parseInt(courseSel.value, 10);
+		if (!lunarCourses || !lunarCourses[i]) { return; }
+		state.lunarCourse = i;
+		lunarWarm = lunarCourses[i];      // adopt it, and track from there
+		refresh();
 	});
-	profileRow.appendChild(profileSel); depHost.appendChild(profileRow);
-	profileSel.addEventListener("change", function () { state.depProfile = profileSel.value; refresh(); });
-	// Sync from the current refresh's estimate: show the row (Earth origin),
-	// and surface auto's current pick in its own option label.
-	function updateProfileRow(est) {
-		profileRow.style.display = "";
-		var autoOpt = profileSel.options[0];
-		autoOpt.textContent = (est.ok && state.depProfile === "auto")
-			? "auto (" + est.profile + ")" : "auto";
-		if (document.activeElement !== profileSel) { profileSel.value = state.depProfile; }
+	courseFindBtn.addEventListener("click", function () {
+		var hand = departureState();
+		if (!(hand.vInf > 1e-6)) { return; }
+		lunarCourses = searchCourses({ vInfVec: hand.vInfVec, jdHandoff: dateState.jd });
+		lunarCoursesKey = lunarKeyFor(hand);
+		state.lunarCourse = 0;
+		if (lunarCourses.length) { lunarWarm = lunarCourses[0]; }
+		refresh();
+	});
+
+	// Show the row for a Moon origin only, and describe the course actually
+	// being flown even when no search has been run.
+	function updateCourseRow(hand) {
+		if (state.origin !== "Moon") { courseRow.style.display = "none"; return; }
+		courseRow.style.display = "";
+		courseSel.innerHTML = "";
+		if (lunarCoursesKey !== null && lunarCoursesKey !== lunarKeyFor(hand)) {
+			lunarCourses = null; lunarCoursesKey = null;
+		}
+		var list = lunarCourses && lunarCourses.length ? lunarCourses : null;
+		if (!list) {
+			var opt = document.createElement("option");
+			opt.textContent = (hand.lunar && hand.lunar.ok)
+				? describeCourse(hand.lunar) : "not solved";
+			courseSel.appendChild(opt);
+			courseSel.disabled = true;
+			return;
+		}
+		courseSel.disabled = false;
+		list.forEach(function (c, i) {
+			var o = document.createElement("option");
+			o.value = String(i);
+			o.textContent = describeCourse(c) + (i === 0 && list.length > 1 ? " — cheapest" : "");
+			if (i === state.lunarCourse) { o.selected = true; }
+			courseSel.appendChild(o);
+		});
+	}
+	function describeCourse(c) {
+		return c.lead.toFixed(2) + " d lead, release " + Math.round(c.releaseSpeed) + " m/s";
 	}
 
 	// A different origin means a different SOI entirely, so an adopted exit
-	// point no longer describes anything — back to deriving it.
+	// point no longer describes anything — back to deriving it. The destination
+	// list narrows with the origin, and a lunar course belongs to the origin
+	// that had one.
 	originSel.addEventListener("change", function () {
 		state.origin = originSel.value;
 		state.handoff = { mode: "derived", offset: null };
+		state.lunarCourse = 0;
+		lunarWarm = null; lunarCourses = null; lunarCoursesKey = null;
+		rebuildDestinationOptions();
 		refresh();
 	});
 
@@ -489,13 +555,32 @@ export function createEphemerisView(opts) {
 	var destRow = document.createElement("div"); destRow.className = "mp-inrow";
 	var destLab = document.createElement("label"); destLab.textContent = "destination"; destRow.appendChild(destLab);
 	var destSel = document.createElement("select");
-	["(none)"].concat(HELIO_BODIES).forEach(function (name) {
-		var opt = document.createElement("option");
-		opt.value = name === "(none)" ? "" : name;
-		opt.textContent = name;
-		if (opt.value === state.leg.destination) { opt.selected = true; }
-		destSel.appendChild(opt);
-	});
+	// Which bodies this origin may aim at. Never the origin itself; and never
+	// Earth from the Moon, because that flight never leaves Earth's sphere of
+	// influence and so is not a coast between two heliocentric states at all —
+	// it is one cislunar transfer, which this tab does not author.
+	function destinationsFor(origin) {
+		return DESTINATION_BODIES.filter(function (name) {
+			if (name === origin) { return false; }
+			if (origin === "Moon" && name === "Earth") { return false; }
+			return true;
+		});
+	}
+	function rebuildDestinationOptions() {
+		var allowed = destinationsFor(state.origin);
+		if (state.leg.destination && allowed.indexOf(state.leg.destination) < 0) {
+			state.leg.destination = "";
+		}
+		destSel.innerHTML = "";
+		["(none)"].concat(allowed).forEach(function (name) {
+			var opt = document.createElement("option");
+			opt.value = name === "(none)" ? "" : name;
+			opt.textContent = name;
+			if (opt.value === state.leg.destination) { opt.selected = true; }
+			destSel.appendChild(opt);
+		});
+	}
+	rebuildDestinationOptions();
 	destRow.appendChild(destSel); depHost.appendChild(destRow);
 	var destInfo = muted(depHost, "");
 	var arrMoon = buildMoonWidget(depHost, "Moon phase at arrival");
@@ -789,29 +874,66 @@ export function createEphemerisView(opts) {
 	// A ship with no meaningful v-infinity has no asymptote to sit on and no
 	// flight to start, so it departs from the body's own position.
 	//
-	// Returns { body, r, v, jd, vInfVec, vInf, offset, adopted }.
+	// Returns { body, r, v, jd, vInfVec, vInf, offset, adopted, lunar }.
+	//
+	// `body` is the ESCAPE REFERENCE's state, not always the origin's: for a
+	// Moon origin the ship crosses EARTH's sphere of influence, at Earth's
+	// distance and carrying Earth's heliocentric velocity, so Earth is what the
+	// card's axes and its v∞ are measured against (Shared/frames.js's
+	// escapeReferenceFor). The Moon's own contribution is not lost by this —
+	// it is inside the integrated departure below, where it belongs.
 	function departureState() {
-		var body = O.bodyStateAtJD(GM_SUN, systems.get(state.origin).orbit, dateState.jd);
+		var refName = Frames.escapeReferenceFor(state.origin);
+		var body = Frames.bodyHelioState(refName, dateState.jd);
 		var b = state.leg.burn;
 		var v = O.applyBurn(body.r, body.v, b.pro || 0, b.nrm || 0, b.rad || 0);
 		var vInfVec = O.vSub(v, body.v), vInf = O.vMag(vInfVec);
 		var adopted = state.handoff.mode === "adopted" && state.handoff.offset;
-		var offset;
-		if (adopted) { offset = state.handoff.offset; }
-		else {
+		var offset, lunar = null;
+		if (adopted) {
+			offset = state.handoff.offset;
+		} else if (state.origin === "Moon" && vInf > 1e-6) {
+			// The exit point is FLOWN, not constructed: core/lunar-departure.js
+			// integrates Earth + Moon + Sun from the release to this hand-off and
+			// reports where the crossing actually is. A straight ray from the Moon
+			// misses that by 33,000-440,000 km, because the flight bends 6-56° on
+			// the way out and the Moon's own well is worth 0.9-2.2 km/s.
+			lunar = solveLunarDeparture({ vInfVec: vInfVec, jdHandoff: dateState.jd,
+			                              warm: lunarWarm });
+			if (lunar.ok) {
+				lunarWarm = lunar;
+				offset = lunar.exit.r;                 // geocentric, already on the SOI sphere
+			} else {
+				// No converged course to this hand-off. Draw from the ray so the
+				// coast still shows, and let the card say what happened.
+				lunarWarm = null;
+				offset = O.vScale(O.vUnit(vInfVec), originSoiRadius(state.origin));
+			}
+		} else {
 			var R = originSoiRadius(state.origin);
 			offset = (R > 0 && vInf > 1e-6) ? O.vScale(O.vUnit(vInfVec), R) : [0, 0, 0];
 		}
 		return { body: body, r: O.vAdd(body.r, offset), v: v, jd: dateState.jd,
-		         vInfVec: vInfVec, vInf: vInf, offset: offset, adopted: !!adopted };
+		         vInfVec: vInfVec, vInf: vInf, offset: offset, adopted: !!adopted,
+		         lunar: lunar };
 	}
 
 	// The departure estimate read BACKWARDS from the hand-off: how long before
 	// it the departure chain must release, and by which Earth course. Nothing
 	// here shapes the arc — it feeds the Moon widget and the profile row only.
 	function departureEstimateFor(hand) {
+		// A Moon origin has already been solved exactly in departureState —
+		// reuse that rather than paying for a second integration to answer the
+		// same question.
+		if (hand.lunar) {
+			return hand.lunar.ok
+				? { ok: true, seconds: hand.lunar.lead * DAY, days: hand.lunar.lead,
+				    jdLaunch: hand.lunar.jdRelease, profile: "lunar-integrated",
+				    vInf: hand.vInf, solve: hand.lunar }
+				: { ok: false, reason: hand.lunar.reason };
+		}
 		return estimateDeparture({ origin: state.origin, vInfVec: hand.vInfVec,
-			jdHandoff: dateState.jd, profile: state.depProfile });
+			jdHandoff: dateState.jd });
 	}
 
 	// The card carries no hand-off prose — the numbers it would have stated are
@@ -1387,7 +1509,10 @@ export function createEphemerisView(opts) {
 				waypoints: rw.entries.map(function (e) { return { days: e.days, burn: e.burn }; }),
 				arrivalJd: arrJd,
 				arrivalVInf: O.vMag(O.vSub(s.v, b.v)),
-				depProfile: state.depProfile
+				// A lunar departure's release epoch is solved, not estimated —
+				// carry the solved one across so the mission opens on the same
+				// course the planner was looking at.
+				releaseJd: (hand.lunar && hand.lunar.ok) ? hand.lunar.jdRelease : undefined
 			}
 		};
 	}
@@ -1928,7 +2053,7 @@ export function createEphemerisView(opts) {
 		// keep the marker on the (possibly reshaped) path + refresh its card
 		updateMarker();
 
-		updateMoonWidgets(dep, depEst);
+		updateMoonWidgets(dep, depEst, hand);
 	}
 
 	// Feed the Moon widgets from the CURRENT refresh's numbers. Departure
@@ -1940,17 +2065,26 @@ export function createEphemerisView(opts) {
 	// meaningful v∞ yet, the glyph/speed read at the clock and the days bar
 	// idles. Arrival side mirrors it at the marker's rendezvous (the catch
 	// date), when the destination is Earth and a rendezvous exists to read.
-	function updateMoonWidgets(dep, est) {
-		if (state.origin === "Earth") {
+	// `dep` is the ESCAPE body's own state (what the Moon's prograde speed is
+	// measured against); `hand` is the full hand-off, which is what carries the
+	// lunar solve. They are different objects and the course row needs the
+	// second one.
+	function updateMoonWidgets(dep, est, hand) {
+		if (state.origin === "Moon") {
+			// Departing FROM the Moon: the phase is where the ship starts, and
+			// the days bar is the solved release lead, not an assumption.
 			var jdAt = est && est.ok ? est.jdLaunch : dateState.jd;
 			depMoon.show({
 				elong: moonElongationDeg(jdAt),
 				rel: moonProgradeSpeed(jdAt, dep.v),
 				days: (est && est.ok) ? est.days : null,
-				note: (est && est.ok) ? est.profile + " course assumed" : null
+				note: (est && est.ok)
+					? "release " + Math.round(est.solve.releaseSpeed) + " m/s at "
+					  + Math.round(RELEASE_ALTITUDE / 1e3) + " km"
+					: null
 			});
-			updateProfileRow(est || { ok: false });
-		} else { depMoon.hide(); profileRow.style.display = "none"; }
+		} else { depMoon.hide(); }
+		updateCourseRow(hand);
 
 		var showArr = false;
 		if (state.leg.destination === "Earth" && state.marker && trajTotalT > 0) {

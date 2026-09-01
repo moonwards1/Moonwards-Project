@@ -47,7 +47,7 @@ export var EXAMPLE_MISSIONS = [
 	},
 	{
 		id: "earth-mars-reference",
-		label: "Earth → Mars 2033 (clean reference)",
+		label: "Moon → Mars 2033 (clean reference)",
 		blurb: "Compliant by construction — zero comply-boundary warnings at " +
 			"either end, plus a configured arrival-skyhook catch.",
 		mission: earthMarsReferenceMission,
@@ -71,7 +71,7 @@ export var EXAMPLE_MISSIONS = [
 	},
 	{
 		id: "earth-venus-overshoot",
-		label: "Earth → Venus 2036 (overshoot)",
+		label: "Moon → Venus 2036 (overshoot)",
 		blurb: "The most demanding waypoint-tuning case — swings out past " +
 			"Mars' orbit before falling back to catch Venus, using both " +
 			"waypoint slots for genuinely different jobs.",

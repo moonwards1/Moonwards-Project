@@ -110,9 +110,11 @@ export function deliveredFlight(spec) {
 
 	// v-infinity OUT is a property of the hand-off alone — it needs no flight,
 	// so it survives even a coast that will not compute.
-	var originSys = systems.get(spec.origin);
+	// Against the ESCAPE body, not always the origin: a lunar departure hands
+	// over at Earth's SOI edge and its v-infinity is Earth-relative there.
+	var originSys = systems.get(Frames.escapeReferenceFor(spec.origin));
 	if (originSys) {
-		out.vInfOut = O.vMag(O.vSub(d.v, Frames.bodyHelioState(spec.origin, d.jd).v));
+		out.vInfOut = O.vMag(O.vSub(d.v, Frames.bodyHelioState(Frames.escapeReferenceFor(spec.origin), d.jd).v));
 	}
 
 	if (!isFinite(spec.horizonJd)) {

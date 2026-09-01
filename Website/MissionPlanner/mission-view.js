@@ -41,6 +41,7 @@ import { computeArrivalSeam } from "./core/arrival-seam.js";
 import { releaseEpochFor } from "./core/release-epoch.js";
 import { systems, constants } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
+import { Frames } from "../Shared/frames.js";
 import { Exchange, encodeFragmentZ } from "../Shared/exchange.js";
 import { packMissionLink } from "./ui/share-link.js";
 import { createHistory, recordUpdate, packSets, entriesOf, changesBetween } from "./core/revisions.js";
@@ -89,8 +90,8 @@ var FLOAT_ZOOM = 0.5;
 // "departure" and "arrival" are per-mission: each view builds
 // PHASE_FRAME.departure from its own frozen plan's `origin` body
 // (missionOriginBody/departureFrameFor below) — "body:Earth-Moon" for an Earth
-// origin, or a generic buildBodyFrame(origin) for any other HELIO_BODIES
-// origin — and PHASE_FRAME.arrival from the plan's arrival body, if
+// or Moon origin, or a generic buildBodyFrame(origin) for any other origin —
+// and PHASE_FRAME.arrival from the plan's arrival body, if
 // it commits to one. A mission with no arrival commitment (a destination-less
 // plan) keeps the Arrival phase button disabled.
 //
@@ -118,9 +119,11 @@ function missionOriginBody(world) {
 }
 
 // The departure phase's real frame id for a given origin body: the Earth-Moon
-// frame for Earth, else "body:<origin>" (scene-frames.js's buildBodyFrame).
+// frame for Earth or the MOON — a lunar departure's interesting geometry is
+// the escape from the Earth system, and the Moon's own 66,000 km sphere makes
+// a poor stage for it — else "body:<origin>" (scene-frames.js's buildBodyFrame).
 function departureFrameFor(origin) {
-	return origin === "Earth" ? "body:Earth-Moon" : "body:" + origin;
+	return (origin === "Earth" || origin === "Moon") ? "body:Earth-Moon" : "body:" + origin;
 }
 
 // The mission's arrival body: the frozen plan's own arrival commitment, read
@@ -967,7 +970,7 @@ export function createMissionView(opts) {
 		var show = workspace.phase === "departure" && anchorJd !== null;
 		depInfoEl.style.display = show ? "" : "none";
 		if (!show) { return; }
-		var state = O.bodyStateAtJD(GM_SUN, systems.get(originBody).orbit, anchorJd);
+		var state = Frames.bodyHelioState(originBody, anchorJd);
 		var speed = O.vMag(state.v);
 		var incl = Math.asin(Math.max(-1, Math.min(1, state.v[2] / speed))) * 180 / Math.PI;
 		var d = O.dateFromJulian(anchorJd);

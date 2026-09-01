@@ -13,10 +13,11 @@
  *
  *   THE DEPARTURE SCAFFOLD is a base + an integrated leg with an EMPTY carrier
  *   slot, which mission-view.js's "Departure technology" card fills:
- *   moon-platform + departure-leg for an Earth origin — the Moon is always the
- *   lunar-departure platform — or just body-departure-leg for any other origin,
- *   where the skyhook self-originates and there is no separate platform. Empty,
- *   the leg reports "no carrier".
+ *   moon-platform + departure-leg for a MOON origin — the Moon is the platform
+ *   a lunar departure rides, and its escape needs Earth + Moon + Sun physics —
+ *   or just body-departure-leg for any other origin, Earth included, where the
+ *   skyhook self-originates and there is no separate platform. Empty, the leg
+ *   reports "no carrier".
  *
  *   THE ARRIVAL-TECH SLOT is empty too: arrival-leg is simply the terminal
  *   stage until an arrival technology is loaded. The departure slot being
@@ -74,12 +75,12 @@
  *                                 //   whatever closest approach it measures
  *   arrivalVInf,                  // |ship v − destination v| there (m/s)
  *   windowDays,                   // optional — hand-off window half-width
- *   depProfile                    // optional — the tab's Earth-course
- *                                 //   override ("dive-in"/"direct-out";
- *                                 //   absent/"auto" = the wedge rule), passed
- *                                 //   through to estimateDeparture so the
- *                                 //   seeded release epoch matches the course
- *                                 //   the planner was shown
+ *   releaseJd                     // optional — the release epoch the planner
+ *                                 //   was actually shown. A Moon origin has
+ *                                 //   solved its whole departure to place the
+ *                                 //   hand-off, so it passes that epoch in
+ *                                 //   rather than letting it be re-estimated
+ *                                 //   into a different answer
  * }
  *
  * Waypoints are sorted chronologically and any at/after the rendezvous are
@@ -111,9 +112,13 @@ var O = OrbitalMath;
 
 export var DEFAULT_WINDOW_DAYS = 1;
 
-// The origin body's heliocentric velocity at an epoch — the reference the
-// plan's v∞ is measured against, read the same way frozen-plan.js reads it.
-function bodyHelioV(origin, jd) { return Frames.bodyHelioState(origin, jd).v; }
+// The heliocentric velocity the plan's v∞ is measured against at an epoch,
+// read the same way frozen-plan.js reads it. That reference is the ESCAPE body,
+// which is the origin itself for every origin but the Moon — a lunar departure
+// hands over at Earth's SOI edge, carrying Earth's heliocentric velocity.
+function bodyHelioV(origin, jd) {
+	return Frames.bodyHelioState(Frames.escapeReferenceFor(origin), jd).v;
+}
 
 function copyBurn(b) {
 	b = b || {};
@@ -139,29 +144,34 @@ export function freezeMissionWorld(spec) {
 	// leads the hand-off by the departure-duration estimate — both epochs name
 	// the SOI exit, so the crossing is counted once. The plan's own window
 	// half-width defaults to ±1 d.
+	// A Moon origin already knows its release epoch exactly — the Ephemeris tab
+	// solved the whole departure to place the hand-off, so re-deriving it here
+	// would be a second, worse answer to a settled question. Every other origin
+	// takes the estimate.
 	var est = estimateDeparture({
 		origin: spec.origin,
 		vInfVec: O.vSub(handoff.v, bodyHelioV(spec.origin, handoff.jd)),
-		jdHandoff: handoff.jd,
-		profile: spec.depProfile
+		jdHandoff: handoff.jd
 	});
 	var windowDays = (isFinite(spec.windowDays) && spec.windowDays > 0)
 		? spec.windowDays : DEFAULT_WINDOW_DAYS;
-	var releaseJd = est.ok ? est.jdLaunch : handoff.jd;
+	var releaseJd = isFinite(spec.releaseJd) ? spec.releaseJd
+		: (est.ok ? est.jdLaunch : handoff.jd);
 
 	// Assemble the profile with sequential stage ids. The DEPARTURE SCAFFOLD
 	// comes first, with an EMPTY carrier slot the mission view's departure-
-	// technology card fills: Earth departs from the Moon, so its fixed base is
-	// moon-platform + the geocentric departure-leg; any other origin departs its
-	// body directly, so just the generic body-departure-leg (a skyhook there
-	// self-originates — no separate platform). Empty, the leg reports
-	// "no carrier"; frozen-plan is a compliance boundary (recompute.js), so that
-	// never blanks the coast.
+	// technology card fills: a MOON origin departs from the Moon, so its fixed
+	// base is moon-platform + the geocentric departure-leg (Earth + Moon + Sun,
+	// the physics a cislunar escape needs); every other origin — Earth now
+	// included — departs its own body directly, so just the generic
+	// body-departure-leg, where a skyhook self-originates and there is no
+	// separate platform. Empty, the leg reports "no carrier"; frozen-plan is a
+	// compliance boundary (recompute.js), so that never blanks the coast.
 	var stages = [];
 	var n = 1;
 	function add(moduleId, params) { stages.push({ id: "stg-" + (n++), moduleId: moduleId, params: params }); }
 
-	if (spec.origin === "Earth") {
+	if (spec.origin === "Moon") {
 		add("moon-platform", {});
 		add("departure-leg", { waypoints: [], releaseJd: releaseJd });
 	} else {

@@ -1,5 +1,5 @@
 /* MissionPlanner/modules/moon-platform — the Moon as the departure stack's
- * top card, for missions that depart from Earth.
+ * top card, for missions that depart from the Moon.
  *
  * The Moon itself is the first CARRIER: ~1 km/s of geocentric velocity plus
  * position that every lunar departure rides for free. This module makes that a
@@ -7,7 +7,7 @@
  * carrier chain's base (Shared/kinematic-chain.js's `emptyChain("Moon")`) for
  * the carrier stages downstream to extend (the skyhook appends its rotor;
  * departure-leg integrates the result).
- * Non-Earth origins have no platform stage at all — their skyhook
+ * Every other origin has no platform stage at all — their skyhook
  * self-originates; see core/freeze.js's scaffold.
  *
  * READ-ONLY by design: there is no release-date knob here. The release epoch

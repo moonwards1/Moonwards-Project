@@ -89,7 +89,7 @@ export var earthVenusOvershootMission = {
 			id: "stg-4",
 			moduleId: "frozen-plan",
 			params: {
-				origin: "Earth",
+				origin: "Moon",
 				departure: {
 					r: [-30678747876.00545, 143236804776.33505, -2489001.4901082767],
 					v: [-33918.082188770226, -8439.468796011004, -86.246699961888],

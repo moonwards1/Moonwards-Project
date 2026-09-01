@@ -165,12 +165,16 @@ export function soiRadiusAU(sys, primaryMassKg, AU) {
 // can be a top-level group (its world position is just its local position)
 // or something nested under a moving parent (e.g. a body positioned inside a
 // spin/position group) — `updateLabels` below tracks either the same way.
-export function addLabel(labelLayer, labelList, name, obj, className) {
+// `gate` is optional: a predicate consulted each frame, the label hiding
+// whenever it returns false. Used for a body that should only announce itself
+// when the camera is close enough for it to be a distinct thing — the Moon in
+// the heliocentric frame, which otherwise sits permanently on top of Earth.
+export function addLabel(labelLayer, labelList, name, obj, className, gate) {
 	var el = document.createElement("span");
 	el.className = className;
 	el.textContent = name;
 	labelLayer.appendChild(el);
-	labelList.push({ el: el, obj: obj });
+	labelList.push({ el: el, obj: obj, gate: gate || null });
 }
 
 var _lp = new THREE.Vector3();
@@ -180,6 +184,7 @@ export function updateLabels(camera, holderEl, labelList) {
 	var w = holderEl.clientWidth, h = holderEl.clientHeight;
 	for (var i = 0; i < labelList.length; i++) {
 		var L = labelList[i];
+		if (L.gate && !L.gate()) { L.el.style.display = "none"; continue; }
 		L.obj.getWorldPosition(_lp).project(camera);
 		if (_lp.z < 1 && _lp.x > -1.06 && _lp.x < 1.06 && _lp.y > -1.06 && _lp.y < 1.06) {
 			L.el.style.display = "block";
@@ -262,12 +267,30 @@ export function createSunBody(scene, scaleList, opts) {
 	return descriptor;
 }
 
+var _sepA = null, _sepB = null;
+
+// Screen separation, in pixels, between two Object3Ds under `camera`.
+function screenSeparationPx(camera, holderEl, objA, objB) {
+	var a = _sepA || (_sepA = new THREE.Vector3());
+	var b = _sepB || (_sepB = new THREE.Vector3());
+	objA.getWorldPosition(a).project(camera);
+	objB.getWorldPosition(b).project(camera);
+	var w = holderEl.clientWidth, h = holderEl.clientHeight;
+	return Math.hypot((a.x - b.x) * 0.5 * w, (a.y - b.y) * 0.5 * h);
+}
+
 // Per-frame: show each Kepler body / SOI as a real sphere when big enough on
 // screen, otherwise collapse it to its bright pixel. `scaleList` entries are
 // the descriptors `createBody`/`createSunBody` push (or an equivalent shape).
 // opts: wantSOI (bool, whether SOI shells should show at all), pxBody
 //   (optional, default 1.4 — px threshold for the core sphere), pxSoi
 //   (optional, default 2.0 — px threshold for the SOI shell).
+//
+// A descriptor carrying `nearOnly` ({ relativeTo, minPx }) disappears
+// ENTIRELY — sphere, point and SOI — until it is at least `minPx` from the
+// body it is measured against. A satellite drawn at solar-system scale is
+// otherwise a permanent second dot sitting on its primary, claiming to be a
+// separate thing the camera can never resolve.
 export function updateScales(camera, holderEl, scaleList, opts) {
 	opts = opts || {};
 	var pxBody = opts.pxBody == null ? 1.4 : opts.pxBody;
@@ -276,6 +299,13 @@ export function updateScales(camera, holderEl, scaleList, opts) {
 	var f = pixelScaleFactor(camera, holderEl);
 	for (var i = 0; i < scaleList.length; i++) {
 		var b = scaleList[i];
+		if (b.nearOnly && screenSeparationPx(camera, holderEl, b.group, b.nearOnly.relativeTo)
+		                  < b.nearOnly.minPx) {
+			b.core.visible = false;
+			b.point.visible = false;
+			if (b.soi) { b.soi.visible = false; }
+			continue;
+		}
 		var dist = camera.position.distanceTo(b.group.position) || 1e-9;
 		var showCore = (b.radiusAU / dist * f) >= pxBody;
 		b.core.visible = showCore;
@@ -305,7 +335,10 @@ export function pickBodyName(camera, holderEl, e, scaleList, pxThreshold) {
 		-(((e.clientY - rect.top) / rect.height) * 2 - 1));
 	var rc = _pickRaycaster || (_pickRaycaster = new THREE.Raycaster());
 	rc.setFromCamera(ndc, camera);
-	var meshes = scaleList.map(function (b) { return b.core; });
+	// A body currently hidden by a `nearOnly` gate isn't on screen, so it isn't
+	// clickable either — otherwise an invisible Moon would steal Earth's clicks.
+	var shown = scaleList.filter(function (b) { return b.core.visible || b.point.visible; });
+	var meshes = shown.map(function (b) { return b.core; });
 	var hits = rc.intersectObjects(meshes, true);
 	if (hits.length) {
 		for (var i = 0; i < scaleList.length; i++) {
@@ -316,12 +349,12 @@ export function pickBodyName(camera, holderEl, e, scaleList, pxThreshold) {
 	var px = e.clientX - rect.left, py = e.clientY - rect.top;
 	var best = null, bestD = pxThreshold == null ? 10 : pxThreshold;
 	var wp = _pickWorldPos || (_pickWorldPos = new THREE.Vector3());
-	for (var j = 0; j < scaleList.length; j++) {
-		scaleList[j].group.getWorldPosition(wp).project(camera);
+	for (var j = 0; j < shown.length; j++) {
+		shown[j].group.getWorldPosition(wp).project(camera);
 		if (wp.z > 1) { continue; }
 		var sx = (wp.x * 0.5 + 0.5) * rect.width, sy = (-wp.y * 0.5 + 0.5) * rect.height;
 		var d = Math.hypot(sx - px, sy - py);
-		if (d < bestD) { bestD = d; best = scaleList[j].name; }
+		if (d < bestD) { bestD = d; best = shown[j].name; }
 	}
 	return best;
 }

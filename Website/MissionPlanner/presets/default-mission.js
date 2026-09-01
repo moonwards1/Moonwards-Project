@@ -3,7 +3,7 @@
 // (planner.js's initialMissions). Also the first entry in the example-mission
 // dropdown (presets/examples-catalog.js).
 //
-//   release   2031-12-19 ~16:20 UT (jd 2463220.1804 — the plan's frozen
+//   release   2031-12-19 ~19:06 UT (jd 2463220.2961 — the plan's frozen
 //             release ANCHOR; see TIMING below) — lunar skyhook, CoM 275 km,
 //             release from the tether top at 6000 km, phase 92 deg
 //   injection 2031-12-20 06:00 UT (jd 2463220.75) — the epoch the plan's
@@ -41,9 +41,11 @@
 // where it was before the hand-off moved out.
 //
 // TIMING: the departure leg's releaseJd below is seeded the way core/freeze.js
-// seeds it — the hand-off epoch minus core/departure-estimate.js's estimate for
-// the plan's own required v∞ (6.55 km/s → dive-in profile, 2.2041 d) =
-// 2463222.3845 − 2.2041 = 2463220.180402478. Both epochs name the SOI exit, so
+// seeds it. This mission departs the MOON, so that seed is not an estimate at
+// all: core/lunar-departure.js integrates Earth + Moon + Sun from the release
+// out to Earth's SOI and solves for the flight that delivers the plan's own
+// required v∞ (6.55 km/s), giving a lead of 2.0884 d =
+// 2463222.3845 − 2.0884 = 2463220.296116752. Both epochs name the SOI exit, so
 // the crossing is counted once, not once by the estimate and again by the
 // coast. The epoch belongs to the departure phase, not to the plan
 // (core/release-epoch.js).
@@ -92,7 +94,7 @@ export var defaultMission = {
 			// The headless integrated departure flight.
 			id: "stg-3",
 			moduleId: "departure-leg",
-			params: { releaseJd: 2463220.180402478, waypoints: [] }
+			params: { releaseJd: 2463220.296116752, waypoints: [] }
 		},
 		{
 			// The frozen flight plan: the mission's commitment, shaped exactly
@@ -105,7 +107,7 @@ export var defaultMission = {
 			id: "stg-4",
 			moduleId: "frozen-plan",
 			params: {
-				origin: "Earth",
+				origin: "Moon",
 				departure: {
 					r: [660083682.164505, 147206054850.250427, 33427377.406683],
 					v: [-36804.3535975916, 557.9835955893, 236.6369368047],

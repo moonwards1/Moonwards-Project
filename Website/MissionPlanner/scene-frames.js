@@ -34,11 +34,27 @@ var EARTH = systems.get("Earth");
 var MOON = systems.get("Moon");
 var GM_SUN = SUN.GM;
 
-// Exported so callers building an origin/destination select (ephemeris-view.js)
-// offer exactly the bodies buildHelioFrame() actually draws — a body missing
-// from the frame has no bodyNode()/gizmo home to hang a leg off of.
+// The bodies drawn from a Sun-centred Kepler ellipse, each with its own orbit
+// ring. Also the bodies a leg may be aimed AT: an arrival is judged against
+// the destination's orbit ellipse (core/proximity.js), which is a thing only a
+// body on this list has.
 export var HELIO_BODIES = ["Mercury", "Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
 	"Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"];
+
+export var DESTINATION_BODIES = HELIO_BODIES;
+
+// The bodies a mission may depart FROM. The Moon is one, and is not on the
+// list above: it has no heliocentric ellipse, it is drawn from the lunar
+// ephemeris, and it carries no orbit ring at solar-system scale because its
+// true heliocentric path is a wobble narrower than Earth's own ring is wide.
+// Departing it is still ordinary — Shared/frames.js's `escapeReferenceFor`
+// says the SOI such a departure leaves is Earth's.
+export var ORIGIN_BODIES = HELIO_BODIES.concat(["Moon"]);
+
+// How far, in screen pixels, the Moon must be from Earth before it is drawn at
+// all in the heliocentric frame. Below this it is not a body the camera can
+// resolve, only a second dot on top of the first.
+export var MOON_MIN_SEPARATION_PX = 15;
 
 export function makeStars(radius, count) {
 	var g = new THREE.BufferGeometry();
@@ -98,6 +114,18 @@ export function buildHelioFrame() {
 		scene.add(createKeplerOrbitRing({
 			orbit: sys.orbit, GM: GM_SUN, color: new THREE.Color(sys.color || "#bcc3d0"), AU: AU }));
 	});
+
+	// The Moon: a real body here because a mission can depart from it, but no
+	// orbit ring and nothing on screen until the camera is close enough to
+	// separate it from Earth. Its SOI is measured against Earth, the body it
+	// actually orbits, not the Sun.
+	var moonBody = createBody(scene, scaleList, "Moon", {
+		sys: MOON, AU: AU, primaryMass: EARTH.mass });
+	moonBody.nearOnly = { relativeTo: bodyGroups.Earth, minPx: MOON_MIN_SEPARATION_PX };
+	bodyGroups.Moon = moonBody.group;
+	brAddLabel(labelLayer, labelList, "Moon", moonBody.group, "mp-label", function () {
+		return moonBody.core.visible || moonBody.point.visible;
+	});
 	scaleList.forEach(function (b) {
 		pickMeshes.push(b.core);
 		if (b.soiAU > 0) {
@@ -124,6 +152,10 @@ export function buildHelioFrame() {
 				var s = O.bodyStateAtJD(GM_SUN, systems.get(name).orbit, jd);
 				bodyGroups[name].position.set(s.r[0] / AU, s.r[1] / AU, s.r[2] / AU);
 			});
+			// The Moon rides Earth: its real geocentric offset, in scene units.
+			var mg = LE.moonVector(jd);                       // km, geocentric
+			bodyGroups.Moon.position.copy(bodyGroups.Earth.position)
+				.add(new THREE.Vector3(mg[0] * 1e3 / AU, mg[1] * 1e3 / AU, mg[2] * 1e3 / AU));
 			if (this.focusBody && bodyGroups[this.focusBody]) {
 				this.cam.target.copy(bodyGroups[this.focusBody].position);
 			}

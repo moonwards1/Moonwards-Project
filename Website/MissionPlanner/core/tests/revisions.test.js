@@ -93,10 +93,10 @@ test("an unfamiliar state label is kept as a later plan, read as 'updated'", fun
 test("planSummaryOf reads the shipped mission's stored values", function () {
 	var rows = planSummaryOf(defaultMission).rows;
 	function val(k) { return rows.filter(function (r) { return r.key === k; })[0].value; }
-	assert.equal(val("origin"), "Earth");
+	assert.equal(val("origin"), "Moon");
 	assert.equal(val("destination"), "Ceres");
 	assert.equal(val("handoffJd"), 2463222.384503543);
-	assert.equal(val("releaseJd"), 2463220.180402478);
+	assert.equal(val("releaseJd"), 2463220.296116752);
 	assert.equal(val("arrivalVInf"), 3776.34);
 	assert.equal(val("legDays"), 748.365496);
 	assert.equal(val("planWps"), 1);

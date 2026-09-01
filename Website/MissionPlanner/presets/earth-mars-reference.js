@@ -95,7 +95,7 @@ export var earthMarsReferenceMission = {
 			id: "stg-4",
 			moduleId: "frozen-plan",
 			params: {
-				origin: "Earth",
+				origin: "Moon",
 				departure: {
 					r: [-55250072397.27843, 135366879897.14548, -26223756.651247278],
 					v: [-27527.926707411603, -16220.510078668216, -68.4829236571825],

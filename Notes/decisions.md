@@ -778,3 +778,52 @@ figures stay in the report's flight table, which is recomputed live. A
 technology's dials are enumerated from whatever params its stage holds, keyed
 by module and occurrence rather than chain position: a technology added above
 another must not make the other's dials read as changed.
+
+THE MOON IS AN ORIGIN, AND ITS DEPARTURE IS FLOWN, NOT CONSTRUCTED
+(2026-09-01). A mission may depart from the Moon. That makes it the one origin
+whose departure phase ends at a DIFFERENT body's sphere of influence than the
+one it left: a ship leaving the Moon is still 850,000 km inside Earth's SOI,
+so the hand-off is at Earth's edge and its v∞ is measured against EARTH's
+heliocentric velocity. `Shared/frames.js` holds both halves of that split —
+`bodyHelioState` resolves the Moon's POSITION through the lunar ephemeris (a
+second hop; it has no Sun-centred ellipse), while `escapeReferenceFor` answers
+the separate question of which body's velocity a hand-off is measured against.
+Measuring against the Moon's own velocity instead would fold its monthly
+1 km/s swing into compliance, so the same plan would grade differently by
+lunar phase.
+
+The Ephemeris tab does not CONSTRUCT a lunar exit point. Every other origin
+puts the hand-off one SOI radius along the outbound heading; from the Moon
+that is wrong by 33,000–440,000 km, because the flight bends 6–56° on the way
+out and lands 75–130° around the sphere from the Moon's own direction. So
+`core/lunar-departure.js` integrates the real Earth+Moon+Sun escape
+(`Shared/geo-leg.js`) and the exit point is wherever the crossing lands. Three
+terms make that necessary, each worth 0.9–2.2 km/s at the hand-off: the Moon's
+1,046 m/s orbital velocity (which is NOT spent climbing out — energy
+conservation carries it through slightly amplified; delete it and a 1.4 km/s
+release never escapes Earth at all), the Moon's own well (2,311 m/s escape at
+a 100 km release), and Earth's remaining well from lunar distance. The solve
+is a damped Newton with Broyden updates on the release velocity and lead —
+~15 integrations cold, ~4 warm — and it has SEVERAL roots: distinct courses
+reaching the same hand-off at materially different release cost (856 m/s apart
+in the case that first showed it). Those roots ARE the departure courses, so
+the card enumerates them and the planner picks; the warm solve tracks one so
+the drawn arc never jumps course mid-keystroke.
+
+EARTH IS AN ORDINARY ORIGIN (2026-09-01). It departs from Earth the way Mars
+departs from Mars: the generic `body-departure-leg`, a self-originating
+skyhook, no platform stage. Only a MOON origin gets `moon-platform` +
+the geocentric `departure-leg`. This replaces the old arrangement where an
+"Earth" origin silently meant a lunar departure — the shipped mission was
+titled "Moon → Ceres" while storing origin "Earth". With it goes the
+dive-in/direct-out Moon-wedge estimate, which existed to time that lunar
+departure and is superseded by solving it.
+
+v∞ IS ASYMPTOTIC WHEREVER A HYPERBOLA FORMULA TAKES IT (2026-09-01). The
+Departure card's vector is the ship's velocity AT the SOI edge, where the
+primary's potential is not yet spent — 929 m/s worth for Earth. Feeding that
+edge speed into the two-body SOI-crossing helpers, which want the true
+hyperbolic excess, overstated the energy and shortened the estimate by 8% for
+a fast departure and 24% for a slow one. `departure-estimate.js`'s
+`asymptoticVInf` converts first. The coast is unaffected — it propagates a
+full state, not an asymptote.

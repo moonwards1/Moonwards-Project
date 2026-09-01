@@ -201,6 +201,16 @@ function vec3Finite(a) {
 
 function burnMag(b) { return Math.hypot(b.pro || 0, b.rad || 0, b.nrm || 0); }
 
+// Every v∞ in this file — required and delivered alike — is measured against
+// the ESCAPE body, the one whose sphere of influence the departure phase
+// leaves. That is the origin itself for every origin but the Moon, where the
+// hand-off happens at EARTH's SOI edge, carrying Earth's heliocentric
+// velocity. Measuring a lunar departure against the Moon's own velocity would
+// fold the Moon's monthly 1 km/s swing into the comparison, so the same plan
+// would grade differently depending on lunar phase.
+function escapeBody(origin) { return Frames.escapeReferenceFor(origin); }
+function escapeHelioV(origin, jd) { return Frames.bodyHelioState(escapeBody(origin), jd).v; }
+
 function copyBurn(b) {
 	b = b || {};
 	return { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 };
@@ -224,11 +234,11 @@ export function planSummary(params) {
 	var p = Object.assign({}, defaultParams, params);
 	var arr = p.arrival || {};
 	var dep = p.departure || {};
-	var origin = systems.get(p.origin);
+	var origin = systems.get(escapeBody(p.origin));
 
 	var vInfIn = null;
 	if (vec3Finite(dep.r) && vec3Finite(dep.v) && isFinite(dep.jd) && origin && origin.orbit) {
-		vInfIn = O.vMag(O.vSub(dep.v, Frames.bodyHelioState(p.origin, dep.jd).v));
+		vInfIn = O.vMag(O.vSub(dep.v, escapeHelioV(p.origin, dep.jd)));
 	}
 	var vInfOut = isFinite(arr.vInf) ? arr.vInf : null;
 	var waypointDv = 0;
@@ -279,14 +289,14 @@ export function computeCompliance(params, data) {
 	// Required: the plan's v-infinity out, measured against the origin's
 	// heliocentric velocity at the plan's departure epoch. Derived from the
 	// frozen state rather than stored, so the two can never disagree.
-	var reqVec = O.vSub(dep.v, Frames.bodyHelioState(p.origin, dep.jd).v);
+	var reqVec = O.vSub(dep.v, escapeHelioV(p.origin, dep.jd));
 	var required = { vInf: O.vMag(reqVec), vInfVec: reqVec, jd: dep.jd };
 
 	if (!data) { return { ok: true, required: required, delivered: null, rows: [] }; }
 
 	// Delivered: the same measurement on the tech's hand-off state, against
 	// the origin's velocity at the TECH's epoch (it releases when it releases).
-	var delVec = O.vSub(data.v, Frames.bodyHelioState(p.origin, data.jd).v);
+	var delVec = O.vSub(data.v, escapeHelioV(p.origin, data.jd));
 	// `state` is the delivered hand-off itself, carried through so a view can
 	// offer to ADOPT it as the plan's new departure (mission-view.js's
 	// compliance bar). Comparing is still all this module does — adopting is a

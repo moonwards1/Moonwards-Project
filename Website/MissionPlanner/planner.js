@@ -44,7 +44,7 @@ import { createEphemerisView } from "./ephemeris-view.js";
 // fetched rather than bundled). Every built module is eager-loaded here, so
 // ui/tech-options.js's own moduleUrl fallback rarely fires. -------------------
 var MODULE_URLS = [
-	// The departure stack's fixed base for Earth-origin missions.
+	// The departure stack's fixed base for Moon-origin missions.
 	"./modules/moon-platform/moon-platform.js",
 	// The ONE skyhook platform in its departure role: serves the Moon (riding
 	// moon-platform, escaping Earth via departure-leg) and any HELIO_BODIES

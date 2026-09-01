@@ -324,7 +324,8 @@ export function solveDepartureTarget(spec) {
 		return out;
 	}
 
-	var bodyV = Frames.bodyHelioState(spec.origin, d.jd).v;
+	// The escape body, not always the origin — see Shared/frames.js.
+	var bodyV = Frames.bodyHelioState(Frames.escapeReferenceFor(spec.origin), d.jd).v;
 	var vInfVec = O.vSub(sol.v, bodyV);
 
 	// HOW FAR THE TECHNOLOGY HAS TO MOVE, reported so the mission report can

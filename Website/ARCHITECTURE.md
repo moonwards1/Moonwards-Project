@@ -193,9 +193,20 @@ $$
 - $\vec R_B(jd),\ \vec V_B(jd)$ — body $B$'s heliocentric state at the packet's epoch (from `OrbitalMath.bodyStateAtJD`)
 - $jd$ — the packet's Julian-date epoch of validity
 
-This conversion gets promoted into `Shared/` (either into `math-utils.js` or a
-small `frames.js`) so there is exactly one blessed implementation, with Node
-tests.
+This conversion lives in `Shared/frames.js`, the one blessed implementation,
+with Node tests. Most bodies resolve $\vec R_B$ in a single hop from a
+Sun-centred orbit record; a **satellite** takes a second, its primary's state
+plus its own offset — the Moon has no heliocentric ellipse and its true
+heliocentric path is not a conic at all, so `frames.js` resolves it through
+Earth plus the lunar ephemeris.
+
+Separately, `frames.js` answers which body a departure from $B$ actually
+**escapes** (`escapeReferenceFor`). For every body with its own heliocentric
+orbit that is itself; for the Moon it is Earth, because a ship leaving the
+Moon is still deep inside Earth's sphere of influence and its departure phase
+does not end until it crosses Earth's. Position and velocity genuinely take
+different answers for a satellite origin, so the two lookups stay separate
+rather than collapsing into one "origin body".
 
 ## Mission profiles and recompute rules
 

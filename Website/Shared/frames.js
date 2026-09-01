@@ -18,20 +18,50 @@
 // packet-level convention this backs: a ship-state packet's `frame` field is
 // either `"helio"` or `"body:<Name>"`.
 //
-// This only handles one level of lift/drop — B must have its own heliocentric
-// orbit record (`systems.get(B).orbit`, centred on the Sun), not a moon
-// orbiting a planet. That matches every plotter that currently needs this
-// (Solar-System-Trajectory-Plotter's bodies, Mars-Phobos's Mars-relative
-// legs); a moon-relative frame (e.g. "body:Phobos") is out of scope until a
-// tool actually needs one, at which point this file is the place to add a
-// second hop rather than resolving it ad hoc in a calculator.
+// Most bodies resolve in one hop: B has its own heliocentric orbit record
+// (`systems.get(B).orbit`, centred on the Sun). The Moon takes a SECOND hop —
+// Earth's heliocentric state plus its own geocentric offset from the lunar
+// ephemeris — because it has no Sun-centred ellipse and its heliocentric path
+// is not a conic at all. `SATELLITE_PRIMARY` lists which bodies need that hop
+// and around what; everything else is one hop, exactly as before.
+//
+// Separately, `escapeReferenceFor` answers a different question with the same
+// flavour: which body's SOI a departure from B actually leaves, and therefore
+// whose heliocentric velocity a hand-off's v-infinity is measured against. For
+// every body that is itself; for the Moon it is Earth, because a ship leaving
+// the Moon is still 850,000 km inside Earth's sphere of influence and its
+// departure phase does not end until it crosses THAT boundary. Position and
+// velocity genuinely take different answers for a satellite origin, so the two
+// lookups are kept separate rather than collapsed into one "origin body".
 
 import { systems } from "./orbit.js";
 import { OrbitalMath } from "./math-utils.js";
+import { LunarEphemeris } from "./lunar-ephemeris.js";
+
+// Bodies with no heliocentric orbit record: the primary they orbit, and their
+// own state relative to it (m, m/s) — the lunar ephemeris reports km and km/s.
+export const SATELLITES = {
+	Moon: {
+		primary: "Earth",
+		localState: function (jd) {
+			var s = LunarEphemeris.moonState(jd);
+			return { r: [s.r[0] * 1e3, s.r[1] * 1e3, s.r[2] * 1e3],
+			         v: [s.v[0] * 1e3, s.v[1] * 1e3, s.v[2] * 1e3] };
+		}
+	}
+};
 
 export const Frames = {
 
 	HELIO: "helio",
+
+	// Which body's SOI a departure from `bodyName` exits — the reference its
+	// hand-off v-infinity is measured against. Identity for every body with its
+	// own heliocentric orbit; the primary for a satellite.
+	escapeReferenceFor: function (bodyName) {
+		var sat = SATELLITES[bodyName];
+		return sat ? sat.primary : bodyName;
+	},
 
 	// "body:Mars" -> "Mars". "helio" -> null. Throws on anything else, so a
 	// malformed frame string fails loudly rather than silently no-op'ing.
@@ -48,7 +78,16 @@ export const Frames = {
 	},
 
 	// Body B's heliocentric state (r [m] x3, v [m/s] x3) at Julian date jd.
+	// A satellite (SATELLITES) is its primary's state plus its own offset from
+	// the ephemeris, so the Moon reports where it really is rather than where a
+	// Sun-centred conic would put it.
 	bodyHelioState: function (bodyName, jd) {
+		var sat = SATELLITES[bodyName];
+		if (sat) {
+			var base = this.bodyHelioState(sat.primary, jd);
+			var loc = sat.localState(jd);
+			return { r: OrbitalMath.vAdd(base.r, loc.r), v: OrbitalMath.vAdd(base.v, loc.v) };
+		}
 		var sys = systems.get(bodyName);
 		if (!sys || !sys.orbit) {
 			throw new Error("Frames.bodyHelioState: '" + bodyName + "' has no heliocentric orbit");

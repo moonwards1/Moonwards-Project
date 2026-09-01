@@ -5,7 +5,7 @@
  * flight-time EARLIER. Nothing about the eventual tech or course is known
  * when the plan is frozen, so this estimate comes from the plan's own
  * numbers: the required hyperbolic excess (v∞ = hand-off velocity minus the
- * origin body's), the hand-off epoch, and — for Earth — where the Moon is.
+ * escape body's), and the hand-off epoch.
  * The estimate feeds two things: the Ephemeris tab's "Moon phase at launch"
  * widget (ephemeris-view.js's buildMoonWidget/updateMoonWidgets), and the
  * SEED for the departure leg's own releaseJd, which core/freeze.js writes at
@@ -22,27 +22,26 @@
  * flight that edge can sit slightly away from where the SOI-exit event will
  * actually land.
  *
- * Earth departures (this project's carriers all start near the Moon) use an
- * exact two-body SOI-exit time from the Moon's mean distance, choosing
- * between two course profiles by the Moon-wedge rule: DIVE-IN — the course
- * first drops to a low-perigee Oberth pass — when the Moon sits within ±37.5°
- * of the direction OPPOSITE the exit heading (the geometry that forces the
- * ship to cross Earth's vicinity: around first quarter for a prograde launch,
- * last quarter for retrograde); DIRECT-OUT otherwise. The wedge is narrower
- * than the geometric quarter because near its edges the dive's benefit
- * diminishes — there the flyby only pays when a cheap plane change justifies
- * its cost in departure prograde/retrograde speed, and a planner who wants
- * that can force the profile (spec.profile below). The check is the sign test
- * dot(moonHat, exitHat) < −cos 37.5°, evaluated in TWO bounded passes: a
- * tentative direct-out launch date locates the Moon, the profile is chosen,
- * the estimate is final. Never an iteration — a derived release date that
- * keeps moving would slide the Moon under the user. Measured against the
- * shipped skyhook chain (v∞ 5.50 km/s): direct-out 1.75 d, dive-in 2.58 d vs
- * the chain's real 2.56 d, and that release genuinely dives (geocentric
- * perigee 24,200 km).
+ * A MOON origin is not estimated at all: core/lunar-departure.js solves that
+ * flight exactly, integrating Earth + Moon + Sun from the release to Earth's
+ * SOI edge, and this file delegates to it rather than keeping a cheaper,
+ * wronger second answer. The three terms that decide a lunar departure — the
+ * Moon's orbital velocity, the Moon's own well, Earth's remaining well — are
+ * each worth 0.9 to 2.2 km/s at the hand-off, so there is no honest closed
+ * form to fall back on.
  *
- * Non-Earth origins have no Moon model and use the naive estimate
- * (SOI radius / v∞).
+ * Every other origin, Earth included, uses the naive estimate (SOI radius /
+ * v∞). Earth is not special here: a departure from Earth leaves from Earth,
+ * the same as one from Mars leaves from Mars. It is a departure from the MOON
+ * that starts a quarter of the way out and rides 1 km/s of the Moon's motion,
+ * and that case is solved rather than approximated.
+ *
+ * v∞ IS ASYMPTOTIC HERE. The hand-off vector is the ship's velocity AT the SOI
+ * edge, where the primary's potential is not yet spent — 929 m/s worth for
+ * Earth. The two-body helpers below take the true hyperbolic excess, so the
+ * edge speed is converted before it reaches them (`asymptoticVInf`). Feeding
+ * the edge speed in directly overstates the energy and shortens the estimate
+ * by 8% for a fast departure and 24% for a slow one.
  *
  * Also exports the Moon readouts the widget shows beside the estimate:
  * elongation (phase) and the Moon's speed along EARTH'S OWN heliocentric
@@ -52,12 +51,14 @@
  * Pure (no DOM, no THREE) — Node-testable. Frames note: LunarEphemeris
  * works geocentric ecliptic-of-date in km; the plan's vectors are ecliptic
  * J2000-ish from orbit.js elements. The ~0.4°/30 yr precession between the
- * two is far below this file's needs (a wedge test and a phase glyph).
+ * two is far below this file's needs (a phase glyph and a speed readout).
  */
 
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
+import { Frames } from "../../Shared/frames.js";
+import { solveLunarDeparture } from "./lunar-departure.js";
 
 var O = OrbitalMath;
 var LE = LunarEphemeris;
@@ -66,24 +67,32 @@ var SUN = systems.get("Sun");
 var GM_SUN = SUN.GM;
 var DAY = 86400;
 
-export var MOON_DIST = 3.844e8;                  // m — mean lunar distance (the carriers' start radius)
-export var DIVE_PERIGEE = EARTH.radius + 200e3;  // m — the dive-in profile's Oberth perigee
-export var MIN_VINF = 10;                        // m/s — below this there is no departure to time
-export var DIVE_WEDGE_DEG = 75;                  // full width of the auto rule's dive-in wedge (see header)
-
-// dot(moonHat, exitHat) below this dives: the Moon within ±(wedge/2) of the
-// anti-exit direction.
-var DIVE_DOT = -Math.cos((DIVE_WEDGE_DEG / 2) * Math.PI / 180);
+export var MOON_DIST = 3.844e8;   // m — mean lunar distance, where an arrival's lunar-vicinity catch happens
+export var MIN_VINF = 10;         // m/s — below this there is no departure to time
 
 function semiMajor(orbit) { return (orbit.apoapsis + orbit.periapsis) / 2; }
 
-// SOI radius (m) of an origin body against the Sun, at its mean distance.
-// (orbit.system is resolved by orbit.js to the parent System INSTANCE, so
-// the "heliocentric orbit" check is an identity comparison, not a string.)
+// The SOI a departure from `origin` actually has to leave, in metres — which
+// for a satellite origin is its PRIMARY's, not its own (Frames.escapeReference
+// For): a ship leaving the Moon is still deep inside Earth's SOI, and its
+// departure phase does not end until it crosses Earth's. Measured against the
+// Sun at the escape body's mean distance. (orbit.system is resolved by orbit.js
+// to the parent System INSTANCE, so the "heliocentric orbit" check is an
+// identity comparison, not a string.)
 export function originSoiRadius(origin) {
-	var sys = systems.get(origin);
+	var sys = systems.get(Frames.escapeReferenceFor(origin));
 	if (!sys || !sys.orbit || sys.orbit.system !== SUN) { return null; }
 	return O.sphereOfInfluence(semiMajor(sys.orbit), sys.GM, GM_SUN);
+}
+
+// The true hyperbolic excess behind a speed measured AT the SOI edge, where
+// the primary still has a grip. Returns 0 for an edge speed that is not
+// actually escaping, so a caller sees "no departure" rather than a NaN.
+export function asymptoticVInf(vAtSoiEdge, origin) {
+	var sys = systems.get(Frames.escapeReferenceFor(origin));
+	var rSoi = originSoiRadius(origin);
+	if (!sys || rSoi == null) { return null; }
+	return Math.sqrt(Math.max(0, vAtSoiEdge * vAtSoiEdge - 2 * sys.GM / rSoi));
 }
 
 // Moon–Sun elongation (deg, 0..360; 0 new, 90 first quarter, 180 full,
@@ -105,60 +114,55 @@ export function moonProgradeSpeed(jd, earthHelioV) {
 }
 
 // The estimate. spec = {
-//   origin,      // HELIO_BODIES name, e.g. "Earth"
-//   vInfVec,     // m/s — hand-off velocity minus the origin body's (helio)
+//   origin,      // origin-body name, e.g. "Earth" or "Moon"
+//   vInfVec,     // m/s — hand-off velocity minus the ESCAPE body's (helio);
+//                //   for a Moon origin that reference is Earth, not the Moon
 //   jdHandoff,   // the plan's nominal Departure→Coast hand-off epoch
-//   profile      // optional Earth-course override: "dive-in" | "direct-out"
-//                //   pins the profile (near the wedge's edge both are
-//                //   genuinely viable, so the choice is the planner's);
-//                //   anything else (or absent) = the auto wedge rule.
-//                //   Ignored for non-Earth origins.
+//   warm         // optional previous lunar solve, passed through to
+//                //   core/lunar-departure.js for a Moon origin
 // }
 // Returns { ok: true, seconds, days, jdLaunch, profile, vInf } with profile
-// one of "dive-in" | "direct-out" | "naive", or { ok: false, reason } when
-// there's no meaningful departure to time ("no-vinf") or the origin has no
-// heliocentric orbit record ("unknown-origin"). A forced "dive-in" whose
-// geometry degenerates (soiExitTimeDive refuses) falls back to direct-out,
-// reported honestly in the returned profile.
+// "naive" or "lunar-integrated" (the latter also carrying the `solve` itself),
+// or { ok: false, reason } when there's no meaningful departure to time
+// ("no-vinf"), the origin has no heliocentric orbit record to escape from
+// ("unknown-origin"), or a lunar solve did not converge (the solver's own
+// reason). `vInf` is the TRUE hyperbolic excess, not the hand-off's edge speed.
 export function estimateDeparture(spec) {
-	var vInf = O.vMag(spec.vInfVec || [0, 0, 0]);
-	if (!(vInf >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
+	var vEdge = O.vMag(spec.vInfVec || [0, 0, 0]);
+	if (!(vEdge >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
 	var rSoi = originSoiRadius(spec.origin);
 	if (rSoi == null) { return { ok: false, reason: "unknown-origin" }; }
+	var vInf = asymptoticVInf(vEdge, spec.origin);
+	if (!(vInf >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
 
 	function done(seconds, profile) {
 		return { ok: true, seconds: seconds, days: seconds / DAY,
 		         jdLaunch: spec.jdHandoff - seconds / DAY, profile: profile, vInf: vInf };
 	}
 
-	if (spec.origin !== "Earth") { return done(rSoi / vInf, "naive"); }
-
-	var tDirect = O.soiExitTimeDirect(EARTH.GM, vInf, MOON_DIST, rSoi);
-	if (tDirect == null) { return done(rSoi / vInf, "naive"); }   // degenerate geometry — fall back to the naive estimate
-
-	// Pick the profile: honour a forced override; otherwise (pass 2 of the
-	// auto rule) locate the Moon at the tentative launch and apply the wedge.
-	var dive;
-	if (spec.profile === "dive-in") { dive = true; }
-	else if (spec.profile === "direct-out") { dive = false; }
-	else {
-		var m = LE.moonVector(spec.jdHandoff - tDirect / DAY);
-		dive = O.vDot(O.vUnit(m), O.vUnit(spec.vInfVec)) < DIVE_DOT;
+	// A lunar departure is solved, not estimated — see the header.
+	if (spec.origin === "Moon") {
+		var s = solveLunarDeparture({ vInfVec: spec.vInfVec, jdHandoff: spec.jdHandoff,
+		                              warm: spec.warm });
+		if (!s.ok) { return { ok: false, reason: s.reason }; }
+		return { ok: true, seconds: s.lead * DAY, days: s.lead, jdLaunch: s.jdRelease,
+		         profile: "lunar-integrated", vInf: vInf, solve: s };
 	}
-	if (dive) {
-		var tDive = O.soiExitTimeDive(EARTH.GM, vInf, DIVE_PERIGEE, MOON_DIST, rSoi);
-		if (tDive != null) { return done(tDive, "dive-in"); }
-	}
-	return done(tDirect, "direct-out");
+
+	return done(rSoi / vInf, "naive");
 }
 
 // The arrival mirror (destination Earth): time (s) to cross INBOUND from
 // Earth's SOI down to the Moon's distance — where a lunar-vicinity tech
 // makes its catch. Direct profile only (two-body time symmetry of
 // soiExitTimeDirect; the dive question is a departure's). vInfVec is the
-// ship's velocity minus Earth's at the rendezvous epoch jdRendezvous.
+// ship's velocity minus Earth's at the rendezvous epoch jdRendezvous, measured
+// AT the SOI edge, so it is converted to the true excess the same way a
+// departure's is.
 export function estimateArrival(vInfVec, jdRendezvous) {
-	var vInf = O.vMag(vInfVec || [0, 0, 0]);
+	var vEdge = O.vMag(vInfVec || [0, 0, 0]);
+	if (!(vEdge >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
+	var vInf = asymptoticVInf(vEdge, "Earth");
 	if (!(vInf >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
 	var t = O.soiExitTimeDirect(EARTH.GM, vInf, MOON_DIST, originSoiRadius("Earth"));
 	if (t == null) { return { ok: false, reason: "degenerate" }; }

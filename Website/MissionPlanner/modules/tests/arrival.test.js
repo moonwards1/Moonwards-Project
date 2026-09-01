@@ -298,12 +298,15 @@ function makeFrozenMission() {
 	// jd IS the hand-off epoch, and `handoff` the coast's starting state at
 	// Earth's SOI edge — the shape ephemeris-view.js's buildFreezeSpec hands
 	// over (a 2.94 km/s v∞ on an exit point one SOI radius along its heading).
+	// Origin MOON: the departure leaves the Moon and hands over at EARTH's SOI,
+	// so the v∞ reference here is Earth either way — it is the scaffold that
+	// differs, and the Moon is the origin that gets the platform.
 	var jd = O.julianDate(2031, 3, 1, 0, 0, 0);
 	var body = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, jd);
 	var vh = O.applyBurn(body.r, body.v, 2940, 0, 0);
 	var off = O.vScale(O.vUnit(O.vSub(vh, body.v)), originSoiRadius("Earth"));
 	var data = freezeMissionWorld({
-		origin: "Earth", destination: "Mars", jd: jd,
+		origin: "Moon", destination: "Mars", jd: jd,
 		handoff: { r: O.vAdd(body.r, off), v: vh },
 		waypoints: [],
 		arrivalJd: jd + 260,
@@ -312,8 +315,8 @@ function makeFrozenMission() {
 	var res = deserializeWorld(data);
 	assert.equal(res.ok, true, res.reason);
 	var reg = createRegistry();
-	reg.register(moonPlatform);   // the Earth-origin departure scaffold (empty
-	reg.register(departureLeg);   // carrier slot) freeze now prepends
+	reg.register(moonPlatform);   // the Moon-origin departure scaffold (empty
+	reg.register(departureLeg);   // carrier slot) freeze prepends
 	reg.register(frozenPlan);
 	reg.register(transferLeg);
 	reg.register(arrivalLeg);
@@ -322,9 +325,9 @@ function makeFrozenMission() {
 }
 
 test("engine: a frozen mission flies its scaffold → coast → flyby leg; both tech slots empty", function () {
-	var m = makeFrozenMission();   // origin Earth
+	var m = makeFrozenMission();   // origin Moon
 	var stages = m.world.stages();
-	// Earth scaffold (moon-platform + departure-leg, empty carrier) up front;
+	// Moon scaffold (moon-platform + departure-leg, empty carrier) up front;
 	// the flyby leg is terminal (empty arrival-tech slot).
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
