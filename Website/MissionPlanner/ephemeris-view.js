@@ -83,11 +83,12 @@
  * same path as anything authored from scratch.
  *
  * THE ORBIT-APPROACH RING SCAN rounds out the proximity markers: hollow rings
- * where the drawn path passes near a candidate body's orbit (independent of
- * whether the body is actually there then), refreshed alongside the trajectory
- * each recompute. Ring mechanics are shared (Shared/sim/approach-markers.js,
- * the same module the temporal ring uses); the golden-section scan itself is
- * local, over this view's leg.samples/trajSegs.
+ * where the drawn path passes near the SELECTED DESTINATION's orbit
+ * (independent of whether the body is actually there then), refreshed
+ * alongside the trajectory each recompute. Ring mechanics are shared
+ * (Shared/sim/approach-markers.js, the same module the temporal ring uses);
+ * the golden-section scan itself is local, over this view's
+ * leg.samples/trajSegs.
  *
  * NOT PORTED from the SST: in-scene waypoint dragging.
  *
@@ -119,7 +120,7 @@ import {
 	fmtKm, fmtTof, fmtDate
 } from "../Shared/sim/marker-card.js";
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
-import { buildHelioFrame, HELIO_BODIES, ORIGIN_BODIES, DESTINATION_BODIES } from "./scene-frames.js";
+import { buildHelioFrame, ORIGIN_BODIES, DESTINATION_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
 import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
 import {
@@ -1106,14 +1107,15 @@ export function createEphemerisView(opts) {
 	function makeTempRing() { return makeRingSprite({ lineWidth: 7, px: 30, renderOrder: 13 }); }
 
 	// =======================================================================
-	//  Orbit-approach rings: where the drawn path passes near a candidate body's
-	//  orbit *ring*. Scans the path for local minima of distance-to-each-orbit,
-	//  then refines each with a golden-section search over the true Kepler arc,
-	//  so the result is not limited by polyline spacing. The ring-sprite
-	//  mechanics are shared (Shared/sim/approach-markers.js); the scan and tier
-	//  tables stay local, the same split as the temporal ring above. Unlike the
-	//  SST's own trajSamples (THREE.Vector3, pre-scaled to AU), this view's
-	//  leg.samples stay in metres throughout, so the scan needs no AU round-trip.
+	//  Orbit-approach rings: where the drawn path passes near the selected
+	//  destination's orbit *ring*. Scans the path for local minima of
+	//  distance-to-that-orbit, then refines each with a golden-section search
+	//  over the true Kepler arc, so the result is not limited by polyline
+	//  spacing. The ring-sprite mechanics are shared
+	//  (Shared/sim/approach-markers.js); the scan and tier tables stay local,
+	//  the same split as the temporal ring above. Unlike the SST's own
+	//  trajSamples (THREE.Vector3, pre-scaled to AU), this view's leg.samples
+	//  stay in metres throughout, so the scan needs no AU round-trip.
 	// =======================================================================
 	function makeApproachRing(tier) {
 		var st = SPACE_TIERS[tier] || SPACE_TIERS[0];
@@ -1137,43 +1139,42 @@ export function createEphemerisView(opts) {
 	// few samples that are actually near, before refining each local minimum.
 	function computeOrbitApproaches() {
 		var out = [];
+		var name = state.leg.destination;
+		if (!name || name === state.origin) { return out; }
 		if (trajSamples.length < 3 || !trajSegs.length) { return out; }
 		var GATE = 0.012 * AU, CAND = 0.006 * AU;
-		HELIO_BODIES.forEach(function (name) {
-			if (name === state.origin) { return; }
-			var orbit = systems.get(name).orbit;
-			if (!orbit || orbit.e >= 1) { return; }
-			var a = orbit.a, e = orbit.e;
-			var iI = orbit.inclination || 0, Om = orbit.longitude || 0, w = orbit.argument || 0;
-			var cO = Math.cos(Om), sO = Math.sin(Om), ci = Math.cos(iI), si = Math.sin(iI),
-			    cw = Math.cos(w), sw = Math.sin(w);
-			var ux = cO*cw - sO*sw*ci, uy = sO*cw + cO*sw*ci, uz = sw*si;
-			var vx = -cO*sw - sO*cw*ci, vy = -sO*sw + cO*cw*ci, vz = cw*si;
-			var A = Math.abs(a), B = A * Math.sqrt(Math.max(0, 1 - e * e));
-			var ae = a * e, Cx = -ae*ux, Cy = -ae*uy, Cz = -ae*uz;
-			var nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
-			var n = trajSamples.length, dists = new Array(n);
-			for (var k = 0; k < n; k++) {
-				var p = trajSamples[k].r;
-				var wx = p[0] - Cx, wy = p[1] - Cy, wz = p[2] - Cz;
-				var z = wx*nx + wy*ny + wz*nz;
-				if (Math.abs(z) > GATE) { dists[k] = Infinity; continue; }
-				var x = wx*ux + wy*uy + wz*uz, yy = wx*vx + wy*vy + wz*vz;
-				var rho = Math.hypot(x, yy);
-				if (rho < B - GATE || rho > A + GATE) { dists[k] = Infinity; continue; }
-				dists[k] = Math.hypot(O.distancePointEllipse(A, B, x, yy), z);
-			}
-			for (var m = 1; m < n - 1; m++) {
-				if (dists[m] < CAND && dists[m] < dists[m-1] && dists[m] <= dists[m+1]) {
-					var r = mcRefineApproach(orbit, stateAtGlobalTime, trajSamples[m-1].t, trajSamples[m+1].t);
-					var tier = r ? pickProximityTier(r.dist, APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE) : -1;
-					if (tier >= 0) {
-						out.push({ pos: new THREE.Vector3(r.r[0] / AU, r.r[1] / AU, r.r[2] / AU),
-						           dist: r.dist, tier: tier, body: name });
-					}
+		var orbit = systems.get(name).orbit;
+		if (!orbit || orbit.e >= 1) { return out; }
+		var a = orbit.a, e = orbit.e;
+		var iI = orbit.inclination || 0, Om = orbit.longitude || 0, w = orbit.argument || 0;
+		var cO = Math.cos(Om), sO = Math.sin(Om), ci = Math.cos(iI), si = Math.sin(iI),
+		    cw = Math.cos(w), sw = Math.sin(w);
+		var ux = cO*cw - sO*sw*ci, uy = sO*cw + cO*sw*ci, uz = sw*si;
+		var vx = -cO*sw - sO*cw*ci, vy = -sO*sw + cO*cw*ci, vz = cw*si;
+		var A = Math.abs(a), B = A * Math.sqrt(Math.max(0, 1 - e * e));
+		var ae = a * e, Cx = -ae*ux, Cy = -ae*uy, Cz = -ae*uz;
+		var nx = uy*vz - uz*vy, ny = uz*vx - ux*vz, nz = ux*vy - uy*vx;
+		var n = trajSamples.length, dists = new Array(n);
+		for (var k = 0; k < n; k++) {
+			var p = trajSamples[k].r;
+			var wx = p[0] - Cx, wy = p[1] - Cy, wz = p[2] - Cz;
+			var z = wx*nx + wy*ny + wz*nz;
+			if (Math.abs(z) > GATE) { dists[k] = Infinity; continue; }
+			var x = wx*ux + wy*uy + wz*uz, yy = wx*vx + wy*vy + wz*vz;
+			var rho = Math.hypot(x, yy);
+			if (rho < B - GATE || rho > A + GATE) { dists[k] = Infinity; continue; }
+			dists[k] = Math.hypot(O.distancePointEllipse(A, B, x, yy), z);
+		}
+		for (var m = 1; m < n - 1; m++) {
+			if (dists[m] < CAND && dists[m] < dists[m-1] && dists[m] <= dists[m+1]) {
+				var r = mcRefineApproach(orbit, stateAtGlobalTime, trajSamples[m-1].t, trajSamples[m+1].t);
+				var tier = r ? pickProximityTier(r.dist, APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE) : -1;
+				if (tier >= 0) {
+					out.push({ pos: new THREE.Vector3(r.r[0] / AU, r.r[1] / AU, r.r[2] / AU),
+					           dist: r.dist, tier: tier, body: name });
 				}
 			}
-		});
+		}
 		return out;
 	}
 
@@ -1182,9 +1183,10 @@ export function createEphemerisView(opts) {
 	// position (not its orbit ellipse — the body is moving too, so this tracks
 	// actual separation at matching times), then refine with a golden-section
 	// search over the true Kepler arc so the result isn't limited by polyline
-	// spacing. Unlike computeOrbitApproaches (which flags every candidate
-	// body's orbit ring for the scene), this is a single global minimum for
-	// one named destination, used for the card's readouts.
+	// spacing. Unlike computeOrbitApproaches (which can flag several local
+	// passes near the destination's orbit ring, for the scene), this is the
+	// single global minimum against the destination's actual moving
+	// position, used for the card's readouts.
 	// Returns { r, v (ship, m/m/s), bodyR, bodyV, t (global s), jd, dist (m) }
 	// or null when there's no destination or no valid trajectory.
 	function computeDestinationApproach() {
