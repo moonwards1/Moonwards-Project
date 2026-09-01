@@ -472,12 +472,21 @@ velocity mismatch that grew into a 249,418 km miss over the remaining 275
 days. The conic-only solve is then VERIFIED by flying it through `computeLeg`,
 which integrates SOI encounters.
 
-THE BOUND IS ON THE ASK, not on the answer. Lambert will happily solve for a
-hand-off flung an AU sideways — at a 115° turn and 14 km/s — so the answer
-alone cannot gate anything. The required change is held to the same per-axis
-limit a course correction gets, ±100 m/s. On the shipped Moon→Ceres plan a
-100,000 km exit-point offset asks 1 m/s and passes; 400,000 km asks 125 m/s
-and is refused as a new mission for the Ephemeris tab.
+SEEDED FROM REAL TRAJECTORIES — the velocity the technology delivers, then the
+one the plan commits to — never from a two-point conic. A Lambert arc answers
+a different question ("what orbit joins these two POSITIONS in this time") and
+is singular where the two points are 180° apart, since the plane through them
+is undefined. Seeded there, the correction starts an out-of-plane climb it
+cannot walk back: on a 551-day Earth→Ceres coast sweeping 176.5° it stalled
+9.7 million km from the aim, and the stalled velocity was returned as the
+requirement — 12.34 km/s with an 11.2 km/s normal. Seeded from the delivered
+velocity the same case converges exactly, to a 108 m/s trim. Nothing in the
+flight is singular there; the state has a definite position and velocity at
+every point, and a correction that starts from one arrives.
+
+A SOLVE THAT DID NOT REACH ITS AIM IS NOT AN ANSWER. The correction returns
+its best attempt whatever happens, so a residual over one `AIM_PASS_ALTITUDE`
+is reported as "no requirement to state", never as a requirement.
 
 RE-TARGETING DOES NOT TOUCH `releaseAnchorJd`. The anchor is when the chain
 actually lets go; re-deriving it would make the button chase a hand-off that
@@ -495,6 +504,18 @@ committed date. The arrival commitment is untouched.
 goes by, and the standard it must land inside is `MAX_PASS_ALTITUDE`
 (30,000 km). Both are altitudes above the SURFACE, at closest approach — what
 the arrival phase deals in.
+
+THAT PASS IS THE WHOLE OF `withinTolerance`, and the only thing Update is
+gated on. The SIZE of the change a re-target asks the departure for decides
+nothing: a requirement is correct when meeting it lands the mission at the
+destination, and a correct requirement does not become wrong for being
+expensive. An ask the technology cannot meet yet is answered by building the
+technology up towards the Needed column — that is what the column is for. The
+ask is still reported, so the mission report can show it shrinking across
+iterations. (Superseded 2026-08-31: it was previously also held to
+`WAYPOINT_AXIS_CAP_MPS`, ±100 m/s per axis, which blocked correct
+requirements — the course-correction budget is a bound on a coast trim and has
+nothing to do with what a departure must deliver.)
 
 WHAT THIS GIVES UP, deliberately: a plan's own flyby offset. THE SIDE of the
 body is kept; only the distance is standardised. The offset is whatever the

@@ -1471,7 +1471,7 @@ export function createMissionView(opts) {
 			destination: arr.body,
 			delivered: comp.delivered.state,
 			planDeparture: p.departure,
-			planWaypoints: legStage.params.waypoints || [],
+			coastWaypoints: legStage.params.waypoints || [],
 			// The aim epoch is the coast's own horizon, not a committed arrival
 			// date: fly for as long as the coast lasts, and arrive wherever
 			// closest approach falls inside that.
@@ -1566,7 +1566,11 @@ export function createMissionView(opts) {
 			cbarKms(sol.vInf) + "</b>, a " + sol.turnDeg.toFixed(2) + "° turn and " +
 			(sol.dSpeed >= 0 ? "+" : "−") + Math.abs(Math.round(sol.dSpeed)) +
 			" m/s from now, " + (applied ? "bringing" : "which would bring") +
-			" the pass to <b class='ok'>" + cbarKm(sol.passAfter) + "</b>.");
+			" the pass to <b class='" + (sol.withinTolerance ? "ok" : "warn") + "'>" +
+			cbarKm(sol.passAfter) + "</b>.");
+		if (!sol.withinTolerance) {
+			msgPara(wrap, "<span class='warn'>" + escapeText(sol.reason) + "</span>");
+		}
 		// The drawn coast flies what the TECHNOLOGY delivers, and an Update does
 		// not touch the technology — so this does not move the trajectory. It
 		// moves the requirement the trajectory is steered towards, and the
@@ -1576,7 +1580,10 @@ export function createMissionView(opts) {
 				"moved with it. The trajectory changes when you re-tune the technology " +
 				"towards those figures — then Check again, and each pass asks less " +
 				"than the last."
-			: "Nothing written. Re-tune towards the new Needed figures, then Update.");
+			: (sol.withinTolerance
+				? "Nothing written. Re-tune towards the new Needed figures, then Update."
+				: "Nothing written. The Needed column states this even though Update " +
+					"can't commit it yet."));
 	}
 
 	function escapeText(s) {
@@ -1602,7 +1609,8 @@ export function createMissionView(opts) {
 		if (!planStage) { return; }
 		var sol = retargetSolveNow();           // from the CURRENT delivery, not Check's
 		var dest = (planStage.params.arrival || {}).body || "the destination";
-		if (sol.ok) {
+		var applied = sol.ok && sol.withinTolerance;
+		if (applied) {
 			history.push(snapshotForReport(sol));
 			applyRetarget(planStage.id, sol);   // this recomputes and redraws
 			// Recorded AFTER the retarget, so the set is the plan as committed
@@ -1611,9 +1619,8 @@ export function createMissionView(opts) {
 			if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
 			checked = null;
 		}
-		showMessage("Update — the plan has changed", function (wrap) {
-			solveMessage(wrap, sol, dest, sol.ok);
-		});
+		showMessage(applied ? "Update — the plan has changed" : "Update — nothing written",
+			function (wrap) { solveMessage(wrap, sol, dest, applied); });
 		refreshViews();
 	});
 
@@ -1864,10 +1871,14 @@ export function createMissionView(opts) {
 			? "Re-solve what the departure has to deliver from the point it actually " +
 				"leaves from, and report what that would buy. Writes nothing."
 			: "This mission commits to no destination, so there is nothing to re-target towards.";
-		updateBtn.disabled = !checked;
-		updateBtn.title = checked
+		var canCommit = !!checked && checked.withinTolerance;
+		updateBtn.disabled = !canCommit;
+		updateBtn.title = canCommit
 			? "Commit the re-solved departure requirement and redraw the trajectory."
-			: "Press Check first — Update commits what it finds.";
+			: (checked
+				? "The departure technology isn't close enough to deliver this yet " +
+					"— see the Check message for what to build up."
+				: "Press Check first — Update commits what it finds.");
 	}
 	// Phase-button dots: a HARD-FAULT LIGHT, showing the worst status among a
 	// phase's stages only when that status is err or blocked — a stage that

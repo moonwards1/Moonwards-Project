@@ -34,6 +34,12 @@
  * once a real departure is flying the mission, what matters is arriving close
  * enough for the arrival phase to take over.
  *
+ * AND THAT PASS IS THE WHOLE STANDARD. A requirement is worth committing when
+ * meeting it lands the mission at the destination. How big a change it asks of
+ * the departure decides nothing: a correct requirement does not become wrong
+ * for being expensive, and an ask the technology cannot meet yet is answered by
+ * building the technology up, which is exactly what the Needed column is for.
+ *
  * Pure: plain values in, plain values out. Every answer is VERIFIED by flying
  * it through core/delivered-flight.js — a solve that doesn't actually arrive
  * is not an answer.
@@ -42,7 +48,6 @@
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Frames } from "../../Shared/frames.js";
 import { systems } from "../../Shared/orbit.js";
-import { WAYPOINT_AXIS_CAP_MPS } from "../modules/transfer-leg/transfer-leg.js";
 import { MAX_PASS_ALTITUDE, AIM_PASS_ALTITUDE } from "./proximity.js";
 import { deliveredFlight, rebaseWaypoints } from "./delivered-flight.js";
 
@@ -154,6 +159,40 @@ export function solveArrivalVelocity(r0, v0Guess, waypoints, tDays, target) {
 	return { v: best, err: bestErr };
 }
 
+// A solve is an ANSWER only if it actually reached its aim. solveArrivalVelocity
+// returns its best attempt whatever happens, and a stalled attempt can sit
+// millions of km from the target — a number with the shape of a requirement and
+// none of the meaning. One aim offset is the bound: inside it the flown
+// verification decides, outside it there is nothing to report.
+var CONVERGED_M = AIM_PASS_ALTITUDE;
+
+// The departure velocity that hits `target`, from the seeds worth trying.
+//
+// EVERY SEED IS A REAL TRAJECTORY'S OWN VELOCITY — the one the technology
+// delivers, and the one the plan commits to. Both describe a flight that goes
+// roughly where this one has to go, so the answer sits a few hundred m/s away
+// and the correction walks there in a couple of steps.
+//
+// NOT a two-point conic. Asking "what orbit joins these two POSITIONS in this
+// time" is a different question from the one being solved, and it is singular
+// where the two points are 180 degrees apart: the plane through them is
+// undefined, so it answers with an arbitrary steep one. Seeded there, the
+// correction starts an out-of-plane climb it cannot walk back, and on a
+// 551-day Earth->Ceres coast — which sweeps 176.5 degrees — it stalls 9.7
+// million km from the aim. Nothing in the flight itself is singular there; the
+// state has a definite position and velocity at every point of it, and a
+// correction that starts from one arrives.
+function bestSolve(r0, seeds, wps, legDays, target) {
+	var best = null;
+	for (var i = 0; i < seeds.length; i++) {
+		if (!seeds[i]) { continue; }
+		var s = solveArrivalVelocity(r0, seeds[i], wps, legDays, target);
+		if (!best || s.err < best.err) { best = s; }
+		if (best.err < CONVERGED_M) { break; }
+	}
+	return best;
+}
+
 /* Solve the departure requirement at the delivered exit point.
  *
  * spec: {
@@ -161,20 +200,27 @@ export function solveArrivalVelocity(r0, v0Guess, waypoints, tDays, target) {
  *   destination,      // the plan's arrival body
  *   delivered,        // { r, v, jd } — where the technology ACTUALLY hands over
  *   planDeparture,    // { r, v, jd } — what the plan currently commits to
- *   planWaypoints,    // the coast's waypoints, in the PLAN's own day-numbering
+ *   coastWaypoints,   // the coast's waypoints, numbered in DAYS FROM THE
+ *                     //   DELIVERED hand-off — the same numbering transfer-leg
+ *                     //   flies them in, taken as they stand
  *   horizonJd         // the epoch the coast's own duration runs to (its
  *                     //   hand-off + legDays) — the aim epoch, NOT a
  *                     //   committed arrival: the mission arrives at the
  *                     //   closest approach it measures
  * }
  *
- * Returns, on success:
- *   { ok: true, r, v, jd,        // the new committed hand-off state
+ * Returns, whenever a targeting solution exists at all (even one the
+ * technology cannot yet deliver — that is what `withinTolerance` is for):
+ *   { ok: true, withinTolerance, reason,   // reason is set only when false
+ *     r, v, jd,                  // the new committed hand-off state
  *     vInfVec, vInf,             // what the technology must now deliver
  *     turnDeg, dSpeed,           // how far that is from the current delivery
  *     waypoints, legDays,        // the coast, re-based onto the new epoch
  *     passBefore, passAfter }    // pass altitude, delivered vs re-solved
- * or { ok: false, reason, passBefore }.
+ * `withinTolerance` gates whether Update may commit this; Check reports the
+ * figures regardless. `ok: false` (no figures at all — `reason, passBefore`
+ * only) means no targeting solution exists to report: no delivered hand-off,
+ * no destination, or no encounter anywhere near it.
  */
 export function solveDepartureTarget(spec) {
 	var d = spec.delivered, p = spec.planDeparture;
@@ -192,10 +238,16 @@ export function solveDepartureTarget(spec) {
 			"duration — there is no coast left to fly.";
 		return out;
 	}
-	var shift = d.jd - p.jd;
-	var wps = rebaseWaypoints(spec.planWaypoints, shift, legDays);
+	// THE COAST'S WAYPOINTS ARE ALREADY NUMBERED FROM THE DELIVERED HAND-OFF.
+	// transfer-leg flies from the state frozen-plan emits, which is the state
+	// the technology delivered (its `jd0` is that epoch), so a burn at day N
+	// fires N days after the real exit — not N days after the plan's assumed
+	// one. Shifting them by the gap between those two epochs would model a
+	// flight whose burns fire at dates the drawn coast never fires them at.
+	// They are taken as they stand, and only clipped to the span of the leg.
+	var wps = rebaseWaypoints(spec.coastWaypoints, 0, legDays);
 
-	// What the technology delivers RIGHT NOW, flown with the plan's own burns.
+	// What the technology delivers RIGHT NOW, flown with the coast's own burns.
 	var now = deliveredFlight({ origin: spec.origin, destination: spec.destination,
 		delivered: d, waypoints: wps, horizonJd: spec.horizonJd });
 	out.passBefore = (now.ok && now.pass) ? now.pass.altitude : Infinity;
@@ -228,11 +280,12 @@ export function solveDepartureTarget(spec) {
 	var bodyR = Frames.bodyHelioState(spec.destination, spec.horizonJd).r;
 	var offset = destSys.radius + AIM_PASS_ALTITUDE;
 	var sol = null, solved = null, passAfter = Infinity;
+	var seeds = [d.v.slice(), p.v.slice()];
 
 	for (var pass = 0; pass < 4; pass++) {
 		var target = O.vAdd(bodyR, O.vScale(aimDir, offset));
-		var guess = O.lambert(GM_SUN(), d.r, target, legDays * DAY, true);
-		sol = solveArrivalVelocity(d.r, guess ? guess.v1 : d.v, wps, legDays, target);
+		sol = bestSolve(d.r, seeds, wps, legDays, target);
+		seeds = [sol.v, d.v.slice()];          // each pass starts where the last landed
 		solved = { r: d.r, v: sol.v, jd: d.jd };
 
 		// Verified by flying it for real — the solve above is conic-only, and
@@ -249,47 +302,55 @@ export function solveDepartureTarget(spec) {
 		if (flown.pass.rRel) { aimDir = O.vUnit(flown.pass.rRel); }
 	}
 
-	if (!(passAfter < MAX_PASS_ALTITUDE)) {
-		out.reason = "Re-solved from the delivered exit point the flight still passes " +
-			fmtKm(passAfter) + " above " + spec.destination + " — needs to be within " +
-			fmtKm(MAX_PASS_ALTITUDE) + ". Build the departure technology up until it " +
+	// A totally divergent solve (no encounter at all) has no state worth
+	// reporting. Anything short of that — a pass outside MAX_PASS_ALTITUDE, or
+	// an ask past the correction cap — is still a real answer: it names the
+	// requirement, and Check's job is to SHOW that requirement, not to hide it
+	// behind whether the technology can reach it yet. Those two checks gate
+	// only whether Update may commit (below), never whether a figure exists.
+	if (!sol || !(sol.err < CONVERGED_M)) {
+		out.reason = "No departure from the delivered exit point reaches " +
+			spec.destination + " over the coast's own duration — the closest aim found " +
+			"still comes out " + fmtKm(sol ? sol.err : Infinity) + " away, which is not a " +
+			"requirement worth stating. Build the departure technology up until it " +
 			"delivers something near what the plan asks for, then Check again.";
-		out.passAfter = passAfter;
+		return out;
+	}
+
+	if (!isFinite(passAfter)) {
+		out.reason = "The re-solved flight never comes near " + spec.destination +
+			", so there is no requirement to report. Build the departure technology up " +
+			"until it delivers something near what the plan asks for, then Check again.";
 		return out;
 	}
 
 	var bodyV = Frames.bodyHelioState(spec.origin, d.jd).v;
 	var vInfVec = O.vSub(sol.v, bodyV);
 
-	// HOW FAR THE TECHNOLOGY HAS TO MOVE, and the limit on it. Re-targeting
-	// compensates for the exit point sitting elsewhere on the SOI sphere, which
-	// is at most a couple of SOI radii and costs single-digit m/s to absorb (a
-	// 400,000 km offset on the shipped Moon->Ceres plan asks for 1.1 degrees and
-	// 3.2 m/s). A Lambert solve will happily answer for a hand-off flung an AU
-	// away too — at a 115 degree turn and 14 km/s — but that is not a departure
-	// being refined, it is a departure that has not been built yet: the answer
-	// is more technology, not a re-aim. So the required change is held to the
-	// same per-axis bound a course
-	// correction gets (transfer-leg's WAYPOINT_AXIS_CAP_MPS): normal correction
-	// scale, in the frame the departure card states its own vector in.
+	// HOW FAR THE TECHNOLOGY HAS TO MOVE, reported so the mission report can
+	// show the ask shrinking across iterations. It is a figure, not a gate.
 	var curVInf = O.vSub(d.v, bodyV);
 	var ask = O.burnComponents(d.r, bodyV, O.vSub(vInfVec, curVInf));
 	var worst = Math.max(Math.abs(ask.pro), Math.abs(ask.rad), Math.abs(ask.nrm));
-	if (worst > WAYPOINT_AXIS_CAP_MPS) {
-		out.reason = "Re-targeting would ask the departure for " + Math.round(worst) +
-			" m/s on one axis, past the " + WAYPOINT_AXIS_CAP_MPS + " m/s correction limit. " +
-			"That gap is a missing or under-built departure technology, not an aiming " +
-			"error — add to the departure until it delivers close to the plan, then " +
-			"Check again.";
-		out.passAfter = passAfter;
-		return out;
-	}
 	var mA = O.vMag(curVInf), mB = O.vMag(vInfVec);
 	var turnDeg = (mA > 1e-6 && mB > 1e-6)
 		? Math.acos(Math.max(-1, Math.min(1, O.vDot(O.vUnit(curVInf), O.vUnit(vInfVec))))) * 180 / Math.PI
 		: 0;
 
-	return { ok: true, r: solved.r, v: solved.v, jd: solved.jd,
+	// THE ONE STANDARD: where the re-solved flight actually passes. A departure
+	// requirement is worth committing when meeting it lands the mission close
+	// enough for the arrival phase to take over, and that is the whole of it —
+	// what the ask COSTS is a separate question, answered by building the
+	// departure up, and no size of ask makes a correct requirement wrong.
+	var withinTolerance = passAfter < MAX_PASS_ALTITUDE;
+	var reason = withinTolerance ? null
+		: "Re-solved from the delivered exit point the flight still passes " +
+			fmtKm(passAfter) + " above " + spec.destination + " — needs to be within " +
+			fmtKm(MAX_PASS_ALTITUDE) + " before Update can commit it. Build the departure " +
+			"technology up until it delivers something near what the plan asks for.";
+
+	return { ok: true, withinTolerance: withinTolerance, reason: reason,
+	         r: solved.r, v: solved.v, jd: solved.jd,
 	         vInfVec: vInfVec, vInf: mB, turnDeg: turnDeg, dSpeed: mB - mA,
 	         ask: ask, askWorst: worst,
 	         waypoints: wps, legDays: legDays,
@@ -306,7 +367,7 @@ function passOffsetDir(now, spec, planDeparture, wps) {
 		return O.vUnit(now.pass.rRel);
 	}
 	var planEnd = propagateWithWaypoints(planDeparture.r, planDeparture.v,
-		spec.planWaypoints, spec.horizonJd - planDeparture.jd).r;
+		spec.coastWaypoints, spec.horizonJd - planDeparture.jd).r;
 	var rel = O.vSub(planEnd, Frames.bodyHelioState(spec.destination, spec.horizonJd).r);
 	return O.vMag(rel) > 0 ? O.vUnit(rel) : null;
 }

@@ -45,7 +45,7 @@ function deliveredOffsetBy(metres, mission) {
 function specFor(delivered, mission) {
 	var pl = planOf(mission);
 	return { origin: "Earth", destination: pl.arr.body, delivered: delivered,
-	         planDeparture: pl.dep, planWaypoints: pl.wps, horizonJd: pl.horizon };
+	         planDeparture: pl.dep, coastWaypoints: pl.wps, horizonJd: pl.horizon };
 }
 
 test("the plan's own hand-off already arrives — that is the control", () => {
@@ -94,18 +94,49 @@ test("an unchanged hand-off solves back to (essentially) the plan's own velocity
 	assert.ok(res.turnDeg < 0.01);
 });
 
-test("a hand-off flung far enough off base is refused, and says where to go", () => {
-	// A quarter of an AU sideways is not a departure to re-point. Lambert will
-	// still answer — at a 70 degree turn and about 4.8 km/s — which is exactly
-	// why the answer alone cannot be the test: the ASK has to stay inside normal
-	// correction scale.
+test("the size of the ask does not gate a requirement that arrives", () => {
+	// A quarter of an AU sideways asks the departure for a 70 degree turn and
+	// about 10 km/s on one axis. That is a large ask — and it is still the
+	// correct requirement, because a departure meeting it lands the mission at
+	// the aim. Where the flight PASSES is the only standard; what the ask costs
+	// is answered by building the departure up, not by refusing to state it.
 	var res = solveDepartureTarget(specFor(deliveredOffsetBy(0.25 * 149597870700)));
-	assert.equal(res.ok, false);
-	assert.match(res.reason, /correction limit/);
-	// A gap this size is a departure that has not been built up yet, so the
-	// refusal points at the technology — not at authoring a different mission.
-	assert.match(res.reason, /add to the departure/);
+	assert.equal(res.ok, true, res.reason);
+	assert.ok(res.passAfter < MAX_PASS_ALTITUDE,
+		"the re-solved flight arrives, got " + Math.round(res.passAfter / 1000) + " km");
+	assert.equal(res.withinTolerance, true);
+	assert.equal(res.reason, null);
+	// The ask is still reported — the mission report shows it shrinking across
+	// iterations — it just decides nothing.
+	assert.ok(res.askWorst > 1000, "a large ask, reported: " + Math.round(res.askWorst) + " m/s");
 });
+
+test("what Update commits follows the pass and nothing else", () => {
+	// Across offsets spanning five orders of magnitude — and asks spanning
+	// three, from 1 m/s to 15 km/s — the gate tracks one thing.
+	var offsets = [0, 2e8, 0.25 * 149597870700, 149597870700];
+	var asks = [];
+	offsets.forEach(function (m) {
+		var res = solveDepartureTarget(specFor(
+			m === 0 ? { r: planOf().dep.r, v: planOf().dep.v, jd: planOf().dep.jd }
+			        : deliveredOffsetBy(m)));
+		assert.equal(res.ok, true, m + ": " + res.reason);
+		assert.equal(res.withinTolerance, res.passAfter < MAX_PASS_ALTITUDE,
+			"offset " + m + " m: the gate is the pass");
+		assert.equal(res.reason === null, res.withinTolerance,
+			"offset " + m + " m: a reason is given exactly when it is refused");
+		asks.push(res.askWorst);
+	});
+	// The isolation: the asks really do span the range that used to decide this,
+	// so the assertions above are not all testing the same easy case.
+	assert.ok(Math.max.apply(null, asks) > 100 * WAS_THE_OLD_CAP,
+		"asks should span past the old cap, max " + Math.round(Math.max.apply(null, asks)));
+	assert.ok(Math.min.apply(null, asks) < WAS_THE_OLD_CAP,
+		"and start below it, min " + Math.round(Math.min.apply(null, asks)));
+});
+// The per-axis course-correction limit re-targeting used to be held to. Named
+// here only so the test above can show it is spanned and no longer decides.
+var WAS_THE_OLD_CAP = 100;
 
 test("a hand-off at or after the coast's own end has no coast to solve", () => {
 	var pl = planOf();
@@ -187,4 +218,64 @@ test("re-targeting keeps the side of the body the flight already passes on", () 
 	// to 15,000 km, but not flipped to the far face of the body.
 	var dot = O.vDot(O.vUnit(before.pass.rRel), O.vUnit(after.pass.rRel));
 	assert.ok(dot > 0, "the pass should stay on the same side, dot " + dot.toFixed(3));
+});
+
+// ---- near-180 degree transfers, where the Lambert seed is singular ---------
+
+// A real Earth->Ceres mission whose 551-day coast sweeps 176.5 degrees of true
+// anomaly. At that geometry the transfer plane is undefined, so a Lambert conic
+// answers with an arbitrary steep one; Newton started there stalls in an
+// ill-conditioned out-of-plane direction 9.7 million km from the aim, and the
+// stalled velocity used to be returned as the departure requirement — a 12.34
+// km/s ask with an 11.8 km/s normal component, which the Departure card's
+// Needed column then showed as the figure to build towards.
+//
+// Seeded from the delivered velocity instead, the same case converges exactly:
+// the answer is a 108 m/s trim of a flight that was already going the right way.
+var nearOppositionMission = {
+	origin: "Earth",
+	destination: "Ceres",
+	delivered: { r: [-3239823775.384351, 147443882371.82523, 87338065.34408806],
+	             v: [-36540.756751715846, 2024.3719365792563, 694.1564839959574],
+	             jd: 2463223.897232968 },
+	planDeparture: { r: [-2837989135.6456904, 147492497514.03708, 93373586.13984686],
+	                 v: [-36546.545735811946, 2099.790327426168, 690],
+	                 jd: 2463223.75 },
+	coastWaypoints: [{ days: 345.43608844963944,
+	                  burn: { pro: 1.1037750835542788, rad: 40.06689879098357,
+	                          nrm: -677.2557345093262 } }],
+	horizonJd: 2463223.897232968 + 551.4069569669664
+};
+
+test("a near-180 degree coast solves to a trim, not to a stalled two-point seed", () => {
+	var res = solveDepartureTarget(nearOppositionMission);
+	assert.equal(res.ok, true, res.reason);
+	// The aim is reached: the pass lands on AIM_PASS_ALTITUDE, where before the
+	// fix it came out 6.45 million km away — twice as far as flying the
+	// delivered hand-off untouched.
+	assert.ok(Math.abs(res.passAfter - AIM_PASS_ALTITUDE) < 0.05 * AIM_PASS_ALTITUDE,
+		"should pass at the aim, got " + Math.round(res.passAfter / 1000) + " km");
+	assert.ok(res.passAfter < res.passBefore,
+		"re-solving must not make the approach worse: " +
+		Math.round(res.passBefore / 1000) + " km -> " + Math.round(res.passAfter / 1000) + " km");
+	// A small ask, in the frame the Departure card states its own vector in.
+	assert.ok(res.askWorst < 200,
+		"the ask should be a trim, got " + Math.round(res.askWorst) + " m/s on one axis");
+	assert.ok(res.turnDeg < 5, "a small turn, got " + res.turnDeg.toFixed(2) + " degrees");
+});
+
+test("a solve that never reaches its aim is not reported as a requirement", () => {
+	// A hand-off an AU off base: Newton cannot bring the flight back, so there
+	// is no requirement to state. The module reports figures it cannot commit,
+	// but only when they mean something.
+	var pl = planOf();
+	var res = solveDepartureTarget(specFor({
+		r: O.vScale(pl.dep.r, 2.5), v: pl.dep.v.slice(), jd: pl.dep.jd
+	}));
+	if (res.ok) {
+		assert.ok(res.passAfter <= res.passBefore || res.passAfter < MAX_PASS_ALTITUDE,
+			"an ok solve must be an improvement or inside the bound");
+	} else {
+		assert.ok(/reach|come near|re-aim/.test(res.reason), "a stated reason: " + res.reason);
+	}
 });
