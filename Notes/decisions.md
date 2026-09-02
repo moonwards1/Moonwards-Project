@@ -779,66 +779,18 @@ technology's dials are enumerated from whatever params its stage holds, keyed
 by module and occurrence rather than chain position: a technology added above
 another must not make the other's dials read as changed.
 
-THE MOON IS AN ORIGIN, AND ITS DEPARTURE IS AUTHORED FORWARD (2026-09-01). A
-mission may depart from the Moon. That makes it the one origin whose departure
-phase ends at a DIFFERENT body's sphere of influence than the one it left: a
-ship leaving the Moon is still 850,000 km inside Earth's SOI, so the hand-off
-is at Earth's edge and its v∞ is measured against EARTH's heliocentric
-velocity. `Shared/frames.js` holds both halves of that split — `bodyHelioState`
-resolves the Moon's POSITION through the lunar ephemeris (a second hop; it has
-no Sun-centred ellipse), while `escapeReferenceFor` answers the separate
-question of which body's velocity a hand-off is measured against. Measuring
-against the Moon's own velocity instead would fold its monthly 1 km/s swing
-into compliance, so the same plan would grade differently by lunar phase.
-
-A LUNAR DEPARTURE IS THE ONE THE PLANNER SETS AT ITS START, not at its end.
-The Ephemeris tab's departure card, for a Moon origin only, holds an IMPULSE
-thrown from the Moon and its clock is the RELEASE epoch;
-`core/lunar-departure.js` integrates Earth + Moon + Sun forward from the Moon's
-SOI edge, and the crossing of Earth's SOI — position, velocity and epoch — is
-the output that starts the coast. Every other origin still authors the hand-off
-directly, with the clock as its epoch.
-
-THE CARD'S AXES ARE EARTH'S AT EVERY ORIGIN, the Moon included: prograde along
-EARTH's heliocentric motion, normal ecliptic-up, radial completing the set,
-taken at the epoch the card acts (for a lunar release, the RELEASE epoch —
-Earth's heading moves about a degree a day, so reading them at the crossing
-days later would be a different frame). Stating a lunar release on the Moon's
-own geocentric axes instead would make "prograde" rotate a full turn a month,
-so the same three numbers would mean a different throw every week and could not
-be compared with any other origin's card. The Moon's contribution reaches the
-trajectory through its VELOCITY, which the release rides, not through the axes
-the release is quoted on.
-
-The direction is the decision. The Moon's ~1,022 m/s points a different way
-every day of the month, and at Earth's SOI that shows up as a HEADING: the
-geocentric speed there varies under 1%, while the heliocentric speed — Earth's
-30 km/s plus that rotating vector — swings about 6 km/s. Pinning a velocity at
-Earth's SOI and solving backwards for the release therefore pins the one
-quantity lunar phase controls, and the drawn trajectory stops responding to the
-launch date: across a lunar month a fixed card moved aphelion by 0.2%, where a
-fixed release moves it from 0.99 AU to 1.53 AU. The Moon's contribution landed
-only in the release COST, which is a readout.
-
-Consequences that follow from it, and are not separately negotiable:
-
-- **The clock and the coast's start are different dates** for a Moon origin.
-  The departure phase begins at the tab's date and ends where the flight
-  crosses Earth's SOI, days later; `legStartJd` in `ephemeris-view.js` is that
-  second date, and every "t along the leg" reading is measured from it.
-- **There is one course per release.** The backwards solve had several roots
-  for one hand-off, which is why a course picker existed; forward there is
-  nothing to choose and the control is gone.
-- **A frozen lunar plan stores its release** (`lunarRelease` on `frozen-plan`:
-  epoch + impulse) alongside the hand-off. The release cannot be recovered from
-  the hand-off without solving backwards, so without that record a pasted lunar
-  mission cannot be reopened for revision. Provenance only — no stage computes
-  from it.
-- **`core/departure-estimate.js` no longer shapes a lunar departure.** Its Moon
-  branch is a SEED for a plan that arrived without a release, and it covers the
-  right stretch — lunar distance out to Earth's SOI, not Earth's surface out.
-- The shipped Moon → Ceres preset predates this and carries no release, so the
-  Ephemeris tab cannot reopen it. Re-solving it is an open decision.
+THE MOON IS AN ORIGIN, AND ITS DEPARTURE IS FLOWN, NOT CONSTRUCTED
+(2026-09-01). A mission may depart from the Moon. That makes it the one origin
+whose departure phase ends at a DIFFERENT body's sphere of influence than the
+one it left: a ship leaving the Moon is still 850,000 km inside Earth's SOI,
+so the hand-off is at Earth's edge and its v∞ is measured against EARTH's
+heliocentric velocity. `Shared/frames.js` holds both halves of that split —
+`bodyHelioState` resolves the Moon's POSITION through the lunar ephemeris (a
+second hop; it has no Sun-centred ellipse), while `escapeReferenceFor` answers
+the separate question of which body's velocity a hand-off is measured against.
+Measuring against the Moon's own velocity instead would fold its monthly
+1 km/s swing into compliance, so the same plan would grade differently by
+lunar phase.
 
 EARTH IS AN ORDINARY ORIGIN (2026-09-01). It departs from Earth the way Mars
 departs from Mars: the generic `body-departure-leg`, a self-originating
@@ -847,7 +799,7 @@ the geocentric `departure-leg`. This replaces the old arrangement where an
 "Earth" origin silently meant a lunar departure — the shipped mission was
 titled "Moon → Ceres" while storing origin "Earth". With it goes the
 dive-in/direct-out Moon-wedge estimate, which existed to time that lunar
-departure and is superseded by flying it.
+departure and is superseded by solving it.
 
 v∞ IS ASYMPTOTIC WHEREVER A HYPERBOLA FORMULA TAKES IT (2026-09-01). The
 Departure card's vector is the ship's velocity AT the SOI edge, where the
