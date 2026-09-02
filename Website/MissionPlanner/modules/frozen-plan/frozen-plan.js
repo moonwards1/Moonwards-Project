@@ -123,7 +123,12 @@ export var defaultParams = {
 	departure: { r: null, v: null, jd: null },
 	arrival: { body: "", vInf: null },
 	handoffWindowDays: null,   // half-width (d); null → DEFAULT_WINDOW_DAYS
-	waypoints: []
+	waypoints: [],
+	// A Moon origin only: { jd, burn: { pro, rad, nrm } } — the release the
+	// departure was authored from, an impulse in the Moon's own geocentric
+	// frame (core/lunar-departure.js). Carried so a pasted mission reopens
+	// that departure; nothing here computes from it.
+	lunarRelease: null
 };
 
 // The half-width (days) of a plan's hand-off window, with the default for

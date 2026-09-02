@@ -74,13 +74,19 @@ test("non-Earth origin keeps the naive estimate, on the TRUE excess speed", () =
 	assert.ok(est.seconds > originSoiRadius("Mars") / 3000, "and longer than the naive edge-speed answer");
 });
 
-test("a Moon origin is solved, not estimated; an unknown origin refuses", () => {
+test("a Moon origin is seeded from lunar distance; an unknown origin refuses", () => {
 	// The Moon has no heliocentric orbit record, but it does have a departure:
-	// it escapes EARTH's SOI, and the flight there is integrated.
+	// it escapes EARTH's SOI. This is only the SEED for a plan that arrived
+	// without a release of its own — a real lunar departure is flown forward
+	// from one (core/lunar-departure.js) — so what it must get right is the
+	// stretch it covers: lunar distance out to Earth's SOI, not Earth's
+	// surface out to Earth's SOI.
 	var est = estimateDeparture({ origin: "Moon", vInfVec: [1900, -600, 120], jdHandoff: JD_BASE });
 	assert.ok(est.ok, "reason: " + est.reason);
-	assert.equal(est.profile, "lunar-integrated");
+	assert.equal(est.profile, "lunar-seed");
 	assert.ok(est.days > 0.5 && est.days < 20, "release lead " + est.days + " d");
+	var naive = originSoiRadius("Moon") / est.vInf;
+	assert.ok(est.seconds < naive, "shorter than crossing the whole SOI: " + est.seconds + " vs " + naive);
 	assert.ok(Math.abs((JD_BASE - est.jdLaunch) - est.days) < 1e-9);
 	// It escapes Earth's sphere, so it is timed against Earth's SOI, not the Moon's.
 	assert.equal(originSoiRadius("Moon"), originSoiRadius("Earth"));

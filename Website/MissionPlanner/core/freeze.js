@@ -145,9 +145,9 @@ export function freezeMissionWorld(spec) {
 	// the SOI exit, so the crossing is counted once. The plan's own window
 	// half-width defaults to ±1 d.
 	// A Moon origin already knows its release epoch exactly — the Ephemeris tab
-	// solved the whole departure to place the hand-off, so re-deriving it here
-	// would be a second, worse answer to a settled question. Every other origin
-	// takes the estimate.
+	// FLEW the departure from that epoch to place the hand-off, so re-deriving
+	// it here would be a second, worse answer to a settled question. Every
+	// other origin takes the estimate.
 	var est = estimateDeparture({
 		origin: spec.origin,
 		vInfVec: O.vSub(handoff.v, bodyHelioV(spec.origin, handoff.jd)),
@@ -177,13 +177,26 @@ export function freezeMissionWorld(spec) {
 	} else {
 		add("body-departure-leg", { waypoints: [], releaseJd: releaseJd });
 	}
-	add("frozen-plan", {
+	var planParams = {
 		origin: spec.origin,
 		departure: { r: handoff.r.slice(), v: handoff.v.slice(), jd: handoff.jd },
 		arrival: { body: spec.destination, vInf: spec.arrivalVInf },
 		handoffWindowDays: windowDays,
 		waypoints: waypoints.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; })
-	});
+	};
+	// A Moon origin's departure is authored FORWARD, from a release the
+	// Ephemeris tab flew out to Earth's SOI. The hand-off above is that
+	// flight's result, and the release cannot be recovered from it without
+	// solving backwards, so it is stored alongside — which is what lets a
+	// pasted mission reopen the same departure. Provenance only: no stage
+	// computes from it.
+	if (spec.lunarRelease) {
+		planParams.lunarRelease = {
+			jd: spec.lunarRelease.jd,
+			burn: copyBurn(spec.lunarRelease.burn)
+		};
+	}
+	add("frozen-plan", planParams);
 	add("transfer-leg", { waypoints: waypoints, legDays: legDays, destination: spec.destination });
 	// The arrival flyby leg: the visible Coast→Arrival hand-off, no burns, and
 	// the terminal stage — the arrival-tech slot is empty by default.

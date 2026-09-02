@@ -22,19 +22,17 @@
  * flight that edge can sit slightly away from where the SOI-exit event will
  * actually land.
  *
- * A MOON origin is not estimated at all: core/lunar-departure.js solves that
- * flight exactly, integrating Earth + Moon + Sun from the release to Earth's
- * SOI edge, and this file delegates to it rather than keeping a cheaper,
- * wronger second answer. The three terms that decide a lunar departure — the
- * Moon's orbital velocity, the Moon's own well, Earth's remaining well — are
- * each worth 0.9 to 2.2 km/s at the hand-off, so there is no honest closed
- * form to fall back on.
+ * NOTHING HERE SHAPES A LUNAR DEPARTURE. A Moon origin is authored forward —
+ * core/lunar-departure.js integrates Earth + Moon + Sun from a release the
+ * planner set, and its release epoch is the Ephemeris tab's own clock, carried
+ * into the mission by core/freeze.js. The Moon branch below exists only for a
+ * plan that reached freeze WITHOUT that record, and it is a seed: the
+ * two-body crossing from lunar distance out to Earth's SOI, since a lunar
+ * departure starts a quarter of the way out rather than at Earth's surface.
  *
  * Every other origin, Earth included, uses the naive estimate (SOI radius /
  * v∞). Earth is not special here: a departure from Earth leaves from Earth,
- * the same as one from Mars leaves from Mars. It is a departure from the MOON
- * that starts a quarter of the way out and rides 1 km/s of the Moon's motion,
- * and that case is solved rather than approximated.
+ * the same as one from Mars leaves from Mars.
  *
  * v∞ IS ASYMPTOTIC HERE. The hand-off vector is the ship's velocity AT the SOI
  * edge, where the primary's potential is not yet spent — 929 m/s worth for
@@ -58,7 +56,6 @@ import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { LunarEphemeris } from "../../Shared/lunar-ephemeris.js";
 import { Frames } from "../../Shared/frames.js";
-import { solveLunarDeparture } from "./lunar-departure.js";
 
 var O = OrbitalMath;
 var LE = LunarEphemeris;
@@ -117,16 +114,13 @@ export function moonProgradeSpeed(jd, earthHelioV) {
 //   origin,      // origin-body name, e.g. "Earth" or "Moon"
 //   vInfVec,     // m/s — hand-off velocity minus the ESCAPE body's (helio);
 //                //   for a Moon origin that reference is Earth, not the Moon
-//   jdHandoff,   // the plan's nominal Departure→Coast hand-off epoch
-//   warm         // optional previous lunar solve, passed through to
-//                //   core/lunar-departure.js for a Moon origin
+//   jdHandoff    // the plan's nominal Departure→Coast hand-off epoch
 // }
 // Returns { ok: true, seconds, days, jdLaunch, profile, vInf } with profile
-// "naive" or "lunar-integrated" (the latter also carrying the `solve` itself),
-// or { ok: false, reason } when there's no meaningful departure to time
-// ("no-vinf"), the origin has no heliocentric orbit record to escape from
-// ("unknown-origin"), or a lunar solve did not converge (the solver's own
-// reason). `vInf` is the TRUE hyperbolic excess, not the hand-off's edge speed.
+// "naive" or "lunar-seed", or { ok: false, reason } when there's no meaningful
+// departure to time ("no-vinf"), the origin has no heliocentric orbit record
+// to escape from ("unknown-origin"), or the crossing is degenerate. `vInf` is
+// the TRUE hyperbolic excess, not the hand-off's edge speed.
 export function estimateDeparture(spec) {
 	var vEdge = O.vMag(spec.vInfVec || [0, 0, 0]);
 	if (!(vEdge >= MIN_VINF)) { return { ok: false, reason: "no-vinf" }; }
@@ -140,13 +134,15 @@ export function estimateDeparture(spec) {
 		         jdLaunch: spec.jdHandoff - seconds / DAY, profile: profile, vInf: vInf };
 	}
 
-	// A lunar departure is solved, not estimated — see the header.
+	// A lunar departure starts a quarter of the way out, so it crosses only
+	// the stretch from lunar distance to Earth's SOI — the exact mirror of
+	// estimateArrival's inbound crossing. Two-body and closed form: this is a
+	// seed for a plan that arrived without one, never the flight itself, which
+	// core/lunar-departure.js integrates from the release.
 	if (spec.origin === "Moon") {
-		var s = solveLunarDeparture({ vInfVec: spec.vInfVec, jdHandoff: spec.jdHandoff,
-		                              warm: spec.warm });
-		if (!s.ok) { return { ok: false, reason: s.reason }; }
-		return { ok: true, seconds: s.lead * DAY, days: s.lead, jdLaunch: s.jdRelease,
-		         profile: "lunar-integrated", vInf: vInf, solve: s };
+		var t = O.soiExitTimeDirect(EARTH.GM, vInf, MOON_DIST, rSoi);
+		if (t == null) { return { ok: false, reason: "degenerate" }; }
+		return done(t, "lunar-seed");
 	}
 
 	return done(rSoi / vInf, "naive");

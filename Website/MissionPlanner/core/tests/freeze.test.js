@@ -241,3 +241,33 @@ test("waypoint days are already hand-off-relative and pass through untouched", (
 	// and the rendezvous still lands where the marker put it
 	assert.ok(Math.abs((plan.departure.jd + leg.legDays) - spec.arrivalJd) < 1e-9);
 });
+
+test("a Moon origin's release travels with the plan, and nothing else carries one", () => {
+	// A lunar departure is authored FORWARD, from a release the Ephemeris tab
+	// flew out to Earth's SOI, and the hand-off below is that flight's result.
+	// The release cannot be recovered from the hand-off without solving
+	// backwards, so freeze stores it — that record is what lets the tab reopen
+	// the plan on the same departure.
+	var spec = makeSpec();
+	spec.releaseJd = spec.jd - 3.25;
+	spec.lunarRelease = { jd: spec.jd - 3.25, burn: { pro: 120, rad: 2900, nrm: -40 } };
+	var world = freezeMissionWorld(spec);
+	var plan = paramsOf(world, "frozen-plan");
+
+	assert.equal(plan.lunarRelease.jd, spec.jd - 3.25);
+	assert.deepEqual(plan.lunarRelease.burn, { pro: 120, rad: 2900, nrm: -40 });
+	// The stored release is a copy: editing the plan must not reach back into
+	// whatever the caller still holds.
+	assert.notEqual(plan.lunarRelease.burn, spec.lunarRelease.burn);
+	// The departure leg's own release epoch agrees with it, so the phase and
+	// the plan describe one flight rather than two.
+	assert.equal(paramsOf(world, "departure-leg").releaseJd, spec.jd - 3.25);
+
+	// Every other origin authors the hand-off directly and has no release to
+	// store; freeze must not invent one.
+	var earth = freezeMissionWorld(Object.assign(makeSpec(), {
+		origin: "Earth", handoff: handoffFor(makeSpec().jd, "Earth", VINF),
+		releaseJd: undefined, lunarRelease: undefined
+	}));
+	assert.equal(paramsOf(earth, "frozen-plan").lunarRelease, undefined);
+});

@@ -407,9 +407,7 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 	// data, not something any live code re-derives, so what is checkable is its
 	// own internal consistency: the required v∞ it encodes, that the hand-off
 	// really sits on Earth's SOI edge (where a departure leg delivers, and where
-	// core/freeze.js commits), and that the timing fields were baked exactly the
-	// way core/freeze.js bakes them — anchor = hand-off − the departure flight
-	// core/lunar-departure.js solves for that same v∞.
+	// core/freeze.js commits), and that its timing fields hang together.
 	var planStage = defaultMission.stages[3];
 	assert.equal(planStage.moduleId, "frozen-plan");
 	var p = planStage.params;
@@ -426,14 +424,19 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 	assert.equal("injectionJd" in p, false);
 
 	assert.equal(p.handoffWindowDays, 1);
-	// Origin Moon: the seed is a solved lunar departure, not a naive estimate.
-	var est = estimateDeparture({ origin: p.origin, vInfVec: vInfVec, jdHandoff: p.departure.jd });
-	assert.equal(est.ok, true);
+	// The departure leg's release leads the hand-off by a real lunar flight
+	// time. It is baked, not re-derivable: a Moon departure's release is the
+	// planner's own input (core/lunar-departure.js flies forward from it), so
+	// there is no formula here to check it against — only that it is sane.
 	var legParams = defaultMission.stages
 		.filter(function (s) { return s.moduleId === "departure-leg"; })[0].params;
-	assert.ok(Math.abs(legParams.releaseJd - (p.departure.jd - est.days)) < 1e-6,
-		"release = hand-off − the freeze-time estimate (" + est.profile + ", " +
-		est.days.toFixed(4) + " d)");
+	var lead = p.departure.jd - legParams.releaseJd;
+	assert.ok(lead > 0.5 && lead < 20, "release leads the hand-off by " + lead.toFixed(3) + " d");
+	// This preset predates the forward model and carries no release of its
+	// own, so the Ephemeris tab cannot reopen it for revision. Re-solving it
+	// is a separate decision; this records the state rather than asserting it
+	// is fine.
+	assert.equal("lunarRelease" in p, false);
 });
 
 // ---- releaseEpochFor: the departure phase's own epoch, one lookup ----------

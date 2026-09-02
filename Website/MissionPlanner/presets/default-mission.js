@@ -40,15 +40,16 @@
 // every absolute epoch (the waypoint burn, the Ceres rendezvous) is exactly
 // where it was before the hand-off moved out.
 //
-// TIMING: the departure leg's releaseJd below is seeded the way core/freeze.js
-// seeds it. This mission departs the MOON, so that seed is not an estimate at
-// all: core/lunar-departure.js integrates Earth + Moon + Sun from the release
-// out to Earth's SOI and solves for the flight that delivers the plan's own
-// required v∞ (6.55 km/s), giving a lead of 2.0884 d =
-// 2463222.3845 − 2.0884 = 2463220.296116752. Both epochs name the SOI exit, so
-// the crossing is counted once, not once by the estimate and again by the
-// coast. The epoch belongs to the departure phase, not to the plan
+// TIMING: the departure leg's releaseJd below is baked, leading the hand-off
+// by 2.0884 d = 2463222.3845 − 2.0884 = 2463220.296116752. Both epochs name the
+// SOI exit, so the crossing is counted once, not once by a seed and again by
+// the coast. The epoch belongs to the departure phase, not to the plan
 // (core/release-epoch.js).
+//
+// This preset carries no `lunarRelease`, so the Ephemeris tab cannot reopen it
+// for revision: a lunar departure is authored FORWARD now (Notes/decisions.md,
+// 2026-09-01) and its release is not recoverable from the hand-off. Re-solving
+// this mission against the forward model is an open decision.
 //
 // THE DELIBERATE GAP: released at that epoch with phase 92, the chain delivers
 // v∞ ≈ 5.41 km/s against the committed 6.55, aimed ≈ 23.9° off, with the
