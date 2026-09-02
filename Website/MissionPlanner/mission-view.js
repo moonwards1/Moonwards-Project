@@ -39,6 +39,7 @@
 import { createEngine } from "./core/recompute.js";
 import { computeArrivalSeam } from "./core/arrival-seam.js";
 import { releaseEpochFor } from "./core/release-epoch.js";
+import { estimateDeparture, originSoiRadius } from "./core/departure-estimate.js";
 import { systems, constants } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Frames } from "../Shared/frames.js";
@@ -2185,19 +2186,38 @@ export function createMissionView(opts) {
 	// destination is set. Origin is this mission's own origin body
 	// (missionOriginBody()), not necessarily Earth. Always returns seconds > 0.
 	function departureDefaultSpanSeconds(results) {
-		var origin = systems.get(missionOriginBody(world));
-		var soi = O.sphereOfInfluence(origin.orbit.a, origin.GM, GM_SUN);   // m
+		var origin = missionOriginBody(world);
+		// The SOI a departure from this origin actually has to leave, and the
+		// heliocentric orbit it leaves from: for a satellite origin both belong
+		// to its PRIMARY (Frames.escapeReferenceFor). A ship leaving the Moon
+		// crosses EARTH's SOI, on Earth's heliocentric orbit — the Moon's own
+		// 384,399 km is geocentric and means nothing against the Sun.
+		var escape = systems.get(Frames.escapeReferenceFor(origin));
+		var soi = originSoiRadius(origin);
 		var plan = plannedDeparture(results);
-		if (plan && plan.vInf > 0) { return soi / plan.vInf; }
-		var dest = coastDestination();
-		if (dest) {
-			var rDest = systems.get(dest).orbit.a;
-			var dv1 = O.hohmann(GM_SUN, origin.orbit.a, rDest).dv1;   // m/s injection burn
-			if (dv1 > 0) { return soi / dv1; }
+
+		var vEdge = (plan && plan.vInf > 0) ? plan.vInf : 0;
+		if (!vEdge) {
+			var dest = coastDestination();
+			if (dest && escape && escape.orbit) {
+				var rDest = systems.get(dest).orbit.a;
+				vEdge = O.hohmann(GM_SUN, escape.orbit.a, rDest).dv1;   // m/s injection burn
+			}
 		}
 		// No plan data and no destination: use a conservative generic v∞ estimate
 		// (3 km/s is typical for interplanetary missions from Earth/similar bodies)
-		return soi / 3000;
+		if (!(vEdge > 0)) { vEdge = 3000; }
+
+		// core/departure-estimate.js owns the crossing: it converts the SOI-edge
+		// speed to the true hyperbolic excess and, for a Moon origin, crosses
+		// only from lunar distance out. Same estimator core/freeze.js seeds the
+		// release epoch with, so this edge and that seed agree.
+		var est = estimateDeparture({ origin: origin, vInfVec: [vEdge, 0, 0],
+		                              jdHandoff: (plan && isFinite(plan.jd)) ? plan.jd : 0 });
+		if (est.ok && est.seconds > 0) { return est.seconds; }
+		// An origin with no heliocentric escape reference at all has no crossing
+		// to time; departureSpan's own two-day default covers it.
+		return soi > 0 ? soi / vEdge : 2 * 86400;
 	}
 
 	// ---- the Arrival slider: the seam window itself --------------------------
