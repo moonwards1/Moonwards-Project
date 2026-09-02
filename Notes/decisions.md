@@ -792,12 +792,23 @@ against the Moon's own velocity instead would fold its monthly 1 km/s swing
 into compliance, so the same plan would grade differently by lunar phase.
 
 A LUNAR DEPARTURE IS THE ONE THE PLANNER SETS AT ITS START, not at its end.
-The Ephemeris tab's departure card, for a Moon origin only, holds an IMPULSE in
-the Moon's own geocentric frame and its clock is the RELEASE epoch;
+The Ephemeris tab's departure card, for a Moon origin only, holds an IMPULSE
+thrown from the Moon and its clock is the RELEASE epoch;
 `core/lunar-departure.js` integrates Earth + Moon + Sun forward from the Moon's
 SOI edge, and the crossing of Earth's SOI — position, velocity and epoch — is
 the output that starts the coast. Every other origin still authors the hand-off
 directly, with the clock as its epoch.
+
+THE CARD'S AXES ARE EARTH'S AT EVERY ORIGIN, the Moon included: prograde along
+EARTH's heliocentric motion, normal ecliptic-up, radial completing the set,
+taken at the epoch the card acts (for a lunar release, the RELEASE epoch —
+Earth's heading moves about a degree a day, so reading them at the crossing
+days later would be a different frame). Stating a lunar release on the Moon's
+own geocentric axes instead would make "prograde" rotate a full turn a month,
+so the same three numbers would mean a different throw every week and could not
+be compared with any other origin's card. The Moon's contribution reaches the
+trajectory through its VELOCITY, which the release rides, not through the axes
+the release is quoted on.
 
 The direction is the decision. The Moon's ~1,022 m/s points a different way
 every day of the month, and at Earth's SOI that shows up as a HEADING: the

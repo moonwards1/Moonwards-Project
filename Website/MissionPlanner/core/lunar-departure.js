@@ -8,12 +8,12 @@
  * departure is not over until it crosses THAT boundary.
  *
  * WHAT IS GIVEN, AND WHAT COMES OUT. The release is the input: an epoch, and
- * an impulse in the Moon's own geocentric frame. The ship starts at the edge
- * of the Moon's sphere of influence, carrying the Moon's velocity at that
- * epoch plus that impulse, and is integrated with Earth + Moon + Sun gravity
- * (Shared/geo-leg.js) until it crosses Earth's SOI. Where and when it crosses,
- * and how fast, are OUTPUTS. Nothing here solves backwards, and there is no
- * hand-off to converge on.
+ * an impulse stated on EARTH's heliocentric axes (see releaseImpulse). The
+ * ship starts at the edge of the Moon's sphere of influence, carrying the
+ * Moon's velocity at that epoch plus that impulse, and is integrated with
+ * Earth + Moon + Sun gravity (Shared/geo-leg.js) until it crosses Earth's SOI.
+ * Where and when it crosses, and how fast, are OUTPUTS. Nothing here solves
+ * backwards, and there is no hand-off to converge on.
  *
  * That direction is the whole point. The Moon's ~1,022 m/s of orbital velocity
  * points a different way every day of the month, and at Earth's SOI edge that
@@ -44,6 +44,7 @@
 
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { systems } from "../../Shared/orbit.js";
+import { Frames } from "../../Shared/frames.js";
 import { SOI_EARTH, SOI_MOON, moonGeoPos, moonGeoVel, integrateTrajectory }
 	from "../../Shared/geo-leg.js";
 
@@ -65,15 +66,31 @@ export function releaseSpeedFor(uMag, rRelease) {
 	return Math.sqrt(uMag * uMag + 2 * GM_MOON * (1 / r - 1 / SOI_MOON));
 }
 
-// The Moon's velocity at `jd` plus an impulse stated in the Moon's own
-// geocentric orbital frame — prograde along the Moon's motion, normal
-// ecliptic-up, radial completing the set. Exported because the Ephemeris tab's
-// departure card holds exactly these three components and needs to read them
-// back as a vector (and the readout boxes need the frame's axes).
-export function releaseVelocity(jd, burn) {
+// The release impulse as a vector, from the three components the Ephemeris
+// tab's departure card holds.
+//
+// THE AXES ARE EARTH'S, not the Moon's: prograde is along EARTH's heliocentric
+// motion, normal is ecliptic-up, radial completes the set — the same frame
+// every other origin's departure card uses, and the same one the Moon widget's
+// "relative speed" bar is measured along. So "prograde" means one thing across
+// the whole tab, instead of rotating a full turn a month at this one origin.
+// They are taken at the RELEASE epoch, where the impulse actually happens;
+// Earth's heading moves about a degree a day, so reading them at the SOI
+// crossing several days later would be a different frame.
+export function releaseImpulse(jd, burn) {
 	var b = burn || {};
-	return O.applyBurn(moonGeoPos(jd), moonGeoVel(jd),
-	                   b.pro || 0, b.nrm || 0, b.rad || 0);
+	var e = Frames.bodyHelioState("Earth", jd);
+	var f = O.burnFrame(e.r, e.v);
+	return O.vAdd(O.vScale(f.pro, b.pro || 0),
+	       O.vAdd(O.vScale(f.nrm, b.nrm || 0), O.vScale(f.rad, b.rad || 0)));
+}
+
+// The ship's GEOCENTRIC velocity as it leaves: the Moon's own, plus that
+// impulse. The impulse's axes come from Earth's heliocentric motion but the
+// sum is geocentric — velocities add directly, the two frames differing only
+// by Earth's own velocity, which is not applied here.
+export function releaseVelocity(jd, burn) {
+	return O.vAdd(moonGeoVel(jd), releaseImpulse(jd, burn));
 }
 
 // Where the flight crosses Earth's SOI, interpolated between the two samples
@@ -96,7 +113,7 @@ function soiCrossing(samples, jd0) {
 
 // The flight. spec = {
 //   jd,            // the release epoch — the Departure phase's own start
-//   burn,          // { pro, rad, nrm } m/s, in the Moon's geocentric frame
+//   burn,          // { pro, rad, nrm } m/s, on Earth's heliocentric axes
 //   releaseRadius  // optional, for the quoted release speed only (default 100 km)
 // }
 //

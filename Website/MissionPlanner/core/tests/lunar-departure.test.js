@@ -14,7 +14,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { Frames } from "../../../Shared/frames.js";
 import { SOI_EARTH, SOI_MOON, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
-import { flyLunarDeparture, releaseVelocity, releaseSpeedFor, RELEASE_ALTITUDE }
+import { flyLunarDeparture, releaseVelocity, releaseImpulse, releaseSpeedFor, RELEASE_ALTITUDE }
 	from "../lunar-departure.js";
 
 var O = OrbitalMath;
@@ -81,12 +81,14 @@ test("the launch date moves the resulting heliocentric arc", function () {
 		helioSpeed.push(O.vMag(vh));
 	}
 	var spread = Math.max.apply(null, apo) - Math.min.apply(null, apo);
-	assert.ok(spread > 0.3, "aphelion spans a lunar month, spread " + spread.toFixed(3) + " AU");
+	assert.ok(spread > 0.2, "aphelion spans a lunar month, spread " + spread.toFixed(3) + " AU");
 
-	// It is a heliocentric SPEED difference, not a geocentric one: the same
-	// throw adds to Earth's motion at one phase and subtracts at another.
+	// It is a heliocentric SPEED difference, not a geocentric one. The card's
+	// own direction is fixed on Earth's axes, so what swings is the Moon's
+	// 1,022 m/s riding underneath it — worth a couple of km/s of heliocentric
+	// speed by the time the ship is out of Earth's SOI.
 	var vSpread = Math.max.apply(null, helioSpeed) - Math.min.apply(null, helioSpeed);
-	assert.ok(vSpread > 3000, "heliocentric speed spans " + Math.round(vSpread) + " m/s");
+	assert.ok(vSpread > 2000, "heliocentric speed spans " + Math.round(vSpread) + " m/s");
 });
 
 test("release speed at altitude is the impulse plus the Moon's well", function () {
@@ -108,24 +110,79 @@ test("a release that cannot escape reports it, with the flight attached", functi
 	assert.equal(none.ok, false);
 	assert.equal(none.reason, "no-impulse");
 
-	// Thrown, but far too slowly to leave Earth from lunar distance.
-	var weak = flyLunarDeparture({ jd: JD, burn: { pro: 0, rad: 60, nrm: 0 } });
+	// Thrown, but far too slowly to leave Earth from lunar distance: 60 m/s on
+	// top of the Moon's 1,022 m/s, against the 1,440 m/s Earth escape needs
+	// out here. It stays in orbit and never reaches Earth's SOI.
+	var weak = flyLunarDeparture({ jd: JD, burn: { pro: 60, rad: 0, nrm: 0 } });
 	assert.equal(weak.ok, false, "60 m/s should not escape Earth");
-	assert.ok(weak.reason === "no-escape" || weak.reason.indexOf("impact-") === 0, weak.reason);
+	assert.equal(weak.reason, "no-escape");
 	assert.ok(weak.leg && weak.leg.samples.length > 1, "the flight is still there to draw");
+
+	// Thrown out of the Moon's orbital plane too slowly to clear the Moon
+	// itself (385 m/s at its SOI edge), so it falls back onto it.
+	var back = flyLunarDeparture({ jd: JD, burn: { pro: 0, rad: 0, nrm: 60 } });
+	assert.equal(back.ok, false);
+	assert.equal(back.reason, "impact-Moon");
+	assert.ok(back.leg.samples.length > 1, "and that flight is drawable too");
 });
 
-test("the card's components are read in the Moon's own frame", function () {
-	// releaseVelocity is what the Ephemeris tab's departure card means: the
-	// Moon's velocity plus an impulse in the Moon's geocentric orbital frame.
-	// A pure prograde entry must therefore speed the Moon's own motion up.
+test("a marginal release still reports the flight it really makes", function () {
+	// Barely faster than the Moon, a release does not fail outright: it wanders
+	// out on a weakly bound orbit that solar and lunar perturbation eventually
+	// carry across Earth's SOI, weeks later. That is what the integration says,
+	// so it is reported as a real (if useless) departure rather than rejected —
+	// the flight time on the card is what marks it as one to avoid.
+	var drift = flyLunarDeparture({ jd: JD, burn: { pro: 0, rad: 60, nrm: 0 } });
+	assert.equal(drift.ok, true, drift.reason);
+	assert.ok(drift.flightDays > 20,
+		"a drift-out takes weeks, not days: " + drift.flightDays.toFixed(1) + " d");
+});
+
+test("the card's components are read on EARTH's heliocentric axes", function () {
+	// The departure card means the same thing here as at every other origin:
+	// prograde is along Earth's heliocentric motion, not the Moon's geocentric
+	// motion — which would rotate a full turn a month and make "prograde"
+	// mean something different every week.
+	var e = Frames.bodyHelioState("Earth", JD);
+	var pro = releaseImpulse(JD, { pro: 500, rad: 0, nrm: 0 });
+	assert.ok(Math.abs(O.vMag(pro) - 500) < 1e-9, "magnitude is the entry");
+	var cos = O.vDot(O.vUnit(pro), O.vUnit(e.v));
+	assert.ok(cos > 1 - 1e-9, "and it points along Earth's heliocentric velocity");
+
+	// Explicitly NOT the Moon's frame: at a date where the Moon's geocentric
+	// motion is well away from Earth's heliocentric heading, the two readings
+	// of "prograde" differ, and the card follows Earth.
+	var moonPro = O.vUnit(moonGeoVel(JD));
+	assert.ok(O.vDot(O.vUnit(pro), moonPro) < 0.9,
+		"the Moon's own prograde is a different direction here");
+
+	// The impulse rides the Moon's velocity: that is what releaseVelocity adds.
 	var mV = moonGeoVel(JD);
-	var pro = releaseVelocity(JD, { pro: 500, rad: 0, nrm: 0 });
-	assert.ok(O.vMag(pro) > O.vMag(mV), "prograde adds to the Moon's speed");
-	assert.ok(Math.abs(O.vMag(O.vSub(pro, mV)) - 500) < 1e-6, "and by exactly the entry");
-
-	var zero = releaseVelocity(JD, { pro: 0, rad: 0, nrm: 0 });
-	assert.deepEqual(zero.map(round3), mV.map(round3), "no impulse means the Moon's own motion");
+	assert.deepEqual(releaseVelocity(JD, { pro: 500, rad: 0, nrm: 0 }).map(round3),
+		O.vAdd(mV, pro).map(round3));
+	assert.deepEqual(releaseVelocity(JD, { pro: 0, rad: 0, nrm: 0 }).map(round3),
+		mV.map(round3), "no impulse means the Moon's own motion");
 });
+
+test("a prograde release outruns a retrograde one, whatever the lunar phase", function () {
+	// The payoff of Earth-frame axes: a positive prograde entry always adds to
+	// the ship's heliocentric speed, on every day of the month. On the Moon's
+	// own axes the same entry would add at one phase and subtract at another.
+	for (var k = 0; k < 6; k++) {
+		var jd = JD + k * LUNAR_MONTH / 6;
+		var fwd = flyLunarDeparture({ jd: jd, burn: { pro: 2600, rad: 0, nrm: 0 } });
+		var back = flyLunarDeparture({ jd: jd, burn: { pro: -2600, rad: 0, nrm: 0 } });
+		assert.equal(fwd.ok, true, "prograde day " + k + ": " + fwd.reason);
+		assert.equal(back.ok, true, "retrograde day " + k + ": " + back.reason);
+		assert.ok(helioSpeedAtExit(fwd) > helioSpeedAtExit(back) + 3000,
+			"day " + k + ": prograde " + Math.round(helioSpeedAtExit(fwd)) +
+			" vs retrograde " + Math.round(helioSpeedAtExit(back)) + " m/s");
+	}
+});
+
+function helioSpeedAtExit(f) {
+	var eh = Frames.bodyHelioState("Earth", f.exit.jd);
+	return O.vMag(O.vAdd(eh.v, f.exit.v));
+}
 
 function round3(x) { return Math.round(x * 1e3) / 1e3; }
