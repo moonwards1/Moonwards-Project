@@ -31,8 +31,10 @@
  * module only owns rendering the rows and positioning the box.
  */
 
-// Rebuild the readout boxes from a list of { host, data } (data may be null
-// for a negligible burn, in which case that entry is skipped). Removes the
+// Rebuild the readout boxes from a list of { host, data, title, magLabel }
+// (data may be null for a negligible burn, in which case that entry is
+// skipped; title/magLabel are optional and default to "Δv"/"impulse", which
+// the non-compact layout joins as one row label). Removes the
 // old boxes from `layer`, builds new ones, and returns the new boxes array
 // (caller keeps this in its own `readoutBoxes`-style variable). Does NOT
 // position them — call `positionReadoutBoxes` after.
@@ -50,17 +52,24 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 	entries.forEach(function (en) {
 		if (!en.data || !en.host) { return; }
 		var prograde = fmtPrograde(en.data);
+		// Not every box describes an impulse. A DEPARTURE box's magnitude is a
+		// v∞ — the ship's speed relative to the body it is leaving, which no
+		// single burn delivered — so an entry may name its own title and
+		// magnitude row. Waypoint and stage burns are real impulses and take
+		// the defaults.
+		var title = en.title || "Δv";
+		var magLabel = en.magLabel || "impulse";
 		var box = document.createElement("div");
 		box.className = cls + "-readout" + (opts.compact ? " " + cls + "-readout-compact" : "");
 		box.innerHTML = opts.compact
-			? '<div class="' + cls + '-readout-title">Δv</div>'
-			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse</span>'
+			? '<div class="' + cls + '-readout-title">' + title + '</div>'
+			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + magLabel + '</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">prograde</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.spdHex + '">' + prograde + '</span></div>'
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">plane<br>change</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'
-			: '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">impulse Δv</span>'
+			: '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + magLabel + ' ' + title + '</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + en.data.burnDv.toFixed(2) + ' km/s</span></div>'
 			  + '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + planeChangeLabel + '</span>'
 			  + '<span class="' + cls + '-readout-val" style="color:' + opts.dvHex + '">' + fmtSigned(en.data.planeChange, 1, '°') + '</span></div>'

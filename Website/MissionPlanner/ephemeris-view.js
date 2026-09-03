@@ -2104,7 +2104,13 @@ export function createEphemerisView(opts) {
 		// propagated from — the same pair at every origin, including the Moon.
 		// They are shown even when the rest of the leg is invalid, since the
 		// hand-off itself is always resolvable.
-		var entries = [{ host: depBurnHost, data: departureReadout(hand) }];
+		// "v∞ / speed", not "Δv / impulse": the departure's magnitude is the
+		// ship's speed relative to the body it is leaving, which no single burn
+		// delivered — a skyhook release and the Moon's own motion are both in
+		// it at a Moon origin. Waypoint boxes below keep the impulse labels,
+		// which are true of them.
+		var entries = [{ host: depBurnHost, data: departureReadout(hand),
+		                 title: "v∞", magLabel: "speed" }];
 		addDepartureArrows(hand);
 
 		// A lunar departure core/lunar-departure.js does not model has no
