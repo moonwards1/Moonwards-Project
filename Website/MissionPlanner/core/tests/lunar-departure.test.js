@@ -1,188 +1,286 @@
 // node --test MissionPlanner/core/tests/lunar-departure.test.js
 //
-// The forward lunar departure: a release at the Moon's SOI edge, integrated
-// out to Earth's SOI. The properties worth pinning are that the flight is
-// real (energy adds up across the crossing), that the LAUNCH DATE moves the
-// resulting heliocentric arc — the whole reason the calculation runs this
-// direction — and that a release which cannot escape says so instead of
-// returning a flight.
+// The departure from a Moon origin. What is being pinned down here:
+//
+//   - the round trip. A card in, a ship velocity at the Moon out, and that
+//     velocity escapes along exactly the card that produced it. Everything
+//     else rests on this inversion being right.
+//   - the null control. Stop the Moon dead and the residual must vanish: the
+//     total is then the card and nothing else. A decomposition that cannot
+//     pass this is measuring its own arithmetic.
+//   - the residual is not the Moon's speed. It is what that speed is WORTH
+//     out at Earth's SOI, which is a different and usually larger number.
+//   - the supported region is enforced, not assumed.
 
-import { test } from "node:test";
-import assert from "node:assert/strict";
+import test from "node:test";
+import assert from "node:assert";
 
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
-import { Frames } from "../../../Shared/frames.js";
-import { SOI_EARTH, SOI_MOON, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
-import { flyLunarDeparture, releaseVelocity, releaseImpulse, releaseSpeedFor, RELEASE_ALTITUDE }
+import { SOI_EARTH, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
+import { flyLunarDeparture, cardVInf, vInfFromState, solveShipVelocity,
+         hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE }
 	from "../lunar-departure.js";
 
 var O = OrbitalMath;
 var GM_EARTH = systems.get("Earth").GM;
-var GM_MOON = systems.get("Moon").GM;
-var GM_SUN = systems.get("Sun").GM;
-var R_MOON = Number(systems.get("Moon").radius);
-var AU = 1.495978707e11;
-var JD = 2464329.5;                       // 2035-01-01
-var LUNAR_MONTH = 29.53;
+var JD = 2462502.5;                 // 2030-01-01, the tab's own opening date
+var LUNAR_MONTH = 27.321661;
 
-// A release that comfortably escapes: 3 km/s straight out from the Moon.
-var OUTWARD = { pro: 0, rad: 3000, nrm: 0 };
-
-test("the release starts at the Moon's SOI edge, carrying the Moon's motion", function () {
-	var f = flyLunarDeparture({ jd: JD, burn: OUTWARD });
-	assert.equal(f.ok, true, f.reason);
-
-	// One Moon-SOI radius from the Moon, along the way it was thrown.
-	var fromMoon = O.vSub(f.r0, moonGeoPos(JD));
-	assert.ok(Math.abs(O.vMag(fromMoon) - SOI_MOON) < 1, "release is on the Moon's SOI sphere");
-	var cos = O.vDot(O.vUnit(fromMoon), O.vUnit(f.u));
-	assert.ok(cos > 1 - 1e-9, "release point lies along the impulse direction");
-
-	// The velocity is the Moon's plus the card's impulse, and `u` is that
-	// impulse — so deleting the Moon's motion would change the flight.
-	assert.deepEqual(f.v0.map(round3), O.vAdd(moonGeoVel(JD), f.u).map(round3));
-	assert.ok(Math.abs(f.uMag - 3000) < 1, "|u| is the impulse magnitude, " + f.uMag);
-	assert.ok(O.vMag(moonGeoVel(JD)) > 900, "the Moon really is moving ~1 km/s");
-});
-
-test("the flight reaches Earth's SOI with the energy it left with", function () {
-	var f = flyLunarDeparture({ jd: JD, burn: OUTWARD });
-	assert.equal(f.ok, true, f.reason);
-
-	assert.ok(Math.abs(O.vMag(f.exit.r) - SOI_EARTH) < 2e3, "exit is on Earth's SOI sphere");
-	assert.ok(f.flightDays > 0.2 && f.flightDays < 30, "plausible flight time: " + f.flightDays);
-	assert.ok(Math.abs(f.exit.jd - (JD + f.flightDays)) < 1e-6, "exit epoch follows the release");
-
-	// Geocentric specific energy at release vs at the crossing. They differ
-	// only by the Moon's own well (still gripping at its SOI edge) and the
-	// Sun's third-body pull over the flight — small against the total.
-	function energy(r, v) { return O.vDot(v, v) / 2 - GM_EARTH / O.vMag(r); }
-	var e0 = energy(f.r0, f.v0), e1 = energy(f.exit.r, f.exit.v);
-	var moonWell = GM_MOON / SOI_MOON;
-	assert.ok(Math.abs(e1 - e0) < 3 * moonWell,
-		"energy is conserved to within the Moon's residual well: " + (e1 - e0));
-	assert.ok(e1 > 0, "the flight is escaping Earth");
-});
-
-test("the launch date moves the resulting heliocentric arc", function () {
-	// The point of flying this forward: an UNCHANGED release, launched on
-	// different days of the lunar month, produces materially different
-	// trajectories, because the Moon's ~1 km/s points a different way and
-	// that lands in the heliocentric velocity at Earth's SOI.
-	var apo = [], helioSpeed = [];
-	for (var k = 0; k < 8; k++) {
-		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 8, burn: OUTWARD });
-		assert.equal(f.ok, true, "day " + k + ": " + f.reason);
-		var eh = Frames.bodyHelioState("Earth", f.exit.jd);
-		var vh = O.vAdd(eh.v, f.exit.v);
-		var el = O.elementsFromState(GM_SUN, O.vAdd(eh.r, f.exit.r), vh);
-		apo.push(el.a * (1 + el.e) / AU);
-		helioSpeed.push(O.vMag(vh));
-	}
-	var spread = Math.max.apply(null, apo) - Math.min.apply(null, apo);
-	assert.ok(spread > 0.2, "aphelion spans a lunar month, spread " + spread.toFixed(3) + " AU");
-
-	// It is a heliocentric SPEED difference, not a geocentric one. The card's
-	// own direction is fixed on Earth's axes, so what swings is the Moon's
-	// 1,022 m/s riding underneath it — worth a couple of km/s of heliocentric
-	// speed by the time the ship is out of Earth's SOI.
-	var vSpread = Math.max.apply(null, helioSpeed) - Math.min.apply(null, helioSpeed);
-	assert.ok(vSpread > 2000, "heliocentric speed spans " + Math.round(vSpread) + " m/s");
-});
-
-test("release speed at altitude is the impulse plus the Moon's well", function () {
-	var f = flyLunarDeparture({ jd: JD, burn: OUTWARD });
-	var r = R_MOON + RELEASE_ALTITUDE;
-	// vis-viva through the Moon's well, and it must exceed the excess it buys.
-	var expect = Math.sqrt(f.uMag * f.uMag + 2 * GM_MOON * (1 / r - 1 / SOI_MOON));
-	assert.ok(Math.abs(f.releaseSpeed - expect) < 1e-6);
-	assert.ok(f.releaseSpeed > f.uMag + 500, "the Moon's well costs real speed");
-	// Climbing to the SOI EDGE with nothing left over, which is a little less
-	// than escaping to infinity (2,380 m/s at this altitude).
-	var toEdge = releaseSpeedFor(0, r);
-	assert.ok(toEdge > 2200 && toEdge < 2380, "reaching the SOI edge costs " + Math.round(toEdge));
-});
-
-test("a release that cannot escape reports it, with the flight attached", function () {
-	// Nothing thrown at all.
-	var none = flyLunarDeparture({ jd: JD, burn: { pro: 0, rad: 0, nrm: 0 } });
-	assert.equal(none.ok, false);
-	assert.equal(none.reason, "no-impulse");
-
-	// Thrown, but far too slowly to leave Earth from lunar distance: 60 m/s on
-	// top of the Moon's 1,022 m/s, against the 1,440 m/s Earth escape needs
-	// out here. It stays in orbit and never reaches Earth's SOI.
-	var weak = flyLunarDeparture({ jd: JD, burn: { pro: 60, rad: 0, nrm: 0 } });
-	assert.equal(weak.ok, false, "60 m/s should not escape Earth");
-	assert.equal(weak.reason, "no-escape");
-	assert.ok(weak.leg && weak.leg.samples.length > 1, "the flight is still there to draw");
-
-	// Thrown out of the Moon's orbital plane too slowly to clear the Moon
-	// itself (385 m/s at its SOI edge), so it falls back onto it.
-	var back = flyLunarDeparture({ jd: JD, burn: { pro: 0, rad: 0, nrm: 60 } });
-	assert.equal(back.ok, false);
-	assert.equal(back.reason, "impact-Moon");
-	assert.ok(back.leg.samples.length > 1, "and that flight is drawable too");
-});
-
-test("a marginal release still reports the flight it really makes", function () {
-	// Barely faster than the Moon, a release does not fail outright: it wanders
-	// out on a weakly bound orbit that solar and lunar perturbation eventually
-	// carry across Earth's SOI, weeks later. That is what the integration says,
-	// so it is reported as a real (if useless) departure rather than rejected —
-	// the flight time on the card is what marks it as one to avoid.
-	var drift = flyLunarDeparture({ jd: JD, burn: { pro: 0, rad: 60, nrm: 0 } });
-	assert.equal(drift.ok, true, drift.reason);
-	assert.ok(drift.flightDays > 20,
-		"a drift-out takes weeks, not days: " + drift.flightDays.toFixed(1) + " d");
-});
-
-test("the card's components are read on EARTH's heliocentric axes", function () {
-	// The departure card means the same thing here as at every other origin:
-	// prograde is along Earth's heliocentric motion, not the Moon's geocentric
-	// motion — which would rotate a full turn a month and make "prograde"
-	// mean something different every week.
-	var e = Frames.bodyHelioState("Earth", JD);
-	var pro = releaseImpulse(JD, { pro: 500, rad: 0, nrm: 0 });
-	assert.ok(Math.abs(O.vMag(pro) - 500) < 1e-9, "magnitude is the entry");
-	var cos = O.vDot(O.vUnit(pro), O.vUnit(e.v));
-	assert.ok(cos > 1 - 1e-9, "and it points along Earth's heliocentric velocity");
-
-	// Explicitly NOT the Moon's frame: at a date where the Moon's geocentric
-	// motion is well away from Earth's heliocentric heading, the two readings
-	// of "prograde" differ, and the card follows Earth.
-	var moonPro = O.vUnit(moonGeoVel(JD));
-	assert.ok(O.vDot(O.vUnit(pro), moonPro) < 0.9,
-		"the Moon's own prograde is a different direction here");
-
-	// The impulse rides the Moon's velocity: that is what releaseVelocity adds.
-	var mV = moonGeoVel(JD);
-	assert.deepEqual(releaseVelocity(JD, { pro: 500, rad: 0, nrm: 0 }).map(round3),
-		O.vAdd(mV, pro).map(round3));
-	assert.deepEqual(releaseVelocity(JD, { pro: 0, rad: 0, nrm: 0 }).map(round3),
-		mV.map(round3), "no impulse means the Moon's own motion");
-});
-
-test("a prograde release outruns a retrograde one, whatever the lunar phase", function () {
-	// The payoff of Earth-frame axes: a positive prograde entry always adds to
-	// the ship's heliocentric speed, on every day of the month. On the Moon's
-	// own axes the same entry would add at one phase and subtract at another.
-	for (var k = 0; k < 6; k++) {
-		var jd = JD + k * LUNAR_MONTH / 6;
-		var fwd = flyLunarDeparture({ jd: jd, burn: { pro: 2600, rad: 0, nrm: 0 } });
-		var back = flyLunarDeparture({ jd: jd, burn: { pro: -2600, rad: 0, nrm: 0 } });
-		assert.equal(fwd.ok, true, "prograde day " + k + ": " + fwd.reason);
-		assert.equal(back.ok, true, "retrograde day " + k + ": " + back.reason);
-		assert.ok(helioSpeedAtExit(fwd) > helioSpeedAtExit(back) + 3000,
-			"day " + k + ": prograde " + Math.round(helioSpeedAtExit(fwd)) +
-			" vs retrograde " + Math.round(helioSpeedAtExit(back)) + " m/s");
-	}
-});
-
-function helioSpeedAtExit(f) {
-	var eh = Frames.bodyHelioState("Earth", f.exit.jd);
-	return O.vMag(O.vAdd(eh.v, f.exit.v));
+function angleBetween(a, b) {
+	return Math.acos(Math.max(-1, Math.min(1, O.vDot(O.vUnit(a), O.vUnit(b))))) * 180 / Math.PI;
 }
 
-function round3(x) { return Math.round(x * 1e3) / 1e3; }
+// ---------------------------------------------------------------------------
+// vInfFromState — the forward step, against cases with known answers
+// ---------------------------------------------------------------------------
+
+test("a bound state has no v-infinity", function () {
+	var r = [384400e3, 0, 0];
+	var vCirc = Math.sqrt(GM_EARTH / 384400e3);
+	assert.equal(vInfFromState(r, [0, vCirc, 0]), null);
+});
+
+test("escape speed is the boundary", function () {
+	var r = [384400e3, 0, 0], vEsc = Math.sqrt(2 * GM_EARTH / 384400e3);
+	assert.equal(vInfFromState(r, [0, vEsc * 0.999, 0]), null);   // just short: bound
+	var out = vInfFromState(r, [0, vEsc * 1.001, 0]);
+	assert.ok(out.mag > 0 && out.mag < 100);                     // just over: barely out
+});
+
+test("vis-viva sets the magnitude", function () {
+	var r = [384400e3, 0, 0], v = [0, 2500, 0];
+	var out = vInfFromState(r, v);
+	var expect = Math.sqrt(2500 * 2500 - 2 * GM_EARTH / 384400e3);
+	assert.ok(Math.abs(out.mag - expect) < 1e-6);
+});
+
+test("a radial escape never turns", function () {
+	var out = vInfFromState([384400e3, 0, 0], [2000, 0, 0]);
+	assert.ok(angleBetween(out.vec, [1, 0, 0]) < 1e-9);
+});
+
+test("a tangential release puts periapsis at the release point", function () {
+	var out = vInfFromState([384400e3, 0, 0], [0, 2000, 0]);
+	assert.ok(Math.abs(out.rp - 384400e3) / 384400e3 < 1e-9);
+});
+
+// ---------------------------------------------------------------------------
+// solveShipVelocity — the inversion, which everything downstream rests on
+// ---------------------------------------------------------------------------
+
+test("the inversion round-trips: solved velocity escapes along the card", function () {
+	var rMoon = [384400e3, 0, 0];
+	var cards = [[0, 3000, 0], [1000, 3000, 0], [2000, 2000, 0],
+	             [500, 4000, 300], [3000, 1000, -800], [200, 1500, 0]];
+	cards.forEach(function (w) {
+		var s = solveShipVelocity(rMoon, w);
+		assert.ok(s.ok, "should solve " + w);
+		var back = vInfFromState(rMoon, s.u);
+		assert.ok(angleBetween(back.vec, w) < 1e-4,
+			"direction for " + w + " off by " + angleBetween(back.vec, w) + " deg");
+		assert.ok(Math.abs(back.mag - O.vMag(w)) / O.vMag(w) < 1e-9,
+			"magnitude for " + w);
+	});
+});
+
+test("vis-viva alone fixes the solved speed", function () {
+	var rMoon = [384400e3, 0, 0], w = [0, 3000, 0];
+	var s = solveShipVelocity(rMoon, w);
+	var expect = Math.sqrt(3000 * 3000 + 2 * GM_EARTH / 384400e3);
+	assert.ok(Math.abs(O.vMag(s.u) - expect) < 1e-6);
+});
+
+test("a card aimed back at Earth is refused, not fudged", function () {
+	var rMoon = [384400e3, 0, 0];
+	assert.equal(solveShipVelocity(rMoon, [-3000, 0, 0]).reason, "card-toward-Earth");
+	assert.equal(solveShipVelocity(rMoon, [0, 0, 0]).reason, "no-card");
+});
+
+test("a card past what an outward release can reach is refused by name", function () {
+	// Straight back along the Moon's radius but tilted just off it: reachable
+	// only by a trajectory that swings past Earth, which this file excludes.
+	var s = solveShipVelocity([384400e3, 0, 0], [-3000, 30, 0]);
+	assert.equal(s.ok, false);
+	assert.equal(s.reason, "card-needs-earth-pass");
+});
+
+// ---------------------------------------------------------------------------
+// THE NULL CONTROL — the test the whole decomposition stands on
+// ---------------------------------------------------------------------------
+
+test("null control: a stationary Moon contributes exactly nothing", function () {
+	var rMoon = [384400e3, 0, 0];
+	[[0, 2000, 0], [0, 3000, 0], [2000, 2000, 0], [800, 4000, 500]].forEach(function (w) {
+		var s = solveShipVelocity(rMoon, w);
+		// the Moon's velocity replaced by zero — the ship's own contribution alone
+		var total = vInfFromState(rMoon, O.vAdd([0, 0, 0], s.u));
+		var residual = O.vSub(total.vec, w);
+		assert.ok(O.vMag(residual) < 1e-6,
+			"residual for " + w + " should vanish, got " + O.vMag(residual));
+	});
+});
+
+test("null control: doubling the Moon's speed grows the residual", function () {
+	var rMoon = [384400e3, 0, 0], w = [0, 3000, 0];
+	var s = solveShipVelocity(rMoon, w);
+	var vM = [0, 1022, 0];
+	var mags = [0, 0.5, 1, 2].map(function (k) {
+		var total = vInfFromState(rMoon, O.vAdd(O.vScale(vM, k), s.u));
+		return O.vMag(O.vSub(total.vec, w));
+	});
+	assert.ok(mags[0] < 1e-6);
+	assert.ok(mags[1] < mags[2] && mags[2] < mags[3]);
+});
+
+// ---------------------------------------------------------------------------
+// The residual — the quantity the feature exists to show
+// ---------------------------------------------------------------------------
+
+test("the residual is close to the Moon's speed but never equal to it", function () {
+	// What the Moon's motion is WORTH at Earth's SOI is not what the Moon
+	// handed over. Deep in the well it can buy more than face value; carried
+	// across the departure rather than along it, less. Both happen.
+	var above = 0, below = 0, worst = 0;
+	for (var d = 0; d < 60; d += 3) {
+		[2000, 3000, 4000].forEach(function (pro) {
+			var f = flyLunarDeparture({ jd: JD + d, card: { pro: pro, rad: 0, nrm: 0 } });
+			if (!f.ok) { return; }
+			var ratio = f.residual.mag / O.vMag(moonGeoVel(JD + d));
+			if (ratio > 1) { above++; } else { below++; }
+			worst = Math.max(worst, Math.abs(ratio - 1));
+		});
+	}
+	assert.ok(above > 0 && below > 0, "should land on both sides of face value");
+	assert.ok(worst > 0.05, "residual should differ from face value by more than rounding");
+});
+
+test("the total is the card plus the residual, by construction", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 2500, rad: 300, nrm: -200 } });
+	assert.ok(f.ok, f.reason);
+	var sum = O.vAdd(f.cardVec, f.residual.vec);
+	assert.ok(O.vMag(O.vSub(sum, f.vInf.vec)) < 1e-6);
+});
+
+test("an unchanged card buys a different departure on a different date", function () {
+	// This is the whole point of letting the Moon reach the hand-off: same
+	// card, same ship, different day of the lunar month, different trajectory.
+	var totals = [];
+	for (var k = 0; k < 16; k++) {
+		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 16,
+		                            card: { pro: 3000, rad: 0, nrm: 0 } });
+		if (f.ok) { totals.push(f.vInf.mag); }
+	}
+	assert.ok(totals.length >= 4, "some phases must be supported, got " + totals.length);
+	var spread = Math.max.apply(null, totals) - Math.min.apply(null, totals);
+	assert.ok(spread > 500, "phase spread only " + spread + " m/s");
+});
+
+test("the card is what the ship pays, and never contains the Moon", function () {
+	// The card's own length is fixed by what the user typed and does not move
+	// with the Moon; only the TOTAL does.
+	var lens = [], totals = [];
+	for (var k = 0; k < 16; k++) {
+		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 16,
+		                            card: { pro: 3000, rad: 0, nrm: 0 } });
+		if (f.ok) { lens.push(O.vMag(f.cardVec)); totals.push(f.vInf.mag); }
+	}
+	assert.ok(lens.length >= 4);
+	lens.forEach(function (l) { assert.ok(Math.abs(l - 3000) < 1e-6); });
+	assert.ok(Math.max.apply(null, totals) - Math.min.apply(null, totals) > 500);
+});
+
+test("half the lunar month is refused, and that is the stated limit", function () {
+	// A card fixed on Earth's heliocentric axes points the same way all month
+	// while the Moon goes round it. When the Moon is on the far side, the only
+	// trajectory that would deliver that card has to pass Earth — out of scope
+	// here, and refused by name rather than drawn wrong.
+	var ok = 0, pass = 0;
+	for (var k = 0; k < 32; k++) {
+		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
+		                            card: { pro: 3000, rad: 0, nrm: 0 } });
+		if (f.ok) { ok++; } else if (f.reason === "card-needs-earth-pass") { pass++; }
+	}
+	assert.ok(ok > 0 && pass > 0, "expected both supported and refused phases");
+	assert.equal(ok + pass, 32, "every phase is either supported or named");
+});
+
+// ---------------------------------------------------------------------------
+// The supported region is enforced
+// ---------------------------------------------------------------------------
+
+test("supported departures head outward at the Moon", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	assert.ok(f.ok, f.reason);
+	var vTotal = O.vAdd(f.vMoon, f.u);
+	assert.ok(O.vDot(f.rMoon, vTotal) > 0);
+});
+
+test("no card is a named refusal, not a throw or a zero", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 0, rad: 0, nrm: 0 } });
+	assert.equal(f.ok, false);
+	assert.equal(f.reason, "no-card");
+});
+
+test("every refusal carries a reason a caller can show", function () {
+	var known = ["no-card", "card-toward-Earth", "card-needs-earth-pass",
+	             "heads-into-Earth", "no-escape"];
+	[{ pro: 0, rad: 0, nrm: 0 }, { pro: -4000, rad: 0, nrm: 0 },
+	 { pro: 10, rad: 0, nrm: 0 }].forEach(function (card) {
+		var f = flyLunarDeparture({ jd: JD, card: card });
+		if (!f.ok) { assert.ok(known.indexOf(f.reason) >= 0, "unknown reason " + f.reason); }
+	});
+});
+
+// ---------------------------------------------------------------------------
+// The reported numbers
+// ---------------------------------------------------------------------------
+
+test("the coast out to Earth's SOI is days, not hours or months", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	assert.ok(f.ok, f.reason);
+	assert.ok(f.coastDays > 0.5 && f.coastDays < 20,
+		"coast of " + f.coastDays + " days is not plausible");
+});
+
+test("a slower departure takes longer to reach Earth's SOI", function () {
+	var slow = flyLunarDeparture({ jd: JD, card: { pro: 2000, rad: 0, nrm: 0 } });
+	var fast = flyLunarDeparture({ jd: JD, card: { pro: 5000, rad: 0, nrm: 0 } });
+	assert.ok(slow.ok && fast.ok, (slow.reason || "") + " " + (fast.reason || ""));
+	assert.ok(slow.coastDays > fast.coastDays);
+});
+
+test("hyperbolic coast time matches a straight radial estimate", function () {
+	// A fast RADIAL departure runs straight out, so the closed form must land
+	// near distance over average speed. (A tangential one covers more ground
+	// than the radial gap and legitimately takes longer, so it is no control.)
+	var r1 = 384400e3, vInf = 8000;
+	var v = Math.sqrt(vInf * vInf + 2 * GM_EARTH / r1);
+	var out = vInfFromState([r1, 0, 0], [v * 0.9999, v * 0.014, 0]);   // near-radial
+	var t = hyperbolicCoastTime(out.mag, out.e, r1, SOI_EARTH);
+	var crude = (SOI_EARTH - r1) / ((v + out.mag) / 2);
+	assert.ok(Math.abs(t - crude) / crude < 0.05,
+		"closed form " + t + " s vs crude " + crude + " s");
+});
+
+test("the release speed adds the Moon's own well on top of the excess", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	assert.ok(f.ok, f.reason);
+	// Climbing out of the Moon costs something, so the release is always faster
+	// than the excess it is left with.
+	assert.ok(f.releaseSpeed > f.uMag);
+	var r = Number(systems.get("Moon").radius) + RELEASE_ALTITUDE;
+	assert.ok(Math.abs(f.releaseSpeed - releaseSpeedFor(f.uMag, r)) < 1e-9);
+});
+
+test("the card vector is built on Earth's axes, so its length is the card's", function () {
+	var w = cardVInf(JD, { pro: 3000, rad: 400, nrm: -200 });
+	assert.ok(Math.abs(O.vMag(w) - Math.hypot(3000, 400, 200)) < 1e-6);
+});
+
+test("the ship's velocity at the Moon exceeds Earth escape speed there", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 2000, rad: 0, nrm: 0 } });
+	assert.ok(f.ok, f.reason);
+	var vEsc = Math.sqrt(2 * GM_EARTH / O.vMag(moonGeoPos(JD)));
+	assert.ok(f.uMag > vEsc, "ship alone must be able to escape to state a v-infinity");
+});

@@ -779,18 +779,47 @@ technology's dials are enumerated from whatever params its stage holds, keyed
 by module and occurrence rather than chain position: a technology added above
 another must not make the other's dials read as changed.
 
-THE MOON IS AN ORIGIN, AND ITS DEPARTURE IS FLOWN, NOT CONSTRUCTED
-(2026-09-01). A mission may depart from the Moon. That makes it the one origin
-whose departure phase ends at a DIFFERENT body's sphere of influence than the
-one it left: a ship leaving the Moon is still 850,000 km inside Earth's SOI,
-so the hand-off is at Earth's edge and its v∞ is measured against EARTH's
-heliocentric velocity. `Shared/frames.js` holds both halves of that split —
-`bodyHelioState` resolves the Moon's POSITION through the lunar ephemeris (a
-second hop; it has no Sun-centred ellipse), while `escapeReferenceFor` answers
-the separate question of which body's velocity a hand-off is measured against.
-Measuring against the Moon's own velocity instead would fold its monthly
-1 km/s swing into compliance, so the same plan would grade differently by
-lunar phase.
+THE MOON IS AN ORIGIN (2026-09-01). A mission may depart from the Moon. That
+makes it the one origin whose departure phase ends at a DIFFERENT body's
+sphere of influence than the one it left: a ship leaving the Moon is still
+850,000 km inside Earth's SOI, so the hand-off is at Earth's edge and its v∞
+is measured against EARTH's heliocentric velocity. `Shared/frames.js` holds
+both halves of that split — `bodyHelioState` resolves the Moon's POSITION
+through the lunar ephemeris (a second hop; it has no Sun-centred ellipse),
+while `escapeReferenceFor` answers the separate question of which body's
+velocity a hand-off is measured against. Measuring against the Moon's own
+velocity instead would fold its monthly 1 km/s swing into compliance, so the
+same plan would grade differently by lunar phase.
+
+THE LUNAR DEPARTURE CARD IS THE SHIP'S SHARE; THE MOON'S IS A RESIDUAL
+(2026-09-02). The Departure card at a Moon origin states the v∞ the SHIP's own
+actions deliver at Earth's SOI — release plus burns — and nothing the Moon
+contributes appears in it. The card is the ship's bill, comparable with every
+other origin's. The Moon's ~1,022 m/s rides on top for free, but it is handed
+over deep inside Earth's well, so what reaches Earth's SOI is a RESIDUAL:
+sampled over dates and cards it runs 0.9 to 1.9 times the Moon's own speed,
+above face value about half the time. The drawn arc uses card + residual, so
+the same card on a different day of the lunar month is a different trajectory
+while the card keeps reading what the ship must supply.
+
+The two shares cannot be propagated separately and added: energy goes as speed
+squared, and the Moon's 1,022 m/s alone does not even escape Earth (escape at
+lunar distance is 1,440 m/s). So `core/lunar-departure.js` runs the chain
+through the one state where both are simply present together — the ship's
+velocity at the Moon. The card is INVERTED to that velocity (vis-viva fixes
+its speed; a 1-D solve fixes its direction), the Moon's velocity is added
+there, and the sum is taken out through Earth's well exactly. Validated
+against numerical integration to six significant figures and 0.005°, with a
+null control: zero the Moon's velocity and the residual vanishes.
+
+LUNAR DEPARTURES HEAD AWAY FROM EARTH, OR ARE REFUSED (2026-09-02). Only
+departures moving outward at the Moon are supported, which keeps the ship from
+passing Earth on the way out and picks one of the two inversion branches. A
+card fixed on Earth's heliocentric axes points the same way all month while the
+Moon goes round it, so roughly half of all (date, card) pairs are refused by
+name — `card-needs-earth-pass` most often — and drawn not at all rather than
+drawn wrong. The dive-to-low-periapsis Oberth departure is a real and powerful
+manoeuvre that this excludes; it is deferred, not rejected.
 
 EARTH IS AN ORDINARY ORIGIN (2026-09-01). It departs from Earth the way Mars
 departs from Mars: the generic `body-departure-leg`, a self-originating
