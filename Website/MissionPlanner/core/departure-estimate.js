@@ -92,6 +92,16 @@ export function asymptoticVInf(vAtSoiEdge, origin) {
 	return Math.sqrt(Math.max(0, vAtSoiEdge * vAtSoiEdge - 2 * sys.GM / rSoi));
 }
 
+// The inverse: the speed AT the SOI edge that leaves with a given hyperbolic
+// excess. What a solver working in asymptotic terms must report back to the
+// card, which states the edge speed.
+export function edgeVInf(vAsymptotic, origin) {
+	var sys = systems.get(Frames.escapeReferenceFor(origin));
+	var rSoi = originSoiRadius(origin);
+	if (!sys || rSoi == null) { return null; }
+	return Math.sqrt(vAsymptotic * vAsymptotic + 2 * sys.GM / rSoi);
+}
+
 // Moon–Sun elongation (deg, 0..360; 0 new, 90 first quarter, 180 full,
 // 270 last quarter) — the phase the Ephemeris tab's Moon glyph draws.
 export function moonElongationDeg(jd) {

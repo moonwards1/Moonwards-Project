@@ -791,11 +791,15 @@ velocity a hand-off is measured against. Measuring against the Moon's own
 velocity instead would fold its monthly 1 km/s swing into compliance, so the
 same plan would grade differently by lunar phase.
 
-THE LUNAR DEPARTURE CARD IS THE SHIP'S SHARE; THE MOON'S IS A RESIDUAL
-(2026-09-02). The Departure card at a Moon origin states the v∞ the SHIP's own
+THE LUNAR DEPARTURE CARD IS THE SHIP'S SHARE; THE MOON'S IS A BONUS
+(2026-09-02). The Departure card at a Moon origin states what the SHIP's own
 actions deliver at Earth's SOI — release plus burns — and nothing the Moon
 contributes appears in it. The card is the ship's bill, comparable with every
-other origin's. The Moon's ~1,022 m/s rides on top for free, but it is handed
+other origin's, and like every other origin's it is the EDGE speed (see the
+entry above). The Moon's ~1,022 m/s rides on top for free — a BONUS, reach the
+ship did not pay for, not a discount on the bill: the card is the input and the
+arc is the output, so what the Moon adds is extra distance rather than a
+smaller requirement. On the wrong phase it is a penalty instead. It is handed
 over deep inside Earth's well, so what reaches Earth's SOI is a RESIDUAL:
 sampled over dates and cards it runs 0.9 to 1.9 times the Moon's own speed,
 above face value about half the time. The drawn arc uses card + residual, so
@@ -818,8 +822,13 @@ passing Earth on the way out and picks one of the two inversion branches. A
 card fixed on Earth's heliocentric axes points the same way all month while the
 Moon goes round it, so roughly half of all (date, card) pairs are refused by
 name — `card-needs-earth-pass` most often — and drawn not at all rather than
-drawn wrong. The dive-to-low-periapsis Oberth departure is a real and powerful
-manoeuvre that this excludes; it is deferred, not rejected.
+drawn wrong: the Ephemeris tab clears the trajectory on a refusal, because the
+state it would otherwise propagate is the Moon's own and the arc it produces is
+just the Moon coasting on around the Sun — plausible-looking, and not the
+flight. The dive-to-low-periapsis Oberth departure is a real and powerful
+manoeuvre that this excludes; it is deferred, not rejected, and every refusal
+routes through `flyEarthPassDeparture` — a placeholder returning null today —
+so filling it in needs no new wiring.
 
 EARTH IS AN ORDINARY ORIGIN (2026-09-01). It departs from Earth the way Mars
 departs from Mars: the generic `body-departure-leg`, a self-originating
@@ -830,11 +839,39 @@ titled "Moon → Ceres" while storing origin "Earth". With it goes the
 dive-in/direct-out Moon-wedge estimate, which existed to time that lunar
 departure and is superseded by solving it.
 
-v∞ IS ASYMPTOTIC WHEREVER A HYPERBOLA FORMULA TAKES IT (2026-09-01). The
-Departure card's vector is the ship's velocity AT the SOI edge, where the
-primary's potential is not yet spent — 929 m/s worth for Earth. Feeding that
-edge speed into the two-body SOI-crossing helpers, which want the true
-hyperbolic excess, overstated the energy and shortened the estimate by 8% for
-a fast departure and 24% for a slow one. `departure-estimate.js`'s
-`asymptoticVInf` converts first. The coast is unaffected — it propagates a
-full state, not an asymptote.
+THE CARD IS THE EDGE SPEED; THE ARC FLIES THE ASYMPTOTE (2026-09-03, replacing
+the 2026-09-01 entry that covered only the estimate). The Departure card states
+the ship's velocity AT the SOI edge, on the escape reference's heliocentric
+axes — a boundary summary, in the convention a first-pass mission design is
+read in. It is NOT the hyperbolic excess: the primary's potential is not yet
+spent there, 928.5 m/s worth for Earth, 24.8 for Mars.
+
+So every consumer that works in energy terms converts first
+(`departure-estimate.js`'s `asymptoticVInf`, and `edgeVInf` back):
+
+- The DRAWN ARC leaves on the asymptote. Handing it the edge speed let it keep
+  energy the primary was still owed — 147 m/s of a 3 km/s card, 322 m/s of a
+  1.5 km/s one, since it is speeds squared that subtract.
+- The DEPARTURE ESTIMATE converts, or it overstates the energy and shortens
+  the span by 8% for a fast departure and 24% for a slow one.
+- TARGET MODE converts BACK: Lambert answers in the arc's frame, so the solved
+  vector is scaled up to an edge speed before it is written to the card or
+  checked against the budget. Round-trips to 4e-12 m/s.
+- A LUNAR card converts before the inversion, since `solveShipVelocity` inverts
+  an escape hyperbola.
+
+A card that does not escape the reference's SOI is not a departure and is not
+drawn: refused as "card-below-escape" at the Moon (the ship's share must be an
+escape in its own right for the decomposition to state it separately), and as
+no flight at any other origin. This includes the tab's opening state — with no
+card, drawing the origin body's own orbit around the Sun was the misleading
+default it replaced.
+
+The coast is unaffected: it propagates a full state, not an asymptote.
+
+The hand-off is therefore position at the SOI boundary with the velocity the
+ship has once the primary is fully behind it — deliberately a convention
+rather than a physical instant, since the ship is not yet moving that slowly
+where it is placed. The alternative (collapsing the boundary to the body's
+centre) would throw away the exit point, which `state.handoff` and the
+re-target both need.

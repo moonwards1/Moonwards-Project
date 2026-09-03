@@ -38,6 +38,24 @@ restate its content in code comments — cite the entry and its date.
 
 ## Invariants worth knowing before you start
 
+- **The Departure card is a velocity at the SOI edge, not an impulse.** Its
+  three numbers are the ship's speed relative to the escape reference where it
+  crosses that body's sphere of influence, on the reference's heliocentric
+  prograde/normal/radial axes — the same axes at every origin. It states a
+  boundary condition and says nothing about how the ship got there. It is NOT
+  the hyperbolic excess: the primary still has a grip at the SOI edge (928.5
+  m/s for Earth), so anything working in energy terms converts first —
+  `asymptoticVInf` out, `edgeVInf` back. **The drawn arc flies the asymptote;
+  the card and every readout state the edge speed.**
+- **At a MOON origin the card is the technology's share alone.** It is what the
+  ship had to spend energy to supply. The Moon's own motion is deliberately not
+  in it, because that part is free — the ship inherits it by leaving a body
+  that is already moving, and it shows up as extra REACH rather than a smaller
+  bill (a bonus, not a discount; on the wrong lunar phase, a penalty). The
+  flown arc is card + residual, so the same card on a different day of the
+  month is a different trajectory. Never add the two before showing them: the
+  split is the whole point, and conflating them is the mistake this origin
+  invites.
 - **The flown flight is the clock.** `frozen-plan` emits what the departure
   technology actually DELIVERED — position, velocity and epoch — so the drawn
   coast is the ship's flight and the Coast timeline starts where the Departure

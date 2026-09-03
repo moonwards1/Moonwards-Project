@@ -7,11 +7,17 @@
  * 66,168 km from the Moon and still deep inside Earth's well, so a lunar
  * departure is not over until it crosses EARTH's boundary.
  *
- * WHAT THE DEPARTURE CARD HOLDS. The card is the v-infinity the SHIP's own
- * actions deliver at Earth's SOI — the skyhook release plus any burns it makes
- * on the way out — stated on Earth's heliocentric prograde/normal/radial axes,
+ * WHAT THE DEPARTURE CARD HOLDS. The card is the speed the SHIP's own actions
+ * deliver AT Earth's SOI edge — the skyhook release plus any burns it makes on
+ * the way out — stated on Earth's heliocentric prograde/normal/radial axes,
  * the same frame and the same meaning every other origin's card carries. It is
  * the ship's bill, and nothing the Moon contributes appears in it.
+ *
+ * That edge speed is NOT the hyperbolic excess: at 924,631 km Earth still holds
+ * 928.5 m/s. The solve below inverts an escape hyperbola and so needs the
+ * excess, and `cardAsym` is the card converted to it. A card below 928.5 m/s
+ * describes a contribution that never escapes Earth on its own, which this
+ * decomposition cannot express — refused as "card-below-escape".
  *
  * WHAT THE MOON ADDS. The Moon is moving, and a ship that leaves it keeps that
  * motion for free. But the Moon hands it over at 384,400 km, deep inside
@@ -37,8 +43,9 @@
  *
  * WHAT IS SUPPORTED. Departures that head AWAY from Earth — outward at the
  * Moon, so the ship never passes Earth on the way out. Everything else is
- * refused by name and drawn not at all. A dive to low periapsis with a burn
- * there is a real and powerful departure, and it is not modelled here.
+ * refused by name and drawn not at all: every refusal routes through
+ * flyEarthPassDeparture, the placeholder where a dive past Earth will be
+ * solved once there is a rule for it.
  *
  * Pure (no DOM, no THREE) and Node-testable, like the rest of core/.
  */
@@ -47,6 +54,7 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 import { systems } from "../../Shared/orbit.js";
 import { Frames } from "../../Shared/frames.js";
 import { SOI_EARTH, SOI_MOON, moonGeoPos, moonGeoVel } from "../../Shared/geo-leg.js";
+import { asymptoticVInf } from "./departure-estimate.js";
 
 var O = OrbitalMath;
 var GM_EARTH = systems.get("Earth").GM;
@@ -176,38 +184,79 @@ export function hyperbolicCoastTime(vInf, e, r1, r2) {
 	return Math.sqrt(aAbs * aAbs * aAbs / GM_EARTH) * (m2 - m1);
 }
 
+// PLACEHOLDER — the departures this file refuses, all of which pass Earth.
+//
+// A release aimed so the ship falls IN toward Earth first, swings through a
+// low periapsis and leaves from there, is a real departure and often a better
+// one: velocity added deep in the well buys more v-infinity, and the pass can
+// swing the outbound asymptote round to headings no outward release can reach
+// (`card-needs-earth-pass`). It is not modelled because the card does not
+// determine it — a periapsis radius and the burn made there are free choices
+// the card alone cannot pin down, so there is a second unknown here that the
+// outward case does not have.
+//
+// Returns null: "not modelled, keep the refusal you already have". When it is
+// filled in it will return a flight in the same shape flyLunarDeparture does,
+// and the caller below will hand that back instead.
+export function flyEarthPassDeparture(spec) {
+	return null;
+}
+
 // The departure. spec = {
 //   jd,    // the release epoch — the Departure phase's own start
 //   card   // { pro, rad, nrm } m/s, the SHIP's v-infinity at Earth's SOI
 // }
 //
 // Returns, on success:
-//   { ok: true, jd, cardVec, u, uMag, releaseSpeed,
-//     vInf,        // { vec, mag, e, rp } — the TOTAL, ship plus Moon
+//   { ok: true, jd, u, uMag, releaseSpeed,
+//     cardVec,     // the card as typed — the ship's speed AT Earth's SOI edge
+//     cardAsym,    // the same, as the hyperbolic excess behind it
+//     vInf,        // { vec, mag, e, rp } — the TOTAL excess, ship plus Moon
 //     residual,    // vec + mag: what the Moon's motion is worth at Earth's SOI
 //     rMoon, vMoon, turnDeg, coastDays }
-// and on failure { ok: false, reason } with reason one of "no-card",
-// "card-toward-Earth", "card-needs-earth-pass", "heads-into-Earth" or
-// "no-escape".
+// with vInf.vec === cardAsym + residual.vec, all three hyperbolic excesses.
+// On failure { ok: false, reason } with reason one of "no-card",
+// "card-below-escape", "card-toward-Earth", "card-needs-earth-pass",
+// "heads-into-Earth" or "no-escape".
 export function flyLunarDeparture(spec) {
 	var jd = spec.jd;
-	var w = cardVInf(jd, spec.card);
+	var cardVec = cardVInf(jd, spec.card);
+	// The card states the ship's speed AT Earth's SOI edge, where Earth still
+	// holds 928.5 m/s (Notes/decisions.md). Everything below works in
+	// asymptotic terms — solveShipVelocity inverts an escape hyperbola, which
+	// only an escaping contribution has — so convert once, here.
+	var cardMag = O.vMag(cardVec);
+	var cardAsym = asymptoticVInf(cardMag, "Moon");
+	if (!(cardMag > 1e-6)) { return { ok: false, reason: "no-card" }; }
+	if (!(cardAsym > 1e-6)) { return { ok: false, reason: "card-below-escape" }; }
+	var w = O.vScale(cardVec, cardAsym / cardMag);
 	var rMoon = moonGeoPos(jd), vMoon = moonGeoVel(jd);
 
+	// Every departure refused here is one that would pass Earth on the way
+	// out, so each refusal offers flyEarthPassDeparture the chance to fly it
+	// before naming a reason.
 	var solved = solveShipVelocity(rMoon, w);
-	if (!solved.ok) { return { ok: false, reason: solved.reason }; }
+	if (!solved.ok) {
+		// No card at all is nothing to fly, by any route.
+		if (solved.reason === "no-card") { return { ok: false, reason: "no-card" }; }
+		return flyEarthPassDeparture(spec) || { ok: false, reason: solved.reason };
+	}
 
 	var vTotal = O.vAdd(vMoon, solved.u);
 	// Supported departures leave going outward, so the ship never passes Earth.
-	if (O.vDot(rMoon, vTotal) <= 0) { return { ok: false, reason: "heads-into-Earth" }; }
+	if (O.vDot(rMoon, vTotal) <= 0) {
+		return flyEarthPassDeparture(spec) || { ok: false, reason: "heads-into-Earth" };
+	}
 
 	var total = vInfFromState(rMoon, vTotal);
-	if (!total) { return { ok: false, reason: "no-escape" }; }
+	if (!total) { return flyEarthPassDeparture(spec) || { ok: false, reason: "no-escape" }; }
 
+	// Both shares as hyperbolic excesses, so they add: the card's own worth out
+	// there plus what the Moon's motion is still worth once Earth is behind.
 	var residual = O.vSub(total.vec, w);
 	var coast = hyperbolicCoastTime(total.mag, total.e, O.vMag(rMoon), SOI_EARTH);
 	return {
-		ok: true, jd: jd, cardVec: w,
+		ok: true, jd: jd, cardVec: cardVec, cardAsym: w,
 		u: solved.u, uMag: O.vMag(solved.u),
 		releaseSpeed: releaseSpeedFor(O.vMag(solved.u), spec.releaseRadius),
 		vInf: total,

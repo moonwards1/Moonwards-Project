@@ -156,10 +156,31 @@ test("the residual is close to the Moon's speed but never equal to it", function
 });
 
 test("the total is the card plus the residual, by construction", function () {
+	// All three as hyperbolic excesses — the card converted from the edge
+	// speed it states (cardAsym), since edge speeds do not add.
 	var f = flyLunarDeparture({ jd: JD, card: { pro: 2500, rad: 300, nrm: -200 } });
 	assert.ok(f.ok, f.reason);
-	var sum = O.vAdd(f.cardVec, f.residual.vec);
+	var sum = O.vAdd(f.cardAsym, f.residual.vec);
 	assert.ok(O.vMag(O.vSub(sum, f.vInf.vec)) < 1e-6);
+});
+
+test("the card states the SOI-edge speed, not the excess behind it", function () {
+	// Earth still holds 928.5 m/s at its SOI edge, so a card typed as 3000
+	// is worth less than 3000 once the ship is clear (Notes/decisions.md).
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	assert.ok(f.ok, f.reason);
+	assert.ok(Math.abs(O.vMag(f.cardVec) - 3000) < 1e-6, "card keeps what was typed");
+	assert.ok(Math.abs(O.vMag(f.cardAsym) - 2852.7) < 0.5,
+		"excess behind it was " + O.vMag(f.cardAsym));
+});
+
+test("a card that does not escape Earth on its own is refused by name", function () {
+	// The decomposition states the ship's share as an escape in its own
+	// right; below the SOI edge's 928.5 m/s there is no such trajectory to
+	// invert, whatever the Moon might add on top.
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 800, rad: 0, nrm: 0 } });
+	assert.equal(f.ok, false);
+	assert.equal(f.reason, "card-below-escape");
 });
 
 test("an unchanged card buys a different departure on a different date", function () {
@@ -223,8 +244,8 @@ test("no card is a named refusal, not a throw or a zero", function () {
 });
 
 test("every refusal carries a reason a caller can show", function () {
-	var known = ["no-card", "card-toward-Earth", "card-needs-earth-pass",
-	             "heads-into-Earth", "no-escape"];
+	var known = ["no-card", "card-below-escape", "card-toward-Earth",
+	             "card-needs-earth-pass", "heads-into-Earth", "no-escape"];
 	[{ pro: 0, rad: 0, nrm: 0 }, { pro: -4000, rad: 0, nrm: 0 },
 	 { pro: 10, rad: 0, nrm: 0 }].forEach(function (card) {
 		var f = flyLunarDeparture({ jd: JD, card: card });
