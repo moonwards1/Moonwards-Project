@@ -54,7 +54,7 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 import { systems } from "../../Shared/orbit.js";
 import { Frames } from "../../Shared/frames.js";
 import { SOI_EARTH, SOI_MOON, moonGeoPos, moonGeoVel } from "../../Shared/geo-leg.js";
-import { asymptoticVInf } from "./departure-estimate.js";
+import { asymptoticVInf, edgeVInf } from "./departure-estimate.js";
 
 var O = OrbitalMath;
 var GM_EARTH = systems.get("Earth").GM;
@@ -166,6 +166,136 @@ export function solveShipVelocity(rMoon, w) {
 	var turn = Math.acos(Math.max(-1, Math.min(1,
 		O.vDot(O.vUnit(u), O.vUnit(check.vec)))));
 	return { ok: true, u: u, turnDeg: turn * 180 / Math.PI };
+}
+
+// The inverse of cardVInf: a geocentric vector back into card components, on
+// the same Earth heliocentric axes. Exact — burnComponents projects onto the
+// orthonormal frame cardVInf builds the vector from.
+export function cardFromVector(jd, vec) {
+	var e = Frames.bodyHelioState("Earth", jd);
+	var c = O.burnComponents(e.r, e.v, vec);
+	return { pro: c.pro, rad: c.rad, nrm: c.nrm };
+}
+
+// How close a solved card has to land on the v∞ it was asked for. Under a
+// tenth of a m/s on a departure of kilometres per second: the drawn arc is
+// the one that was asked for.
+var CARD_SOLVE_TOL = 0.05;
+
+/* SOLVING BACKWARDS: which card delivers a wanted TOTAL v∞?
+ *
+ * flyLunarDeparture runs card -> total. Target mode needs the other
+ * direction: Lambert states the total v∞ the arc has to leave on, and the
+ * card holds only the ship's share of it. Writing the total into the card
+ * would bill the ship for the Moon's contribution as well, and the next
+ * recompute would add the residual on top of it — an arc that overshoots by
+ * up to ~1.4 km/s and re-overshoots on every refresh instead of settling.
+ *
+ * The residual cannot simply be subtracted once, because it is a function of
+ * the card: change the card and the ship leaves the Moon on a different
+ * hyperbola, so what the Moon's motion is worth out at Earth's SOI changes
+ * too. So this iterates the subtraction — card = wanted - residual(card) —
+ * which converges in a handful of passes over most of the lunar month. Near
+ * the edges of the supported region it can crawl or oscillate, and a damped
+ * Newton on the same function picks those up.
+ *
+ * spec = { jd, vInfVec, seedCard } — vInfVec is the wanted TOTAL hyperbolic
+ * excess (geocentric, asymptotic: what flyLunarDeparture reports as
+ * vInf.vec), seedCard the card in force, which is usually close.
+ *
+ * Returns { ok: true, card, flight, err } — `flight` is the departure that
+ * card flies, so a caller needs no second call — or { ok: false, reason },
+ * with reason either a flyLunarDeparture refusal or "no-card-solution" when
+ * the ask is escaping but no card reaches it.
+ */
+export function solveLunarCard(spec) {
+	var jd = spec.jd, want = spec.vInfVec;
+	if (!want || !(O.vMag(want) > 1e-6)) { return { ok: false, reason: "no-card" }; }
+
+	function fly(card) {
+		var f = flyLunarDeparture({ jd: jd, card: card });
+		return f.ok ? f : null;
+	}
+	function errOf(f) { return O.vMag(O.vSub(f.vInf.vec, want)); }
+	var best = null, firstReason = null;
+	function keep(card, f) {
+		var e = errOf(f);
+		if (!best || e < best.err) { best = { card: card, flight: f, err: e }; }
+		return e;
+	}
+
+	// SEEDS. The card in force is the natural one — a scrub moves the answer
+	// only a little. The wanted total read as if it were the card is the
+	// fallback: wrong by exactly the residual, but always inside the region
+	// where an escaping card is defined, which a stale seed may not be.
+	var wm = O.vMag(want);
+	var seeds = [];
+	if (spec.seedCard) { seeds.push(spec.seedCard); }
+	seeds.push(cardFromVector(jd, O.vScale(want, edgeVInf(wm, "Moon") / wm)));
+
+	for (var s = 0; s < seeds.length; s++) {
+		var card = seeds[s], lastGood = null;
+		for (var i = 0; i < 14; i++) {
+			var f = fly(card);
+			if (!f) {
+				// The step left the supported region. With a good card behind
+				// it, halve the step and try again; with none, this seed is
+				// simply not a departure and the next seed gets its turn.
+				if (!lastGood) {
+					if (!firstReason) { firstReason = flyLunarDeparture({ jd: jd, card: card }).reason; }
+					break;
+				}
+				card = { pro: 0.5 * (lastGood.pro + card.pro), rad: 0.5 * (lastGood.rad + card.rad),
+				         nrm: 0.5 * (lastGood.nrm + card.nrm) };
+				continue;
+			}
+			if (keep(card, f) < CARD_SOLVE_TOL) { return { ok: true, card: best.card, flight: best.flight, err: best.err }; }
+			lastGood = card;
+			var next = O.vSub(want, f.residual.vec), nm = O.vMag(next);
+			if (!(nm > 1e-6)) { break; }
+			card = cardFromVector(jd, O.vScale(next, edgeVInf(nm, "Moon") / nm));
+		}
+		if (best && best.err < CARD_SOLVE_TOL) { break; }
+	}
+	if (!best) { return { ok: false, reason: firstReason || "no-card-solution" }; }
+
+	// NEWTON on the same three unknowns, from the best card the iteration
+	// found. A step out of the supported region is not a refusal here — the
+	// difference is taken one-sided the other way, and a step that does not
+	// improve is damped until it does.
+	var x = [best.card.pro, best.card.rad, best.card.nrm];
+	function F(a) {
+		var f = fly({ pro: a[0], rad: a[1], nrm: a[2] });
+		return f ? { vec: O.vSub(f.vInf.vec, want), flight: f } : null;
+	}
+	var cur = F(x);
+	for (var it = 0; cur && best.err >= CARD_SOLVE_TOL && it < 20; it++) {
+		var J = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], d = 0.1, singular = false;
+		for (var c2 = 0; c2 < 3; c2++) {
+			var xp = x.slice(); xp[c2] += d;
+			var Fp = F(xp), sign = 1;
+			if (!Fp) { xp[c2] -= 2 * d; Fp = F(xp); sign = -1; }
+			if (!Fp) { singular = true; break; }
+			for (var row = 0; row < 3; row++) { J[row][c2] = sign * (Fp.vec[row] - cur.vec[row]) / d; }
+		}
+		if (singular) { break; }
+		var step = O.solve3(J, cur.vec);
+		if (!step) { break; }
+		var improved = false;
+		for (var damp = 1; damp > 0.02; damp *= 0.5) {
+			var xt = [x[0] - damp * step[0], x[1] - damp * step[1], x[2] - damp * step[2]];
+			var Ft = F(xt);
+			if (!Ft || O.vMag(Ft.vec) >= best.err) { continue; }
+			x = xt; cur = Ft;
+			keep({ pro: x[0], rad: x[1], nrm: x[2] }, Ft.flight);
+			improved = true;
+			break;
+		}
+		if (!improved) { break; }
+	}
+
+	if (!(best.err < 1)) { return { ok: false, reason: "no-card-solution" }; }
+	return { ok: true, card: best.card, flight: best.flight, err: best.err };
 }
 
 // How long a hyperbolic coast takes to climb from r1 to r2, in seconds.

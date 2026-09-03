@@ -816,6 +816,20 @@ there, and the sum is taken out through Earth's well exactly. Validated
 against numerical integration to six significant figures and 0.005°, with a
 null control: zero the Moon's velocity and the residual vanishes.
 
+TARGET MODE SOLVES FOR THE LUNAR CARD, NOT THE TOTAL (2026-09-03). Lambert
+states the TOTAL v∞ an arc needs; at a Moon origin the card holds only the
+ship's share, so the total cannot be written into it. Doing so bills the ship
+for the Moon's contribution, and the next recompute adds the residual on top
+again — an arc overshooting by up to ~1.4 km/s that re-overshoots on every
+refresh instead of settling. The residual cannot be subtracted once either,
+because it is a function of the card: a different card leaves the Moon on a
+different hyperbola. `solveLunarCard` in `core/lunar-departure.js` therefore
+iterates the subtraction — card = wanted − residual(card) — with a damped
+Newton picking up the dates where that crawls or oscillates, and refuses
+rather than answering when no card reaches the ask. The Δv the budget is read
+against is the solved CARD, the ship's bill, which is what the row is
+labelled.
+
 LUNAR DEPARTURES HEAD AWAY FROM EARTH, OR ARE REFUSED (2026-09-02). Only
 departures moving outward at the Moon are supported, which keeps the ship from
 passing Earth on the way out and picks one of the two inversion branches. A
@@ -856,7 +870,8 @@ So every consumer that works in energy terms converts first
   the span by 8% for a fast departure and 24% for a slow one.
 - TARGET MODE converts BACK: Lambert answers in the arc's frame, so the solved
   vector is scaled up to an edge speed before it is written to the card or
-  checked against the budget. Round-trips to 4e-12 m/s.
+  checked against the budget. Round-trips to 4e-12 m/s. At a Moon origin the
+  conversion is a full inversion instead — see the entry below.
 - A LUNAR card converts before the inversion, since `solveShipVelocity` inverts
   an escape hyperbola.
 

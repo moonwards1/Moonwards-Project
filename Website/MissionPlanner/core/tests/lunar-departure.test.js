@@ -18,9 +18,10 @@ import assert from "node:assert";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
-import { flyLunarDeparture, cardVInf, vInfFromState, solveShipVelocity,
-         hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE }
+import { flyLunarDeparture, cardVInf, cardFromVector, vInfFromState, solveShipVelocity,
+         solveLunarCard, hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE }
 	from "../lunar-departure.js";
+import { edgeVInf } from "../departure-estimate.js";
 
 var O = OrbitalMath;
 var GM_EARTH = systems.get("Earth").GM;
@@ -304,4 +305,87 @@ test("the ship's velocity at the Moon exceeds Earth escape speed there", functio
 	assert.ok(f.ok, f.reason);
 	var vEsc = Math.sqrt(2 * GM_EARTH / O.vMag(moonGeoPos(JD)));
 	assert.ok(f.uMag > vEsc, "ship alone must be able to escape to state a v-infinity");
+});
+
+// ---------------------------------------------------------------------------
+// solveLunarCard — the inversion Target mode needs: a wanted TOTAL v∞ back
+// into the card that delivers it
+// ---------------------------------------------------------------------------
+
+// Every card that flies on a given date, so a sweep tests what is actually
+// supported rather than skipping quietly.
+function flyable(jd, cards) {
+	return cards.map(function (c) { return { card: c, f: flyLunarDeparture({ jd: jd, card: c }) }; })
+		.filter(function (x) { return x.f.ok; });
+}
+
+test("a solved card flies to exactly the v-infinity it was asked for", function () {
+	var cards = [{ pro: 2500, rad: 0, nrm: 0 }, { pro: 1500, rad: 400, nrm: 200 },
+	             { pro: 3400, rad: -600, nrm: 500 }, { pro: 1100, rad: 0, nrm: -300 }];
+	var tried = 0, solved = 0;
+	for (var d = 0; d < LUNAR_MONTH; d += 1) {
+		var jd = JD + d;
+		flyable(jd, cards).forEach(function (x) {
+			tried++;
+			// The seed is deliberately off the answer — a scrubbed card, not the
+			// one that produced the target.
+			var seed = { pro: x.card.pro * 0.8, rad: x.card.rad + 100, nrm: x.card.nrm - 50 };
+			var s = solveLunarCard({ jd: jd, vInfVec: x.f.vInf.vec, seedCard: seed });
+			if (!s.ok) { return; }
+			solved++;
+			var check = flyLunarDeparture({ jd: jd, card: s.card });
+			assert.ok(check.ok, "a solved card must fly: " + check.reason);
+			assert.ok(O.vMag(O.vSub(check.vInf.vec, x.f.vInf.vec)) < 1,
+				"solved card lands " + O.vMag(O.vSub(check.vInf.vec, x.f.vInf.vec)) + " m/s off");
+		});
+	}
+	assert.ok(tried > 40, "the sweep must actually reach supported dates, got " + tried);
+	assert.ok(solved / tried > 0.9, "solved only " + solved + " of " + tried);
+});
+
+test("the solved card is the SHIP's share, not the total it was asked for", function () {
+	// The bug this solve exists for: writing the wanted total into the card
+	// bills the ship for the Moon's contribution too, and the next recompute
+	// adds the residual on top of it.
+	var jd = JD + 21;
+	var truth = flyLunarDeparture({ jd: jd, card: { pro: 2500, rad: 0, nrm: 0 } });
+	assert.ok(truth.ok, truth.reason);
+	var s = solveLunarCard({ jd: jd, vInfVec: truth.vInf.vec });
+	assert.ok(s.ok, s.reason);
+	var solvedVec = cardVInf(jd, s.card);
+	assert.ok(O.vMag(O.vSub(solvedVec, truth.vInf.vec)) > 100,
+		"the card must differ from the total by the residual, not equal it");
+	// and it is the card that produced the ask, recovered
+	assert.ok(Math.abs(s.card.pro - 2500) < 1 && Math.abs(s.card.rad) < 1 && Math.abs(s.card.nrm) < 1,
+		"recovered " + JSON.stringify(s.card));
+});
+
+test("naively writing the total into the card overshoots, and keeps overshooting", function () {
+	// The null control for the fix: run the OLD behaviour — card := the total
+	// Lambert asked for — and watch it walk away instead of settling.
+	var jd = JD + 21;
+	var want = flyLunarDeparture({ jd: jd, card: { pro: 2500, rad: 0, nrm: 0 } }).vInf.vec;
+	var wm = O.vMag(want);
+	var naive = cardFromVector(jd, O.vScale(want, edgeVInf(wm, "Moon") / wm));
+	var errs = [];
+	for (var i = 0; i < 3; i++) {
+		var f = flyLunarDeparture({ jd: jd, card: naive });
+		if (!f.ok) { break; }
+		errs.push(O.vMag(O.vSub(f.vInf.vec, want)));
+		var nm = O.vMag(f.vInf.vec);
+		naive = cardFromVector(jd, O.vScale(f.vInf.vec, edgeVInf(nm, "Moon") / nm));
+	}
+	assert.ok(errs.length >= 2, "the naive card should keep flying, not refuse immediately");
+	assert.ok(errs[0] > 500, "one naive pass already misses by " + errs[0] + " m/s");
+	assert.ok(errs[1] > errs[0], "and the miss grows: " + errs.join(" -> "));
+});
+
+test("an unreachable ask is refused, never answered with a wrong card", function () {
+	// Straight down at Earth: no outward release delivers it, so there is no
+	// card to write and the caller must be told so.
+	var jd = JD;
+	var down = O.vScale(O.vUnit(moonGeoPos(jd)), -4000);
+	var s = solveLunarCard({ jd: jd, vInfVec: down });
+	assert.ok(!s.ok, "expected a refusal, got " + JSON.stringify(s.card));
+	assert.ok(typeof s.reason === "string" && s.reason.length > 0);
 });

@@ -387,3 +387,27 @@ test("sweptTrueAnomaly/timeAtSweptTrueAnomaly: hyperbolic branch round-trips wit
 		assert.ok(Math.abs(back - dt) < 1e-3, "dt=" + dt + " back=" + back);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// solve3 — the 3x3 step both of MissionPlanner's differential correctors take
+// ---------------------------------------------------------------------------
+
+test("solve3 returns the exact solution of a well-conditioned system", function () {
+	var M = [[2, 1, -1], [-3, -1, 2], [-2, 1, 2]];
+	var x = O.solve3(M, [8, -11, -3]);
+	[2, 3, -1].forEach(function (want, i) {
+		assert.ok(Math.abs(x[i] - want) < 1e-9, "x[" + i + "] = " + x[i]);
+	});
+});
+
+test("solve3 needs pivoting, and does it", function () {
+	// A zero in the first pivot position: without a row swap this is a divide
+	// by zero, not a hard case.
+	var M = [[0, 1, 0], [1, 0, 0], [0, 0, 2]];
+	var x = O.solve3(M, [3, 5, 8]);
+	assert.deepEqual(x.map(function (v) { return Math.round(v * 1e9) / 1e9; }), [5, 3, 4]);
+});
+
+test("solve3 refuses a singular matrix rather than returning nonsense", function () {
+	assert.equal(O.solve3([[1, 2, 3], [2, 4, 6], [1, 1, 1]], [1, 2, 3]), null);
+});

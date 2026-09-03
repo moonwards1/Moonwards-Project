@@ -140,7 +140,7 @@ import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
 	originSoiRadius, asymptoticVInf, edgeVInf, MIN_VINF
 } from "./core/departure-estimate.js";
-import { flyLunarDeparture, RELEASE_ALTITUDE } from "./core/lunar-departure.js";
+import { flyLunarDeparture, solveLunarCard, RELEASE_ALTITUDE } from "./core/lunar-departure.js";
 import { Frames } from "../Shared/frames.js";
 import {
 	APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE, TEMP_FAR, TEMP_NEAR, TEMP_CLOSE,
@@ -1096,26 +1096,50 @@ export function createEphemerisView(opts) {
 		var sol = O.lambert(GM_SUN, r1, target, tof, true);
 		if (!sol) { hardFail("no solution"); return; }
 
-		// Lambert answers in the frame the ARC flies — for the departure that
-		// is a hyperbolic excess, since the arc leaves on the asymptote. The
-		// card states the edge speed, so the departure's answer is converted
-		// back before it is decomposed or checked against the budget; a
-		// waypoint impulse is a real impulse in deep space and converts not at
-		// all.
-		function asCard(dvVec) {
-			if (!term.isDeparture) { return dvVec; }
-			var m = O.vMag(dvVec);
-			var e = m > 1e-6 ? edgeVInf(m, state.origin) : null;
-			return e == null ? dvVec : O.vScale(dvVec, e / m);
+		// THE CARD THAT DELIVERS WHAT LAMBERT ASKED FOR. Lambert answers in the
+		// frame the ARC flies — for the departure that is a hyperbolic excess,
+		// since the arc leaves on the asymptote. A waypoint impulse is a real
+		// impulse in deep space and converts not at all; every other origin's
+		// departure converts from that asymptote to the edge speed the card
+		// states.
+		//
+		// A MOON ORIGIN has to be INVERTED instead. Lambert states the TOTAL
+		// v∞ the arc needs, and the card holds only the ship's share of it, so
+		// writing the total in would bill the ship for the Moon's contribution
+		// as well — and the next recompute would add the residual on top of
+		// that again, overshooting further on every refresh. The card whose
+		// own flight delivers this total is solved for in
+		// core/lunar-departure.js, and the figure the budget is read against
+		// is that card: the ship's bill, which is what the row is labelled.
+		//
+		// Returns null when no card reaches the ask — the departure is
+		// released rather than given a number that is not a departure.
+		var isMoon = term.isDeparture && state.origin === "Moon";
+		function cardFor(dvVec, fr) {
+			if (isMoon) {
+				var s = solveLunarCard({ jd: departureState().jd, vInfVec: dvVec, seedCard: term.burn });
+				if (!s.ok) { return null; }
+				return { c: s.card, mag: O.vMag(s.flight.cardVec) };
+			}
+			var vec = dvVec;
+			if (term.isDeparture) {
+				var mg = O.vMag(dvVec);
+				var e = mg > 1e-6 ? edgeVInf(mg, state.origin) : null;
+				if (e != null) { vec = O.vScale(dvVec, e / mg); }
+			}
+			return { c: O.burnComponents(fr.r, fr.v, vec), mag: O.vMag(vec) };
 		}
 
-		var dv = asCard(O.vSub(sol.v1, v1)), dvMag = O.vMag(dv);
-		var c = O.burnComponents(ref.r, ref.v, dv);
+		var got = cardFor(O.vSub(sol.v1, v1), ref);
+		if (!got) { hardFail("no lunar card"); return; }
+		var dvMag = got.mag, c = got.c;
 
 		// Second pass: with the vector above in force the derived exit point
 		// has moved onto the new heading, so re-solve from where the ship
 		// actually leaves. Nothing is committed until after the budget check.
-		if (term.isDeparture && state.handoff.mode !== "adopted") {
+		// A Moon origin skips it — the departure starts at the Moon's own
+		// position, which no card moves.
+		if (term.isDeparture && !isMoon && state.handoff.mode !== "adopted") {
 			var keep = { pro: term.burn.pro, rad: term.burn.rad, nrm: term.burn.nrm };
 			term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
 			var f2 = frameAt();
@@ -1123,8 +1147,8 @@ export function createEphemerisView(opts) {
 			if (f2) {
 				var sol2 = O.lambert(GM_SUN, f2.r1, target, tof, true);
 				if (sol2) {
-					dv = asCard(O.vSub(sol2.v1, f2.v1)); dvMag = O.vMag(dv);
-					c = O.burnComponents(f2.ref.r, f2.ref.v, dv);
+					var got2 = cardFor(O.vSub(sol2.v1, f2.v1), f2.ref);
+					if (got2) { dvMag = got2.mag; c = got2.c; }
 				}
 			}
 		}

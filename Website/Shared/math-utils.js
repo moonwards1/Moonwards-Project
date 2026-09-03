@@ -883,6 +883,30 @@ export const OrbitalMath = {
 			return { pro: O.vDot(dv, f.pro), nrm: O.vDot(dv, f.nrm), rad: O.vDot(dv, f.rad) };
 		},
 
+		// Solve a 3x3 linear system M x = b by Gaussian elimination with partial
+		// pivoting. Null if the matrix is singular to working precision. The
+		// differential correctors in MissionPlanner/core both take a step this
+		// way: build a numerical 3x3 Jacobian, solve it, damp the step.
+		solve3: function (M, b) {
+			var A = [[M[0][0], M[0][1], M[0][2], b[0]],
+			         [M[1][0], M[1][1], M[1][2], b[1]],
+			         [M[2][0], M[2][1], M[2][2], b[2]]];
+			for (var c = 0; c < 3; c++) {
+				var piv = c;
+				for (var r = c + 1; r < 3; r++) {
+					if (Math.abs(A[r][c]) > Math.abs(A[piv][c])) { piv = r; }
+				}
+				if (Math.abs(A[piv][c]) < 1e-12) { return null; }
+				var tmp = A[c]; A[c] = A[piv]; A[piv] = tmp;
+				for (var r2 = 0; r2 < 3; r2++) {
+					if (r2 === c) { continue; }
+					var f = A[r2][c] / A[c][c];
+					for (var k = c; k < 4; k++) { A[r2][k] -= f * A[c][k]; }
+				}
+			}
+			return [A[0][3] / A[0][0], A[1][3] / A[1][1], A[2][3] / A[2][2]];
+		},
+
 		// The B-plane of a hyperbolic approach: the plane through the body's
 		// centre perpendicular to the INCOMING asymptote, and the aim point in
 		// it. This is the standard instrument for "which side does the ship pass

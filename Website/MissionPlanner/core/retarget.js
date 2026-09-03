@@ -98,28 +98,6 @@ export function propagateWithWaypoints(r0, v0, waypoints, tDays) {
 	return O.propagateState(GM_SUN(), r, v, (tDays - t) * DAY);
 }
 
-// Solve a 3x3 system by Gaussian elimination with partial pivoting. Returns
-// null if the matrix is singular to working precision.
-function solve3(M, b) {
-	var A = [[M[0][0], M[0][1], M[0][2], b[0]],
-	         [M[1][0], M[1][1], M[1][2], b[1]],
-	         [M[2][0], M[2][1], M[2][2], b[2]]];
-	for (var c = 0; c < 3; c++) {
-		var piv = c;
-		for (var r2 = c + 1; r2 < 3; r2++) {
-			if (Math.abs(A[r2][c]) > Math.abs(A[piv][c])) { piv = r2; }
-		}
-		if (Math.abs(A[piv][c]) < 1e-12) { return null; }
-		var tmp = A[c]; A[c] = A[piv]; A[piv] = tmp;
-		for (var r3 = 0; r3 < 3; r3++) {
-			if (r3 === c) { continue; }
-			var f = A[r3][c] / A[c][c];
-			for (var k = c; k < 4; k++) { A[r3][k] -= f * A[c][k]; }
-		}
-	}
-	return [A[0][3] / A[0][0], A[1][3] / A[1][1], A[2][3] / A[2][2]];
-}
-
 // DIFFERENTIAL CORRECTION on the departure velocity: find the v at r0 whose
 // flight — across the waypoint burns, which stay exactly as authored — arrives
 // at `target` after `tDays`. Newton with a numerical Jacobian, damped so a full
@@ -145,7 +123,7 @@ export function solveArrivalVelocity(r0, v0Guess, waypoints, tDays, target) {
 			var Fp = O.vSub(propagateWithWaypoints(r0, vp, waypoints, tDays).r, target);
 			for (var row = 0; row < 3; row++) { J[row][c] = (Fp[row] - F[row]) / d; }
 		}
-		var step = solve3(J, F);
+		var step = O.solve3(J, F);
 		if (!step) { break; }
 		var damp = 1, improved = false;
 		for (var tryN = 0; tryN < 10; tryN++) {
