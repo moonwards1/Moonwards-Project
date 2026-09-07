@@ -244,13 +244,13 @@ export var SKYHOOK = {
 		// display — only decimals needs to be wide enough to show it. The catch
 		// side has no such need, so it keeps the coarser step.
 		{ name: "relAlt", label: "release altitude", unit: "km", scale: 1e3, decimals: 3,
-		  step: 0.001, kind: "nudge", roles: [RELEASE] },
+		  step: 0.001, spinStep: 1, kind: "nudge", roles: [RELEASE] },
 		{ name: "relAlt", label: "catch altitude", unit: "km", scale: 1e3, step: 25,
 		  roles: [CATCH] },
 		// The carrier's aiming control. The catch's own phasing is set at the
 		// capture point instead, so this control is the release role's alone.
 		{ name: "releasePhaseDeg", label: "release phase", unit: "°", kind: "slider",
-		  min: 0, max: 360, step: 0.1, decimals: 1, roles: [RELEASE] }
+		  min: 0, max: 360, step: 0.1, spinStep: 1, decimals: 1, roles: [RELEASE] }
 	],
 
 	geometry: tetherGeometry,

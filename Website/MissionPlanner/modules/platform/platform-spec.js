@@ -122,7 +122,7 @@
  *
  * ---- PARAM SPEC -----------------------------------------------------------
  *
- *   { name, label, unit, kind, step, scale, decimals, min, max, roles, labelFor }
+ *   { name, label, unit, kind, step, spinStep, scale, decimals, min, max, roles, labelFor }
  *
  *   kind      "number" (a numeric field); "slider" (a range control whose
  *             position IS the value, issuing transient sets while dragging
@@ -134,6 +134,11 @@
  *             plain step, e.g. the skyhook's release altitude). Both
  *             "slider" and "nudge" pair a number field with a second control
  *             row (platform-roles.js's buildPlatformCard).
+ *   spinStep  a "slider" or "nudge" number field's plain Up/Down-arrow-key or
+ *             spin-button step, in shown units — independent of `step`
+ *             (which also sizes the paired range control's own drag
+ *             granularity). Shift scales it to a tenth, Ctrl to a hundredth
+ *             (platform-roles.js's attachModifierStep). Defaults to `step`.
  *   scale     stored SI value = shown value × scale (altitudes are stored in
  *             metres and shown in km, so scale is 1e3). Default 1.
  *   decimals  digits shown. Default 0.

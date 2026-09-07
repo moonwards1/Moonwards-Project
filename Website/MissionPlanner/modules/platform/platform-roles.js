@@ -406,6 +406,39 @@ function attachNudgeSlider(slider, onTick, onRelease) {
 	slider.addEventListener("blur", stop);
 }
 
+// A number field's native step buttons and its Up/Down arrow keys both fire
+// a discrete input+change pair at a fixed increment (the field's own
+// `step`); this makes that increment scale with whichever modifier was held
+// at the moment of the click or keypress — the full `plainStep` alone, a
+// tenth of it with Shift, a hundredth with Ctrl. Both a MouseEvent (a
+// spin-button click) and a KeyboardEvent (an arrow key) carry shiftKey/
+// ctrlKey natively, so the modifier is read straight off whichever one
+// starts the interaction. It lets the browser apply its own
+// (irrelevant-magnitude) native step first, then overwrites the result
+// using only the direction that step moved in, so the same logic covers a
+// click and a keypress alike.
+function attachModifierStep(input, plainStep) {
+	var prev = null, mult = 1;
+	function arm(e) {
+		prev = parseFloat(input.value);
+		mult = e.ctrlKey ? 0.01 : (e.shiftKey ? 0.1 : 1);
+	}
+	input.addEventListener("mousedown", arm);
+	input.addEventListener("keydown", function (e) {
+		if (e.key === "ArrowUp" || e.key === "ArrowDown") { arm(e); }
+	});
+	input.addEventListener("input", function () {
+		if (prev === null || !isFinite(prev)) { return; }
+		var now = parseFloat(input.value);
+		if (!isFinite(now) || now === prev) { return; }
+		var dir = now > prev ? 1 : -1;
+		// Rounded off to sidestep binary float noise (0.1 - 0.01 kinds of
+		// error) that a raw addition would otherwise show in the field.
+		input.value = +(prev + dir * plainStep * mult).toFixed(6);
+		prev = parseFloat(input.value);
+	});
+}
+
 // ---- the shared card and draw plumbing ------------------------------------
 
 // The declared-parameter card: the platform's note, one control per param that
@@ -458,6 +491,7 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 			var num = document.createElement("input");
 			num.type = "number"; num.step = p.step;
 			num.value = paramToDisplay(p, fullParams()[p.name]);
+			attachModifierStep(num, p.spinStep || p.step);
 			wrap.appendChild(num);
 			wrap.appendChild(unitSpan(p.unit || ""));
 
@@ -502,6 +536,7 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 			nNum.type = "number"; nNum.step = p.step;
 			var current = fullParams()[p.name];
 			nNum.value = paramToDisplay(p, current);
+			attachModifierStep(nNum, p.spinStep || p.step);
 			wrap.appendChild(nNum);
 			wrap.appendChild(unitSpan(p.unit || ""));
 
