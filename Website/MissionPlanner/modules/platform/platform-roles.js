@@ -406,26 +406,45 @@ function attachNudgeSlider(slider, onTick, onRelease) {
 	slider.addEventListener("blur", stop);
 }
 
-// A number field's native step buttons and its Up/Down arrow keys both fire
-// a discrete input+change pair at a fixed increment (the field's own
-// `step`); this makes that increment scale with whichever modifier was held
-// at the moment of the click or keypress — the full `plainStep` alone, a
-// tenth of it with Shift, a hundredth with Ctrl. Both a MouseEvent (a
-// spin-button click) and a KeyboardEvent (an arrow key) carry shiftKey/
-// ctrlKey natively, so the modifier is read straight off whichever one
-// starts the interaction. It lets the browser apply its own
-// (irrelevant-magnitude) native step first, then overwrites the result
-// using only the direction that step moved in, so the same logic covers a
-// click and a keypress alike.
+// A number field's native step buttons and its Up/Down arrow keys both step
+// at a fixed increment (the field's own `step`); this makes that increment
+// scale with whichever modifier is held — the full `plainStep` alone, a
+// tenth of it with Shift, a hundredth with Ctrl. The two triggers need two
+// different fixes:
+//
+//   Arrow keys   handled entirely here, bypassing the native step: preventing
+//                default and applying the scaled delta directly means typing
+//                a plain digit is never mistaken for a step (a KeyboardEvent
+//                carries shiftKey/ctrlKey natively).
+//   Spin buttons handled by letting the native (irrelevant-magnitude) step
+//                happen, then overwriting it using only the direction it
+//                moved in. Only ARMED when the mousedown lands in the
+//                spinner's own narrow strip at the field's right edge — a
+//                click on the text itself is the user placing a cursor to
+//                type, and must never be mistaken for a step (that was the
+//                bug: arming on every mousedown treated each keystroke's
+//                `input` event as a step to override).
+var SPINNER_STRIP_PX = 20;
+
 function attachModifierStep(input, plainStep) {
+	input.addEventListener("keydown", function (e) {
+		if (e.key !== "ArrowUp" && e.key !== "ArrowDown") { return; }
+		var v = parseFloat(input.value);
+		if (!isFinite(v)) { return; }
+		e.preventDefault();
+		var mult = e.ctrlKey ? 0.01 : (e.shiftKey ? 0.1 : 1);
+		var dir = e.key === "ArrowUp" ? 1 : -1;
+		input.value = +(v + dir * plainStep * mult).toFixed(6);
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+		input.dispatchEvent(new Event("change", { bubbles: true }));
+	});
+
 	var prev = null, mult = 1;
-	function arm(e) {
+	input.addEventListener("mousedown", function (e) {
+		var rect = input.getBoundingClientRect();
+		if (rect.right - e.clientX > SPINNER_STRIP_PX) { prev = null; return; }
 		prev = parseFloat(input.value);
 		mult = e.ctrlKey ? 0.01 : (e.shiftKey ? 0.1 : 1);
-	}
-	input.addEventListener("mousedown", arm);
-	input.addEventListener("keydown", function (e) {
-		if (e.key === "ArrowUp" || e.key === "ArrowDown") { arm(e); }
 	});
 	input.addEventListener("input", function () {
 		if (prev === null || !isFinite(prev)) { return; }
