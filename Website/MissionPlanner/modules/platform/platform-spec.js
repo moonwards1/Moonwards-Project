@@ -124,8 +124,16 @@
  *
  *   { name, label, unit, kind, step, scale, decimals, min, max, roles, labelFor }
  *
- *   kind      "number" (a numeric field) or "slider" (a range control that
- *             issues transient sets while dragging and commits on release).
+ *   kind      "number" (a numeric field); "slider" (a range control whose
+ *             position IS the value, issuing transient sets while dragging
+ *             and committing on release); or "nudge" (a centred range whose
+ *             position is a signed, log-scaled RATE — the handle springs
+ *             back to centre on release, and holding it off-centre nudges
+ *             the number field at that rate instead of jumping to a
+ *             position — for a value needing far finer control than a
+ *             plain step, e.g. the skyhook's release altitude). Both
+ *             "slider" and "nudge" pair a number field with a second control
+ *             row (platform-roles.js's buildPlatformCard).
  *   scale     stored SI value = shown value × scale (altitudes are stored in
  *             metres and shown in km, so scale is 1e3). Default 1.
  *   decimals  digits shown. Default 0.

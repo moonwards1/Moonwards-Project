@@ -70,7 +70,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { rotorElement } from "../../../Shared/kinematic-chain.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { resolvePlatformParams, RELEASE } from "../platform/platform-spec.js";
+import { resolvePlatformParams, RELEASE, CATCH } from "../platform/platform-spec.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -237,8 +237,16 @@ export var SKYHOOK = {
 
 	params: [
 		{ name: "comAlt", label: "CoM altitude", unit: "km", scale: 1e3, step: 25 },
-		{ name: "relAlt", label: "release altitude", labelFor: { catch: "catch altitude" },
-		  unit: "km", scale: 1e3, step: 25 },
+		// Release altitude is stored in metres but shown in km like every other
+		// altitude here. The nudge control (platform-roles.js) works directly on
+		// the stored SI value regardless of display scale, so the sub-metre drag
+		// precision a close destination pass needs is unaffected by the km
+		// display — only decimals needs to be wide enough to show it. The catch
+		// side has no such need, so it keeps the coarser step.
+		{ name: "relAlt", label: "release altitude", unit: "km", scale: 1e3, decimals: 3,
+		  step: 0.001, kind: "nudge", roles: [RELEASE] },
+		{ name: "relAlt", label: "catch altitude", unit: "km", scale: 1e3, step: 25,
+		  roles: [CATCH] },
 		// The carrier's aiming control. The catch's own phasing is set at the
 		// capture point instead, so this control is the release role's alone.
 		{ name: "releasePhaseDeg", label: "release phase", unit: "°", kind: "slider",

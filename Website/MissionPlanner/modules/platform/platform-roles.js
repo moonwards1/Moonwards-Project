@@ -351,6 +351,61 @@ function attachFineDrag(slider) {
 	});
 }
 
+// A "nudge" control's own drag model: unlike a plain range, the slider's
+// OWN position is never the value — it is a signed rate, centred at zero, so
+// the handle springs back to centre the instant it's released. Holding it
+// off-centre nudges the field at that rate, log-scaled from barely
+// perceptible near the centre up to the full rate at either end, so a value
+// needing far finer control than a plain step (the skyhook's release
+// altitude, tuned for a close destination pass) can be dialed in as coarsely
+// or as finely as the drag warrants — all the way down to a wiggle just off
+// centre.
+var NUDGE_MIN_RATE = 100;      // per second, just off centre (0.1 km/s)
+var NUDGE_MAX_RATE = 100000;   // per second, at full deflection (100 km/s)
+var NUDGE_TICK_MS = 100;
+var NUDGE_DEADZONE = 0.02;  // fraction of full deflection with no effect
+
+function nudgeRate(frac) {
+	var abs = Math.abs(frac);
+	if (abs < NUDGE_DEADZONE) { return 0; }
+	var rate = NUDGE_MIN_RATE * Math.pow(NUDGE_MAX_RATE / NUDGE_MIN_RATE, abs);
+	return frac < 0 ? -rate : rate;
+}
+
+// Wires a centred range input as a nudge control. `onTick(deltaSI)` fires
+// every NUDGE_TICK_MS while held off-centre, in the param's own stored SI
+// units; `onRelease()` fires once the handle springs back to centre, for the
+// drag's final commit (the same released-commits convention a "slider"
+// control's `change` event gives it).
+function attachNudgeSlider(slider, onTick, onRelease) {
+	var timer = null;
+	function stop() {
+		if (!timer) { return; }
+		clearInterval(timer);
+		timer = null;
+		slider.value = 0;
+		onRelease();
+	}
+	function start() {
+		if (timer) { return; }
+		timer = setInterval(function () {
+			var rate = nudgeRate(parseFloat(slider.value));
+			if (rate !== 0) { onTick(rate * (NUDGE_TICK_MS / 1000)); }
+		}, NUDGE_TICK_MS);
+	}
+	slider.addEventListener("pointerdown", start);
+	slider.addEventListener("pointerup", stop);
+	slider.addEventListener("pointercancel", stop);
+	slider.addEventListener("lostpointercapture", stop);
+	slider.addEventListener("keydown", function (e) {
+		if (e.key === "ArrowLeft" || e.key === "ArrowRight") { start(); }
+	});
+	slider.addEventListener("keyup", function (e) {
+		if (e.key === "ArrowLeft" || e.key === "ArrowRight") { stop(); }
+	});
+	slider.addEventListener("blur", stop);
+}
+
 // ---- the shared card and draw plumbing ------------------------------------
 
 // The declared-parameter card: the platform's note, one control per param that
@@ -437,6 +492,45 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 			el.appendChild(wrap);
 			host.appendChild(el);
 			host.appendChild(sliderRow);
+			return;
+		} else if (p.kind === "nudge") {
+			// Two-line control like "slider" above, but the second row is a
+			// press-and-hold RATE control (attachNudgeSlider), not a coarse
+			// aiming position — see its own header for why the handle springs
+			// back to centre instead of tracking the value.
+			var nNum = document.createElement("input");
+			nNum.type = "number"; nNum.step = p.step;
+			var current = fullParams()[p.name];
+			nNum.value = paramToDisplay(p, current);
+			wrap.appendChild(nNum);
+			wrap.appendChild(unitSpan(p.unit || ""));
+
+			var nudgeRow = document.createElement("div"); nudgeRow.className = "mp-nudge-slider-row";
+			var leftArrow = document.createElement("span");
+			leftArrow.className = "mp-nudge-arrow"; leftArrow.textContent = "◀";
+			var rightArrow = document.createElement("span");
+			rightArrow.className = "mp-nudge-arrow"; rightArrow.textContent = "▶";
+			var nudge = document.createElement("input");
+			nudge.type = "range"; nudge.min = -1; nudge.max = 1; nudge.step = 0.001; nudge.value = 0;
+			nudgeRow.appendChild(leftArrow); nudgeRow.appendChild(nudge); nudgeRow.appendChild(rightArrow);
+
+			nNum.addEventListener("change", function () {
+				var v = parseFloat(nNum.value);
+				if (!isFinite(v)) { return; }
+				current = paramFromDisplay(p, v);
+				setParam(p.name, current);
+			});
+			attachNudgeSlider(nudge, function (deltaSI) {
+				current += deltaSI;
+				nNum.value = paramToDisplay(p, current);
+				setParam(p.name, current, { transient: true });
+			}, function () {
+				setParam(p.name, current);
+			});
+
+			el.appendChild(wrap);
+			host.appendChild(el);
+			host.appendChild(nudgeRow);
 			return;
 		} else {
 			var inp = document.createElement("input");
