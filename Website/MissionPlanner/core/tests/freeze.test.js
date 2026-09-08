@@ -1,13 +1,13 @@
-// Node tests for core/freeze.js: the Ephemeris-tab -> mission-tab
-// freeze contract. Run from the repo root:
-//   node --test Website/MissionPlanner/core/tests/freeze.test.js
+﻿// Node tests for core/adopt.js: the Ephemeris-tab -> mission-tab
+// adopt contract. Run from the repo root:
+//   node --test Website/MissionPlanner/core/tests/adopt.test.js
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { freezeMissionWorld, defaultMissionTitle } from "../freeze.js";
+import { adoptMissionWorld, defaultMissionTitle } from "../adopt.js";
 import { deserializeWorld } from "../world.js";
-import { computeCompliance } from "../../modules/frozen-plan/frozen-plan.js";
+import { computeCompliance } from "../../modules/adopted-plan/adopted-plan.js";
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { originSoiRadius } from "../departure-estimate.js";
@@ -16,7 +16,7 @@ import { Frames } from "../../../Shared/frames.js";
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
 
-// A realistic spec, shaped exactly as ephemeris-view.js's buildFreezeSpec
+// A realistic spec, shaped exactly as ephemeris-view.js's buildadoptSpec
 // hands it over: jd IS the hand-off epoch, `handoff` IS the coast's starting
 // state at the origin's SOI edge, and waypoint days already count from it.
 // 260-day leg to Mars.
@@ -48,22 +48,22 @@ function makeSpec() {
 	};
 }
 
-// Find a stage's params by moduleId — stage positions shifted once freeze grew
+// Find a stage's params by moduleId — stage positions shifted once adopt grew
 // the departure scaffold, so never index by position.
 function paramsOf(data, moduleId) {
 	var s = data.stages.find(function (x) { return x.moduleId === moduleId; });
 	return s ? s.params : null;
 }
 
-test("freeze output deserializes into a working World with the E2 profile (Moon scaffold)", () => {
-	var data = freezeMissionWorld(makeSpec());   // origin Moon
+test("adopt output deserializes into a working World with the E2 profile (Moon scaffold)", () => {
+	var data = adoptMissionWorld(makeSpec());   // origin Moon
 	var res = deserializeWorld(data);
 	assert.equal(res.ok, true, res.reason);
 	var stages = res.world.serialize().stages;
 	// Moon: the fixed Moon platform + the geocentric leg (empty carrier slot),
 	// then the plan, coast, and the flyby leg (empty arrival-tech slot).
 	assert.deepEqual(stages.map(s => s.moduleId),
-		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
+		["moon-platform", "departure-leg", "adopted-plan", "transfer-leg", "arrival-leg"]);
 	assert.equal(data.nextStage, 6);
 	// the departure leg starts with no waypoints; the flyby leg carries the
 	// destination explicitly (body convention) and is the terminal stage.
@@ -73,11 +73,11 @@ test("freeze output deserializes into a working World with the E2 profile (Moon 
 	// The clock opens at the hand-off — the coast's own start, since a spawned
 	// mission opens on the coast phase. Phase clocks are only consistent WITHIN
 	// a phase; the departure's estimated span leaves a gap at this seam.
-	assert.equal(data.jd, paramsOf(data, "frozen-plan").departure.jd);
+	assert.equal(data.jd, paramsOf(data, "adopted-plan").departure.jd);
 	assert.ok(paramsOf(data, "departure-leg").releaseJd < data.jd,
 		"release leads the hand-off the clock opens at");
 	// the plan states the boundary requirement only — release is not its business
-	assert.equal("releaseAnchorJd" in paramsOf(data, "frozen-plan"), false);
+	assert.equal("releaseAnchorJd" in paramsOf(data, "adopted-plan"), false);
 });
 
 test("every origin but the Moon scaffolds just the generic departure leg", () => {
@@ -85,7 +85,7 @@ test("every origin but the Moon scaffolds just the generic departure leg", () =>
 	// same way one from Mars departs from Mars. Only the Moon rides a platform.
 	var jd = O.julianDate(2033, 6, 1, 0, 0, 0);
 	[["Mars", "Ceres"], ["Earth", "Mars"]].forEach(function ([origin, dest]) {
-		var data = freezeMissionWorld({
+		var data = adoptMissionWorld({
 			origin: origin, destination: dest, jd: jd,
 			handoff: handoffFor(jd, origin, { pro: 1800, rad: 0, nrm: 0 }),
 			waypoints: [], arrivalJd: jd + 300, arrivalVInf: 3000
@@ -95,16 +95,16 @@ test("every origin but the Moon scaffolds just the generic departure leg", () =>
 		// no platform stage — the generic leg's skyhook, when added,
 		// self-originates — then the plan, coast, and the flyby.
 		assert.deepEqual(res.world.serialize().stages.map(s => s.moduleId),
-			["body-departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"], origin);
+			["body-departure-leg", "adopted-plan", "transfer-leg", "arrival-leg"], origin);
 		assert.equal(data.nextStage, 5);
-		assert.equal(paramsOf(data, "frozen-plan").origin, origin);
+		assert.equal(paramsOf(data, "adopted-plan").origin, origin);
 	});
 });
 
-test("frozen-plan and transfer-leg carry matching waypoint copies, not shared refs", () => {
+test("adopted-plan and transfer-leg carry matching waypoint copies, not shared refs", () => {
 	var spec = makeSpec();
-	var data = freezeMissionWorld(spec);
-	var plan = paramsOf(data, "frozen-plan"), leg = paramsOf(data, "transfer-leg");
+	var data = adoptMissionWorld(spec);
+	var plan = paramsOf(data, "adopted-plan"), leg = paramsOf(data, "transfer-leg");
 	assert.deepEqual(plan.waypoints, leg.waypoints);
 	assert.notEqual(plan.waypoints[0], leg.waypoints[0]);       // copies
 	assert.notEqual(plan.departure.r, spec.handoff.r);          // nor the live input
@@ -118,15 +118,15 @@ test("frozen-plan and transfer-leg carry matching waypoint copies, not shared re
 
 test("the hand-off is committed verbatim, carries no burn field, and re-derives nothing", () => {
 	var spec = makeSpec();
-	var data = freezeMissionWorld(spec);
-	var plan = paramsOf(data, "frozen-plan"), leg = paramsOf(data, "transfer-leg");
+	var data = adoptMissionWorld(spec);
+	var plan = paramsOf(data, "adopted-plan"), leg = paramsOf(data, "transfer-leg");
 	// no burn field at all — the hand-off state IS the coast's start, and
 	// nothing at that seam is recorded as an impulse anywhere in the chain
 	assert.equal("burn" in leg, false);
 	assert.equal("burn" in plan, false);
 	// EXACT copies of what the tab handed in — this is the whole contract:
 	// whatever produced the hand-off (an authored heading, or a real carrier
-	// chain's delivered state) survives the freeze bit for bit, so pasting
+	// chain's delivered state) survives the adopt bit for bit, so pasting
 	// the plan back into the Ephemeris tab reproduces it exactly.
 	assert.deepEqual(plan.departure.r, spec.handoff.r);
 	assert.deepEqual(plan.departure.v, spec.handoff.v);
@@ -147,19 +147,19 @@ test("waypoints are sorted chronologically and post-arrival ones dropped", () =>
 		{ days: 300, burn: { pro: 999 } },    // ≥ the 260-day rendezvous — dropped
 		{ days: NaN, burn: { pro: 1 } }       // unresolved — dropped
 	];
-	var data = freezeMissionWorld(spec);
+	var data = adoptMissionWorld(spec);
 	var wps = paramsOf(data, "transfer-leg").waypoints;
 	// days re-based onto the hand-off: authored from the burn, flown from the
 	// SOI edge, so each loses the crossing while its absolute epoch stands
-	var crossingDays = paramsOf(data, "frozen-plan").departure.jd - spec.jd;
+	var crossingDays = paramsOf(data, "adopted-plan").departure.jd - spec.jd;
 	assert.deepEqual(wps.map(w => w.days), [80 - crossingDays, 200 - crossingDays]);
 	assert.deepEqual(wps[0].burn, { pro: 0, rad: -50, nrm: 0 });   // burn normalized to all three axes
 });
 
 test("required v∞ is the injection the departure burn demanded, read at the SOI edge", () => {
 	var spec = makeSpec();
-	var data = freezeMissionWorld(spec);
-	var comp = computeCompliance(paramsOf(data, "frozen-plan"), null);
+	var data = adoptMissionWorld(spec);
+	var comp = computeCompliance(paramsOf(data, "adopted-plan"), null);
 	assert.equal(comp.ok, true);
 	assert.equal(comp.delivered, null);   // empty tech slot: warning territory, not a block
 	// v∞ = |hand-off v − origin's helio v|. At the burn that is exactly the
@@ -172,11 +172,11 @@ test("required v∞ is the injection the departure burn demanded, read at the SO
 		"required v∞ should be near " + expect + ", got " + comp.required.vInf);
 });
 
-test("a waypoint-only plan (no departure burn) freezes to required v∞ 0", () => {
+test("a waypoint-only plan (no departure burn) adopts to required v∞ 0", () => {
 	var spec = makeSpec();
 	spec.handoff = handoffFor(spec.jd, "Moon", { pro: 0, rad: 0, nrm: 0 });
-	var data = freezeMissionWorld(spec);
-	var comp = computeCompliance(paramsOf(data, "frozen-plan"), null);
+	var data = adoptMissionWorld(spec);
+	var comp = computeCompliance(paramsOf(data, "adopted-plan"), null);
 	assert.equal(comp.ok, true);
 	assert.ok(comp.required.vInf < 1e-6, "required v∞ should be ~0, got " + comp.required.vInf);
 });
@@ -188,10 +188,10 @@ test("defaultMissionTitle names origin → destination + departure year", () => 
 
 // ---- timing fields: the plan's window + the leg's release epoch ------------
 
-test("freeze bakes a hand-off window (default ±1 d) and seeds release ahead of the hand-off", async () => {
+test("adopt bakes a hand-off window (default ±1 d) and seeds release ahead of the hand-off", async () => {
 	var spec = makeSpec();
-	var world = freezeMissionWorld(spec);
-	var plan = paramsOf(world, "frozen-plan");
+	var world = adoptMissionWorld(spec);
+	var plan = paramsOf(world, "adopted-plan");
 	var releaseJd = paramsOf(world, "departure-leg").releaseJd;
 	assert.equal(plan.handoffWindowDays, 1);
 	// release leads departure.jd by the departure-estimate module's own
@@ -214,13 +214,13 @@ test("freeze bakes a hand-off window (default ±1 d) and seeds release ahead of 
 test("a custom windowDays is honoured; a waypoint-only plan releases at the hand-off itself", () => {
 	var spec = makeSpec();
 	spec.windowDays = 2.5;
-	assert.equal(paramsOf(freezeMissionWorld(spec), "frozen-plan").handoffWindowDays, 2.5);
+	assert.equal(paramsOf(adoptMissionWorld(spec), "adopted-plan").handoffWindowDays, 2.5);
 
 	var spec2 = makeSpec();
 	spec2.handoff = handoffFor(spec2.jd, "Moon", { pro: 0, rad: 0, nrm: 0 });   // v∞ ~ 0, nothing to time
-	var world2 = freezeMissionWorld(spec2);
+	var world2 = adoptMissionWorld(spec2);
 	assert.equal(paramsOf(world2, "departure-leg").releaseJd, spec2.jd);
-	assert.equal(paramsOf(world2, "frozen-plan").handoffWindowDays, 1);
+	assert.equal(paramsOf(world2, "adopted-plan").handoffWindowDays, 1);
 });
 
 test("waypoint days are already hand-off-relative and pass through untouched", () => {
@@ -229,8 +229,8 @@ test("waypoint days are already hand-off-relative and pass through untouched", (
 		{ days: 60, burn: { pro: 120 } },
 		{ days: 190, burn: { nrm: -80 } }
 	];
-	var data = freezeMissionWorld(spec);
-	var plan = paramsOf(data, "frozen-plan"), leg = paramsOf(data, "transfer-leg");
+	var data = adoptMissionWorld(spec);
+	var plan = paramsOf(data, "adopted-plan"), leg = paramsOf(data, "transfer-leg");
 	assert.deepEqual(leg.waypoints.map(w => Math.round(w.burn.pro)), [120, 0]);
 	assert.deepEqual(leg.waypoints.map(w => w.days), [60, 190]);
 	// each waypoint fires at the epoch it was authored for
@@ -246,13 +246,13 @@ test("a Moon origin's release travels with the plan, and nothing else carries on
 	// A lunar departure is authored FORWARD, from a release the Ephemeris tab
 	// flew out to Earth's SOI, and the hand-off below is that flight's result.
 	// The release cannot be recovered from the hand-off without solving
-	// backwards, so freeze stores it — that record is what lets the tab reopen
+	// backwards, so adopt stores it — that record is what lets the tab reopen
 	// the plan on the same departure.
 	var spec = makeSpec();
 	spec.releaseJd = spec.jd - 3.25;
 	spec.lunarRelease = { jd: spec.jd - 3.25, burn: { pro: 120, rad: 2900, nrm: -40 } };
-	var world = freezeMissionWorld(spec);
-	var plan = paramsOf(world, "frozen-plan");
+	var world = adoptMissionWorld(spec);
+	var plan = paramsOf(world, "adopted-plan");
 
 	assert.equal(plan.lunarRelease.jd, spec.jd - 3.25);
 	assert.deepEqual(plan.lunarRelease.burn, { pro: 120, rad: 2900, nrm: -40 });
@@ -264,10 +264,10 @@ test("a Moon origin's release travels with the plan, and nothing else carries on
 	assert.equal(paramsOf(world, "departure-leg").releaseJd, spec.jd - 3.25);
 
 	// Every other origin authors the hand-off directly and has no release to
-	// store; freeze must not invent one.
-	var earth = freezeMissionWorld(Object.assign(makeSpec(), {
+	// store; adopt must not invent one.
+	var earth = adoptMissionWorld(Object.assign(makeSpec(), {
 		origin: "Earth", handoff: handoffFor(makeSpec().jd, "Earth", VINF),
 		releaseJd: undefined, lunarRelease: undefined
 	}));
-	assert.equal(paramsOf(earth, "frozen-plan").lunarRelease, undefined);
+	assert.equal(paramsOf(earth, "adopted-plan").lunarRelease, undefined);
 });

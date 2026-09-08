@@ -1,4 +1,4 @@
-# Design decisions log
+﻿# Design decisions log
 
 Settled rules that are load-bearing for more than one file. Each entry states
 the rule and, briefly, why — and where it matters, what it forbids. It is not
@@ -20,7 +20,7 @@ Entries are chronological within each section.
 
 - **Departure→Coast hand-off** — the epoch the departure technology actually
   delivers, which is also the coast's own start. It moves as the technology is
-  tuned. The epoch frozen at mission creation is the REQUIREMENT graded
+  tuned. The epoch adopted at mission creation is the REQUIREMENT graded
   against it, not a second date the coast runs on. See "One clock" below.
 
 - **Coast→Arrival hand-off (the seam)** — **a window around the encounter,
@@ -199,7 +199,7 @@ force a full clear regardless of `autoClear`, wiping the first pass.
 
 The arrival phase begins at the seam (`closest approach − Δt`), but the
 packet the chain hands it sits later, at the coast's own leg end. That end
-must stay where it is: `frozen-plan`'s boundary work and the arrival
+must stay where it is: `adopted-plan`'s boundary work and the arrival
 comparison measure there, and at the seam the ship is a whole SOI radius from
 the body, which would make every miss look enormous.
 
@@ -309,10 +309,10 @@ present shape.
 
 ### 2026-08-11 — There is no Coast→Arrival compliance boundary
 
-`frozen-plan`'s departure-side boundary has no mirror at the far seam, and a
+`adopted-plan`'s departure-side boundary has no mirror at the far seam, and a
 stage that tried to be one was removed.
 
-Why: `frozen-plan` earns its boundary two ways — it is what the coast
+Why: `adopted-plan` earns its boundary two ways — it is what the coast
 *actually starts from* (an authoritative substitute, so a broken departure
 tech never blanks the mission), and it is the only target departure tech has,
 since a skyhook doesn't know where the destination is and just delivers a
@@ -321,14 +321,14 @@ velocity. Neither applies at arrival: there is nothing to substitute, and
 actual approach live as waypoints are tuned. A boundary there would be a
 second rendering of numbers the coast already shows. The ship card's
 Coast-phase job is to show progress toward the destination, not to re-litigate
-the plan the coast was frozen from.
+the plan the coast was adopted from.
 
 Consequence accepted, not fixed: a broken departure/coast leaves `arrival-leg`
 in the ordinary `blocked` state rather than getting a tailored "nothing
 delivered" diagnostic. That is the standard block propagation every other
 stage has.
 
-`frozen-plan`'s `arrival: { body, jd, vInf }` commitment is untouched —
+`adopted-plan`'s `arrival: { body, jd, vInf }` commitment is untouched —
 `arrival-seam.js` and `arrival-skyhook.js` read its `jd` as a fallback
 default.
 
@@ -374,7 +374,7 @@ plan-relative diffing between them:
   that baseline — the burn edit itself, isolated from where the ship happens
   to be when it fires.
 
-The plan section's own descriptive line always describes the frozen plan's
+The plan section's own descriptive line always describes the adopted plan's
 own day and never changes.
 
 Why: raw pro/rad/nrm components are read off whatever local frame the ship is
@@ -404,17 +404,17 @@ signal** — check a body's rendered position against what the date bar claims
 ### 2026-08-24 — The Ephemeris tab authors the HAND-OFF, not a burn at the body's centre
 
 A ship is not on an interplanetary flight until it is clear of the origin, so
-the flight starts at the origin's SOI crossing — in the tab and in the freeze
+the flight starts at the origin's SOI crossing — in the tab and in the adopt
 both.
 
 The Departure card's prograde/radial/normal vector IS the ship's
 v-infinity — speed and heading — where it leaves the origin's sphere of
 influence, and the tab's clock IS that hand-off's epoch. The drawn arc starts
-there, at t = 0. `core/freeze.js` commits that state verbatim.
+there, at t = 0. `core/adopt.js` commits that state verbatim.
 
-Why: the frozen plan's Departure→Coast boundary already IS a hand-off state
-(`frozen-plan.departure.{r,v,jd}`). Editing that same quantity means the two
-sides never translate, so freeze commits verbatim and "Paste mission link…"
+Why: the adopted plan's Departure→Coast boundary already IS a hand-off state
+(`adopted-plan.departure.{r,v,jd}`). Editing that same quantity means the two
+sides never translate, so adopt commits verbatim and "Paste mission link…"
 reads back verbatim — the round trip is exact by construction, for any plan,
 including one whose hand-off came from a real carrier chain rather than an
 authored heading.
@@ -439,12 +439,12 @@ which is in force.
 The arrival side is untouched: the marker's rendezvous is still the
 destination body's own position, with SOI entry estimated backwards from it.
 
-`injectionJd` is a legacy field. Nothing reads it, freeze does not write it,
+`injectionJd` is a legacy field. Nothing reads it, adopt does not write it,
 and older saves carrying it load fine.
 
 ### 2026-08-25 — Re-targeting the departure, not adopting what it delivers
 
-A frozen plan commits to a hand-off STATE — position, velocity, epoch at the
+A adopted plan commits to a hand-off STATE — position, velocity, epoch at the
 origin's SOI edge. When the Ephemeris tab authors one from scratch, that
 position is DERIVED (body position + R_soi × heading): a geometric
 convenience, not a place any real departure chain comes out. On the shipped
@@ -595,7 +595,7 @@ an edit costs about one leg integration (3.8 ms on the shipped mission).
 
 ### 2026-08-26 — What the compliance check is, and what it is not
 
-THE CHECK (`frozen-plan.js`'s `computeCompliance`) compares the plan's frozen
+THE CHECK (`adopted-plan.js`'s `computeCompliance`) compares the plan's adopted
 hand-off against the technology's delivered one on exactly three scalars:
 
     |v_inf| within 10 m/s, aim direction within 1 degree, epoch within the
@@ -650,15 +650,15 @@ over all reals. See the functions' own headers for the exact bookkeeping.
 
 ### 2026-08-28 — One clock: the flown flight is what the coast flies
 
-`frozen-plan.update()` emits the state the departure technology ACTUALLY
+`adopted-plan.update()` emits the state the departure technology ACTUALLY
 DELIVERED — position, velocity and epoch. The coast therefore begins exactly
 where and when the departure phase ended: one mission clock, one epoch at the
-seam. The plan's frozen `departure` is the REQUIREMENT the compliance rows
+seam. The plan's adopted `departure` is the REQUIREMENT the compliance rows
 grade against and a mark on the timelines, never a second flight.
 
 FALLBACK: with nothing delivered — an empty technology slot, or a departure
-whose flight fails — the plan's own frozen state is what the coast flies. That
-is what keeps a freshly frozen mission flying while its departure is built,
+whose flight fails — the plan's own adopted state is what the coast flies. That
+is what keeps a freshly adopted mission flying while its departure is built,
 and it is the whole of the `boundary` carve-out's remaining job.
 
 WHAT THIS REPLACED: the plan used to be authoritative for the drawn coast, so
@@ -706,20 +706,20 @@ every time the button is pressed.
 
 ### 2026-08-28 — The arrival date is measured, not committed
 
-A frozen plan commits to a DESTINATION and an APPROACH v∞ — where the mission
+A adopted plan commits to a DESTINATION and an APPROACH v∞ — where the mission
 is going and how fast it may show up, the two things an arrival technology has
 to be built for. It commits to no DATE. The mission arrives at the coast's own
 measured closest approach (`transfer-leg`'s `nearestApproach`), which moves as
 the flight is tuned, exactly as the departure epoch is whatever the technology
 delivers.
 
-`frozen-plan`'s `arrival` is therefore `{ body, vInf }`, and it emits no
+`adopted-plan`'s `arrival` is therefore `{ body, vInf }`, and it emits no
 arrival event: the coast measures the pass and emits it, so there is one
 arrival epoch rather than a measured one competing with a committed one.
 
 THE HORIZON IS NOT AN ARRIVAL DATE. Flying an arc still needs an end, and that
 is `transfer-leg`'s own `legDays` — a duration the coast owns, seeded at
-freeze from the epoch the Ephemeris tab's marker was scrubbed to. The
+adopt from the epoch the Ephemeris tab's marker was scrubbed to. The
 re-target solve aims at where the destination will be at that horizon
 (`retarget.js`'s `horizonJd`, named for what it is), and closest approach
 falls wherever it falls inside the span. `Update` no longer stretches
@@ -737,8 +737,8 @@ of that, the end of the coast is the only honest anchor.
 ### 2026-08-31 — A mission carries a plan history; a link carries two sets of it
 
 A mission's plan is not only what it holds now — it is also what it held when
-it was frozen. `core/revisions.js` keeps that: an ORIGINAL (the serialized
-World `core/freeze.js` wrote) plus a STEP per commit. Each entry is a whole
+it was adopted. `core/revisions.js` keeps that: an ORIGINAL (the serialized
+World `core/adopt.js` wrote) plus a STEP per commit. Each entry is a whole
 serialized World, never a diff, because a World already is the complete
 description of a mission and there is no smaller thing a plan can be rebuilt
 from.
@@ -772,7 +772,7 @@ paste dialog carries a standing warning to use another browser window to keep
 what is there.
 
 THE REPORT'S ORIGINALS TABLE IS STORED VALUES ONLY (`planSummaryOf`) —
-read off two serialized Worlds with no physics, so the frozen column costs
+read off two serialized Worlds with no physics, so the adopted column costs
 nothing however old it is and cannot drift from what was committed. Derived
 figures stay in the report's flight table, which is recomputed live. A
 technology's dials are enumerated from whatever params its stage holds, keyed

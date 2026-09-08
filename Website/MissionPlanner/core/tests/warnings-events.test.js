@@ -1,4 +1,4 @@
-// Node tests for the { packet, warnings, events } envelope return added to
+﻿// Node tests for the { packet, warnings, events } envelope return added to
 // recompute.js for the Mission Planner's comply mode:
 // warnings are diagnostics that do NOT block downstream, events feed the
 // phase sliders / stage strip. Hard-failure blocking semantics must be
@@ -22,8 +22,8 @@ function ship(v, jd) {
 
 // A comply-mode-shaped chain:
 //   src   (accepts [], emits ship-state) — the "tech": delivers params.v
-//   plan  (accepts/emits ship-state)     — the frozen flight plan: ALWAYS
-//         emits its own frozen output (params.planV), and when the incoming
+//   plan  (accepts/emits ship-state)     — the adopted flight plan: ALWAYS
+//         emits its own adopted output (params.planV), and when the incoming
 //         speed misses params.requiredV it attaches a warning instead of
 //         failing — the comply-mode contract.
 //   sink  (accepts ship-state, emits []) — the arrival tech; returns null
@@ -41,7 +41,7 @@ function fixture() {
 	});
 
 	reg.register({
-		id: "plan", title: "Frozen plan",
+		id: "plan", title: "adopted plan",
 		accepts: ["ship-state"], emits: ["ship-state"],
 		update: function (ctx, input) {
 			calls.plan++;
@@ -85,7 +85,7 @@ test("comply mode: a warning does not block — the plan's output keeps flowing"
 	assert.equal(r.warnings[0].code, "noncompliant");
 	assert.deepEqual(r.warnings[0].values, { required: 3420, delivered: 3180 });
 	assert.match(r.warnings[0].fix, /240/);             // the offending gap, actionable
-	assert.equal(r.output.data.v[0], 4050);             // frozen plan output, not the tech's
+	assert.equal(r.output.data.v[0], 4050);             // adopted plan output, not the tech's
 });
 
 test("comply mode: fixing the tech clears the warning on the same recompute rules", function () {
@@ -218,9 +218,9 @@ test("boundary: a failing upstream does NOT block a `boundary` stage or anything
 		update: function () { calls.fail++; return makeDiagnostic("bust", "no hand-off"); }
 	});
 	// The compliance boundary: authoritative, tolerates a null (failed) input,
-	// always emits its own frozen state, reports the shortfall as a warning.
+	// always emits its own adopted state, reports the shortfall as a warning.
 	reg.register({
-		id: "bnd", title: "Frozen boundary",
+		id: "bnd", title: "adopted boundary",
 		accepts: ["ship-state"], emits: ["ship-state"], boundary: true,
 		update: function (ctx, input) {
 			calls.plan++;
@@ -243,7 +243,7 @@ test("boundary: a failing upstream does NOT block a `boundary` stage or anything
 	assert.equal(engine.resultFor(f).status, "diagnostic");   // the tech still shows its own failure
 	assert.equal(engine.resultFor(b).status, "ok");           // the plan is NOT blocked
 	assert.equal(engine.resultFor(b).warnings[0].code, "nothing-delivered");
-	assert.equal(engine.resultFor(b).output.data.v[0], 4050); // its frozen state flows
+	assert.equal(engine.resultFor(b).output.data.v[0], 4050); // its adopted state flows
 	assert.equal(engine.resultFor(s).status, "ok");           // the coast beyond flies
 	assert.deepEqual(calls, { fail: 1, plan: 1, sink: 1 });    // boundary + sink ran despite the failure
 
@@ -261,7 +261,7 @@ test("boundary: the boundary's OWN failure still blocks downstream", function ()
 		update: function (ctx) { return ship(3000, ctx.jd); }
 	});
 	reg.register({
-		id: "bnd", title: "Frozen boundary",
+		id: "bnd", title: "adopted boundary",
 		accepts: ["ship-state"], emits: ["ship-state"], boundary: true,
 		update: function () { return makeDiagnostic("plan-damaged", "the plan itself is unusable"); }
 	});

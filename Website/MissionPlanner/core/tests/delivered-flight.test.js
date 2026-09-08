@@ -1,4 +1,4 @@
-// Node tests for core/delivered-flight.js — the flight the ship is ACTUALLY
+﻿// Node tests for core/delivered-flight.js — the flight the ship is ACTUALLY
 // on, as opposed to the plan's. Run from the repo root:
 //   node --test Website/MissionPlanner/core/tests/delivered-flight.test.js
 //
@@ -16,7 +16,7 @@ import { systems } from "../../../Shared/orbit.js";
 
 function planOf(mission) {
 	var st = (mission || defaultMission).stages;
-	var fp = st.filter(function (s) { return s.moduleId === "frozen-plan"; })[0].params;
+	var fp = st.filter(function (s) { return s.moduleId === "adopted-plan"; })[0].params;
 	var tl = st.filter(function (s) { return s.moduleId === "transfer-leg"; })[0].params;
 	// The coast's own horizon: no arrival date is committed any more, so the
 	// flight is flown over the duration the coast owns.

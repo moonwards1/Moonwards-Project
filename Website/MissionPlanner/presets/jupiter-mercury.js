@@ -1,4 +1,4 @@
-// The OUTER → INNER example: the largest origin SOI in the
+﻿// The OUTER → INNER example: the largest origin SOI in the
 // set and the longest transfer, falling almost the full width of the solar
 // system. Jupiter self-originates its skyhook (via body-departure-leg,
 // no platform stage) — no arrival technology is configured, so the flight
@@ -10,7 +10,7 @@
 // real hand-off, a Lambert-solved waypoint burn (aimed at an offset point
 // near Mercury, not its exact centre — a dead-centre Lambert target is a
 // collision orbit) redirects the coast, and transfer-leg's own SOI-encounter
-// integration confirms the real flyby. Compliant BY CONSTRUCTION: the frozen
+// integration confirms the real flyby. Compliant BY CONSTRUCTION: the adopted
 // plan's departure/arrival fields are copied verbatim from what the tech
 // actually delivers (including the ARRIVAL figure being the leg's raw v∞ AT
 // ITS OWN END EPOCH, per arrival-approach.js's approachAt — NOT the
@@ -35,7 +35,7 @@
 // THE HAND-OFF IS THIS PLAN'S DEPARTURE, VERBATIM. `departure` below is
 // the REAL departure leg's Jupiter-SOI exit — a state a genuine carrier
 // chain delivered, not an impulse at the body's centre. Both the Ephemeris
-// tab and core/freeze.js now treat that state as the thing itself, so
+// tab and core/adopt.js now treat that state as the thing itself, so
 // "Paste mission link…" reproduces this plan EXACTLY: it opens on the
 // hand-off epoch, reads the v-infinity off the state, and adopts the exit
 // point's own offset from Jupiter rather than re-deriving it.
@@ -69,7 +69,7 @@ export var jupiterMercuryMission = {
 			// Compliant by construction (see header): departure/arrival copied
 			// verbatim from the real computeBodyDepartureLeg / computeLeg run.
 			id: "stg-3",
-			moduleId: "frozen-plan",
+			moduleId: "adopted-plan",
 			params: {
 				origin: "Jupiter",
 				departure: {

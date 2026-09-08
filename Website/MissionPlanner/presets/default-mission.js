@@ -1,9 +1,9 @@
-// The worked-example default mission — Moon → Ceres 2031, the mission a fresh
+﻿// The worked-example default mission — Moon → Ceres 2031, the mission a fresh
 // browser opens with when nothing is saved and no share link is present
 // (planner.js's initialMissions). Also the first entry in the example-mission
 // dropdown (presets/examples-catalog.js).
 //
-//   release   2031-12-19 ~19:06 UT (jd 2463220.2961 — the plan's frozen
+//   release   2031-12-19 ~19:06 UT (jd 2463220.2961 — the plan's adopted
 //             release ANCHOR; see TIMING below) — lunar skyhook, CoM 275 km,
 //             release from the tether top at 6000 km, phase 92 deg
 //   injection 2031-12-20 06:00 UT (jd 2463220.75) — the epoch the plan's
@@ -19,20 +19,20 @@
 //
 // THE CHAIN:
 //
-//   moon-platform → orbital-skyhook → departure-leg → frozen-plan →
+//   moon-platform → orbital-skyhook → departure-leg → adopted-plan →
 //   transfer-leg → arrival-leg
 //
 // moon-platform emits the chain base (the Moon's own ~1 km/s), the skyhook
 // appends its rotor, and the headless departure-leg evaluates the chain at the
-// plan's frozen release anchor and integrates the released ship with restricted
+// plan's adopted release anchor and integrates the released ship with restricted
 // N-body gravity (Shared/geo-leg.js) out to Earth-SOI exit — the delivered
-// hand-off frozen-plan measures against its window. The mission ends at the
+// hand-off adopted-plan measures against its window. The mission ends at the
 // arrival flyby: the arrival-tech slot is empty, symmetric with the empty
 // departure-tech slot (both are filled from the mission view's technology
 // cards).
 //
 // THE HAND-OFF IS AT EARTH'S SOI EDGE, where the departure leg above actually
-// delivers its ship, and where core/freeze.js commits a plan authored on the
+// delivers its ship, and where core/adopt.js commits a plan authored on the
 // Ephemeris tab (see that file's header). The plan's departure state is the
 // authored injection — a 6.55 km/s impulse on Earth's own state at jd
 // 2463220.75 — followed out along its own arc to the SOI crossing 1.6345 d
@@ -58,7 +58,7 @@
 // on purpose. Closing that gap (a low-perigee Oberth impulse on the departure
 // leg, say) is the mission-planning exercise this preset teaches, and it is the
 // one example that ships non-compliant; every other entry in the catalog is
-// compliant by construction. The coast flies the FROZEN plan's state
+// compliant by construction. The coast flies the adopted plan's state
 // regardless, so the mission still rendezvouses clean.
 //
 // This is a SERIALIZED WORLD (core/world.js's `serialize()` shape, at the
@@ -98,15 +98,15 @@ export var defaultMission = {
 			params: { releaseJd: 2463220.296116752, waypoints: [] }
 		},
 		{
-			// The frozen flight plan: the mission's commitment, shaped exactly
-			// as core/freeze.js would have written it had this tab been spawned
+			// The adopted flight plan: the mission's commitment, shaped exactly
+			// as core/adopt.js would have written it had this tab been spawned
 			// from the Ephemeris tab. departure.r/v/jd are the SOI-edge hand-off
 			// the authored injection reaches (see this file's header);
 			// arrival vInf is the leg's speed relative to Ceres at the
 			// rendezvous; handoffWindowDays is the plan's own timing field (the
 			// release epoch lives on the departure leg — see the header).
 			id: "stg-4",
-			moduleId: "frozen-plan",
+			moduleId: "adopted-plan",
 			params: {
 				origin: "Moon",
 				departure: {

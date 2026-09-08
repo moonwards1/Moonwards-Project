@@ -1,7 +1,7 @@
-/* MissionPlanner/modules/frozen-plan — the frozen flight plan (comply mode).
+﻿/* MissionPlanner/modules/adopted-plan — the adopted flight plan (comply mode).
  *
  * A mission tab's backbone: its params ARE the flight plan captured when the
- * mission was created from the Ephemeris tab (core/freeze.js does the
+ * mission was created from the Ephemeris tab (core/adopt.js does the
  * capturing). The module sits AT THE DEPARTURE→COAST BOUNDARY — see
  * ARCHITECTURE.md's "Phases are chains; compliance is a boundary check, not
  * a reconciliation" for the general shape — and enforces the comply rule:
@@ -10,7 +10,7 @@
  *   technology actually DELIVERED — position, velocity and epoch — so the
  *   coast everyone sees is the flight the ship is really on, starting exactly
  *   where and when the departure phase ended. There is one mission clock and
- *   one seam epoch on it. The plan's own frozen state is the fallback for
+ *   one seam epoch on it. The plan's own adopted state is the fallback for
  *   when nothing is delivered (an empty tech slot, or a departure whose
  *   flight fails), so a mission with no departure yet still flies its plan.
  *
@@ -39,12 +39,12 @@
  * not own the release epoch, which is a departure-phase decision living on the
  * departure leg stage (core/release-epoch.js).
  *
- * The param schema (what core/freeze.js writes):
+ * The param schema (what core/adopt.js writes):
  *
  *   origin:    "Earth"       — the departure system's primary; the required
  *                              v-infinity is measured against its heliocentric
  *                              velocity at the departure epoch
- *   departure: { r, v, jd }  — the frozen heliocentric hand-off state the
+ *   departure: { r, v, jd }  — the adopted heliocentric hand-off state the
  *                              departure tech must deliver (m, m/s, jd), AT
  *                              THE ORIGIN'S SOI EDGE, where a departure leg
  *                              ends. A REQUIREMENT, and the coast's starting
@@ -110,9 +110,9 @@ var O = OrbitalMath;
 // warning is raised. Exported so the shell's readouts and the Node tests share
 // them. The epoch tolerance is not a constant here — the hand-off epoch is
 // checked against the plan's own hand-off WINDOW, params.handoffWindowDays,
-// the half-width core/freeze.js bakes at mission creation (±1 d default).
+// the half-width core/adopt.js bakes at mission creation (±1 d default).
 // Saves without the field default to DEFAULT_WINDOW_DAYS below, kept equal to
-// freeze.js's own DEFAULT_WINDOW_DAYS — the consumer-side copy of the same
+// adopt.js's own DEFAULT_WINDOW_DAYS — the consumer-side copy of the same
 // agreement.
 export var VINF_TOL = 10;             // m/s   — |v∞| mismatch
 export var AIM_TOL_DEG = 1.0;         // deg   — v∞ direction (asymptote) mismatch
@@ -142,7 +142,7 @@ export function windowDaysOf(params) {
 // going and HOW FAST it may show up, the two things an arrival technology has
 // to be built for. The arrival technologies and mission-view.js read it
 // through this one function rather than each groping through the stages.
-// Returns null when the mission has no frozen plan or commits to no body.
+// Returns null when the mission has no adopted plan or commits to no body.
 //
 // NO EPOCH. When the mission arrives is measured, not committed — the coast's
 // own closest approach (see the param schema above) — so there is no date
@@ -151,7 +151,7 @@ export function arrivalCommitmentFor(world) {
 	if (!world || typeof world.stages !== "function") { return null; }
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
-		if (stages[i].moduleId !== "frozen-plan") { continue; }
+		if (stages[i].moduleId !== "adopted-plan") { continue; }
 		var arr = (stages[i].params && stages[i].params.arrival) || {};
 		if (typeof arr.body === "string" && arr.body !== "") {
 			return { body: arr.body, vInf: isFinite(arr.vInf) ? arr.vInf : null };
@@ -160,20 +160,20 @@ export function arrivalCommitmentFor(world) {
 	return null;
 }
 
-// The mission's ORIGINAL waypoint burns — the reference copy frozen at plan
-// creation (core/freeze.js), read the same way arrivalCommitmentFor reads
+// The mission's ORIGINAL waypoint burns — the reference copy adopted at plan
+// creation (core/adopt.js), read the same way arrivalCommitmentFor reads
 // its field. transfer-leg's sidebar card uses
 // this to tell an original plan waypoint (part of the committed mission,
 // not removable — only resettable to these values) from one added later as
 // a course correction during Coast (freely removable). Index-matched against
 // the working copy on the transfer-leg stage: edits mutate waypoints in
 // place and never reorder them, so position i here is plan waypoint i there.
-// [] when the mission has no frozen plan.
+// [] when the mission has no adopted plan.
 export function planWaypointsFor(world) {
 	if (!world || typeof world.stages !== "function") { return []; }
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
-		if (stages[i].moduleId !== "frozen-plan") { continue; }
+		if (stages[i].moduleId !== "adopted-plan") { continue; }
 		return ((stages[i].params && stages[i].params.waypoints) || []).map(function (wp) {
 			return { days: wp.days, burn: copyBurn(wp.burn) };
 		});
@@ -189,7 +189,7 @@ export function handoffWindowFor(world) {
 	if (!world || typeof world.stages !== "function") { return DEFAULT_WINDOW_DAYS; }
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
-		if (stages[i].moduleId === "frozen-plan") { return windowDaysOf(stages[i].params || {}); }
+		if (stages[i].moduleId === "adopted-plan") { return windowDaysOf(stages[i].params || {}); }
 	}
 	return DEFAULT_WINDOW_DAYS;
 }
@@ -264,7 +264,7 @@ export function planSummary(params) {
 // damaged save — this fails the stage hard), else:
 //
 //   { ok: true,
-//     required:  { vInf, vInfVec, jd },          — from the frozen plan
+//     required:  { vInf, vInfVec, jd },          — from the adopted plan
 //     delivered: { vInf, vInfVec, jd } | null,   — from the tech, if any
 //     rows: [{ key: "vinf"|"epoch"|"aim", required, delivered, delta, ok }] }
 //
@@ -276,24 +276,24 @@ export function computeCompliance(params, data) {
 
 	if (!vec3Finite(dep.r) || !vec3Finite(dep.v) || !isFinite(dep.jd)) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The frozen plan has no departure state — this mission's save may be damaged.",
+			"The adopted plan has no departure state — this mission's save may be damaged.",
 			{ values: { departure: dep } }) };
 	}
 	var origin = systems.get(p.origin);
 	if (!origin || !origin.orbit) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The frozen plan's origin body '" + p.origin + "' is unknown.",
+			"The adopted plan's origin body '" + p.origin + "' is unknown.",
 			{ values: { origin: p.origin } }) };
 	}
 	var arr = p.arrival || {};
 	if (arr.body && !systems.get(arr.body)) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The frozen plan's arrival body '" + arr.body + "' is unknown.",
+			"The adopted plan's arrival body '" + arr.body + "' is unknown.",
 			{ values: { body: arr.body } }) };
 	}
 	// Required: the plan's v-infinity out, measured against the origin's
 	// heliocentric velocity at the plan's departure epoch. Derived from the
-	// frozen state rather than stored, so the two can never disagree.
+	// adopted state rather than stored, so the two can never disagree.
 	var reqVec = O.vSub(dep.v, escapeHelioV(p.origin, dep.jd));
 	var required = { vInf: O.vMag(reqVec), vInfVec: reqVec, jd: dep.jd };
 
@@ -310,7 +310,7 @@ export function computeCompliance(params, data) {
 	                  state: { r: data.r.slice(), v: data.v.slice(), jd: data.jd } };
 
 	// A ~zero v∞ vector has no direction to compare (vUnit of it is NaN), and
-	// that is legitimate: a waypoint-only plan freezes to required v∞ 0. The
+	// that is legitimate: a waypoint-only plan adopts to required v∞ 0. The
 	// magnitude row already reports any mismatch in that case.
 	var aimDeg = 0;
 	if (required.vInf > 1e-6 && delivered.vInf > 1e-6) {
@@ -349,7 +349,7 @@ export function complianceWarnings(comp) {
 		warnings.push(makeDiagnostic("no-departure-tech",
 			"No departure state is reaching the plan — the departure technology is " +
 			"absent, or its flight doesn't deliver a hand-off — so the coast shows the " +
-			"frozen plan itself.",
+			"adopted plan itself.",
 			{ values: { requiredVInf: comp.required.vInf },
 			  fix: "Add or fix a departure technology so it delivers v∞ " +
 			       (comp.required.vInf / 1000).toFixed(2) + " km/s on " + isoOf(comp.required.jd) + "." }));
@@ -407,7 +407,7 @@ function rememberCompliance(world, stageId, comp) {
 }
 
 export default {
-	id: "frozen-plan",
+	id: "adopted-plan",
 	title: "Flight plan",
 	attachesTo: null,
 	accepts: ["ship-state"],
@@ -440,7 +440,7 @@ export default {
 		// THE FLOWN FLIGHT IS THE CLOCK: the state that flows downstream is the
 		// one the departure technology actually delivered — position, velocity
 		// AND epoch — so the coast drawn below this seam starts exactly where
-		// and when the departure phase ended. The plan's own frozen state is
+		// and when the departure phase ended. The plan's own adopted state is
 		// the FALLBACK, used when nothing is delivered (an empty tech slot, or
 		// a departure whose flight fails); a mission with no departure yet
 		// still flies its plan. Δv spent so far is a fact of the tech, so that
@@ -450,7 +450,7 @@ export default {
 		var packet = PacketTypes.make("ship-state",
 			{ r: src.r.slice(), v: src.v.slice(), jd: src.jd, frame: "helio",
 			  dvUsed: data ? (data.dvUsed || 0) : 0 },
-			{ tool: "mission-planner/frozen-plan",
+			{ tool: "mission-planner/adopted-plan",
 			  label: comp.delivered ? "delivered hand-off" : "plan departure",
 			  iso: isoOf(src.jd) });
 
@@ -472,7 +472,7 @@ export default {
 	// No view layer: no init (see sidebarCard above) and no draw hook (the
 	// plan owns no hardware). complianceFor/planSummary/arrivalCommitmentFor are
 	// exposed on the descriptor (not just the named export) so the shell can
-	// reach them via `registry.get("frozen-plan")` without a static import —
+	// reach them via `registry.get("adopted-plan")` without a static import —
 	// modules stay dynamically loaded (planner.js's MODULE_URLS), only the
 	// registry is a shared/known handle.
 	complianceFor: complianceFor,

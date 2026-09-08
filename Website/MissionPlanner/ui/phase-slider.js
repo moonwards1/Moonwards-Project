@@ -1,4 +1,4 @@
-/* MissionPlanner/ui/phase-slider.js — the segmented-timeline widget behind
+﻿/* MissionPlanner/ui/phase-slider.js — the segmented-timeline widget behind
  * the phase bar's sliders. ONE PER PHASE, three in all, exactly one on screen
  * at a time (mission-view.js's syncSliderVisibility): Departure, Coast,
  * Arrival. Each phase's slider IS that phase's clock control; the raw
@@ -207,7 +207,7 @@ export function createSegmentedSlider(container, opts) {
 }
 
 // ---- the Coast slider ------------------------------------------------------
-// Pure: given the coast span (start/end jd, from the frozen plan's committed
+// Pure: given the coast span (start/end jd, from the adopted plan's committed
 // dates ending at the arrival seam — see mission-view.js's coastSpan()), the
 // shared clock's jd, a tick count and a shortDate(jd) formatter for the tick
 // captions, compute what the widget should show. No DOM — Node-testable.
@@ -232,7 +232,7 @@ export function coastSliderState(opts) {
 	// The readout always shows the true clock time, even when the handle itself
 	// is pinned at an edge because the clock has wandered outside the span —
 	// that's the point of showing it. `start` IS the departure/release epoch
-	// here (the frozen plan's departure date, or the events' envelope minimum
+	// here (the adopted plan's departure date, or the events' envelope minimum
 	// without a plan), so elapsedStamp needs no separate epoch.
 	var stamp = elapsedStamp(jd, start);
 	return { empty: false, segments: segments, playheadFrac: playheadFrac, pinnedAt: pinnedAt,
@@ -278,7 +278,7 @@ export function createCoastSlider(container, opts) {
 //
 // PINNED-START for every origin (mission-view.js's departureSpan): the LEFT
 // edge is the release epoch — the departure leg's own `releaseJd`, seeded by
-// core/freeze.js from core/departure-estimate.js's estimateDeparture() and
+// core/adopt.js from core/departure-estimate.js's estimateDeparture() and
 // read via core/release-epoch.js. The RIGHT edge floats: the flight's own
 // predicted SOI exit once a departure tech resolves one, else departureSpan's
 // default estimate (SOI_radius / required v∞), stretched when needed to keep

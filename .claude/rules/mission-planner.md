@@ -1,4 +1,4 @@
----
+﻿---
 paths:
   - "Website/MissionPlanner/**"
 ---
@@ -24,7 +24,7 @@ restate its content in code comments — cite the entry and its date.
 ## The shape
 
 - `core/` — pure logic, no DOM, Node-tested: the World and its serialization,
-  the recompute engine, diagnostics, the freeze contract, the arrival seam,
+  the recompute engine, diagnostics, the adopt contract, the arrival seam,
   the arrival standards, the delivered flight, the re-target solve.
 - `modules/` — the mission-profile stages, one folder each, default-exporting
   a descriptor the shell `import()`s dynamically. Technology platforms are one
@@ -56,10 +56,10 @@ restate its content in code comments — cite the entry and its date.
   month is a different trajectory. Never add the two before showing them: the
   split is the whole point, and conflating them is the mistake this origin
   invites.
-- **The flown flight is the clock.** `frozen-plan` emits what the departure
+- **The flown flight is the clock.** `adopted-plan` emits what the departure
   technology actually DELIVERED — position, velocity and epoch — so the drawn
   coast is the ship's flight and the Coast timeline starts where the Departure
-  timeline ends. The plan's frozen state is the REQUIREMENT (and the fallback
+  timeline ends. The plan's adopted state is the REQUIREMENT (and the fallback
   when nothing is delivered), never a second flight on a second clock. Moving
   the plan onto what is flown is the Update button's deliberate commit
   (`core/retarget.js`), never something the boundary does by itself.

@@ -18,7 +18,7 @@ A calculator that imports from `Shared/` references it as `../../Shared/…` and
 calculator's README states whether it has this dependency; keep that statement
 true when you add or remove an import.
 
-## The standalone plotters are frozen
+## The standalone plotters are adopted
 
 `Solar-System-Trajectory-Plotter`, `Moon-Skyhook-Trajectory-Plotter` and
 `Mars-Phobos-Skyhook-Trajectory-Plotter` are **not to be modified uninvited.**

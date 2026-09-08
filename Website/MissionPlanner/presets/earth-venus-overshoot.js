@@ -1,4 +1,4 @@
-// The OVERSHOOT-AND-RETURN example: the most demanding
+﻿// The OVERSHOOT-AND-RETURN example: the most demanding
 // waypoint-tuning case in the set. The coast swings out past 3.5 AU — past
 // Mars' own 1.52 AU orbit — before falling back to catch Venus at 0.72 AU,
 // exercising BOTH waypoint slots (the departure/coast UI's own limit) with
@@ -48,7 +48,7 @@
 // THE HAND-OFF IS THIS PLAN'S DEPARTURE, VERBATIM. `departure` below is
 // the REAL departure leg's Earth-SOI exit — a state a genuine carrier
 // chain delivered, not an impulse at the body's centre. Both the Ephemeris
-// tab and core/freeze.js now treat that state as the thing itself, so
+// tab and core/adopt.js now treat that state as the thing itself, so
 // "Paste mission link…" reproduces this plan EXACTLY: it opens on the
 // hand-off epoch, reads the v-infinity off the state, and adopts the exit
 // point's own offset from Earth rather than re-deriving it.
@@ -87,7 +87,7 @@ export var earthVenusOvershootMission = {
 			// Compliant by construction (see header): departure/arrival copied
 			// verbatim from the real computeDepartureLeg / computeLeg run.
 			id: "stg-4",
-			moduleId: "frozen-plan",
+			moduleId: "adopted-plan",
 			params: {
 				origin: "Moon",
 				departure: {

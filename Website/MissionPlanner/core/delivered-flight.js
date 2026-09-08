@@ -1,12 +1,12 @@
-/* MissionPlanner/core/delivered-flight — the flight the ship is ACTUALLY on.
+﻿/* MissionPlanner/core/delivered-flight — the flight the ship is ACTUALLY on.
  *
  * ONE RULE, and this module is where it lives: every figure the compliance bar
  * shows describes the flight flown from what the departure technology really
  * delivers, through the waypoints as they currently stand. Not the plan's
  * commitments, not its requirements — the real thing.
  *
- * WHY THAT NEEDS ITS OWN COMPUTATION. `frozen-plan` is authoritative by design:
- * it always emits the plan's own frozen departure state downstream, so the
+ * WHY THAT NEEDS ITS OWN COMPUTATION. `adopted-plan` is authoritative by design:
+ * it always emits the plan's own adopted departure state downstream, so the
  * coast that gets drawn and measured flies from the point the plan ASSUMES the
  * ship leaves. When the plan was authored in the Ephemeris tab that point is
  * derived geometry (body position + R_soi x heading), not a place any real

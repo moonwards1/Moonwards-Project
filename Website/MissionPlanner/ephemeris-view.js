@@ -1,4 +1,4 @@
-/* Mission Planner — the Ephemeris tab: where a trajectory is authored before
+﻿/* Mission Planner — the Ephemeris tab: where a trajectory is authored before
  * any mission exists.
  *
  * This tab is the Solar-System-Trajectory-Plotter's (SST's) authoring
@@ -11,7 +11,7 @@
  *
  * PHYSICS IS NOT FORKED: the actual leg — burn application, sample polyline,
  * events, miss distance — goes through transfer-leg.js's exported `computeLeg`,
- * the same function the transfer-leg module uses once a plan is frozen. What is
+ * the same function the transfer-leg module uses once a plan is adopted. What is
  * local to this file is everything computeLeg doesn't own: resolving a
  * waypoint's "snap to an orbital feature" request into a concrete day offset
  * (via the snap-to helpers in Shared/math-utils.js), and the view-only glue —
@@ -37,9 +37,9 @@
  * where it leaves the origin's sphere of influence, measured against the origin
  * body's own heliocentric motion, and THE TAB'S CLOCK IS THAT HAND-OFF'S EPOCH.
  * So the drawn arc starts at the hand-off, at t = 0, and the tab's state is the
- * same thing core/freeze.js commits and modules/frozen-plan holds: a position,
+ * same thing core/adopt.js commits and modules/adopted-plan holds: a position,
  * a velocity and an epoch at the SOI edge. Nothing is re-derived across that
- * seam, so a plan frozen here and pasted back is exact. A departure
+ * seam, so a plan adopted here and pasted back is exact. A departure
  * technology's job is to DELIVER that hand-off; how much impulse it costs and
  * when it must launch are asked BACKWARDS from it, by
  * core/departure-estimate.js, and those answers never bend the drawn arc.
@@ -83,16 +83,16 @@
  * floating overlay on the 3D pane: with no marker placed it collapses to a hint
  * line + the (disabled, with its reason) Start button + "Paste mission link…",
  * the marker-specific controls CSS-hidden via the card's .mp-empty class
- * (planner.css). Start opens the name dialog, freezes the authored plan through
- * core/freeze.js — that file's header is the freeze CONTRACT — and hands the
+ * (planner.css). Start opens the name dialog, adopts the authored plan through
+ * core/adopt.js — that file's header is the adopt CONTRACT — and hands the
  * serialized World to planner.js's onStartMission, which registers it as a new
  * mission tab and switches to it.
  *
  * "PASTE MISSION LINK…" does NOT spawn a tab. It decodes a shared link
- * (ui/share-link.js parses URL/fragment/blob) and loads the frozen plan's
+ * (ui/share-link.js parses URL/fragment/blob) and loads the adopted plan's
  * origin/burn/waypoints/destination back into THIS tab's own scratchpad state
- * (loadFrozenPlanIntoState), placing the marker at the original rendezvous — so
- * a pasted mission is revised here and then frozen into a new tab through the
+ * (loadadoptedPlanIntoState), placing the marker at the original rendezvous — so
+ * a pasted mission is revised here and then adopted into a new tab through the
  * same path as anything authored from scratch.
  *
  * THE ORBIT-APPROACH RING SCAN rounds out the proximity markers: hollow rings
@@ -135,7 +135,7 @@ import {
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
 import { buildHelioFrame, ORIGIN_BODIES, DESTINATION_BODIES } from "./scene-frames.js";
 import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
-import { freezeMissionWorld, defaultMissionTitle } from "./core/freeze.js";
+import { adoptMissionWorld, defaultMissionTitle } from "./core/adopt.js";
 import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
 	originSoiRadius, asymptoticVInf, edgeVInf, MIN_VINF
@@ -227,14 +227,14 @@ var LUNAR_FAILURES = {
 //    renderer, root      — root is planner.html's #mp-eph-view, already in
 //                          the DOM
 //    onStartMission(worldData, title) — spawn a mission tab from a
-//                          frozen serialized World; returns { ok } or
+//                          adopted serialized World; returns { ok } or
 //                          { ok: false, reason } (shown in the dialog)
 //    onOpenPastedMission(worldData, title, planSets) — same, for the LATER
 //                          plan a pasted link carries when the mission has
-//                          been updated since it was frozen
+//                          been updated since it was adopted
 //  }
 //  "Paste mission link…" loads a link's ORIGINAL plan into this tab's own
-//  scratchpad (loadFrozenPlanIntoState). When the link also carries a later
+//  scratchpad (loadadoptedPlanIntoState). When the link also carries a later
 //  commit, that one opens as its own mission tab through onOpenPastedMission —
 //  see loadPastedMission.
 //  Returns { show, hide, render, resize }.
@@ -273,7 +273,7 @@ export function createEphemerisView(opts) {
 	// it is recomputed every refresh() from the physics alone (see
 	// finalCoastDays), never user-set, so the drawn arc just keeps going —
 	// closing into a loop if bound, coasting outward for a long while if not. A
-	// real duration only becomes meaningful at freeze, where core/freeze.js
+	// real duration only becomes meaningful at adopt, where core/adopt.js
 	// decides legDays from the marker's resolved rendezvous.
 	var state = {
 		origin: "Moon",
@@ -633,7 +633,7 @@ export function createEphemerisView(opts) {
 	// hand-off itself if there are none) for finalCoastDays to size the drawn
 	// arc's last segment from. r0/v0 IS the hand-off state (departureState) —
 	// the coast's own start, with no burn left to apply at that seam. `days`
-	// are counted from it, the same zero core/freeze.js commits.
+	// are counted from it, the same zero core/adopt.js commits.
 	// -------------------------------------------------------------------------
 	function resolveWaypoints(r0, v0, leg) {
 		var entries = leg.waypoints.map(function (wp, i) {
@@ -873,13 +873,13 @@ export function createEphemerisView(opts) {
 	// v-infinity in the body's own prograde/radial/normal frame, so the
 	// hand-off velocity is the body's heliocentric velocity plus that vector
 	// (O.applyBurn is exactly that sum, and O.burnComponents its exact
-	// inverse, which is what makes the freeze/paste round trip lossless), and
+	// inverse, which is what makes the adopt/paste round trip lossless), and
 	// the epoch is the clock's. The position is the body's plus an offset onto
 	// its SOI sphere:
 	//   derived  — one SOI radius along the outbound asymptote (the heading
 	//              itself), so editing the card moves the exit point with it;
 	//   adopted  — the body-relative offset a pasted mission's departure chain
-	//              actually produced, held fixed (see loadFrozenPlanIntoState).
+	//              actually produced, held fixed (see loadadoptedPlanIntoState).
 	// A ship with no meaningful v-infinity has no asymptote to sit on and no
 	// flight to start, so it departs from the body's own position.
 	//
@@ -1026,7 +1026,7 @@ export function createEphemerisView(opts) {
 	}
 
 	// Keep the marker glued to the destination-orbit crossing while it is
-	// inside an encounter ring; freeze when out of range
+	// inside an encounter ring; adopt when out of range
 	// (Shared/sim/marker-card.js). Used by released Target.
 	function followCrossing() {
 		if (!state.marker || !trajSegs.length) { return; }
@@ -1160,7 +1160,7 @@ export function createEphemerisView(opts) {
 		m._encT = t1g + tof; m._released = false;
 	}
 
-	// Switch the marker behaviour. Entering Target freezes the current
+	// Switch the marker behaviour. Entering Target adopts the current
 	// arrival date and snapshots BOTH the terminal burn and the marker's own
 	// position (so each can be restored); leaving Target restores that manual
 	// burn and puts the marker back where it was. Restoring the position is
@@ -1508,15 +1508,15 @@ export function createEphemerisView(opts) {
 		// "Start Mission Plan": enabled only when the marker sits inside both
 		// closest-approach rings, space and time (see updateStartMissionButton,
 		// fed by updateDestinationMarker's nearOrbit/timing computation). Click:
-		// name dialog → core/freeze.js → planner.js spawns the tab.
+		// name dialog → core/adopt.js → planner.js spawns the tab.
 		mk.startBtn = document.createElement("button");
 		mk.startBtn.type = "button";
 		mk.startBtn.className = "mp-btn mp-big";
 		mk.startBtn.textContent = "Start Mission Plan";
-		mk.startBtn.title = "Freeze this flight plan into a new mission tab.";
+		mk.startBtn.title = "adopt this flight plan into a new mission tab.";
 		mk.startBtn.disabled = true;
 		mk.startBtn.addEventListener("click", function () {
-			var f = buildFreezeSpec();
+			var f = buildadoptSpec();
 			if (!f.ok) { mk.startNote.textContent = f.reason; return; }   // gate should prevent this
 			openDialog({
 				title: "Name this mission",
@@ -1524,7 +1524,7 @@ export function createEphemerisView(opts) {
 				okLabel: "Create mission tab",
 				onOk: function (name) {
 					var title = (name || "").trim() || f.defaultTitle;
-					return opts.onStartMission(freezeMissionWorld(f.spec), title);
+					return opts.onStartMission(adoptMissionWorld(f.spec), title);
 				}
 			});
 		});
@@ -1534,7 +1534,7 @@ export function createEphemerisView(opts) {
 		// "Paste mission link…": a link copied with a mission tab's "Copy mission
 		// link" loads its ORIGINAL plan back into THIS tab's own scratchpad
 		// (loadPastedMission), so it can be revised before Start Mission Plan is
-		// clicked — the same freeze/spawn path as anything authored from
+		// clicked — the same adopt/spawn path as anything authored from
 		// scratch. A link that also carries a later commit opens that as a
 		// mission tab at the same time. The dialog's input auto-fills from the
 		// OS clipboard as soon as it opens (best-effort — silently stays blank
@@ -1575,16 +1575,16 @@ export function createEphemerisView(opts) {
 		mk.el.appendChild(mk.pasteBtn);
 	}
 
-	// Everything core/freeze.js's spec wants, read off the CURRENT authored
+	// Everything core/adopt.js's spec wants, read off the CURRENT authored
 	// state: the origin body's pre-burn helio state at the tab's clock, the
 	// resolved waypoint days (snaps made concrete — the same resolveWaypoints
 	// pass refresh() draws from), and the marker's rendezvous — its time along
 	// the path as the arrival epoch, its velocity against the destination body's
-	// as the arrival v∞. Freeze re-solves the SOI-edge hand-off itself, from
+	// as the arrival v∞. adopt re-solves the SOI-edge hand-off itself, from
 	// these same numbers, so the mission's coast starts exactly where this tab
 	// drew the flight starting. Returns { ok: false, reason } if the gate's
 	// preconditions somehow aren't met.
-	function buildFreezeSpec() {
+	function buildadoptSpec() {
 		var dn = state.leg.destination;
 		if (!state.marker || !trajSegs.length || !(trajTotalT > 0)) {
 			return { ok: false, reason: "No marker on a drawn trajectory." };
@@ -1606,7 +1606,7 @@ export function createEphemerisView(opts) {
 				origin: state.origin,
 				destination: dn,
 				// The hand-off state and its epoch are handed over verbatim —
-				// freeze re-derives nothing, so what the planner was shown is
+				// adopt re-derives nothing, so what the planner was shown is
 				// exactly what the mission commits. For a Moon origin that
 				// epoch is the FLOWN SOI crossing, not the clock; the clock is
 				// the release, and travels separately as releaseJd.
@@ -1628,11 +1628,11 @@ export function createEphemerisView(opts) {
 		};
 	}
 
-	// The inverse of buildFreezeSpec/core/freeze.js: reconstructs this tab's
-	// scratchpad from a mission World that was previously frozen — the back half
+	// The inverse of buildadoptSpec/core/adopt.js: reconstructs this tab's
+	// scratchpad from a mission World that was previously adopted — the back half
 	// of "Paste mission link…", so a shared mission loads here for revision
-	// instead of spawning a tab. Reads the frozen-plan and transfer-leg stages'
-	// own params (the same two stages core/freeze.js writes); every other stage
+	// instead of spawning a tab. Reads the adopted-plan and transfer-leg stages'
+	// own params (the same two stages core/adopt.js writes); every other stage
 	// — the departure and arrival techs and their legs — is ignored, because
 	// this tab only ever edits the plan, never a tech's configuration.
 	//
@@ -1658,17 +1658,17 @@ export function createEphemerisView(opts) {
 	// departure.v the way the branch above does would read an Earth-frame
 	// velocity as a Moon-frame impulse and draw a different flight entirely.
 	//
-	// Waypoint snap-to intent doesn't survive a freeze (resolveWaypoints
-	// already turned it into a concrete day before core/freeze.js ever saw
-	// it), so restored waypoints land unsnapped at their frozen day — still
+	// Waypoint snap-to intent doesn't survive a adopt (resolveWaypoints
+	// already turned it into a concrete day before core/adopt.js ever saw
+	// it), so restored waypoints land unsnapped at their adopted day — still
 	// revisable, just not re-snappable to the same feature without
 	// re-checking the box. Waypoint burns themselves copy straight across.
-	function loadFrozenPlanIntoState(world) {
+	function loadadoptedPlanIntoState(world) {
 		var stages = world.stages();
-		var fpStage = stages.filter(function (s) { return s.moduleId === "frozen-plan"; })[0];
+		var fpStage = stages.filter(function (s) { return s.moduleId === "adopted-plan"; })[0];
 		var legStage = stages.filter(function (s) { return s.moduleId === "transfer-leg"; })[0];
 		if (!fpStage || !legStage) {
-			return { ok: false, reason: "That mission has no frozen flight plan to load here." };
+			return { ok: false, reason: "That mission has no adopted flight plan to load here." };
 		}
 		var p = fpStage.params || {};
 		var lp = legStage.params || {};
@@ -1685,7 +1685,7 @@ export function createEphemerisView(opts) {
 		// goes to the release epoch and the card takes its impulse verbatim.
 		// The hand-off then comes back out of the same integration that
 		// produced it, so the round trip is exact without solving anything
-		// backwards. A lunar plan frozen without that record (there is nothing
+		// backwards. A lunar plan adopted without that record (there is nothing
 		// else it could have come from) is reported rather than guessed at.
 		var burn;
 		if (p.origin === "Moon") {
@@ -1719,7 +1719,7 @@ export function createEphemerisView(opts) {
 		state.leg.burn.pro = burn.pro;
 		state.leg.burn.rad = burn.rad;
 		state.leg.burn.nrm = burn.nrm;
-		// Frozen waypoint days already count from the coast's start, which is
+		// adopted waypoint days already count from the coast's start, which is
 		// now this tab's zero too — they copy across untouched.
 		state.leg.waypoints = (lp.waypoints || []).map(function (wp) {
 			var b = wp.burn || {};
@@ -1733,7 +1733,7 @@ export function createEphemerisView(opts) {
 		rebuildWaypointRows();
 		refresh();
 
-		// Place the marker back at the frozen rendezvous — trajTotalT is now
+		// Place the marker back at the adopted rendezvous — trajTotalT is now
 		// current (the refresh() just above), so the fraction this resolves
 		// to is against the freshly-restored trajectory, not a stale one.
 		var tof = (lp.legDays || 0) * DAY;
@@ -1745,7 +1745,7 @@ export function createEphemerisView(opts) {
 
 	// A pasted link, unpacked (ui/share-link.js), turned into whatever it
 	// describes. A mission link carries up to two plans — the ORIGINAL as it
-	// was first frozen, and the LATEST commit if the mission has been updated
+	// was first adopted, and the LATEST commit if the mission has been updated
 	// since — and each has a different destination here:
 	//
 	//   - the ORIGINAL loads into this scratchpad, because this tab is where a
@@ -1764,7 +1764,7 @@ export function createEphemerisView(opts) {
 
 		var res = deserializeWorld(sketchWorld);
 		if (!res.ok) { return { ok: false, reason: "Couldn't load the mission: " + res.reason + "." }; }
-		var loaded = loadFrozenPlanIntoState(res.world);
+		var loaded = loadadoptedPlanIntoState(res.world);
 		if (!loaded.ok) { return loaded; }
 
 		if (latest && opts.onOpenPastedMission) {
@@ -1981,7 +1981,7 @@ export function createEphemerisView(opts) {
 	// Place (or move) the marker at a global time along the path; that point
 	// becomes 0° on the slider and the camera focus. Called from handlePick
 	// below whenever a click resolves to a nearest trajectory sample, and by
-	// loadFrozenPlanIntoState to restore a pasted mission's rendezvous.
+	// loadadoptedPlanIntoState to restore a pasted mission's rendezvous.
 	function placeMarkerAtGlobalTime(t) {
 		var f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, t / trajTotalT)) : 0;
 		var budget = (state.marker && state.marker.dvBudget != null) ? state.marker.dvBudget : 10000;

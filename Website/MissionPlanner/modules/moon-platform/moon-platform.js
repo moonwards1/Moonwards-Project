@@ -1,4 +1,4 @@
-/* MissionPlanner/modules/moon-platform — the Moon as the departure stack's
+﻿/* MissionPlanner/modules/moon-platform — the Moon as the departure stack's
  * top card, for missions that depart from the Moon.
  *
  * The Moon itself is the first CARRIER: ~1 km/s of geocentric velocity plus
@@ -8,7 +8,7 @@
  * the carrier stages downstream to extend (the skyhook appends its rotor;
  * departure-leg integrates the result).
  * Every other origin has no platform stage at all — their skyhook
- * self-originates; see core/freeze.js's scaffold.
+ * self-originates; see core/adopt.js's scaffold.
  *
  * READ-ONLY by design: there is no release-date knob here. The release epoch
  * is the departure leg's own release epoch (core/release-epoch.js), seeded at
@@ -31,7 +31,7 @@
  * the inclination-of-motion figure above — the Moon's motion is already
  * tilted off the ecliptic before any carrier tech adds its own plane change.
  *
- * A missing anchor (no frozen plan and no release date anywhere in
+ * A missing anchor (no adopted plan and no release date anywhere in
  * the profile) is diagnosed HERE, at the top of the chain, so the one clear
  * message blocks the stack instead of each stage failing its own way.
  *
@@ -39,7 +39,7 @@
  * card, `draw` only ever pushes the readout entry — the Moon itself is drawn
  * by the frame, so there is no trajectory geometry here.
  *
- * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this
+ * Imports from ../../../Shared/, ../../core/ and ../adopted-plan/ — this
  * folder breaks if moved without them coming along.
  */
 

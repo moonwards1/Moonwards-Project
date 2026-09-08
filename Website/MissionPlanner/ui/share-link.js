@@ -1,4 +1,4 @@
-/* MissionPlanner/ui/share-link.js — the mission-link envelope.
+﻿/* MissionPlanner/ui/share-link.js — the mission-link envelope.
  *
  * Pure (no DOM), Node-testable. A "Copy mission link" URL carries a mission in
  * its #mission= fragment. The envelope wraps { title, world, plan } under its
@@ -9,7 +9,7 @@
  * older links keep working.
  *
  * `plan` is the two-set history from core/revisions.js: the mission as
- * originally frozen, plus its latest commit when it has one. Two sets is the
+ * originally adopted, plus its latest commit when it has one. Two sets is the
  * whole budget — a user's intermediate updates are their own working record,
  * and a link has to fit in a chat message.
  *
@@ -37,7 +37,7 @@ export var MISSION_LINK_VERSION = 2;
 
 // The fragment payload for a share link: title (may be null), the World the
 // receiving TAB should open with, and — at v2 — the two-set `plan`
-// core/revisions.js's packSets produced: the mission as originally frozen, and
+// core/revisions.js's packSets produced: the mission as originally adopted, and
 // the latest commit if there is one. Kind-stamped and versioned like the World
 // itself, so a future format change can be refused politely rather than
 // misread.

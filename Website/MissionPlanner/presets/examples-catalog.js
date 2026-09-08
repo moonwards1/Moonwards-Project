@@ -1,4 +1,4 @@
-/* MissionPlanner/presets/examples-catalog.js — the "example missions"
+﻿/* MissionPlanner/presets/examples-catalog.js — the "example missions"
  * drop-down's catalog (design doc, Top pane / top part: "a button for
  * duplicating the currently displayed mission, and one for opening a mission
  * from a drop-down menu where users can choose from a small number of
@@ -23,7 +23,7 @@
  * arrival modules, verified in Node — see each preset file's own header),
  * not a hand-waved placeholder, and — the shipped default excepted, which
  * deliberately teaches the departure gap it ships with (see its own header)
- * — each is compliant BY CONSTRUCTION: the frozen plan's departure/arrival
+ * — each is compliant BY CONSTRUCTION: the adopted plan's departure/arrival
  * commitment is exactly what the configured technology actually delivers,
  * so opening one shows a clean flight with no comply-boundary warnings
  * unless a future change breaks something.

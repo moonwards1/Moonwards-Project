@@ -1,4 +1,4 @@
-/* MissionPlanner/modules/transfer-leg — the canonical transfer-leg module.
+﻿/* MissionPlanner/modules/transfer-leg — the canonical transfer-leg module.
  *
  * The Coast phase: a ballistic arc between two ship states, with up to two
  * waypoint burns along the way — the compute core of the
@@ -12,7 +12,7 @@
  * ceiling — per ARCHITECTURE.md's "Phases are chains; compliance is a boundary
  * check, not a reconciliation", a phase is any length of ordinary stage chain.
  * The plotter's snap-to and Lambert targeting are not here: they live on the
- * Ephemeris tab (ephemeris-view.js), which authors a plan before it is frozen.
+ * Ephemeris tab (ephemeris-view.js), which authors a plan before it is adopted.
  *
  * Consumes a ship-state packet (any frame — converted to "helio" via
  * Shared/frames.js) AS THE COAST'S STARTING STATE, unmodified. No burn of its
@@ -50,7 +50,7 @@
  * card) and `draw` (trajectory polyline in the "helio" frame) are the
  * browser-only view hooks.
  *
- * Imports from ../../../Shared/, ../../core/ and ../frozen-plan/ — this
+ * Imports from ../../../Shared/, ../../core/ and ../adopted-plan/ — this
  * folder breaks if moved without them coming along.
  */
 /* global THREE */
@@ -65,7 +65,7 @@ import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.
 import { buildVectorEditor, renderVectorGlyph } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
-import { planWaypointsFor } from "../frozen-plan/frozen-plan.js";
+import { planWaypointsFor } from "../adopted-plan/adopted-plan.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -82,7 +82,7 @@ export var DESTINATIONS = ["Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
 
 // A waypoint burn edited during Coast is a COURSE CORRECTION, not a fresh
 // injection: the sidebar card caps how far any single axis may move from its
-// baseline (the frozen plan's original burn for an existing waypoint, or
+// baseline (the adopted plan's original burn for an existing waypoint, or
 // zero for one added after freezing — see rebuildWaypointRows). Exported so
 // the shell/tests can reference the same figure.
 export var WAYPOINT_AXIS_CAP_MPS = 100;
@@ -189,8 +189,8 @@ function bodyPosAt(name, jd) { return O.bodyStateAtJD(GM_SUN, systems.get(name).
 // previous stretch ended mid-encounter (a waypoint burn inside the SOI, or
 // the overrun continuing a leg that ends there) — that encounter resumes
 // immediately. Any OTHER body the arc merely STARTS inside of is the
-// patched-conic departure case (the plan's frozen hand-off states live at
-// the origin body's own position with v∞ folded in — see frozen-plan) and
+// patched-conic departure case (the plan's adopted hand-off states live at
+// the origin body's own position with v∞ folded in — see adopted-plan) and
 // its gravity belongs to the departure stage, not the coast: that body is
 // ignored until the arc has first LEFT its SOI.
 function findFirstEncounter(r, v, jdAbs, durS, insideBody) {
@@ -412,7 +412,7 @@ export function computeLeg(params, data) {
 	var jdEnd = impact ? impact.jd : jd0 + p.legDays;
 	var miss = null;
 	// display: false on both — bookkeeping for mission-view.js's coastSpan
-	// fallback (the envelope of departure/coast event jd's, when no frozen
+	// fallback (the envelope of departure/coast event jd's, when no adopted
 	// plan supplies the span directly), not a ship event worth showing the
 	// reader; the leg's own end is already the next phase's hand-off.
 	if (impact) {
@@ -605,8 +605,8 @@ export function nearestApproach(leg, body) {
 // "swept from origin" quantity Shared/sim/marker-card.js's marker readout
 // shows, reusing its sweepAngleFrom so a waypoint's angle and a marker's mean
 // the same thing. The card still stores/edits the waypoint by DAY internally
-// (computeLeg's chain-walk is time-parameterized, and freeze/reset compare
-// against the frozen plan's own days) -- this and dayAtDeg below are purely
+// (computeLeg's chain-walk is time-parameterized, and adopt/reset compare
+// against the adopted plan's own days) -- this and dayAtDeg below are purely
 // the display/edit conversion at the UI boundary.
 export function degAtDay(leg, day) {
 	if (!leg || !leg.ok || !leg.segs.length) { return 0; }
@@ -755,7 +755,7 @@ export default {
 	// (mission-view.js's Coast ship card) can reach them through
 	// registry.get("transfer-leg") — modules stay dynamically loaded
 	// (planner.js's MODULE_URLS) and only the registry is a shared handle. The
-	// same arrangement frozen-plan uses for complianceFor and friends.
+	// same arrangement adopted-plan uses for complianceFor and friends.
 	legFor: legFor,
 	handoffLegFor: handoffLegFor,
 	stateAtElapsed: stateAtElapsed,
@@ -819,17 +819,17 @@ export default {
 
 	// Sidebar card: ONLY the waypoint burns live here — one small card per
 	// existing waypoint plus the add button (capped at 2). Leg duration,
-	// destination and the departure injection are the frozen plan's business,
+	// destination and the departure injection are the adopted plan's business,
 	// not knobs on the coast, and its figures render in the phase bar's
 	// compliance readout instead. The stage opts out of the generic title/status
 	// header (`plainCard` above); the leg's warnings and diagnostics still render
 	// underneath via the shell's generic diag boxes.
 	//
 	// An ORIGINAL plan waypoint (index-matched against planWaypointsFor's
-	// frozen reference copy) is a committed course correction, not a knob the
+	// adopted reference copy) is a committed course correction, not a knob the
 	// user can delete outright: its card's button reads "reset" and restores
 	// the plan's own days/burn rather than removing the row. A waypoint added
-	// AFTER freezing (index beyond the frozen list) is a later course
+	// AFTER freezing (index beyond the adopted list) is a later course
 	// correction with no commitment behind it yet, so it keeps the ordinary
 	// "remove" button.
 	//
@@ -867,10 +867,10 @@ export default {
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
 		// Each waypoint gets ONE outlined card, titled "waypoint N" once at the
 		// top, with two sections inside: the read-only PLAN section (what the
-		// mission plan, frozen at "Start Mission Plan" on the Ephemeris tab,
+		// mission plan, adopted at "Start Mission Plan" on the Ephemeris tab,
 		// authored — the info line plus Shared/sim/vector-editor.js's static
 		// renderVectorGlyph, present only when this index has a plan waypoint
-		// behind it — an index beyond the frozen list is a correction added
+		// behind it — an index beyond the adopted list is a correction added
 		// after freezing, with no plan section) and the COURSE CORRECTION
 		// section (the editable part: reset/remove, the cap hint, the degree
 		// field, the draggable burn editor). Both sections get their own
@@ -882,7 +882,7 @@ export default {
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
-			var planWps = planWaypointsFor(ctx.world);   // the frozen plan's original waypoints, by index
+			var planWps = planWaypointsFor(ctx.world);   // the adopted plan's original waypoints, by index
 			var burnHosts = [];
 			var planRows = [];
 			wps.forEach(function (wp, i) {
@@ -1218,9 +1218,9 @@ export default {
 		// rescale hook; readout boxes are collected in view.readoutEntries for
 		// mission-view.js to render/position.
 		//
-		// planLeg — the FROZEN PLAN's own waypoints run through the same coast
+		// planLeg — the adopted PLAN's own waypoints run through the same coast
 		// start — feeds the plan section's readouts further down (planLeg is
-		// resampled at each frozen waypoint's own day, which never changes).
+		// resampled at each adopted waypoint's own day, which never changes).
 		var coastStart0 = stateAtElapsed(leg, 0);
 		var planWpsDraw = planWaypointsFor(snap.world);
 		var planLeg = coastStart0 &&
@@ -1261,7 +1261,7 @@ export default {
 				// plan-relative diffing between them
 				// (Notes/decisions.md, 2026-08-19):
 				//
-				// The WAYPOINT section's pane (up top, beside the frozen
+				// The WAYPOINT section's pane (up top, beside the adopted
 				// plan's own info) reports the PLAN's own burn fired from
 				// wherever the waypoint currently sits — same fixed burn
 				// numbers every time, but read through whatever local frame
@@ -1290,7 +1290,7 @@ export default {
 		}
 
 		// The plan section's own descriptive line ("+475 d, 2.966 AU from
-		// Sun...") always describes the FROZEN plan's own day — it never
+		// Sun...") always describes the adopted plan's own day — it never
 		// changes, unlike its readout pane's Δv box (now fed live, above,
 		// from wherever the waypoint currently sits).
 		if (planRows.length && planLeg) {

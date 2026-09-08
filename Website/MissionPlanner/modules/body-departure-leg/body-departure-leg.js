@@ -1,4 +1,4 @@
-/* MissionPlanner/modules/body-departure-leg — the integrated escape flight
+﻿/* MissionPlanner/modules/body-departure-leg — the integrated escape flight
  * from a generic-origin skyhook release to the Departure→Coast hand-off, for
  * departures from any body on scene-frames.js's HELIO_BODIES list.
  *
@@ -22,14 +22,14 @@
  *
  * update() — every recompute is one FORWARD pass, no fixed-point iteration:
  *   1. Take the RELEASE EPOCH from this stage's own `releaseJd` param — a
- *      departure-phase decision, seeded at freeze (core/release-epoch.js).
+ *      departure-phase decision, seeded at adopt (core/release-epoch.js).
  *   2. Evaluate the incoming carrier-chain packet there
  *      (Shared/kinematic-chain.js) — the released ship's body-centric state.
  *   3. Integrate FORWARD with body + Sun gravity (Shared/body-leg.js RK4),
  *      applying up to 2 waypoint impulses, each in its leg's own local
  *      dynamical frame (body-leg's localFrameAt / burnEffect).
  *   4. The flight ends at ORIGIN-BODY-SOI EXIT — the hand-off. Emit the ship's
- *      heliocentric state there (Frames.localToHelio(body, …)). frozen-plan,
+ *      heliocentric state there (Frames.localToHelio(body, …)). adopted-plan,
  *      downstream, measures this integrated hand-off against the plan's window.
  *
  * A flight that never escapes (bound to the body) or impacts it still draws —
@@ -39,7 +39,7 @@
  * fixing it means adjusting the carrier, the waypoint impulses, or
  * re-planning from the Ephemeris tab.
  *
- * Params: releaseJd — when the carrier chain lets go (the frozen plan does
+ * Params: releaseJd — when the carrier chain lets go (the adopted plan does
  * not own this: it states where the ship must be when the departure phase
  * ENDS, never when that phase started); waypoints: [{ t, burn: { pro, rad,
  * nrm } }] — up to 2, t in SECONDS after release, each strictly inside the
@@ -317,7 +317,7 @@ export default {
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
 
-		// The release epoch — this stage's OWN param, seeded at freeze and owned
+		// The release epoch — this stage's OWN param, seeded at adopt and owned
 		// by the departure phase (core/release-epoch.js). Upstream carriers read
 		// the same value through releaseEpochFor and diagnose a missing one too;
 		// this stage may also be exercised bare (tests), so it carries the check.
@@ -439,7 +439,7 @@ export default {
 	// The last computed flight, for shell readouts that need the flown arc
 	// rather than just the hand-off packet — the ship card's speed bar reads
 	// `samples` for the current and peak speeds. Same registry-reached
-	// accessor pattern frozen-plan.js uses for complianceFor.
+	// accessor pattern adopted-plan.js uses for complianceFor.
 	legFor: legFor,
 
 	draw: function (view, snap) {

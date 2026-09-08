@@ -1,4 +1,4 @@
-/* Mission Planner — deliberately plain styling for the whole app: the tab bar,
+﻿/* Mission Planner — deliberately plain styling for the whole app: the tab bar,
  * the Ephemeris tab, and the per-mission chrome cloned from planner.html's
  * <template>. */
 
@@ -147,7 +147,7 @@ body {
 .mp-dot.err { background: var(--err); }
 .mp-dot.blocked { background: #5a6478; }
 
-/* frozen-plan's hard states — its only home, since it has no sidebar card. */
+/* adopted-plan's hard states — its only home, since it has no sidebar card. */
 .mp-planstate {
 	flex: none; padding: 6px 14px; font-size: 12.5px;
 	background: #241a20; color: var(--warn); border-bottom: 1px solid #6b5226;
@@ -214,7 +214,7 @@ body {
 .mp-msg th:first-child, .mp-msg td:first-child { text-align: left; color: var(--dim); }
 .mp-msg tr.now td { color: var(--text); }
 /* The mission report's originals table: what the plan STORED when it was
-   frozen beside what it holds now (core/revisions.js). The "as frozen"
+   adopted beside what it holds now (core/revisions.js). The "as adopted"
    column is dimmed — it is the reference, not the live figure. */
 .mp-msg h4 { margin: 10px 0 4px; font-size: 12px; color: var(--bright); font-weight: 600; }
 .mp-msg table.mp-originals td.was { color: var(--dim); }

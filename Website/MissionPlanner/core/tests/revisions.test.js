@@ -1,4 +1,4 @@
-/* core/revisions — the plan history: what a mission stored when it was frozen,
+﻿/* core/revisions — the plan history: what a mission stored when it was adopted,
  * what it stores now, and the two sets a link carries between them. */
 
 import { test } from "node:test";
@@ -111,7 +111,7 @@ test("a plan compared with itself shows no change (a JSON round trip is not an e
 test("changesBetween names exactly what moved", function () {
 	var after = planWith(function (w) {
 		w.stages[4].params.legDays = 800;              // transfer-leg horizon
-		w.stages[3].params.arrival.vInf = 4000;        // frozen-plan commitment
+		w.stages[3].params.arrival.vInf = 4000;        // adopted-plan commitment
 	});
 	var moved = changesBetween(defaultMission, after).filter(function (c) { return c.changed; });
 	assert.deepEqual(moved.map(function (c) { return c.key; }).sort(), ["arrivalVInf", "legDays"]);

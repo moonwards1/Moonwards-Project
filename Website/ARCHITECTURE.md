@@ -1,4 +1,4 @@
-# Website architecture — from standalone calculators to one simulator
+﻿# Website architecture — from standalone calculators to one simulator
 
 This document describes the target structure for the Moonwards website: how the
 standalone calculators and trajectory plotters evolve into **modules** that can
@@ -285,20 +285,20 @@ needs to — composition, not comparison, is what a chain does internally.
 
 What a phase *boundary* carries is a different thing: exactly one
 requirement — a target ship-state the next phase is committed to starting
-from. `MissionPlanner/modules/frozen-plan/` is this requirement for the
+from. `MissionPlanner/modules/adopted-plan/` is this requirement for the
 Departure→Coast boundary: its `departure` field is not a stage in anyone's
 chain, it's the spec the chain upstream of it is measured against.
 **Compliance is a single comparison at that one seam.** Whatever the upstream
 chain actually composed to is an opaque end result — `computeCompliance`
 never looks inside it, and doesn't care whether one stage produced it or a
-thousand — compared once to the one frozen target. A miss is one warning
+thousand — compared once to the one adopted target. A miss is one warning
 naming the gap, not a reconciliation of individual upstream events against
 each other or against anything else.
 
 **What flows downstream is what the chain actually delivered, not the
 target.** There is one mission clock and one epoch at this seam: the coast
 begins exactly where and when the departure phase ended, so the trajectory
-drawn is the flight the ship is on. The frozen target is the requirement
+drawn is the flight the ship is on. The adopted target is the requirement
 graded against, and a mark beside the real hand-off on the timelines — never
 a second flight running on a second clock. Only when nothing is delivered at
 all (an empty technology slot, or a departure whose flight fails) does the
@@ -321,11 +321,11 @@ same seam start needing "reconciling" against each other, that is never a
 peer-comparison problem to solve — it means an event has been attached to
 the wrong side of a boundary, and the fix is to move it, not to compare it.
 (2026-07-14: `transfer-leg.js` used to carry its own `burn` field, applied on
-top of `frozen-plan`'s already-frozen departure state — a second, uncounted
+top of `adopted-plan`'s already-adopted departure state — a second, uncounted
 injection sitting on the Coast side of a boundary defined as "no burn
 happens here." The fix was never to compare the two burns; it was to notice
 the leg's burn belonged to whatever composed the departure requirement, and
-fold it there instead. See `frozen-plan.js`'s and `transfer-leg.js`'s
+fold it there instead. See `adopted-plan.js`'s and `transfer-leg.js`'s
 headers.)
 
 ## Module interface

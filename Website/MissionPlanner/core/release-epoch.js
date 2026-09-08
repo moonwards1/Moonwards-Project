@@ -1,12 +1,12 @@
-/* MissionPlanner/core/release-epoch.js — when the departure chain lets go.
+﻿/* MissionPlanner/core/release-epoch.js — when the departure chain lets go.
  *
- * The release epoch belongs to the DEPARTURE PHASE, not to the frozen plan.
+ * The release epoch belongs to the DEPARTURE PHASE, not to the adopted plan.
  * The plan states a requirement at the Departure→Coast boundary — be at this
  * heliocentric state, with this v∞, within this window — and says nothing
  * about how or when the ship got there. Release is one of the things the
  * departure phase decides in order to meet that requirement, so it is a param
  * on the departure leg stage (`releaseJd` on departure-leg /
- * body-departure-leg), seeded at freeze from core/departure-estimate.js and
+ * body-departure-leg), seeded at adopt from core/departure-estimate.js and
  * owned by the phase thereafter.
  *
  * Everything upstream of the leg needs the same epoch to evaluate itself at —

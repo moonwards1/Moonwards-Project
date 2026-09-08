@@ -1,4 +1,4 @@
-/* Shared/sim/marker-card.js
+﻿/* Shared/sim/marker-card.js
  *
  * The slidable ship "marker" probe on a heliocentric coast, its floating,
  * draggable panel-corner card (slider, Free/Track/Target mode selector,
@@ -173,7 +173,7 @@ export function refineApproach(orbit, sampleFn, tA, tB) {
 }
 
 // Keep the marker glued to the destination-orbit crossing while it is inside
-// an encounter ring; freeze (do nothing) when out of range, so it never
+// an encounter ring; adopt (do nothing) when out of range, so it never
 // skips to a far crossing -- it re-engages only when a ring sweeps back over
 // its own spot. Mutates `marker.f0`/`marker.angle` in place (a caller-owned
 // object, same convention as body-renderer.js's scaleList). Used by Track
@@ -187,7 +187,7 @@ export function followCrossing(marker, orbit, totalT, sampleCount, sampleFn, app
 	if (!marker || !orbit || orbit.e >= 1 || !(totalT > 0)) { return; }
 	var tCur = markerFraction(marker.f0, marker.angle) * totalT;
 	var sCur = sampleFn(tCur);
-	if (!sCur || OrbitalMath.distanceToOrbit(orbit, sCur.r) >= approachFar) { return; }  // freeze
+	if (!sCur || OrbitalMath.distanceToOrbit(orbit, sCur.r) >= approachFar) { return; }  // adopt
 	var avgdt = totalT / Math.max(1, sampleCount - 1);
 	var win = 6 * avgdt;
 	var r = refineApproach(orbit, sampleFn, Math.max(0, tCur - win), Math.min(totalT, tCur + win));

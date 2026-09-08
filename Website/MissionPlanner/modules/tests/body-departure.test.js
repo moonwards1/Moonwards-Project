@@ -1,4 +1,4 @@
-// Node tests for the GENERIC (non-Earth) departure system: the
+﻿// Node tests for the GENERIC (non-Earth) departure system: the
 // orbital-skyhook carrier + body-departure-leg release modules, on
 // Shared/body-leg.js. Run from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/body-departure.test.js
@@ -16,7 +16,7 @@ import {
 } from "../skyhook/skyhook.js";
 import bodyDepartureLeg, { computeBodyDepartureLeg, stateAtElapsed }
 	from "../body-departure-leg/body-departure-leg.js";
-import frozenPlan from "../frozen-plan/frozen-plan.js";
+import adoptedPlan from "../adopted-plan/adopted-plan.js";
 import { evaluateChain } from "../../../Shared/kinematic-chain.js";
 import { bodySOI } from "../../../Shared/body-leg.js";
 import { Frames } from "../../../Shared/frames.js";
@@ -197,13 +197,13 @@ test("computeBodyDepartureLeg: an impacting release still draws, with no hand-of
 	assert.ok(leg.samples.length > 1, "the doomed arc is still drawn");
 });
 
-// ---- engine integration: skyhook → leg → frozen-plan -----------------------
+// ---- engine integration: skyhook → leg → adopted-plan -----------------------
 
 test("engine: orbital-skyhook → body-departure-leg emits a heliocentric ship-state", function () {
 	var reg = createRegistry();
 	reg.register(orbitalSkyhook);
 	reg.register(bodyDepartureLeg);
-	reg.register(frozenPlan);
+	reg.register(adoptedPlan);
 
 	var mars = Frames.bodyHelioState("Mars", JD_ANCHOR);
 	var world = createWorld({ jd: JD_ANCHOR });
@@ -214,7 +214,7 @@ test("engine: orbital-skyhook → body-departure-leg emits a heliocentric ship-s
 	var legId = world.set({ addStage: { moduleId: "body-departure-leg",
 		params: { releaseJd: JD_ANCHOR } } });
 	// Mars departure/arrival stubs keep the plan from throwing.
-	world.set({ addStage: { moduleId: "frozen-plan", params: {
+	world.set({ addStage: { moduleId: "adopted-plan", params: {
 		origin: "Mars",
 		departure: { r: mars.r.slice(), v: mars.v.slice(), jd: JD_ANCHOR },
 		arrival: { body: "Earth", jd: JD_ANCHOR + 200, vInf: 3000 }

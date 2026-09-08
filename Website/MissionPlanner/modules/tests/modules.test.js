@@ -1,4 +1,4 @@
-// Node tests for the mission modules' headless side: the departure carrier
+﻿// Node tests for the mission modules' headless side: the departure carrier
 // chain (moon-platform → orbital-skyhook → departure-leg) and the transfer-leg
 // module, chained through the real World + registry + recompute engine. Run
 // from the repo root:
@@ -16,7 +16,7 @@ import skyhook from "../skyhook/skyhook-departure.js";
 import { tetherKinematics, rotorFor } from "../skyhook/skyhook.js";
 import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed }
 	from "../departure-leg/departure-leg.js";
-import frozenPlan from "../frozen-plan/frozen-plan.js";
+import adoptedPlan from "../adopted-plan/adopted-plan.js";
 import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_AU,
 	handoffPending, commitHandoff, sameWaypoints, copyWaypoints, legFor, nearestApproach,
 	sweptAnglesOf, placeAtSweptAngles }
@@ -46,7 +46,7 @@ function makeRegistry() {
 	reg.register(moonPlatform);
 	reg.register(skyhook);
 	reg.register(departureLeg);
-	reg.register(frozenPlan);
+	reg.register(adoptedPlan);
 	reg.register(transferLeg);
 	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
 	                             // flyby leg; arrival tech is empty by default
@@ -221,7 +221,7 @@ test("departure-leg stateAtElapsed: a malformed/missing leg returns null", funct
 
 var HELIO_START = (function () {
 	// At Earth's own position with v∞ folded in — the patched-conic departure
-	// state frozen-plan really emits. The coast's SOI-encounter pass
+	// state adopted-plan really emits. The coast's SOI-encounter pass
 	// deliberately ignores a body the arc STARTS inside of until it first
 	// leaves that SOI, so this stays a legal coast start.
 	var e = O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Earth").orbit, JD_HANDOFF);
@@ -359,7 +359,7 @@ test("swept-angle hold: a waypoint keeps its angle when the hand-off changes", f
 test("swept-angle hold: nothing is dropped, so plan index-matching survives", function () {
 	// A waypoint whose angle the new leg never reaches clamps to that leg's end
 	// rather than vanishing — a hole here would mis-pair every plan waypoint
-	// after it (frozen-plan's planWaypointsFor is index-matched against this).
+	// after it (adopted-plan's planWaypointsFor is index-matched against this).
 	var wps = [{ days: 50, burn: { pro: 5, rad: 0, nrm: 0 } },
 	           { days: 460, burn: { pro: 5, rad: 0, nrm: 0 } }];
 	var leg = computeLeg({ waypoints: wps, legDays: 480, destination: "" }, HELIO_START);
@@ -472,7 +472,7 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	// The integrated departure honestly under-delivers the committed 6.55
 	// km/s (the folded-in injection has no modelled tech yet — see the
 	// preset's header), but the hand-off lands INSIDE the ±1 d window, so
-	// the plan warns on v∞ and aim only. The coast still flies the FROZEN
+	// the plan warns on v∞ and aim only. The coast still flies the adopted
 	// plan's state regardless, so it still arrives clean.
 	var res = deserializeWorld(defaultMission);
 	assert.equal(res.ok, true, res.reason);
@@ -480,7 +480,7 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	var stages = res.world.stages();
 	assert.equal(stages.length, 6);
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["moon-platform", "orbital-skyhook", "departure-leg", "frozen-plan", "transfer-leg",
+		["moon-platform", "orbital-skyhook", "departure-leg", "adopted-plan", "transfer-leg",
 		 "arrival-leg"]);      // arrival tech empty by default — the mission ends at the flyby
 
 	var rMoon = engine.resultFor(stages[0].id);
@@ -505,8 +505,8 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 });
 
 // The same preset with its departure stack removed, so nothing is delivered
-// and the coast falls back to the plan's own frozen state (frozen-plan.js's
-// boundary fallback). That is the plan AS FROZEN — the flight the Ephemeris
+// and the coast falls back to the plan's own adopted state (adopted-plan.js's
+// boundary fallback). That is the plan AS adopted — the flight the Ephemeris
 // tab authored — and it is the fixture for everything below that needs a
 // coast which genuinely reaches Ceres.
 function planFlownPreset() {
@@ -522,9 +522,9 @@ function planFlownPreset() {
 test("preset flying its own plan: the coast rendezvouses and the arrival leg pins to the pass", function () {
 	var world = planFlownPreset();
 	var engine = createEngine(world, makeRegistry());
-	var stages = world.stages();     // frozen-plan, transfer-leg, arrival-leg
+	var stages = world.stages();     // adopted-plan, transfer-leg, arrival-leg
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["frozen-plan", "transfer-leg", "arrival-leg"]);
+		["adopted-plan", "transfer-leg", "arrival-leg"]);
 	var res = { world: world };
 	var rLeg = engine.resultFor(stages[1].id);
 	assert.equal(rLeg.status, "ok");
@@ -762,7 +762,7 @@ test("handoff: the arrival phase runs on the committed coast, not the pending on
 // is hundreds of thousands of km apart.
 
 function ceresLeg(deltaPro) {
-	// planFlownPreset, so the coast starts from the plan's frozen hand-off and
+	// planFlownPreset, so the coast starts from the plan's adopted hand-off and
 	// genuinely reaches Ceres — what these tests are measuring. Flown from the
 	// shipped skyhook's real delivery it misses by over an AU, which is the
 	// subject of the preset test above, not of this one.

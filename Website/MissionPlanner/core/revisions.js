@@ -1,6 +1,6 @@
-/* MissionPlanner/core/revisions — a mission's plan history.
+﻿/* MissionPlanner/core/revisions — a mission's plan history.
  *
- * A mission has exactly one ORIGINAL: the plan as core/freeze.js wrote it when
+ * A mission has exactly one ORIGINAL: the plan as core/adopt.js wrote it when
  * the mission was created from the Ephemeris tab. Every later commit — the
  * mission bar's Update, and eventually the Finished control — appends a STEP.
  * Each entry is a whole serialized World, not a diff, because a World already
@@ -28,7 +28,7 @@
 
 export var PLAN_STATES = ["updated", "finished"];
 
-// A fresh history for a mission just frozen. `worldData` is a serialized World
+// A fresh history for a mission just adopted. `worldData` is a serialized World
 // (world.serialize()); it is stored as given and never inspected here —
 // validity is core/world.js's deserializeWorld's job, and an unloadable
 // original is still worth keeping rather than silently dropping.
@@ -62,7 +62,7 @@ export function markFinished(history, worldData) {
 	};
 }
 
-// The last commit, or null when the mission has only ever been frozen.
+// The last commit, or null when the mission has only ever been adopted.
 export function latestOf(history) {
 	if (!history || !history.steps.length) { return null; }
 	return history.steps[history.steps.length - 1];
@@ -133,11 +133,11 @@ export function entriesOf(history) {
 // The report's existing table is FLIGHT figures — what the mission achieves,
 // recomputed live. This is the other half: the values a plan actually holds,
 // read straight off a serialized World with no physics involved, so the
-// original's row costs nothing to produce however long ago it was frozen.
+// original's row costs nothing to produce however long ago it was adopted.
 //
 // Deliberately only stored values. Anything derived (the required v-infinity,
 // the closest approach, the delivered hand-off) belongs to the live flight and
-// has no meaning frozen in a saved plan — see core/delivered-flight.js.
+// has no meaning adopted in a saved plan — see core/delivered-flight.js.
 //
 // `rows` is display-ordered; each { key, label, value, unit }, with `value`
 // null where a plan has no such stage. Comparing two summaries is a plain
@@ -177,7 +177,7 @@ function burnTotal(list) {
 // The technology stages: everything that is neither the plan, the legs, nor
 // the transfer — i.e. the platforms and carriers a mission was built up from,
 // in chain order. Named by moduleId, which is what reconstructs the stack.
-var STRUCTURAL = ["frozen-plan", "transfer-leg", "arrival-leg", "departure-leg", "body-departure-leg"];
+var STRUCTURAL = ["adopted-plan", "transfer-leg", "arrival-leg", "departure-leg", "body-departure-leg"];
 
 function techStages(worldData) {
 	return ((worldData && worldData.stages) || []).filter(function (s) {
@@ -233,7 +233,7 @@ function techRows(worldData) {
 }
 
 export function planSummaryOf(worldData) {
-	var fp = stageByModule(worldData, "frozen-plan");
+	var fp = stageByModule(worldData, "adopted-plan");
 	var leg = stageByModule(worldData, "transfer-leg");
 	var dep = departureLegStage(worldData);
 	var p = (fp && fp.params) || {};

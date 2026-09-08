@@ -1,11 +1,11 @@
-// The COMPLIANT reference example: unlike the shipped
+﻿// The COMPLIANT reference example: unlike the shipped
 // default (presets/default-mission.js), which deliberately ships a v∞/aim
-// gap as a teaching exercise, this mission's frozen-plan commitment is
+// gap as a teaching exercise, this mission's adopted-plan commitment is
 // EXACTLY what the configured technology actually delivers at both
 // boundaries — built by running the real departure/coast physics first
 // (orbital-skyhook + departure-leg's computeDepartureLeg, transfer-leg's
 // computeLeg with a Lambert-solved waypoint correction) and then copying
-// the genuine result back into frozen-plan's departure/arrival fields, so
+// the genuine result back into adopted-plan's departure/arrival fields, so
 // opening it shows a clean flight with no comply-boundary warnings — a
 // state nothing else in the example set demonstrates. Also the only example
 // carrying a configured arrival-skyhook CATCH (modules/skyhook/skyhook-arrival.js,
@@ -17,7 +17,7 @@
 //             by scanning release phase for a low, sanely-aimed v∞ at this
 //             anchor — see the solving note below)
 //   hand-off  2033-01-12 (jd 2463610.059797283) — Earth-SOI exit, v∞
-//             4.771 km/s local / 4.772 km/s vs Earth — this IS the frozen
+//             4.771 km/s local / 4.772 km/s vs Earth — this IS the adopted
 //             plan's departure requirement, verbatim
 //   waypoint  day 91 of the coast — a single Lambert-solved correction burn
 //             (pro -0.317 / rad -3.044 / nrm -1.132 km/s, 3.26 km/s total)
@@ -45,14 +45,14 @@
 // computeLeg (whose SOI-encounter physics finds the true closest approach,
 // not just the Lambert aim point) to confirm a clean flyby; then copy the
 // departure hand-off and the leg's own "closest-approach" event straight
-// into frozen-plan's departure/arrival fields. Verified end-to-end through
+// into adopted-plan's departure/arrival fields. Verified end-to-end through
 // the real module chain (see modules/tests/ — same registry/engine
 // machinery, not reimplemented physics) before being shipped here.
 //
 // THE HAND-OFF IS THIS PLAN'S DEPARTURE, VERBATIM. `departure` below is
 // the REAL departure leg's Earth-SOI exit — a state a genuine carrier
 // chain delivered, not an impulse at the body's centre. Both the Ephemeris
-// tab and core/freeze.js now treat that state as the thing itself, so
+// tab and core/adopt.js now treat that state as the thing itself, so
 // "Paste mission link…" reproduces this plan EXACTLY: it opens on the
 // hand-off epoch, reads the v-infinity off the state, and adopts the exit
 // point's own offset from Earth rather than re-deriving it.
@@ -93,7 +93,7 @@ export var earthMarsReferenceMission = {
 			// this preset's header describes, so the tech's delivered state
 			// matches the plan's commitment exactly at both boundaries.
 			id: "stg-4",
-			moduleId: "frozen-plan",
+			moduleId: "adopted-plan",
 			params: {
 				origin: "Moon",
 				departure: {

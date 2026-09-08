@@ -1,4 +1,4 @@
-// Node tests for core/retarget.js — re-stating the departure requirement at the
+﻿// Node tests for core/retarget.js — re-stating the departure requirement at the
 // point a technology actually leaves from. Run from the repo root:
 //   node --test Website/MissionPlanner/core/tests/retarget.test.js
 //
@@ -26,7 +26,7 @@ var GM_SUN = systems.get("Sun").GM;
 
 function planOf(mission) {
 	var st = (mission || defaultMission).stages;
-	var fp = st.filter(function (s) { return s.moduleId === "frozen-plan"; })[0].params;
+	var fp = st.filter(function (s) { return s.moduleId === "adopted-plan"; })[0].params;
 	var tl = st.filter(function (s) { return s.moduleId === "transfer-leg"; })[0].params;
 	// The coast's HORIZON — its own duration, which is what the solve aims
 	// over now that no arrival date is committed.

@@ -1,4 +1,4 @@
-/* Mission Planner — the shell: the multi-mission host.
+﻿/* Mission Planner — the shell: the multi-mission host.
  *
  * A deliberately plain UI over the headless core (core/world.js +
  * core/registry.js + core/recompute.js). The per-mission pipeline — World +
@@ -55,7 +55,7 @@ var MODULE_URLS = [
 	"./modules/departure-leg/departure-leg.js",
 	"./modules/body-departure-leg/body-departure-leg.js",
 	// The Departure→Coast compliance boundary, and the coast itself.
-	"./modules/frozen-plan/frozen-plan.js",
+	"./modules/adopted-plan/adopted-plan.js",
 	"./modules/transfer-leg/transfer-leg.js",
 	// The arrival flyby leg: the visible Coast→Arrival hand-off — one day out,
 	// past the body at SOI/2, one day beyond — with waypoint burns on the
@@ -256,9 +256,9 @@ var ephView = createEphemerisView({
 	renderer: renderer,
 	root: ephViewEl,
 
-	// "Start Mission Plan": worldData is core/freeze.js's serialized World.
+	// "Start Mission Plan": worldData is core/adopt.js's serialized World.
 	// Opens on the helio pane — a spawned mission has no departure tech yet, so
-	// the frozen coast is what there is to see.
+	// the adopted coast is what there is to see.
 	//
 	onStartMission: function (worldData, title) {
 		var res = deserializeWorld(worldData);
@@ -268,7 +268,7 @@ var ephView = createEphemerisView({
 	},
 
 	// "Paste mission link…" with a link that carries a LATER plan than the one
-	// it was frozen with. The original goes into the Ephemeris scratchpad
+	// it was adopted with. The original goes into the Ephemeris scratchpad
 	// (ephemeris-view.js does that itself); this opens the later plan as its
 	// own tab, so a pasted mission arrives as both the place it started and
 	// the place it got to. A link with no later set never calls this — it
@@ -350,7 +350,7 @@ function duplicateActiveMission() {
 	var res = deserializeWorld(src.view.world.serialize());
 	if (!res.ok) { return; }   // shouldn't happen: we just serialized it ourselves
 	// The copy inherits the source's plan history: it is the same mission's
-	// lineage, so its report still compares against the plan first frozen.
+	// lineage, so its report still compares against the plan first adopted.
 	spawnMissionTab(res.world, nextCopyTitle(src.title), null, src.view.planHistory());
 }
 tabPlusEl.addEventListener("click", duplicateActiveMission);

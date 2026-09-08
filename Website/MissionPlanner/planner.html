@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en-US">
 <head>
 	<title>Mission Planner</title>
@@ -31,7 +31,7 @@
 		     bar live here; the Departure and Waypoints cards' CONTENT is built
 		     by ephemeris-view.js into the two host divs below. The marker card
 		     floats over the 3D pane and always exists — it hosts "Start
-		     Mission Plan" (freeze → new mission tab) and "Paste mission link…"
+		     Mission Plan" (adopt → new mission tab) and "Paste mission link…"
 		     (import back into this tab). One instance for the page's life, so
 		     addressed by id/class query like the rest of the shell-level
 		     chrome, not templated (contrast .mp-mission, cloned per mission).
@@ -115,7 +115,7 @@
 			     The dot on each button is a hard-fault light only (error or
 			     blocked); compliance is not a dot, it is the colour of the
 			     figure beside it. Arrival ships disabled and is enabled by
-			     mission-view.js when the frozen plan commits to an arrival
+			     mission-view.js when the adopted plan commits to an arrival
 			     body, since only then does that phase have a frame.
 
 			     The spacer between the two halves is the first thing to be
@@ -152,7 +152,7 @@
 				</div>
 			</div>
 
-			<!-- frozen-plan has no sidebar card, so its hard states (a
+			<!-- adopted-plan has no sidebar card, so its hard states (a
 			     diagnostic, or blocked-on-upstream) have no home of their own;
 			     they take this strip above the bar when they happen. -->
 			<div class="mp-planstate"></div>

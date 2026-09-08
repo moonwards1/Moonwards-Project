@@ -1,7 +1,7 @@
-/* MissionPlanner/core/retarget — re-state the departure REQUIREMENT at the
+﻿/* MissionPlanner/core/retarget — re-state the departure REQUIREMENT at the
  * point the ship actually leaves from.
  *
- * THE PROBLEM. A frozen plan commits to a hand-off state — a position, a
+ * THE PROBLEM. A adopted plan commits to a hand-off state — a position, a
  * velocity and an epoch at the origin's SOI edge. When the plan is authored in
  * the Ephemeris tab that position is DERIVED (`body position + R_soi x
  * heading`): a geometric convenience, not a place any real departure chain
@@ -217,7 +217,7 @@ export function solveDepartureTarget(spec) {
 		return out;
 	}
 	// THE COAST'S WAYPOINTS ARE ALREADY NUMBERED FROM THE DELIVERED HAND-OFF.
-	// transfer-leg flies from the state frozen-plan emits, which is the state
+	// transfer-leg flies from the state adopted-plan emits, which is the state
 	// the technology delivered (its `jd0` is that epoch), so a burn at day N
 	// fires N days after the real exit — not N days after the plan's assumed
 	// one. Shifting them by the gap between those two epochs would model a

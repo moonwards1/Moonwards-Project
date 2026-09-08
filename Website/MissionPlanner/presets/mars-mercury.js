@@ -1,4 +1,4 @@
-// The EXTREME-Δv example: pushes departure AND arrival
+﻿// The EXTREME-Δv example: pushes departure AND arrival
 // delta-v up together, rather than either extreme in isolation — Mars
 // self-originates its skyhook (no platform stage), and the fall to Mercury,
 // deep in the Sun's well, delivers a genuinely large arrival v∞ on top of a
@@ -10,7 +10,7 @@
 // real hand-off, a Lambert-solved waypoint burn (aimed at an offset point
 // near Mercury, not its exact centre) redirects the coast, and transfer-
 // leg's own SOI-encounter integration confirms the real flyby. Compliant BY
-// CONSTRUCTION: the frozen plan's departure/arrival fields are copied
+// CONSTRUCTION: the adopted plan's departure/arrival fields are copied
 // verbatim from what the tech actually delivers.
 //
 //   release   2032-09-01 (jd 2463476.5) — a skyhook orbiting Mars itself,
@@ -33,7 +33,7 @@
 // THE HAND-OFF IS THIS PLAN'S DEPARTURE, VERBATIM. `departure` below is
 // the REAL departure leg's Mars-SOI exit — a state a genuine carrier
 // chain delivered, not an impulse at the body's centre. Both the Ephemeris
-// tab and core/freeze.js now treat that state as the thing itself, so
+// tab and core/adopt.js now treat that state as the thing itself, so
 // "Paste mission link…" reproduces this plan EXACTLY: it opens on the
 // hand-off epoch, reads the v-infinity off the state, and adopts the exit
 // point's own offset from Mars rather than re-deriving it.
@@ -67,7 +67,7 @@ export var marsMercuryMission = {
 			// Compliant by construction (see header): departure/arrival copied
 			// verbatim from the real computeBodyDepartureLeg / computeLeg run.
 			id: "stg-3",
-			moduleId: "frozen-plan",
+			moduleId: "adopted-plan",
 			params: {
 				origin: "Mars",
 				departure: {

@@ -1,4 +1,4 @@
-// The chain-recompute engine — turns a World's mission profile into packets
+﻿// The chain-recompute engine — turns a World's mission profile into packets
 // and diagnostics. ES module:
 //   import { createEngine } from "./recompute.js";
 // Pure (no DOM, no Three.js), imports directly in Node for unit testing.
@@ -46,8 +46,8 @@
 //                the envelope's warnings/events are then dropped)
 //     warnings — optional array of diagnostic-shaped objects (diagnostics.js)
 //                that do NOT block downstream. This is how comply mode
-//                reports "the tech misses the frozen plan by X" while the
-//                plan's own numbers keep flowing: the frozen-plan stage
+//                reports "the tech misses the adopted plan by X" while the
+//                plan's own numbers keep flowing: the adopted-plan stage
 //                emits its output regardless and carries the mismatch here.
 //                stageId is filled with the authoring stage's id when absent
 //                (set it explicitly to point the warning at another stage).
@@ -69,7 +69,7 @@
 //                            A descriptor may set `inputOptional: true` to
 //                            opt out: its update() is then called with
 //                            input null instead of failing. This exists for
-//                            the frozen-plan module (comply mode): a mission
+//                            the adopted-plan module (comply mode): a mission
 //                            spawned with an empty tech slot must still show
 //                            its plan, so the plan tolerates having no tech
 //                            upstream and reports it as a warning, not a
@@ -86,7 +86,7 @@
 // COMPLIANCE BOUNDARIES (a descriptor may set `boundary: true`). Comply mode
 // (MissionPlannerDesign_v2.md; ARCHITECTURE.md's "Phases are chains;
 // compliance is a boundary check, not a reconciliation") makes a phase
-// boundary a thing MEASURED against, never a prerequisite: the frozen plan is
+// boundary a thing MEASURED against, never a prerequisite: the adopted plan is
 // authoritative and the departure technology is diagnosed against it. A
 // broken, half-built, or absent departure must NOT blank the committed plan
 // or the coast beyond it — the tech's failure is the tech's problem, reported
@@ -98,10 +98,10 @@
 // stages that produced the upstream failure keep their own diagnostic/blocked
 // status (rendered on their own cards); only propagation PAST the boundary is
 // cut. A boundary's OWN failure (its params are damaged) still blocks
-// downstream normally. modules/frozen-plan (Departure→Coast) sets the flag;
+// downstream normally. modules/adopted-plan (Departure→Coast) sets the flag;
 // the Coast→Arrival seam has no such boundary — the coast's own live
 // readouts are what tell the user whether the flight reaches the
-// destination, so there is nothing there to measure against a frozen
+// destination, so there is nothing there to measure against a adopted
 // commitment.
 //
 // The engine calls `update(ctx, input)` with ctx = { world, jd, stageId,

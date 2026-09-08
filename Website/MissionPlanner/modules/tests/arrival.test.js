@@ -1,6 +1,6 @@
-// Node tests for the arrival phase: the arrival flyby leg (arrival-leg), the
+﻿// Node tests for the arrival phase: the arrival flyby leg (arrival-leg), the
 // arrival-skyhook catch (the generic tether run in reverse), the arrival-tech
-// catalog, and the frozen plan's arrival-commitment lookup. The shared
+// catalog, and the adopted plan's arrival-commitment lookup. The shared
 // arrival-approach helpers (approachAt / interceptWarning) are tested in
 // arrival-approach.test.js. Run from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/arrival.test.js
@@ -12,11 +12,11 @@ import assert from "node:assert/strict";
 import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
-import { freezeMissionWorld } from "../../core/freeze.js";
+import { adoptMissionWorld } from "../../core/adopt.js";
 import { originSoiRadius } from "../../core/departure-estimate.js";
 import moonPlatform from "../moon-platform/moon-platform.js";
 import departureLeg from "../departure-leg/departure-leg.js";
-import frozenPlan, { arrivalCommitmentFor } from "../frozen-plan/frozen-plan.js";
+import adoptedPlan, { arrivalCommitmentFor } from "../adopted-plan/adopted-plan.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import arrivalSkyhook, { computeCatch } from "../skyhook/skyhook-arrival.js";
 import arrivalLeg, { computeArrivalLeg, arrivalWindow, stateAtElapsed,
@@ -277,26 +277,26 @@ test("arrivalTechOptionsFor: generic techs for any body, the elevator only at Ce
 test("arrivalCommitmentFor: the plan's arrival { body, vInf } — no epoch — else null", function () {
 	var w = createWorld({ jd: JD });
 	assert.equal(arrivalCommitmentFor(w), null);
-	w.set({ addStage: { moduleId: "frozen-plan",
+	w.set({ addStage: { moduleId: "adopted-plan",
 		params: { arrival: { body: "Ceres", vInf: 3776 } } } });
 	// WHERE it is going and HOW FAST it may show up. WHEN is measured, not
 	// committed, so a stale save's leftover jd is ignored rather than read.
 	assert.deepEqual(arrivalCommitmentFor(w), { body: "Ceres", vInf: 3776 });
 	var w3 = createWorld({ jd: JD });
-	w3.set({ addStage: { moduleId: "frozen-plan",
+	w3.set({ addStage: { moduleId: "adopted-plan",
 		params: { arrival: { body: "Ceres", jd: JD, vInf: 3776 } } } });
 	assert.deepEqual(arrivalCommitmentFor(w3), { body: "Ceres", vInf: 3776 });
 	// a destination-less plan commits to nothing
 	var w2 = createWorld({ jd: JD });
-	w2.set({ addStage: { moduleId: "frozen-plan", params: { arrival: { body: "" } } } });
+	w2.set({ addStage: { moduleId: "adopted-plan", params: { arrival: { body: "" } } } });
 	assert.equal(arrivalCommitmentFor(w2), null);
 });
 
-// ---- through the real engine: freeze → coast → capture, then the tech swap --
+// ---- through the real engine: adopt → coast → capture, then the tech swap --
 
-function makeFrozenMission() {
+function makeadoptedMission() {
 	// jd IS the hand-off epoch, and `handoff` the coast's starting state at
-	// Earth's SOI edge — the shape ephemeris-view.js's buildFreezeSpec hands
+	// Earth's SOI edge — the shape ephemeris-view.js's buildadoptSpec hands
 	// over (a 2.94 km/s v∞ on an exit point one SOI radius along its heading).
 	// Origin MOON: the departure leaves the Moon and hands over at EARTH's SOI,
 	// so the v∞ reference here is Earth either way — it is the scaffold that
@@ -305,7 +305,7 @@ function makeFrozenMission() {
 	var body = O.bodyStateAtJD(GM_SUN, systems.get("Earth").orbit, jd);
 	var vh = O.applyBurn(body.r, body.v, 2940, 0, 0);
 	var off = O.vScale(O.vUnit(O.vSub(vh, body.v)), originSoiRadius("Earth"));
-	var data = freezeMissionWorld({
+	var data = adoptMissionWorld({
 		origin: "Moon", destination: "Mars", jd: jd,
 		handoff: { r: O.vAdd(body.r, off), v: vh },
 		waypoints: [],
@@ -316,27 +316,27 @@ function makeFrozenMission() {
 	assert.equal(res.ok, true, res.reason);
 	var reg = createRegistry();
 	reg.register(moonPlatform);   // the Moon-origin departure scaffold (empty
-	reg.register(departureLeg);   // carrier slot) freeze prepends
-	reg.register(frozenPlan);
+	reg.register(departureLeg);   // carrier slot) adopt prepends
+	reg.register(adoptedPlan);
 	reg.register(transferLeg);
 	reg.register(arrivalLeg);
 	reg.register(arrivalSkyhook);
 	return { world: res.world, engine: createEngine(res.world, reg) };
 }
 
-test("engine: a frozen mission flies its scaffold → coast → flyby leg; both tech slots empty", function () {
-	var m = makeFrozenMission();   // origin Moon
+test("engine: a adopted mission flies its scaffold → coast → flyby leg; both tech slots empty", function () {
+	var m = makeadoptedMission();   // origin Moon
 	var stages = m.world.stages();
 	// Moon scaffold (moon-platform + departure-leg, empty carrier) up front;
 	// the flyby leg is terminal (empty arrival-tech slot).
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
-		["moon-platform", "departure-leg", "frozen-plan", "transfer-leg", "arrival-leg"]);
+		["moon-platform", "departure-leg", "adopted-plan", "transfer-leg", "arrival-leg"]);
 	function stageId(m2) { return stages.find(function (s) { return s.moduleId === m2; }).id; }
 
 	// the empty carrier slot: departure-leg has no releasing carrier, but the
-	// frozen-plan boundary keeps the coast flying regardless.
+	// adopted-plan boundary keeps the coast flying regardless.
 	assert.equal(m.engine.resultFor(stageId("departure-leg")).diagnostic.code, "no-carrier");
-	assert.equal(m.engine.resultFor(stageId("frozen-plan")).status, "ok");
+	assert.equal(m.engine.resultFor(stageId("adopted-plan")).status, "ok");
 
 	// this synthetic prograde-only shot doesn't actually reach Mars — the
 	// coast's own miss warning reports that
@@ -365,7 +365,7 @@ test("engine: a BROKEN coast blocks the arrival phase, standard propagation", fu
 	// Without a compliance boundary at this seam, a failing coast blocks
 	// downstream the ordinary way (recompute.js's ok/diagnostic/blocked rule) —
 	// no special-cased reporting at the seam.
-	var m = makeFrozenMission();
+	var m = makeadoptedMission();
 	var stages = m.world.stages();
 	function stageId(m2) { return stages.find(function (s) { return s.moduleId === m2; }).id; }
 
@@ -376,7 +376,7 @@ test("engine: a BROKEN coast blocks the arrival phase, standard propagation", fu
 });
 
 test("engine: an arrival skyhook appended after the flyby leg computes clean", function () {
-	var m = makeFrozenMission();
+	var m = makeadoptedMission();
 	var catchId = m.world.set({ addStage: { moduleId: "arrival-skyhook",
 		params: { body: "Mars" } }, before: null });   // append after the flyby leg
 	var r = m.engine.resultFor(catchId);

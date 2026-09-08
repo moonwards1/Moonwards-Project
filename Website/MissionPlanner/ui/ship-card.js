@@ -1,11 +1,11 @@
-/* Mission Planner — the ship card.
+﻿/* Mission Planner — the ship card.
  *
  * A floating card in the scene pane reporting on the ship the chevron marks:
  * a small three.js gizmo, a numeric summary, and a speed bar — plus, for
  * phases that ask for them, an approach readout, a timing bar, a B-plane
  * square and a commit button.
  *
- * Departure's gizmo is a comparison: dim = the v∞ the frozen plan requires at
+ * Departure's gizmo is a comparison: dim = the v∞ the adopted plan requires at
  * hand-off, bright = what the technology delivers, each split onto the burn
  * frame's three axes plus a net line, and "on course" is when the two coincide.
  * Coast's gizmo shows a single vector instead — the speed change pending
@@ -167,7 +167,7 @@ export function bearingPoint(angleDeg, radius) {
 }
 
 // How far the live arrival sits from the coast's own last-committed arrival —
-// a plain delta, not a comparison to the frozen plan. Positive hours = later.
+// a plain delta, not a comparison to the adopted plan. Positive hours = later.
 //
 // Returns { hours }, or null when either epoch is missing.
 export function timingModel(deliveredJd, refJd) {

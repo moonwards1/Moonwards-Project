@@ -1,4 +1,4 @@
-/* MissionPlanner/modules/departure-leg — the integrated geocentric flight
+﻿/* MissionPlanner/modules/departure-leg — the integrated geocentric flight
  * from carrier release to the Departure→Coast hand-off, for missions
  * departing from Earth. modules/body-departure-leg is its generic sibling for
  * every other origin.
@@ -19,7 +19,7 @@
  * iteration, no hidden solving:
  *
  *   1. Take the RELEASE EPOCH from this stage's own `releaseJd` param —
- *      a departure-phase decision, seeded at freeze (core/release-epoch.js).
+ *      a departure-phase decision, seeded at adopt (core/release-epoch.js).
  *   2. Evaluate the incoming carrier-chain packet there
  *      (Shared/kinematic-chain.js) — the released ship's geocentric state.
  *   3. Integrate FORWARD with restricted N-body gravity
@@ -32,8 +32,8 @@
  *      v∞ — the Oberth pattern.
  *   4. The flight ends at EARTH-SOI EXIT — the hand-off. Emit the ship's
  *      heliocentric state there (Frames.bodyHelioState lift, the same Earth
- *      model frozen-plan measures against, so the compliance comparison is
- *      apples-to-apples). frozen-plan, downstream, measures this INTEGRATED
+ *      model adopted-plan measures against, so the compliance comparison is
+ *      apples-to-apples). adopted-plan, downstream, measures this INTEGRATED
  *      hand-off against the plan's window.
  *
  * A flight that never escapes (bound to the Moon or Earth) or that impacts a
@@ -45,7 +45,7 @@
  * Nothing here ever solves backwards.
  *
  * Params:
- *   releaseJd: when the carrier chain lets go. The frozen plan does not own
+ *   releaseJd: when the carrier chain lets go. The adopted plan does not own
  *     this: it states where the ship must be when the departure phase ENDS,
  *     never when that phase started.
  *   waypoints: [{ t, burn: { pro, rad, nrm } }] — up to 2 impulses, t in
@@ -347,7 +347,7 @@ export default {
 	update: function (ctx, input) {
 		var params = Object.assign({}, defaultParams, ctx.params);
 
-		// The release epoch — this stage's OWN param, seeded at freeze and owned
+		// The release epoch — this stage's OWN param, seeded at adopt and owned
 		// by the departure phase (core/release-epoch.js). Upstream carriers read
 		// the same value through releaseEpochFor and diagnose a missing one too;
 		// this stage may also be exercised bare (tests), so it carries the check.
@@ -480,7 +480,7 @@ export default {
 	// The last computed flight, for shell readouts that need the flown arc
 	// rather than just the hand-off packet — the ship card's speed bar reads
 	// `samples` for the current and peak speeds. Same registry-reached
-	// accessor pattern frozen-plan.js uses for complianceFor.
+	// accessor pattern adopted-plan.js uses for complianceFor.
 	legFor: legFor,
 
 	// The flight polyline in the Earth–Moon frame (geocentric — the frame's

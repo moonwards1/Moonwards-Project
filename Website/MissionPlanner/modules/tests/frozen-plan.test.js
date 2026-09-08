@@ -1,9 +1,9 @@
-// Node tests for the frozen-plan module — the comply-mode
-// semantics: the plan's frozen departure state always flows downstream;
+﻿// Node tests for the adopted-plan module — the comply-mode
+// semantics: the plan's adopted departure state always flows downstream;
 // tech deviations surface as warnings (v∞ / epoch / aim), never re-planning;
 // a missing tech is a warning too (inputOptional), not a block. Run from the
 // repo root:
-//   node --test Website/MissionPlanner/modules/tests/frozen-plan.test.js
+//   node --test Website/MissionPlanner/modules/tests/adopted-plan.test.js
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -16,9 +16,9 @@ import skyhook from "../skyhook/skyhook-departure.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import transferLeg from "../transfer-leg/transfer-leg.js";
 import arrivalLeg from "../arrival-leg/arrival-leg.js";
-import frozenPlan, { computeCompliance, complianceWarnings, planSummary,
+import adoptedPlan, { computeCompliance, complianceWarnings, planSummary,
 	windowDaysOf,
-	VINF_TOL, AIM_TOL_DEG, DEFAULT_WINDOW_DAYS } from "../frozen-plan/frozen-plan.js";
+	VINF_TOL, AIM_TOL_DEG, DEFAULT_WINDOW_DAYS } from "../adopted-plan/adopted-plan.js";
 import { releaseEpochFor } from "../../core/release-epoch.js";
 import { defaultMission } from "../../presets/default-mission.js";
 import { estimateDeparture, originSoiRadius } from "../../core/departure-estimate.js";
@@ -32,7 +32,7 @@ function makeRegistry() {
 	reg.register(moonPlatform);
 	reg.register(skyhook);
 	reg.register(departureLeg);
-	reg.register(frozenPlan);
+	reg.register(adoptedPlan);
 	reg.register(transferLeg);
 	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
 	                             // flyby leg; arrival tech is empty by default
@@ -134,8 +134,8 @@ test("compliance: an off-aim asymptote of the same speed warns on aim only", fun
 });
 
 test("compliance: a required v∞ of ~0 has no aim to compare — row stays finite and ok", function () {
-	// Legitimate since E2's freeze contract: a waypoint-only plan (no
-	// departure burn) freezes to a hand-off co-moving with the origin, so
+	// Legitimate since E2's adopt contract: a waypoint-only plan (no
+	// departure burn) adopts to a hand-off co-moving with the origin, so
 	// the required v∞ vector is ~0 and has no direction. The aim row must
 	// not go NaN; the v∞ magnitude row still reports the mismatch.
 	var comp = computeCompliance(planParams(0), delivered([3420, 0, 0], JD));
@@ -178,7 +178,7 @@ test("compliance: unknown origin / arrival bodies are bad-params", function () {
 
 test("planSummary: v∞ in/out, epoch, and the plan Δv formula", function () {
 	// plan Δv = v∞ in (leaving the origin's SOI) + v∞ out (reaching the
-	// destination's) + the waypoint burns. A frozen leg carries no burn of its
+	// destination's) + the waypoint burns. A adopted leg carries no burn of its
 	// own — the hand-off is post-burn — so there is no leg-burn term.
 	var p = planParams(3420);
 	p.waypoints = [{ days: 100, burn: { pro: 300, rad: 0, nrm: -400 } }];   // 500 m/s
@@ -214,7 +214,7 @@ function presetChain() {
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();   // moon-platform, orbital-skyhook, departure-leg,
-	                                   // frozen-plan, transfer-leg
+	                                   // adopted-plan, transfer-leg
 	return { world: res.world, engine: engine,
 	         moon: stages[0].id, sky: stages[1].id, dep: stages[2].id,
 	         plan: stages[3].id, leg: stages[4].id };
@@ -289,8 +289,8 @@ test("comply: detuning the tech warns on the plan AND moves the coast with it", 
 
 test("boundary fallback: with nothing delivered the coast flies the PLAN's own state", function () {
 	// The other half of the one-clock rule. A mission whose departure stack is
-	// absent has no delivered epoch to start from, so the plan's frozen state
-	// is what the coast flies — which is also every freshly frozen mission,
+	// absent has no delivered epoch to start from, so the plan's adopted state
+	// is what the coast flies — which is also every freshly adopted mission,
 	// before a technology is chosen.
 	var c = presetChain();
 	c.world.set({ removeStage: c.dep });
@@ -304,13 +304,13 @@ test("boundary fallback: with nothing delivered the coast flies the PLAN's own s
 	assert.deepEqual(rPlan.output.data.r, presetPlan.departure.r);
 	assert.deepEqual(rPlan.output.data.v, presetPlan.departure.v);
 	assert.equal(rPlan.events[0].jd, presetPlan.departure.jd);
-	// and it still arrives clean, because that is the plan it was frozen from
+	// and it still arrives clean, because that is the plan it was adopted from
 	assert.deepEqual(c.engine.resultFor(c.leg).warnings, []);
 });
 
 test("comply: a mission with NO departure system still shows its whole plan", function () {
-	// E2's "empty tech slot" is the whole departure STACK absent (a freeze-
-	// spawned mission is [frozen-plan, transfer-leg] until the shell adds
+	// E2's "empty tech slot" is the whole departure STACK absent (a adopt-
+	// spawned mission is [adopted-plan, transfer-leg] until the shell adds
 	// carriers), so drop all three departure stages, not just the skyhook.
 	var c = presetChain();
 	c.world.set({ removeStage: c.dep });
@@ -328,9 +328,9 @@ test("comply: a mission with NO departure system still shows its whole plan", fu
 
 // ---- the boundary rule: a present-but-FAILING departure (not
 // just an absent one) must still leave the committed plan and coast flying.
-// Before frozen-plan became a `boundary` stage, a departure diagnostic blocked
+// Before adopted-plan became a `boundary` stage, a departure diagnostic blocked
 // the plan and blanked the whole coast — breaking the comply rule's promise
-// that the frozen plan is always shown.
+// that the adopted plan is always shown.
 
 test("boundary: a bound-at-moon skyhook does NOT blank the plan or coast", function () {
 	var c = presetChain();
@@ -384,32 +384,32 @@ test("comply: reverting the tech to its shipped params reproduces the same (stil
 });
 
 test("update: dvUsed passes through from the tech; zero when there is none", function () {
-	var withTech = frozenPlan.update(
+	var withTech = adoptedPlan.update(
 		{ world: null, jd: JD, stageId: "stg-t", params: planParams(3420) },
 		{ kind: "moonwards-packet", type: "ship-state", version: 1, source: {},
 		  data: Object.assign(delivered([3420, 0, 0], JD), { dvUsed: 123 }) });
 	assert.equal(withTech.packet.data.dvUsed, 123);
 
-	var without = frozenPlan.update(
+	var without = adoptedPlan.update(
 		{ world: null, jd: JD, stageId: "stg-t", params: planParams(3420) }, null);
 	assert.equal(without.packet.data.dvUsed, 0);
 });
 
 test("update: a damaged plan fails hard (diagnostic), not as a warning", function () {
-	var out = frozenPlan.update(
+	var out = adoptedPlan.update(
 		{ world: null, jd: JD, stageId: "stg-t", params: { origin: "Earth" } }, null);
 	assert.equal(out.kind, "moonwards-diagnostic");
 	assert.equal(out.code, "bad-params");
 });
 
 test("the baked preset plan is internally consistent: v∞, anchor, window", function () {
-	// Guards the preset's frozen numbers. The committed departure state is baked
+	// Guards the preset's adopted numbers. The committed departure state is baked
 	// data, not something any live code re-derives, so what is checkable is its
 	// own internal consistency: the required v∞ it encodes, that the hand-off
 	// really sits on Earth's SOI edge (where a departure leg delivers, and where
-	// core/freeze.js commits), and that its timing fields hang together.
+	// core/adopt.js commits), and that its timing fields hang together.
 	var planStage = defaultMission.stages[3];
-	assert.equal(planStage.moduleId, "frozen-plan");
+	assert.equal(planStage.moduleId, "adopted-plan");
 	var p = planStage.params;
 	var earthAt = Frames.bodyHelioState("Earth", p.departure.jd);
 	var vInfVec = O.vSub(p.departure.v, earthAt.v);
@@ -419,7 +419,7 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 	assert.ok(Math.abs(sep / originSoiRadius("Earth") - 1) < 1e-6,
 		"hand-off sits on Earth's SOI edge, got " + (sep / 1000).toFixed(0) + " km");
 	// the plan carries no release epoch of its own — that is the departure
-	// leg's, and it leads the hand-off by the freeze-time estimate
+	// leg's, and it leads the hand-off by the adopt-time estimate
 	assert.equal("releaseAnchorJd" in p, false);
 	assert.equal("injectionJd" in p, false);
 
@@ -456,7 +456,7 @@ test("releaseEpochFor: the departure leg's releaseJd → null", function () {
 	// 3. a leg with no epoch recorded, no leg at all, and a null world → null.
 	//    The plan is NOT consulted: it never owned this.
 	assert.equal(releaseEpochFor(worldWith([{ moduleId: "departure-leg", params: {} }])), null);
-	assert.equal(releaseEpochFor(worldWith([{ moduleId: "frozen-plan",
+	assert.equal(releaseEpochFor(worldWith([{ moduleId: "adopted-plan",
 		params: { departure: { jd: JD } } }])), null);
 	assert.equal(releaseEpochFor(null), null);
 });

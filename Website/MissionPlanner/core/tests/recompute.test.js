@@ -1,4 +1,4 @@
-// Node tests for recompute.js — the recompute/blocked semantics that
+﻿// Node tests for recompute.js — the recompute/blocked semantics that
 // must hold independent of any UI, and are asserted here without one.
 // Run with:  node --test
 import { test } from "node:test";
@@ -327,7 +327,7 @@ test("transient sets (mid-gesture) still recompute live", function () {
 });
 
 test("inputOptional: a consumer with nothing upstream runs with input null", function () {
-	// The comply-mode carve-out (see recompute.js header): the frozen-plan
+	// The comply-mode carve-out (see recompute.js header): the adopted-plan
 	// module must emit its plan even when the mission has no departure tech
 	// yet, so a descriptor may declare missing input survivable.
 	var t = fixture();

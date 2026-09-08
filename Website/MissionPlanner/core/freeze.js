@@ -1,4 +1,4 @@
-/* MissionPlanner/core/freeze.js — "Start Mission Plan"'s freeze contract:
+﻿/* MissionPlanner/core/adopt.js — "Start Mission Plan"'s adopt contract:
  * turn a plan authored on the Ephemeris tab into a serialized World, ready for
  * core/world.js's deserializeWorld() and a new mission tab.
  *
@@ -7,7 +7,7 @@
  * rendezvous time, the arrival v-infinity — and hands plain numbers in; this
  * file only assembles the profile:
  *
- *   [ departure scaffold ] -> [ frozen-plan (the commitment) ] ->
+ *   [ departure scaffold ] -> [ adopted-plan (the commitment) ] ->
  *   [ transfer-leg (the working coast) ] -> [ arrival-leg (the flyby
  *   hand-off) ].
  *
@@ -21,9 +21,9 @@
  *
  *   THE ARRIVAL-TECH SLOT is empty too: arrival-leg is simply the terminal
  *   stage until an arrival technology is loaded. The departure slot being
- *   empty is safe because frozen-plan is a compliance BOUNDARY
+ *   empty is safe because adopted-plan is a compliance BOUNDARY
  *   (recompute.js): an empty or half-built departure never blanks the coast —
- *   with nothing delivered the plan's own frozen state is what the coast
+ *   with nothing delivered the plan's own adopted state is what the coast
  *   flies from, so the mission still flies and arrives while its departure
  *   slot is filled in. The arrival phase has no such boundary —
  *   the coast's own live readouts (the ship card) are what tell the user
@@ -35,8 +35,8 @@
  * THERE (departure-leg.js step 4, body-departure-leg.js the same). The
  * Ephemeris tab authors that same hand-off directly — its clock IS the hand-off
  * epoch and its departure card IS the v-infinity there (ephemeris-view.js's
- * departureState) — so freeze COMMITS spec.handoff verbatim. It re-derives
- * nothing across this seam, which is what makes a plan frozen here and pasted
+ * departureState) — so adopt COMMITS spec.handoff verbatim. It re-derives
+ * nothing across this seam, which is what makes a plan adopted here and pasted
  * back into the tab exact, whatever geometry produced the hand-off: an
  * authored heading, or a real carrier chain's delivered state adopted into
  * the plan.
@@ -46,16 +46,16 @@
  * re-based here either.
  *
  * The plan's required v-infinity is the ship's velocity against the origin
- * body's at the hand-off (frozen-plan.js derives it from the frozen state), so
+ * body's at the hand-off (adopted-plan.js derives it from the adopted state), so
  * it is the same measurement the departure tech's own delivered hand-off is
  * judged by. A plan authored with NO departure burn — waypoints only — never
- * leaves the SOI at all: it keeps the burn epoch as its hand-off and freezes
+ * leaves the SOI at all: it keeps the burn epoch as its hand-off and adopts
  * to a required v∞ of 0.
  *
- * Neither output stage carries a `burn` field: the frozen departure state
+ * Neither output stage carries a `burn` field: the adopted departure state
  * above already IS the coast's starting point, full stop. There is no burn to
  * record at that seam, only the ship's own waypoint burns during Coast (see
- * transfer-leg.js's and frozen-plan.js's headers).
+ * transfer-leg.js's and adopted-plan.js's headers).
  *
  * spec: {
  *   origin,                       // "Earth" — HELIO_BODIES name
@@ -84,7 +84,7 @@
  * }
  *
  * Waypoints are sorted chronologically and any at/after the rendezvous are
- * dropped — they never shaped the flight up to arrival, and a frozen leg
+ * dropped — they never shaped the flight up to arrival, and an adopted leg
  * whose duration is the rendezvous would flag them as past its end.
  *
  * TWO TIMING FIELDS, ON TWO DIFFERENT STAGES, because they answer to two
@@ -113,7 +113,7 @@ var O = OrbitalMath;
 export var DEFAULT_WINDOW_DAYS = 1;
 
 // The heliocentric velocity the plan's v∞ is measured against at an epoch,
-// read the same way frozen-plan.js reads it. That reference is the ESCAPE body,
+// read the same way adopted-plan.js reads it. That reference is the ESCAPE body,
 // which is the origin itself for every origin but the Moon — a lunar departure
 // hands over at Earth's SOI edge, carrying Earth's heliocentric velocity.
 function bodyHelioV(origin, jd) {
@@ -125,7 +125,7 @@ function copyBurn(b) {
 	return { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 };
 }
 
-export function freezeMissionWorld(spec) {
+export function adoptMissionWorld(spec) {
 	// The hand-off, verbatim (see header): the tab authored this state at this
 	// epoch, and it is the coast's own starting point. Nothing is applied,
 	// followed or re-solved here.
@@ -165,7 +165,7 @@ export function freezeMissionWorld(spec) {
 	// the physics a cislunar escape needs); every other origin — Earth now
 	// included — departs its own body directly, so just the generic
 	// body-departure-leg, where a skyhook self-originates and there is no
-	// separate platform. Empty, the leg reports "no carrier"; frozen-plan is a
+	// separate platform. Empty, the leg reports "no carrier"; adopted-plan is a
 	// compliance boundary (recompute.js), so that never blanks the coast.
 	var stages = [];
 	var n = 1;
@@ -196,7 +196,7 @@ export function freezeMissionWorld(spec) {
 			burn: copyBurn(spec.lunarRelease.burn)
 		};
 	}
-	add("frozen-plan", planParams);
+	add("adopted-plan", planParams);
 	add("transfer-leg", { waypoints: waypoints, legDays: legDays, destination: spec.destination });
 	// The arrival flyby leg: the visible Coast→Arrival hand-off, no burns, and
 	// the terminal stage — the arrival-tech slot is empty by default.
@@ -207,10 +207,10 @@ export function freezeMissionWorld(spec) {
 		version: WORLD_VERSION,
 		// The clock opens at the HAND-OFF — the coast's own start — because a
 		// spawned mission opens on the coast phase, and a mission with no
-		// departure technology yet coasts from the plan's own frozen state.
+		// departure technology yet coasts from the plan's own adopted state.
 		//
 		// ONE CLOCK, ONE SEAM EPOCH. Once a technology delivers, the coast
-		// starts from what it really delivered (frozen-plan.js), so the
+		// starts from what it really delivered (adopted-plan.js), so the
 		// Departure timeline's end and the Coast timeline's start are the same
 		// instant, not two that a window has to reconcile. The plan's committed
 		// hand-off becomes a mark on those timelines and the epoch the

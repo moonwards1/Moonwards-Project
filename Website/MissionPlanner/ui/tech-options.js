@@ -1,4 +1,4 @@
-// MissionPlanner/ui/tech-options.js — the departure and arrival "technology"
+﻿// MissionPlanner/ui/tech-options.js — the departure and arrival "technology"
 // dropdowns' own small catalog, distinct from core/registry.js (the module
 // registry: what's LOADED and how the recompute chain calls it). This one is
 // about what's OFFERABLE in a dropdown and to which body it applies — UI data,
@@ -55,7 +55,7 @@ export function techOptionsFor(body) {
 	});
 }
 
-// The ARRIVAL technologies — same catalog shape, filtered against the frozen
+// The ARRIVAL technologies — same catalog shape, filtered against the adopted
 // plan's arrival body instead of the chain's base. The one built entry is the
 // same skyhook platform in its arrival role: the tether run in reverse.
 export var ARRIVAL_TECH_OPTIONS = [

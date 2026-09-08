@@ -1,4 +1,4 @@
-/* Mission Planner — the per-mission view factory.
+﻿/* Mission Planner — the per-mission view factory.
  *
  * Everything that belongs to ONE mission lives here: its World + recompute
  * engine, its Three.js frames, its panes, its sidebar cards, its date bar and
@@ -89,7 +89,7 @@ var FLOAT_ZOOM = 0.5;
 
 // ---- phase <-> frame mapping. "coast" is always the heliocentric leg.
 // "departure" and "arrival" are per-mission: each view builds
-// PHASE_FRAME.departure from its own frozen plan's `origin` body
+// PHASE_FRAME.departure from its own adopted plan's `origin` body
 // (missionOriginBody/departureFrameFor below) — "body:Earth-Moon" for an Earth
 // or Moon origin, or a generic buildBodyFrame(origin) for any other origin —
 // and PHASE_FRAME.arrival from the plan's arrival body, if
@@ -105,13 +105,13 @@ var FLOAT_ZOOM = 0.5;
 var PHASES = ["departure", "coast", "arrival"];
 var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
 
-// The mission's departure-origin body: read from its frozen-plan stage's
-// `origin` param — "Earth" for any mission without a frozen-plan stage,
-// matching frozen-plan.js's own default.
+// The mission's departure-origin body: read from its adopted-plan stage's
+// `origin` param — "Earth" for any mission without a adopted-plan stage,
+// matching adopted-plan.js's own default.
 function missionOriginBody(world) {
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
-		if (stages[i].moduleId === "frozen-plan") {
+		if (stages[i].moduleId === "adopted-plan") {
 			var o = stages[i].params && stages[i].params.origin;
 			return (typeof o === "string" && systems.has(o)) ? o : "Earth";
 		}
@@ -127,15 +127,15 @@ function departureFrameFor(origin) {
 	return (origin === "Earth" || origin === "Moon") ? "body:Earth-Moon" : "body:" + origin;
 }
 
-// The mission's arrival body: the frozen plan's own arrival commitment, read
+// The mission's arrival body: the adopted plan's own arrival commitment, read
 // directly from its stage params. Same direct-read pattern as
 // missionOriginBody, because the view is built before any module resolves.
-// null when the mission has no frozen plan, no committed body, or names a
+// null when the mission has no adopted plan, no committed body, or names a
 // body `systems` doesn't know.
 function missionArrivalBody(world) {
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
-		if (stages[i].moduleId !== "frozen-plan") { continue; }
+		if (stages[i].moduleId !== "adopted-plan") { continue; }
 		var arr = (stages[i].params && stages[i].params.arrival) || {};
 		if (typeof arr.body === "string" && systems.has(arr.body)) { return arr.body; }
 	}
@@ -227,7 +227,7 @@ export function createMissionView(opts) {
 	var missionId = opts.missionId;
 	var active = false;
 
-	// ---- the plan history (core/revisions.js): the mission as first frozen,
+	// ---- the plan history (core/revisions.js): the mission as first adopted,
 	// plus a set per Update. A mission arriving without one — the shipped
 	// preset, a pre-history save, a v1 link — takes the World it opens with as
 	// its original, which is the honest reading: that IS the earliest plan this
@@ -306,7 +306,7 @@ export function createMissionView(opts) {
 	// frame id wherever rendersIn is consulted.
 	var originBody = missionOriginBody(world);
 	var departureFrameId = departureFrameFor(originBody);
-	// ---- arrival frame: the frozen plan's arrival body gets its own
+	// ---- arrival frame: the adopted plan's arrival body gets its own
 	// buildBodyFrame, and the "body:destination" rendersIn token aliases to it.
 	// In the degenerate case where destination and origin share a frame id (a
 	// Mars→Mars mission), the one frame serves both phases and departure keeps
@@ -709,7 +709,7 @@ export function createMissionView(opts) {
 			var sets = packSets(planHistory);
 			var note = (sets && sets.latest)
 				? "A link that opens this exact mission is on the clipboard. It also " +
-					"carries the plan as originally frozen, so pasting it into the " +
+					"carries the plan as originally adopted, so pasting it into the " +
 					"Ephemeris tab starts from where this mission began."
 				: "A link that opens this exact mission is on the clipboard.";
 			return navigator.clipboard.writeText(url).then(function () {
@@ -1019,7 +1019,7 @@ export function createMissionView(opts) {
 	// bottom of the sidebar.
 	function buildCard(stage, insertBeforeEl) {
 		var desc = registry.get(stage.moduleId);
-		if (desc && desc.sidebarCard === false) { return; }   // frozen-plan: its readouts live in the phase bar instead
+		if (desc && desc.sidebarCard === false) { return; }   // adopted-plan: its readouts live in the phase bar instead
 		var card = document.createElement("div");
 		card.className = "mp-card";
 
@@ -1078,7 +1078,7 @@ export function createMissionView(opts) {
 	// boundary — carriers go before it. Options come from ui/tech-options.js,
 	// filtered by the body the chain is actually based at (departureChainBody),
 	// so this is not Moon-only. Removing the last carrier is fine: departure-leg
-	// reports "no-carrier" and, because frozen-plan is a compliance boundary, the
+	// reports "no-carrier" and, because adopted-plan is a compliance boundary, the
 	// coast still flies rather than blanking.
 	var DEP_TECH_KEY = "__departure-tech__";
 	var MAX_CARRIERS = 2;
@@ -1247,7 +1247,7 @@ export function createMissionView(opts) {
 	// ---- arrival technology dropdown ----------------------------------------
 	// Swaps whichever ONE stage is shaped like an arrival tech — consumes a
 	// ship-state and emits nothing (the chain's terminal catch, e.g.
-	// arrival-skyhook). Options are filtered by the frozen plan's arrival body
+	// arrival-skyhook). Options are filtered by the adopted plan's arrival body
 	// (arrivalTechOptionsFor), and the swap seeds the incoming module with that
 	// body explicitly. A mission with no such stage simply doesn't get the card:
 	// unlike the departure side, this dropdown swaps an existing stage and
@@ -1347,7 +1347,7 @@ export function createMissionView(opts) {
 	// approach, one v∞ out, one v∞ in.
 	//
 	// The drawn coast now flies from that same delivered hand-off
-	// (frozen-plan.js), so the bar and the trajectory agree by construction
+	// (adopted-plan.js), so the bar and the trajectory agree by construction
 	// rather than by the user's diligence. What they still measure differently
 	// is the horizon, and since neither is a committed date any more they are
 	// the same span: the coast's own legDays.
@@ -1359,7 +1359,7 @@ export function createMissionView(opts) {
 	// standard to be graded against. Right of it, the mission's headline
 	// number and the two controls that move it.
 	//
-	// frozen-plan has no sidebar card (sidebarCard: false), so its hard states
+	// adopted-plan has no sidebar card (sidebarCard: false), so its hard states
 	// (a diagnostic, or blocked on an upstream failure) also land here, in the
 	// strip above the bar.
 	function cbarDate(jd) {
@@ -1387,8 +1387,8 @@ export function createMissionView(opts) {
 	// leg integration). See core/delivered-flight.js.
 	var flightCache = { sig: null, value: null };
 	function flightSpecNow() {
-		var planStage = frozenPlanStage();
-		var desc = registry.get("frozen-plan");
+		var planStage = adoptedPlanStage();
+		var desc = registry.get("adopted-plan");
 		var comp = (planStage && desc && typeof desc.complianceFor === "function")
 			? desc.complianceFor(world, planStage.id) : null;
 		if (!planStage || !comp || !comp.ok || !comp.delivered || !comp.delivered.state) { return null; }
@@ -1400,7 +1400,7 @@ export function createMissionView(opts) {
 		if (!legStage) { return null; }
 		var wps = legStage.params.waypoints || [];
 		// Waypoint days are counted from the coast's own start, which IS the
-		// delivered hand-off (frozen-plan.js emits it), so they need no
+		// delivered hand-off (adopted-plan.js emits it), so they need no
 		// re-basing here. The horizon is the coast's own duration — there is no
 		// committed arrival date to fly to, and the arrival is wherever closest
 		// approach falls inside it — so this and the drawn leg are now the same
@@ -1456,8 +1456,8 @@ export function createMissionView(opts) {
 	var checked = null;        // the provisional target, or null
 
 	function retargetSolveNow() {
-		var planStage = frozenPlanStage();
-		var desc = registry.get("frozen-plan");
+		var planStage = adoptedPlanStage();
+		var desc = registry.get("adopted-plan");
 		var comp = (planStage && desc && typeof desc.complianceFor === "function")
 			? desc.complianceFor(world, planStage.id) : null;
 		if (!planStage || !comp || !comp.ok || !comp.delivered || !comp.delivered.state) {
@@ -1598,7 +1598,7 @@ export function createMissionView(opts) {
 
 	checkBtn.addEventListener("click", function () {
 		var sol = retargetSolveNow();
-		var dest = (frozenPlanStage() && (frozenPlanStage().params.arrival || {}).body) || "the destination";
+		var dest = (adoptedPlanStage() && (adoptedPlanStage().params.arrival || {}).body) || "the destination";
 		checked = sol.ok ? sol : null;
 		showMessage("Check — nothing written", function (wrap) {
 			solveMessage(wrap, sol, dest, false);
@@ -1609,7 +1609,7 @@ export function createMissionView(opts) {
 	});
 
 	updateBtn.addEventListener("click", function () {
-		var planStage = frozenPlanStage();
+		var planStage = adoptedPlanStage();
 		if (!planStage) { return; }
 		var sol = retargetSolveNow();           // from the CURRENT delivery, not Check's
 		var dest = (planStage.params.arrival || {}).body || "the destination";
@@ -1664,7 +1664,7 @@ export function createMissionView(opts) {
 	}
 	function renderReport() {
 		var f = flightAsDelivered();
-		var planStage = frozenPlanStage();
+		var planStage = adoptedPlanStage();
 		var dest = (planStage && (planStage.params.arrival || {}).body) || "—";
 		showMessage("Mission report — " + dest, function (wrap) {
 			if (!f) {
@@ -1713,7 +1713,7 @@ export function createMissionView(opts) {
 	// ---- what the plan STORED, then and now ---------------------------------
 	// The table above is what the mission ACHIEVES, recomputed live. This is
 	// the other half, and the reason the plan history exists: the values the
-	// plan actually holds, as first frozen beside as they stand. Read straight
+	// plan actually holds, as first adopted beside as they stand. Read straight
 	// off two serialized Worlds (core/revisions.js's planSummaryOf), so the
 	// original's column costs nothing however long ago it was written and
 	// cannot drift from what was really committed.
@@ -1741,14 +1741,14 @@ export function createMissionView(opts) {
 		wrap.appendChild(h);
 
 		if (!moved.length) {
-			msgPara(wrap, "Nothing stored in the plan has changed since it was frozen — " +
+			msgPara(wrap, "Nothing stored in the plan has changed since it was adopted — " +
 				"this is the mission exactly as it came from the Ephemeris tab.");
 			return;
 		}
 
 		var t = document.createElement("table");
 		t.className = "mp-originals";
-		t.innerHTML = "<tr><th>value</th><th>as frozen</th><th>now</th></tr>";
+		t.innerHTML = "<tr><th>value</th><th>as adopted</th><th>now</th></tr>";
 		moved.forEach(function (c) {
 			var tr = document.createElement("tr");
 			tr.innerHTML = "<td>" + escapeText(c.label) + "</td>" +
@@ -1762,10 +1762,10 @@ export function createMissionView(opts) {
 		msgPara(wrap, commits
 			? escapeText(String(moved.length)) + " stored value" + (moved.length > 1 ? "s have" : " has") +
 				" moved across " + commits + " commit" + (commits > 1 ? "s" : "") +
-				". A mission link carries the frozen column as well as the current one, so " +
+				". A mission link carries the adopted column as well as the current one, so " +
 				"pasting it into the Ephemeris tab reopens the plan this mission started from."
 			: escapeText(String(moved.length)) + " stored value" + (moved.length > 1 ? "s differ" : " differs") +
-				" from the frozen plan without an Update having been committed — these are " +
+				" from the adopted plan without an Update having been committed — these are " +
 				"live edits the plan has not been moved onto yet.");
 	}
 
@@ -1791,7 +1791,7 @@ export function createMissionView(opts) {
 	function renderComplianceBar(results) {
 		var planRes = null;
 		for (var i = 0; i < results.length; i++) {
-			if (results[i].moduleId === "frozen-plan") { planRes = results[i]; break; }
+			if (results[i].moduleId === "adopted-plan") { planRes = results[i]; break; }
 		}
 		planStateEl.textContent = "";
 		function blankBar(note) {
@@ -1804,7 +1804,7 @@ export function createMissionView(opts) {
 			checkBtn.disabled = true;
 			updateBtn.disabled = true;
 		}
-		if (!planRes) { blankBar(); return; }       // this mission carries no frozen plan
+		if (!planRes) { blankBar(); return; }       // this mission carries no adopted plan
 
 		// No sidebar card exists for this stage, so its hard states need a home.
 		if (planRes.status === "diagnostic") {
@@ -1818,7 +1818,7 @@ export function createMissionView(opts) {
 			return;
 		}
 
-		var desc = registry.get("frozen-plan");
+		var desc = registry.get("adopted-plan");
 		var comp = desc && typeof desc.complianceFor === "function"
 			? desc.complianceFor(world, planRes.stageId) : null;
 		if (!comp || !comp.ok) { blankBar(); return; }
@@ -2029,7 +2029,7 @@ export function createMissionView(opts) {
 	function committedCoastPass(stageId) { return coastPass(stageId, false); }
 
 	// The coast span. Its LEFT edge is the real Departure→Coast hand-off —
-	// frozen-plan's own hand-off event, which since the flown flight became
+	// adopted-plan's own hand-off event, which since the flown flight became
 	// the clock is the epoch the technology actually delivers. So the Coast
 	// timeline begins exactly where the Departure timeline ends, and it moves
 	// as the technology is tuned. Waypoint edits still do not stretch it: they
@@ -2040,10 +2040,10 @@ export function createMissionView(opts) {
 	// arrival date: it moves with closest approach as the coast is tuned, ending
 	// the phase early enough to leave the Arrival phase its own window.
 	function coastSpan(results) {
-		// The LEFT edge: the real hand-off, frozen-plan's own single event.
+		// The LEFT edge: the real hand-off, adopted-plan's own single event.
 		var start = null;
 		results.forEach(function (res) {
-			if (res.moduleId !== "frozen-plan") { return; }
+			if (res.moduleId !== "adopted-plan") { return; }
 			res.events.forEach(function (e) {
 				if (start === null || e.jd < start) { start = e.jd; }
 			});
@@ -2105,17 +2105,17 @@ export function createMissionView(opts) {
 		return null;
 	}
 
-	// The frozen plan's own departure numbers — its required v∞ out and fixed
+	// The adopted plan's own departure numbers — its required v∞ out and fixed
 	// on-course deadline — known the instant a mission is created, well before
 	// any departure tech resolves real flight events. null when this mission has
-	// no frozen-plan stage, or it hasn't resolved yet.
+	// no adopted-plan stage, or it hasn't resolved yet.
 	function plannedDeparture(results) {
 		var planRes = null;
 		for (var i = 0; i < results.length; i++) {
-			if (results[i].moduleId === "frozen-plan") { planRes = results[i]; break; }
+			if (results[i].moduleId === "adopted-plan") { planRes = results[i]; break; }
 		}
 		if (!planRes) { return null; }
-		var desc = registry.get("frozen-plan");
+		var desc = registry.get("adopted-plan");
 		var comp = desc && typeof desc.complianceFor === "function" ? desc.complianceFor(world, planRes.stageId) : null;
 		return (comp && comp.ok) ? { vInf: comp.required.vInf, jd: comp.required.jd } : null;
 	}
@@ -2181,7 +2181,7 @@ export function createMissionView(opts) {
 
 	// The default span length: SOI_radius / v∞ — the time to cross the origin
 	// body's SOI at the plan's required departure v∞ out. Falls back to a
-	// Hohmann-transfer dv1 estimate to the chosen destination when no frozen
+	// Hohmann-transfer dv1 estimate to the chosen destination when no adopted
 	// plan has resolved, then to a conservative 3 km/s v∞ guess when no
 	// destination is set. Origin is this mission's own origin body
 	// (missionOriginBody()), not necessarily Earth. Always returns seconds > 0.
@@ -2210,7 +2210,7 @@ export function createMissionView(opts) {
 
 		// core/departure-estimate.js owns the crossing: it converts the SOI-edge
 		// speed to the true hyperbolic excess and, for a Moon origin, crosses
-		// only from lunar distance out. Same estimator core/freeze.js seeds the
+		// only from lunar distance out. Same estimator core/adopt.js seeds the
 		// release epoch with, so this edge and that seed agree.
 		var est = estimateDeparture({ origin: origin, vInfVec: [vEdge, 0, 0],
 		                              jdHandoff: (plan && isFinite(plan.jd)) ? plan.jd : 0 });
@@ -2261,7 +2261,7 @@ export function createMissionView(opts) {
 	// Departure and Coast each have one; the card hides in the others rather
 	// than showing an empty shell.
 	//
-	// Departure reads ONE comparison, the same one frozen-plan makes: the v∞ the
+	// Departure reads ONE comparison, the same one adopted-plan makes: the v∞ the
 	// plan requires at hand-off against the v∞ the configured technology and
 	// waypoints actually deliver. Both are split onto the burn frame of the
 	// plan's own committed departure state (OrbitalMath.burnComponents — the
@@ -2280,25 +2280,25 @@ export function createMissionView(opts) {
 		return workspace.phase === "departure" || workspace.phase === "coast";
 	}
 
-	function frozenPlanStage() {
+	function adoptedPlanStage() {
 		var stages = world.stages();
 		for (var i = 0; i < stages.length; i++) {
-			if (stages[i].moduleId === "frozen-plan") { return stages[i]; }
+			if (stages[i].moduleId === "adopted-plan") { return stages[i]; }
 		}
 		return null;
 	}
 
 	// The plan's committed heliocentric departure state { r, v, jd }, or null
-	// when this mission has no frozen plan or its state is unusable.
+	// when this mission has no adopted plan or its state is unusable.
 	function planDepartureState() {
-		var stage = frozenPlanStage();
+		var stage = adoptedPlanStage();
 		var d = (stage && stage.params && stage.params.departure) || null;
 		return (d && Array.isArray(d.r) && Array.isArray(d.v) && isFinite(d.jd)) ? d : null;
 	}
 
 	// The last computed departure flight, from whichever leg module this
 	// mission's origin uses (Earth-Moon or the generic body leg) — both expose
-	// legFor the same registry-reached way frozen-plan exposes complianceFor.
+	// legFor the same registry-reached way adopted-plan exposes complianceFor.
 	function departureFlight() {
 		var stage = departureLegStage();
 		if (!stage) { return null; }
@@ -2478,8 +2478,8 @@ export function createMissionView(opts) {
 		shipCard.setUpdate(null);
 
 		var dep = planDepartureState();
-		var planStage = frozenPlanStage();
-		var planDesc = registry.get("frozen-plan");
+		var planStage = adoptedPlanStage();
+		var planDesc = registry.get("adopted-plan");
 		var comp = (planStage && planDesc && typeof planDesc.complianceFor === "function")
 			? planDesc.complianceFor(world, planStage.id) : null;
 

@@ -1,18 +1,18 @@
-/* MissionPlanner/core/departure-estimate.js — how long the departure leg
+﻿/* MissionPlanner/core/departure-estimate.js — how long the departure leg
  * lasts, estimated from the plan alone.
  *
- * The frozen plan pins the Departure→Coast hand-off; the release happens
+ * The adopted plan pins the Departure→Coast hand-off; the release happens
  * flight-time EARLIER. Nothing about the eventual tech or course is known
- * when the plan is frozen, so this estimate comes from the plan's own
+ * when the plan is adopted, so this estimate comes from the plan's own
  * numbers: the required hyperbolic excess (v∞ = hand-off velocity minus the
  * escape body's), and the hand-off epoch.
  * The estimate feeds two things: the Ephemeris tab's "Moon phase at launch"
  * widget (ephemeris-view.js's buildMoonWidget/updateMoonWidgets), and the
- * SEED for the departure leg's own releaseJd, which core/freeze.js writes at
+ * SEED for the departure leg's own releaseJd, which core/adopt.js writes at
  * mission creation. The ±1 d hand-off window absorbs the estimate's error.
  *
  * It is only a seed. The epoch belongs to the DEPARTURE PHASE from then on
- * (core/release-epoch.js) — the frozen plan neither stores it nor imposes it.
+ * (core/release-epoch.js) — the adopted plan neither stores it nor imposes it.
  * It is read back through releaseEpochFor() by moon-platform.js and the
  * platform roles, stamped as the Release flight event by departure-leg.js and
  * body-departure-leg.js, and used by mission-view.js's departureSpan as the
@@ -25,8 +25,8 @@
  * NOTHING HERE SHAPES A LUNAR DEPARTURE. A Moon origin is authored forward —
  * core/lunar-departure.js integrates Earth + Moon + Sun from a release the
  * planner set, and its release epoch is the Ephemeris tab's own clock, carried
- * into the mission by core/freeze.js. The Moon branch below exists only for a
- * plan that reached freeze WITHOUT that record, and it is a seed: the
+ * into the mission by core/adopt.js. The Moon branch below exists only for a
+ * plan that reached adopt WITHOUT that record, and it is a seed: the
  * two-body crossing from lunar distance out to Earth's SOI, since a lunar
  * departure starts a quarter of the way out rather than at Earth's surface.
  *
