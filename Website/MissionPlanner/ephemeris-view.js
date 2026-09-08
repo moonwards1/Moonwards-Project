@@ -331,24 +331,62 @@ export function createEphemerisView(opts) {
 	// The slider shows RADIAL (swept-angle) progress from the flight's start
 	// (0°, the SOI edge) to the drawn arc's end, whatever it sweeps (up to
 	// ~360° when bound, less for an escape). degAtTime/timeAtDeg are exact,
-	// analytic functions of the leg's start state (trajSegs[0]) via
-	// Shared/math-utils.js's sweptTrueAnomaly/timeAtSweptTrueAnomaly, not a
-	// table sampled from the drawn polyline — see Notes/decisions.md,
-	// 2026-08-28, for why sampling doesn't work here.
-	function startElements() {
-		return trajSegs.length ? O.elementsFromState(GM_SUN, trajSegs[0].r0, trajSegs[0].v0) : null;
+	// analytic functions via Shared/math-utils.js's
+	// sweptTrueAnomaly/timeAtSweptTrueAnomaly, not a table sampled from the
+	// drawn polyline — see Notes/decisions.md, 2026-08-28, for why sampling
+	// doesn't work here.
+	//
+	// sweptTrueAnomaly's exactness holds only WITHIN one conic, so a waypoint
+	// burn — which hands the ship to a different (a, e, nu0) mid-flight — has
+	// to be walked segment by segment: each trajSegs entry's own elements own
+	// its own span of degrees, and the running total (not time) is what
+	// carries across a burn. Using trajSegs[0]'s elements for the whole
+	// flight (as if there were no burn) is exact only up to the first
+	// waypoint; past it, on a leg that sweeps multiple laps, it silently
+	// answers with degrees/times from the wrong orbit, which is what dragged
+	// the marker along the timeline instead of holding it.
+	function segElements(seg) { return O.elementsFromState(GM_SUN, seg.r0, seg.v0); }
+
+	// Degrees swept over one whole segment (its own conic, dt = seg.dur).
+	function segDegSpan(seg) {
+		var el = segElements(seg);
+		return O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, seg.dur) * 180 / Math.PI;
 	}
 
-	// Swept degrees at global time t.
+	// Swept degrees at global time t, accumulated across whichever segments
+	// (waypoint burns) precede it.
 	function degAtTime(t) {
-		var el = startElements();
-		return el ? O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, t) * 180 / Math.PI : 0;
+		if (!trajSegs.length) { return 0; }
+		var offset = 0;
+		for (var i = 0; i < trajSegs.length; i++) {
+			var seg = trajSegs[i];
+			var isLast = i === trajSegs.length - 1;
+			if (isLast || t <= seg.tStart + seg.dur) {
+				var el = segElements(seg);
+				var dt = t - seg.tStart;
+				return offset + O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, dt) * 180 / Math.PI;
+			}
+			offset += segDegSpan(seg);
+		}
+		return offset;
 	}
 
-	// Inverse of degAtTime: global time at which the swept angle reaches deg.
+	// Inverse of degAtTime: global time at which the accumulated swept angle
+	// reaches deg, resolved on whichever segment's own span it falls in.
 	function timeAtDeg(deg) {
-		var el = startElements();
-		return el ? O.timeAtSweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, deg * Math.PI / 180) : 0;
+		if (!trajSegs.length) { return 0; }
+		var offset = 0;
+		for (var i = 0; i < trajSegs.length; i++) {
+			var seg = trajSegs[i];
+			var isLast = i === trajSegs.length - 1;
+			var span = isLast ? Infinity : segDegSpan(seg);
+			if (isLast || deg <= offset + span) {
+				var el = segElements(seg);
+				return seg.tStart + O.timeAtSweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, (deg - offset) * Math.PI / 180);
+			}
+			offset += span;
+		}
+		return 0;
 	}
 
 	// ==== the clock: same date-bar widget and epoch/span every plotter
