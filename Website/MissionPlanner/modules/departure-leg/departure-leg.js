@@ -440,7 +440,7 @@ export default {
 					list[i].burn = Object.assign({ pro: 0, rad: 0, nrm: 0 }, list[i].burn);
 					list[i].burn[axis] = mps;
 					setParam("waypoints", list);
-				});
+				}, { unitLabel: "km/s" });
 				wpHost.appendChild(card);
 				burnHosts.push(burnHost);
 			});

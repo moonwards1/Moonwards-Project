@@ -130,7 +130,7 @@ import {
 	markerFraction as mcMarkerFraction, sweepAngleFrom, phasingDays as mcPhasingDays,
 	refineApproach as mcRefineApproach, followCrossing as mcFollowCrossing,
 	buildMarkerCard as mcBuildMarkerCard, updateMarkerModeButtons as mcUpdateMarkerModeButtons,
-	fmtKm, fmtTof, fmtDate
+	bindAbsoluteDragSlider, fmtKm, fmtTof, fmtDate
 } from "../Shared/sim/marker-card.js";
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
 import { buildHelioFrame, ORIGIN_BODIES, DESTINATION_BODIES } from "./scene-frames.js";
@@ -304,7 +304,7 @@ export function createEphemerisView(opts) {
 
 	var trajLine = null, endDots = [], wpMarkers = [], burnArrows = [];
 	var depBurnHost = null;             // wraps the departure burn's vector editor (readout anchor)
-	var wpRows = [];                    // [{ card, dayInput, snapBoxes, slider, info, host }]
+	var wpRows = [];                    // [{ card, degInput, snapBoxes, slider, info, host }]
 
 	// ---- marker state: the drawn leg as per-segment start states, so the
 	// marker can be located at any global time along the whole path (rebuilt by
@@ -387,6 +387,15 @@ export function createEphemerisView(opts) {
 			offset += span;
 		}
 		return 0;
+	}
+
+	// Waypoint slider/field upper bound: the trajectory's own total sweep, but
+	// capped at 720° (two full revolutions) — a bound orbit can be drawn for
+	// up to 500 years (finalCoastDays), which sweeps far more than 720° and
+	// would otherwise make the control's range physically meaningless.
+	var WAYPOINT_MAX_DEG = 720;
+	function waypointMaxDeg() {
+		return trajTotalT > 0 ? Math.min(degAtTime(trajTotalT), WAYPOINT_MAX_DEG) : 360;
 	}
 
 	// ==== the clock: same date-bar widget and epoch/span every plotter
@@ -540,7 +549,7 @@ export function createEphemerisView(opts) {
 	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
 	buildVectorEditor(depBurnHost, state.leg.burn, function (axis, mps) {
 		state.leg.burn[axis] = mps; refresh();
-	});
+	}, { unitLabel: "km/s" });
 	var depReadout = muted(depHost, "");
 
 	var destRow = document.createElement("div"); destRow.className = "mp-inrow";
@@ -607,9 +616,32 @@ export function createEphemerisView(opts) {
 			rm.addEventListener("click", function () { removeWaypoint(idx); });
 			head.appendChild(rm); card.appendChild(head);
 
-			var dayInput = numRow(card, "at day", "", wp.days, 5, function (v) {
-				state.leg.waypoints[idx].days = v; refresh();
-			});
+			// Position, in degrees swept from the flight's start (0°) — same
+			// domain as the marker card's slider (degAtTime/timeAtDeg above).
+			// Setting either the field or the slider clears any snap, same as
+			// how a resolved snap otherwise owns the position outright.
+			function setDeg(v) {
+				v = Math.max(0, Math.min(waypointMaxDeg(), v));
+				state.leg.waypoints[idx].days = timeAtDeg(v) / DAY;
+				state.leg.waypoints[idx].snap = null;
+				refresh();
+			}
+			var degInput = numRow(card, "at", "°",
+				Math.min(degAtTime(wp.days * DAY), waypointMaxDeg()).toFixed(1), 0.1, setDeg);
+
+			// full-trajectory position slider: drags the waypoint from the
+			// flight's start to the drawn arc's end (capped at WAYPOINT_MAX_DEG),
+			// same absolute-drag physics as the marker card's slider
+			// (Shared/sim/marker-card.js's bindAbsoluteDragSlider) — 1:1 with the
+			// mouse, 1/3 speed with Shift, 1/12 with Ctrl.
+			var slider = document.createElement("input");
+			slider.type = "range"; slider.className = "mp-wp-slider";
+			slider.min = 0; slider.max = waypointMaxDeg(); slider.step = 0.1;
+			slider.value = Math.min(degAtTime(wp.days * DAY), waypointMaxDeg());
+			slider.title = "drag the waypoint along the trajectory";
+			slider.addEventListener("input", function () { setDeg(parseFloat(slider.value)); });
+			bindAbsoluteDragSlider(slider, setDeg);
+			card.appendChild(slider);
 
 			// snap-to controls: place the waypoint on a chosen orbital feature.
 			// Mutually exclusive — checking one clears the others (updateWaypointRowUI
@@ -629,29 +661,15 @@ export function createEphemerisView(opts) {
 			});
 			card.appendChild(snapRow);
 
-			// fine-tune slider: slides the waypoint +/-90deg along the arc,
-			// centred on the snapped feature. Active only while a snap is chosen.
-			var slider = document.createElement("input");
-			slider.type = "range"; slider.className = "mp-wp-slider";
-			slider.min = -90; slider.max = 90; slider.step = 1;
-			slider.value = Math.round((wp.snapOffset || 0) * 180 / Math.PI);
-			slider.disabled = !wp.snap;
-			slider.title = "slide ±90° along the arc, around the snapped point";
-			slider.addEventListener("input", function () {
-				state.leg.waypoints[idx].snapOffset = parseFloat(slider.value) * Math.PI / 180;
-				refresh();
-			});
-			card.appendChild(slider);
-
 			var info = muted(card, "");
 
 			var burnHost = document.createElement("div"); card.appendChild(burnHost);
 			buildVectorEditor(burnHost, wp.burn, function (axis, mps) {
 				state.leg.waypoints[idx].burn[axis] = mps; refresh();
-			});
+			}, { unitLabel: "km/s" });
 
 			wpHost.appendChild(card);
-			wpRows.push({ card: card, dayInput: dayInput, snapBoxes: snapBoxes, slider: slider,
+			wpRows.push({ card: card, degInput: degInput, snapBoxes: snapBoxes, slider: slider,
 			              info: info, host: burnHost });
 		});
 		wpAddBtn.style.display = state.leg.waypoints.length < MAX_WAYPOINTS ? "" : "none";
@@ -755,10 +773,14 @@ export function createEphemerisView(opts) {
 		["apsis", "asc", "desc"].forEach(function (k) {
 			row.snapBoxes[k].cb.checked = (e.resolvedSnap === k);
 		});
-		row.slider.disabled = !e.resolvedSnap;
+		var maxDeg = waypointMaxDeg();
+		var deg = Math.min(degAtTime(e.days * DAY), maxDeg);
+		if (document.activeElement !== row.degInput) { row.degInput.value = deg.toFixed(1); }
+		row.degInput.disabled = !!e.resolvedSnap;
 
-		if (document.activeElement !== row.dayInput) { row.dayInput.value = Math.round(e.days); }
-		row.dayInput.disabled = !!e.resolvedSnap;
+		row.slider.max = maxDeg;
+		if (document.activeElement !== row.slider) { row.slider.value = deg; }
+		row.slider.disabled = !!e.resolvedSnap;
 
 		var wpDv = Math.hypot(e.burn.pro || 0, e.burn.nrm || 0, e.burn.rad || 0);
 		row.info.textContent = "+" + Math.round(e.days) + " d, " + (O.vMag(e.preR) / AU).toFixed(3) +
