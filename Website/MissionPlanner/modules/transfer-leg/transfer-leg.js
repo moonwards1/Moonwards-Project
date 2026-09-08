@@ -367,7 +367,7 @@ export function computeLeg(params, data) {
 	}
 	var wps = (p.waypoints || []).slice().sort(function (a, b) { return a.days - b.days; });
 	for (var w = 0; w < wps.length; w++) {
-		if (!(isFinite(wps[w].days) && wps[w].days > 0 && wps[w].days < p.legDays)) {
+		if (!(isFinite(wps[w].days) && wps[w].days >= 0 && wps[w].days <= p.legDays)) {
 			return { ok: false, diagnostic: makeDiagnostic("waypoint-outside-leg",
 				"Waypoint " + (w + 1) + " at day " + wps[w].days +
 				" falls outside the leg (0 – " + p.legDays + " days).",
