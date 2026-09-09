@@ -1,7 +1,11 @@
-﻿// The worked-example default mission — Moon → Ceres 2031, the mission a fresh
-// browser opens with when nothing is saved and no share link is present
-// (planner.js's initialMissions). Also the first entry in the example-mission
-// dropdown (presets/examples-catalog.js).
+﻿// The worked-example mission — Moon → Ceres 2031 — used as a realistic fixture
+// across the Node test suites (a full chain: skyhook, lunar release, waypoint,
+// deliberate departure gap). Not wired into the running app: a fresh browser
+// with nothing saved opens on the Ephemeris tab with no mission tabs
+// (planner.js's initialMissions), and it is not in the example-mission
+// dropdown (presets/examples-catalog.js). `defaultWorkspaceMain` below is
+// still live in the app, as the generic fallback main-pane id for a mission
+// tab spawned with none specified.
 //
 //   release   2031-12-19 ~19:06 UT (jd 2463220.2961 — the plan's adopted
 //             release ANCHOR; see TIMING below) — lunar skyhook, CoM 275 km,

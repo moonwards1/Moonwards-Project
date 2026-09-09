@@ -55,10 +55,9 @@
  *   not just a display range. The legend/number row shows the DELTA from
  *   baseline (signed), not the absolute value, formatted via opts.displayDiv
  *   (m/s-per-displayed-unit, e.g. 1 for m/s or 1000 for km/s), opts.decimals
- *   and opts.step. opts.unitLabel, if given, prints that text beside each
- *   number field (e.g. "m/s") and narrows the field to make room — the
- *   default mode leaves the field full-width with no visible unit (the km/s
- *   convention is implied, not printed). Omitting opts (or opts.maxDeltaMps)
+ *   and opts.step. opts.unitLabel, if given, is appended to each axis's
+ *   field name (e.g. "Prograde m/s") — omitting it names the field for the
+ *   axis alone, with no unit stated. Omitting opts (or opts.maxDeltaMps)
  *   reproduces the original absolute-from-zero, drag-clamped/type-unclamped,
  *   km/s-display behavior exactly.
  *
@@ -95,9 +94,9 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	var baseline = (opts && opts.baseline) || { pro: 0, rad: 0, nrm: 0 };
 	var maxMps = capped ? opts.maxDeltaMps : 15000;
 	var dispDiv = (opts && isFinite(opts.displayDiv)) ? opts.displayDiv : 1000;
-	var decimals = (opts && isFinite(opts.decimals)) ? opts.decimals : 2;
-	var numStep = (opts && isFinite(opts.step)) ? opts.step : 0.01;
-	var unitLabel = (opts && opts.unitLabel) || null;   // shown beside each number field, narrowed to make room
+	var decimals = (opts && isFinite(opts.decimals)) ? opts.decimals : 3;
+	var numStep = (opts && isFinite(opts.step)) ? opts.step : 0.001;
+	var unitLabel = (opts && opts.unitLabel) || null;   // appended to each axis's field name
 	var HIDE_FRAC = 0.008;   // matches the original 0.12 km/s dead-zone at MAXV=15 km/s
 	var hideMps = maxMps * HIDE_FRAC;
 	var W = 278, H = 300, OX = 139, OY = 150, AXIS_LEN = 112.5, SCALE = AXIS_LEN / maxMps, LEN = AXIS_LEN;
@@ -200,11 +199,11 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	axes.forEach(function (a) {
 		var cell = document.createElement("label"); cell.className = "sst-vec-num";
 		var tag = document.createElement("span");
-		tag.textContent = a.name.charAt(0).toUpperCase() + a.name.slice(1);
+		var label = a.name.charAt(0).toUpperCase() + a.name.slice(1);
+		tag.textContent = unitLabel ? (label + " " + unitLabel) : label;
 		tag.style.color = a.col;
 		var inp = document.createElement("input");
 		inp.type = "number"; inp.step = numStep;
-		if (unitLabel) { inp.className = "sst-vec-num-narrow"; }
 		inp.value = ((values[a.key] - baseline[a.key]) / dispDiv).toFixed(decimals);
 		inp.addEventListener("change", function () {
 			var v = parseFloat(inp.value); if (!isFinite(v)) { v = 0; }
@@ -215,17 +214,7 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		});
 		nums[a.key] = inp;
 		cell.appendChild(tag);
-		if (unitLabel) {
-			// Input + unit on one row, narrower than the old full-width field —
-			// there's room now that a visible "m/s" replaces the implied-km/s
-			// convention the unlabeled fields rely on.
-			var inpRow = document.createElement("span"); inpRow.className = "sst-vec-num-row";
-			var unit = document.createElement("span"); unit.className = "mp-unit"; unit.textContent = unitLabel;
-			inpRow.appendChild(inp); inpRow.appendChild(unit);
-			cell.appendChild(inpRow);
-		} else {
-			cell.appendChild(inp);
-		}
+		cell.appendChild(inp);
 		row.appendChild(cell);
 	});
 	host.appendChild(row);

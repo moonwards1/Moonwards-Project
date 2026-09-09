@@ -374,27 +374,31 @@ never when it started.
 | `share-link.js`   | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope (v2) wrapping `{ title, world, plan }` under its own kind stamp — a bare serialized World has no title, and `plan` is `core/revisions.js`'s two sets: the mission as first adopted, plus its latest commit when it has one. `world` is what opens in a tab; `plan.original` is what the Ephemeris tab reconstructs. v1 envelopes and bare Worlds still load, with no plan. Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button, through `Shared/exchange.js`'s **compressed** `encodeFragmentZ` — two sets don't fit in a Discord message otherwise. |
 | `tech-options.js` | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                           | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add/swap a stage; unbuilt entries show disabled with a "(future)" label.                                                                                                                                                                                                                                                                                                                                                                                                            |
 
-## presets/ — the shipped mission and example catalog
+## presets/ — the example catalog and test fixtures
 
-`default-mission.js` is the mission a fresh visit opens with, a serialized
-World checked in as plain data: a Moon → Ceres flight through a lunar skyhook
-whose real integrated departure under-delivers against the plan's required
-v∞ — the mission does not comply with itself, by design, so closing the gap
-(a low-perigee Oberth impulse on the departure leg, say) is the exercise it
-teaches, while the coast still flies the adopted plan's state regardless and
-still arrives clean.
+A fresh visit with nothing saved and no share link opens on the Ephemeris
+tab with no mission tabs — new missions are started there, not from a
+shipped starter mission.
+
+`default-mission.js` is a Node-test fixture only, not wired into the running
+app: a serialized World checked in as plain data — a Moon → Ceres flight
+through a lunar skyhook whose real integrated departure under-delivers
+against the plan's required v∞, on purpose, exercising the non-compliant
+case across the test suites. It also exports `defaultWorkspaceMain`, the
+generic fallback main-pane id used when a mission tab is spawned with none
+specified — that part IS still live in the app.
 
 `examples-catalog.js` drives the tab bar's example-mission dropdown; each
-other file in this folder (`earth-mars-reference.js`, `earth-venus-
-overshoot.js`, `jupiter-mercury.js`, `mars-mercury.js`, `venus-saturn.js`) is
-one catalog entry — a genuine integrated flight (real carrier geometry +
-waypoint burns run through the actual departure/coast/arrival modules,
-verified in Node) spanning a geometry the app has to render correctly, and,
-unlike the shipped default, compliant by construction: the adopted commitment
-is exactly what the configured technology delivers, so opening one shows a
-clean flight with no comply-boundary warnings. A catalog entry's `mission` is
-deserialized fresh on every pick, so stateless data is never shared live
-across tabs.
+other file in this folder that it imports (`moon-mars-2039.js`,
+`moon-ceres-2032.js`, `ceres-mercury-2030.js`) is one catalog entry — the
+adopted-plan-only state a freshly created mission carries once its plan is
+adopted on the Ephemeris tab, with no departure or arrival technology
+configured. A catalog entry's `mission` is deserialized fresh on every pick,
+so stateless data is never shared live across tabs.
+
+`earth-mars-reference.js` is not in the catalog — it's a fixture
+`core/tests/retarget.test.js` depends on (a plan authored around a flyby
+offset outside `MAX_PASS_ALTITUDE`), kept only for that.
 
 ## Save format
 

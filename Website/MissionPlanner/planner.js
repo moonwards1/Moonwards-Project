@@ -12,9 +12,9 @@
  *     why the views scissor panes instead of owning canvases). A view's
  *     show() takes the canvas; only the active view renders,
  *   - the initial mission load — persisted missions if any exist, merged with
- *     a share-link fragment if the URL carries one, else the shipped preset —
- *     and the failure banner for a bad fragment or an unreadable saved
- *     mission,
+ *     a share-link fragment if the URL carries one, else no mission tabs at
+ *     all (the Ephemeris tab, where new missions are started) — and the
+ *     failure banner for a bad fragment or an unreadable saved mission,
  *   - the tab bar: the Ephemeris tab (its own view, ephemeris-view.js's
  *     createEphemerisView()) + one tab per mission, active highlight,
  *     confirm-then-dispose close, a "+" duplicate button and the example-
@@ -32,7 +32,7 @@
 
 import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
-import { defaultMission, defaultWorkspaceMain } from "./presets/default-mission.js";
+import { defaultWorkspaceMain } from "./presets/default-mission.js";
 import { EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink } from "./ui/share-link.js";
@@ -180,14 +180,13 @@ async function initialMissions() {
 		return { missions: d.restored, activeId: activeId };
 	}
 
-	var preset = deserializeWorld(defaultMission);
-	if (!preset.ok) {   // an authoring error in the preset file; fail loud
-		throw new Error("presets/default-mission.js does not deserialize: " + preset.reason);
-	}
+	// No saved missions and no usable share link: open on the Ephemeris tab
+	// with no mission tabs at all — new missions are started from there (the
+	// "+" tab's title says as much), not from a shipped starter mission.
 	if (hashFailReason) {
-		loadNotice = "Couldn't load the linked mission (" + hashFailReason + ") — opened the default mission instead.";
+		loadNotice = "Couldn't load the linked mission (" + hashFailReason + ") — opened the Ephemeris tab instead.";
 	}
-	return { missions: [{ id: "m1", title: "Moon → Ceres 2031", world: preset.world }], activeId: "m1" };
+	return { missions: [], activeId: "eph" };
 }
 
 // ---- the one renderer; views borrow its canvas while active ---------------
