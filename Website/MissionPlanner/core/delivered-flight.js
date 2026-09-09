@@ -8,11 +8,12 @@
  * WHY THAT NEEDS ITS OWN COMPUTATION. `adopted-plan` is authoritative by design:
  * it always emits the plan's own adopted departure state downstream, so the
  * coast that gets drawn and measured flies from the point the plan ASSUMES the
- * ship leaves. When the plan was authored in the Ephemeris tab that point is
- * derived geometry (body position + R_soi x heading), not a place any real
- * chain comes out — measured on the shipped Moon->Ceres mission, 209,335 km
- * away. So the drawn coast is not the ship's flight. It is the plan's, and
- * until a re-target has closed the gap the two arrive in different places.
+ * ship leaves. At every origin but the Moon, a plan authored in the Ephemeris
+ * tab puts that point on derived geometry (body position + R_soi x heading),
+ * not a place any real chain comes out; at a Moon origin it is the crossing a
+ * two-body conic reaches rather than the integrated flight's. Either way the
+ * drawn coast is not the ship's flight. It is the plan's, and until a re-target
+ * has closed the gap the two arrive in different places.
  *
  * There is only ONE closest approach, one v-infinity out, one v-infinity in.
  * The drawn coast is a stale estimate of them; this module computes them.

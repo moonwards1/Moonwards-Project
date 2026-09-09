@@ -3,7 +3,9 @@
 // technology configured yet (moon-platform's Moon card sits bare, and the
 // arrival leg ends with no capture burn) and no mid-course waypoint needed.
 //
-// Moon origin, jd 2466067.75 departure hand-off, Mars arrival at 5.096 km/s.
+// Moon origin: release at jd 2466067.75, hand-off at jd 2466069.743 where that
+// release crosses Earth's SOI (the two are ~2 days apart at this origin, see
+// Notes/decisions.md 2026-09-09), Mars arrival at 5.096 km/s.
 //
 // This is a SERIALIZED WORLD (core/world.js's `serialize()` shape, at the
 // current WORLD_VERSION), loaded through the same deserializeWorld path a
@@ -28,23 +30,23 @@ export var moonMars2039Mission = {
 			params: {
 				origin: "Moon",
 				departure: {
-					r: [146340488362.37106, 32300335632.5578, -10293020.447654689],
-					v: [-9951.990737688151, 31915.985066837253, 803.5950547092622],
-					jd: 2466067.75
+					r: [144540011809.642, 37788221841.802246, 129271343.3518278],
+					v: [-10945.984778206774, 31676.0369943115, 803.1498587747895],
+					jd: 2466069.742964474
 				},
-				arrival: { body: "Mars", vInf: 5095.648390144863 },
+				arrival: { body: "Mars", vInf: 5095.523897126727 },
 				handoffWindowDays: 1,
 				waypoints: [],
 				lunarRelease: {
 					jd: 2466067.75,
-					burn: { pro: 2885.5185079315834, rad: 1760.3507268094106, nrm: 734.9497746059197 }
+					burn: { pro: 2784.250395381644, rad: 1728.5477472237542, nrm: 717.3694806025901 }
 				}
 			}
 		},
 		{
 			id: "stg-4",
 			moduleId: "transfer-leg",
-			params: { waypoints: [], legDays: 458.9114657151513, destination: "Mars" }
+			params: { waypoints: [], legDays: 456.9185012411326, destination: "Mars" }
 		},
 		{ id: "stg-5", moduleId: "arrival-leg", params: { body: "Mars", waypoints: [] } }
 	]

@@ -2,15 +2,21 @@
  * point the ship actually leaves from.
  *
  * THE PROBLEM. A adopted plan commits to a hand-off state — a position, a
- * velocity and an epoch at the origin's SOI edge. When the plan is authored in
- * the Ephemeris tab that position is DERIVED (`body position + R_soi x
- * heading`): a geometric convenience, not a place any real departure chain
- * comes out. A skyhook release with an Oberth pass leaves from somewhere else
- * on that sphere entirely — measured on the shipped Moon->Ceres mission,
- * 209,335 km away — and that offset alone, flown with the plan's own waypoint
- * burns, throws the arrival off by about two million kilometres. It does this
- * while the compliance boundary reads "on course", because that boundary
+ * velocity and an epoch at the origin's SOI edge. At every origin BUT THE MOON,
+ * a plan authored in the Ephemeris tab DERIVES that position (`body position +
+ * R_soi x heading`): a geometric convenience, not a place any real departure
+ * chain comes out. A skyhook release with an Oberth pass leaves from somewhere
+ * else on that sphere entirely, and that offset alone, flown with the plan's
+ * own waypoint burns, throws the arrival off by millions of kilometres. It does
+ * this while the compliance boundary reads "on course", because that boundary
  * compares speed, epoch and aim direction, and never position.
+ *
+ * A MOON ORIGIN does not derive its hand-off: core/lunar-departure.js
+ * propagates the release's escape hyperbola to Earth's SOI and commits that
+ * crossing, so the plan already asks for a v∞ at a point a real departure can
+ * reach. What remains there is the gap between that two-body conic and the
+ * departure leg's integrated Earth+Moon+Sun flight, which is a far smaller
+ * thing than a constructed exit point — but this solve is still what closes it.
  *
  * THE FIX IS NOT TO ABSORB IT DOWNSTREAM. A coast waypoint is a trim — the
  * editors cap it at +/-100 m/s per axis (transfer-leg's WAYPOINT_AXIS_CAP_MPS)

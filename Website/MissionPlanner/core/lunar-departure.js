@@ -199,9 +199,25 @@ var CARD_SOLVE_TOL = 0.05;
  * the edges of the supported region it can crawl or oscillate, and a damped
  * Newton on the same function picks those up.
  *
- * spec = { jd, vInfVec, seedCard } — vInfVec is the wanted TOTAL hyperbolic
- * excess (geocentric, asymptotic: what flyLunarDeparture reports as
- * vInf.vec), seedCard the card in force, which is usually close.
+ * spec = { jd, vInfVec, seedCard, at } — seedCard is the card in force, which
+ * is usually close, and `at` says WHERE vInfVec is measured:
+ *
+ *   "asymptote" (default) — the wanted TOTAL hyperbolic excess, geocentric,
+ *                           what flyLunarDeparture reports as vInf.vec.
+ *   "exit"                — the wanted geocentric velocity AT the Earth-SOI
+ *                           crossing, i.e. soiExit.v. This is what a caller
+ *                           holding a hand-off wants, and it is NOT the
+ *                           asymptote rescaled: out at the SOI the velocity
+ *                           has not finished turning onto the asymptote, so
+ *                           the two differ in DIRECTION as well as magnitude
+ *                           — worth ~23 m/s on a 4.3 km/s departure, which is
+ *                           most of a million kilometres of arrival error
+ *                           over a long coast.
+ *
+ * Either way the ITERATION runs in asymptotic terms, because that is where the
+ * card-minus-residual algebra lives; an "exit" ask is converted to an
+ * asymptotic proxy to seed with, and the damped Newton then closes on the real
+ * quantity.
  *
  * Returns { ok: true, card, flight, err } — `flight` is the departure that
  * card flies, so a caller needs no second call — or { ok: false, reason },
@@ -212,11 +228,24 @@ export function solveLunarCard(spec) {
 	var jd = spec.jd, want = spec.vInfVec;
 	if (!want || !(O.vMag(want) > 1e-6)) { return { ok: false, reason: "no-card" }; }
 
+	// The quantity the answer is graded on, and the asymptotic proxy the
+	// iteration steers by. They are the same vector for an asymptote ask.
+	var atExit = spec.at === "exit";
+	var wantIter = want;
+	if (atExit) {
+		var wm0 = O.vMag(want), a0 = asymptoticVInf(wm0, "Moon");
+		if (!(a0 > 1e-6)) { return { ok: false, reason: "card-below-escape" }; }
+		wantIter = O.vScale(want, a0 / wm0);
+	}
+
 	function fly(card) {
 		var f = flyLunarDeparture({ jd: jd, card: card });
-		return f.ok ? f : null;
+		return (f.ok && (!atExit || f.soiExit)) ? f : null;
 	}
-	function errOf(f) { return O.vMag(O.vSub(f.vInf.vec, want)); }
+	function errOf(f) {
+		return atExit ? O.vMag(O.vSub(f.soiExit.v, want))
+		              : O.vMag(O.vSub(f.vInf.vec, want));
+	}
 	var best = null, firstReason = null;
 	function keep(card, f) {
 		var e = errOf(f);
@@ -228,10 +257,10 @@ export function solveLunarCard(spec) {
 	// only a little. The wanted total read as if it were the card is the
 	// fallback: wrong by exactly the residual, but always inside the region
 	// where an escaping card is defined, which a stale seed may not be.
-	var wm = O.vMag(want);
+	var wm = O.vMag(wantIter);
 	var seeds = [];
 	if (spec.seedCard) { seeds.push(spec.seedCard); }
-	seeds.push(cardFromVector(jd, O.vScale(want, edgeVInf(wm, "Moon") / wm)));
+	seeds.push(cardFromVector(jd, O.vScale(wantIter, edgeVInf(wm, "Moon") / wm)));
 
 	for (var s = 0; s < seeds.length; s++) {
 		var card = seeds[s], lastGood = null;
@@ -251,7 +280,7 @@ export function solveLunarCard(spec) {
 			}
 			if (keep(card, f) < CARD_SOLVE_TOL) { return { ok: true, card: best.card, flight: best.flight, err: best.err }; }
 			lastGood = card;
-			var next = O.vSub(want, f.residual.vec), nm = O.vMag(next);
+			var next = O.vSub(wantIter, f.residual.vec), nm = O.vMag(next);
 			if (!(nm > 1e-6)) { break; }
 			card = cardFromVector(jd, O.vScale(next, edgeVInf(nm, "Moon") / nm));
 		}
@@ -266,7 +295,8 @@ export function solveLunarCard(spec) {
 	var x = [best.card.pro, best.card.rad, best.card.nrm];
 	function F(a) {
 		var f = fly({ pro: a[0], rad: a[1], nrm: a[2] });
-		return f ? { vec: O.vSub(f.vInf.vec, want), flight: f } : null;
+		if (!f) { return null; }
+		return { vec: atExit ? O.vSub(f.soiExit.v, want) : O.vSub(f.vInf.vec, want), flight: f };
 	}
 	var cur = F(x);
 	for (var it = 0; cur && best.err >= CARD_SOLVE_TOL && it < 20; it++) {
@@ -343,6 +373,10 @@ export function flyEarthPassDeparture(spec) {
 //     cardAsym,    // the same, as the hyperbolic excess behind it
 //     vInf,        // { vec, mag, e, rp } — the TOTAL excess, ship plus Moon
 //     residual,    // vec + mag: what the Moon's motion is worth at Earth's SOI
+//     soiExit,     // { r, v, dt } — the hand-off: the outward Earth-SOI
+//                  //   crossing in Earth's frame, dt seconds after release.
+//                  //   `v` is the EDGE speed there, not the asymptote.
+//                  //   Null when coastDays is (no crossing to state).
 //     rMoon, vMoon, turnDeg, coastDays }
 // with vInf.vec === cardAsym + residual.vec, all three hyperbolic excesses.
 // On failure { ok: false, reason } with reason one of "no-card",
@@ -385,6 +419,20 @@ export function flyLunarDeparture(spec) {
 	// there plus what the Moon's motion is still worth once Earth is behind.
 	var residual = O.vSub(total.vec, w);
 	var coast = hyperbolicCoastTime(total.mag, total.e, O.vMag(rMoon), SOI_EARTH);
+
+	// WHERE THE DEPARTURE ENDS: the outward crossing of Earth's SOI, in
+	// Earth's frame. The state at the Moon fixes the escape hyperbola exactly
+	// and `coast` is that same hyperbola's time from the Moon out to the
+	// boundary, so propagating by it lands ON SOI_EARTH rather than near it.
+	//
+	// `v` here is the EDGE speed, not the asymptote: Earth still holds ~98 m/s
+	// of a 4.3 km/s departure at this radius. That is what a hand-off velocity
+	// means everywhere in core/, and it is the quantity the compliance
+	// boundary measures the delivered hand-off in.
+	//
+	// Null when the coast time is undefined (a departure too near radial for
+	// the anomaly), which is a departure with no hand-off to state.
+	var exitState = coast == null ? null : O.propagateState(GM_EARTH, rMoon, vTotal, coast);
 	return {
 		ok: true, jd: jd, cardVec: cardVec, cardAsym: w,
 		u: solved.u, uMag: O.vMag(solved.u),
@@ -393,6 +441,7 @@ export function flyLunarDeparture(spec) {
 		residual: { vec: residual, mag: O.vMag(residual) },
 		rMoon: rMoon, vMoon: vMoon,
 		turnDeg: solved.turnDeg,
-		coastDays: coast == null ? null : coast / DAY
+		coastDays: coast == null ? null : coast / DAY,
+		soiExit: exitState ? { r: exitState.r, v: exitState.v, dt: coast } : null
 	};
 }

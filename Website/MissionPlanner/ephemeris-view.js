@@ -52,9 +52,22 @@
  * works out what it is still worth once Earth's well has been climbed. The
  * drawn arc uses the TOTAL, card plus that residual, so the same card on a
  * different day of the lunar month is a different trajectory — while the card
- * keeps reading what the ship has to supply. The arc starts at the MOON's own
- * position at the clock's date; the coast out to Earth's SOI is reported, not
- * drawn.
+ * keeps reading what the ship has to supply.
+ *
+ * AND AT THIS ORIGIN ALONE THE CLOCK IS NOT THE HAND-OFF'S EPOCH. The clock is
+ * the RELEASE at the Moon; the hand-off is where that release crosses Earth's
+ * SOI, a couple of days and half a million kilometres later. Both are real and
+ * both are kept: core/lunar-departure.js propagates the escape hyperbola to
+ * the crossing and returns its position, velocity and epoch, the arc starts
+ * there, and buildadoptSpec commits the crossing as the plan's departure while
+ * the release travels separately as `releaseJd` and `lunarRelease`.
+ *
+ * Committing the MOON's position instead is the tempting shortcut — it is a
+ * real, known point, and nearer to Earth than the SOI radius every other
+ * origin starts from — and it fails silently. It would ask the technology for
+ * a v∞ solved ~925,000 km from where any real departure chain hands over, and
+ * the compliance boundary cannot see the difference: it compares speed, epoch
+ * and aim, never position.
  *
  * WHERE ON THE SOI SPHERE the ship exits is `state.handoff` (see departureState
  * below), for those other origins. Authoring from scratch it is DERIVED — one
@@ -64,8 +77,8 @@
  * from a real departure chain (a platform, carriers, departure waypoints) and
  * this tab has no way to re-derive it. An adopted offset is body-relative, so
  * it survives date scrubs; changing the origin drops back to derived, as does
- * the card's reset control. A Moon origin uses neither: it starts from the
- * Moon's own position, which is known outright.
+ * the card's reset control. A Moon origin uses neither: its exit point is not
+ * chosen at all but computed — the Earth-SOI crossing its release reaches.
  *
  * THE SHIP MARKER is a slidable probe on the drawn path with Free / Target
  * modes, plus the destination-at-arrival "×" and the
@@ -287,18 +300,21 @@ export function createEphemerisView(opts) {
 		// offset (see departureState). mode "derived" recomputes it from the
 		// current heading every refresh; mode "adopted" holds the vector a
 		// pasted mission's departure chain actually produced. A MOON origin
-		// uses neither: it starts from the Moon's own position.
+		// uses neither: its exit point is computed, not chosen — the Earth-SOI
+		// crossing core/lunar-departure.js propagates the release out to.
 		handoff: { mode: "derived", offset: null },
 		marker: null,          // { f0, angle (deg), mode: "free"|"target", dvBudget, ... }
 		markerFocused: false,  // camera pivots on the marker
 		destFocused: false     // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
 	};
 
-	// WHEN THE DRAWN HELIOCENTRIC ARC STARTS — the date bar's own value at
-	// every origin, the Moon included: the clock states the hand-off's epoch,
-	// and every "t seconds along the leg" reading is measured from it. Set by
+	// WHEN THE DRAWN HELIOCENTRIC ARC STARTS — the hand-off's epoch, which every
+	// "t seconds along the leg" reading is measured from. That is the date bar's
+	// own value at every origin but the Moon, where the bar states the RELEASE
+	// and the arc starts at the Earth-SOI crossing ~2 days later. Set by
 	// departureState() on each call, so anything reading it during a refresh
-	// sees the epoch the arc was actually drawn from.
+	// sees the epoch the arc was actually drawn from — never assume it is the
+	// clock.
 	var legStart = null;
 	function legStartJd() { return legStart == null ? dateState.jd : legStart; }
 
@@ -946,12 +962,15 @@ export function createEphemerisView(opts) {
 	// A MOON ORIGIN — the card states only the SHIP's share of the v∞, on the
 	// same Earth heliocentric axes as every other origin's. The Moon's own
 	// motion is added by core/lunar-departure.js, which works out what that
-	// motion is still worth once Earth's well has been climbed, and the drawn
-	// arc uses the total. Neither derived nor adopted applies: the departure
-	// starts from the Moon's own position, which is known outright.
+	// motion is still worth once Earth's well has been climbed. Neither
+	// derived nor adopted applies: there is no offset to choose, because the
+	// release fixes an escape hyperbola outright and its Earth-SOI crossing is
+	// computed rather than constructed.
 	//
 	// Returns { body, r, v, jd, vInfVec, vInf, offset, adopted, lunar }, where
-	// `jd` is the epoch of the returned state — the clock, at every origin.
+	// `jd` is the epoch of the returned state. That is the clock at every
+	// origin but the Moon, where the clock is the RELEASE and the returned
+	// state is the crossing a couple of days later.
 	//
 	// `body` is the ESCAPE REFERENCE's state, not always the origin's: for a
 	// Moon origin the ship crosses EARTH's sphere of influence, at Earth's
@@ -964,10 +983,12 @@ export function createEphemerisView(opts) {
 		return out;
 	}
 
-	// A Moon origin: solve the card and report what the Moon adds to it. A
-	// departure this file does not support still returns a state — the Moon's
-	// own, with no v∞ — so the readouts that only need the origin body stay
-	// continuous across the boundary. Nothing derived from a FLIGHT is drawn
+	// A Moon origin: solve the card, report what the Moon adds to it, and hand
+	// back the Earth-SOI crossing that departure reaches. A departure this file
+	// does not support — or one whose coast time is undefined, leaving no
+	// crossing to state — still returns a state, the Moon's own with no v∞, so
+	// the readouts that only need the origin body stay continuous across the
+	// boundary. Nothing derived from a FLIGHT is drawn
 	// there: refresh() clears the trajectory and the departure box (noDeparture)
 	// and the card states the reason.
 	//
@@ -982,29 +1003,41 @@ export function createEphemerisView(opts) {
 		var body = Frames.bodyHelioState("Earth", jd);
 		var moon = Frames.bodyHelioState("Moon", jd);
 		var lunar = flyLunarDeparture({ jd: jd, card: state.leg.burn });
-		if (!lunar.ok) {
+		if (!lunar.ok || !lunar.soiExit) {
 			return { body: body, r: moon.r, v: moon.v, jd: jd,
 			         vInfVec: [0, 0, 0], vInf: 0, offset: [0, 0, 0],
-			         adopted: false, lunar: lunar, escapes: false };
+			         adopted: false,
+			         lunar: lunar.ok ? { ok: false, reason: "no-coast" } : lunar,
+			         escapes: false };
 		}
-		// The arc is drawn from the MOON's own position — a real, known point,
-		// and a smaller offset from Earth than the SOI radius every other
-		// origin already starts from. The velocity is the TOTAL excess, ship
-		// plus what the Moon's motion is worth by the time the ship is out.
+		// THE HAND-OFF IS THE SOI CROSSING. The departure ends where the ship
+		// leaves Earth's sphere of influence, so that crossing — its position,
+		// its velocity and its epoch — is the state this tab commits and the
+		// state the drawn coast starts from. core/lunar-departure.js fixes all
+		// three by propagating the escape hyperbola the release sets up.
 		//
-		// `vInfVec` is that same total stated as an EDGE speed, because that is
-		// what a hand-off vector means everywhere else in core/ — what the ship
-		// has where the departure phase ends, not what is left of it at
-		// infinity (core/departure-estimate.js converts the other way).
-		var edge = edgeVInf(lunar.vInf.mag, "Moon");
+		// The epoch is therefore NOT the clock at this origin, alone among the
+		// origins: the clock is the RELEASE, and the crossing is a couple of
+		// days later. Both travel with the adopted mission — the crossing as
+		// the plan's departure state, the release as `releaseJd` and
+		// `lunarRelease` (buildadoptSpec) — so neither has to be recovered
+		// from the other.
+		//
+		// Velocity is stated as the EDGE speed, which is simply what the ship
+		// has at the crossing: Earth still holds ~98 m/s of a 4.3 km/s
+		// departure out there. That is what a hand-off vector means everywhere
+		// in core/, and what the compliance boundary measures a delivered
+		// hand-off in.
+		var exit = lunar.soiExit;
+		var atExit = Frames.bodyHelioState("Earth", jd + exit.dt / DAY);
 		return {
-			body: body,
-			r: moon.r,
-			v: O.vAdd(body.v, lunar.vInf.vec),
-			jd: jd,
-			vInfVec: O.vScale(O.vUnit(lunar.vInf.vec), edge),
-			vInf: edge,
-			offset: lunar.rMoon.slice(),
+			body: atExit,
+			r: O.vAdd(atExit.r, exit.r),
+			v: O.vAdd(atExit.v, exit.v),
+			jd: jd + exit.dt / DAY,
+			vInfVec: exit.v.slice(),
+			vInf: O.vMag(exit.v),
+			offset: exit.r.slice(),
 			adopted: false,
 			lunar: lunar,
 			escapes: true
@@ -1177,7 +1210,18 @@ export function createEphemerisView(opts) {
 		var isMoon = term.isDeparture && state.origin === "Moon";
 		function cardFor(dvVec, fr) {
 			if (isMoon) {
-				var s = solveLunarCard({ jd: departureState().jd, vInfVec: dvVec, seedCard: term.burn });
+				// Lambert's answer is the velocity wanted AT the hand-off, which
+				// for a Moon origin is the SOI crossing — so the solve is asked
+				// for it THERE ("exit"), not as an asymptote. Rescaling this
+				// vector to asymptotic magnitude instead would keep its
+				// direction, and the velocity has not finished turning onto the
+				// asymptote at the SOI: ~23 m/s of aim error, which a long coast
+				// turns into most of a million kilometres.
+				//
+				// The epoch it solves at is the RELEASE — the clock — never the
+				// hand-off's own epoch two days downstream.
+				var s = solveLunarCard({ jd: dateState.jd, seedCard: term.burn,
+				                         vInfVec: dvVec, at: "exit" });
 				if (!s.ok) { return null; }
 				return { c: s.card, mag: O.vMag(s.flight.cardVec) };
 			}
@@ -1197,9 +1241,10 @@ export function createEphemerisView(opts) {
 		// Second pass: with the vector above in force the derived exit point
 		// has moved onto the new heading, so re-solve from where the ship
 		// actually leaves. Nothing is committed until after the budget check.
-		// A Moon origin skips it — the departure starts at the Moon's own
-		// position, which no card moves.
-		if (term.isDeparture && !isMoon && state.handoff.mode !== "adopted") {
+		// A Moon origin takes it too: its exit point is the SOI crossing the
+		// release flies to, so a new card moves it just as a new heading moves
+		// a derived one.
+		if (term.isDeparture && state.handoff.mode !== "adopted") {
 			var keep = { pro: term.burn.pro, rad: term.burn.rad, nrm: term.burn.nrm };
 			term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
 			var f2 = frameAt();
@@ -1667,9 +1712,10 @@ export function createEphemerisView(opts) {
 				destination: dn,
 				// The hand-off state and its epoch are handed over verbatim —
 				// adopt re-derives nothing, so what the planner was shown is
-				// exactly what the mission commits. For a Moon origin that
-				// epoch is the FLOWN SOI crossing, not the clock; the clock is
-				// the release, and travels separately as releaseJd.
+				// exactly what the mission commits. For a Moon origin all three
+				// are the Earth-SOI crossing the release flies to, so the epoch
+				// is NOT the clock; the clock is the release, and travels
+				// separately as releaseJd.
 				jd: hand.jd,
 				handoff: { r: hand.r, v: hand.v },
 				waypoints: rw.entries.map(function (e) { return { days: e.days, burn: e.burn }; }),

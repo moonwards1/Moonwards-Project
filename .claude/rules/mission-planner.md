@@ -46,7 +46,8 @@ restate its content in code comments — cite the entry and its date.
   the hyperbolic excess: the primary still has a grip at the SOI edge (928.5
   m/s for Earth), so anything working in energy terms converts first —
   `asymptoticVInf` out, `edgeVInf` back. **The drawn arc flies the asymptote;
-  the card and every readout state the edge speed.**
+  the card and every readout state the edge speed.** (A Moon origin's arc
+  starts AT the crossing and so leaves on the edge velocity — see below.)
 - **At a MOON origin the card is the technology's share alone.** It is what the
   ship had to spend energy to supply. The Moon's own motion is deliberately not
   in it, because that part is free — the ship inherits it by leaving a body
@@ -56,6 +57,15 @@ restate its content in code comments — cite the entry and its date.
   month is a different trajectory. Never add the two before showing them: the
   split is the whole point, and conflating them is the mistake this origin
   invites.
+- **A MOON origin's hand-off is the EARTH-SOI CROSSING, and its clock is the
+  RELEASE.** Alone among the origins, the tab's date is not the hand-off epoch:
+  the release fixes an escape hyperbola, `core/lunar-departure.js` propagates it
+  to Earth's SOI (`soiExit`), and that crossing — position, edge velocity, epoch
+  ~2 days later — is what the plan commits and what **Needed** reads. The
+  release travels separately as `releaseJd`/`lunarRelease`. Committing the
+  Moon's own position instead is the tempting shortcut and fails silently:
+  compliance compares speed, epoch and aim, never position. See
+  `Notes/decisions.md`, 2026-09-09.
 - **The flown flight is the clock.** `adopted-plan` emits what the departure
   technology actually DELIVERED — position, velocity and epoch — so the drawn
   coast is the ship's flight and the Coast timeline starts where the Departure

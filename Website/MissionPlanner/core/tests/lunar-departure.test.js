@@ -389,3 +389,86 @@ test("an unreachable ask is refused, never answered with a wrong card", function
 	assert.ok(!s.ok, "expected a refusal, got " + JSON.stringify(s.card));
 	assert.ok(typeof s.reason === "string" && s.reason.length > 0);
 });
+
+// ---------------------------------------------------------------------------
+// soiExit — the hand-off the departure actually reaches
+// ---------------------------------------------------------------------------
+
+test("the hand-off lands exactly on Earth's SOI, not near it", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	assert.ok(f.ok && f.soiExit, "expected a supported departure with a crossing");
+	var r = O.vMag(f.soiExit.r);
+	assert.ok(Math.abs(r - SOI_EARTH) < 1, "crossing at " + r + " m, wanted " + SOI_EARTH);
+});
+
+test("the hand-off velocity is the EDGE speed, not the asymptote", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	// Vis-viva across Earth's well: the two differ by exactly the grip Earth
+	// still has at the SOI radius, so the edge figure is the larger one.
+	var want = Math.sqrt(f.vInf.mag * f.vInf.mag + 2 * GM_EARTH / SOI_EARTH);
+	assert.ok(Math.abs(O.vMag(f.soiExit.v) - want) < 0.5,
+		"edge " + O.vMag(f.soiExit.v) + " vs vis-viva " + want);
+	assert.ok(O.vMag(f.soiExit.v) > f.vInf.mag + 50,
+		"the edge speed must exceed the asymptotic one by Earth's remaining grip");
+});
+
+test("the crossing epoch is the coast time, so the hand-off is not the release", function () {
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	assert.ok(Math.abs(f.soiExit.dt / 86400 - f.coastDays) < 1e-9);
+	assert.ok(f.coastDays > 0.5, "a lunar departure takes real time to reach the SOI");
+});
+
+test("null control: the crossing is downrange of the Moon, not at it", function () {
+	// The whole point of the hand-off is that it is somewhere else. If this
+	// ever reads ~0 the propagation has silently degenerated to the release.
+	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	var moved = O.vMag(O.vSub(f.soiExit.r, f.rMoon));
+	assert.ok(moved > 400e6, "crossing only " + (moved / 1e3) + " km from the Moon");
+});
+
+test("a stronger card reaches the SOI sooner and faster", function () {
+	var slow = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	var fast = flyLunarDeparture({ jd: JD, card: { pro: 3400, rad: 900, nrm: 300 } });
+	assert.ok(slow.ok && fast.ok);
+	assert.ok(fast.soiExit.dt < slow.soiExit.dt, "more energy should arrive earlier");
+	assert.ok(O.vMag(fast.soiExit.v) > O.vMag(slow.soiExit.v));
+});
+
+// ---------------------------------------------------------------------------
+// solveLunarCard at: "exit" — matching the velocity AT the SOI crossing
+// ---------------------------------------------------------------------------
+
+test("an exit ask is met at the crossing, not merely near it", function () {
+	var ref = flyLunarDeparture({ jd: JD, card: { pro: 2900, rad: 1000, nrm: 400 } });
+	assert.ok(ref.ok && ref.soiExit);
+	// Ask for a velocity a little off the one that card delivers.
+	var want = O.vAdd(ref.soiExit.v, [60, -40, 25]);
+	var s = solveLunarCard({ jd: JD, vInfVec: want, at: "exit",
+	                         seedCard: { pro: 2900, rad: 1000, nrm: 400 } });
+	assert.ok(s.ok, "expected a card, got " + s.reason);
+	assert.ok(O.vMag(O.vSub(s.flight.soiExit.v, want)) < 1,
+		"missed the exit ask by " + O.vMag(O.vSub(s.flight.soiExit.v, want)) + " m/s");
+});
+
+test("null control: rescaling the ask to asymptotic magnitude does NOT solve it", function () {
+	// The failure this mode exists to prevent. At the SOI the velocity has not
+	// finished turning onto the asymptote, so an edge ask converted by
+	// magnitude alone keeps the wrong DIRECTION — and the asymptote solve then
+	// answers a question nobody asked. If this ever passes under 1 m/s the two
+	// modes have collapsed into one and `at` is no longer buying anything.
+	var ref = flyLunarDeparture({ jd: JD, card: { pro: 2900, rad: 1000, nrm: 400 } });
+	var want = O.vAdd(ref.soiExit.v, [60, -40, 25]);
+	var wm = O.vMag(want);
+	var asym = Math.sqrt(wm * wm - 2 * GM_EARTH / SOI_EARTH);
+	var s = solveLunarCard({ jd: JD, vInfVec: O.vScale(want, asym / wm),
+	                         seedCard: { pro: 2900, rad: 1000, nrm: 400 } });
+	assert.ok(s.ok);
+	var miss = O.vMag(O.vSub(s.flight.soiExit.v, want));
+	assert.ok(miss > 5, "expected the rescale to miss the exit ask; it missed by " + miss);
+});
+
+test("an exit solve refuses an ask below Earth's escape at the SOI", function () {
+	var down = O.vScale(O.vUnit(moonGeoPos(JD)), 300);
+	var s = solveLunarCard({ jd: JD, vInfVec: down, at: "exit" });
+	assert.ok(!s.ok && typeof s.reason === "string");
+});

@@ -33,9 +33,11 @@
  * departure technology does not hand a ship over at the origin body's centre:
  * a departure leg flies until it exits the origin's SOI and delivers the ship
  * THERE (departure-leg.js step 4, body-departure-leg.js the same). The
- * Ephemeris tab authors that same hand-off directly — its clock IS the hand-off
- * epoch and its departure card IS the v-infinity there (ephemeris-view.js's
- * departureState) — so adopt COMMITS spec.handoff verbatim. It re-derives
+ * Ephemeris tab authors that same hand-off directly — its departure card IS the
+ * v-infinity there, and its clock IS the hand-off epoch at every origin but the
+ * Moon, where the clock is the release and the hand-off is the Earth-SOI
+ * crossing it flies to (ephemeris-view.js's departureState) — so adopt COMMITS
+ * spec.handoff verbatim. It re-derives
  * nothing across this seam, which is what makes a plan adopted here and pasted
  * back into the tab exact, whatever geometry produced the hand-off: an
  * authored heading, or a real carrier chain's delivered state adopted into

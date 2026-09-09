@@ -151,7 +151,12 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   the same state, verbatim, that the adopt commits as the mission's
   Departure→Coast boundary, so a plan adopted here and pasted back is exact.
   Where on the SOI sphere the ship exits is either derived from the heading
-  (authoring) or adopted from a pasted mission's own departure chain. How
+  (authoring) or adopted from a pasted mission's own departure chain.
+  **A MOON origin differs on both counts:** its exit point is neither derived
+  nor adopted but computed — the Earth-SOI crossing the release's escape
+  hyperbola reaches — and the date bar states the RELEASE, so the hand-off
+  epoch is ~2 days later than the clock. The release travels with the mission
+  separately, as `releaseJd` and `lunarRelease`. How
   much impulse that hand-off costs, and when the launch must happen, are read
   BACKWARDS from it by `core/departure-estimate.js` — information for the
   Moon-phase widget and the release anchor, never a change to the drawn arc.

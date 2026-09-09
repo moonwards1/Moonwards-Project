@@ -412,6 +412,9 @@ v-infinity — speed and heading — where it leaves the origin's sphere of
 influence, and the tab's clock IS that hand-off's epoch. The drawn arc starts
 there, at t = 0. `core/adopt.js` commits that state verbatim.
 
+(The clock-is-the-epoch half holds at every origin but the Moon; see
+2026-09-09 below.)
+
 Why: the adopted plan's Departure→Coast boundary already IS a hand-off state
 (`adopted-plan.departure.{r,v,jd}`). Editing that same quantity means the two
 sides never translate, so adopt commits verbatim and "Paste mission link…"
@@ -419,9 +422,11 @@ reads back verbatim — the round trip is exact by construction, for any plan,
 including one whose hand-off came from a real carrier chain rather than an
 authored heading.
 
-The Moon assist is INFORMATION only: `departure-estimate.js` reads it
-backwards from the hand-off, for the Moon widget and the release-anchor
-readout, and it never bends the drawn arc. (Folding it into the authored burn,
+At a Moon origin the assist is not information only — it is flown, and the
+hand-off is where it gets to (2026-09-09). At every other origin it IS
+information only: `departure-estimate.js` reads it backwards from the hand-off,
+for the Moon widget and the release-anchor readout, and it never bends the
+drawn arc. (Folding it into the authored burn,
 as an earlier model did, needed three separate two-pass nettings to undo,
 which disagreed by 131.56 m/s on a real plan — about 3 M km of arrival error
 over a 273-day coast.)
@@ -445,12 +450,14 @@ and older saves carrying it load fine.
 ### 2026-08-25 — Re-targeting the departure, not adopting what it delivers
 
 A adopted plan commits to a hand-off STATE — position, velocity, epoch at the
-origin's SOI edge. When the Ephemeris tab authors one from scratch, that
-position is DERIVED (body position + R_soi × heading): a geometric
-convenience, not a place any real departure chain comes out. On the shipped
-Moon→Ceres mission the chain exits 209,335 km from the point its plan assumes,
-and that offset alone — flown with the plan's own waypoint burns — throws the
-arrival 2,374,577 km off.
+origin's SOI edge. At every origin but the Moon, a plan the Ephemeris tab
+authors from scratch DERIVES that position (body position + R_soi × heading):
+a geometric convenience, not a place any real departure chain comes out. The
+offset alone — flown with the plan's own waypoint burns — throws the arrival
+off by millions of kilometres. (A Moon origin computes its crossing instead,
+2026-09-09, so its gap is the far smaller one between a two-body conic and an
+integrated flight. The Moon→Ceres figures this entry once quoted were measured
+under the superseded model and want re-measuring.)
 
 So the mission bar's button does not adopt the delivered hand-off. It
 RE-TARGETS: keep the exit point and epoch the technology actually reaches, and
@@ -890,3 +897,41 @@ rather than a physical instant, since the ship is not yet moving that slowly
 where it is placed. The alternative (collapsing the boundary to the body's
 centre) would throw away the exit point, which `state.handoff` and the
 re-target both need.
+
+### 2026-09-09 — A Moon origin's hand-off is the Earth-SOI crossing, and its clock is the release
+
+At a Moon origin the plan's departure state — `adopted-plan.departure.{r,v,jd}`,
+which is what the Ship card's **Needed** column reads — is the point where the
+release's escape hyperbola crosses **Earth's** sphere of influence: its
+position, its velocity there (the EDGE speed, not the asymptote), and its
+epoch. `core/lunar-departure.js` returns it as `soiExit`, propagating the state
+at the Moon by the coast time it already computes, so the crossing lands on
+`SOI_EARTH` exactly. The drawn arc starts there.
+
+The clock is therefore NOT the hand-off epoch at this origin, alone among the
+origins. The clock is the RELEASE; the crossing is ~2 days later. Both are
+kept: the crossing as the plan's departure, the release as `releaseJd` and
+`lunarRelease`.
+
+Why: a requirement is only meaningful attached to a position and an epoch, and
+a departure technology hands over at the SOI, not at the Moon. Committing the
+Moon's own position instead states a v∞ solved ~925,000 km from anywhere a real
+chain arrives, and the compliance boundary cannot catch it — that boundary
+compares speed, epoch and aim, never position. The symptom is a mission that
+reads "on course" against Needed while the flight's closest approach is off by
+hundreds of thousands of kilometres.
+
+Consequences, all deliberate:
+
+- **Required v∞ becomes an EDGE quantity** (+98 m/s on the shipped Moon→Mars
+  departure: 4,437.99 m/s rather than 4,339.77). `delivered` was always measured
+  at the crossing, so this is the two sides finally being in the same units —
+  they were being compared across a 10 m/s tolerance while ~98 m/s apart.
+- **Lambert's ask converts before the card solve.** `solveLunarCard` works in
+  asymptotic terms; the Ephemeris tab's Target mode now hands it an edge
+  quantity, so it scales down through `asymptoticVInf` first — and solves at the
+  release epoch, never the hand-off's.
+- **A Moon origin takes the second Target pass** like a derived exit point does:
+  its crossing moves when the card changes.
+- **Moon-origin saves made before this carry the old convention** and keep it
+  until re-authored; nothing migrates them.
