@@ -318,9 +318,7 @@ export function solveDepartureTarget(spec) {
 	var ask = O.burnComponents(d.r, bodyV, O.vSub(vInfVec, curVInf));
 	var worst = Math.max(Math.abs(ask.pro), Math.abs(ask.rad), Math.abs(ask.nrm));
 	var mA = O.vMag(curVInf), mB = O.vMag(vInfVec);
-	var turnDeg = (mA > 1e-6 && mB > 1e-6)
-		? Math.acos(Math.max(-1, Math.min(1, O.vDot(O.vUnit(curVInf), O.vUnit(vInfVec))))) * 180 / Math.PI
-		: 0;
+	var turnDeg = (mA > 1e-6 && mB > 1e-6) ? O.angleBetweenDeg(curVInf, vInfVec) : 0;
 
 	// THE ONE STANDARD: where the re-solved flight actually passes. A departure
 	// requirement is worth committing when meeting it lands the mission close

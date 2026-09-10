@@ -25,7 +25,7 @@
  *
  * - WORKSPACE IS KEYED PER MISSION. One localStorage key
  *   (mw-missionplanner-workspace, version 2) holds a { missions: { id ->
- *   { main, phase, cams } } } map; each view reads/writes only its own slot
+ *   { main, phase, cams, check } } } map; each view reads/writes only its own slot
  *   (read-modify-write, so slots survive each other). Mission CONTENT lives
  *   under a separate key that planner.js owns.
  *
@@ -355,9 +355,11 @@ export function createMissionView(opts) {
 	// never built. ------------------------------------------------------------
 	var initialMain = frames[opts.defaultMain] ? opts.defaultMain : "helio";
 	var workspace = { main: initialMain, phase: FRAME_PHASE[initialMain] || "departure", cams: {} };
+	var savedCheck = null;     // a standing Check, restored where `checked` is declared
 	(function loadWorkspace() {
 		var saved = loadWorkspaceSlot(missionId);
 		if (!saved) { return; }
+		savedCheck = saved.check || null;
 		if (saved.main && frames[saved.main]) { workspace.main = saved.main; }
 		workspace.phase = (typeof saved.phase === "string" && PHASES.indexOf(saved.phase) !== -1)
 			? saved.phase : (FRAME_PHASE[workspace.main] || workspace.phase);
@@ -379,7 +381,12 @@ export function createMissionView(opts) {
 			             target: f.cam.target.toArray(), focusBody: f.focusBody,
 			             focusChevron: f.focusChevron || null };
 		});
-		saveWorkspaceSlot(missionId, { main: workspace.main, phase: workspace.phase, cams: cams });
+		// Only the fields the views read from a standing Check are kept: Update
+		// re-solves from the current delivery, so nothing else of it is needed.
+		var check = checked ? { plan: checked.plan, vInf: checked.vInf,
+		                        vInfVec: checked.vInfVec, withinTolerance: checked.withinTolerance } : null;
+		saveWorkspaceSlot(missionId, { main: workspace.main, phase: workspace.phase, cams: cams,
+		                               check: check });
 	}
 	window.addEventListener("pagehide", saveWorkspace);
 
@@ -1454,7 +1461,21 @@ export function createMissionView(opts) {
 	// The loop closes because each pass is smaller than the last: committing
 	// moves the requirement, re-tuning towards it moves the exit point, and
 	// re-solving from the new exit point asks for less than it did before.
-	var checked = null;        // the provisional target, or null
+	//
+	// A standing Check is saved with the workspace and restored on load, so a
+	// reload never silently swaps the Needed column back to the committed plan.
+	// It is tied to the plan it was solved against (`plan`, the committed
+	// departure as a string): a saved Check whose plan no longer matches is
+	// dropped, not shown against a requirement it was never solved for.
+	function planKeyOf(stage) {
+		return stage ? JSON.stringify(stage.params.departure || null) : null;
+	}
+	var checked = (function restoreCheck(s) {   // the provisional target, or null
+		if (!s || s.plan !== planKeyOf(adoptedPlanStage()) || !isFinite(s.vInf) ||
+			!Array.isArray(s.vInfVec) || s.vInfVec.length !== 3) { return null; }
+		return { ok: true, plan: s.plan, vInf: s.vInf, vInfVec: s.vInfVec.slice(),
+		         withinTolerance: !!s.withinTolerance };
+	})(savedCheck);
 
 	function retargetSolveNow() {
 		var planStage = adoptedPlanStage();
@@ -1600,7 +1621,7 @@ export function createMissionView(opts) {
 	checkBtn.addEventListener("click", function () {
 		var sol = retargetSolveNow();
 		var dest = (adoptedPlanStage() && (adoptedPlanStage().params.arrival || {}).body) || "the destination";
-		checked = sol.ok ? sol : null;
+		checked = sol.ok ? Object.assign({ plan: planKeyOf(adoptedPlanStage()) }, sol) : null;
 		showMessage("Check — nothing written", function (wrap) {
 			solveMessage(wrap, sol, dest, false);
 		});
@@ -2509,15 +2530,22 @@ export function createMissionView(opts) {
 			currentDir: comp.delivered ? unitOf(comp.delivered.vInfVec) : null
 		});
 		shipCard.setComponents(needed, current);
-		// checked.turnDeg is the angle between the delivered v∞ and the
-		// re-solved one — the same "aim" quantity comp.rows's aim row checks,
-		// just computed by retarget.js instead of re-derived here. Magnitude
-		// alone used to gate this badge, so it could read on-course with the
-		// Needed/Current rows beside it visibly disagreeing on direction.
-		shipCard.setOnCourse(checked
-			? (!!comp.delivered && Math.abs(O.vMag(comp.delivered.vInfVec) - wantMag) <= VINF_TOL &&
-				checked.turnDeg <= AIM_TOL_DEG)
-			: (!!comp.delivered && comp.rows.every(function (r) { return r.ok; })));
+		// ON COURSE needs two things: Current matches Needed, AND the flight
+		// flown from the delivery actually reaches the destination — the same
+		// closest-approach figure and standard as the mission bar's headline
+		// chip. Matching Needed alone is not enough, because the compliance
+		// tolerances are far coarser than the pass standard: 1° of aim on a
+		// Moon→Ceres departure is ~250,000 km at Ceres against a 30,000 km bound.
+		// Against a Check target, speed and aim are measured live from the
+		// current delivery — the same two tests comp.rows applies to the plan —
+		// so the badge follows the technology as it is re-tuned towards Needed.
+		var matches = !!comp.delivered && (checked
+			? (Math.abs(O.vMag(comp.delivered.vInfVec) - wantMag) <= VINF_TOL &&
+				O.angleBetweenDeg(comp.delivered.vInfVec, wantVec) <= AIM_TOL_DEG)
+			: comp.rows.every(function (r) { return r.ok; }));
+		var flown = flightAsDelivered();
+		shipCard.setOnCourse(matches &&
+			checkPassAltitude(flown && flown.pass ? flown.pass.altitude : Infinity).ok);
 
 		// The speed section reads the flown arc, not the hand-off packet: the
 		// bar's right edge is the flight's own peak speed, so it rescales with

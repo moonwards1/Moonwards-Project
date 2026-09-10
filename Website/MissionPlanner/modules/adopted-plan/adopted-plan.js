@@ -314,8 +314,7 @@ export function computeCompliance(params, data) {
 	// magnitude row already reports any mismatch in that case.
 	var aimDeg = 0;
 	if (required.vInf > 1e-6 && delivered.vInf > 1e-6) {
-		var cosA = O.vDot(O.vUnit(reqVec), O.vUnit(delVec));
-		aimDeg = Math.acos(Math.max(-1, Math.min(1, cosA))) * 180 / Math.PI;
+		aimDeg = O.angleBetweenDeg(reqVec, delVec);
 	}
 
 	// The epoch row asks "is the delivered hand-off inside the plan's window"

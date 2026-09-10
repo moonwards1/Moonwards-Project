@@ -186,9 +186,12 @@ stage ids like "stg-2"; `legFor`/`physicsFor`-style lookups take
 `(world, stageId)`.
 
 Layout/camera state ("workspace") lives in `localStorage`
-(`mw-missionplanner-workspace`, `{ missions: { id -> { main, phase, cams } } }`,
+(`mw-missionplanner-workspace`, `{ missions: { id -> { main, phase, cams, check } } }`,
 one slot per mission, read-modify-write so slots survive each other), never in
-World — a **separate key** from mission-content persistence. Mission CONTENT
+World — a **separate key** from mission-content persistence. `check` is a
+standing Check's target, so a reload keeps the Needed column where Check put
+it; it is tied to the committed departure it was solved against and dropped on
+load if that no longer matches. Mission CONTENT
 (title + `world.serialize()`) lives under its own key
 (`mw-missionplanner-missions`), owned by `planner.js` and saved on `pagehide`
 and immediately after any structural change (a mission added or closed).

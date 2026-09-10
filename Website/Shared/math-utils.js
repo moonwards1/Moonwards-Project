@@ -315,6 +315,14 @@ export const OrbitalMath = {
 		},
 		vMag:   function (a) { return Math.hypot(a[0], a[1], a[2]); },
 		vUnit:  function (a) { var m = Math.hypot(a[0],a[1],a[2]); return m ? [a[0]/m,a[1]/m,a[2]/m] : [0,0,0]; },
+		// The angle between two vectors, in degrees (0..180). A zero-length
+		// vector has no direction, so that case reads 0 rather than NaN.
+		angleBetweenDeg: function (a, b) {
+			var m = Math.hypot(a[0],a[1],a[2]) * Math.hypot(b[0],b[1],b[2]);
+			if (!m) { return 0; }
+			var c = (a[0]*b[0] + a[1]*b[1] + a[2]*b[2]) / m;
+			return Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
+		},
 
 		// A body's true rotation-axis direction, as a unit vector in the
 		// heliocentric-ecliptic J2000 frame this codebase places bodies in (X

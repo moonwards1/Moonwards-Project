@@ -411,3 +411,17 @@ test("solve3 needs pivoting, and does it", function () {
 test("solve3 refuses a singular matrix rather than returning nonsense", function () {
 	assert.equal(O.solve3([[1, 2, 3], [2, 4, 6], [1, 1, 1]], [1, 2, 3]), null);
 });
+
+test("angleBetweenDeg: right angle, parallel, antiparallel, and zero-length", () => {
+	assert.ok(Math.abs(O.angleBetweenDeg([1, 0, 0], [0, 3, 0]) - 90) < 1e-12);
+	assert.equal(O.angleBetweenDeg([2, 0, 0], [5, 0, 0]), 0);
+	assert.ok(Math.abs(O.angleBetweenDeg([1, 0, 0], [-1, 0, 0]) - 180) < 1e-12);
+	assert.equal(O.angleBetweenDeg([0, 0, 0], [1, 0, 0]), 0, "no direction to compare");
+});
+
+test("angleBetweenDeg: resolves a small angle at a realistic v-infinity", () => {
+	// 0.35 degrees off a 6.74 km/s vector, as a Check reports it.
+	var t = 0.35 * Math.PI / 180;
+	var a = [6740, 0, 0], b = [6740 * Math.cos(t), 6740 * Math.sin(t), 0];
+	assert.ok(Math.abs(O.angleBetweenDeg(a, b) - 0.35) < 1e-9);
+});
