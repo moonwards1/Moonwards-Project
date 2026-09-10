@@ -2526,7 +2526,7 @@ export function createMissionView(opts) {
 		// hand-off radius that leaves with the plan's required v∞ (v² = v∞² +
 		// 2μ/r) — the same escape the plan is asking the technology for.
 		var leg = departureFlight();
-		if (!leg) { shipCard.setSpeed(null); return; }
+		if (!leg || !leg.handoff) { shipCard.setSpeed(null); return; }
 		var currentSpeed = speedAlong(leg.samples, (world.jd - leg.jd0) * 86400);
 		var peak = peakSpeed(leg.samples);
 		var rHandoff = O.vMag(leg.handoff.r);
