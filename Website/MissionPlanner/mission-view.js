@@ -59,6 +59,7 @@ import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-
 import { solveDepartureTarget, rebaseWaypoints } from "./core/retarget.js";
 import { deliveredFlight, signatureOf } from "./core/delivered-flight.js";
 import { checkPassAltitude, passAltitudeReason } from "./core/proximity.js";
+import { VINF_TOL, AIM_TOL_DEG } from "./modules/adopted-plan/adopted-plan.js";
 
 var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
@@ -2508,8 +2509,14 @@ export function createMissionView(opts) {
 			currentDir: comp.delivered ? unitOf(comp.delivered.vInfVec) : null
 		});
 		shipCard.setComponents(needed, current);
+		// checked.turnDeg is the angle between the delivered v∞ and the
+		// re-solved one — the same "aim" quantity comp.rows's aim row checks,
+		// just computed by retarget.js instead of re-derived here. Magnitude
+		// alone used to gate this badge, so it could read on-course with the
+		// Needed/Current rows beside it visibly disagreeing on direction.
 		shipCard.setOnCourse(checked
-			? (!!comp.delivered && Math.abs(O.vMag(comp.delivered.vInfVec) - wantMag) < 1)
+			? (!!comp.delivered && Math.abs(O.vMag(comp.delivered.vInfVec) - wantMag) <= VINF_TOL &&
+				checked.turnDeg <= AIM_TOL_DEG)
 			: (!!comp.delivered && comp.rows.every(function (r) { return r.ok; })));
 
 		// The speed section reads the flown arc, not the hand-off packet: the
