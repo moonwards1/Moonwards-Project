@@ -73,10 +73,10 @@ body {
 	.mp-bar-mission { border-left: none; padding-left: 0; }
 }
 .mp-phase {
-	padding: 6px 18px; border-radius: 8px; background: #151b2b;
+	padding: 6px 12px; border-radius: 8px; background: #151b2b;
 	border: 1px solid var(--line2); color: var(--dim); cursor: pointer;
 	font: inherit; font-size: 13.5px;
-	display: flex; align-items: center; gap: 8px;
+	display: flex; align-items: center;
 }
 .mp-phase.active { background: #22304e; border-color: #3c5788; color: var(--bright); }
 .mp-phase:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -87,7 +87,6 @@ body {
 .mp-bar-phases { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 .mp-phasegroup {
 	display: flex; align-items: center; gap: 9px; flex: none;
-	padding: 2px 10px 2px 2px; border: 1px solid var(--line2); border-radius: 10px;
 }
 .mp-cbar-metric { display: flex; flex-direction: column; align-items: center; font-size: 12.5px; color: var(--text); white-space: nowrap; }
 .mp-cbar-metric:empty { display: none; }
@@ -107,12 +106,13 @@ body {
 	padding-left: 14px; border-left: 1px solid var(--line2);
 }
 .mp-approach { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.mp-approach-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .mp-approach-chip {
+	display: flex; flex-direction: column; align-items: center; gap: 1px;
 	font-size: 14px; font-weight: 600; white-space: nowrap;
-	padding: 3px 12px; border-radius: 6px;
+	padding: 1px 10px; border-radius: 6px;
 	background: var(--panel2); color: var(--text);
 }
+.mp-approach-label { font-size: 11px; font-weight: 400; color: inherit; white-space: nowrap; }
 .mp-approach-chip.ok { background: var(--ok); color: #101613; }
 .mp-approach-chip.warn { background: var(--warn); color: #14161c; }
 
@@ -123,7 +123,7 @@ body {
 .mp-check:not(:disabled) { border-color: #3c5788; color: var(--bright); }
 .mp-update:not(:disabled) { border-color: var(--ok); color: var(--ok); }
 .mp-update:not(:disabled):hover { background: var(--ok); color: #101613; }
-.mp-report { line-height: 1.15; border-radius: 14px !important; }
+.mp-report { line-height: 1 !important; padding: 6px 12px !important; border-radius: 14px !important; }
 
 /* The mission menu. Anchored to its button; the bar itself must not clip it. */
 .mp-report-wrap { position: relative; }
@@ -140,19 +140,6 @@ body {
 	background: none; color: var(--text); cursor: pointer;
 }
 .mp-report-menu button:hover { background: #22304e; color: var(--bright); }
-
-/* A hard-fault light, not a compliance light: a stage that failed or is
-   blocked. Anything softer is the colour of the figure beside it. */
-.mp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: transparent; }
-.mp-dot.err { background: var(--err); }
-.mp-dot.blocked { background: #5a6478; }
-
-/* adopted-plan's hard states — its only home, since it has no sidebar card. */
-.mp-planstate {
-	flex: none; padding: 6px 14px; font-size: 12.5px;
-	background: #241a20; color: var(--warn); border-bottom: 1px solid #6b5226;
-}
-.mp-planstate:empty { display: none; }
 
 #mp-banner {
 	flex: none; padding: 6px 14px; font-size: 12.5px; cursor: pointer;

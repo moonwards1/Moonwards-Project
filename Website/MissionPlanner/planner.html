@@ -124,38 +124,33 @@
 			<div class="mp-phasebar">
 				<div class="mp-bar-phases">
 					<div class="mp-phasegroup">
-						<button class="mp-phase mp-phase-dep" type="button"><span class="mp-dot"></span>Departure</button>
+						<button class="mp-phase mp-phase-dep" type="button">Departure</button>
 						<span class="mp-cbar-metric mp-m-vinfout"></span>
 					</div>
 					<div class="mp-phasegroup">
-						<button class="mp-phase mp-phase-coast" type="button"><span class="mp-dot"></span>Coast</button>
+						<button class="mp-phase mp-phase-coast" type="button">Coast</button>
 						<span class="mp-cbar-metric mp-m-coastdv"></span>
 					</div>
 					<div class="mp-phasegroup">
 						<button class="mp-phase mp-phase-arr" type="button" disabled
-							title="This mission commits to no arrival body"><span class="mp-dot"></span>Arrival</button>
+							title="This mission commits to no arrival body">Arrival</button>
 						<span class="mp-cbar-metric mp-m-vinfin"></span>
 					</div>
 				</div>
 				<div class="mp-bar-spacer"></div>
 				<div class="mp-bar-mission">
 					<div class="mp-approach">
-						<span class="mp-approach-label">Closest approach</span>
-						<span class="mp-approach-chip">—</span>
+						<span class="mp-approach-chip"><span class="mp-approach-label">Closest approach</span><span class="mp-approach-value">—</span></span>
 					</div>
 					<button class="mp-btn mp-check" type="button">Check</button>
 					<button class="mp-btn mp-update" type="button">Update</button>
 					<div class="mp-report-wrap">
-						<button class="mp-btn mp-report" type="button">Mission<br>report ▾</button>
+						<button class="mp-btn mp-report" type="button">Mission<br>data ▾</button>
 						<div class="mp-report-menu"></div>
 					</div>
 				</div>
 			</div>
 
-			<!-- adopted-plan has no sidebar card, so its hard states (a
-			     diagnostic, or blocked-on-upstream) have no home of their own;
-			     they take this strip above the bar when they happen. -->
-			<div class="mp-planstate"></div>
 
 			<!-- Ephemeris date bar: the mission's one clock -->
 			<div class="mp-datebar">

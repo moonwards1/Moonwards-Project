@@ -104,7 +104,6 @@ var FLOAT_ZOOM = 0.5;
 // terminal role) rendersIn token, and resolveFrameId() below aliases it to the
 // real frame id wherever rendersIn is consulted.
 var PHASES = ["departure", "coast", "arrival"];
-var PHASE_DOT_RANK = { err: 0, blocked: 1, warn: 2, ok: 3 };   // lower = worse
 
 // The mission's departure-origin body: read from its adopted-plan stage's
 // `origin` param — "Earth" for any mission without a adopted-plan stage,
@@ -141,12 +140,6 @@ function missionArrivalBody(world) {
 		if (typeof arr.body === "string" && systems.has(arr.body)) { return arr.body; }
 	}
 	return null;
-}
-
-function dotClassFor(res) {
-	return res.status === "ok"
-		? (res.warnings.length ? "warn" : "ok")
-		: (res.status === "diagnostic" ? "err" : "blocked");
 }
 
 // =======================================================================
@@ -246,7 +239,6 @@ export function createMissionView(opts) {
 	var floatsEl = q(".mp-floats");
 	var panelEl = q(".mp-panel");
 	var mainEl = q(".mp-main");
-	var planStateEl = q(".mp-planstate");
 	var messagesEl = q(".mp-messages");
 	var metricEls = {
 		vInfOut: q(".mp-m-vinfout"),
@@ -259,6 +251,7 @@ export function createMissionView(opts) {
 	metricEls.coastDv.dataset.marker = "mp-m-coastdv";
 	metricEls.vInfIn.dataset.marker = "mp-m-vinfin";
 	var approachChipEl = q(".mp-approach-chip");
+	var approachValueEl = q(".mp-approach-value");
 	var checkBtn = q(".mp-check");
 	var updateBtn = q(".mp-update");
 	var reportWrapEl = q(".mp-report-wrap");
@@ -292,12 +285,6 @@ export function createMissionView(opts) {
 		coast: q(".mp-phase-coast"),
 		arrival: q(".mp-phase-arr")
 	};
-	var phaseDotEls = {
-		departure: phaseBtns.departure.querySelector(".mp-dot"),
-		coast: phaseBtns.coast.querySelector(".mp-dot"),
-		arrival: phaseBtns.arrival.querySelector(".mp-dot")
-	};
-
 	var engine = createEngine(world, registry);
 
 	// ---- departure frame: this mission's own origin body picks which frame
@@ -1447,6 +1434,21 @@ export function createMissionView(opts) {
 		wrap.appendChild(p);
 		return p;
 	}
+	// adopted-plan has no sidebar card, so its hard states (a diagnostic, or
+	// blocked-on-upstream) have no home of their own; they take the message
+	// area when they happen, marked so a later Check/Update/report can tell
+	// them apart from its own standing output and safely replace them.
+	function showPlanState(note) {
+		var cur = messagesEl.firstElementChild;
+		if (!note) {
+			if (cur && cur.dataset.planstate) { messagesEl.innerHTML = ""; }
+			return;
+		}
+		showMessage(null, function (wrap) {
+			wrap.dataset.planstate = "1";
+			msgPara(wrap, '<span class="warn">' + note + "</span>");
+		});
+	}
 
 	// ---- Check and Update --------------------------------------------------
 	// CHECK reads. It re-solves the departure requirement at the point the
@@ -1815,14 +1817,14 @@ export function createMissionView(opts) {
 		for (var i = 0; i < results.length; i++) {
 			if (results[i].moduleId === "adopted-plan") { planRes = results[i]; break; }
 		}
-		planStateEl.textContent = "";
+		showPlanState("");
 		function blankBar(note) {
-			planStateEl.textContent = note || "";
+			showPlanState(note || "");
 			setMetric(metricEls.vInfOut, "v∞ out", "—", null, null);
 			setMetric(metricEls.coastDv, "Δv", "—", null, null);
 			setMetric(metricEls.vInfIn, "v∞ in", "—", null, null);
 			approachChipEl.className = "mp-approach-chip";
-			approachChipEl.textContent = "—";
+			approachValueEl.textContent = "—";
 			checkBtn.disabled = true;
 			updateBtn.disabled = true;
 		}
@@ -1883,7 +1885,7 @@ export function createMissionView(opts) {
 		var alt = f.pass ? f.pass.altitude : Infinity;
 		var passOk = checkPassAltitude(alt).ok;
 		approachChipEl.className = "mp-approach-chip " + (passOk ? "ok" : "warn");
-		approachChipEl.textContent = cbarKm(alt);
+		approachValueEl.textContent = cbarKm(alt);
 		approachChipEl.title = destName
 			? passAltitudeReason(checkPassAltitude(alt), destName)
 			: "This mission commits to no destination.";
@@ -1906,27 +1908,6 @@ export function createMissionView(opts) {
 					"— see the Check message for what to build up."
 				: "Press Check first — Update commits what it finds.");
 	}
-	// Phase-button dots: a HARD-FAULT LIGHT, showing the worst status among a
-	// phase's stages only when that status is err or blocked — a stage that
-	// failed to compute, or one waiting on an upstream failure. Compliance is
-	// deliberately NOT a dot: it is the colour of the figure beside the button,
-	// where the number it grades can be read at the same time. A phase with
-	// nothing wrong shows no dot at all.
-	function renderPhaseDots(results) {
-		var worst = {};
-		results.forEach(function (res) {
-			var stage = world.getStage(res.stageId);
-			var phase = stage && stagePhaseOf(stage);
-			if (!phase) { return; }
-			var cls = dotClassFor(res);
-			if (cls !== "err" && cls !== "blocked") { return; }
-			if (!worst[phase] || PHASE_DOT_RANK[cls] < PHASE_DOT_RANK[worst[phase]]) { worst[phase] = cls; }
-		});
-		PHASES.forEach(function (p) {
-			phaseDotEls[p].className = "mp-dot" + (worst[p] ? " " + worst[p] : "");
-		});
-	}
-
 	// The readout's "active" event is the latest one at or before the clock
 	// (the one whose date the mission is currently living in); before the
 	// first event it falls back to that first (upcoming) one so the readout
@@ -2590,7 +2571,6 @@ export function createMissionView(opts) {
 			updateCard(res);
 		});
 		renderComplianceBar(results);
-		renderPhaseDots(results);
 		renderEventsBar(results);
 		updateShipCard();
 		updateDepartureInfo();
