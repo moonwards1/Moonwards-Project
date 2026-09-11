@@ -28,6 +28,22 @@
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 function pad2(n) { return String(n).padStart(2, "0"); }
 
+// Even tick segments across [start, end], labeled ONLY at the two ends of the
+// track — the first segment with `start`, the last with `end` — so a narrow
+// timeline doesn't try to cram a date/time stamp into every interior tick.
+// The interior ticks stay as plain unlabeled dividers (tickOnly).
+function buildTickSegments(start, end, ticks, formatter) {
+	var span = end - start;
+	var segments = [];
+	for (var i = 0; i < ticks; i++) {
+		var seg = { frac0: i / ticks, frac1: (i + 1) / ticks, tickOnly: true };
+		if (i === 0) { seg.label = formatter(start); }
+		else if (i === ticks - 1) { seg.label = formatter(end); }
+		segments.push(seg);
+	}
+	return segments;
+}
+
 // "T+" mission-elapsed-time readout for the playhead label: days elapsed since
 // `start`, split into a "167 d" line and a separate elapsed HH:MM line. The
 // time line is ELAPSED time within the current day, not calendar wall-clock, so
@@ -219,14 +235,7 @@ export function coastSliderState(opts) {
 	if (!(isFinite(start) && isFinite(end) && end > start)) {
 		return { empty: true };
 	}
-	var segments = [];
-	for (var i = 0; i < ticks; i++) {
-		var f0 = i / ticks;
-		segments.push({
-			frac0: f0, frac1: (i + 1) / ticks, tickOnly: true,
-			label: shortDate(start + f0 * (end - start))
-		});
-	}
+	var segments = buildTickSegments(start, end, ticks, shortDate);
 	var pinnedAt = jd < start ? "start" : (jd > end ? "end" : null);
 	var playheadFrac = pinnedAt === "start" ? 0 : (pinnedAt === "end" ? 1 : (jd - start) / (end - start));
 	// The readout always shows the true clock time, even when the handle itself
@@ -305,14 +314,7 @@ export function departureSliderState(opts) {
 	if (!(isFinite(start) && isFinite(end) && end > start)) { return { empty: true }; }
 	var span = end - start;
 
-	var segments = [];
-	for (var i = 0; i < ticks; i++) {
-		var f0 = i / ticks;
-		segments.push({
-			frac0: f0, frac1: (i + 1) / ticks, tickOnly: true,
-			label: stamp(start + f0 * span)
-		});
-	}
+	var segments = buildTickSegments(start, end, ticks, stamp);
 
 	// Event marks (release, SOI crossings, burns) at their real fractions —
 	// interior only; the launch and on-course ends are the edges themselves.
@@ -412,14 +414,7 @@ export function arrivalSliderState(opts) {
 	if (!(isFinite(start) && isFinite(end) && end > start)) { return { empty: true }; }
 	var span = end - start;
 
-	var segments = [];
-	for (var i = 0; i < ticks; i++) {
-		var f0 = i / ticks;
-		segments.push({
-			frac0: f0, frac1: (i + 1) / ticks, tickOnly: true,
-			label: stamp(start + f0 * span)
-		});
-	}
+	var segments = buildTickSegments(start, end, ticks, stamp);
 
 	var marks = [];
 	if (isFinite(ca)) {

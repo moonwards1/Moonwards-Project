@@ -89,11 +89,11 @@ test("coastSliderState: default tick count is 5, evenly spaced, covering the ful
 	});
 });
 
-test("coastSliderState: honors a custom tick count and labels each tick's start jd", () => {
+test("coastSliderState: honors a custom tick count, labeling only the first and last segment", () => {
 	var s = coastSliderState({ start: 0, end: 10, jd: 0, ticks: 2, shortDate });
 	assert.equal(s.segments.length, 2);
 	assert.equal(s.segments[0].label, shortDate(0));
-	assert.equal(s.segments[1].label, shortDate(5));
+	assert.equal(s.segments[1].label, shortDate(10));
 });
 
 // ---- B3: the linear-time Departure slider ---------------------------------
@@ -114,12 +114,16 @@ test("departureSliderState: time is LINEAR — the playhead fraction is (jd-star
 	assert.equal(departureSliderState({ start: 0, end: 12, jd: 6, stamp }).playheadFrac, 0.5);
 });
 
-test("departureSliderState: even time ticks give the linear scale", () => {
+test("departureSliderState: even time ticks give the linear scale, labeled only at the ends", () => {
 	var s = departureSliderState({ start: 0, end: 10, jd: 0, ticks: 5, stamp });
 	assert.equal(s.segments.length, 5);
 	assert.equal(s.segments[0].frac0, 0);
 	assert.equal(s.segments[4].frac1, 1);
-	assert.equal(s.segments[1].label, stamp(2));   // tick at 1/5 of the span
+	assert.equal(s.segments[0].label, stamp(0));
+	assert.equal(s.segments[4].label, stamp(10));
+	assert.equal(s.segments[1].label, undefined);
+	assert.equal(s.segments[2].label, undefined);
+	assert.equal(s.segments[3].label, undefined);
 });
 
 test("departureSliderState: interior event marks sit at their true time fractions", () => {
@@ -249,10 +253,13 @@ test("arrivalSliderState: BOTH edges move with the encounter, and the marks move
 	assert.ok(Math.abs(wide.marks[0].frac - 5 / 6) < 1e-12);
 });
 
-test("arrivalSliderState: even time ticks across the window", () => {
+test("arrivalSliderState: even time ticks across the window, labeled only at the ends", () => {
 	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, ticks: 4, stamp });
 	assert.equal(s.segments.length, 4);
 	assert.equal(s.segments[0].frac0, 0);
 	assert.equal(s.segments[3].frac1, 1);
-	assert.equal(s.segments[1].label, stamp(98));   // 1/4 of a 4-day window past 97
+	assert.equal(s.segments[0].label, stamp(AW.start));
+	assert.equal(s.segments[3].label, stamp(AW.end));
+	assert.equal(s.segments[1].label, undefined);
+	assert.equal(s.segments[2].label, undefined);
 });

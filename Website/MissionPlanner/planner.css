@@ -58,19 +58,17 @@ body {
 .mp-mission { display: none; flex-direction: column; flex: 1; min-width: 0; }
 .mp-mission.on { display: flex; }
 
-/* ---------- phase bar + plan-compliance readout ---------- */
-.mp-phasebar {
-	display: flex; align-items: center; gap: 10px; flex: none; flex-wrap: wrap;
-	row-gap: 8px;
-	padding: 8px 14px; background: #0f1322; border-bottom: 1px solid var(--line);
+/* ---------- mission header: phase/timeline column + mission/messages column,
+   side by side, full height, one vertical rule between them ---------- */
+.mp-headerbar {
+	display: flex; align-items: stretch; flex: none;
+	background: #0f1322; border-bottom: 1px solid var(--line);
 }
-/* Wrapped onto its own line, the divider between the halves is the wrap
-   itself — the left rule would then read as a stray mark. The breakpoint sits
-   a little above where the bar actually wraps (~960px for the widest figures),
-   so the rule is gone before the wrap rather than lingering after it. */
-.mp-phasebar > .mp-bar-mission:not(:first-child) { margin-left: auto; }
-@media (max-width: 1000px) {
-	.mp-bar-mission { border-left: none; padding-left: 0; }
+.mp-headercol { display: flex; flex-direction: column; min-width: 0; }
+.mp-headercol-phase { flex: 0 0 480px; width: 480px; }
+.mp-headercol-mission {
+	flex: 1 1 auto; min-width: 0;
+	border-left: 1px solid var(--line2);
 }
 .mp-phase {
 	padding: 6px 12px; border-radius: 8px; background: #151b2b;
@@ -84,7 +82,10 @@ body {
 /* Each phase's group: its selector button and the one figure that matters in
    that phase, side by side. The groups never break internally — a button
    stranded from its own number would be worse than a wrap. */
-.mp-bar-phases { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.mp-bar-phases {
+	display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex: none;
+	padding: 8px 14px; row-gap: 8px;
+}
 .mp-phasegroup {
 	display: flex; align-items: center; gap: 9px; flex: none;
 }
@@ -95,15 +96,12 @@ body {
 .mp-cbar-metric.ok .mp-cbar-value { color: var(--ok); }
 .mp-cbar-metric.warn .mp-cbar-value { color: var(--warn); }
 
-/* The squeeze budget. This is the ONLY thing between the two halves, so it
-   absorbs every spare pixel first and collapses to nothing before the bar is
-   forced to wrap. */
-.mp-bar-spacer { flex: 1 1 0; min-width: 0; }
-
-/* The mission's own half: the headline number and the controls that move it. */
+/* The mission's own half: the headline number and the controls that move it,
+   pushed against the dividing rule on the right. */
 .mp-bar-mission {
-	display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
-	padding-left: 14px; border-left: 1px solid var(--line2);
+	display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+	flex-wrap: wrap; row-gap: 8px; flex: none;
+	padding: 8px 14px;
 }
 .mp-approach { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .mp-approach-chip {
@@ -164,25 +162,15 @@ body {
 .mp-slider-end { font-size: 11px; color: var(--dim); min-width: 64px; text-align: center; }
 
 /* ---------- flight timeline + message area ---------- */
-/* Timeline left, messages right. Both are flex-basis floors rather than a
-   fixed split: the timeline is the scrub control and gets whatever is spare,
-   the message area keeps enough width to read a sentence, and below their
-   combined floor the messages wrap underneath instead of crushing the track. */
-/* Tall enough that a Check or Update report fits without scrolling — the
-   timeline alone is shorter than that, and messages that have to be scrolled
-   to be read mostly go unread. */
-.mp-timelinerow {
-	flex: none; display: flex; flex-wrap: wrap; align-items: stretch;
-	min-height: 104px;
-	background: #0e1220; border-bottom: 1px solid var(--line);
-}
-/* The timeline takes the lion's share of any slack — it is the scrub control,
-   and its resolution is its usefulness. The message area grows slowly from a
-   floor wide enough to read a sentence at. */
-.mp-timelines { flex: 3 1 460px; min-width: 0; }
+/* Timeline below the phase buttons, in the fixed-width left column; messages
+   below the mission bar, in the flexible right column — the same height
+   (mp-headercol stretches both columns to the taller of the two). Tall enough
+   that a Check or Update report fits without scrolling — messages that have
+   to be scrolled to be read mostly go unread. */
+.mp-timelines { flex: 1 1 auto; min-height: 96px; background: #0e1220; }
 .mp-messages {
-	flex: 1 1 320px; min-width: 0; max-height: 148px; overflow-y: auto;
-	padding: 8px 14px; border-left: 1px solid var(--line);
+	flex: 1 1 auto; min-height: 96px; max-height: 220px; overflow-y: auto;
+	padding: 8px 14px; border-top: 1px solid var(--line);
 	font-size: 12px; line-height: 1.5; color: var(--dim);
 }
 .mp-messages:empty::before {
