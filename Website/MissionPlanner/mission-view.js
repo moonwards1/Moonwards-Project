@@ -254,8 +254,6 @@ export function createMissionView(opts) {
 	var approachValueEl = q(".mp-approach-value");
 	var checkBtn = q(".mp-check");
 	var updateBtn = q(".mp-update");
-	var reportWrapEl = q(".mp-report-wrap");
-	var reportMenuEl = q(".mp-report-menu");
 	var reportPopupEl = q(".mp-report-popup");
 
 	// Straddling burn-readout boxes (Shared/sim/readout-panes.js) — the same
@@ -1625,6 +1623,7 @@ export function createMissionView(opts) {
 		var sol = retargetSolveNow();
 		var dest = (adoptedPlanStage() && (adoptedPlanStage().params.arrival || {}).body) || "the destination";
 		checked = sol.ok ? Object.assign({ plan: planKeyOf(adoptedPlanStage()) }, sol) : null;
+		nowSnapshot = snapshotForReport();   // the report's "now" row's own refresh point
 		showMessage("Check — nothing written", function (wrap) {
 			solveMessage(wrap, sol, dest, false);
 		});
@@ -1640,14 +1639,17 @@ export function createMissionView(opts) {
 		var dest = (planStage.params.arrival || {}).body || "the destination";
 		var applied = sol.ok && sol.withinTolerance;
 		if (applied) {
+			// The row "now" was showing (whatever Check, import, or the initial
+			// capture last left it at) becomes a permanent "Update N" line —
+			// literally that value, not a fresh read, so the row states what the
+			// user was looking at when they committed rather than a number that
+			// changes out from under the click.
+			history.push(nowSnapshot || snapshotForReport());
 			applyRetarget(planStage.id, sol);   // this recomputes and redraws
-			// Both recorded AFTER the retarget, so the row (and the set behind its
-			// Copy Mission button) are the plan as committed, not the one it
-			// replaced — and so they stay in lockstep, one push each per Update.
-			history.push(snapshotForReport());
 			planHistory = recordUpdate(planHistory, world.serialize());
 			if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
 			checked = null;
+			nowSnapshot = snapshotForReport();   // a fresh "now", the just-committed state
 		}
 		showMessage(applied ? "Update — the plan has changed" : "Update — nothing written",
 			function (wrap) { solveMessage(wrap, sol, dest, applied); });
@@ -1660,6 +1662,16 @@ export function createMissionView(opts) {
 	// remembered impression. Transient — it belongs to this session, not to the
 	// mission, so it is neither saved nor carried in a mission link.
 	var history = [];
+
+	// The report's "now" row: the mission's CURRENT figures, but not a live
+	// read — a checkpoint, refreshed only at Check (checkBtn, below) or by an
+	// Update starting a fresh one (updateBtn, below), plus one lazy initial
+	// capture the first time a flight exists at all (so "now" is never blank
+	// on a freshly created or freshly imported mission; a link that already
+	// carries a hand-off gets a populated line immediately, with no Check
+	// needed first). Deliberately not tied to every recompute — a waypoint
+	// drag mid-edit shouldn't make the row flicker.
+	var nowSnapshot = null;
 
 	// Departure's own Δv split: FUEL is what the departure leg's own waypoint
 	// burns cost (the user's own impulses); TECH is what a carrier platform's
@@ -1739,11 +1751,14 @@ export function createMissionView(opts) {
 			cbarKms(m.vInfIn), cbarKms(m.arrFuel), cbarKms(m.arrTech), cbarKms(arrTotal)];
 	}
 
+	// Index 4 (Coast's own Δv) and index 5 (Arrival's v∞ in) are where a new
+	// section starts in reportCells' output and in the two header rows below —
+	// where the vertical section rule (planner.css's mp-report-sep) goes.
+	var REPORT_SEP_AT = { 4: true, 5: true };
+
 	function renderReport() {
 		var f = flightAsDelivered();
-		var planStage = adoptedPlanStage();
-		var dest = (planStage && (planStage.params.arrival || {}).body) || "—";
-		showReport("Mission report — " + dest, function (wrap) {
+		showReport(function (wrap) {
 			if (!f) {
 				msgPara(wrap, "No departure technology is delivering a hand-off yet, so " +
 					"there is no flight to report on.");
@@ -1751,50 +1766,56 @@ export function createMissionView(opts) {
 				return;
 			}
 
-			// One row per plan-history entry (core/revisions.js's entriesOf: the
-			// original adopt, then each committed Update, in lockstep with
-			// `history` — both are appended together in updateBtn's handler
-			// below), plus a live "now" row. Each row carries its OWN serialized
-			// World for the Copy Mission button — a click spins that exact state
-			// into a new tab (planner.js's copyMissionRow) — truncated to the
-			// history a tab seeded from it should itself report against.
-			var sets = entriesOf(planHistory);
-			var rows = sets.map(function (set, i) {
-				return {
-					label: i === 0 ? "original" : "Update " + i,
-					world: set.world,
-					historyForCopy: { original: planHistory.original, steps: planHistory.steps.slice(0, i) },
-					metrics: i === 0 ? null : history[i - 1],
-					live: false
-				};
+			// One row per committed Update (`history`, pushed in updateBtn's
+			// handler above), plus "now" — the mission's current checkpoint
+			// (nowSnapshot: refreshed by Check or a fresh Update, populated once
+			// on the mission's first working flight so it is never the empty
+			// row). No row for "original": with nothing yet committed, "now" IS
+			// the mission as first set up.
+			var rows = history.map(function (snap, i) {
+				return { label: "Update " + (i + 1), metrics: snap, live: false };
 			});
-			rows.push({
-				label: "now", world: world.serialize(), historyForCopy: planHistory,
-				metrics: snapshotForReport(), live: true
-			});
+			rows.push({ label: "now", metrics: nowSnapshot, live: true });
 
 			var t = document.createElement("table");
 			t.className = "mp-report-table";
-			t.innerHTML =
-				"<tr><th></th><th colspan='4'>Departure</th><th>Coast</th><th colspan='4'>Arrival</th></tr>" +
-				"<tr><th>copy mission</th>" +
-				"<th>v∞ out</th><th>fuel Δv</th><th>tech Δv</th><th>total</th>" +
-				"<th>Δv</th>" +
-				"<th>v∞ in</th><th>fuel Δv</th><th>tech Δv</th><th>total</th></tr>";
+			var head1 = document.createElement("tr");
+			var copyTh = document.createElement("th");
+			copyTh.rowSpan = 2;
+			// The table's own corner button, where "Copy mission link" used to
+			// live as a dropdown item (shareMission, unchanged) — there is no
+			// per-row copy; a row states what an Update bought, not a mission of
+			// its own to spin off.
+			var copyBtn = document.createElement("button");
+			copyBtn.type = "button"; copyBtn.className = "mp-btn mp-report-copy";
+			copyBtn.textContent = "Copy Mission";
+			copyBtn.title = "Copy a link to this exact mission to the clipboard.";
+			copyBtn.addEventListener("click", function (ev) { ev.stopPropagation(); shareMission(); });
+			copyTh.appendChild(copyBtn);
+			head1.appendChild(copyTh);
+			[["Departure", 4], ["Coast", 1], ["Arrival", 4]].forEach(function (g, i) {
+				var th = document.createElement("th"); th.colSpan = g[1]; th.textContent = g[0];
+				if (i > 0) { th.className = "mp-report-sep"; }   // Coast, Arrival — not Departure
+				head1.appendChild(th);
+			});
+			t.appendChild(head1);
+			var head2 = document.createElement("tr");
+			["v∞ out", "fuel Δv", "tech Δv", "total", "Δv", "v∞ in", "fuel Δv", "tech Δv", "total"]
+				.forEach(function (label, i) {
+					var th = document.createElement("th"); th.textContent = label;
+					if (REPORT_SEP_AT[i]) { th.className = "mp-report-sep"; }
+					head2.appendChild(th);
+				});
+			t.appendChild(head2);
 			rows.forEach(function (r) {
 				var tr = document.createElement("tr");
 				if (r.live) { tr.className = "now"; }
-				var copyTd = document.createElement("td");
-				var btn = document.createElement("button");
-				btn.type = "button"; btn.className = "mp-btn mp-report-copy"; btn.textContent = r.label;
-				btn.title = "Copy the mission as it stood at \"" + r.label + "\" into a new tab.";
-				btn.addEventListener("click", function () {
-					if (opts.onCopyMission) { opts.onCopyMission(r.world, r.historyForCopy); }
-				});
-				copyTd.appendChild(btn);
-				tr.appendChild(copyTd);
-				reportCells(r.metrics).forEach(function (text) {
-					var td = document.createElement("td"); td.textContent = text; tr.appendChild(td);
+				var labelTd = document.createElement("td"); labelTd.textContent = r.label;
+				tr.appendChild(labelTd);
+				reportCells(r.metrics).forEach(function (text, i) {
+					var td = document.createElement("td"); td.textContent = text;
+					if (REPORT_SEP_AT[i]) { td.className = "mp-report-sep"; }
+					tr.appendChild(td);
 				});
 				t.appendChild(tr);
 			});
@@ -1862,46 +1883,28 @@ export function createMissionView(opts) {
 				"live edits the plan has not been moved onto yet.");
 	}
 
-	// The mission menu: the report, and the bar's other mission-level actions.
-	function closeReportMenu() { reportWrapEl.classList.remove("open"); }
-	(function buildReportMenu() {
-		[["Show mission report", renderReport],
-		 ["Copy mission link", function () { shareMission(); }]].forEach(function (item) {
-			var b = document.createElement("button");
-			b.type = "button";
-			b.textContent = item[0];
-			b.addEventListener("click", function () { closeReportMenu(); item[1](); });
-			reportMenuEl.appendChild(b);
-		});
-	})();
+	// "Mission data" opens the report POPUP directly — no dropdown menu. A
+	// second click (or any click outside the popup and the button itself)
+	// closes it; excluding the button from the outside-click check is what
+	// stops the very click that opens it (bubbling to document after
+	// showReport has already added "open") from closing it again in the same
+	// turn.
+	function closeReportPopup() { reportPopupEl.classList.remove("open"); }
 	q(".mp-report").addEventListener("click", function (ev) {
 		ev.stopPropagation();
-		reportWrapEl.classList.toggle("open");
+		if (reportPopupEl.classList.contains("open")) { closeReportPopup(); }
+		else { renderReport(); }
 	});
-	document.addEventListener("click", closeReportMenu);
-
-	// The report POPUP (planner.css's .mp-report-popup): floats over the pane
-	// rather than sharing .mp-messages, so it can run taller than the bar
-	// without stretching it. Closes on any click outside itself and outside
-	// the button/menu that opens it — excluding reportWrapEl is what stops the
-	// very click that opens it (bubbling to document after showReport has
-	// already added "open") from closing it again in the same turn.
-	function closeReportPopup() { reportPopupEl.classList.remove("open"); }
 	document.addEventListener("click", function (ev) {
 		if (reportPopupEl.classList.contains("open") &&
-			!reportPopupEl.contains(ev.target) && !reportWrapEl.contains(ev.target)) {
+			!reportPopupEl.contains(ev.target) && !q(".mp-report").contains(ev.target)) {
 			closeReportPopup();
 		}
 	});
-	function showReport(head, buildBody) {
+	function showReport(buildBody) {
 		reportPopupEl.innerHTML = "";
 		var wrap = document.createElement("div");
 		wrap.className = "mp-msg";
-		if (head) {
-			var h = document.createElement("div");
-			h.className = "mp-msg-head"; h.textContent = head;
-			wrap.appendChild(h);
-		}
 		buildBody(wrap);
 		reportPopupEl.appendChild(wrap);
 		reportPopupEl.classList.add("open");
@@ -2666,6 +2669,12 @@ export function createMissionView(opts) {
 			drawStage(res);
 			updateCard(res);
 		});
+		// The report's "now" row's one-time initial capture (see nowSnapshot's
+		// own comment, above) — the first time this mission has a flight to
+		// measure at all.
+		if (nowSnapshot === null && flightAsDelivered()) {
+			nowSnapshot = snapshotForReport();
+		}
 		renderComplianceBar(results);
 		renderEventsBar(results);
 		updateShipCard();
