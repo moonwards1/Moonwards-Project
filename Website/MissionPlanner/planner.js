@@ -233,8 +233,24 @@ function makeMissionView(world, missionId, defaultMainId, plan) {
 		template: missionTemplate,
 		missionId: missionId,
 		defaultMain: defaultMainId || defaultWorkspaceMain,
-		getTitle: function () { return titleFor(missionId); }
+		getTitle: function () { return titleFor(missionId); },
+		// The mission report's per-row "Copy Mission" button: `worldData` is
+		// that row's own serialized World (the original adopt, one of the
+		// recorded updates, or the live "now"), `historyForCopy` the plan
+		// history the new tab should carry — see copyMissionRow below.
+		onCopyMission: function (worldData, historyForCopy) {
+			copyMissionRow(worldData, historyForCopy, missionId);
+		}
 	});
+}
+
+// One row of the mission report, spun into its own tab — the same clone
+// mechanism as the "+" tab (duplicateActiveMission), but seeded from a
+// specific row's world/history rather than always the live active tab.
+function copyMissionRow(worldData, historyForCopy, sourceMissionId) {
+	var res = deserializeWorld(worldData);
+	if (!res.ok) { return; }
+	spawnMissionTab(res.world, nextCopyTitle(titleFor(sourceMissionId)), null, historyForCopy);
 }
 
 // Register a freshly built World as a new mission tab and switch to it — the

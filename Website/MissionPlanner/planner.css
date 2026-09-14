@@ -69,6 +69,7 @@ body {
 .mp-headercol-mission {
 	flex: 1 1 auto; min-width: 0;
 	border-left: 1px solid var(--line2);
+	position: relative;   /* anchors .mp-report-popup, below */
 }
 .mp-phase {
 	padding: 6px 12px; border-radius: 8px; background: #151b2b;
@@ -193,6 +194,31 @@ body {
    column is dimmed — it is the reference, not the live figure. */
 .mp-msg h4 { margin: 10px 0 4px; font-size: 12px; color: var(--bright); font-weight: 600; }
 .mp-msg table.mp-originals td.was { color: var(--dim); }
+
+/* The mission report POPUP: floats over the rest of the pane rather than
+   pushing .mp-headerbar taller, so mp-headerbar's own height stays whatever
+   Check/Update need. Same width as .mp-headercol-mission (its positioning
+   parent), fixed height with its own scrollbar — the table can run wider
+   than 150px tall once a mission has a few updates. */
+.mp-report-popup {
+	display: none;
+	position: absolute; left: 0; right: 0; top: 100%; z-index: 45;
+	height: 150px; overflow-y: auto;
+	background: #151b2b; border: 1px solid var(--line2); border-top: none;
+	box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+	padding: 8px 14px;
+}
+.mp-report-popup.open { display: block; }
+.mp-report-table { border-collapse: collapse; width: 100%; font-size: 11px; }
+.mp-report-table th, .mp-report-table td {
+	text-align: right; padding: 2px 8px 2px 0; white-space: nowrap;
+}
+.mp-report-table th { color: var(--dim); font-weight: 400; border-bottom: 1px solid var(--line2); }
+.mp-report-table th:first-child, .mp-report-table td:first-child { text-align: left; color: var(--dim); }
+.mp-report-table tr.now td { color: var(--text); }
+.mp-report-table .mp-report-copy {
+	font-size: 11px; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}
 
 
 /* ---------- phase sliders (ui/phase-slider.js) ---------- */

@@ -186,7 +186,12 @@ export function makeCarrier(spec, opts) {
 
 		draw: function (view, snap) {
 			drawPlatform(spec, view, snap, RELEASE, cache, releaseEpochFor(snap.world), readoutCache, hostCache);
-		}
+		},
+
+		// The straddling readout box's own data (carrierReadout, above) — the
+		// hardware's isolated impulse Δv, for anything outside this stage that
+		// wants its own contribution (the mission report's departure tech Δv).
+		readoutFor: function (world, stageId) { return readoutCache.get(world, stageId); }
 	};
 	if (!isBaseOnly && rides === "*") { desc.inputOptional = true; }
 	return desc;
@@ -310,7 +315,12 @@ export function makeTerminal(spec, opts) {
 			var cached = cache.get(snap.world, snap.stageId);
 			var pinJd = (cached && cached.ok) ? cached.jd : null;
 			drawPlatform(spec, view, snap, CATCH, cache, pinJd, readoutCache, hostCache);
-		}
+		},
+
+		// The straddling readout box's own data (captureReadout, above) — the
+		// hardware's own trim figure, for anything outside this stage that wants
+		// it (the mission report's arrival tech Δv).
+		readoutFor: function (world, stageId) { return readoutCache.get(world, stageId); }
 	};
 }
 

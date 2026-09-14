@@ -256,6 +256,7 @@ export function createMissionView(opts) {
 	var updateBtn = q(".mp-update");
 	var reportWrapEl = q(".mp-report-wrap");
 	var reportMenuEl = q(".mp-report-menu");
+	var reportPopupEl = q(".mp-report-popup");
 
 	// Straddling burn-readout boxes (Shared/sim/readout-panes.js) — the same
 	// mechanism the Ephemeris tab uses for its departure/waypoint burns, poking
@@ -1639,10 +1640,11 @@ export function createMissionView(opts) {
 		var dest = (planStage.params.arrival || {}).body || "the destination";
 		var applied = sol.ok && sol.withinTolerance;
 		if (applied) {
-			history.push(snapshotForReport(sol));
 			applyRetarget(planStage.id, sol);   // this recomputes and redraws
-			// Recorded AFTER the retarget, so the set is the plan as committed
-			// rather than the one it replaced.
+			// Both recorded AFTER the retarget, so the row (and the set behind its
+			// Copy Mission button) are the plan as committed, not the one it
+			// replaced — and so they stay in lockstep, one push each per Update.
+			history.push(snapshotForReport());
 			planHistory = recordUpdate(planHistory, world.serialize());
 			if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
 			checked = null;
@@ -1659,77 +1661,144 @@ export function createMissionView(opts) {
 	// mission, so it is neither saved nor carried in a mission link.
 	var history = [];
 
-	// The drawn plan's own pass — what the committed trajectory achieves, as
-	// opposed to what the technology currently flies. The two are the whole
-	// point of the table: an Update moves the PLAN immediately, and re-tuning
-	// the technology then walks the delivered flight towards it.
-	function planPassAltitude() {
-		var stage = coastStage();
-		var desc = registry.get("transfer-leg");
-		var dest = coastDestination();
-		if (!stage || !desc || !dest) { return Infinity; }
-		var leg = desc.legFor(world, stage.id);
-		var ca = leg && desc.nearestApproach(leg, dest);
-		return ca ? ca.altitude : Infinity;
+	// Departure's own Δv split: FUEL is what the departure leg's own waypoint
+	// burns cost (the user's own impulses); TECH is what a carrier platform's
+	// hardware contributes for free (a skyhook's rotor tip speed) — the sum of
+	// every carrier stage's own isolated impulse (carrierReadout's burnDv,
+	// km/s), read back through platform-roles.js's readoutFor. The Moon's own
+	// ~1 km/s is deliberately excluded: moon-platform is the chain's BASE, not
+	// a carrier (carrierStages() only matches stages that both accept and emit
+	// a carrier-chain), matching the "bonus, not a discount" rule (see
+	// modules/skyhook's header and Notes/decisions.md).
+	function departureDvSplit() {
+		var legStage = departureLegStage();
+		var fuel = NaN;
+		if (legStage) {
+			var legDesc = registry.get(legStage.moduleId);
+			var leg = legDesc && legDesc.legFor ? legDesc.legFor(world, legStage.id) : null;
+			if (leg && leg.ok) { fuel = leg.totalDv; }
+		}
+		var tech = 0;
+		carrierStages().forEach(function (stage) {
+			var desc = registry.get(stage.moduleId);
+			var r = desc && desc.readoutFor ? desc.readoutFor(world, stage.id) : null;
+			if (r && isFinite(r.burnDv)) { tech += r.burnDv * 1000; }
+		});
+		return { fuel: fuel, tech: tech };
 	}
 
-	// One row. `sol` is the solve an Update is about to commit, absent for the
-	// live "now" row; `aims` is where the plan will pass once it is committed.
-	function snapshotForReport(sol) {
+	// Arrival's own Δv split, the same shape: FUEL is the arrival leg's own
+	// waypoint burns; TECH is the arrival technology's own hardware figure
+	// (a skyhook catch's trim burn, captureReadout's burnDv) — not a waypoint,
+	// so it is tech by the same rule.
+	function arrivalDvSplit() {
+		var legStage = world.stages().filter(function (s) { return s.moduleId === "arrival-leg"; })[0];
+		var fuel = NaN;
+		if (legStage) {
+			var legDesc = registry.get("arrival-leg");
+			var leg = legDesc && legDesc.legFor ? legDesc.legFor(world, legStage.id) : null;
+			if (leg && leg.ok) { fuel = leg.totalDv; }
+		}
+		var tech = 0;
+		var techStage = arrivalTechStage();
+		if (techStage) {
+			var desc = registry.get(techStage.moduleId);
+			var r = desc && desc.readoutFor ? desc.readoutFor(world, techStage.id) : null;
+			if (r && isFinite(r.burnDv)) { tech = r.burnDv * 1000; }
+		}
+		return { fuel: fuel, tech: tech };
+	}
+
+	// One row's worth of the live figures: what the departure/coast/arrival
+	// boundaries actually deliver right now. `sol` is unused today (kept so a
+	// future Check/Update tie-in has somewhere to plug a provisional figure
+	// in) — every row reads the CURRENT world, which is why a row is only
+	// meaningful captured at the instant an Update commits (below) or read
+	// live for "now".
+	function snapshotForReport() {
 		var f = flightAsDelivered();
+		var dep = departureDvSplit();
+		var arr = arrivalDvSplit();
 		return {
-			flown: (f && f.pass) ? f.pass.altitude : Infinity,
-			aims: (sol && sol.ok) ? sol.passAfter : planPassAltitude(),
 			vInfOut: f ? f.vInfOut : NaN,
+			depFuel: dep.fuel, depTech: dep.tech,
 			coastDv: f ? f.coastDv : NaN,
 			vInfIn: (f && f.pass) ? f.pass.vInf : NaN,
-			ask: (sol && sol.ok) ? sol.askWorst : NaN
+			arrFuel: arr.fuel, arrTech: arr.tech
 		};
 	}
+
+	// m is null/NaN-safe: "—" wherever a figure hasn't been captured (the
+	// "original" row, before any Update) or doesn't compute.
+	function reportCells(m) {
+		if (!m) { return ["—", "—", "—", "—", "—", "—", "—", "—", "—"]; }
+		var depTotal = (isFinite(m.depFuel) && isFinite(m.depTech)) ? m.depFuel + m.depTech : NaN;
+		var arrTotal = (isFinite(m.arrFuel) && isFinite(m.arrTech)) ? m.arrFuel + m.arrTech : NaN;
+		return [cbarKms(m.vInfOut), cbarKms(m.depFuel), cbarKms(m.depTech), cbarKms(depTotal),
+			cbarKms(m.coastDv),
+			cbarKms(m.vInfIn), cbarKms(m.arrFuel), cbarKms(m.arrTech), cbarKms(arrTotal)];
+	}
+
 	function renderReport() {
 		var f = flightAsDelivered();
 		var planStage = adoptedPlanStage();
 		var dest = (planStage && (planStage.params.arrival || {}).body) || "—";
-		showMessage("Mission report — " + dest, function (wrap) {
+		showReport("Mission report — " + dest, function (wrap) {
 			if (!f) {
 				msgPara(wrap, "No departure technology is delivering a hand-off yet, so " +
 					"there is no flight to report on.");
 				renderOriginals(wrap);   // the stored plan exists either way
 				return;
 			}
-			var rows = history.concat([snapshotForReport(null)]);
+
+			// One row per plan-history entry (core/revisions.js's entriesOf: the
+			// original adopt, then each committed Update, in lockstep with
+			// `history` — both are appended together in updateBtn's handler
+			// below), plus a live "now" row. Each row carries its OWN serialized
+			// World for the Copy Mission button — a click spins that exact state
+			// into a new tab (planner.js's copyMissionRow) — truncated to the
+			// history a tab seeded from it should itself report against.
+			var sets = entriesOf(planHistory);
+			var rows = sets.map(function (set, i) {
+				return {
+					label: i === 0 ? "original" : "Update " + i,
+					world: set.world,
+					historyForCopy: { original: planHistory.original, steps: planHistory.steps.slice(0, i) },
+					metrics: i === 0 ? null : history[i - 1],
+					live: false
+				};
+			});
+			rows.push({
+				label: "now", world: world.serialize(), historyForCopy: planHistory,
+				metrics: snapshotForReport(), live: true
+			});
+
 			var t = document.createElement("table");
-			t.innerHTML = "<tr><th>update</th><th>flown</th><th>plan aims at</th>" +
-				"<th>v∞ out</th><th>Δv coast</th><th>v∞ in</th></tr>";
-			rows.forEach(function (r, i) {
-				var last = i === rows.length - 1;
+			t.className = "mp-report-table";
+			t.innerHTML =
+				"<tr><th></th><th colspan='4'>Departure</th><th>Coast</th><th colspan='4'>Arrival</th></tr>" +
+				"<tr><th>copy mission</th>" +
+				"<th>v∞ out</th><th>fuel Δv</th><th>tech Δv</th><th>total</th>" +
+				"<th>Δv</th>" +
+				"<th>v∞ in</th><th>fuel Δv</th><th>tech Δv</th><th>total</th></tr>";
+			rows.forEach(function (r) {
 				var tr = document.createElement("tr");
-				if (last) { tr.className = "now"; }
-				tr.innerHTML = "<td>" + (last ? "now" : String(i + 1)) + "</td>" +
-					"<td>" + cbarKm(r.flown) + "</td><td>" + cbarKm(r.aims) + "</td>" +
-					"<td>" + cbarKms(r.vInfOut) + "</td>" +
-					"<td>" + cbarKms(r.coastDv) + "</td><td>" + cbarKms(r.vInfIn) + "</td>";
+				if (r.live) { tr.className = "now"; }
+				var copyTd = document.createElement("td");
+				var btn = document.createElement("button");
+				btn.type = "button"; btn.className = "mp-btn mp-report-copy"; btn.textContent = r.label;
+				btn.title = "Copy the mission as it stood at \"" + r.label + "\" into a new tab.";
+				btn.addEventListener("click", function () {
+					if (opts.onCopyMission) { opts.onCopyMission(r.world, r.historyForCopy); }
+				});
+				copyTd.appendChild(btn);
+				tr.appendChild(copyTd);
+				reportCells(r.metrics).forEach(function (text) {
+					var td = document.createElement("td"); td.textContent = text; tr.appendChild(td);
+				});
 				t.appendChild(tr);
 			});
 			wrap.appendChild(t);
-
-			// FLOWN is the flight the technology actually produces; PLAN AIMS AT
-			// is where the committed trajectory goes. An Update moves the second
-			// one at once; the first only follows when the technology is re-tuned
-			// towards the new requirement. The gap between the two columns is the
-			// work still outstanding.
-			var now = rows[rows.length - 1];
-			var gap = Math.abs(now.flown - now.aims);
-			msgPara(wrap, isFinite(gap) && gap > 1e6
-				? "The flight is <b class='warn'>" + cbarKm(gap) + "</b> off what the plan " +
-					"now aims for — re-tune the departure towards the Needed column to close it."
-				: "The flight and the plan agree to within <b class='ok'>" + cbarKm(gap) +
-					"</b>.");
-			if (history.length > 1) {
-				msgPara(wrap, "Across " + history.length + " updates, the flown pass has " +
-					"moved from <b>" + cbarKm(history[0].flown) + "</b> to <b>" +
-					cbarKm(now.flown) + "</b>.");
-			}
 			renderOriginals(wrap);
 		});
 	}
@@ -1810,6 +1879,33 @@ export function createMissionView(opts) {
 		reportWrapEl.classList.toggle("open");
 	});
 	document.addEventListener("click", closeReportMenu);
+
+	// The report POPUP (planner.css's .mp-report-popup): floats over the pane
+	// rather than sharing .mp-messages, so it can run taller than the bar
+	// without stretching it. Closes on any click outside itself and outside
+	// the button/menu that opens it — excluding reportWrapEl is what stops the
+	// very click that opens it (bubbling to document after showReport has
+	// already added "open") from closing it again in the same turn.
+	function closeReportPopup() { reportPopupEl.classList.remove("open"); }
+	document.addEventListener("click", function (ev) {
+		if (reportPopupEl.classList.contains("open") &&
+			!reportPopupEl.contains(ev.target) && !reportWrapEl.contains(ev.target)) {
+			closeReportPopup();
+		}
+	});
+	function showReport(head, buildBody) {
+		reportPopupEl.innerHTML = "";
+		var wrap = document.createElement("div");
+		wrap.className = "mp-msg";
+		if (head) {
+			var h = document.createElement("div");
+			h.className = "mp-msg-head"; h.textContent = head;
+			wrap.appendChild(h);
+		}
+		buildBody(wrap);
+		reportPopupEl.appendChild(wrap);
+		reportPopupEl.classList.add("open");
+	}
 
 	// ---- rendering the bar --------------------------------------------------
 	function renderComplianceBar(results) {
