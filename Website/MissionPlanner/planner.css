@@ -121,7 +121,9 @@ body {
 .mp-check:not(:disabled) { border-color: #3c5788; color: var(--bright); }
 .mp-update:not(:disabled) { border-color: var(--ok); color: var(--ok); }
 .mp-update:not(:disabled):hover { background: var(--ok); color: #101613; }
-.mp-report { line-height: 1 !important; padding: 6px 12px !important; border-radius: 14px !important; }
+.mp-report, .mp-copy-mission {
+	line-height: 1 !important; padding: 6px 12px !important; border-radius: 14px !important;
+}
 
 #mp-banner {
 	flex: none; padding: 6px 14px; font-size: 12.5px; cursor: pointer;
@@ -181,22 +183,17 @@ body {
 .mp-msg th { color: var(--dim); font-weight: 400; border-bottom: 1px solid var(--line2); }
 .mp-msg th:first-child, .mp-msg td:first-child { text-align: left; color: var(--dim); }
 .mp-msg tr.now td { color: var(--text); }
-/* The mission report's originals table: what the plan STORED when it was
-   adopted beside what it holds now (core/revisions.js). The "as adopted"
-   column is dimmed — it is the reference, not the live figure. */
-.mp-msg h4 { margin: 10px 0 4px; font-size: 12px; color: var(--bright); font-weight: 600; }
-.mp-msg table.mp-originals td.was { color: var(--dim); }
 
 /* The mission report POPUP: floats over the rest of the pane rather than
    pushing .mp-headerbar taller, so mp-headerbar's own height stays whatever
    Check/Update need. Positioned against .mp-messages-slot (above), not
    .mp-messages itself, so it covers the message area from its own top edge
-   — height is the slot's own 100% (covering it exactly) plus 150px more, so
-   it continues on below the message area rather than starting underneath it. */
+   rather than starting underneath it. Sized to its content (the table) up to
+   150px, past which it scrolls rather than growing further. */
 .mp-report-popup {
 	display: none;
 	position: absolute; left: 0; right: 0; top: 0; z-index: 45;
-	height: calc(100% + 150px); overflow-y: auto;
+	height: auto; max-height: 150px; overflow-y: auto;
 	background: #151b2b; border: 1px solid var(--line2);
 	box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
 	padding: 8px 14px;
@@ -209,8 +206,14 @@ body {
 .mp-report-table th { color: var(--dim); font-weight: 400; border-bottom: 1px solid var(--line2); }
 .mp-report-table th:first-child, .mp-report-table td:first-child { text-align: left; color: var(--dim); }
 .mp-report-table tr.now td { color: var(--text); }
-.mp-report-table .mp-report-copy {
-	font-size: 11px; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+/* Departure / Coast / Arrival's own group-header row: bold and capitalized so
+   the three read as section titles rather than more data columns, centered
+   over their span — but faded to the same muted grey a disabled button's
+   label fades to (var(--dim) alone reads as full-strength text here, not
+   dim), and a size down so bold+caps doesn't read larger than the data below. */
+.mp-report-table .mp-report-group {
+	text-align: center; text-transform: uppercase; font-weight: 700;
+	color: #4c5568; font-size: 10px;
 }
 /* The vertical rule between Departure/Coast and Coast/Arrival — applied to
    whichever cell starts each of those two sections in every row (mission-

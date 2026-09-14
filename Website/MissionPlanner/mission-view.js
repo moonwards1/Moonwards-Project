@@ -45,7 +45,7 @@ import { OrbitalMath } from "../Shared/math-utils.js";
 import { Frames } from "../Shared/frames.js";
 import { Exchange, encodeFragmentZ } from "../Shared/exchange.js";
 import { packMissionLink } from "./ui/share-link.js";
-import { createHistory, recordUpdate, packSets, entriesOf, changesBetween } from "./core/revisions.js";
+import { createHistory, recordUpdate, packSets } from "./core/revisions.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
@@ -1740,32 +1740,31 @@ export function createMissionView(opts) {
 		};
 	}
 
+	// One more decimal than cbarKms's — the report is read as a comparison
+	// across rows, where cbarKms's 2 places round too many variants to the
+	// same digits — and no " km/s" suffix: the table states the unit once,
+	// in the corner cell (renderReport, below), not on every cell.
+	function reportKms(v) { return isFinite(v) ? (v / 1000).toFixed(3) : "—"; }
+
 	// m is null/NaN-safe: "—" wherever a figure hasn't been captured (the
 	// "original" row, before any Update) or doesn't compute.
 	function reportCells(m) {
 		if (!m) { return ["—", "—", "—", "—", "—", "—", "—", "—", "—"]; }
 		var depTotal = (isFinite(m.depFuel) && isFinite(m.depTech)) ? m.depFuel + m.depTech : NaN;
 		var arrTotal = (isFinite(m.arrFuel) && isFinite(m.arrTech)) ? m.arrFuel + m.arrTech : NaN;
-		return [cbarKms(m.vInfOut), cbarKms(m.depFuel), cbarKms(m.depTech), cbarKms(depTotal),
-			cbarKms(m.coastDv),
-			cbarKms(m.vInfIn), cbarKms(m.arrFuel), cbarKms(m.arrTech), cbarKms(arrTotal)];
+		return [reportKms(m.vInfOut), reportKms(m.depFuel), reportKms(m.depTech), reportKms(depTotal),
+			reportKms(m.coastDv),
+			reportKms(m.vInfIn), reportKms(m.arrFuel), reportKms(m.arrTech), reportKms(arrTotal)];
 	}
 
-	// Index 4 (Coast's own Δv) and index 5 (Arrival's v∞ in) are where a new
-	// section starts in reportCells' output and in the two header rows below —
-	// where the vertical section rule (planner.css's mp-report-sep) goes.
-	var REPORT_SEP_AT = { 4: true, 5: true };
+	// Index 0 (Departure's v∞ out) is the row-labels/parameters boundary;
+	// index 4 (Coast's own Δv) and index 5 (Arrival's v∞ in) are where a new
+	// section starts — in reportCells' output and in the two header rows
+	// below — where the vertical rule (planner.css's mp-report-sep) goes.
+	var REPORT_SEP_AT = { 0: true, 4: true, 5: true };
 
 	function renderReport() {
-		var f = flightAsDelivered();
 		showReport(function (wrap) {
-			if (!f) {
-				msgPara(wrap, "No departure technology is delivering a hand-off yet, so " +
-					"there is no flight to report on.");
-				renderOriginals(wrap);   // the stored plan exists either way
-				return;
-			}
-
 			// One row per committed Update (`history`, pushed in updateBtn's
 			// handler above), plus "now" — the mission's current checkpoint
 			// (nowSnapshot: refreshed by Check or a fresh Update, populated once
@@ -1780,26 +1779,22 @@ export function createMissionView(opts) {
 			var t = document.createElement("table");
 			t.className = "mp-report-table";
 			var head1 = document.createElement("tr");
-			var copyTh = document.createElement("th");
-			copyTh.rowSpan = 2;
-			// The table's own corner button, where "Copy mission link" used to
-			// live as a dropdown item (shareMission, unchanged) — there is no
-			// per-row copy; a row states what an Update bought, not a mission of
-			// its own to spin off.
-			var copyBtn = document.createElement("button");
-			copyBtn.type = "button"; copyBtn.className = "mp-btn mp-report-copy";
-			copyBtn.textContent = "Copy Mission";
-			copyBtn.title = "Copy a link to this exact mission to the clipboard.";
-			copyBtn.addEventListener("click", function (ev) { ev.stopPropagation(); shareMission(); });
-			copyTh.appendChild(copyBtn);
-			head1.appendChild(copyTh);
-			[["Departure", 4], ["Coast", 1], ["Arrival", 4]].forEach(function (g, i) {
+			// A plain (not rowspan) blank corner cell, so its border-bottom sits
+			// at the SAME height as the group headers' — a rowspan cell's own
+			// border-bottom would fall at the bottom of row 2 instead, leaving
+			// the rule under Departure/Coast/Arrival stop short of the left edge.
+			head1.appendChild(document.createElement("th"));
+			[["Departure", 4], ["Coast", 1], ["Arrival", 4]].forEach(function (g) {
 				var th = document.createElement("th"); th.colSpan = g[1]; th.textContent = g[0];
-				if (i > 0) { th.className = "mp-report-sep"; }   // Coast, Arrival — not Departure
+				th.className = "mp-report-group mp-report-sep";
 				head1.appendChild(th);
 			});
 			t.appendChild(head1);
 			var head2 = document.createElement("tr");
+			// The corner cell of the parameter-label row: the one place the
+			// unit is stated, since no individual cell repeats it (reportKms).
+			var unitTh = document.createElement("th"); unitTh.textContent = "KM/S:";
+			head2.appendChild(unitTh);
 			["v∞ out", "fuel Δv", "tech Δv", "total", "Δv", "v∞ in", "fuel Δv", "tech Δv", "total"]
 				.forEach(function (label, i) {
 					var th = document.createElement("th"); th.textContent = label;
@@ -1820,67 +1815,7 @@ export function createMissionView(opts) {
 				t.appendChild(tr);
 			});
 			wrap.appendChild(t);
-			renderOriginals(wrap);
 		});
-	}
-
-	// ---- what the plan STORED, then and now ---------------------------------
-	// The table above is what the mission ACHIEVES, recomputed live. This is
-	// the other half, and the reason the plan history exists: the values the
-	// plan actually holds, as first adopted beside as they stand. Read straight
-	// off two serialized Worlds (core/revisions.js's planSummaryOf), so the
-	// original's column costs nothing however long ago it was written and
-	// cannot drift from what was really committed.
-	function summaryValueText(row, value) {
-		if (value === null || value === undefined) { return "—"; }
-		if (row.unit === "jd") { return cbarDate(value) + " (" + Number(value).toFixed(3) + ")"; }
-		if (row.unit === "m/s") { return Math.round(value).toLocaleString("en-US") + " m/s"; }
-		if (row.unit === "d") { return Number(value).toFixed(2) + " d"; }
-		// A technology's own dials carry no unit here — core/revisions.js reads
-		// them off whatever params a module happens to hold, and only the module
-		// knows what they mean. Grouped digits at least keep 275000 legible.
-		if (typeof value === "number") {
-			return Number.isInteger(value) ? value.toLocaleString("en-US") : String(value);
-		}
-		return String(value);
-	}
-
-	function renderOriginals(wrap) {
-		var sets = entriesOf(planHistory);
-		var changes = changesBetween(planHistory.original, world.serialize());
-		var moved = changes.filter(function (c) { return c.changed; });
-
-		var h = document.createElement("h4");
-		h.textContent = "The plan as stored";
-		wrap.appendChild(h);
-
-		if (!moved.length) {
-			msgPara(wrap, "Nothing stored in the plan has changed since it was adopted — " +
-				"this is the mission exactly as it came from the Ephemeris tab.");
-			return;
-		}
-
-		var t = document.createElement("table");
-		t.className = "mp-originals";
-		t.innerHTML = "<tr><th>value</th><th>as adopted</th><th>now</th></tr>";
-		moved.forEach(function (c) {
-			var tr = document.createElement("tr");
-			tr.innerHTML = "<td>" + escapeText(c.label) + "</td>" +
-				"<td class='was'>" + escapeText(summaryValueText(c, c.was)) + "</td>" +
-				"<td>" + escapeText(summaryValueText(c, c.now)) + "</td>";
-			t.appendChild(tr);
-		});
-		wrap.appendChild(t);
-
-		var commits = sets.length - 1;
-		msgPara(wrap, commits
-			? escapeText(String(moved.length)) + " stored value" + (moved.length > 1 ? "s have" : " has") +
-				" moved across " + commits + " commit" + (commits > 1 ? "s" : "") +
-				". A mission link carries the adopted column as well as the current one, so " +
-				"pasting it into the Ephemeris tab reopens the plan this mission started from."
-			: escapeText(String(moved.length)) + " stored value" + (moved.length > 1 ? "s differ" : " differs") +
-				" from the adopted plan without an Update having been committed — these are " +
-				"live edits the plan has not been moved onto yet.");
 	}
 
 	// "Mission data" opens the report POPUP directly — no dropdown menu. A
@@ -1890,6 +1825,7 @@ export function createMissionView(opts) {
 	// showReport has already added "open") from closing it again in the same
 	// turn.
 	function closeReportPopup() { reportPopupEl.classList.remove("open"); }
+	q(".mp-copy-mission").addEventListener("click", function () { shareMission(); });
 	q(".mp-report").addEventListener("click", function (ev) {
 		ev.stopPropagation();
 		if (reportPopupEl.classList.contains("open")) { closeReportPopup(); }
