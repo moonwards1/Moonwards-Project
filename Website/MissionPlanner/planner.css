@@ -153,14 +153,14 @@ body {
    (mp-headercol stretches both columns to the taller of the two). Tall enough
    that a Check or Update report fits without scrolling — messages that have
    to be scrolled to be read mostly go unread. */
-.mp-timelines { flex: 1 1 auto; min-height: 96px; background: #0e1220; }
+.mp-timelines { flex: 1 1 auto; min-height: 52px; background: #0e1220; }
 /* .mp-messages-slot is the positioning box the report popup covers (see
    .mp-report-popup below): it carries the flex/min/max sizing .mp-messages
    used to carry itself, and .mp-messages fills it exactly (inset: 0) so the
    popup's own top:0 lines up with the message area's own top rather than
    its bottom. */
 .mp-messages-slot {
-	position: relative; flex: 1 1 auto; min-height: 96px; max-height: 220px;
+	position: relative; flex: 1 1 auto; min-height: 52px; max-height: 205px;
 	border-top: 1px solid var(--line);
 }
 .mp-messages {
@@ -169,7 +169,7 @@ body {
 	font-size: 12px; line-height: 1.5; color: var(--dim);
 }
 .mp-messages:empty::before {
-	content: "Check, Update and the mission report write here.";
+	content: "Messages appear here";
 	color: #4c5568; font-style: italic;
 }
 .mp-msg-head { color: var(--bright); font-size: 12.5px; margin-bottom: 4px; }
@@ -226,7 +226,7 @@ body {
 /* ---------- phase sliders (ui/phase-slider.js) ---------- */
 .mp-sliderzone {
 	flex: none; background: #0e1220;
-	padding: 8px 14px 36px;
+	padding: 8px 14px 21px;
 }
 .mp-timeline { position: relative; }
 .mp-track { display: flex; gap: 3px; position: relative; height: 26px; cursor: pointer; }
@@ -264,7 +264,7 @@ body {
    edge. Two lines, stacked and centred: "167 d" (bold) over the elapsed HH:MM
    (dim). */
 .mp-playhead-label {
-	position: absolute; top: 34px; left: 50%; transform: translateX(-50%);
+	position: absolute; top: 19px; left: 50%; transform: translateX(-50%);
 	display: flex; flex-direction: column; align-items: center;
 	white-space: nowrap; pointer-events: none;
 	background: #1a2036; border: 1px solid var(--acc); border-radius: 4px;
