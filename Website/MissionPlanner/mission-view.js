@@ -51,8 +51,8 @@ import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider, createArrivalSlider } from "./ui/phase-slider.js";
-import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, speedRange,
-	timingModel } from "./ui/ship-card.js";
+import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, speedRange }
+	from "./ui/ship-card.js";
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
@@ -1512,10 +1512,6 @@ export function createMissionView(opts) {
 	// days are then solved on the NEW leg for those same angles — the
 	// two-sided conversion transfer-leg's sweptAnglesOf/placeAtSweptAngles
 	// exist for, and the same hold the Ephemeris tab's marker uses.
-	//
-	// Finally the coast is handed to Arrival. An Update is a commitment, so
-	// the arrival phase runs on the trajectory it commits to; leaving the
-	// snapshot behind would have Arrival still flying the pre-Update coast.
 	function applyRetarget(planStageId, sol) {
 		var stage = world.getStage(planStageId);
 		if (!stage || !sol || !sol.ok) { return; }
@@ -1562,7 +1558,6 @@ export function createMissionView(opts) {
 					world.getStage(legStage.id).params.waypoints, degs)
 			} });
 		}
-		if (legDesc) { legDesc.commitHandoff(world, legStage.id); }
 	}
 
 	// How a solve reads as prose. `verb` distinguishes what has happened from
@@ -1992,31 +1987,26 @@ export function createMissionView(opts) {
 		var jds = legRes.events.map(function (e) { return e.jd; });
 		if (!jds.length) { return null; }
 		var fallbackJd = Math.max.apply(null, jds);
-		// The phase structure follows the COMMITTED coast — the one the Arrival
-		// phase is running on — so a pending waypoint edit moves the drawn arc
-		// without dragging the sliders and the arrival window with it.
-		return computeArrivalSeam({ destination: dest, pass: committedCoastPass(legStageId),
+		return computeArrivalSeam({ destination: dest, pass: coastPass(legStageId),
 			fallbackArrivalJd: fallbackJd });
 	}
 
-	// The measured pass at the destination on a coast leg, through the module's
-	// own nearestApproach. `live` picks the leg being tuned rather than the one
-	// handed off. null when there is no coast, no destination, or no leg yet.
-	function coastPass(stageId, live) {
+	// The measured pass at the destination on the coast leg, through the
+	// module's own nearestApproach. null when there is no coast, no
+	// destination, or no leg yet.
+	function coastPass(stageId) {
 		var dest = coastDestination();
 		var desc = registry.get("transfer-leg");
 		if (!dest || !desc || !stageId) { return null; }
-		var leg = live ? desc.legFor(world, stageId) : desc.handoffLegFor(world, stageId);
+		var leg = desc.legFor(world, stageId);
 		return leg ? desc.nearestApproach(leg, dest) : null;
 	}
-	function committedCoastPass(stageId) { return coastPass(stageId, false); }
 
 	// The coast span. Its LEFT edge is the real Departure→Coast hand-off —
 	// adopted-plan's own hand-off event, which since the flown flight became
 	// the clock is the epoch the technology actually delivers. So the Coast
 	// timeline begins exactly where the Departure timeline ends, and it moves
-	// as the technology is tuned. Waypoint edits still do not stretch it: they
-	// change nothing about either end. Without a plan (or while it's
+	// as the technology is tuned. Without a plan (or while it's
 	// blocked/broken), fall back to the envelope of events emitted by
 	// departure/coast-phase stages this recompute pass. The RIGHT edge is the
 	// arrival seam, not the raw committed
@@ -2120,7 +2110,7 @@ export function createMissionView(opts) {
 	// it: a departure that beats its deadline should show the slack, not clip
 	// it off. When the flight overruns, the mark sits inside the track and the
 	// overrun is visible the same way. Either way release is always on the
-	// timeline (decisions.md, "Departure timeline").
+	// timeline (Notes/decisions.md, 2026-07-25, "Departure timeline").
 	//
 	// The predicted SOI exit renders as a mark too. Whichever mark coincides
 	// with an edge is simply not drawn twice: departureSliderState only marks
@@ -2304,144 +2294,50 @@ export function createMissionView(opts) {
 		return null;
 	}
 
-	function fmtKm(m) {
-		return (m == null || !isFinite(m)) ? "—" : Math.round(m / 1000).toLocaleString("en-US");
-	}
 
-	// The Coast card. The gizmo and the change row both show the same thing —
-	// the speed change pending waypoint edits make at leg end — plus the pass
-	// those waypoints actually buy. Nothing here is graded: the chips say which
-	// way a pending edit moved each figure and Update hands the live coast
-	// over, but the card never decides that a pass is wrong.
+	// The Coast card: the speed under the chevron and which side of the
+	// destination the pass goes. Nothing here is graded — many passes arrive
+	// successfully — and how close and how fast the pass is are the mission
+	// bar's figures, which follow every waypoint edit.
 	function updateCoastCard() {
 		shipCard.setSubtitle("Coast");
 		shipCard.setComponents(null, null);
 		shipCard.setOnCourse(false);
+		shipCard.setGizmo(null);
+		shipCard.showGizmo(false);
 
 		var stage = coastStage();
 		var desc = registry.get("transfer-leg");
-		if (!stage || !desc) { return; }
-		var live = desc.legFor(world, stage.id);
-		var committed = desc.handoffLegFor(world, stage.id) || live;
-		var pending = desc.handoffPending(stage.params);
-
-		shipCard.setUpdate({
-			show: true, enabled: pending,
-			title: pending
-				? "Hand this coast to the Arrival phase"
-				: "The Arrival phase is already running on this coast",
-			onClick: function () { desc.commitHandoff(world, stage.id); }
-		});
-
-		if (!live || !live.ok || !committed.ok) {
-			shipCard.setGizmo(null);
-			shipCard.setChange(null, null);
+		var leg = (stage && desc) ? desc.legFor(world, stage.id) : null;
+		if (!leg || !leg.ok) {
 			shipCard.setSpeed(null);
-			shipCard.setApproach(null);
-			shipCard.setTiming(null);
 			shipCard.setBPlane(null);
 			return;
 		}
 
-		// THE GIZMO IS THE SPEED CHANGE: what the pending waypoint edits do to the
-		// leg-end velocity, split onto the committed leg end's own burn frame —
-		// the same axes and colours Departure's comparison gizmo uses, so an axis
-		// means the same thing on both cards. There is only one layer (nothing to
-		// compare the change against), and the net line draws in the bright/white
-		// net colour.
-		//
-		// Both sides are sampled at the SAME elapsed time — the earlier of the
-		// two legs' own ends — rather than each leg's own `.end`. A leg's `.end`
-		// is the surface-impact state when the arc hits the destination and the
-		// full-duration state otherwise; diffing one of each (the moment an edit
-		// crosses the impact/miss boundary) compares two unrelated points on the
-		// orbit and produces a huge, meaningless velocity difference.
-		// stateAtElapsed clamps outside a leg's own span to its nearest end, so
-		// this reduces to a plain `.end` vs `.end` diff whenever both legs share
-		// the same regime (the common case).
-		var end = committed.end, liveEnd = live.end;
-		var tCommon = Math.min((end.jd - committed.jd0) * 86400,
-		                        (liveEnd.jd - live.jd0) * 86400);
-		var endState = desc.stateAtElapsed(committed, tCommon) || end;
-		var liveState = desc.stateAtElapsed(live, tCommon) || liveEnd;
-		var dv = O.vSub(liveState.v, endState.v);
-		var c = O.burnComponents(endState.r, endState.v, dv);
-		shipCard.setGizmo({
-			axes: O.burnFrame(endState.r, endState.v),
-			current: { pro: c.pro, rad: c.rad, nrm: c.nrm, net: O.vMag(dv) },
-			currentDir: unitOf(dv)
-		});
-
-		// The change row: the same figures the gizmo draws as lengths along the
-		// burn frame's axes, restated as numbers.
-		shipCard.setChange("Speed change", { pro: c.pro, rad: c.rad, nrm: c.nrm,
-			net: O.vMag(dv) }, "m/s");
-
-		// The speed bar reads the LIVE arc, spanning its own min..max — an
-		// interplanetary coast never goes near zero, so a zero-based bar would
-		// hide the variation the reader is scrubbing for. The position sampled is
-		// the chevron's, seam clamp included (transfer-leg's draw), so the number
-		// belongs to the marker on screen.
-		// The chevron's own clamp, from the LIVE arc — this is the seam on the
-		// trajectory being drawn, matching transfer-leg's draw(), not the
-		// committed one the sliders follow.
+		// The speed bar spans the arc's own min..max — an interplanetary coast
+		// never goes near zero, so a zero-based bar would hide the variation the
+		// reader is scrubbing for. The position sampled is the chevron's, seam
+		// clamp included (transfer-leg's draw), so the number belongs to the
+		// marker on screen.
 		var dest = coastDestination();
+		var pass = dest ? desc.nearestApproach(leg, dest) : null;
 		var seam = dest ? computeArrivalSeam({ destination: dest,
-			pass: desc.nearestApproach(live, dest), fallbackArrivalJd: live.end.jd }) : null;
-		var t = (world.jd - live.jd0) * 86400;
-		if (seam) { t = Math.min(t, (seam.start - live.jd0) * 86400); }
-		var range = speedRange(live.samples);
-		var now = speedAlong(live.samples, t);
+			pass: pass, fallbackArrivalJd: leg.end.jd }) : null;
+		var t = (world.jd - leg.jd0) * 86400;
+		if (seam) { t = Math.min(t, (seam.start - leg.jd0) * 86400); }
+		var range = speedRange(leg.samples);
+		var now = speedAlong(leg.samples, t);
 		shipCard.setSpeed(range
 			? speedModel(now == null ? NaN : now / 1000, NaN, range.max / 1000, range.min / 1000)
 			: null);
 
-		// The pass itself. Both figures come off the live leg, with the committed
-		// leg's own values shown underneath whenever an edit is pending, so a
-		// change reads as a move from one number to another.
-		// ONE measurement of the pass, whether or not the arc enters the SOI —
-		// transfer-leg's nearestApproach, which scans time rather than polyline
-		// samples so the figure is a continuous function of the waypoints. A
-		// sample-based reading jumped by tens of thousands of km the moment a
-		// nudge walked the pass out of the SOI; see that function's own note.
-		var livePass = desc.nearestApproach(live, dest);
-		var refPass = pending ? desc.nearestApproach(committed, dest) : null;
-		if (!livePass) {
-			shipCard.setApproach(null);
-			shipCard.setTiming(null);
-			shipCard.setBPlane(null);
-			return;
-		}
-		function better(now2, was) {
-			return (was == null || !isFinite(was) || !isFinite(now2)) ? null : now2 < was;
-		}
-		// THE PASS, WHILE AN EDIT IS PENDING — and only then. The standing
-		// figure lives in the mission bar, measured on the flight the ship is
-		// really on rather than on this drawn arc, so repeating it here would
-		// be the same quantity quoted twice off two different bases. What the
-		// bar cannot show is the DIRECTION a pending waypoint edit moved it,
-		// which is what the reader is steering by while dragging, so that is
-		// what stays: was-to-now, and nothing when nothing is pending.
-		shipCard.setApproach(refPass ? [
-			{ label: livePass.insideSoi ? "Closest approach" : "Closest approach (outside SOI)",
-			  value: fmtKm(livePass.altitude), unit: "km",
-			  ref: "was " + fmtKm(refPass.altitude),
-			  better: better(livePass.altitude, refPass.altitude) },
-			{ label: "Arrival speed",
-			  value: livePass.speed == null ? "—" : (livePass.speed / 1000).toFixed(3), unit: "km/s",
-			  ref: refPass.speed != null ? "was " + (refPass.speed / 1000).toFixed(3) : null,
-			  better: better(livePass.speed, refPass.speed) }
-		] : null);
-
-		// Timing: how far the pending edit has moved arrival from the coast's
-		// own last-committed arrival — nothing to show once nothing is pending.
-		shipCard.setTiming(refPass ? timingModel(livePass.jd, refPass.jd) : null);
-
-		// The approach geometry comes off the same measurement — nearestApproach
-		// hands back the body-relative state it already found. null when the pass
-		// is not hyperbolic about the body: a captured arrival has no approach
-		// asymptote to take a bearing from.
-		var bp = O.bPlane(systems.get(dest).GM, livePass.rRel, livePass.vRel);
+		if (!pass) { shipCard.setBPlane(null); return; }
+		// The approach geometry comes off nearestApproach's own measurement —
+		// it hands back the body-relative state it already found. null when the
+		// pass is not hyperbolic about the body: a captured arrival has no
+		// approach asymptote to take a bearing from.
+		var bp = O.bPlane(systems.get(dest).GM, pass.rRel, pass.vRel);
 		shipCard.setBPlane(bp ? { angleDeg: bp.angleDeg,
 			label: "Where the ship passes " + dest + ", seen coming in with ecliptic north up"
 		} : null);
@@ -2455,10 +2351,8 @@ export function createMissionView(opts) {
 		// switching phases can never leave a stale row behind.
 		if (workspace.phase === "coast") { updateCoastCard(); return; }
 		shipCard.setSubtitle("Departure");
-		shipCard.setApproach(null);
-		shipCard.setTiming(null);
+		shipCard.showGizmo(true);
 		shipCard.setBPlane(null);
-		shipCard.setUpdate(null);
 
 		var dep = planDepartureState();
 		var planStage = adoptedPlanStage();

@@ -16,8 +16,8 @@
  * ONLY gate on committing (withinTolerance). The size of the ask decides
  * nothing. Notes/decisions.md, 2026-08-26.
  *
- * SCOPE: the departure requirement, nothing else. The coast and arrival
- * phases gate their own commits, and this solve has no say in those. It takes
+ * SCOPE: the departure requirement, nothing else — this solve has no say over
+ * the coast or arrival phases. It takes
  * the coast's waypoints exactly as they currently stand — including edits
  * made after the plan was adopted — and solves the departure that flies THAT
  * coast to the destination.

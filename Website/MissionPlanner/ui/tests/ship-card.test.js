@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { vInfComponents, gizmoScale, speedModel, speedAlong, peakSpeed, speedRange,
-	bearingPoint, timingModel } from "../ship-card.js";
+	bearingPoint } from "../ship-card.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 
 var O = OrbitalMath;
@@ -141,22 +141,6 @@ test("bearingPoint: 0 degrees is straight up, 90 is to the right", () => {
 	assert.ok(Math.abs(down.y - 10) < 1e-9, JSON.stringify(down));
 });
 
-test("timingModel: zero delta at the reference epoch", () => {
-	var m = timingModel(2463000, 2463000);
-	assert.equal(m.hours, 0);
-});
-
-test("timingModel: earlier reads negative, later reads positive", () => {
-	var early = timingModel(2463000 - 0.5, 2463000);
-	assert.ok(Math.abs(early.hours + 12) < 1e-9, "got " + early.hours);
-	var late = timingModel(2463000 + 0.5, 2463000);
-	assert.ok(Math.abs(late.hours - 12) < 1e-9, "got " + late.hours);
-});
-
-test("timingModel: a missing epoch on either side is no delta at all", () => {
-	assert.equal(timingModel(NaN, 2463000), null);
-	assert.equal(timingModel(2463000, null), null);
-});
 
 test("gizmoScale: a net-only layer scales on its net, not on NaN components", () => {
 	// The Coast card's layers carry only `net`; the absent components must be

@@ -27,15 +27,10 @@
  * state plus whatever waypoint burns happened along the way, so nothing at the
  * Coast→Arrival seam needs a burn concept either — the emitted state passes
  * through untouched, and arrival-leg simply continues this leg's own flight
- * from the seam (it reads the state there off handoffLegFor/stateAtElapsed
- * below, since the EMITTED state sits later, at this leg's end, past where
- * the arrival phase actually begins).
- *
- * THE LEG IS COMPUTED TWICE, and the two answers go to different places: the
- * live tuning is drawn and reported on the ship card, while the last committed
- * hand-off is what the Arrival phase runs on. See the hand-off snapshot block
- * below defaultParams for why, and legFor/handoffLegFor for which consumer
- * reads which.
+ * from the seam (it reads the state there off legFor/stateAtElapsed below,
+ * since the EMITTED state sits later, at this leg's end, past where the
+ * arrival phase actually begins). There is one coast: a waypoint edit moves
+ * the drawn arc, the emitted state and the Arrival phase together.
  *
  * If a destination body is set, the miss distance at arrival is reported
  * through the envelope's WARNINGS channel — non-blocking, per the core's
@@ -90,65 +85,19 @@ export var WAYPOINT_AXIS_CAP_MPS = 100;
 // Warn when the leg ends farther than this from the destination body.
 export var MISS_WARN_AU = 0.02;
 
-// ---- the hand-off snapshot --------------------------------------------------
-// Waypoint edits on Coast take effect on the DRAWN coast immediately, but they
-// do not reach the Arrival phase until the ship card's Update button is
-// pressed. There is no single right approach — many passes arrive successfully —
-// so the user tunes against the card's live closest-approach/speed readouts and
-// commits when the pass is one they want, rather than dragging the whole
-// arrival phase along behind every nudge.
-//
-// `handoff` holds the waypoint list as of the last commit. null means nothing
-// is pending and the live waypoints ARE the hand-off — which is also what every
-// save written before this feature deserializes to, so no migration is needed:
-// such a mission simply behaves as it always did until its first waypoint edit,
-// which captures the snapshot (see init's commitWaypoints).
 export var defaultParams = {
 	waypoints: [],                       // up to 2: { days, burn: {pro,rad,nrm} }
-	handoff: null,                       // waypoints as of the last Update, or null
 	legDays: 480,                        // duration from leg start to the emitted state
 	destination: ""                      // body name, or "" for none
 };
 
-// Waypoint lists equal for hand-off purposes: same count, same times, same
-// burns. Compared rather than identity-checked so that editing a waypoint and
-// putting it back reads as "nothing pending" instead of leaving the card
-// offering an Update that would change nothing.
-export function sameWaypoints(a, b) {
-	if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) { return false; }
-	for (var i = 0; i < a.length; i++) {
-		var x = a[i] || {}, y = b[i] || {};
-		var xb = x.burn || {}, yb = y.burn || {};
-		if (x.days !== y.days || (xb.pro || 0) !== (yb.pro || 0) ||
-		    (xb.rad || 0) !== (yb.rad || 0) || (xb.nrm || 0) !== (yb.nrm || 0)) { return false; }
-	}
-	return true;
-}
-
-// A detached copy of a waypoint list — the snapshot must not alias the live
-// objects the vector editor mutates in place.
+// A detached copy of a waypoint list, for the card's editors to modify and
+// write back through world.set — a stage's params are never mutated in place.
 export function copyWaypoints(list) {
 	return (list || []).map(function (wp) {
 		var b = wp.burn || {};
 		return { days: wp.days, burn: { pro: b.pro || 0, rad: b.rad || 0, nrm: b.nrm || 0 } };
 	});
-}
-
-// Does the live coast differ from the one the Arrival phase is running on?
-// The ship card's Update button exists exactly when this is true. Takes a
-// stage's raw params.
-export function handoffPending(params) {
-	var p = Object.assign({}, defaultParams, params || {});
-	return Array.isArray(p.handoff) && !sameWaypoints(p.handoff, p.waypoints);
-}
-
-// Hand the live coast to Arrival: the Update button's whole effect. Snapshots
-// the current waypoints, which makes handoffPending false until the next edit.
-export function commitHandoff(world, stageId) {
-	var stage = world.getStage(stageId);
-	if (!stage) { return; }
-	var p = Object.assign({}, defaultParams, stage.params);
-	world.set({ stage: stageId, params: { handoff: copyWaypoints(p.waypoints) } });
 }
 
 function isoOf(jd) {
@@ -668,43 +617,24 @@ export function placeAtSweptAngles(leg, legDays, waypoints, degs) {
 	});
 }
 
-// Last computed legs per (World, stage), for the card readouts and the
-// polyline. Keyed by World first because N missions coexist and their Worlds
-// reuse stage ids like "stg-2" — a stageId-only cache would let one mission's
-// recompute clobber another's drawn leg. WeakMap, so a closed mission's entries
-// go with its World.
-//
-// TWO legs per stage, because the coast has two answers at once (see the
-// hand-off snapshot block above): `live` is the coast as currently tuned — the
-// drawn polyline, the chevron, the ship card's live readouts — and `handoff` is
-// the coast the Arrival phase is running on. They are the same object whenever
-// nothing is pending.
+// Last computed leg per (World, stage): the polyline, the card readouts, and
+// the arrival leg's start state all read it. Keyed by World first because N
+// missions coexist and their Worlds reuse stage ids like "stg-2" — a
+// stageId-only cache would let one mission's recompute clobber another's
+// drawn leg. WeakMap, so a closed mission's entries go with its World.
 var lastByWorld = new WeakMap();
-function legsOf(world, stageId) {
+
+export function legFor(world, stageId) {
 	var m = lastByWorld.get(world);
 	return (m && m.get(stageId)) || null;
 }
 
-// The coast as currently tuned. Everything that DRAWS the coast wants this.
-export function legFor(world, stageId) {
-	var l = legsOf(world, stageId);
-	return l ? l.live : null;
-}
-
-// The coast the Arrival phase is running on — the last hand-off. Arrival stages
-// read the coast through THIS, so a pending waypoint edit moves the drawn arc
-// without moving the approach the arrival phase has been built against.
-export function handoffLegFor(world, stageId) {
-	var l = legsOf(world, stageId);
-	return l ? l.handoff : null;
-}
-
-function rememberLegs(world, stageId, live, handoff) {
+function rememberLeg(world, stageId, leg) {
 	if (!world || typeof world !== "object") { return; }   // a bare Node call
 	                                                       // (ctx.world null) has no view to feed
 	var m = lastByWorld.get(world);
 	if (!m) { m = new Map(); lastByWorld.set(world, m); }
-	m.set(stageId, { live: live, handoff: handoff });
+	m.set(stageId, leg);
 }
 
 // Each waypoint card's burn-editor host (init, below), by index — draw()
@@ -757,11 +687,8 @@ export default {
 	// (planner.js's MODULE_URLS) and only the registry is a shared handle. The
 	// same arrangement adopted-plan uses for complianceFor and friends.
 	legFor: legFor,
-	handoffLegFor: handoffLegFor,
 	stateAtElapsed: stateAtElapsed,
 	nearestApproach: nearestApproach,
-	handoffPending: handoffPending,
-	commitHandoff: commitHandoff,
 	sweptAnglesOf: sweptAnglesOf,
 	placeAtSweptAngles: placeAtSweptAngles,
 
@@ -769,32 +696,14 @@ export default {
 		var params = Object.assign({}, defaultParams, ctx.params);
 		var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 
-		// The live coast: what is drawn, and what the ship card reports against.
 		var leg = computeLeg(params, data);
-		// The hand-off coast: what Arrival is running on. Identical unless a
-		// waypoint edit is pending, in which case this is the SECOND full
-		// integration of the leg — the price of letting the arc move without
-		// dragging the arrival phase with it.
-		var handoff = leg;
-		if (Array.isArray(params.handoff) && !sameWaypoints(params.handoff, params.waypoints)) {
-			handoff = computeLeg(Object.assign({}, params, { waypoints: params.handoff }), data);
-		}
-		rememberLegs(ctx.world, ctx.stageId, leg, handoff.ok ? handoff : leg);
+		rememberLeg(ctx.world, ctx.stageId, leg);
 		if (!leg.ok) { return leg.diagnostic; }
-		// A pending edit that breaks the leg must not take the committed
-		// hand-off down with it, and vice versa: fall back to whichever ran.
-		if (!handoff.ok) { handoff = leg; }
 
-		// PACKET AND EVENTS COME FROM THE HAND-OFF, warnings from the live arc.
-		// The packet is the Arrival phase's input and the events carry the
-		// structure hung off this leg — core/arrival-seam.js's window, the
-		// phase sliders, the events bar — so all of that holds still until
-		// Update. The warnings are feedback on the arc the user is looking at
-		// and is actively dragging, so they track the live leg instead.
 		var packet = PacketTypes.make("ship-state",
-			{ r: handoff.end.r, v: handoff.end.v, jd: handoff.end.jd, frame: "helio",
-			  dvUsed: (data.dvUsed || 0) + handoff.totalDv },
-			{ tool: "mission-planner/transfer-leg", label: "leg end", iso: isoOf(handoff.end.jd) });
+			{ r: leg.end.r, v: leg.end.v, jd: leg.end.jd, frame: "helio",
+			  dvUsed: (data.dvUsed || 0) + leg.totalDv },
+			{ tool: "mission-planner/transfer-leg", label: "leg end", iso: isoOf(leg.end.jd) });
 
 		var warnings = [];
 		if (leg.impact) {
@@ -812,7 +721,7 @@ export default {
 				  fix: "Adjust the waypoint impulses, the leg duration, or whatever delivers the coast's starting state." }));
 		}
 
-		return { packet: packet, warnings: warnings, events: handoff.events };
+		return { packet: packet, warnings: warnings, events: leg.events };
 	},
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
@@ -847,21 +756,11 @@ export default {
 			var stage = ctx.world.getStage(ctx.stageId);
 			return Object.assign({}, defaultParams, stage ? stage.params : {});
 		}
-		// EVERY waypoint mutation goes through here. It writes the new list and,
-		// the first time anything on this leg is touched, captures the pre-edit
-		// list as the hand-off snapshot — in ONE patch, so there is never an
-		// instant where the live waypoints have moved and the hand-off has not.
-		//
-		// `list` must be DETACHED (copyWaypoints), never the live param objects:
-		// the callers below hand the vector editor a copy of each burn precisely
-		// so that the params still hold the pre-edit values when this runs. An
-		// editor writing through to the live burn would erase the very snapshot
-		// this is here to take.
+		// EVERY waypoint mutation goes through here, with a DETACHED list
+		// (copyWaypoints): the editors below work on copies, so the stage's
+		// params only ever change through world.set and the recompute it runs.
 		function commitWaypoints(list) {
-			var p = stageParams();
-			var patch = { waypoints: list };
-			if (!Array.isArray(p.handoff)) { patch.handoff = copyWaypoints(p.waypoints); }
-			ctx.world.set({ stage: ctx.stageId, params: patch });
+			ctx.world.set({ stage: ctx.stageId, params: { waypoints: list } });
 		}
 
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);

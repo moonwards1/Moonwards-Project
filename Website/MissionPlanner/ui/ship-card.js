@@ -1,24 +1,20 @@
 ﻿/* Mission Planner — the ship card.
  *
  * A floating card in the scene pane reporting on the ship the chevron marks:
- * a small three.js gizmo, a numeric summary, and a speed bar — plus, for
- * phases that ask for them, an approach readout, a timing bar, a B-plane
- * square and a commit button.
+ * a small three.js gizmo, a numeric summary, and a speed bar — plus, for a
+ * phase that asks for it, a B-plane square.
  *
  * Departure's gizmo is a comparison: dim = the v∞ the adopted plan requires at
  * hand-off, bright = what the technology delivers, each split onto the burn
  * frame's three axes plus a net line, and "on course" is when the two coincide.
- * Coast's gizmo shows a single vector instead — the speed change pending
- * waypoint edits make at leg end, split onto the committed leg end's own burn
- * frame the same way, with the net line drawn in the bright/white net colour.
- * Coast has no on-course state at all: many passes arrive successfully, so the
- * card reports the approach and offers Update rather than grading it.
+ * Coast has no gizmo and no on-course state: many passes arrive successfully,
+ * so the card shows the speed along the coast and which side of the
+ * destination the pass goes, and grades nothing.
  *
  * OPTIONAL PARTS. Every section is filled by a setter and renders nothing until
  * one is called, so a phase takes only the parts it needs and the card stays
- * phase-agnostic: setComponents/setOnCourse are Departure's, setApproach/
- * setTiming/setBPlane/setUpdate are Coast's, and the gizmo and speed bar serve
- * both.
+ * phase-agnostic: the gizmo, setComponents and setOnCourse are Departure's,
+ * setBPlane is Coast's, and the speed bar serves both.
  *
  * The gizmo is a scissored viewport off the shell's single shared renderer —
  * the same mechanism the floating panes use — so the card costs no extra WebGL
@@ -30,7 +26,7 @@
  * business, not this file's.
  *
  * The pure halves (vInfComponents, gizmoScale, speedModel, speedAlong,
- * speedRange, peakSpeed, bearingPoint, timingModel) take and return plain
+ * speedRange, peakSpeed, bearingPoint) take and return plain
  * values and are Node-tested in tests/ship-card.test.js.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
@@ -54,7 +50,6 @@ var AXIS_KEYS = ["pro", "rad", "nrm"];
 var AXIS_LABELS = { pro: "Prograde", rad: "Radial", nrm: "Normal" };
 
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
-function isNum(x) { return typeof x === "number" && isFinite(x); }
 
 // =======================================================================
 //  Pure model
@@ -81,9 +76,9 @@ export function gizmoScale(needed, current) {
 	var m = 0;
 	[needed, current].forEach(function (s) {
 		if (!s) { return; }
-		// A net-only layer (the Coast card) carries no components at all, so
-		// each is skipped rather than folded in as NaN — which would poison the
-		// running maximum and collapse the scale to its fallback.
+		// A missing component is skipped rather than folded in as NaN, which
+		// would poison the running maximum and collapse the scale to its
+		// fallback.
 		["pro", "rad", "nrm", "net"].forEach(function (k) {
 			if (isFinite(s[k])) { m = Math.max(m, Math.abs(s[k])); }
 		});
@@ -166,19 +161,6 @@ export function bearingPoint(angleDeg, radius) {
 	return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
 }
 
-// How far the live arrival sits from the coast's own last-committed arrival —
-// a plain delta, not a comparison to the adopted plan. Positive hours = later.
-//
-// Returns { hours }, or null when either epoch is missing.
-export function timingModel(deliveredJd, refJd) {
-	// isFinite(null) is true — null coerces to 0 — so "is there an epoch at all?"
-	// needs the type check, not just finiteness. Nothing pending (or nothing
-	// reachable) hands a null through here, and treating it as JD 0 would
-	// measure the delivered epoch against the year -4712.
-	if (!isNum(deliveredJd) || !isNum(refJd)) { return null; }
-	return { hours: (deliveredJd - refJd) * 24 };
-}
-
 // =======================================================================
 //  The widget
 // =======================================================================
@@ -191,12 +173,6 @@ function el(tag, cls, text) {
 }
 
 function kms(x) { return (x == null || !isFinite(x)) ? "—" : x.toFixed(2); }
-// A change figure: one decimal, and small enough values read as a plain zero
-// rather than as "-0.0", which looks like a measurement when it is a rounding.
-function chg(x) {
-	if (x == null || !isFinite(x)) { return "—"; }
-	return Math.abs(x) < 0.05 ? "0" : x.toFixed(1);
-}
 
 // Line thickness in gizmo units (radius, so the drawn width is twice this).
 // Needed is drawn fat and current thin, and the current layer is drawn over it
@@ -241,8 +217,8 @@ function makeLine(dir, len, colorHex, radius) {
 //   background  — gizmo clear colour; matches the card's own CSS background so
 //                 the scissored render is seamless with the DOM around it
 //
-// Returns { el, gizmoEl, setOnCourse, setGizmo, setComponents, setSpeed,
-// setExtra, render, dispose }.
+// Returns { el, gizmoEl, setOnCourse, setGizmo, showGizmo, setComponents,
+// setSpeed, setSubtitle, setBPlane, setExtra, render, dispose }.
 export function createShipCard(opts) {
 	opts = opts || {};
 	var host = opts.host;
@@ -267,23 +243,12 @@ export function createShipCard(opts) {
 	titleWrap.appendChild(subtitle);
 	var badge = el("span", "mp-ship-oncourse", "✓");
 	badge.title = "On course";
-	// The commit control and the approach square are Coast's; both stay empty
-	// and out of the layout until a caller fills them (setUpdate / setBPlane).
-	var commitWrap = el("span", "mp-ship-commit");
-	var updateBtn = document.createElement("button");
-	updateBtn.className = "mp-btn mp-ship-update";
-	// Named for what it does, not "Update": the mission bar has an Update of
-	// its own that commits a re-targeted departure, and two buttons a screen
-	// apart both reading "Update" would be two different commitments wearing
-	// the same word.
-	updateBtn.textContent = "Hand off to Arrival";
-	updateBtn.style.display = "none";
-	commitWrap.appendChild(badge);
-	commitWrap.appendChild(updateBtn);
+	// The approach square is Coast's; it stays out of the layout until a
+	// caller fills it (setBPlane).
 	var bPlaneEl = el("div", "mp-ship-bplane");
 	bPlaneEl.style.display = "none";
 	head.appendChild(titleWrap);
-	head.appendChild(commitWrap);
+	head.appendChild(badge);
 	head.appendChild(bPlaneEl);
 	top.appendChild(head);
 
@@ -308,10 +273,6 @@ export function createShipCard(opts) {
 	bodyEl.appendChild(tableEl);
 	var speedEl = el("div", "mp-ship-speed");
 	bodyEl.appendChild(speedEl);
-	var approachEl = el("div", "mp-ship-approach");
-	bodyEl.appendChild(approachEl);
-	var timingEl = el("div", "mp-ship-timing");
-	bodyEl.appendChild(timingEl);
 	var extraEl = el("div", "mp-ship-extra");
 	bodyEl.appendChild(extraEl);
 
@@ -357,10 +318,7 @@ export function createShipCard(opts) {
 	// Passing null clears the gizmo.
 	//
 	// Departure passes both layers with `axes`, drawing the needed/current
-	// comparison: each layer's three components plus its net. Coast passes only
-	// `current` with `axes` set to the leg end's own burn frame — the speed
-	// change pending waypoint edits make, split onto that frame, with no
-	// "needed" layer to compare against.
+	// comparison: each layer's three components plus its net.
 	function setGizmo(spec) {
 		clearGroup();
 		if (!spec) { return; }
@@ -393,7 +351,14 @@ export function createShipCard(opts) {
 			});
 	}
 
-	// ---- readouts ---------------------------------------------------------
+	// Whether the phase uses the gizmo at all. Hidden, the strip and its
+	// "Align to view" toggle leave the layout, and render draws nothing there.
+	function showGizmo(on) {
+		gizmoEl.style.display = on ? "" : "none";
+		alignLabel.style.display = on ? "" : "none";
+	}
+
+	// ---- readouts---------------------------------------------------------
 
 	// The Needed/Current comparison: one column per axis plus the net, needed
 	// on a filled chip (the plan's demand) and current as plain text (what the
@@ -418,31 +383,6 @@ export function createShipCard(opts) {
 			row.appendChild(el("span", "mp-ship-cell mp-ship-c-net", r[1] ? kms(r[1].net) : "—"));
 			tableEl.appendChild(row);
 		});
-	}
-
-	// A SINGLE labelled row of axis figures, for a phase reporting one vector
-	// rather than a comparison — the Coast card's net speed change from its
-	// waypoints. Shares tableEl (and so the axis colours and column widths) with
-	// setComponents; a phase uses one or the other, never both.
-	function setChange(label, comps, unit) {
-		tableEl.innerHTML = "";
-		if (!comps) { return; }
-		var head2 = el("div", "mp-ship-row mp-ship-row-head");
-		head2.appendChild(el("span", "mp-ship-rowlabel", ""));
-		AXIS_KEYS.forEach(function (k) {
-			head2.appendChild(el("span", "mp-ship-cell mp-ship-h-" + k, AXIS_LABELS[k]));
-		});
-		head2.appendChild(el("span", "mp-ship-cell mp-ship-h-net", "Net"));
-		tableEl.appendChild(head2);
-
-		var row = el("div", "mp-ship-row mp-ship-row-current");
-		row.appendChild(el("span", "mp-ship-rowlabel mp-ship-changelabel",
-			label + (unit ? " " + unit : "")));
-		AXIS_KEYS.forEach(function (k) {
-			row.appendChild(el("span", "mp-ship-cell mp-ship-c-" + k, chg(comps[k])));
-		});
-		row.appendChild(el("span", "mp-ship-cell mp-ship-c-net", chg(comps.net)));
-		tableEl.appendChild(row);
 	}
 
 	// The speed section: a headline, then a bar whose right edge IS the peak
@@ -508,65 +448,10 @@ export function createShipCard(opts) {
 		subtitle.textContent = text ? " - " + text : "";
 	}
 
-	// The commit control. spec: { show, enabled, title, onClick } — null hides
-	// it. The button is NEVER disabled merely because the pass got worse: which
-	// way is better is the user's call (raising a closest approach to clear an
-	// impact is an improvement, and the plan commits no periapsis to judge it
-	// against), so the chips say which way each figure moved and the button
-	// stays live.
-	function setUpdate(spec) {
-		if (!spec || !spec.show) { updateBtn.style.display = "none"; return; }
-		updateBtn.style.display = "";
-		updateBtn.disabled = spec.enabled === false;
-		updateBtn.title = spec.title || "";
-		updateBtn.onclick = spec.onClick || null;
-	}
-
-	// The approach chips: the figures the reader is actually steering — how
-	// close the pass comes and how fast it arrives. Each is a big value on a
-	// chip, with the committed figure underneath when it differs, so a pending
-	// edit reads as a move from one number to another.
-	//
-	// rows: [{ label, value, unit, ref, better }] — `ref` is the committed
-	// figure's text (omitted when nothing is pending), `better` is true/false/
-	// null for the direction of the move. null clears.
-	function setApproach(rows) {
-		approachEl.innerHTML = "";
-		if (!rows || !rows.length) { return; }
-		rows.forEach(function (r) {
-			var cell = el("div", "mp-ship-appcell");
-			cell.appendChild(el("div", "mp-ship-applabel", r.label));
-			var chip = el("div", "mp-ship-appchip");
-			if (r.better === true) { chip.classList.add("better"); }
-			if (r.better === false) { chip.classList.add("worse"); }
-			chip.appendChild(el("span", "mp-ship-appval", r.value));
-			if (r.unit) { chip.appendChild(el("span", "mp-ship-appunit", r.unit)); }
-			cell.appendChild(chip);
-			if (r.ref) { cell.appendChild(el("div", "mp-ship-appref", r.ref)); }
-			approachEl.appendChild(cell);
-		});
-	}
-
-	// A plain readout (matching setChange's style, not a bar): how far the live
-	// arrival has moved from the coast's own last-committed arrival. model
-	// comes from timingModel; null clears.
-	function setTiming(model) {
-		timingEl.innerHTML = "";
-		if (!model) { return; }
-		var mag = Math.abs(model.hours);
-		var text = mag < 0.05 ? "unchanged"
-			: (mag >= 48 ? (model.hours / 24).toFixed(1) + " d" : model.hours.toFixed(1) + " h") +
-			  (model.hours > 0 ? " later" : " earlier");
-		var line = el("div", "mp-ship-timinghead");
-		line.appendChild(el("b", null, "Timing:"));
-		line.appendChild(el("span", "mp-ship-timingval", text));
-		timingEl.appendChild(line);
-	}
-
 	// The approach square: which side of the destination the ship passes on,
 	// read off the B-plane (Shared/math-utils.js's bPlane). model:
 	// { angleDeg, label } or null. Only the BEARING is shown — the dot sits at a
-	// fixed radius and says nothing about distance, which the chips above carry.
+	// fixed radius and says nothing about distance, which the mission bar carries.
 	function setBPlane(model) {
 		bPlaneEl.innerHTML = "";
 		if (!model || !isFinite(model.angleDeg)) { bPlaneEl.style.display = "none"; return; }
@@ -674,13 +559,10 @@ export function createShipCard(opts) {
 		gizmoEl: gizmoEl,
 		setOnCourse: setOnCourse,
 		setGizmo: setGizmo,
+		showGizmo: showGizmo,
 		setComponents: setComponents,
-		setChange: setChange,
 		setSpeed: setSpeed,
 		setSubtitle: setSubtitle,
-		setUpdate: setUpdate,
-		setApproach: setApproach,
-		setTiming: setTiming,
 		setBPlane: setBPlane,
 		setExtra: setExtra,
 		render: render,

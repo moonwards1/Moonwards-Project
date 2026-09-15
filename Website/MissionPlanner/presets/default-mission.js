@@ -52,7 +52,7 @@
 //
 // This preset carries no `lunarRelease`, so the Ephemeris tab cannot reopen it
 // for revision: a lunar departure is authored FORWARD now (Notes/decisions.md,
-// 2026-09-01) and its release is not recoverable from the hand-off. Re-solving
+// 2026-09-09) and its release is not recoverable from the hand-off. Re-solving
 // this mission against the forward model is an open decision.
 //
 // THE DELIBERATE GAP: released at that epoch with phase 92, the chain delivers
