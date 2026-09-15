@@ -1,52 +1,28 @@
-﻿/* MissionPlanner/core/retarget — re-state the departure REQUIREMENT at the
- * point the ship actually leaves from.
+﻿/* MissionPlanner/core/retarget — the Update button's solve: re-state the
+ * plan's departure REQUIREMENT at the exit point the technology actually
+ * delivers.
  *
- * THE PROBLEM. A adopted plan commits to a hand-off state — a position, a
- * velocity and an epoch at the origin's SOI edge. At every origin BUT THE MOON,
- * a plan authored in the Ephemeris tab DERIVES that position (`body position +
- * R_soi x heading`): a geometric convenience, not a place any real departure
- * chain comes out. A skyhook release with an Oberth pass leaves from somewhere
- * else on that sphere entirely, and that offset alone, flown with the plan's
- * own waypoint burns, throws the arrival off by millions of kilometres. It does
- * this while the compliance boundary reads "on course", because that boundary
- * compares speed, epoch and aim direction, and never position.
+ * The plan commits to a hand-off state at the origin's SOI edge; the real
+ * departure chain exits somewhere else on that sphere, and the position gap
+ * alone can miss the arrival by millions of km while compliance reads "on
+ * course" (it compares speed, epoch and aim, never position). This module
+ * keeps the REAL exit point and epoch and solves the velocity that reaches
+ * the plan's destination from there. Why re-target rather than adopt the
+ * delivered state or let coast waypoints absorb the error:
+ * Notes/decisions.md, 2026-08-25.
  *
- * A MOON ORIGIN does not derive its hand-off: core/lunar-departure.js
- * propagates the release's escape hyperbola to Earth's SOI and commits that
- * crossing, so the plan already asks for a v∞ at a point a real departure can
- * reach. What remains there is the gap between that two-body conic and the
- * departure leg's integrated Earth+Moon+Sun flight, which is a far smaller
- * thing than a constructed exit point — but this solve is still what closes it.
+ * It aims for a PASS — closest approach at AIM_PASS_ALTITUDE above the
+ * destination, on the side the flight already goes by — and that pass is the
+ * ONLY gate on committing (withinTolerance). The size of the ask decides
+ * nothing. Notes/decisions.md, 2026-08-26.
  *
- * THE FIX IS NOT TO ABSORB IT DOWNSTREAM. A coast waypoint is a trim — the
- * editors cap it at +/-100 m/s per axis (transfer-leg's WAYPOINT_AXIS_CAP_MPS)
- * — and its job is drift, not a systematic aiming error two orders of
- * magnitude larger. Spending the correction budget on the departure's geometry
- * leaves nothing for what the budget is for.
+ * SCOPE: the departure requirement, nothing else. The coast and arrival
+ * phases gate their own commits, and this solve has no say in those. It takes
+ * the coast's waypoints exactly as they currently stand — including edits
+ * made after the plan was adopted — and solves the departure that flies THAT
+ * coast to the destination.
  *
- * So instead: keep the REAL exit point and re-solve what has to be delivered
- * FROM it. This module answers "leaving from where the technology actually
- * leaves, at that moment, what heading and speed reaches the plan's
- * destination?" The answer becomes the plan's new departure requirement, the
- * compliance boundary goes back to reading honestly against it, and the user
- * re-tunes the technology towards it. Re-tuning moves the exit point a little,
- * which re-targets a little: a loop that closes on something the technology can
- * really fly, instead of on a point no chain was ever going to hit.
- *
- * WHAT IT AIMS FOR is a PASS — closest approach at proximity.js's
- * AIM_PASS_ALTITUDE above the destination's surface, on the side the flight
- * already goes by — not the arrival POINT the plan was authored with. A plan's
- * own flyby offset is whatever the Ephemeris tab happened to be pointed at;
- * once a real departure is flying the mission, what matters is arriving close
- * enough for the arrival phase to take over.
- *
- * AND THAT PASS IS THE WHOLE STANDARD. A requirement is worth committing when
- * meeting it lands the mission at the destination. How big a change it asks of
- * the departure decides nothing: a correct requirement does not become wrong
- * for being expensive, and an ask the technology cannot meet yet is answered by
- * building the technology up, which is exactly what the Needed column is for.
- *
- * Pure: plain values in, plain values out. Every answer is VERIFIED by flying
+ * Pure: plain values in, plain values out. Every answer is verified by flying
  * it through core/delivered-flight.js — a solve that doesn't actually arrive
  * is not an answer.
  */
@@ -104,16 +80,14 @@ export function propagateWithWaypoints(r0, v0, waypoints, tDays) {
 	return O.propagateState(GM_SUN(), r, v, (tDays - t) * DAY);
 }
 
-// DIFFERENTIAL CORRECTION on the departure velocity: find the v at r0 whose
-// flight — across the waypoint burns, which stay exactly as authored — arrives
-// at `target` after `tDays`. Newton with a numerical Jacobian, damped so a full
-// step on a long sensitive arc cannot overshoot into nonsense.
+// Differential correction on the departure velocity: find the v at r0 whose
+// flight — through the waypoint burns, taken as authored — arrives at `target`
+// after `tDays`. Newton with a numerical Jacobian, damped so a full step on a
+// long sensitive arc cannot overshoot.
 //
-// Aiming at the first waypoint instead — matching position there and letting
-// the rest replay — is NOT enough. Matching position leaves a VELOCITY mismatch
-// at that point, and on the Moon->Ceres mission the few m/s left over grew into
-// a 249,418 km miss across the remaining 275 days. The whole flight has to be
-// the thing being solved.
+// The WHOLE flight is what gets solved. Aiming only at the first waypoint
+// matches position there but leaves a velocity mismatch that compounds over
+// the rest of the coast into a large miss (Notes/decisions.md, 2026-08-25).
 export function solveArrivalVelocity(r0, v0Guess, waypoints, tDays, target) {
 	var v = v0Guess.slice();
 	var best = v.slice(), bestErr = Infinity;
@@ -143,29 +117,18 @@ export function solveArrivalVelocity(r0, v0Guess, waypoints, tDays, target) {
 	return { v: best, err: bestErr };
 }
 
-// A solve is an ANSWER only if it actually reached its aim. solveArrivalVelocity
+// A solve counts as an answer only if it reached its aim: solveArrivalVelocity
 // returns its best attempt whatever happens, and a stalled attempt can sit
-// millions of km from the target — a number with the shape of a requirement and
-// none of the meaning. One aim offset is the bound: inside it the flown
-// verification decides, outside it there is nothing to report.
+// millions of km from the target. Inside one aim offset the flown verification
+// decides; outside it there is nothing to report.
 var CONVERGED_M = AIM_PASS_ALTITUDE;
 
 // The departure velocity that hits `target`, from the seeds worth trying.
-//
-// EVERY SEED IS A REAL TRAJECTORY'S OWN VELOCITY — the one the technology
-// delivers, and the one the plan commits to. Both describe a flight that goes
-// roughly where this one has to go, so the answer sits a few hundred m/s away
-// and the correction walks there in a couple of steps.
-//
-// NOT a two-point conic. Asking "what orbit joins these two POSITIONS in this
-// time" is a different question from the one being solved, and it is singular
-// where the two points are 180 degrees apart: the plane through them is
-// undefined, so it answers with an arbitrary steep one. Seeded there, the
-// correction starts an out-of-plane climb it cannot walk back, and on a
-// 551-day Earth->Ceres coast — which sweeps 176.5 degrees — it stalls 9.7
-// million km from the aim. Nothing in the flight itself is singular there; the
-// state has a definite position and velocity at every point of it, and a
-// correction that starts from one arrives.
+// Every seed is a real trajectory's own velocity — the one the technology
+// delivers, then the one the plan commits to — so the correction converges in
+// a few steps. Never seed from a two-point (Lambert) conic: it is singular
+// near a 180-degree sweep and starts the correction on an out-of-plane climb
+// it cannot walk back (Notes/decisions.md, 2026-08-25).
 function bestSolve(r0, seeds, wps, legDays, target) {
 	var best = null;
 	for (var i = 0; i < seeds.length; i++) {
@@ -222,13 +185,11 @@ export function solveDepartureTarget(spec) {
 			"duration — there is no coast left to fly.";
 		return out;
 	}
-	// THE COAST'S WAYPOINTS ARE ALREADY NUMBERED FROM THE DELIVERED HAND-OFF.
-	// transfer-leg flies from the state adopted-plan emits, which is the state
-	// the technology delivered (its `jd0` is that epoch), so a burn at day N
-	// fires N days after the real exit — not N days after the plan's assumed
-	// one. Shifting them by the gap between those two epochs would model a
-	// flight whose burns fire at dates the drawn coast never fires them at.
-	// They are taken as they stand, and only clipped to the span of the leg.
+	// The coast's waypoints are already numbered in days from the DELIVERED
+	// hand-off — the same clock transfer-leg flies them on — so they are taken
+	// as they stand, only clipped to the leg's span. Shifting them onto the
+	// plan's assumed epoch would fire burns at dates the drawn coast never
+	// fires them at.
 	var wps = rebaseWaypoints(spec.coastWaypoints, 0, legDays);
 
 	// What the technology delivers RIGHT NOW, flown with the coast's own burns.
@@ -236,23 +197,14 @@ export function solveDepartureTarget(spec) {
 		delivered: d, waypoints: wps, horizonJd: spec.horizonJd });
 	out.passBefore = (now.ok && now.pass) ? now.pass.altitude : Infinity;
 
-	// THE AIM IS A PASS, NOT A POINT: closest approach at AIM_PASS_ALTITUDE
-	// above the destination's surface. The solver targets a POSITION at the
-	// coast's own horizon, so the aim point is the body's own position there,
-	// pushed out along the side the flight already passes on.
-	//
-	// Keeping the side matters — flipping to the other face of the body would
-	// be a different encounter geometry for no reason — but the DISTANCE is
-	// deliberately standardised. A plan authored in the Ephemeris tab carries
-	// whatever flyby offset it was built with (the Earth->Mars reference aims
-	// at ~50,000 km), and once a real departure is flying the mission that
-	// offset is not a commitment worth preserving: what matters is
-	// arriving close enough for the arrival phase to take over.
-	//
-	// Closest approach does not fall exactly at the horizon, so one solve
-	// does not land on the aim. The loop corrects the offset by the altitude
-	// error it measures and re-solves — a few passes, each one a Newton solve
-	// plus a real integrated flight, which is affordable on a button.
+	// The aim is a PASS, not a point: closest approach at AIM_PASS_ALTITUDE,
+	// on the side the flight already goes by — the side is kept, the distance
+	// standardised (Notes/decisions.md, 2026-08-26). The solver targets a
+	// POSITION at the coast's horizon, so the aim point is the body's position
+	// there, pushed out along that side. Closest approach does not fall exactly
+	// at the horizon, so the loop corrects the offset by the measured altitude
+	// error and re-solves — a few passes, each a Newton solve plus a real
+	// integrated flight, affordable on a button.
 	var aimDir = passOffsetDir(now, spec, p, wps);
 	if (!aimDir) {
 		out.reason = "The flight from the delivered hand-off never comes near " +
@@ -286,12 +238,10 @@ export function solveDepartureTarget(spec) {
 		if (flown.pass.rRel) { aimDir = O.vUnit(flown.pass.rRel); }
 	}
 
-	// A totally divergent solve (no encounter at all) has no state worth
-	// reporting. Anything short of that — a pass outside MAX_PASS_ALTITUDE, or
-	// an ask past the correction cap — is still a real answer: it names the
-	// requirement, and Check's job is to SHOW that requirement, not to hide it
-	// behind whether the technology can reach it yet. Those two checks gate
-	// only whether Update may commit (below), never whether a figure exists.
+	// Only a divergent solve (no encounter at all) has nothing to report. A
+	// pass outside MAX_PASS_ALTITUDE, or an expensive ask, is still a real
+	// answer: Check's job is to SHOW the requirement, and only Update's commit
+	// is gated (withinTolerance, below).
 	if (!sol || !(sol.err < CONVERGED_M)) {
 		out.reason = "No departure from the delivered exit point reaches " +
 			spec.destination + " over the coast's own duration — the closest aim found " +
@@ -312,19 +262,16 @@ export function solveDepartureTarget(spec) {
 	var bodyV = Frames.bodyHelioState(Frames.escapeReferenceFor(spec.origin), d.jd).v;
 	var vInfVec = O.vSub(sol.v, bodyV);
 
-	// HOW FAR THE TECHNOLOGY HAS TO MOVE, reported so the mission report can
-	// show the ask shrinking across iterations. It is a figure, not a gate.
+	// How far the technology has to move — a figure for the mission report,
+	// never a gate.
 	var curVInf = O.vSub(d.v, bodyV);
 	var ask = O.burnComponents(d.r, bodyV, O.vSub(vInfVec, curVInf));
 	var worst = Math.max(Math.abs(ask.pro), Math.abs(ask.rad), Math.abs(ask.nrm));
 	var mA = O.vMag(curVInf), mB = O.vMag(vInfVec);
 	var turnDeg = (mA > 1e-6 && mB > 1e-6) ? O.angleBetweenDeg(curVInf, vInfVec) : 0;
 
-	// THE ONE STANDARD: where the re-solved flight actually passes. A departure
-	// requirement is worth committing when meeting it lands the mission close
-	// enough for the arrival phase to take over, and that is the whole of it —
-	// what the ask COSTS is a separate question, answered by building the
-	// departure up, and no size of ask makes a correct requirement wrong.
+	// The one gate: where the re-solved flight actually passes. The size of
+	// the ask decides nothing (Notes/decisions.md, 2026-08-26).
 	var withinTolerance = passAfter < MAX_PASS_ALTITUDE;
 	var reason = withinTolerance ? null
 		: "Re-solved from the delivered exit point the flight still passes " +
