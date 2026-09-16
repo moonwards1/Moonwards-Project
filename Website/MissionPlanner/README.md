@@ -209,9 +209,7 @@ a time — the raw Ephemeris date bar is only a fallback for a phase with no
 resolvable span:
 
 - **Departure** — spans from release to the Departure→Coast hand-off. For an
-  Earth origin (a satellite carries the departure impulse) the left edge is
-  pinned at the release anchor and the right edge floats at the predicted
-  SOI-exit; for any other origin the right edge is pinned at the plan's
+  Moon origin the left edge is pinned at the release anchor and the right edge floats at the predicted SOI-exit; for any other origin the right edge is pinned at the plan's
   committed hand-off and the left edge floats back by the flight's own
   duration. The committed hand-off and the flight's actual events both mark
   the track.
@@ -309,8 +307,8 @@ never when it started.
 
 **The Departure→Coast boundary:**
 
-- **`modules/adopted-plan/`** — the adopted flight plan (comply mode): its
-  params ARE the plan captured at mission creation (origin, the adopted
+- **`modules/adopted-plan/`** — the adopted flight plan: its
+  params are the plan captured at mission creation (origin, the adopted
   heliocentric departure state/epoch, the arrival commitment, a reference copy
   of the plan's waypoint burns). `update()` **emits what the departure
   technology actually delivered** — position, velocity and epoch — so the
@@ -328,8 +326,7 @@ never when it started.
   real SOI encounters (where the arc dips inside a body's SOI the flight
   switches to `Shared/body-leg.js`'s body+Sun integration and resumes Kepler
   at exit). Consumes the hand-off ship-state unmodified — no burn happens at
-  that seam, since only a minority of a mission's delta-v comes from engine
-  burns; whatever put the ship there is upstream's business. A configured
+  that seam; whatever put the ship there is upstream's business. A configured
   destination reports its arrival miss distance through the warnings channel.
   Snap-to and Lambert targeting stay on the Ephemeris tab.
 
@@ -442,15 +439,4 @@ at the copy's root.)
 ## What's next
 
 There is no task document, and no build order. Work comes from Kim directly,
-a request at a time. Broadly, the outstanding work is: the six technology
-platforms still to be written
-(space elevator, tug, ring mass driver, linear mass driver, tip spin
-launcher, aerobrake) onto the shape in `modules/platform/`; linking cards to
-their calculators through the exchange; fleshing out the Arrival phase, which
-is what would let the pass standard in `core/proximity.js` come from what the
-arrival technology can actually catch instead of two flat numbers; and the
-message bar explaining why the mission bar's figures move.
-
-`../../Notes/decisions.md` holds the settled rules that work
-builds on; `../ARCHITECTURE.md` covers the general module/packet model this
-folder implements.
+a request at a time.  `../ARCHITECTURE.md` covers the general module/packet model this folder implements.
