@@ -23,6 +23,9 @@ body {
 .mp-tabbar {
 	display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px 0;
 	background: #0e1220; border-bottom: 1px solid var(--line); flex: none;
+	/* Above the main area (see .mp-main), same as #mp-banner/.mp-headerbar/
+	   .mp-datebar below. */
+	position: relative; z-index: 2;
 }
 .mp-tabs { display: flex; gap: 6px; }
 .mp-tab {
@@ -63,6 +66,11 @@ body {
 .mp-headerbar {
 	display: flex; align-items: stretch; flex: none;
 	background: #0f1322; border-bottom: 1px solid var(--line);
+	/* Above the main area (see .mp-main): the impulse readout chips and
+	   floats live below this in the same stacking context now, so this no
+	   longer needs to out-rank their individual z-indices by number — only
+	   to be a positioned sibling with a higher one. */
+	position: relative; z-index: 2;
 }
 .mp-headercol { display: flex; flex-direction: column; min-width: 0; }
 .mp-headercol-phase { flex: 0 0 480px; width: 480px; }
@@ -129,12 +137,15 @@ body {
 	flex: none; padding: 6px 14px; font-size: 12.5px; cursor: pointer;
 	background: #241a20; color: var(--warn);
 	border-bottom: 1px solid #6b5226;
+	position: relative; z-index: 2;
 }
 
 /* ---------- date bar ---------- */
 .mp-datebar {
 	flex: none; padding: 7px 14px 10px; background: #0e1220;
 	border-bottom: 1px solid var(--line);
+	/* Above the main area, see .mp-main. */
+	position: relative; z-index: 2;
 }
 .mp-date-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
 .mp-date-caption { font-size: 13px; color: var(--bright); }
@@ -299,7 +310,15 @@ body {
 }
 
 /* ---------- main area ---------- */
-.mp-main { display: flex; flex: 1; min-height: 0; position: relative; }
+/* z-index:0 (not just position:relative) makes this its own stacking
+   context, so every z-indexed thing inside it — floats, the ship card, the
+   readout layer, the main pane's caption/HUD — stays confined below the
+   chrome that sits above the main area (tab bar, banner, mission bar, date
+   bar), which all carry a higher explicit z-index for exactly this. Without
+   that context boundary a child's z-index compares globally against the
+   whole page, which is how the readout chips and floats used to paint over
+   the mission bar whenever their rect reached above .mp-main's own box. */
+.mp-main { display: flex; flex: 1; min-height: 0; position: relative; z-index: 0; }
 
 .mp-scene { flex: 1; position: relative; background: var(--pane); min-width: 0; }
 .mp-scene canvas { position: absolute; inset: 0; display: block; }
@@ -337,6 +356,15 @@ body {
 	   over a body or chevron a click would focus, so the hand means that and
 	   nothing else. */
 	overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+	/* z-index:0 gives each float its own stacking context, so its caption
+	   (.mp-pane-cap, z-index:3 below) stays confined to this pane's own body
+	   and border instead of comparing against every other float's z-index:3
+	   caption directly — which is what let one pane's title bar float above
+	   another pane's body regardless of which pane visually sits in front.
+	   With that contained, the two panes' own root boxes stack by DOM order
+	   (mission-view.js builds one per frame, in a fixed order), so the same
+	   pane is always the one behind. */
+	z-index: 0;
 }
 .mp-float:hover { border-color: #3c5788; }
 /* Bottom-right resize grip (mission-view.js's bindFloatResize). Kept out of
@@ -385,6 +413,10 @@ body {
 	display: flex; flex-direction: column;
 	background: transparent; border: 1px solid var(--line2); border-radius: 8px;
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); overflow: hidden;
+	/* Its own stacking context, ranked above every .mp-float's (z-index:0) —
+	   the card and the frame floats are both hosted in .mp-floats, and the
+	   ship always reads on top of a frame pane wherever they overlap. */
+	z-index: 1;
 }
 .mp-shipcard:hover { border-color: #3c5788; }
 .mp-ship-top { background: #121f36; padding: 8px 10px 6px; display: flex; flex-direction: column; gap: 4px; }

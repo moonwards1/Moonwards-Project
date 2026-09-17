@@ -2552,36 +2552,45 @@ export function createMissionView(opts) {
 	// across calls.
 	var floatCamScratch = { radius: 0, theta: 0, phi: 0, target: null };
 
-	// The main pane's caption/HUD/events-dropdown (and its current frame's DOM
-	// label layer) are positioned absolutely across the WHOLE scene and carry
-	// an explicit z-index so they paint above the shared canvas — that z-index
-	// has no ancestor stacking context to stay confined to, so it's compared
-	// globally against .mp-floats' z-index (still correctly below it) rather
-	// than clipped to "wherever the main pane is visually uncovered". A float
-	// shows its own real scene through a TRANSPARENT box (see the .mp-float CSS
-	// comment), so it cannot hide the main pane's text by sitting on top of it —
-	// that text shows through wherever a float's rect overlaps. Punching
-	// float-shaped
-	// holes in the main pane's clip-path hides its overlay content there
-	// without touching the shared canvas (a sibling, unaffected by this
-	// element's clip-path) — the float's own scissor-rendered scene comes
-	// through untouched either way.
-	function updateMainOcclusion() {
-		var overlays = panes.filter(function (p) { return !p.isMain; }).map(function (p) { return p.el; });
-		// The ship card is opaque except for its gizmo hole, and that hole is a
-		// scissored render of its own scene — so it wants the same treatment a
-		// float gets, or the main pane's text shows through the arrows.
-		if (shipCardShown()) { overlays.push(shipCard.el); }
-		if (!overlays.length) { paneMainEl.style.clipPath = ""; return; }
-		var mr = paneMainEl.getBoundingClientRect();
+	// Every pane's caption/HUD/label layer is positioned absolutely across
+	// its WHOLE box and carries an explicit z-index so it paints above the
+	// shared canvas — correctly, but only WITHIN that one pane's own DOM box.
+	// A pane in front of it (a later float, or the ship card, both stacked
+	// above via CSS z-index — see .mp-float/.mp-shipcard in planner.css) is
+	// mostly TRANSPARENT, showing its own real scene through instead of a
+	// solid background (see the .mp-float and .mp-ship-gizmo CSS comments),
+	// so it cannot hide a pane behind it just by sitting on top of it in
+	// z-order — that pane's caption/labels show through the transparent
+	// regions wherever the two rects overlap. Punching pane-shaped holes into
+	// the BACK pane's own clip-path hides its overlay content there without
+	// touching the shared canvas (a sibling of every pane, unaffected by any
+	// one pane's clip-path) — the front pane's own scissor-rendered scene
+	// comes through untouched either way. Every pane needs this against
+	// whatever stacks above IT specifically: the main pane against every
+	// float and the ship card, each float against the later floats and the
+	// ship card (see the panes/z-order comment above), and the ship card
+	// against nothing — it is always frontmost.
+	function clipBehind(el, overlayEls) {
+		var live = overlayEls.filter(function (o) { var r = o.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+		if (!live.length) { el.style.clipPath = ""; return; }
+		var mr = el.getBoundingClientRect();
+		if (mr.width < 1 || mr.height < 1) { el.style.clipPath = ""; return; }
 		var d = "M0 0L" + mr.width + " 0L" + mr.width + " " + mr.height + "L0 " + mr.height + "Z";
-		overlays.forEach(function (overlayEl) {
+		live.forEach(function (overlayEl) {
 			var r = overlayEl.getBoundingClientRect();
 			var x = r.left - mr.left, y = r.top - mr.top;
 			d += "M" + x + " " + y + "L" + (x + r.width) + " " + y +
 				"L" + (x + r.width) + " " + (y + r.height) + "L" + x + " " + (y + r.height) + "Z";
 		});
-		paneMainEl.style.clipPath = "path(evenodd, \"" + d + "\")";
+		el.style.clipPath = "path(evenodd, \"" + d + "\")";
+	}
+	function updateOcclusion() {
+		var shipEl = shipCardShown() ? shipCard.el : null;
+		for (var i = 0; i < panes.length; i++) {
+			var ahead = panes.slice(i + 1).map(function (p) { return p.el; });
+			if (shipEl) { ahead.push(shipEl); }
+			clipBehind(panes[i].el, ahead);
+		}
 	}
 
 	// ---- rendering: the shared renderer, scissored per pane, only while this
@@ -2665,7 +2674,7 @@ export function createMissionView(opts) {
 	function render() {
 		if (!active) { return; }
 		updateChevrons();
-		updateMainOcclusion();
+		updateOcclusion();
 		var canvasRect = renderer.domElement.getBoundingClientRect();
 		renderPane(mainPane, canvasRect);
 		for (var i = 0; i < panes.length; i++) {
