@@ -433,13 +433,18 @@ body {
 .mp-ship-speednow b { font-weight: 400; }
 .mp-ship-speednow i { font-style: normal; font-size: 10.5px; color: var(--dim); }
 .mp-ship-peak { font-size: 11.5px; color: #7fd4f0; white-space: nowrap; }
-/* The bar's right edge IS the flight's peak speed, so it rescales whenever the
-   trajectory is recomputed. */
+/* A peak the bar doesn't reach — the flight's fastest point is in a close pass
+   left out of the bar's span, so the two numbers deliberately differ. */
+.mp-ship-peak-over { color: var(--warn); cursor: help; }
+/* The bar's right edge is the top of the flight's cruise, so it rescales
+   whenever the trajectory is recomputed. */
 .mp-ship-bar {
 	position: relative; height: 11px; border-radius: 6px;
 	border: 1px solid #7fd4f0; overflow: hidden;
 }
 .mp-ship-bar-fill { position: absolute; inset: 0 auto 0 0; background: #7fd4f0; }
+/* Pinned full because the ship is above the bar's top, not because it is at it. */
+.mp-ship-bar-over { background: var(--warn); }
 .mp-ship-bar-need { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--bright); }
 .mp-ship-bar-foot { position: relative; height: 1px; }
 .mp-ship-bar-marker {

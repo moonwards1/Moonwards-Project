@@ -132,6 +132,54 @@ test("speedRange: min and max across the sampled flight", () => {
 	assert.equal(speedRange([{ r: [1, 2, 3] }]), null);
 });
 
+test("speedRange: a time bound excludes the flight past the seam", () => {
+	// A cruise around 2-3 km/s, then a periapsis spike the Coast card's chevron
+	// can never reach — the bar must not scale to the spike.
+	var s = [{ t: 0, v: [3000, 0, 0] }, { t: 100, v: [2000, 0, 0] },
+	         { t: 200, v: [2500, 0, 0] }, { t: 300, v: [40000, 0, 0] }];
+	assert.deepEqual(speedRange(s), { min: 2000, max: 40000 });
+	assert.deepEqual(speedRange(s, { tMax: 200 }), { min: 2000, max: 3000 });
+	// The bound itself counts, interpolated, so the range never stops short of
+	// the fastest point still in view.
+	assert.deepEqual(speedRange(s, { tMax: 250 }), { min: 2000, max: 21250 });
+	// No bound given, or an unusable one, is the plain whole-flight scan.
+	assert.deepEqual(speedRange(s, { tMax: NaN }), { min: 2000, max: 40000 });
+});
+
+test("speedRange: a skip window leaves an en-route close pass out", () => {
+	// Cruise 2-3 km/s with a flyby spike at t=200 that IS inside the scrubbable
+	// span — excluded by window, not by the bound.
+	var s = [{ t: 0, v: [3000, 0, 0] }, { t: 100, v: [2000, 0, 0] },
+	         { t: 200, v: [40000, 0, 0] }, { t: 300, v: [2500, 0, 0] }];
+	assert.deepEqual(speedRange(s), { min: 2000, max: 40000 });
+	assert.deepEqual(speedRange(s, { skip: [{ t0: 150, t1: 250 }] }),
+		{ min: 2000, max: 3000 });
+	// An empty or absent list is the plain scan, not an excluded everything.
+	assert.deepEqual(speedRange(s, { skip: [] }), { min: 2000, max: 40000 });
+	// A bound landing inside a skipped window doesn't smuggle the excursion back
+	// in as the interpolated edge.
+	assert.deepEqual(speedRange(s, { tMax: 200, skip: [{ t0: 150, t1: 250 }] }),
+		{ min: 2000, max: 3000 });
+});
+
+test("speedModel: an excursion above the bar reports max and over", () => {
+	// Bar spans the cruise 2..3; the flight's true peak is 40.
+	var m = speedModel(2.5, NaN, 3, 2, 40);
+	assert.equal(m.peak, 3);
+	assert.equal(m.max, 40);
+	assert.equal(m.over, false);
+	// Scrubbed into the pass: the fill pins full and the card is told why.
+	var inPass = speedModel(40, NaN, 3, 2, 40);
+	assert.equal(inPass.over, true);
+	assert.equal(inPass.currentFrac, 1);
+	// Nothing excluded — max matches the bar's top, so the card shows one figure.
+	var plain = speedModel(2.5, NaN, 3, 2, 3);
+	assert.equal(plain.max, null);
+	assert.equal(plain.over, false);
+	// A caller that passes no max at all is unaffected.
+	assert.equal(speedModel(2.5, NaN, 3, 2).max, null);
+});
+
 test("bearingPoint: 0 degrees is straight up, 90 is to the right", () => {
 	var up = bearingPoint(0, 10);
 	assert.ok(Math.abs(up.x) < 1e-9 && Math.abs(up.y + 10) < 1e-9, JSON.stringify(up));

@@ -2320,16 +2320,38 @@ export function createMissionView(opts) {
 		// reader is scrubbing for. The position sampled is the chevron's, seam
 		// clamp included (transfer-leg's draw), so the number belongs to the
 		// marker on screen.
+		//
+		// The bar's ends are measured over the SAME span the chevron can reach:
+		// the leg's samples run on past the seam, through the destination
+		// encounter, where periapsis speed is far above anything on the cruise.
+		// Scaled to that, the bar would pin a peak the reader can never scrub to
+		// and squash the whole coast into its bottom end.
 		var dest = coastDestination();
 		var pass = dest ? desc.nearestApproach(leg, dest) : null;
 		var seam = dest ? computeArrivalSeam({ destination: dest,
 			pass: pass, fallbackArrivalJd: leg.end.jd }) : null;
+		var seamT = seam ? (seam.start - leg.jd0) * 86400 : NaN;
 		var t = (world.jd - leg.jd0) * 86400;
-		if (seam) { t = Math.min(t, (seam.start - leg.jd0) * 86400); }
-		var range = speedRange(leg.samples);
+		if (seam) { t = Math.min(t, seamT); }
+		// A body met ON THE WAY is an excursion, not the cruise. Its close pass
+		// is over in hours inside a timeline spanning years, so no scrub lands on
+		// it, and a bar scaled to it would flatten the whole coast — the same
+		// failure as the tail past the seam, differing only in that this stretch
+		// is technically reachable. Its window is left out of the bar's ends and
+		// overflows them instead; Peak still states it. The DESTINATION's own
+		// encounter stays in: the run-in is what the reader is watching, and the
+		// bound above already cuts it at the seam.
+		var flybys = (leg.segs || []).filter(function (g) {
+			return g.type === "enc" && g.body !== dest;
+		}).map(function (g) { return { t0: g.tStart, t1: g.tStart + g.dur }; });
+		var full = speedRange(leg.samples, { tMax: seamT });
+		var cruise = flybys.length
+			? (speedRange(leg.samples, { tMax: seamT, skip: flybys }) || full)
+			: full;
 		var now = speedAlong(leg.samples, t);
-		shipCard.setSpeed(range
-			? speedModel(now == null ? NaN : now / 1000, NaN, range.max / 1000, range.min / 1000)
+		shipCard.setSpeed(cruise
+			? speedModel(now == null ? NaN : now / 1000, NaN,
+				cruise.max / 1000, cruise.min / 1000, full.max / 1000)
 			: null);
 
 		if (!pass) { shipCard.setBPlane(null); return; }

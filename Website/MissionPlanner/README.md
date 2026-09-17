@@ -9,6 +9,7 @@ simulator. Three other documents carry the rest of the picture:
   — settled rules that cut across several files (phase seams, timelines,
   waypoint controls, the technology-platform shape), stated once there rather
   than restated here.
+  - Don't put dates on edits to it. Don't make it chronological, edit it to keep it an integrated, coherent description of standing policy.
 
 This README describes what the code does **now**.
 

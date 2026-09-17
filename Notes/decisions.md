@@ -216,7 +216,7 @@ Why the sampled version fails silently: its usable range is however far the
 leg happens to be drawn, and a clamped out-of-range hold snaps the marker to
 the arc's end and leaves it stuck there.
 
-**Inside an SOI the angle is measured around the BODY** (2026-09-17), off that
+**Inside an SOI the angle is measured around the BODY**, off that
 encounter's own integrated trail, and the segments' degrees accumulate. A
 capture loop's heliocentric sweep doubles back, so a Sun-measured domain has
 several times answering to one degree and the marker jumps between them; around

@@ -88,14 +88,20 @@ export function gizmoScale(needed, current) {
 
 // The speed bar's model, km/s. Peak pins the right edge and is recomputed with
 // the trajectory, so the bar rescales as the flight is tuned and the fill
-// always reads as a fraction of the fastest the ship goes this phase.
+// always reads as a fraction of the bar's own span.
 //
 // `floor` pins the LEFT edge. Omitted (the Departure card) the bar starts at
 // zero, as it always has. Given (the Coast card) the bar spans the flight's own
 // [min, max] instead: an interplanetary coast never goes anywhere near zero, so
 // a zero-based bar would spend four fifths of its length saying nothing and the
 // variation the reader is scrubbing for would be invisible.
-export function speedModel(current, needed, peak, floor) {
+//
+// `max` is the fastest the ship goes on the whole phase, which is ABOVE the
+// bar's top when a close pass was left out of the bar's span (see speedRange's
+// `skip`). Reported as `max` only then, so a caller with nothing excluded is
+// unaffected; `over` says the ship is currently up in that excursion, where the
+// fill pins full and the headline speed is the only honest readout.
+export function speedModel(current, needed, peak, floor, max) {
 	var p = (isFinite(peak) && peak > 0) ? peak : null;
 	var f = (isFinite(floor) && floor >= 0 && p && floor < p) ? floor : 0;
 	var span = p ? p - f : 0;
@@ -104,6 +110,8 @@ export function speedModel(current, needed, peak, floor) {
 		current: isFinite(current) ? current : null,
 		needed: isFinite(needed) ? needed : null,
 		peak: p,
+		max: (p && isFinite(max) && max > p) ? max : null,
+		over: !!(p && isFinite(current) && current > p),
 		floor: f > 0 ? f : null,
 		currentFrac: (p && isFinite(current)) ? frac(current) : 0,
 		neededFrac: (p && isFinite(needed)) ? frac(needed) : null
@@ -128,17 +136,56 @@ export function speedAlong(samples, elapsed) {
 	return O.vMag(last.v);
 }
 
-// The slowest and fastest the ship goes anywhere on the sampled flight (m/s),
-// null when there is nothing sampled or no sample carries a velocity.
-export function speedRange(samples) {
+// The slowest and fastest the ship goes over a sampled flight (m/s), null when
+// there is nothing sampled or no sample carries a velocity. With no options
+// this is the plain whole-flight scan.
+//
+// Both options exist for the same reason: a speed bar scaled to a figure the
+// reader cannot reach by scrubbing reads as broken, because the flight on
+// screen never shows it.
+//
+// `opts.tMax` (seconds since the leg's start) bounds the scan to the part of
+// the flight the card can show at all. A leg's samples routinely run past the
+// end of the phase reading them — the coast's continue past the arrival seam,
+// through the destination's SOI, where periapsis speed dwarfs the cruise. The
+// bound itself is included at its interpolated value, so the range never stops
+// just short of the fastest point still in view.
+//
+// `opts.skip` is a list of { t0, t1 } second windows left out of the scan: the
+// close passes of bodies met on the way. Those are inside the span the chevron
+// can reach, but a periapsis lasting hours sits within a slider spanning years,
+// so no scrub lands on it while the bar scaled to it flattens the entire
+// cruise. Left out, the excursion overflows the bar instead of setting it.
+export function speedRange(samples, opts) {
 	if (!samples || !samples.length) { return null; }
-	var lo = Infinity, hi = 0, seen = false;
+	var o = opts || {};
+	var bounded = isFinite(o.tMax);
+	var skip = (Array.isArray(o.skip) && o.skip.length) ? o.skip : null;
+	function skipped(t) {
+		for (var j = 0; j < skip.length; j++) {
+			if (t >= skip[j].t0 && t <= skip[j].t1) { return true; }
+		}
+		return false;
+	}
+	var lo = Infinity, hi = 0, seen = false, gap = false;
 	for (var i = 0; i < samples.length; i++) {
-		if (!samples[i].v) { continue; }
+		// Interpolating the boundary below needs every sample to carry a
+		// velocity; a polyline that only carries position gets the plain scan.
+		if (!samples[i].v) { gap = true; continue; }
+		if (bounded && samples[i].t > o.tMax) { continue; }
+		if (skip && skipped(samples[i].t)) { continue; }
 		var s = O.vMag(samples[i].v);
 		if (s < lo) { lo = s; }
 		if (s > hi) { hi = s; }
 		seen = true;
+	}
+	if (bounded && !gap && !(skip && skipped(o.tMax))) {
+		var edge = speedAlong(samples, o.tMax);
+		if (edge != null && isFinite(edge)) {
+			if (edge < lo) { lo = edge; }
+			if (edge > hi) { hi = edge; }
+			seen = true;
+		}
 	}
 	return seen ? { min: lo, max: hi } : null;
 }
@@ -385,10 +432,15 @@ export function createShipCard(opts) {
 		});
 	}
 
-	// The speed section: a headline, then a bar whose right edge IS the peak
-	// speed of this phase's flight, with the needed speed ticked on it. With a
-	// floor (the Coast card) the left edge is the flight's slowest instead of
-	// zero, and both ends are printed under the bar so the span is readable.
+	// The speed section: a headline, then a bar whose right edge is the top of
+	// this phase's flight, with the needed speed ticked on it. With a floor (the
+	// Coast card) the left edge is the flight's slowest instead of zero, and both
+	// ends are printed under the bar so the span is readable.
+	//
+	// Peak states the fastest the ship actually goes, which is off the top of the
+	// bar when a close pass of a body on the way was left out of the bar's span
+	// — the bar shows the cruise, and the pass overflows it rather than
+	// flattening it. The two agree whenever nothing was left out.
 	function setSpeed(model) {
 		speedEl.innerHTML = "";
 		if (!model) { return; }
@@ -398,12 +450,20 @@ export function createShipCard(opts) {
 		left.appendChild(el("i", null, " at current position: "));
 		left.appendChild(el("span", "mp-ship-speedval", kms(model.current)));
 		line.appendChild(left);
-		line.appendChild(el("span", "mp-ship-peak",
-			model.peak == null ? "" : "Peak: " + kms(model.peak)));
+		var top = model.max != null ? model.max : model.peak;
+		var chip = el("span", "mp-ship-peak" + (model.max != null ? " mp-ship-peak-over" : ""),
+			top == null ? "" : "Peak: " + kms(top));
+		if (model.max != null) {
+			chip.title = "The bar spans the cruise, " + kms(model.floor) + " to " +
+				kms(model.peak) + " km/s. The peak is reached in a close pass of a " +
+				"body on the way — a few hours out of the whole coast, too brief to " +
+				"scrub to — so it runs off the top of the bar instead of setting it.";
+		}
+		line.appendChild(chip);
 		speedEl.appendChild(line);
 
 		var bar = el("div", "mp-ship-bar");
-		var fill = el("div", "mp-ship-bar-fill");
+		var fill = el("div", "mp-ship-bar-fill" + (model.over ? " mp-ship-bar-over" : ""));
 		// A floor-based bar reads at its minimum as an empty tube, which looks
 		// broken rather than slow; keep a sliver so the fill is always a fill.
 		fill.style.width = Math.max(model.floor != null ? 1.5 : 0,
@@ -417,11 +477,13 @@ export function createShipCard(opts) {
 		}
 		speedEl.appendChild(bar);
 
-		// The span's two ends, printed only when the left one isn't zero.
+		// The span's two ends, printed only when the left one isn't zero. A "+"
+		// on the right end marks a bar the flight goes off the top of, so the
+		// reader isn't left to reconcile it against a higher Peak unprompted.
 		if (model.floor != null && model.peak != null) {
 			var ends = el("div", "mp-ship-barends");
 			ends.appendChild(el("span", null, kms(model.floor)));
-			ends.appendChild(el("span", null, kms(model.peak)));
+			ends.appendChild(el("span", null, kms(model.peak) + (model.max != null ? "+" : "")));
 			speedEl.appendChild(ends);
 		}
 
