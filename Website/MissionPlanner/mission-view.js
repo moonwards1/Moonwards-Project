@@ -381,17 +381,25 @@ export function createMissionView(opts) {
 	panes.push(mainPane);
 
 	// A float's title bar (capEl) is its drag handle, deliberately confined to
-	// that top-left strip so the rest of the small pane stays free — that's
-	// where panning/zooming the mini-view itself will eventually live. A
+	// that top-left strip so the rest of the small pane stays free for
+	// orbiting, zooming and clicking objects in the mini-view itself. A
 	// press on the handle is either a drag or a click-to-promote, disambiguated
-	// by whether the pointer moved past a small threshold before release.
+	// by whether the pointer moved past a small threshold before release — the
+	// handle is the promote gesture that never risks being read as a pick.
 	// dragCleanup/resizeCleanup let dispose() tear down a drag or resize's
 	// window-level listeners if the mission is torn down mid-gesture (the
 	// pointerup handler removes them otherwise).
 	var floatIndex = 0, dragCleanup = null, resizeCleanup = null, floatCameraUnbinds = [], cardDragCleanup = null;
+	var cursorUnbinds = [];   // bindFocusCursor, one per pane; torn down in dispose
 	function bindFloatDrag(pane) {
 		var el = pane.el, handle = pane.capEl;
 		var startX, startY, startLeft, startTop, moved;
+		// The camera controller listens for mousedown on the pane itself, and a
+		// pointerdown's preventDefault does NOT suppress the mouse event that
+		// follows it — so a press on this handle reaches the pane too, and the
+		// drag would rotate the view behind the pane while moving the pane.
+		// Same for the resize grip (bindFloatResize below).
+		handle.addEventListener("mousedown", function (e) { e.stopPropagation(); });
 		function onMove(e) {
 			var dx = e.clientX - startX, dy = e.clientY - startY;
 			if (Math.abs(dx) + Math.abs(dy) > 3) { moved = true; }
@@ -425,14 +433,18 @@ export function createMissionView(opts) {
 			window.addEventListener("pointerup", onUp);
 			dragCleanup = onUp;
 		});
-		// The rest of the pane (outside the handle or the resize grip) keeps the
-		// plain click-to-promote behaviour; the handle's own press already
+		// A click in the pane's own area means FOCUS when it lands on a body or
+		// a leg's chevron: the float stays a float and becomes an independent
+		// vantage point on that object, since its camera controls (bound where
+		// the floats are built) orbit and zoom around the focus. Only a click
+		// that hits nothing promotes the pane. The handle's own press already
 		// promotes on a no-move release above, so a click landing on either
 		// control is skipped here to avoid promoting twice (or promoting off the
 		// back of a resize drag).
 		el.addEventListener("click", function (e) {
 			if (handle.contains(e.target)) { return; }
 			if (pane.resizeEl && pane.resizeEl.contains(e.target)) { return; }
+			if (takeFocusAt(pane, e)) { return; }
 			swapMain(pane.frameId);
 		});
 	}
@@ -450,6 +462,7 @@ export function createMissionView(opts) {
 		handle.className = "mp-float-resize";
 		handle.title = "Drag to resize";
 		el.appendChild(handle);
+		handle.addEventListener("mousedown", function (e) { e.stopPropagation(); });
 		var startX, startY, startW, startH;
 		function onMove(e) {
 			var dx = e.clientX - startX, dy = e.clientY - startY;
@@ -496,11 +509,12 @@ export function createMissionView(opts) {
 		cap.className = "mp-pane-cap";
 		cap.title = "Drag to move";
 		el.appendChild(cap);
-		el.title = "Click to make main view";
+		el.title = "Click a body or marker to focus it here; click empty space to make this the main view";
 		floatsEl.appendChild(el);
 		positionFloatDefault(el, floatIndex++);
 		var pane = { el: el, capEl: cap, frameId: null, isMain: false };
 		bindFloatDrag(pane);
+		cursorUnbinds.push(bindFocusCursor(pane));
 		pane.resizeEl = bindFloatResize(pane);
 		// Suppress click-to-promote when a mouse drag just occurred. Track the
 		// mousedown position and compare with the final click position; if the
@@ -537,13 +551,13 @@ export function createMissionView(opts) {
 					return raycastPickPoint(f.camera, el, e,
 						{ meshes: f.pickMeshes, soiSpheres: f.pickSoiSpheres });
 				},
-				// Picking (onPick/onDoubleClick) is main-pane only, per 3.5: a plain
-				// click on a float promotes it (see the capture-phase handler above),
-				// synchronously and before onPick's deferred timer would ever fire, so
-				// wiring click-to-focus here would race that promotion and land on
-				// whatever frame the pane swapped to. lockedZoomTarget still applies —
-				// it's read-only and keys off the frame's own focus state, which a
-				// float shares with whichever pane last had this frame as main.
+				// No onPick here: a float takes its focus from its own DOM click
+				// handler (bindFloatDrag above), synchronously, because the same
+				// click decides between focusing and promoting and onPick's 350ms
+				// deferral would land after the promotion either way. What the
+				// focus then DOES is all here — lockedZoomTarget keeps a zoom
+				// centred on the focused object, and the focus state lives on the
+				// frame, so a float and the main pane showing it agree.
 				lockedZoomTarget: function () { return focusTargetOf(f, pane.frameId); },
 				onPan: function () { f.focusBody = null; f.focusChevron = null; }
 			};
@@ -705,12 +719,11 @@ export function createMissionView(opts) {
 	}
 
 	// ---- click-to-focus picking (3.5). A body or a leg's chevron becomes the
-	// orbit/zoom pivot on a plain click in the main pane; a click on empty
-	// space releases it, same as a pan does. onPick/onDoubleClick are wired on
-	// the main pane's camera binding only (below) — a float's plain click
-	// already promotes it synchronously (see bindFloatDrag above), which would
-	// race onPick's deferred timer, so floats keep the lock read-only via
-	// lockedZoomTarget, sharing whatever the frame's main pane last focused.
+	// orbit/zoom pivot on a plain click in ANY pane, main or float. In the main
+	// pane a click on empty space releases the lock, same as a pan does; in a
+	// float it promotes the pane instead, which is why the two paths split on a
+	// miss (takeFocusAt below) and why a float picks from its own click handler
+	// rather than through the camera controller's deferred onPick.
 	// Chevrons are read generically off stageViews, so the departure and
 	// arrival legs' own chevrons (2.5) are clickable here with no change
 	// needed, same as the coast leg's. Body picking itself is
@@ -766,31 +779,72 @@ export function createMissionView(opts) {
 		return null;
 	}
 
+	// What the pointer at `e` is over in `pane`, or null: the leg chevron
+	// first, then the origin or destination body. ONE definition of "focusable
+	// from here", shared by the click that takes the focus and by the cursor
+	// feedback that promises it — the hand must appear exactly where a click
+	// works, or it teaches the wrong thing about a target too small to aim at
+	// confidently, which is the whole reason it exists.
+	function focusTargetAt(pane, e) {
+		var frameId = pane.frameId, f = frames[frameId];
+		var chev = pickChevronAt(f, frameId, pane.el, e);
+		if (chev) { return { chevron: chev }; }
+		var name = pickBodyName(f.camera, pane.el, e, f.scaleList, PICK_PX);
+		// Only the origin and destination are ever worth pivoting on here — a
+		// mission tab's frames (helio especially) carry every HELIO_BODIES
+		// entry, and letting all of them lock/follow just gets in the way at
+		// this stage. A hit on any other body is treated the same as a miss.
+		if (name !== originBody && name !== arrivalBody) { return null; }
+		return { body: name };
+	}
+
+	// Take the focus under the pointer, or report a miss and leave the current
+	// focus untouched — what a miss MEANS differs per pane kind (the main pane
+	// releases the lock, a float promotes itself), so that's the caller's to
+	// decide.
+	function takeFocusAt(pane, e) {
+		var hit = focusTargetAt(pane, e);
+		if (!hit) { return false; }
+		var f = frames[pane.frameId];
+		if (hit.chevron) {
+			f.focusBody = null; f.focusChevron = hit.chevron.stageId;
+			f.cam.target.copy(hit.chevron.chevron.sprite.position);
+		} else {
+			f.focusChevron = null; f.focusBody = hit.body;
+			var node = f.bodyNode(hit.body);
+			if (node) { f.cam.target.copy(node.position); }
+		}
+		saveWorkspace();
+		return true;
+	}
+
+	// The pointing hand, in any pane, means exactly "a click here focuses this"
+	// — so it is on only while the pointer is over a focusable object, and the
+	// panes are a plain arrow otherwise. Hit-tested per mousemove (a raycast
+	// against a handful of body meshes, then a projection each of the bodies
+	// and chevrons: cheap enough to run live), and skipped mid-drag, where the
+	// pointer is aiming the camera rather than at anything in the scene.
+	function bindFocusCursor(pane) {
+		var el = pane.el;
+		function onMove(e) {
+			if (e.buttons !== 0) { return; }
+			el.style.cursor = focusTargetAt(pane, e) ? "pointer" : "";
+		}
+		function onLeave() { el.style.cursor = ""; }
+		el.addEventListener("mousemove", onMove);
+		el.addEventListener("mouseleave", onLeave);
+		return function () {
+			el.removeEventListener("mousemove", onMove);
+			el.removeEventListener("mouseleave", onLeave);
+		};
+	}
+
 	function pickFocus(pane) {
 		return function (e) {
-			var frameId = pane.frameId, f = frames[frameId];
-			var chev = pickChevronAt(f, frameId, pane.el, e);
-			if (chev) {
-				f.focusBody = null; f.focusChevron = chev.stageId;
-				f.cam.target.copy(chev.chevron.sprite.position);
-				saveWorkspace();
-				return;
-			}
-			var name = pickBodyName(f.camera, pane.el, e, f.scaleList, PICK_PX);
-			// Only the origin and destination are ever worth pivoting on here — a
-			// mission tab's frames (helio especially) carry every HELIO_BODIES
-			// entry, and letting all of them lock/follow just gets in the way at
-			// this stage. A hit on any other body is treated the same as a miss.
-			if (name !== originBody && name !== arrivalBody) { name = null; }
-			if (name) {
-				f.focusChevron = null; f.focusBody = name;
-				var node = f.bodyNode(name);
-				if (node) { f.cam.target.copy(node.position); }
-				saveWorkspace();
-				return;
-			}
+			if (takeFocusAt(pane, e)) { return; }
 			// empty space (or a body that isn't the origin/destination): release
 			// the lock, same as a pan
+			var f = frames[pane.frameId];
 			f.focusBody = null; f.focusChevron = null;
 			saveWorkspace();
 		};
@@ -831,6 +885,7 @@ export function createMissionView(opts) {
 			onDoubleClick: pickArrivalDoubleClick(mainPane)
 		};
 	});
+	cursorUnbinds.push(bindFocusCursor(mainPane));
 
 	// ---- module views: a scoped THREE.Group per (stage, matching frame),
 	// parented at the attachesTo body's node when the frame has it. ------------
@@ -2645,6 +2700,7 @@ export function createMissionView(opts) {
 		if (resizeCleanup) { resizeCleanup(); }
 		if (cardDragCleanup) { cardDragCleanup(); }
 		floatCameraUnbinds.forEach(function (unbind) { unbind(); });
+		cursorUnbinds.forEach(function (unbind) { unbind(); });
 		shipCard.dispose();
 		unWorld();
 		unRecompute();

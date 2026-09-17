@@ -332,7 +332,11 @@ body {
 	position: absolute; width: 210px; height: 148px; min-width: 140px; min-height: 100px;
 	pointer-events: auto; user-select: none;
 	border: 1px solid var(--line2); border-radius: 8px;
-	overflow: hidden; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+	/* A plain arrow by default, in every pane: mission-view.js's
+	   bindFocusCursor switches to the pointing hand only while the pointer is
+	   over a body or chevron a click would focus, so the hand means that and
+	   nothing else. */
+	overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .mp-float:hover { border-color: #3c5788; }
 /* Bottom-right resize grip (mission-view.js's bindFloatResize). Kept out of
