@@ -5,8 +5,6 @@ simulator. Three other documents carry the rest of the picture:
 
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — the general model shared with
   the calculators: modules, packets, the recompute chain, frames.
-- `MissionPlannerDesign_v2.md` in this folder — Kim's UI design, what the app
-  is meant to become.
 - [`../../Notes/decisions.md`](../../Notes/decisions.md)
   — settled rules that cut across several files (phase seams, timelines,
   waypoint controls, the technology-platform shape), stated once there rather
@@ -238,11 +236,7 @@ is the colour of the figure beside it, where the number it grades can be read
 at the same time.
 
 **Check and Update** drive the re-target loop. Check re-solves the departure
-requirement at the point the technology actually leaves from and reports what
-that would buy, writing nothing: its answer becomes a provisional target that
-the Departure card's Needed column steers at. Update re-solves from the
-*current* delivery — not Check's stored answer, already stale once the
-technology is re-tuned — and commits it, redrawing the trajectory. The loop
+requirement at the point the technology actually leaves from and new Needed figures are then generated that will lead to a closest approach of less than 30,000 km. Update stores the *current* delivery — for the mission report and the mission link. The loop
 closes because each pass asks for less than the last. **Mission report** opens
 a menu carrying the per-iteration table and the mission link. All three write
 into the **message area** beside the flight timeline.

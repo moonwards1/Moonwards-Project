@@ -147,7 +147,7 @@ import {
 } from "../Shared/sim/marker-card.js";
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
 import { buildHelioFrame, ORIGIN_BODIES, DESTINATION_BODIES } from "./scene-frames.js";
-import { computeLeg, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
+import { computeLeg, stateAtElapsed as legStateAtElapsed, defaultParams as legDefaults } from "./modules/transfer-leg/transfer-leg.js";
 import { adoptMissionWorld, defaultMissionTitle } from "./core/adopt.js";
 import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
@@ -322,10 +322,13 @@ export function createEphemerisView(opts) {
 	var depBurnHost = null;             // wraps the departure burn's vector editor (readout anchor)
 	var wpRows = [];                    // [{ card, degInput, snapBoxes, slider, info, host }]
 
-	// ---- marker state: the drawn leg as per-segment start states, so the
-	// marker can be located at any global time along the whole path (rebuilt by
-	// refresh()). -------------------------------------------------------------
-	var trajSegs = [];        // { r0, v0 (m, m/s), dur, tStart (s) }
+	// ---- marker state: the drawn leg and its segment chain, so the marker can
+	// be located at any global time along the whole path (rebuilt by
+	// refresh()). The segments are computeLeg's own — Kepler stretches AND the
+	// integrated SOI encounters between them — so the marker rides every bend
+	// the drawn line makes rather than a Sun-only conic through it. ----------
+	var trajLeg = null;       // computeLeg's result, the marker's position source
+	var trajSegs = [];        // trajLeg.segs: { type: "kepler", r0, v0 } | { type: "enc", body, leg }, each with tStart, dur (s)
 	var trajTotalT = 0;       // total drawn-leg duration (s)
 	var trajSampleCount = 0;  // polyline sample count (sets followCrossing's search window)
 	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input
@@ -361,16 +364,60 @@ export function createEphemerisView(opts) {
 	// waypoint; past it, on a leg that sweeps multiple laps, it silently
 	// answers with degrees/times from the wrong orbit, which is what dragged
 	// the marker along the timeline instead of holding it.
+	//
+	// INSIDE AN SOI THE ANGLE IS MEASURED AROUND THE BODY, not the Sun. A
+	// capture loop there is a loop around the planet: its heliocentric angle
+	// stops advancing and doubles back, so a Sun-measured domain has several
+	// times answering to one degree and the marker jumps between them. Around
+	// the body the same loop is an ordinary 360°, still increasing — one time
+	// per degree — and it gives the loop a share of the slider proportional to
+	// the turning it does, instead of the sliver its heliocentric sweep is. The
+	// domain is therefore "degrees turned around whichever body is in charge",
+	// accumulated across segments; outside an SOI that is exactly the
+	// Sun-centred sweep this has always used.
 	function segElements(seg) { return O.elementsFromState(GM_SUN, seg.r0, seg.v0); }
 
-	// Degrees swept over one whole segment (its own conic, dt = seg.dur).
-	function segDegSpan(seg) {
+	// Cumulative body-centred degrees along an encounter's own RK4 trail, built
+	// once per segment. Steps are summed with the running maximum, so the Sun's
+	// pull on the trail near the SOI edge can never hand back a domain that dips
+	// — which would break the one-time-per-degree inverse below.
+	function encTable(seg) {
+		if (seg._degTable) { return seg._degTable; }
+		var arr = seg.leg.samples;
+		var r0 = arr[0].r, v0 = arr[0].v;
+		var cum = [0];
+		for (var k = 1; k < arr.length; k++) {
+			var a = sweepAngleFrom(r0, v0, arr[k].r);   // 0-360 about the body's own plane
+			var prevTurns = Math.floor(cum[k - 1] / 360);
+			// Pick the lap that continues the previous step rather than wrapping.
+			var best = prevTurns * 360 + a;
+			if (best < cum[k - 1]) { best += 360; }
+			cum[k] = Math.max(cum[k - 1], best);
+		}
+		seg._degTable = { t: arr.map(function (s) { return s.t; }), deg: cum };
+		return seg._degTable;
+	}
+
+	// Degrees swept over part of one segment, dt seconds into it.
+	function segDegAt(seg, dt) {
+		if (seg.type === "enc") {
+			var tb = encTable(seg);
+			var t = Math.max(0, Math.min(tb.t[tb.t.length - 1], dt));
+			for (var k = 1; k < tb.t.length; k++) {
+				if (tb.t[k] >= t) {
+					var span = tb.t[k] - tb.t[k - 1];
+					var f = span > 1e-9 ? (t - tb.t[k - 1]) / span : 0;
+					return tb.deg[k - 1] + f * (tb.deg[k] - tb.deg[k - 1]);
+				}
+			}
+			return tb.deg[tb.deg.length - 1];
+		}
 		var el = segElements(seg);
-		return O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, seg.dur) * 180 / Math.PI;
+		return O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, dt) * 180 / Math.PI;
 	}
 
 	// Swept degrees at global time t, accumulated across whichever segments
-	// (waypoint burns) precede it.
+	// (waypoint burns, SOI encounters) precede it.
 	function degAtTime(t) {
 		if (!trajSegs.length) { return 0; }
 		var offset = 0;
@@ -378,11 +425,9 @@ export function createEphemerisView(opts) {
 			var seg = trajSegs[i];
 			var isLast = i === trajSegs.length - 1;
 			if (isLast || t <= seg.tStart + seg.dur) {
-				var el = segElements(seg);
-				var dt = t - seg.tStart;
-				return offset + O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, dt) * 180 / Math.PI;
+				return offset + segDegAt(seg, t - seg.tStart);
 			}
-			offset += segDegSpan(seg);
+			offset += segDegAt(seg, seg.dur);
 		}
 		return offset;
 	}
@@ -395,8 +440,22 @@ export function createEphemerisView(opts) {
 		for (var i = 0; i < trajSegs.length; i++) {
 			var seg = trajSegs[i];
 			var isLast = i === trajSegs.length - 1;
-			var span = isLast ? Infinity : segDegSpan(seg);
+			var span = (isLast && seg.type !== "enc") ? Infinity : segDegAt(seg, seg.dur);
 			if (isLast || deg <= offset + span) {
+				if (seg.type === "enc") {
+					// The table is non-decreasing, so the crossing is a straight
+					// walk with a linear read inside the step it falls in.
+					var target = deg - offset, tb = encTable(seg);
+					if (target <= 0) { return seg.tStart; }
+					for (var k = 1; k < tb.deg.length; k++) {
+						if (tb.deg[k] >= target) {
+							var d = tb.deg[k] - tb.deg[k - 1];
+							var f = d > 1e-9 ? (target - tb.deg[k - 1]) / d : 0;
+							return seg.tStart + tb.t[k - 1] + f * (tb.t[k] - tb.t[k - 1]);
+						}
+					}
+					return seg.tStart + seg.dur;
+				}
 				var el = segElements(seg);
 				return seg.tStart + O.timeAtSweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, (deg - offset) * Math.PI / 180);
 			}
@@ -744,6 +803,22 @@ export function createEphemerisView(opts) {
 		return { entries: entries, finalR: segR, finalV: segV, tPrev: tPrev };
 	}
 
+	// The waypoint states as FLOWN. resolveWaypoints above walks Sun-only conics
+	// to resolve the snaps — which are conic notions (this arc's apsis, its
+	// nodes), and have no other definition — but the leg the ship actually flies
+	// bends wherever it passes inside a body's SOI, so past such a pass the
+	// conic walk is not where the waypoint is. Re-read each entry's pre-burn
+	// state off the computed leg, which carries the encounters, so the gizmo,
+	// its burn arrows and its readout sit on the drawn line. `days` are
+	// untouched: they are the authored parameter computeLeg itself burned at.
+	function flyWaypointStates(entries, leg) {
+		if (!leg || !leg.ok) { return; }
+		entries.forEach(function (e) {
+			var s = legStateAtElapsed(leg, (e.days || 0) * DAY);
+			if (s) { e.preR = s.r; e.preV = s.v; }
+		});
+	}
+
 	// How long to draw the leg's FINAL segment (after the last waypoint, or
 	// after the departure burn if there are none): one orbital period if bound,
 	// capped so a near-parabolic orbit doesn't draw for millennia, else a fixed
@@ -923,12 +998,7 @@ export function createEphemerisView(opts) {
 	// Heliocentric state (r,v in m, m/s) at a global time along the path.
 	function stateAtGlobalTime(t) {
 		if (!trajSegs.length) { return null; }
-		var seg = trajSegs[trajSegs.length - 1];
-		for (var i = 0; i < trajSegs.length; i++) {
-			if (t <= trajSegs[i].tStart + trajSegs[i].dur + 1e-6) { seg = trajSegs[i]; break; }
-		}
-		var dt = Math.max(0, Math.min(seg.dur, t - seg.tStart));
-		return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
+		return legStateAtElapsed(trajLeg, t);
 	}
 
 	// Heliocentric angle (deg, 0–360) swept around the Sun from the flight's
@@ -936,7 +1006,7 @@ export function createEphemerisView(opts) {
 	// sweepAngleFrom.
 	function sweptFromOrigin(r) {
 		if (!trajSegs.length) { return 0; }
-		var s = { r: trajSegs[0].r0, v: trajSegs[0].v0 };
+		var s = stateAtGlobalTime(0);
 		return sweepAngleFrom(s.r, s.v, r);
 	}
 
@@ -1174,6 +1244,11 @@ export function createEphemerisView(opts) {
 				return { r1: hand.r, v1: hand.body.v, ref: hand.body, t1g: 0 };
 			}
 			var rw = resolveWaypoints(hand.r, hand.v, state.leg);
+			// The leg last drawn, so a waypoint past a flyby solves from where it
+			// actually sits. This runs before this pass's own leg exists; the burn
+			// being solved is the only thing that has moved since, and the solve
+			// is re-run every refresh.
+			flyWaypointStates(rw.entries, trajLeg);
 			var e = rw.entries[term.index];
 			if (!e || !e.preR) { return null; }
 			return { r1: e.preR, v1: e.preV, ref: { r: e.preR, v: e.preV }, t1g: (e.days || 0) * DAY };
@@ -2216,8 +2291,9 @@ export function createEphemerisView(opts) {
 		// propagates from the hand-off itself — the same state the trajectory
 		// draws from — so a waypoint's "snap to apoapsis" option, say, matches
 		// what's actually on screen.
+		// The rows themselves are synced further down, once the leg exists: their
+		// day sliders read the same swept-degree domain the drawn leg defines.
 		var rw = resolveWaypoints(hand.r, hand.v, state.leg);
-		rw.entries.forEach(function (e) { updateWaypointRowUI(wpRows[e.originalIndex], e, e.originalIndex); });
 
 		// legDays carries no mission condition — it's just long enough to draw
 		// the leg's own natural end: one full period past the last waypoint
@@ -2249,27 +2325,20 @@ export function createEphemerisView(opts) {
 		// arc that is just the Moon coasting on around the Sun. The readout
 		// above says why instead.
 		if (!leg.ok || noFlight) {
-			trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
+			trajLeg = null; trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
 			updateHandoffControls(hand);
 			clearApproachMarks();
 			// The chip stays short — the reason itself is already spelled out in
 			// the readout right below it.
 			setStatus("err", noFlight ? "no flight to draw" : leg.diagnostic.message);
 		} else {
-			// Marker support: per-segment start states over the whole drawn leg,
-			// so the marker can be located at any global time.
-			trajSegs = [];
-			var chrono = rw.entries.slice().sort(function (a, b) { return (a.days || 0) - (b.days || 0); });
-			var segR = hand.r, segV = hand.v, tStart = 0;
-			chrono.forEach(function (e) {
-				var tWp = (e.days || 0) * DAY;
-				trajSegs.push({ r0: segR, v0: segV, tStart: tStart, dur: tWp - tStart });
-				segR = e.preR;
-				segV = O.applyBurn(e.preR, e.preV, e.burn.pro || 0, e.burn.nrm || 0, e.burn.rad || 0);
-				tStart = tWp;
-			});
-			trajSegs.push({ r0: segR, v0: segV, tStart: tStart, dur: legDays * DAY - tStart });
-			trajTotalT = legDays * DAY;
+			// Marker support: the leg's own segment chain (Kepler stretches and
+			// integrated SOI encounters), so the marker sits on the drawn line at
+			// any global time. An impact ends the flight early.
+			trajLeg = leg;
+			trajSegs = leg.segs;
+			trajTotalT = (leg.end.jd - leg.jd0) * DAY;
+			flyWaypointStates(rw.entries, leg);
 
 			// Re-anchor the marker to the SAME absolute time-of-flight it had
 			// before this recompute (see the note at the top of refresh()),
@@ -2327,6 +2396,8 @@ export function createEphemerisView(opts) {
 			rebuildApproachMarks();
 			setStatus("ok", "ok");
 		}
+
+		rw.entries.forEach(function (e) { updateWaypointRowUI(wpRows[e.originalIndex], e, e.originalIndex); });
 
 		// The trajectory's own closest approach to the destination — a
 		// property of the drawn path and the destination alone, so it's

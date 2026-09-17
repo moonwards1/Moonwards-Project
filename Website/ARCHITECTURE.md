@@ -270,9 +270,7 @@ comparison table reads each chain's `transfer-summary` packets.
 
 ### Phases are chains; compliance is a boundary check, not a reconciliation
 
-The Mission Planner's Departure / Coast / Arrival phases
-(`MissionPlanner/MissionPlannerDesign_v2.md`) are not a second mechanism sitting
-above the chain — a phase is just a labeled sub-range of the one ordered
+The Mission Planner's Departure / Coast / Arrival phases are not a second mechanism sitting above the chain — a phase is just a labeled sub-range of the one ordered
 stage list above. Within a phase, however many stages exist — one burn, two,
 five, a thousand — they compose in strict sequence exactly as described
 above: each stage's `update()` takes the previous stage's output as its own
@@ -315,18 +313,6 @@ tuned (the ship card), so there is no blind design problem needing a
 synthetic target, and nothing downstream needs a substitute to keep flowing.
 A "commitment vs. delivered" comparison at that seam would just be a second,
 read-only rendering of numbers the coast already shows.
-
-**The tell that this model has been lost:** if two numbers describing the
-same seam start needing "reconciling" against each other, that is never a
-peer-comparison problem to solve — it means an event has been attached to
-the wrong side of a boundary, and the fix is to move it, not to compare it.
-(2026-07-14: `transfer-leg.js` used to carry its own `burn` field, applied on
-top of `adopted-plan`'s already-adopted departure state — a second, uncounted
-injection sitting on the Coast side of a boundary defined as "no burn
-happens here." The fix was never to compare the two burns; it was to notice
-the leg's burn belonged to whatever composed the departure requirement, and
-fold it there instead. See `adopted-plan.js`'s and `transfer-leg.js`'s
-headers.)
 
 ## Module interface
 
