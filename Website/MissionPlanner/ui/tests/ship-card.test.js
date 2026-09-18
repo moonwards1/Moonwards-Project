@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { vInfComponents, gizmoScale, speedModel, speedAlong, peakSpeed, speedRange,
-	bearingPoint, altitudeRadius, bPlaneLayout, BPLANE_SCALE, approachRows } from "../ship-card.js";
+	bearingPoint, altitudeRadius, bPlaneLayout, BPLANE_SCALE, approachRows, spinLayout } from "../ship-card.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 
 var O = OrbitalMath;
@@ -239,4 +239,43 @@ test("approachRows: an impact says so, with the speed at impact", () => {
 	assert.equal(rows[0].warn, true);
 	assert.equal(rows[1].label, "Speed at impact");
 	assert.equal(rows[1].value, "7.10 km/s");
+});
+
+test("spinLayout: equator edge-on, prograde half on the side a prograde pass takes", () => {
+	// Coming in along +X with the pole at ecliptic north: north is up, east
+	// is -Y. The Earth-like spin carries the east limb away along +X.
+	var bp = O.bPlane(3.986e14, [-1e9, -1e7, 0], [5000, 0, 0]);
+	var lay = spinLayout([0, 0, 1], bp, 18);
+	assert.ok(Math.abs(lay.light.x - 1) < 1e-6 && Math.abs(lay.light.y) < 1e-6, JSON.stringify(lay.light));
+	lay.equator.forEach(q => assert.ok(Math.abs(q.y) < 1e-6));
+	// This pass's B is on the -Y (east) side and its angular momentum is +Z,
+	// along the pole: prograde, so the ship's bearing is into the light half.
+	var shipDir = bearingPoint(bp.angleDeg, 1);
+	assert.ok(shipDir.x * lay.light.x + shipDir.y * lay.light.y > 0.99);
+});
+
+test("spinLayout: a retrograde pole puts the light half on the other side", () => {
+	var bp = O.bPlane(3.986e14, [-1e9, -1e7, 0], [5000, 0, 0]);
+	var lay = spinLayout([0, 0, -1], bp, 18);
+	assert.ok(Math.abs(lay.light.x + 1) < 1e-6);
+});
+
+test("spinLayout: seen from above the pole, the equator is the near-limb half circle and there is no split", () => {
+	// Coming straight down onto the north pole.
+	var bp = O.bPlane(3.986e14, [1e7, 0, 1e9], [0, 0, -5000]);
+	var lay = spinLayout([0, 0, 1], bp, 18);
+	assert.equal(lay.light, null);
+	lay.equator.forEach(q => assert.ok(Math.abs(Math.hypot(q.x, q.y) - 18) < 1e-6));
+});
+
+test("spinLayout: a tilted pole tilts the equator; its ends are on the disc edge, across the split", () => {
+	var s = Math.SQRT1_2;
+	var bp = O.bPlane(3.986e14, [-1e9, -1e7, 0], [5000, 0, 0]);
+	var lay = spinLayout([s, 0, s], bp, 18);   // pole leaning toward the ship's travel
+	var a = lay.equator[0], b = lay.equator[lay.equator.length - 1];
+	assert.ok(Math.abs(Math.hypot(a.x, a.y) - 18) < 1e-6 && Math.abs(Math.hypot(b.x, b.y) - 18) < 1e-6);
+	// Pole leaning away from the viewer: we see the southern hemisphere's
+	// side, so the near half of the equator bows upward (toward north).
+	var mid = lay.equator[16];
+	assert.ok(mid.y < -1, JSON.stringify(mid));
 });

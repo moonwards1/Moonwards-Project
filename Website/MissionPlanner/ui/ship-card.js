@@ -272,6 +272,48 @@ export function bPlaneLayout(angleDeg, altitudeKm, half, scale) {
 	] };
 }
 
+// The destination's spin as the square shows it, on a disc of radius
+// `bodyR` px. `pole` is the body's spin-pole unit vector (ecliptic, the
+// frame bPlane works in); `bp` is bPlane's result, whose S, north and east
+// give the view: looking along S with north up and east right.
+//   equator — the near half of the equator (the half facing the incoming
+//             ship), as screen points {x, y} about the centre, y down
+//   light   — unit screen vector pointing into the prograde half of the disc,
+//             or null when the ship comes in close to along the pole
+// The two halves are split by the spin axis as seen. On the light half the
+// surface turns away from the viewer, the way the ship is travelling, and a
+// pass there goes round the body with its rotation: a surface point r moves
+// along S in proportion to r·(S×p), and a pass at B has angular momentum
+// along the pole in proportion to B·(S×p) — the same sign on the same side.
+export function spinLayout(pole, bp, bodyR) {
+	var O = OrbitalMath;
+	var S = bp.S, N = bp.north, E = bp.east;
+	function scr(v) { return { x: O.vDot(v, E) * bodyR, y: -O.vDot(v, N) * bodyR }; }
+	var sxp = O.vCross(S, pole);
+	var m = O.vMag(sxp);
+	// u: the equator's in-view diameter. Along S×p when that exists; for a
+	// pole-on approach any direction in the equator will do.
+	var u = m > 1e-6 ? O.vScale(sxp, 1 / m)
+		: O.vUnit(O.vSub(E, O.vScale(pole, O.vDot(pole, E))));
+	var w = O.vCross(pole, u);
+	// r(t) = u cos t + w sin t; r·S = A cos(t - t0), so the near half
+	// (r·S < 0) is t0 + 90° .. t0 + 270°.
+	var t0 = Math.atan2(O.vDot(w, S), O.vDot(u, S));
+	var equator = [];
+	var n = 32;
+	for (var k = 0; k <= n; k++) {
+		var t = t0 + Math.PI / 2 + Math.PI * k / n;
+		equator.push(scr(O.vAdd(O.vScale(u, Math.cos(t)), O.vScale(w, Math.sin(t)))));
+	}
+	var light = null;
+	if (m > 0.05) {
+		var d = scr(u);
+		var dl = Math.hypot(d.x, d.y);
+		light = { x: d.x / dl, y: d.y / dl };
+	}
+	return { equator: equator, light: light };
+}
+
 // =======================================================================
 //  The widget
 // =======================================================================
@@ -584,7 +626,9 @@ export function createShipCard(opts) {
 	}
 
 	// The approach square: where around the destination the ship passes, and
-	// how high. model: { angleDeg, altitudeKm, label } or null. angleDeg is the
+	// how high. model: { angleDeg, altitudeKm, spin, label } or null. `spin`
+	// (optional) is spinLayout's result, drawn on the body disc: the near half
+	// of the equator, and the prograde half of the disc lighter. angleDeg is the
 	// bearing in the B-plane (Shared/math-utils.js's bPlane), clockwise from
 	// ecliptic north; altitudeKm is the closest approach above the surface,
 	// drawn on the altitude-ring scale (BPLANE_SCALE). A pass too high for the
@@ -618,7 +662,24 @@ export function createShipCard(opts) {
 			node("circle", { cx: C, cy: C, r: r, fill: "none",
 				stroke: "#2e3b57", "stroke-width": 1 });
 		});
-		node("circle", { cx: C, cy: C, r: BPLANE_SCALE.bodyR, fill: "#6f7c93" });
+		var bR = BPLANE_SCALE.bodyR;
+		var spin = model.spin || null;
+		node("circle", { cx: C, cy: C, r: bR, fill: spin && spin.light ? "#4d586c" : "#6f7c93" });
+		if (spin) {
+			if (spin.light) {
+				// The prograde half: a half-disc bulging toward `light`, its
+				// straight edge the spin axis as seen.
+				var L = spin.light;
+				var p1 = { x: C - L.y * bR, y: C + L.x * bR };
+				var p2 = { x: C + L.y * bR, y: C - L.x * bR };
+				node("path", { fill: "#a9b4c8", d: "M" + p1.x.toFixed(2) + "," + p1.y.toFixed(2) +
+					" A" + bR + "," + bR + " 0 0 0 " + p2.x.toFixed(2) + "," + p2.y.toFixed(2) + " Z" });
+			}
+			node("polyline", { fill: "none", stroke: "#ffd27f", "stroke-width": 1.3,
+				points: spin.equator.map(function (q) {
+					return (C + q.x).toFixed(2) + "," + (C + q.y).toFixed(2);
+				}).join(" ") });
+		}
 		if (lay.ship) {
 			node("circle", { cx: C + lay.ship.x, cy: C + lay.ship.y, r: lay.ship.r, fill: "#f2f6ff" });
 		} else {

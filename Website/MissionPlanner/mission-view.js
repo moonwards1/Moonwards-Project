@@ -51,7 +51,8 @@ import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider, createArrivalSlider } from "./ui/phase-slider.js";
-import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, speedRange }
+import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, speedRange,
+	spinLayout, BPLANE_SCALE }
 	from "./ui/ship-card.js";
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
 import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
@@ -2469,11 +2470,20 @@ export function createMissionView(opts) {
 		var R = systems.get(dest).radius;
 		var rp = impacts ? bp.b * Math.sqrt((bp.e - 1) / (bp.e + 1)) : pass.rmin;
 		var altKm = (rp - R) / 1000;
-		shipCard.setBPlane({ angleDeg: bp.angleDeg, altitudeKm: altKm,
+		// The body's spin on the disc, from its spin pole (the same one the
+		// scene's equator ring and arrowheads use). None for a body with no
+		// published pole.
+		var pole = systems.get(dest).pole;
+		var spin = pole ? spinLayout(O.poleVectorEcliptic(pole.ra, pole.dec), bp, BPLANE_SCALE.bodyR)
+			: null;
+		shipCard.setBPlane({ angleDeg: bp.angleDeg, altitudeKm: altKm, spin: spin,
 			label: "Where the ship passes " + dest + ", seen coming in with ecliptic " +
 				"north up. " + (impacts ? "It impacts the surface."
 					: "Closest approach " + Math.round(altKm).toLocaleString("en-US") +
-						" km above the surface.") + " Each ring is 10,000 km."
+						" km above the surface.") + " Each ring is 10,000 km." +
+				(spin ? " The gold line is the near half of " + dest + "'s equator" +
+					(spin.light ? "; passing over the lighter half goes with its rotation." : ".")
+					: "")
 		});
 	}
 
