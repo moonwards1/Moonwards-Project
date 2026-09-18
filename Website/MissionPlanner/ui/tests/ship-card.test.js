@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { vInfComponents, gizmoScale, speedModel, speedAlong, peakSpeed, speedRange,
-	bearingPoint } from "../ship-card.js";
+	bearingPoint, altitudeRadius, bPlaneLayout, BPLANE_SCALE } from "../ship-card.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 
 var O = OrbitalMath;
@@ -195,4 +195,31 @@ test("gizmoScale: a net-only layer scales on its net, not on NaN components", ()
 	// skipped rather than poisoning the maximum.
 	assert.equal(gizmoScale({ net: 24 }, { net: 26 }), 26);
 	assert.equal(gizmoScale({ net: 24 }, null), 24);
+});
+
+test("altitudeRadius: surface at the disc edge, each 10,000 km one ring out", () => {
+	assert.equal(altitudeRadius(0), BPLANE_SCALE.bodyR);
+	assert.equal(altitudeRadius(10000), 30);
+	assert.equal(altitudeRadius(20000), 42);
+	// An impact falls inside the disc, floored at the centre.
+	assert.ok(altitudeRadius(-5000) < BPLANE_SCALE.bodyR);
+	assert.equal(altitudeRadius(-1e9), 0);
+});
+
+test("bPlaneLayout: rings stop inside the square; the dot sits on its bearing", () => {
+	var lay = bPlaneLayout(90, 10000, 72);
+	assert.deepEqual(lay.rings, [30, 42, 54, 66]);
+	assert.equal(lay.arrow, null);
+	assert.ok(Math.abs(lay.ship.x - 30) < 1e-9 && Math.abs(lay.ship.y) < 1e-9, JSON.stringify(lay.ship));
+	assert.equal(lay.ship.r, BPLANE_SCALE.shipR);
+});
+
+test("bPlaneLayout: a pass beyond the square becomes an outward edge arrow", () => {
+	var lay = bPlaneLayout(0, 1e6, 72);
+	assert.equal(lay.ship, null);
+	var tip = lay.arrow[0], b1 = lay.arrow[1], b2 = lay.arrow[2];
+	// Straight up: tip nearest the top edge, base below it, symmetric about x = 0.
+	assert.ok(tip.y < b1.y && tip.y < b2.y);
+	assert.ok(Math.abs(tip.y + 70) < 1e-9);
+	assert.ok(Math.abs(b1.x + b2.x) < 1e-9 && Math.abs(b1.x) > 1);
 });

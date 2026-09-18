@@ -57,15 +57,20 @@ geometry blanks every arrow in the app, and the failure is silent until the
 *next* arrow is drawn. The same holds for any module-level geometry a widget
 reuses (the ship card's line cylinder). Teardown disposes materials only.
 
-### The Coast card's approach square is a B-plane bearing
+### The Coast card's approach square: B-plane bearing, closest-approach height
 
-Which side of the destination the ship passes is read off the B-plane
-(`OrbitalMath.bPlane`, fed by `nearestApproach`'s body-relative state), with
-ecliptic north projected in as "up". The dot sits at a fixed radius and
-conveys no distance.
+The dot's bearing is read off the B-plane (`OrbitalMath.bPlane`, fed by
+`nearestApproach`'s body-relative state), with ecliptic north projected in as
+"up". Its distance from the body is the measured closest-approach altitude
+(`pass.rmin` less the body radius), on a fixed scale: body disc 18 px, rings
+from 30 px every 12 px, each 10,000 km. The body's true size is not to scale.
+A pass beyond the square shows as an edge arrow on the same bearing.
 
 Why: the B-plane is defined by the approach itself, so the bearing is stable
 and never flips sign on a near-head-on pass the way a view projection does.
+Altitude, not the impact parameter |B|, because |B| overstates the miss
+(gravity bends the pass inward) and would put an impacting ship outside the
+disc; periapsis lies on B's side of the body, so the two combine exactly.
 
 ### Closest approach is measured in time, never off the polyline
 

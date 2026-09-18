@@ -2385,10 +2385,9 @@ export function createMissionView(opts) {
 	}
 
 
-	// The Coast card: the speed under the chevron and which side of the
-	// destination the pass goes. Nothing here is graded — many passes arrive
-	// successfully — and how close and how fast the pass is are the mission
-	// bar's figures, which follow every waypoint edit.
+	// The Coast card: the speed under the chevron, and where around the
+	// destination the pass goes and how high. Nothing here is graded — many
+	// passes arrive successfully.
 	function updateCoastCard() {
 		shipCard.setSubtitle("Coast");
 		shipCard.setComponents(null, null);
@@ -2450,9 +2449,24 @@ export function createMissionView(opts) {
 		// pass is not hyperbolic about the body: a captured arrival has no
 		// approach asymptote to take a bearing from.
 		var bp = O.bPlane(systems.get(dest).GM, pass.rRel, pass.vRel);
-		shipCard.setBPlane(bp ? { angleDeg: bp.angleDeg,
-			label: "Where the ship passes " + dest + ", seen coming in with ecliptic north up"
-		} : null);
+		if (!bp) { shipCard.setBPlane(null); return; }
+		// Height is the measured closest approach, the same figure the mission
+		// bar states. It lies on the B bearing: periapsis is in the plane of
+		// the pass, on B's side of the body. An impacting flight's trail ends
+		// at atmosphere entry, so its measured closest approach is the entry
+		// height, not a periapsis; there the approach hyperbola's own
+		// periapsis, rp = b·sqrt((e-1)/(e+1)), gives the below-surface depth
+		// that puts the dot on the disc.
+		var R = systems.get(dest).radius;
+		var impacts = !!(leg.impact && leg.impact.body === dest);
+		var rp = impacts ? bp.b * Math.sqrt((bp.e - 1) / (bp.e + 1)) : pass.rmin;
+		var altKm = (rp - R) / 1000;
+		shipCard.setBPlane({ angleDeg: bp.angleDeg, altitudeKm: altKm,
+			label: "Where the ship passes " + dest + ", seen coming in with ecliptic " +
+				"north up. " + (impacts ? "It impacts the surface."
+					: "Closest approach " + Math.round(altKm).toLocaleString("en-US") +
+						" km above the surface.") + " Each ring is 10,000 km."
+		});
 	}
 
 	function updateShipCard() {

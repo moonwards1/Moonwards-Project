@@ -8,8 +8,8 @@
  * hand-off, bright = what the technology delivers, each split onto the burn
  * frame's three axes plus a net line, and "on course" is when the two coincide.
  * Coast has no gizmo and no on-course state: many passes arrive successfully,
- * so the card shows the speed along the coast and which side of the
- * destination the pass goes, and grades nothing.
+ * so the card shows the speed along the coast and where around the
+ * destination the pass goes and how high, and grades nothing.
  *
  * OPTIONAL PARTS. Every section is filled by a setter and renders nothing until
  * one is called, so a phase takes only the parts it needs and the card stays
@@ -26,7 +26,8 @@
  * business, not this file's.
  *
  * The pure halves (vInfComponents, gizmoScale, speedModel, speedAlong,
- * speedRange, peakSpeed, bearingPoint) take and return plain
+ * speedRange, peakSpeed, bearingPoint, altitudeRadius, bPlaneLayout) take and
+ * return plain
  * values and are Node-tested in tests/ship-card.test.js.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
@@ -197,15 +198,58 @@ export function peakSpeed(samples) {
 	return r ? r.max : null;
 }
 
-// Where the approach dot sits in the B-plane square: a point on a FIXED-radius
-// circle at `angleDeg` clockwise from straight up (ecliptic north). Distance to
-// the body is deliberately not conveyed — only which side the ship passes — so
-// the radius is a constant and the bearing is the only thing that moves.
-// Returns { x, y } in the square's own coordinates, y growing downward as SVG's
-// does.
+// A point `radius` from the square's centre at `angleDeg` clockwise from
+// straight up (ecliptic north). Returns { x, y } relative to the centre, y
+// growing downward as SVG's does.
 export function bearingPoint(angleDeg, radius) {
 	var a = (angleDeg - 90) * Math.PI / 180;
 	return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
+}
+
+// The B-plane square's fixed scale, in CSS px: the body is a disc of bodyR,
+// and the altitude rings start at ring0 and step outward by ringStep, each
+// step ringKm of altitude above the surface. The body's true size plays no
+// part — the disc is the same for Ceres as for Jupiter, and only the
+// altitude is to scale.
+export var BPLANE_SCALE = { bodyR: 18, ring0: 30, ringStep: 12, ringKm: 10000, shipR: 4 };
+
+// Radius in px at which a pass `altitudeKm` above the surface is drawn. Below
+// the surface (an impact) it falls inside the disc, floored at the centre.
+export function altitudeRadius(altitudeKm, scale) {
+	scale = scale || BPLANE_SCALE;
+	var perPx = scale.ringKm / scale.ringStep;
+	return Math.max(0, scale.ring0 - scale.ringStep + altitudeKm / perPx);
+}
+
+// Everything the square draws, in px about its centre, for a square of
+// half-width `half`:
+//   rings — radii of the altitude rings that fit whole inside the square
+//   ship  — { x, y, r } the ship's dot, or null when it would not fit
+//   arrow — when the dot is off the square: a triangle at the edge on the
+//           ship's bearing, pointing away from the body, as three points
+//           [{x, y}, ...] (tip first); otherwise null
+export function bPlaneLayout(angleDeg, altitudeKm, half, scale) {
+	scale = scale || BPLANE_SCALE;
+	var rings = [];
+	for (var r = scale.ring0; r <= half - 1; r += scale.ringStep) { rings.push(r); }
+	var rr = altitudeRadius(altitudeKm, scale);
+	// The dot fits if all of it does. The square's corners reach further than
+	// its half-width, but the rings stop at the inscribed circle and so does
+	// the dot, so a ship beyond the last drawn ring's reach always reads as off.
+	if (rr + scale.shipR <= half - 1) {
+		var p = bearingPoint(angleDeg, rr);
+		return { rings: rings, ship: { x: p.x, y: p.y, r: scale.shipR }, arrow: null };
+	}
+	var len = 9, halfBase = 5;
+	var tipR = half - 2, baseR = tipR - len;
+	var tip = bearingPoint(angleDeg, tipR);
+	var mid = bearingPoint(angleDeg, baseR);
+	var side = bearingPoint(angleDeg + 90, halfBase);
+	return { rings: rings, ship: null, arrow: [
+		tip,
+		{ x: mid.x + side.x, y: mid.y + side.y },
+		{ x: mid.x - side.x, y: mid.y - side.y }
+	] };
 }
 
 // =======================================================================
@@ -513,20 +557,23 @@ export function createShipCard(opts) {
 		subtitle.textContent = text ? text.toLowerCase() : "";
 	}
 
-	// The approach square: which side of the destination the ship passes on,
-	// read off the B-plane (Shared/math-utils.js's bPlane). model:
-	// { angleDeg, label } or null. Only the BEARING is shown — the dot sits at a
-	// fixed radius and says nothing about distance, which the mission bar carries.
+	// The approach square: where around the destination the ship passes, and
+	// how high. model: { angleDeg, altitudeKm, label } or null. angleDeg is the
+	// bearing in the B-plane (Shared/math-utils.js's bPlane), clockwise from
+	// ecliptic north; altitudeKm is the closest approach above the surface,
+	// drawn on the altitude-ring scale (BPLANE_SCALE). A pass too high for the
+	// square shows as an arrow at its edge on the same bearing.
 	function setBPlane(model) {
 		bPlaneEl.innerHTML = "";
 		var on = !!model && isFinite(model.angleDeg);
 		root.classList.toggle("has-bplane", on);
 		if (!on) { bPlaneEl.style.display = "none"; return; }
 		bPlaneEl.style.display = "";
-		// C, the viewBox half-width, sits just past the north tick's outer end
-		// (R + 3), so the drawing fills the square with no margin of its own.
-		var R = 25, C = 29, ring = 19;
-		var p = bearingPoint(model.angleDeg, ring);
+		// The viewBox is the square's own inner size, so one unit is one CSS
+		// px and BPLANE_SCALE's figures are the drawn sizes. The card is shown
+		// whenever this runs, so the size is known; 144 is its usual value.
+		var C = (bPlaneEl.clientWidth || 144) / 2;
+		var lay = bPlaneLayout(model.angleDeg, model.altitudeKm, C);
 		var ns = "http://www.w3.org/2000/svg";
 		var svg = document.createElementNS(ns, "svg");
 		svg.setAttribute("viewBox", "0 0 " + (C * 2) + " " + (C * 2));
@@ -537,13 +584,22 @@ export function createShipCard(opts) {
 			svg.appendChild(n);
 			return n;
 		}
-		// North tick, so "up is ecliptic north" is stated by the square itself.
-		node("line", { x1: C, y1: C - R - 3, x2: C, y2: C - R + 3,
+		// North tick at the top edge, so "up is ecliptic north" is stated by
+		// the square itself.
+		node("line", { x1: C, y1: 0, x2: C, y2: 5,
 			stroke: "#7fd4f0", "stroke-width": 1.4 });
-		node("circle", { cx: C, cy: C, r: ring, fill: "none",
-			stroke: "#5a6b8c", "stroke-width": 1, "stroke-dasharray": "2 3" });
-		node("circle", { cx: C, cy: C, r: 8.5, fill: "#6f7c93" });
-		node("circle", { cx: C + p.x, cy: C + p.y, r: 4.2, fill: "#f2f6ff" });
+		lay.rings.forEach(function (r) {
+			node("circle", { cx: C, cy: C, r: r, fill: "none",
+				stroke: "#2e3b57", "stroke-width": 1 });
+		});
+		node("circle", { cx: C, cy: C, r: BPLANE_SCALE.bodyR, fill: "#6f7c93" });
+		if (lay.ship) {
+			node("circle", { cx: C + lay.ship.x, cy: C + lay.ship.y, r: lay.ship.r, fill: "#f2f6ff" });
+		} else {
+			node("polygon", { fill: "#f2f6ff", points: lay.arrow.map(function (q) {
+				return (C + q.x).toFixed(2) + "," + (C + q.y).toFixed(2);
+			}).join(" ") });
+		}
 		bPlaneEl.appendChild(svg);
 		bPlaneEl.title = model.label || "";
 	}

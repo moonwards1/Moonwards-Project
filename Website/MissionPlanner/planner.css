@@ -508,8 +508,8 @@ body {
    card is unaffected by their presence in the markup. */
 .mp-ship-titlewrap { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
 .mp-ship-subtitle { font-size: 12px; color: var(--dim); white-space: nowrap; }
-/* The approach square: bearing only, at a fixed radius. Distance is the
-   mission bar's business (see setBPlane). */
+/* The approach square: B-plane bearing and closest-approach altitude on
+   fixed rings (see setBPlane). */
 .mp-ship-bplane {
 	flex: 1 1 auto; min-width: 0; aspect-ratio: 1 / 1; margin-left: 8px;
 	border: 1px solid var(--line2); border-radius: 6px; background: #0d1729;
