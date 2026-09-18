@@ -284,14 +284,16 @@ export function createShipCard(opts) {
 	var top = el("div", "mp-ship-top");
 	var head = el("div", "mp-ship-head");
 	var titleWrap = el("span", "mp-ship-titlewrap");
-	var title = el("span", "mp-ship-title", "SHIP");
+	var title = el("span", "mp-ship-title", "Ship");
 	var subtitle = el("span", "mp-ship-subtitle", "");
 	titleWrap.appendChild(title);
 	titleWrap.appendChild(subtitle);
 	var badge = el("span", "mp-ship-oncourse", "✓");
 	badge.title = "On course";
 	// The approach square is Coast's; it stays out of the layout until a
-	// caller fills it (setBPlane).
+	// caller fills it (setBPlane). Shown, it takes all the head's width beside
+	// the title as a square, making the band above the speed bar two columns:
+	// title (and whatever goes under it) on the left, the square on the right.
 	var bPlaneEl = el("div", "mp-ship-bplane");
 	bPlaneEl.style.display = "none";
 	head.appendChild(titleWrap);
@@ -505,9 +507,10 @@ export function createShipCard(opts) {
 		}
 	}
 
-	// A phase qualifier beside the title ("- Coast"). "" clears it.
+	// A phase qualifier after the title ("Ship: coast"). "" clears it.
 	function setSubtitle(text) {
-		subtitle.textContent = text ? " - " + text : "";
+		title.textContent = text ? "Ship:" : "Ship";
+		subtitle.textContent = text ? text.toLowerCase() : "";
 	}
 
 	// The approach square: which side of the destination the ship passes on,
@@ -516,9 +519,13 @@ export function createShipCard(opts) {
 	// fixed radius and says nothing about distance, which the mission bar carries.
 	function setBPlane(model) {
 		bPlaneEl.innerHTML = "";
-		if (!model || !isFinite(model.angleDeg)) { bPlaneEl.style.display = "none"; return; }
+		var on = !!model && isFinite(model.angleDeg);
+		root.classList.toggle("has-bplane", on);
+		if (!on) { bPlaneEl.style.display = "none"; return; }
 		bPlaneEl.style.display = "";
-		var R = 25, C = 32, ring = 19;
+		// C, the viewBox half-width, sits just past the north tick's outer end
+		// (R + 3), so the drawing fills the square with no margin of its own.
+		var R = 25, C = 29, ring = 19;
 		var p = bearingPoint(model.angleDeg, ring);
 		var ns = "http://www.w3.org/2000/svg";
 		var svg = document.createElementNS(ns, "svg");

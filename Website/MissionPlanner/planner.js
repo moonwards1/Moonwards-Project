@@ -36,6 +36,7 @@ import { defaultWorkspaceMain } from "./presets/default-mission.js";
 import { EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink } from "./ui/share-link.js";
+import { confirmDialog } from "./ui/confirm-dialog.js";
 import { readHistory, readSets } from "./core/revisions.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
 import { createEphemerisView } from "./ephemeris-view.js";
@@ -377,20 +378,27 @@ exampleSelectEl.addEventListener("change", function () {
 	spawnMissionTab(res.world, nextUniqueTitle(ex.label), ex.workspace);
 });
 
-// Closing asks for confirmation — missions persist, and there is no undo, so
-// closing is permanent. Disposing before removing the
+// Closing asks for confirmation (in-page, ui/confirm-dialog.js) — missions
+// persist, and there is no undo, so closing is permanent. Disposing before
+// removing the
 // workspace slot keeps saveWorkspace() (called by dispose) from re-writing
 // a slot deleteWorkspaceSlot is about to remove; saveMissionsStore() last so
 // the closed mission drops out of the persisted list immediately, not just
 // at the next pagehide.
-function closeMissionTab(missionId) {
-	var idx = missions.findIndex(function (m) { return m.id === missionId; });
-	if (idx === -1) { return; }
-	var entry = missions[idx];
-	var ok = window.confirm(
-		"Close mission “" + entry.title + "”? It will be removed for good " +
-		"and can't be recovered.");
+async function closeMissionTab(missionId) {
+	var entry = missions.find(function (m) { return m.id === missionId; });
+	if (!entry) { return; }
+	var ok = await confirmDialog({
+		title: "Close “" + entry.title + "”?",
+		message: "The mission will be removed for good and can't be recovered.",
+		okLabel: "Close mission",
+		danger: true
+	});
 	if (!ok) { return; }
+	// Found again after the wait: the list may have changed while the
+	// question was open.
+	var idx = missions.indexOf(entry);
+	if (idx === -1) { return; }
 
 	if (activeTabId === missionId) {
 		var fallback = missions[idx - 1] || missions[idx + 1];

@@ -506,14 +506,20 @@ body {
 /* ---- the Coast card's own parts ----
    All of these render nothing until their setter is called, so the Departure
    card is unaffected by their presence in the markup. */
-.mp-ship-titlewrap { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.mp-ship-titlewrap { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
 .mp-ship-subtitle { font-size: 12px; color: var(--dim); white-space: nowrap; }
 /* The approach square: bearing only, at a fixed radius. Distance is the
    mission bar's business (see setBPlane). */
 .mp-ship-bplane {
-	width: 46px; height: 46px; flex: 0 0 auto;
-	border: 1px solid var(--line2); border-radius: 5px; background: #0d1729;
+	flex: 1 1 auto; min-width: 0; aspect-ratio: 1 / 1; margin-left: 8px;
+	border: 1px solid var(--line2); border-radius: 6px; background: #0d1729;
 }
+/* With the square shown, the band above the speed bar is two columns: the
+   title left, the square filling the rest of the width at the card's top-right
+   corner, inset just enough to clear the card's own rounded border. The title
+   keeps its usual distance from the card's top and left edges. */
+.mp-shipcard.has-bplane .mp-ship-top { padding: 2px 2px 2px 10px; }
+.mp-shipcard.has-bplane .mp-ship-titlewrap { flex: 0 0 auto; padding-top: 6px; }
 .mp-ship-bsvg { display: block; width: 100%; height: 100%; }
 
 /* floating body labels (Shared/sim/body-renderer.js label layer) */
@@ -808,9 +814,11 @@ body {
 #mp-marker-card:not(.mp-empty) .mp-marker-hint { display: none; }
 .mp-paste-btn { display: block; width: 100%; margin-top: 9px; }
 
-/* ---------- modal dialog: name-your-mission + paste-a-link ----------
-   Class names are mp- prefixed and mapped onto the shell's palette vars. One
-   instance, built by ephemeris-view.js and appended to <body>. */
+/* ---------- modal dialogs ----------
+   Class names are mp- prefixed and mapped onto the shell's palette vars. Two
+   instances share this chrome, each appended to <body>: name-your-mission +
+   paste-a-link (ephemeris-view.js) and the yes/no question
+   (ui/confirm-dialog.js). */
 .mp-dialog-wrap {
 	position: fixed; inset: 0; background: rgba(5, 8, 14, 0.6);
 	display: none; align-items: center; justify-content: center; z-index: 20;
@@ -834,6 +842,11 @@ body {
 .mp-dialog-err:empty { display: none; }
 .mp-dialog-btnrow { display: flex; gap: 8px; justify-content: flex-end; }
 .mp-dialog-btnrow .mp-btn.mp-big { display: inline-block; width: auto; margin-top: 0; }
+.mp-dialog-msg { margin: 0 0 14px; font-size: 12.5px; color: var(--text); line-height: 1.45; }
+.mp-dialog-msg[hidden] { display: none; }
+/* A destructive OK: the same red as the tab's close cross. */
+.mp-dialog-btnrow .mp-btn.mp-danger { background: #4a2420; border-color: #6b3226; color: #f3c0b8; }
+.mp-dialog-btnrow .mp-btn.mp-danger:hover:not(:disabled) { background: #5e2c26; }
 
 /* ---------- "Moon phase at launch" widget (Ephemeris tab) ----------
    Phase glyph left, two tan-outlined pill bars right (teal fill) — the Moon's
