@@ -327,10 +327,10 @@ export const OrbitalMath = {
 		// A body's true rotation-axis direction, as a unit vector in the
 		// heliocentric-ecliptic J2000 frame this codebase places bodies in (X
 		// toward the equinox, Z ecliptic north — see stateFromElements/burnFrame).
-		// raRad/decRad are the body's IAU-published north-pole right ascension /
+		// raRad/decRad are the body's spin-pole (right-hand rule) right ascension /
 		// declination in the ICRF equatorial frame (the standard those figures are
 		// quoted in); this rotates that into the ecliptic frame via Earth's mean
-		// obliquity. For a retrograde rotator (Venus, Uranus, Pluto, ...) the IAU
+		// obliquity. For a retrograde rotator (Venus, Uranus, Pluto, ...) the spin
 		// pole is the one south of the orbital plane, so the returned vector's
 		// angle from ecliptic-Z is correctly > 90 deg — no separate sign handling
 		// needed.

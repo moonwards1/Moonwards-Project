@@ -294,8 +294,10 @@ class System{
 	get axialTiltEcliptic(){
 		return this.properties.axialTiltEcliptic || this.axialTilt
 	}
-	// IAU north-pole right ascension/declination (ICRF equatorial J2000,
-	// radians) — see Shared/math-utils.js's poleVectorEcliptic for converting
+	// Spin-pole right ascension/declination (ICRF equatorial J2000, radians):
+	// the pole the body turns counter-clockwise about (right-hand rule), which
+	// for a retrograde rotator — Venus, Uranus, Pluto — is the antipode of the
+	// IAU "north" pole and lies south of the ecliptic. See Shared/math-utils.js's poleVectorEcliptic for converting
 	// this into the heliocentric-ecliptic frame the scenes are built in. null
 	// for the few bodies (e.g. Psyche) with no published pole solution.
 	get pole(){
@@ -1704,7 +1706,7 @@ vp^2 = mu * (2/P - 1/a)
 	radiusPolar: 24973e3,
 	radiusequator: 25559e3,
 	axialTilt: 97.77*(Math.PI/180),
-	pole: { ra: 257.31*(Math.PI/180), dec: -15.18*(Math.PI/180) },
+	pole: { ra: 77.31*(Math.PI/180), dec: 15.18*(Math.PI/180) },
 	orbit: {
 		system: "Sun",
 		period: 30687.153*86400,

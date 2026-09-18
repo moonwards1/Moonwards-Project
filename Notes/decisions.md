@@ -356,3 +356,17 @@ window jumps.
 - **Arrival technology measures at the pass**: `arrival-leg.passFor` through
   `approachFromPass`. `approachAt`, at a packet's own epoch, is only the
   fallback. A leg's end is a parameter, not an event.
+
+---
+
+## Shared libraries
+
+### A body's `pole` is its spin pole
+
+`sys.pole` in `Shared/orbit.js` is the pole the body turns counter-clockwise
+about (right-hand rule), not the IAU "north" pole. For Venus, Uranus and Pluto
+it lies south of the ecliptic. `tiltBody` points the equator ring's +Z along it
+and draws the spin arrowheads counter-clockwise about +Z.
+
+Why: the equator ring alone looks the same for either pole, but the arrows
+don't. With the IAU convention a retrograde rotator's arrows would be backwards.

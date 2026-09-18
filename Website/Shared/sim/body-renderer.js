@@ -124,19 +124,49 @@ export function makeEquatorRing(radius, colorHex, opacity) {
 	return makeArcLine(pts, colorHex, opacity == null ? 0.45 : opacity);
 }
 
+// Arrowheads on the equator ring showing which way the body turns: `count`
+// small flat triangles lying on the sphere surface, tip pointing
+// counter-clockwise about local +Z. `tiltBody` aligns +Z with the spin pole
+// (right-hand rule), so counter-clockwise here is the true rotation sense for
+// prograde and retrograde rotators alike. Lifted a hair off the surface so the
+// sphere doesn't hide them.
+export function makeSpinArrows(radius, colorHex, opacity, count) {
+	var n = count || 4;
+	var len = 0.2, halfW = 0.08, lift = 1.012;   // arc length and half-width, in body radii
+	var pos = [];
+	function onSphere(ang, z) {
+		var c = Math.sqrt(Math.max(0, 1 - z * z));
+		var s = radius * lift;
+		pos.push(s * c * Math.cos(ang), s * c * Math.sin(ang), s * z);
+	}
+	for (var k = 0; k < n; k++) {
+		var tip = 2 * Math.PI * (k + 0.5) / n;
+		onSphere(tip, 0);
+		onSphere(tip - len, halfW);
+		onSphere(tip - len, -halfW);
+	}
+	var g = new THREE.BufferGeometry();
+	g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+	return new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+		color: colorHex, transparent: true, opacity: opacity == null ? 0.75 : opacity,
+		side: THREE.DoubleSide, depthWrite: false }));
+}
+
 // Give a body mesh its real orientation and an equator marker: aligns
-// `core`'s local +Z (the equator ring's normal) to the body's true celestial
-// pole — `sys.pole` (IAU right ascension/declination, converted into this
-// codebase's ecliptic scene frame by OrbitalMath.poleVectorEcliptic) when
-// the data has it — and adds a matching equator ring as its child, so the
-// ring inherits the orientation and the core's visibility (including
+// `core`'s local +Z (the equator ring's normal) to the body's spin pole —
+// `sys.pole` (right ascension/declination of the pole the body turns
+// counter-clockwise about, converted into this codebase's ecliptic scene
+// frame by OrbitalMath.poleVectorEcliptic) when the data has it — and adds a
+// matching equator ring with rotation-direction arrowheads as its children,
+// so they inherit the orientation and the core's visibility (including
 // `updateScales`' collapse-to-point toggle) automatically. Falls back to a
 // plain X-axis rotation by `sys.axialTilt` (magnitude only, arbitrary
 // azimuth) for the few bodies with no published pole solution (e.g.
-// Psyche), where `axialTilt` itself is usually 0 too (untilted sphere).
-// A pole and its antipode draw an identical ring (same plane, either
-// direction of the normal), so there's no north/south convention to get
-// wrong here.
+// Psyche), where `axialTilt` itself is usually 0 too (untilted sphere); a
+// tilt above 90 degrees flips +Z below the ecliptic, so the arrows still
+// read retrograde. The ring alone would be the same for either pole, but
+// the arrows are not: `sys.pole` must be the spin pole, not the IAU
+// "north" pole, for a retrograde rotator.
 export function tiltBody(core, radius, sys, ringColorHex, ringOpacity) {
 	var pole = sys.pole;
 	if (pole) {
@@ -148,6 +178,8 @@ export function tiltBody(core, radius, sys, ringColorHex, ringOpacity) {
 		core.rotation.x = sys.axialTilt || 0;
 	}
 	core.add(makeEquatorRing(radius, ringColorHex, ringOpacity));
+	core.add(makeSpinArrows(radius, ringColorHex,
+		ringOpacity == null ? null : Math.min(1, ringOpacity * 1.6)));
 }
 
 // True sphere-of-influence radius in AU (0 for a body with no orbit, e.g.
