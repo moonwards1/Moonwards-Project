@@ -1017,8 +1017,8 @@ export default {
 		rebuildWaypointRows();
 	},
 
-	// Trajectory polyline in the heliocentric frame. snap = { world, stageId,
-	// params, result }.
+	// Trajectory polyline in the heliocentric frame. snap = { world, jd, stageId,
+	// params, result, phase }.
 	draw: function (view, snap) {
 		while (view.group.children.length) {
 			var c = view.group.children[0];
@@ -1207,8 +1207,8 @@ export default {
 		// The ship-marker chevron (ported from the Ephemeris tab's marker —
 		// Shared/sim/marker-card.js's makeShipSprite/orientMarkerSprite):
 		// unlike the Ephemeris marker's own slider, this one has no state of
-		// its own — its position is simply wherever the shared mission clock
-		// (snap.world.jd) currently sits along the leg, via stateAtElapsed's
+		// its own — its position is simply wherever this view's display date
+		// (snap.jd) currently sits along the leg, via stateAtElapsed's
 		// exact two-body re-propagation (samples alone don't carry velocity,
 		// which the chevron needs to orient along the direction of travel).
 		// Recreated fresh every draw() alongside everything else in the
@@ -1225,7 +1225,7 @@ export default {
 		// clicking the plan's own arrival event) can't show the ship somewhere the
 		// Coast phase has no business displaying. In any other phase the clamp
 		// lifts and the same marker continues on to the real encounter.
-		var t = (snap.world.jd - leg.jd0) * DAY;
+		var t = (snap.jd - leg.jd0) * DAY;
 		if (snap.phase === "coast" && seamT !== null && t > seamT) { t = seamT; }
 		var s = stateAtElapsed(leg, t);
 		if (s) {

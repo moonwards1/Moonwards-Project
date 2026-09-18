@@ -94,9 +94,14 @@ Refinements the browser shell adds on top of the headless contract:
 
 - **`update()` stays pure; drawing is a separate `draw(view, snapshot)` hook.**
   update() must run under Node, so the shell calls `draw` after every
-  recompute pass, once per attached view, with `snapshot = { world, stageId,
-  params, result }`. Modules cache what draw needs (samples, physics figures)
-  per stageId during update() — plain data, Node-safe.
+  recompute pass (and every clock move), once per attached view, with
+  `snapshot = { world, jd, stageId, params, result, phase }`. Anything
+  clock-shaped draws at `snap.jd`, never `world.jd`: `jd` is the view's own
+  display date — the clock for the main pane, and for a float the seam its
+  phase shares with the flight (Departure held at its arc's end, Arrival at
+  its arc's start, Coast at whichever end meets the focused phase), so only
+  the focused phase scrubs. Modules cache what draw needs (samples, physics
+  figures) per stageId during update() — plain data, Node-safe.
 - **`ctx.onResult(cb)`** — init()'s ctx carries a subscription scoped to that
   stage's engine result, so a card can refresh its readouts without reaching
   into the engine.

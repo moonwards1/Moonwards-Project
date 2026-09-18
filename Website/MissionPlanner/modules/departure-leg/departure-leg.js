@@ -486,7 +486,7 @@ export default {
 	// The flight polyline in the Earth–Moon frame (geocentric — the frame's
 	// own coordinates), release and hand-off dots, plus each waypoint's
 	// prograde/radial/normal gizmo and dV/prograde-speed-change arrows.
-	// snap = { world, stageId, params, result, phase }.
+	// snap = { world, jd, stageId, params, result, phase }.
 	draw: function (view, snap) {
 		function disposeDeep(o) {
 			if (o.children) { o.children.slice().forEach(disposeDeep); }
@@ -554,12 +554,12 @@ export default {
 		});
 
 		// The ship-marker chevron (2.5) -- same shell contract as transfer-leg's:
-		// no state of its own, positioned wherever the shared mission clock
-		// (snap.world.jd) sits along the flight, oriented along its own velocity.
+		// no state of its own, positioned wherever this view's display date
+		// (snap.jd) sits along the flight, oriented along its own velocity.
 		// view.chevron is a stable slot mission-view.js's render loop re-reads
 		// every frame to keep the sprite screen-facing and constant-sized as the
 		// camera moves (draw() itself never gets the live camera).
-		var t = (snap.world.jd - leg.jd0) * DAY;
+		var t = (snap.jd - leg.jd0) * DAY;
 		var s = stateAtElapsed(leg, t);
 		if (s) {
 			var chevron = makeShipSprite();

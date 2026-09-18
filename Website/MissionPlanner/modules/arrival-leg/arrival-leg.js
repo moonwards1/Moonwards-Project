@@ -538,7 +538,7 @@ export default {
 
 	// The approach polyline in the destination frame: hand-off dot (magenta),
 	// leg-end dot (white), closest-approach dot (amber), waypoint gizmos +
-	// burn arrows. snap = { world, stageId, params, result }.
+	// burn arrows. snap = { world, jd, stageId, params, result, phase }.
 	draw: function (view, snap) {
 		function disposeDeep(o) {
 			if (o.children) { o.children.slice().forEach(disposeDeep); }
@@ -607,7 +607,7 @@ export default {
 
 		// The ship-marker chevron (2.5) -- see departure-leg.js's sibling code
 		// for the shell contract (no state of its own, positioned wherever
-		// snap.world.jd sits along the flight, re-oriented/rescaled every
+		// snap.jd sits along the flight, re-oriented/rescaled every
 		// render frame by mission-view.js via the stable view.chevron slot).
 		// Unlike departure/coast, this frame's own axes are body-relative, so
 		// the local velocity swings with the destination's own motion around
@@ -615,7 +615,7 @@ export default {
 		// reads as a course change that isn't there. Orient along the lifted
 		// heliocentric velocity instead; position stays local (that IS where
 		// the ship is, relative to the frame's origin).
-		var t = (snap.world.jd - leg.jd0) * DAY;
+		var t = (snap.jd - leg.jd0) * DAY;
 		var s = stateAtElapsed(leg, t);
 		if (s) {
 			var chevron = makeShipSprite();

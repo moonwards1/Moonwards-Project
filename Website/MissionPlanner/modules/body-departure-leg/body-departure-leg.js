@@ -502,9 +502,9 @@ export default {
 
 		// The ship-marker chevron (2.5) -- see departure-leg.js's sibling code
 		// for the shell contract (no state of its own, positioned wherever
-		// snap.world.jd sits along the flight, re-oriented/rescaled every
+		// snap.jd sits along the flight, re-oriented/rescaled every
 		// render frame by mission-view.js via the stable view.chevron slot).
-		var t = (snap.world.jd - leg.jd0) * DAY;
+		var t = (snap.jd - leg.jd0) * DAY;
 		var s = stateAtElapsed(leg, t);
 		if (s) {
 			var chevron = makeShipSprite();

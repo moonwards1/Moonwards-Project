@@ -295,7 +295,7 @@ export var SKYHOOK = {
 		// skips. Drawn static at the chosen phase if no epoch resolves.
 		var omega = O.angularVelocity(GM, R + params.comAlt);
 		var phase = (params.releasePhaseDeg * Math.PI / 180) +
-			(ctx.pinJd !== null ? omega * (snap.world.jd - ctx.pinJd) * DAY : 0);
+			(ctx.pinJd !== null ? omega * (snap.jd - ctx.pinJd) * DAY : 0);
 		var dir = new THREE.Vector3(Math.cos(phase), Math.sin(phase), 0);
 		view.group.add(new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints(

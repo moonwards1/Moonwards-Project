@@ -662,10 +662,11 @@ export function createMissionView(opts) {
 		applyPhaseToCards();
 		syncSliderVisibility();
 		saveWorkspace();
-		// Redraw everything against the new phase immediately: transfer-leg's
-		// chevron clamps at the arrival seam only while Coast is active, and
-		// without this it would stay stale at its last-drawn position until the
-		// next unrelated recompute.
+		// Redraw everything against the new phase immediately: which frame
+		// follows the clock and where each float is held (frameJd) both change
+		// with it, as does transfer-leg's seam clamp, and without this they
+		// would stay stale until the next unrelated recompute.
+		placeAll();
 		engine.results().forEach(drawStage);
 		updateShipCard();   // the card is per-phase; show/hide and refill it now
 	}
@@ -939,14 +940,35 @@ export function createMissionView(opts) {
 
 	world.stages().forEach(buildStageViews);
 
+	// ---- each frame's display date. Only the MAIN pane follows the clock; a
+	// float holds its phase at the seam it shares with the flight, so scrubbing
+	// one phase never moves the others. Departure is held at the end of its arc
+	// (the hand-off), Arrival at the start of its arc (the seam window's start),
+	// and Coast at whichever of its two ends meets the focused phase. The
+	// frame's bodies are placed at the same date as its chevron, so a held
+	// float is one consistent instant. framePins is refreshed from each
+	// recompute pass's results (updateFramePins); a pin with nothing to anchor
+	// it yet falls back to the clock.
+	var framePins = { depEnd: null, coastStart: null, coastEnd: null, arrStart: null };
+	function frameJd(frameId) {
+		if (frameId === workspace.main) { return world.jd; }
+		var phase = FRAME_PHASE[frameId], pin = null;
+		if (phase === "departure") { pin = framePins.depEnd; }
+		else if (phase === "arrival") { pin = framePins.arrStart; }
+		else if (phase === "coast") {
+			pin = workspace.phase === "arrival" ? framePins.coastEnd : framePins.coastStart;
+		}
+		return (typeof pin === "number" && isFinite(pin)) ? pin : world.jd;
+	}
+
 	function drawStage(res) {
 		var desc = registry.get(res.moduleId);
 		if (!desc || typeof desc.draw !== "function") { return; }
 		var stage = world.getStage(res.stageId);
 		if (!stage) { return; }
 		(stageViews[res.stageId] || []).forEach(function (view) {
-			desc.draw(view, { world: world, stageId: res.stageId, params: stage.params, result: res,
-			                   phase: workspace.phase });
+			desc.draw(view, { world: world, jd: frameJd(view.frame), stageId: res.stageId,
+			                   params: stage.params, result: res, phase: workspace.phase });
 		});
 		refreshReadouts();
 	}
@@ -2499,14 +2521,21 @@ export function createMissionView(opts) {
 			peak == null ? NaN : peak / 1000));
 	}
 
-	// ---- wiring: World changes place bodies; engine passes redraw the rest --
-	function placeAll(jd) {
-		Object.keys(frames).forEach(function (id) { frames[id].place(jd); });
+	// ---- wiring: every engine pass (a clock move included — the engine
+	// passes its listeners the standing results for one) re-places the bodies,
+	// each frame at its own display date (frameJd), and redraws the rest ------
+	function placeAll() {
+		Object.keys(frames).forEach(function (id) { frames[id].place(frameJd(id)); });
 	}
 
-	var unWorld = world.onChange(function (info) {
-		if (info.change.jd !== undefined) { placeAll(world.jd); }
-	});
+	// The floats' held dates (see frameJd), from this pass's phase spans.
+	function updateFramePins(results, dep, span, arr) {
+		var depEvs = departureEvents(results);
+		framePins.depEnd = depEvs.length ? depEvs[depEvs.length - 1].jd : (dep ? dep.end : null);
+		framePins.coastStart = span ? span.start : null;
+		framePins.coastEnd = span ? span.end : null;
+		framePins.arrStart = arr ? arr.start : framePins.coastEnd;
+	}
 
 	// A view pass with no recompute behind it: Check writes nothing to the
 	// World, so there is no chain to re-run — only the bar and the Departure
@@ -2517,6 +2546,11 @@ export function createMissionView(opts) {
 	}
 
 	var unRecompute = engine.onRecompute(function (results) {
+		var span = coastSpan(results);
+		var dep = departureSpan(results);
+		var arr = arrivalSpan(results);
+		updateFramePins(results, dep, span, arr);
+		placeAll();
 		results.forEach(function (res) {
 			drawStage(res);
 			updateCard(res);
@@ -2530,14 +2564,11 @@ export function createMissionView(opts) {
 		renderComplianceBar(results);
 		updateShipCard();
 		updateDepartureInfo();
-		var span = coastSpan(results);
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
-		var dep = departureSpan(results);
 		depSlider.update(dep
 			? { start: dep.start, end: dep.end, jd: world.jd, marks: dep.marks, defaulted: dep.defaulted,
 			    releaseJd: dep.releaseJd }
 			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
-		var arr = arrivalSpan(results);
 		arrSlider.update(arr
 			? { start: arr.start, end: arr.end, ca: arr.ca, jd: world.jd, marks: arr.marks }
 			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
@@ -2711,7 +2742,6 @@ export function createMissionView(opts) {
 		floatCameraUnbinds.forEach(function (unbind) { unbind(); });
 		cursorUnbinds.forEach(function (unbind) { unbind(); });
 		shipCard.dispose();
-		unWorld();
 		unRecompute();
 		engine.dispose();
 		unbindCamera();
@@ -2737,7 +2767,7 @@ export function createMissionView(opts) {
 	// so only the exact jd gets it right.
 	dateBar.setJd(world.jd);
 	world.set({ jd: dateState.jd });
-	placeAll(world.jd);
+	placeAll();
 	updateShipCard();   // a no-op jd set skips the recompute that would fill it
 
 	return {
