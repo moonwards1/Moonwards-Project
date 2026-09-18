@@ -2401,6 +2401,7 @@ export function createMissionView(opts) {
 		if (!leg || !leg.ok) {
 			shipCard.setSpeed(null);
 			shipCard.setBPlane(null);
+			shipCard.setApproach(null);
 			return;
 		}
 
@@ -2443,22 +2444,29 @@ export function createMissionView(opts) {
 				cruise.max / 1000, cruise.min / 1000, full.max / 1000)
 			: null);
 
-		if (!pass) { shipCard.setBPlane(null); return; }
+		if (!pass) { shipCard.setBPlane(null); shipCard.setApproach(null); return; }
+		// The readouts are the measured closest approach — altitude and speed
+		// relative to the body, the same measurement the mission bar's Closest
+		// approach states. An impacting flight's trail ends at atmosphere entry,
+		// so there the row says Impact and the speed is the entry speed the
+		// impact diagnostic reports.
+		var impacts = !!(leg.impact && leg.impact.body === dest);
+		shipCard.setApproach({ altitudeKm: pass.altitude / 1000, impacts: impacts,
+			speedKms: (impacts ? leg.impact.entry.v : pass.speed) / 1000 });
+
 		// The approach geometry comes off nearestApproach's own measurement —
 		// it hands back the body-relative state it already found. null when the
 		// pass is not hyperbolic about the body: a captured arrival has no
 		// approach asymptote to take a bearing from.
 		var bp = O.bPlane(systems.get(dest).GM, pass.rRel, pass.vRel);
 		if (!bp) { shipCard.setBPlane(null); return; }
-		// Height is the measured closest approach, the same figure the mission
-		// bar states. It lies on the B bearing: periapsis is in the plane of
-		// the pass, on B's side of the body. An impacting flight's trail ends
-		// at atmosphere entry, so its measured closest approach is the entry
-		// height, not a periapsis; there the approach hyperbola's own
-		// periapsis, rp = b·sqrt((e-1)/(e+1)), gives the below-surface depth
-		// that puts the dot on the disc.
+		// The dot's height is the same closest approach. It lies on the B
+		// bearing: periapsis is in the plane of the pass, on B's side of the
+		// body. For an impact the measured figure is the entry height, not a
+		// periapsis; there the approach hyperbola's own periapsis,
+		// rp = b·sqrt((e-1)/(e+1)), gives the below-surface depth that puts the
+		// dot on the disc.
 		var R = systems.get(dest).radius;
-		var impacts = !!(leg.impact && leg.impact.body === dest);
 		var rp = impacts ? bp.b * Math.sqrt((bp.e - 1) / (bp.e + 1)) : pass.rmin;
 		var altKm = (rp - R) / 1000;
 		shipCard.setBPlane({ angleDeg: bp.angleDeg, altitudeKm: altKm,
@@ -2479,6 +2487,7 @@ export function createMissionView(opts) {
 		shipCard.setSubtitle("Departure");
 		shipCard.showGizmo(true);
 		shipCard.setBPlane(null);
+		shipCard.setApproach(null);
 
 		var dep = planDepartureState();
 		var planStage = adoptedPlanStage();

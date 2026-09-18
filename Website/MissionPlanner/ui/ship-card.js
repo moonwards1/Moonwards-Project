@@ -26,7 +26,8 @@
  * business, not this file's.
  *
  * The pure halves (vInfComponents, gizmoScale, speedModel, speedAlong,
- * speedRange, peakSpeed, bearingPoint, altitudeRadius, bPlaneLayout) take and
+ * speedRange, peakSpeed, bearingPoint, altitudeRadius, bPlaneLayout,
+ * approachRows) take and
  * return plain
  * values and are Node-tested in tests/ship-card.test.js.
  *
@@ -221,6 +222,25 @@ export function altitudeRadius(altitudeKm, scale) {
 	return Math.max(0, scale.ring0 - scale.ringStep + altitudeKm / perPx);
 }
 
+// The readouts beside the square. model: { altitudeKm, speedKms, impacts } or
+// null. Returns [{ label, value, warn }]. An impact has no closest approach
+// above the surface, so the first row says so and the speed is the speed at
+// impact.
+export function approachRows(model) {
+	if (!model) { return []; }
+	var alt = model.impacts ? "Impact"
+		: (!isFinite(model.altitudeKm) ? "—"
+			: (Math.abs(model.altitudeKm) >= 1e6
+				? (model.altitudeKm / 1e6).toFixed(2) + " M km"
+				: Math.round(model.altitudeKm).toLocaleString("en-US") + " km"));
+	return [
+		{ label: "Closest approach", value: alt, warn: !!model.impacts },
+		{ label: model.impacts ? "Speed at impact" : "Speed there",
+			value: isFinite(model.speedKms) ? model.speedKms.toFixed(2) + " km/s" : "—",
+			warn: false }
+	];
+}
+
 // Everything the square draws, in px about its centre, for a square of
 // half-width `half`:
 //   rings — radii of the altitude rings that fit whole inside the square
@@ -309,7 +329,7 @@ function makeLine(dir, len, colorHex, radius) {
 //                 the scissored render is seamless with the DOM around it
 //
 // Returns { el, gizmoEl, setOnCourse, setGizmo, showGizmo, setComponents,
-// setSpeed, setSubtitle, setBPlane, setExtra, render, dispose }.
+// setSpeed, setSubtitle, setBPlane, setApproach, setExtra, render, dispose }.
 export function createShipCard(opts) {
 	opts = opts || {};
 	var host = opts.host;
@@ -340,7 +360,13 @@ export function createShipCard(opts) {
 	// title (and whatever goes under it) on the left, the square on the right.
 	var bPlaneEl = el("div", "mp-ship-bplane");
 	bPlaneEl.style.display = "none";
-	head.appendChild(titleWrap);
+	// The left column: the title, and under it the approach readouts
+	// (setApproach), which sit beside the square.
+	var leftCol = el("div", "mp-ship-left");
+	var approachEl = el("div", "mp-ship-approach");
+	leftCol.appendChild(titleWrap);
+	leftCol.appendChild(approachEl);
+	head.appendChild(leftCol);
 	head.appendChild(badge);
 	head.appendChild(bPlaneEl);
 	top.appendChild(head);
@@ -604,6 +630,18 @@ export function createShipCard(opts) {
 		bPlaneEl.title = model.label || "";
 	}
 
+	// The closest-approach readouts under the title, beside the square.
+	// model as approachRows takes it, or null to clear.
+	function setApproach(model) {
+		approachEl.innerHTML = "";
+		approachRows(model).forEach(function (r) {
+			var row = el("div", "mp-ship-approw");
+			row.appendChild(el("div", "mp-ship-aplabel", r.label));
+			row.appendChild(el("div", "mp-ship-apval" + (r.warn ? " mp-ship-apwarn" : ""), r.value));
+			approachEl.appendChild(row);
+		});
+	}
+
 	// Free-form rows below the speed section, for a phase that reports figures
 	// the table doesn't cover. rows: [[label, value], ...] or null to clear.
 	function setExtra(rows) {
@@ -689,6 +727,7 @@ export function createShipCard(opts) {
 		setSpeed: setSpeed,
 		setSubtitle: setSubtitle,
 		setBPlane: setBPlane,
+		setApproach: setApproach,
 		setExtra: setExtra,
 		render: render,
 		dispose: dispose

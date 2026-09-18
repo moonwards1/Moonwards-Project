@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { vInfComponents, gizmoScale, speedModel, speedAlong, peakSpeed, speedRange,
-	bearingPoint, altitudeRadius, bPlaneLayout, BPLANE_SCALE } from "../ship-card.js";
+	bearingPoint, altitudeRadius, bPlaneLayout, BPLANE_SCALE, approachRows } from "../ship-card.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 
 var O = OrbitalMath;
@@ -222,4 +222,21 @@ test("bPlaneLayout: a pass beyond the square becomes an outward edge arrow", () 
 	assert.ok(tip.y < b1.y && tip.y < b2.y);
 	assert.ok(Math.abs(tip.y + 70) < 1e-9);
 	assert.ok(Math.abs(b1.x + b2.x) < 1e-9 && Math.abs(b1.x) > 1);
+});
+
+test("approachRows: a pass states its altitude and the speed there", () => {
+	var rows = approachRows({ altitudeKm: 14416.4, speedKms: 7.523, impacts: false });
+	assert.deepEqual(rows.map(r => [r.label, r.value, r.warn]), [
+		["Closest approach", "14,416 km", false],
+		["Speed there", "7.52 km/s", false]]);
+	assert.equal(approachRows({ altitudeKm: 2.5e6, speedKms: 1 })[0].value, "2.50 M km");
+	assert.deepEqual(approachRows(null), []);
+});
+
+test("approachRows: an impact says so, with the speed at impact", () => {
+	var rows = approachRows({ altitudeKm: 100, speedKms: 7.1, impacts: true });
+	assert.equal(rows[0].value, "Impact");
+	assert.equal(rows[0].warn, true);
+	assert.equal(rows[1].label, "Speed at impact");
+	assert.equal(rows[1].value, "7.10 km/s");
 });
