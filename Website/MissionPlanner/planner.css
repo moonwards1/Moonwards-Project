@@ -597,7 +597,7 @@ body {
    top of that same 12px). */
 .mp-tech-note { margin-left: 12px; }
 .mp-host-inset { padding-left: 25px; }
-.mp-card-inset { padding-left: 20px; }
+.mp-card-inset { padding-left: 20px; padding-right: 2px; border: none; }
 /* Belt-and-braces for the same overlap: rather than relying on every pane
    host's content happening to render tall enough, give any host a readout
    box can anchor a floor height matching the box's own rendered height
@@ -753,9 +753,9 @@ body {
 	display: block;
 	margin: 2px auto;
 }
-.sst-vec-nums { display: flex; gap: 10px; margin-top: 2px; }
+.sst-vec-nums { display: flex; gap: 6px; margin-top: 2px; }
 .sst-vec-num { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1; min-width: 0; font-size: 11px; font-weight: 600; }
-.sst-vec-num span { color: var(--text); }
+.sst-vec-num span { color: var(--text); white-space: nowrap; }
 .sst-vec-num input { width: 100%; min-width: 0; font-weight: 400; background: #0f1424; border: 1px solid var(--line2); color: var(--text); border-radius: 6px; padding: 4px 7px; font: inherit; font-size: 12.5px; color-scheme: dark; }
 
 /* ---------- Ephemeris tab: ship-marker card ----------

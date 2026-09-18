@@ -98,9 +98,12 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	var numStep = (opts && isFinite(opts.step)) ? opts.step : 0.001;
 	var unitLabel = (opts && opts.unitLabel) || null;   // appended to each axis's field name
 	var HIDE_FRAC = 0.008;   // matches the original 0.12 km/s dead-zone at MAXV=15 km/s
-	var hideMps = maxMps * HIDE_FRAC;
+	// The dead zone never exceeds one number-field step (1 m/s in the km/s
+	// editors, 0.1 m/s in the waypoint course-correction editor), so any burn
+	// the field can express draws an arrow (tiny ones only become legible by zooming).
+	var hideMps = Math.min(maxMps * HIDE_FRAC, numStep * dispDiv);
 	var W = 278, H = 300, OX = 139, OY = 150, AXIS_LEN = 112.5, SCALE = AXIS_LEN / maxMps, LEN = AXIS_LEN;
-	var ZMIN = 1, ZMAX = 12, ZSTEP = 1.4, PANSTEP = 40; // never smaller than the default view
+	var ZMIN = 1, ZSTEP = 1.4, ZMAX = 12 * Math.pow(ZSTEP, 4), PANSTEP = 40; // never smaller than the default view
 	// Line/arrowhead length always grows 1:1 with zoom (it's what you're aiming
 	// with), but thickness only grows as zoom^THICK_EXP — a lot slower — so a
 	// heavily zoomed-in arrow doesn't turn into a fat wedge that's harder to
@@ -232,18 +235,21 @@ export function buildVectorEditor(host, values, onChange, opts) {
 			var show = Math.abs(vis) > hideMps;
 			[a.line, a.head].forEach(function (n) { n.style.display = show ? "" : "none"; });
 			if (show) {
-				a.line.setAttribute("stroke-width", strokeW.toFixed(3));
 				var s = vis < 0 ? -1 : 1, hx = s*a.dx, hy = s*a.dy, px = -hy, py = hx;
 				// The shaft stops where the arrowhead's base starts, not at the value
 				// point itself — the arrowhead sits past the end of the line, tip at
-				// the value point, as arrows usually look. Clamp so a value shorter
-				// than the arrowhead can't push its base past the origin.
+				// the value point, as arrows usually look. A value shorter than the
+				// arrowhead shrinks the head (and stroke) in proportion, so a tiny
+				// arrow stays a narrow arrow rather than a flat wide wedge.
 				var baseLen = Math.min(headLen, Math.abs(vis) * SCALE);
+				var k = baseLen / headLen;
+				a.line.setAttribute("stroke-width", (strokeW * Math.max(k, 0.3)).toFixed(3));
+				var hh = headHalf * k;
 				var bx = tx - hx*baseLen, by = ty - hy*baseLen;
 				a.line.setAttribute("x1", OX); a.line.setAttribute("y1", OY);
 				a.line.setAttribute("x2", bx); a.line.setAttribute("y2", by);
 				a.head.setAttribute("points",
-					tx + "," + ty + " " + (bx+px*headHalf) + "," + (by+py*headHalf) + " " + (bx-px*headHalf) + "," + (by-py*headHalf));
+					tx + "," + ty + " " + (bx+px*hh) + "," + (by+py*hh) + " " + (bx-px*hh) + "," + (by-py*hh));
 			}
 			// Unclamped raw (not vis): matches the pre-cap widget's behavior of
 			// showing the true typed value even past the drawn arrow's clamp. In
@@ -375,22 +381,17 @@ export function renderVectorGlyph(host, values) {
 		{ key: "rad", name: "radial",   col: "#ffb45a", dx: Math.cos(Math.PI / 6),  dy: Math.sin(Math.PI / 6) },
 		{ key: "nrm", name: "normal",   col: "#8ab4ff", dx: 0, dy: -1 }
 	];
-	// Auto-fit: AXIS_LEN is what the LARGEST-magnitude axis draws to (a
-	// negligible burn falls back to maxAbs=1 so the fit scale stays finite;
-	// nothing draws at that scale anyway, since HIDE_FRAC below hides it).
-	// But the fit is capped at MAX_SCALE — buildVectorEditor's own top zoom
-	// level (ZMAX=12) applied to its base (unzoomed) scale, AXIS_LEN=112.5
-	// px per its own ±15 km/s range — so a SMALL burn never gets magnified
-	// past what the original interactive widget would ever show it at, even
-	// zoomed all the way in. Below that cap the fit still tightens toward
-	// AXIS_LEN as usual; above it (a small burn), the arrows draw at their
-	// true small size and the tight bounding box (pass 1/2 below) simply
-	// ends up smaller — legibility never costs more space than it needs to.
+	// Auto-fit: AXIS_LEN is what the LARGEST-magnitude axis draws to, however
+	// small that burn is — the legend states the true value, so magnifying a
+	// small burn misleads no one. The smallest burn is 1 m/s: a negligible
+	// burn falls back to maxAbs=1 so the fit scale stays finite, and draws nothing.
 	var maxAbs = Math.max(1, Math.abs(values.pro || 0), Math.abs(values.rad || 0), Math.abs(values.nrm || 0));
 	var AXIS_LEN = 55;
-	var MAX_SCALE = (112.5 / 15000) * 12;
-	var SCALE = Math.min(AXIS_LEN / maxAbs, MAX_SCALE);
-	var HIDE_FRAC = 0.008, hideMps = maxAbs * HIDE_FRAC;
+	var SCALE = AXIS_LEN / maxAbs;
+	var HIDE_FRAC = 0.008, hideMps = Math.max(maxAbs * HIDE_FRAC, 0.5);
+	// Below 1 km/s the legend reads in m/s (km/s at 2 decimals would show a
+	// small burn as 0.00).
+	var inMps = maxAbs < 1000;
 	var STROKE = 2.5, HEAD_LEN = 9, HEAD_HALF = 5;
 	// MIN_TIP_R keeps a near-zero axis's label a little out from the shared
 	// origin point (rather than sitting on top of the other two labels);
@@ -399,7 +400,7 @@ export function renderVectorGlyph(host, values) {
 	// Estimated half-extents of a two-line axis label (a bold 12px letter
 	// over a 10px value, e.g. "N" / "-2.73") — sized generously enough not
 	// to clip real text, only used to size the viewBox below.
-	var TEXT_HALF_W = 17, TEXT_UP = 10, TEXT_DOWN = 21;
+	var TEXT_HALF_W = inMps ? 27 : 17, TEXT_UP = 10, TEXT_DOWN = 21;
 
 	// Pass 1: work out each axis's geometry in a coordinate system centred
 	// on the arrows' shared origin (0,0), and grow a content bounding box
@@ -423,9 +424,10 @@ export function renderVectorGlyph(host, values) {
 		if (Math.abs(v) > hideMps) {
 			var tx = a.dx * v * SCALE, ty = a.dy * v * SCALE;
 			var hx = sgn * a.dx, hy = sgn * a.dy, px = -hy, py = hx;
-			var baseLen = Math.min(HEAD_LEN, mag);
+			// A burn shorter than the arrowhead shrinks head and stroke in proportion.
+			var baseLen = Math.min(HEAD_LEN, mag), k = baseLen / HEAD_LEN;
 			var bx = tx - hx * baseLen, by = ty - hy * baseLen;
-			arrow = { tx: tx, ty: ty, bx: bx, by: by, px: px, py: py };
+			arrow = { tx: tx, ty: ty, bx: bx, by: by, px: px, py: py, k: k };
 			grow(tx, ty);
 		}
 		// The label sits AT THE ARROW'S OWN TIP — its actual direction
@@ -458,11 +460,11 @@ export function renderVectorGlyph(host, values) {
 			var ar = d.arrow;
 			svg.appendChild(svgEl("line", {
 				x1: OX, y1: OY, x2: OX + ar.bx, y2: OY + ar.by,
-				stroke: d.a.col, "stroke-width": STROKE, "stroke-linecap": "round" }));
+				stroke: d.a.col, "stroke-width": STROKE * Math.max(ar.k, 0.3), "stroke-linecap": "round" }));
 			svg.appendChild(svgEl("polygon", { fill: d.a.col, points:
 				(OX + ar.tx) + "," + (OY + ar.ty) + " " +
-				(OX + ar.bx + ar.px * HEAD_HALF) + "," + (OY + ar.by + ar.py * HEAD_HALF) + " " +
-				(OX + ar.bx - ar.px * HEAD_HALF) + "," + (OY + ar.by - ar.py * HEAD_HALF) }));
+				(OX + ar.bx + ar.px * HEAD_HALF * ar.k) + "," + (OY + ar.by + ar.py * HEAD_HALF * ar.k) + " " +
+				(OX + ar.bx - ar.px * HEAD_HALF * ar.k) + "," + (OY + ar.by - ar.py * HEAD_HALF * ar.k) }));
 		}
 		var lx = OX + d.lx, ly = OY + d.ly;
 		// A precisely-zero axis (no burn on it at all, not just a small one)
@@ -473,7 +475,7 @@ export function renderVectorGlyph(host, values) {
 		var letter = svgEl("tspan", { x: lx, dy: 0, "font-size": 12, "font-weight": 700 });
 		letter.textContent = d.a.name.charAt(0).toUpperCase();
 		var val = svgEl("tspan", { x: lx, dy: 13, "font-size": 10, "font-weight": 400, "fill-opacity": 0.85 });
-		val.textContent = (d.v / 1000).toFixed(2);
+		val.textContent = inMps ? d.v.toFixed(1) + " m/s" : (d.v / 1000).toFixed(2);
 		t.appendChild(letter); t.appendChild(val);
 		svg.appendChild(t);
 	});
