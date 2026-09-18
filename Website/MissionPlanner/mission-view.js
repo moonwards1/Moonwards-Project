@@ -655,17 +655,27 @@ export function createMissionView(opts) {
 	// which slider shows (syncSliderVisibility), and the active highlight.
 	function setPhase(phase) {
 		if (PHASES.indexOf(phase) === -1 || phase === workspace.phase) { return; }
-		workspace.phase = phase;
 		var frameId = PHASE_FRAME[phase];
+		// The clock enters the new phase: if it sits outside that phase's span,
+		// it moves to the date the phase's float was held at (read before the
+		// swap, while the frame is still a float), so the main view opens on
+		// exactly what the float showed and the slider readout is this phase's
+		// own time from the first frame.
+		var entryJd = frameId ? frameJd(frameId) : world.jd;
+		var entrySpan = phaseSpans[phase];
+		var clockOutside = !!entrySpan && (world.jd < entrySpan.start || world.jd > entrySpan.end);
+		workspace.phase = phase;
 		if (frameId) { promoteFrame(frameId); }
 		syncPhaseButtons();
 		applyPhaseToCards();
 		syncSliderVisibility();
 		saveWorkspace();
-		// Redraw everything against the new phase immediately: which frame
-		// follows the clock and where each float is held (frameJd) both change
-		// with it, as does transfer-leg's seam clamp, and without this they
-		// would stay stale until the next unrelated recompute.
+		// Moving the clock redraws everything through the engine's clock pass.
+		if (clockOutside && entryJd !== world.jd) { setClock(entryJd); return; }
+		// Otherwise redraw everything against the new phase immediately: which
+		// frame follows the clock and where each float is held (frameJd) both
+		// change with it, as does transfer-leg's seam clamp, and without this
+		// they would stay stale until the next unrelated recompute.
 		placeAll();
 		engine.results().forEach(drawStage);
 		updateShipCard();   // the card is per-phase; show/hide and refill it now
@@ -950,6 +960,9 @@ export function createMissionView(opts) {
 	// recompute pass's results (updateFramePins); a pin with nothing to anchor
 	// it yet falls back to the clock.
 	var framePins = { depEnd: null, coastStart: null, coastEnd: null, arrStart: null };
+	// Each phase's slider span ({ start, end } or null) from the same pass —
+	// setPhase reads it to decide whether the clock needs to enter the phase.
+	var phaseSpans = { departure: null, coast: null, arrival: null };
 	function frameJd(frameId) {
 		if (frameId === workspace.main) { return world.jd; }
 		var phase = FRAME_PHASE[frameId], pin = null;
@@ -2530,6 +2543,7 @@ export function createMissionView(opts) {
 
 	// The floats' held dates (see frameJd), from this pass's phase spans.
 	function updateFramePins(results, dep, span, arr) {
+		phaseSpans = { departure: dep, coast: span, arrival: arr };
 		var depEvs = departureEvents(results);
 		framePins.depEnd = depEvs.length ? depEvs[depEvs.length - 1].jd : (dep ? dep.end : null);
 		framePins.coastStart = span ? span.start : null;
