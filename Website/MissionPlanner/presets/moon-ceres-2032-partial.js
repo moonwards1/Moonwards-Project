@@ -1,7 +1,8 @@
 // A partly solved example: Moon → Ceres with the Moon-orbit skyhook configured
-// as the departure technology and one departure-leg waypoint burn, so the
-// mission carries technology but is not yet a closed, compliant flight — the
-// solving is left to the user.
+// as the departure technology, one departure-leg waypoint burn and one coast
+// correction. Departure and coast are solved — the flight passes Ceres about
+// 16,700 km up — and the arrival is left to the user. The clock opens at the
+// release, matching the Departure view the example opens in.
 //
 // This is a SERIALIZED WORLD (core/world.js's `serialize()` shape, at the
 // current WORLD_VERSION), loaded through the same deserializeWorld path a
@@ -10,8 +11,8 @@
 export var moonCeres2032PartialMission = {
 	"kind": "moonwards-world",
 	"version": 5,
-	"jd": 2463232.52165493,
-	"nextStage": 10,
+	"jd": 2463232.5,
+	"nextStage": 7,
 	"stages": [
 		{
 			"id": "stg-1",
@@ -19,13 +20,13 @@ export var moonCeres2032PartialMission = {
 			"params": {}
 		},
 		{
-			"id": "stg-8",
+			"id": "stg-6",
 			"moduleId": "orbital-skyhook",
 			"params": {
 				"body": "Moon",
 				"comAlt": 275000,
-				"relAlt": 6085734.5621997425,
-				"releasePhaseDeg": 95.55
+				"releasePhaseDeg": 92.6,
+				"relAlt": 6276450.124643876
 			}
 		},
 		{
@@ -34,11 +35,11 @@ export var moonCeres2032PartialMission = {
 			"params": {
 				"waypoints": [
 					{
-						"t": 1872,
+						"t": 2124,
 						"burn": {
-							"pro": 43,
-							"rad": -425,
-							"nrm": 648
+							"pro": -17,
+							"rad": -149,
+							"nrm": 760
 						}
 					}
 				],
@@ -52,29 +53,29 @@ export var moonCeres2032PartialMission = {
 				"origin": "Moon",
 				"departure": {
 					"r": [
-						-28398929314.892937,
-						144704613145.51385,
-						22109982.89277889
+						-28364582435.009884,
+						144716937102.4821,
+						18219083.514521513
 					],
 					"v": [
-						-36380.86924673573,
-						-6696.3097562403555,
-						647.2185392478101
+						-36451.605420177,
+						-6655.939414769096,
+						621.647051874142
 					],
-					"jd": 2463233.5628152196
+					"jd": 2463233.5499391896
 				},
 				"arrival": {
 					"body": "Ceres",
-					"vInf": 6233.581699928556
+					"vInf": 5830.069093394039
 				},
 				"handoffWindowDays": 1,
 				"waypoints": [
 					{
-						"days": 388.7152463824401,
+						"days": 389.7833477959881,
 						"burn": {
-							"pro": 459.5124277791254,
-							"rad": -91.97275681936298,
-							"nrm": -2242.336750573809
+							"pro": 677,
+							"rad": 572,
+							"nrm": -2279
 						}
 					}
 				],
@@ -96,24 +97,14 @@ export var moonCeres2032PartialMission = {
 					{
 						"days": 389.77806160206967,
 						"burn": {
-							"pro": 459.5124277791254,
-							"rad": -91.97275681936298,
-							"nrm": -2242.336750573809
+							"pro": 677.2,
+							"rad": 572.8,
+							"nrm": -2278.7
 						}
 					}
 				],
-				"legDays": 736.1847151550464,
-				"destination": "Ceres",
-				"handoff": [
-					{
-						"days": 389.77806160206967,
-						"burn": {
-							"pro": 459.5124277791254,
-							"rad": -91.97275681936298,
-							"nrm": -2242.336750573809
-						}
-					}
-				]
+				"legDays": 744.9962834394537,
+				"destination": "Ceres"
 			}
 		},
 		{

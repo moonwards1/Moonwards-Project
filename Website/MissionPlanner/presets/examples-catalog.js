@@ -16,7 +16,8 @@
  * Most entries are just the adopted plan a freshly created mission carries
  * once it's adopted on the Ephemeris tab — no departure or arrival technology
  * configured. The "partly solved" entry also carries a configured departure
- * technology and is left unfinished for the user to solve.
+ * technology and a coast that reaches its destination, leaving the arrival
+ * for the user.
  */
 
 import { moonMars2039Mission, moonMars2039Workspace } from "./moon-mars-2039.js";
@@ -49,7 +50,7 @@ export var EXAMPLE_MISSIONS = [
 	{
 		id: "moon-ceres-2032-partial",
 		label: "Moon → Ceres 2032 (partly solved)",
-		blurb: "Adopted plan with a lunar skyhook and a departure waypoint burn configured — not yet a closed flight.",
+		blurb: "Lunar skyhook, a departure burn and a coast correction reach Ceres — the arrival is left to you.",
 		mission: moonCeres2032PartialMission,
 		workspace: moonCeres2032PartialWorkspace
 	}

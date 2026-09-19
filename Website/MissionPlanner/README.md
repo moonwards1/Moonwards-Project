@@ -400,9 +400,9 @@ other file in this folder that it imports (`moon-mars-2039.js`,
 `moon-ceres-2032.js`, `ceres-mercury-2030.js`) is one catalog entry — the
 adopted-plan-only state a freshly created mission carries once its plan is
 adopted on the Ephemeris tab, with no departure or arrival technology
-configured. `moon-ceres-2032-partial.js` is the exception: the same plan
-with a lunar skyhook and a departure waypoint burn configured, left partly
-solved. A catalog entry's `mission` is deserialized fresh on every pick,
+configured. `moon-ceres-2032-partial.js` is the exception: a revised plan
+with a lunar skyhook, a departure waypoint burn and a coast correction that
+together pass Ceres within the standard, leaving the arrival unsolved. A catalog entry's `mission` is deserialized fresh on every pick,
 so stateless data is never shared live across tabs.
 
 `earth-mars-reference.js` is not in the catalog — it's a fixture
