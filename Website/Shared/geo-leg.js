@@ -304,11 +304,10 @@ function inclinationOrNull(GM, r, v) {
 // read 0": it is iAfter measured against an IMPLICIT zero-inclination
 // reference, i.e. the ecliptic itself — exactly what platform-roles.js's
 // straddling readout box wants for a departure/arrival element evaluated on
-// its own (see makeCarrier's own comment): a skyhook's rotor is confined to
-// the ecliptic plane by construction (skyhook.js's rotorFor), so it reads a
-// true, non-placeholder 0°; a future rotor riding a body's TILTED equatorial
-// plane (a space elevator) or a linear track along its rotating surface (a
-// mass driver) would read that body's real axial tilt here instead. Only a
+// its own (see makeCarrier's own comment): a skyhook's rotor lies in its
+// body's equatorial plane (skyhook.js's rotorFor), so it reads that equator's
+// real tilt to the ecliptic, as would any element riding a body's equator or
+// rotating surface. Only a
 // genuinely undefined AFTER (iAfter null — no position of its own to place
 // it in space at all) falls back to a plain 0.
 export function stateDeltaEffect(GM, rBefore, vBefore, rAfter, vAfter) {

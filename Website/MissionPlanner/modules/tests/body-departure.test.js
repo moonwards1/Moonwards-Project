@@ -73,12 +73,16 @@ test("rotorFor + evaluateChain: the chain reproduces the tether-tip release stat
 	var kin = tetherKinematics(params);
 	var chain = marsChain(params, JD_ANCHOR);
 	var st = evaluateChain(chain, JD_ANCHOR);
-	// At the anchor, phase = releasePhaseDeg (0 here): r along +x at rRel,
-	// v along +y at vRel. Mars is the frame origin (base contributes nothing).
+	// At the anchor, phase = releasePhaseDeg (0 here): r at rRel on the equinox
+	// direction projected into Mars's equator, v at vRel turning with Mars's
+	// spin. Mars is the frame origin (base contributes nothing).
+	var pole = systems.get("Mars").pole;
+	var n = O.poleVectorEcliptic(pole.ra, pole.dec);
+	var e1 = O.vUnit(O.vSub([1, 0, 0], O.vScale(n, n[0])));
 	assert.ok(Math.abs(O.vMag(st.r) - kin.rRel) < 1e-3, "|r| = rRel");
 	assert.ok(Math.abs(O.vMag(st.v) - kin.vRel) < 1e-3, "|v| = vRel");
-	assert.ok(Math.abs(st.r[0] - kin.rRel) < 1, "r along +x at phase 0");
-	assert.ok(Math.abs(st.v[1] - kin.vRel) < 1, "v along +y at phase 0");
+	assert.ok(O.vMag(O.vSub(st.r, O.vScale(e1, kin.rRel))) < 1, "r along the projected equinox at phase 0");
+	assert.ok(O.vMag(O.vSub(st.v, O.vScale(O.vCross(n, e1), kin.vRel))) < 1, "v prograde in the equator");
 });
 
 // ---- computeBodyDepartureLeg (the integrated flight) -----------------------

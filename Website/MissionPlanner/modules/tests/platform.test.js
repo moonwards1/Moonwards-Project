@@ -13,7 +13,8 @@ import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
 import { makeCarrier, makeTerminal, computeCapture,
          carrierReadout, captureReadout } from "../platform/platform-roles.js";
 import { fmtPrograde } from "../../../Shared/sim/readout-panes.js";
-import { SKYHOOK, tetherGeometry, defaultGeometryFor } from "../skyhook/skyhook.js";
+import { SKYHOOK, tetherGeometry, defaultGeometryFor, rotorFor, catchFigures, equatorPlane } from "../skyhook/skyhook.js";
+import { systems } from "../../../Shared/orbit.js";
 import skyhookDeparture from "../skyhook/skyhook-departure.js";
 import skyhookArrival from "../skyhook/skyhook-arrival.js";
 import { validateDescriptor } from "../../core/registry.js";
@@ -108,13 +109,16 @@ test("paramsForRole: role filtering and per-role labels", function () {
 	var release = paramsForRole(SKYHOOK, RELEASE).map(function (p) { return p.name; });
 	var catchRole = paramsForRole(SKYHOOK, CATCH).map(function (p) { return p.name; });
 	assert.deepEqual(release, ["comAlt", "relAlt", "releasePhaseDeg"]);
-	assert.deepEqual(catchRole, ["comAlt", "relAlt"],
-		"the release-phase slider is the carrier's aiming control alone");
+	assert.deepEqual(catchRole, release, "a catch has the same three controls as a release");
 
-	var relLabel = paramsForRole(SKYHOOK, RELEASE).filter(function (p) { return p.name === "relAlt"; })[0];
-	var catLabel = paramsForRole(SKYHOOK, CATCH).filter(function (p) { return p.name === "relAlt"; })[0];
-	assert.equal(relLabel.label, "release altitude");
-	assert.equal(catLabel.label, "catch altitude");
+	function labelOf(role, name) {
+		return paramsForRole(SKYHOOK, role).filter(function (p) { return p.name === name; })[0];
+	}
+	assert.equal(labelOf(RELEASE, "relAlt").label, "release altitude");
+	assert.equal(labelOf(CATCH, "relAlt").label, "catch altitude");
+	assert.equal(labelOf(RELEASE, "releasePhaseDeg").label, "release phase");
+	assert.equal(labelOf(CATCH, "releasePhaseDeg").label, "catch phase");
+	assert.equal(labelOf(CATCH, "relAlt").kind, labelOf(RELEASE, "relAlt").kind, "same control");
 });
 
 test("param display conversion: stored SI in, card units out, and back", function () {
@@ -348,21 +352,53 @@ test("captureReadout: a catch reads the speed the ship shed to match the tip", f
 	var out = captureReadout(cap.figures, cap.geo);
 	assert.ok(Math.abs(out.speedAfter - cap.geo.vRel / 1000) < 1e-9,
 		"the prograde row is the tip speed the ship leaves matched to");
-	assert.ok(cap.vCatch / 1000 > out.speedAfter, "the ship arrives faster than the tip");
+	assert.ok(cap.vShip / 1000 > out.speedAfter, "the ship arrives faster than the tip");
 	assert.ok(out.progradeDv < 0, "shedding speed is a negative prograde change");
 	assert.ok(Math.abs(out.burnDv - Math.abs(cap.trimDv) / 1000) < 1e-9);
 
 	assert.equal(captureReadout({}, cap.geo), null, "no trimDv, no box");
 });
 
-test("the carrier's chain element reproduces the tether tip at the release anchor", function () {
+test("the skyhook's catch box: catch speed and Δθ, with the trim carried for the report", function () {
+	var params = { body: "Mars", comAlt: 9000e3, relAlt: 11000e3 };
+	var arriving = { r: [2.2e11, 0, 0], v: [0, 2.5e4, 0], jd: 2463400.5, frame: "helio" };
+	var cap = computeCapture(SKYHOOK, params, arriving);
+	var box = SKYHOOK.capture.readout(cap);
+	assert.equal(box.title, "Catch");
+	assert.deepEqual(box.rows.map(function (r) { return r.label; }), ["catch speed", "Δθ"]);
+	assert.equal(box.rows[0].value, (cap.geo.vRel / 1000).toFixed(2) + " km/s");
+	assert.ok(Math.abs(box.burnDv - Math.abs(cap.trimDv) / 1000) < 1e-12);
+});
+
+test("Δθ: 0 with the tip on the ship at closest approach, 180 with it opposite", function () {
+	var geo = tetherGeometry({ body: "Mars", comAlt: 9000e3, relAlt: 11000e3, releasePhaseDeg: 30 });
+	var tip = evaluateChain({ base: "Mars", rotors: [rotorFor(geo, JD_ANCHOR)] }, JD_ANCHOR).r;
+	function at(r) { return catchFigures(geo, { vInf: 3000, jd: JD_ANCHOR, rShip: r }).dThetaDeg; }
+	assert.ok(at(O.vScale(tip, 2)) < 1e-6, "same direction, any distance");
+	assert.ok(Math.abs(at(O.vScale(tip, -1)) - 180) < 1e-6);
+	assert.equal(catchFigures(geo, { vInf: 3000, jd: JD_ANCHOR, rShip: null }).dThetaDeg, null);
+});
+
+test("the carrier's chain element: the tip rides Mars's equator, turning with its spin", function () {
 	var params = { body: "Mars", comAlt: 9000e3, relAlt: 13000e3 };
 	var geo = tetherGeometry(params);
 	var chain = { base: "Mars", rotors: [SKYHOOK.release.element(geo, JD_ANCHOR)] };
 	assert.equal(elementCount(chain), 1);
 	var st = evaluateChain(chain, JD_ANCHOR);
-	// Phase 0: the tip sits on +x at the anchor, moving at ω·r in +y.
+	var pole = systems.get("Mars").pole;
+	var n = O.poleVectorEcliptic(pole.ra, pole.dec);
 	assert.ok(Math.abs(O.vMag(st.r) - geo.rRel) < 1e-6);
 	assert.ok(Math.abs(O.vMag(st.v) - geo.vRel) < 1e-9);
-	assert.ok(Math.abs(st.r[0] - geo.rRel) < 1e-6, "phase 0 is +x");
+	assert.ok(Math.abs(O.vDot(st.r, n)) < 1e-3, "position in the equatorial plane");
+	assert.ok(Math.abs(O.vDot(st.v, n)) < 1e-9, "velocity in the equatorial plane");
+	assert.ok(O.vDot(O.vCross(st.r, st.v), n) > 0, "turning the way Mars spins");
+	// Phase 0 is the equinox direction projected into the equator.
+	assert.ok(Math.abs(O.vDot(st.r, O.vUnit(O.vCross(n, [1, 0, 0])))) < 1e-3, "phase 0 lies under +x");
+	assert.ok(st.r[0] > 0);
+});
+
+test("equatorPlane: the spin pole, and the ecliptic for a body with no pole", function () {
+	assert.deepEqual(equatorPlane("Psyche").normal, [0, 0, 1]);
+	var venus = equatorPlane("Venus").normal;
+	assert.ok(venus[2] < 0, "Venus spins retrograde, so its hook's normal points south");
 });

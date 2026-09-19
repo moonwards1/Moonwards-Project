@@ -135,6 +135,18 @@ tech stages by those types. A platform with one real role ships one adapter.
 A platform's card is built from its declared params, so adding a control is a
 data change, not new DOM code.
 
+### Every skyhook orbits its primary's equator, turning with its spin
+
+The skyhook's rotor normal is its body's spin pole (`sys.pole`), in both
+roles and at every body; phase 0 is the equinox direction projected into the
+equator. A body with no published pole falls back to the ecliptic. A catch has
+the same three controls as a release, and its phase is pinned at the ship's
+closest approach.
+
+Why: one geometry for every skyhook until a real case calls for another
+plane. Retrograde rotators need no special case, because `pole` is the spin
+pole.
+
 ### Each waypoint readout pane tracks ONE lever, live
 
 The **waypoint** section's pane reports the plan's own burn fired from

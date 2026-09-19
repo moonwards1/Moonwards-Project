@@ -1,4 +1,4 @@
-﻿# Website/MissionPlanner — the integrated mission simulator
+# Website/MissionPlanner — the integrated mission simulator
 
 This folder is where the standalone calculators compose into one mission
 simulator. Three other documents carry the rest of the picture:
@@ -284,8 +284,8 @@ never when it started.
 - **`modules/skyhook/`** — the skyhook TECHNOLOGY PLATFORM (see
   `modules/platform/` below), serving every body and both ends of a mission
   from one folder. `skyhook.js` holds the substance: a gravity-gradient
-  (radial) tether whose centre of mass rides a circular orbit at its `body`'s
-  rate, its parameters, its release gate and rotor element, its catch figures,
+  (radial) tether whose centre of mass rides a circular orbit in its `body`'s
+  equatorial plane, turning the way the body spins, its parameters, its release gate and rotor element, its catch figures,
   and its drawing. `skyhook-departure.js` registers it as the carrier module
   `orbital-skyhook`; `skyhook-arrival.js` registers it as the terminal module
   `arrival-skyhook`. As a carrier it optionally rides an upstream base platform
@@ -343,10 +343,11 @@ never when it started.
   burn near the pass drops/captures. HEADLESS (`plainCard`).
 - **`modules/skyhook/skyhook-arrival.js`** — the same skyhook platform in its
   terminal role: a CATCH at the destination, the very same tether geometry run
-  in reverse. A trim burn at the catch point closes the gap between the
-  approach hyperbola's periapsis speed and the tether tip's own speed. Consumes
-  the coast's delivered ship-state and emits nothing. Not modelled:
-  catch-window phasing, the post-catch unload down the tether.
+  in reverse, with the same card: CoM altitude, catch altitude and catch
+  phase, the phase pinned at the ship's closest approach. Its readout box
+  gives the tip's speed and the angle between the ship at closest approach and
+  the tip then. Consumes the coast's delivered ship-state and emits nothing.
+  Not modelled: the post-catch unload down the tether.
 - **`modules/arrival-approach.js`** — not a stage module, a shared helper
   (`approachFromPass`, `approachAt`, `interceptWarning`) imported by the
   platform layer so the "does the coast actually reach the destination, and how
@@ -378,7 +379,7 @@ never when it started.
 | `phase-slider.js` | `createSegmentedSlider`, `coastSliderState`, `departureSliderState`, `arrivalSliderState`, …               | The segmented-timeline widget behind each phase's slider: a DOM primitive (a track of flex-sized segments plus a playhead, `.mp-` classes styled in `planner.css`) plus three pure state functions (segments + playhead fraction + pinned flag + marks from a span, a jd, a tick count and a formatter) that `mission-view.js`'s `departureSpan`/`coastSpan`/`arrivalSpan` feed.                                                                                                                                                                                                                                                                              |
 | `ship-card.js`    | `createShipCard`, `SHIP_COLORS`, `vInfComponents`, `speedModel`, `bearingPoint`, …                         | The floating card that reports on the ship the chevron marks: a scissored three.js gizmo off the shared renderer, a numeric summary, a speed bar, and — only where a phase fills it — a B-plane square. Phase-agnostic: every section renders nothing until its setter is called, so Departure takes the plan-vs-delivered comparison gizmo and on-course state, Coast takes the speed bar and B-plane square with the gizmo hidden. The pure model functions are Node-tested.                                                                                                                                                                                |
 | `share-link.js`   | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope (v2) wrapping `{ title, world, plan }` under its own kind stamp — a bare serialized World has no title, and `plan` is `core/revisions.js`'s two sets: the mission as first adopted, plus its latest commit when it has one. `world` is what opens in a tab; `plan.original` is what the Ephemeris tab reconstructs. v1 envelopes and bare Worlds still load, with no plan. Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button, through `Shared/exchange.js`'s **compressed** `encodeFragmentZ` — two sets don't fit in a Discord message otherwise. |
-| `tech-options.js` | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                           | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add/swap a stage; unbuilt entries show disabled with a "(future)" label.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `tech-options.js` | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                           | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add a stage; unbuilt entries show disabled with a "(future)" label.                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## presets/ — the example catalog and test fixtures
 

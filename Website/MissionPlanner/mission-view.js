@@ -903,9 +903,9 @@ export function createMissionView(opts) {
 	// parented at the attachesTo body's node when the frame has it. ------------
 	var stageViews = {};   // stageId -> [{ frame, group, stageId, metresPerUnit }]
 
-	// Separate from the mount-time loop so the technology add/swap paths can
-	// build a single stage's views without touching the rest — see addCarrier
-	// and swapTechStage below.
+	// Separate from the mount-time loop so the technology add paths can build a
+	// single stage's views without touching the rest — see addCarrier and
+	// addArrivalTech below.
 	function buildStageViews(stage) {
 		var desc = registry.get(stage.moduleId);
 		if (!desc || !Array.isArray(desc.rendersIn)) { stageViews[stage.id] = []; return; }
@@ -1008,52 +1008,77 @@ export function createMissionView(opts) {
 	// and diagnostics uniformly, so engine- and module-authored ones look alike.
 	var cards = {};   // stageId -> { cardEl, chipEl, diagEl, phase, callbacks: [fn] }
 
-	// ---- departure info strip: context for the phase's tech cards/waypoints
-	// below it -- the launch date and the origin body's own heliocentric state
-	// at that moment. Plain text against the panel background, not a
-	// .mp-card: it isn't a stage or a control, just a header for what follows.
-	var depInfoEl = document.createElement("div"); depInfoEl.className = "mp-dep-info";
-	var depInfoHead = document.createElement("div"); depInfoHead.className = "mp-dep-info-head";
-	var depInfoBody = document.createElement("span"); depInfoBody.className = "mp-dep-info-body";
-	var depInfoDate = document.createElement("span"); depInfoDate.className = "mp-dep-info-date";
-	depInfoHead.appendChild(depInfoBody); depInfoHead.appendChild(depInfoDate);
-	depInfoEl.appendChild(depInfoHead);
-	function depInfoRow(label) {
-		var row = document.createElement("div"); row.className = "mp-dep-info-row";
-		var lab = document.createElement("span"); lab.textContent = label;
-		var val = document.createElement("span");
-		row.appendChild(lab); row.appendChild(val);
-		depInfoEl.appendChild(row);
-		return val;
-	}
-	var depInfoSpeed = depInfoRow("orbital speed:");
-	var depInfoDist = depInfoRow("distance from sun:");
-	var depInfoIncl = depInfoRow("inclination of motion:");
-	panelEl.appendChild(depInfoEl);
+	// ---- body info strips: context for a phase's tech cards/waypoints below
+	// it -- the body the phase happens at, a date, and that body's own
+	// heliocentric state at that moment. Plain text against the panel
+	// background, not a .mp-card: it isn't a stage or a control, just a header
+	// for what follows. Departure's names the origin at the release epoch;
+	// Arrival's names the destination at the coast's measured closest approach.
+	function createBodyInfoStrip() {
+		var el = document.createElement("div"); el.className = "mp-body-info";
+		var head = document.createElement("div"); head.className = "mp-body-info-head";
+		var bodyEl = document.createElement("span"); bodyEl.className = "mp-body-info-body";
+		var dateEl = document.createElement("span"); dateEl.className = "mp-body-info-date";
+		head.appendChild(bodyEl); head.appendChild(dateEl);
+		el.appendChild(head);
+		function row(label) {
+			var r = document.createElement("div"); r.className = "mp-body-info-row";
+			var lab = document.createElement("span"); lab.textContent = label;
+			var val = document.createElement("span");
+			r.appendChild(lab); r.appendChild(val);
+			el.appendChild(r);
+			return val;
+		}
+		var speedEl = row("orbital speed:");
+		var distEl = row("distance from sun:");
+		var inclEl = row("inclination of motion:");
+		panelEl.appendChild(el);
 
-	// The origin body's instantaneous heliocentric state at the release
-	// epoch -- NOT the live scrub date (world.jd): this describes the moment
-	// of launch itself, fixed by the departure leg's own release epoch. "inclination of
-	// motion" is the angle the velocity vector makes with the ecliptic plane
-	// right then, asin(vz/|v|) straight off the state vector -- exact for any
-	// orbit, no circular assumption: zero at the body's peak ecliptic
-	// latitude, up to the full orbital inclination at a node crossing (a
-	// tangent vector inside a plane tilted by i to the ecliptic only reaches
-	// that full tilt where the plane itself crosses the ecliptic).
+		// The body's instantaneous heliocentric state at `jd`. "inclination of
+		// motion" is the angle the velocity vector makes with the ecliptic plane
+		// right then, asin(vz/|v|) straight off the state vector -- exact for any
+		// orbit, no circular assumption: zero at the body's peak ecliptic
+		// latitude, up to the full orbital inclination at a node crossing (a
+		// tangent vector inside a plane tilted by i to the ecliptic only reaches
+		// that full tilt where the plane itself crosses the ecliptic).
+		// `dateText` overrides the date shown, for an epoch that is a stand-in.
+		function show(body, jd, dateText) {
+			el.style.display = "";
+			var state = Frames.bodyHelioState(body, jd);
+			var speed = O.vMag(state.v);
+			var incl = Math.asin(Math.max(-1, Math.min(1, state.v[2] / speed))) * 180 / Math.PI;
+			var d = O.dateFromJulian(jd);
+			bodyEl.textContent = body;
+			dateEl.textContent = dateText ||
+				(d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0"));
+			speedEl.textContent = fmtKmS(speed) + " km/s";
+			distEl.textContent = (O.vMag(state.r) / AU).toFixed(3) + " AU";
+			inclEl.textContent = (incl >= 0 ? "+" : "−") + Math.abs(incl).toFixed(1) + "°";
+		}
+		function hide() { el.style.display = "none"; }
+		return { el: el, show: show, hide: hide };
+	}
+
+	var depInfo = createBodyInfoStrip();
+	var arrInfo = createBodyInfoStrip();
+
+	// At the release epoch -- NOT the live scrub date (world.jd): this
+	// describes the moment of launch itself, fixed by the departure leg's own
+	// release epoch.
 	function updateDepartureInfo() {
 		var anchorJd = releaseEpochFor(world);
-		var show = workspace.phase === "departure" && anchorJd !== null;
-		depInfoEl.style.display = show ? "" : "none";
-		if (!show) { return; }
-		var state = Frames.bodyHelioState(originBody, anchorJd);
-		var speed = O.vMag(state.v);
-		var incl = Math.asin(Math.max(-1, Math.min(1, state.v[2] / speed))) * 180 / Math.PI;
-		var d = O.dateFromJulian(anchorJd);
-		depInfoBody.textContent = originBody;
-		depInfoDate.textContent = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
-		depInfoSpeed.textContent = fmtKmS(speed) + " km/s";
-		depInfoDist.textContent = (O.vMag(state.r) / AU).toFixed(3) + " AU";
-		depInfoIncl.textContent = (incl >= 0 ? "+" : "−") + Math.abs(incl).toFixed(1) + "°";
+		if (workspace.phase !== "departure" || anchorJd === null) { depInfo.hide(); return; }
+		depInfo.show(originBody, anchorJd);
+	}
+
+	// At the coast's measured closest approach -- the same epoch the Arrival
+	// slider centres on, so it moves as the coast is tuned. A coast that never
+	// enters the destination's SOI has no closest approach to date; the strip
+	// then describes the body where the coast ends, and says so.
+	function updateArrivalInfo() {
+		var seam = arrivalBody ? coastSeam(engine.results()) : null;
+		if (workspace.phase !== "arrival" || !seam || !isFinite(seam.jd)) { arrInfo.hide(); return; }
+		arrInfo.show(arrivalBody, seam.jd, seam.hasEncounter ? null : "no encounter");
 	}
 
 	function stageTitle(stage) {
@@ -1083,14 +1108,15 @@ export function createMissionView(opts) {
 			entry.cardEl.style.display = show ? "" : "none";
 		});
 		updateDepartureInfo();
+		updateArrivalInfo();
 	}
 
-	// Separate from the mount-time loop so the technology add/swap paths can
+	// Separate from the mount-time loop so the technology add paths can
 	// build a single stage's card without touching the rest.
 	// `insertBeforeEl` places the card at a given position (null = append at the
-	// end, the mount-time loop's behaviour); the swap path passes the outgoing
-	// card's old position so the new card lands exactly where it was, not at the
-	// bottom of the sidebar.
+	// end, the mount-time loop's behaviour); addCarrier passes the departure
+	// leg's card so a new carrier lands above it, not at the bottom of the
+	// sidebar.
 	function buildCard(stage, insertBeforeEl) {
 		var desc = registry.get(stage.moduleId);
 		if (desc && desc.sidebarCard === false) { return; }   // adopted-plan: its readouts live in the phase bar instead
@@ -1128,8 +1154,7 @@ export function createMissionView(opts) {
 	}
 
 	// The counterpart: drop one stage's card DOM + bookkeeping. Returns the
-	// removed card's next sibling (or null), so the caller can re-insert a
-	// replacement at the same position.
+	// removed card's next sibling (or null).
 	function disposeCard(stageId) {
 		var entry = cards[stageId];
 		if (!entry) { return null; }
@@ -1189,8 +1214,13 @@ export function createMissionView(opts) {
 
 	// Inserts a carrier stage just before the departure leg, seeded with the
 	// chain's body explicitly (the body convention; the module fills geometry
-	// defaults from defaultGeometryFor(body)). Builds its card/views and replays
-	// the engine's already-computed result, like swapTechStage does.
+	// defaults from defaultGeometryFor(body)). world.set recomputes
+	// synchronously while no card/view exists for the new stage, so that pass's
+	// updateCard/drawStage no-op; the card and views are built afterwards and
+	// the engine's already-computed result replayed onto them by hand. Nothing
+	// re-derives physics — this only catches the view layer up. A removal
+	// disposes the card/views BEFORE world.set, so viewRemoved runs against
+	// the descriptor that built them.
 	async function addCarrier(opt) {
 		var legStage = departureLegStage();
 		if (!legStage || carrierStages().length >= MAX_CARRIERS) { return; }
@@ -1283,100 +1313,106 @@ export function createMissionView(opts) {
 
 	refreshDepartureTechControl();
 
-	// Swaps a tech stage's module — the arrival technology dropdown's change
-	// handler. (The departure side adds and removes stages instead; see
-	// addCarrier/removeCarrier above.) Disposes the outgoing module's card/views
-	// BEFORE world.set, so its viewRemoved runs against the descriptor that
-	// actually built them; commits the change, which recomputes synchronously
-	// (recompute.js) with no card/view yet registered for this stage, so that
-	// pass's updateCard/drawStage safely no-op; then builds the incoming
-	// module's card/views against the now-committed fresh params and replays the
-	// engine's already-computed result onto them by hand. Nothing here re-derives
-	// physics — recompute already ran; this only catches the view layer up to
-	// what the engine already decided. `seedParams` is the incoming module's
-	// starting params — { body } for an arrival tech, since the body convention
-	// requires every arrival tech to carry its destination explicitly.
-	async function swapTechStage(stageId, opt, seedParams) {
-		var stage = world.getStage(stageId);
-		if (!stage || stage.moduleId === opt.moduleId) { return; }
-		if (!registry.has(opt.moduleId)) {
-			var mod = await import(opt.moduleUrl);
-			registry.register(mod.default);
-		}
-		var oldDesc = registry.get(stage.moduleId);
-		var insertBefore = disposeCard(stageId);
-		disposeStageViews(stageId, oldDesc);
+	// ---- arrival technology: add/remove the catch -------------------------
+	// The arrival stack is [ arrival leg ] → [ 0..1 arrival tech ]. An arrival
+	// tech is identified by its packet SHAPE, like the departure side: it
+	// consumes a ship-state and emits nothing — the chain's terminal catch
+	// (arrival-skyhook). Being terminal, there is at most one, appended after
+	// the arrival leg. Options come from ui/tech-options.js filtered by the
+	// adopted plan's arrival body, and the new stage is seeded with that body
+	// explicitly (the body convention). Removing it leaves the arrival leg as
+	// the terminal stage, a flyby.
+	//
+	// In the sidebar the order mirrors the Departure phase — info strip, the
+	// technology control card, the tech's own card, then the leg with its
+	// waypoints — whatever order the stages take in the chain.
+	var ARR_TECH_KEY = "__arrival-tech__";
 
-		world.set({ swapStage: stageId, moduleId: opt.moduleId, params: seedParams || {} });
-
-		var newStage = world.getStage(stageId);
-		buildStageViews(newStage);
-		buildCard(newStage, insertBefore);
-		applyPhaseToCards();
-
-		var res = engine.resultFor(stageId);
-		if (res) { drawStage(res); updateCard(res); }
-	}
-
-	// ---- arrival technology dropdown ----------------------------------------
-	// Swaps whichever ONE stage is shaped like an arrival tech — consumes a
-	// ship-state and emits nothing (the chain's terminal catch, e.g.
-	// arrival-skyhook). Options are filtered by the adopted plan's arrival body
-	// (arrivalTechOptionsFor), and the swap seeds the incoming module with that
-	// body explicitly. A mission with no such stage simply doesn't get the card:
-	// unlike the departure side, this dropdown swaps an existing stage and
-	// cannot add or remove one.
 	function isArrivalTechStage(stage) {
 		var desc = registry.get(stage.moduleId);
 		return !!desc && desc.accepts.indexOf("ship-state") !== -1 && desc.emits.length === 0;
 	}
-	function arrivalTechStage() {
-		var stages = world.stages();
-		for (var i = 0; i < stages.length; i++) { if (isArrivalTechStage(stages[i])) { return stages[i]; } }
-		return null;
+	function arrivalTechStage() { return world.stages().filter(isArrivalTechStage)[0] || null; }
+	function arrivalLegStage() {
+		return world.stages().filter(function (s) { return s.moduleId === "arrival-leg"; })[0] || null;
 	}
 
-	var ARR_TECH_KEY = "__arrival-tech__";
+	async function addArrivalTech(opt) {
+		if (arrivalTechStage() || !arrivalLegStage()) { return; }
+		if (!registry.has(opt.moduleId)) {
+			var mod = await import(opt.moduleUrl);
+			registry.register(mod.default);
+		}
+		var newId = world.set({ addStage: { moduleId: opt.moduleId, params: { body: arrivalBody } }, before: null });
+		var newStage = world.getStage(newId);
+		buildStageViews(newStage);
+		buildCard(newStage, null);
+		applyPhaseToCards();
+		var res = engine.resultFor(newId);
+		if (res) { drawStage(res); updateCard(res); }
+		refreshArrivalTechControl();
+	}
 
-	function buildArrivalTechCard() {
-		var techStage = arrivalTechStage();
-		if (!techStage || !arrivalBody) { return; }
+	function removeArrivalTech(stageId) {
+		var stage = world.getStage(stageId);
+		if (!stage || !isArrivalTechStage(stage)) { return; }
+		disposeStageViews(stageId, registry.get(stage.moduleId));
+		disposeCard(stageId);
+		world.set({ removeStage: stageId });
+		refreshArrivalTechControl();
+	}
 
+	// Rebuilt wholesale on any add/remove, like the departure control card.
+	// Absent when the mission has no arrival leg or no known destination.
+	function refreshArrivalTechControl() {
+		if (cards[ARR_TECH_KEY]) { cards[ARR_TECH_KEY].cardEl.remove(); delete cards[ARR_TECH_KEY]; }
+		var legStage = arrivalLegStage();
+		if (!legStage || !arrivalBody) { return; }
+
+		var tech = arrivalTechStage();
 		var card = document.createElement("div"); card.className = "mp-card";
-		var h = document.createElement("h3"); h.textContent = "Arrival technology"; card.appendChild(h);
-		var select = document.createElement("select");
-		select.className = "mp-tech-select";
-		card.appendChild(select);
-		panelEl.insertBefore(card, cards[techStage.id] ? cards[techStage.id].cardEl : null);
-		cards[ARR_TECH_KEY] = { cardEl: card, phase: "arrival", callbacks: [] };
+		var h = document.createElement("h3");
+		var t = document.createElement("span"); t.textContent = "Arrival technology";
+		h.appendChild(t); card.appendChild(h);
 
-		function refreshOptions() {
-			var stage = world.getStage(techStage.id);
-			select.innerHTML = "";
+		if (tech) {
+			var row = document.createElement("div"); row.className = "mp-inrow";
+			var lab = document.createElement("label"); lab.textContent = stageTitle(tech); row.appendChild(lab);
+			var rm = document.createElement("button"); rm.className = "mp-btn"; rm.textContent = "remove";
+			rm.addEventListener("click", function () { removeArrivalTech(tech.id); });
+			row.appendChild(rm); card.appendChild(row);
+		} else {
+			var hint = document.createElement("div"); hint.className = "mp-muted";
+			hint.textContent = "None yet — add a technology to catch the ship at " + arrivalBody + ".";
+			card.appendChild(hint);
+			var select = document.createElement("select"); select.className = "mp-tech-select";
+			var ph = document.createElement("option");
+			ph.value = ""; ph.disabled = true; ph.selected = true;
+			ph.textContent = "+ Add technology…";
+			select.appendChild(ph);
 			arrivalTechOptionsFor(arrivalBody).forEach(function (opt) {
 				var o = document.createElement("option");
 				o.value = opt.id;
 				o.textContent = opt.label + (opt.future ? " (future)" : "");
 				o.disabled = !!opt.future;
-				if (opt.moduleId === stage.moduleId) { o.selected = true; }
 				select.appendChild(o);
 			});
+			select.addEventListener("change", function () {
+				var opt = arrivalTechOptionsFor(arrivalBody).filter(function (o) { return o.id === select.value; })[0];
+				select.value = "";
+				if (opt && !opt.future && opt.moduleId) { addArrivalTech(opt); }
+			});
+			card.appendChild(select);
 		}
-		refreshOptions();
 
-		select.addEventListener("change", function () {
-			var opt = arrivalTechOptionsFor(arrivalBody).filter(function (o) { return o.id === select.value; })[0];
-			if (!opt || opt.future || !opt.moduleId) { refreshOptions(); return; }
-			swapTechStage(techStage.id, opt, { body: arrivalBody }).then(refreshOptions);
-		});
+		var legCard = cards[legStage.id] ? cards[legStage.id].cardEl : null;
+		panelEl.insertBefore(card, legCard);
+		if (tech && cards[tech.id]) { panelEl.insertBefore(cards[tech.id].cardEl, legCard); }
+		cards[ARR_TECH_KEY] = { cardEl: card, phase: "arrival", callbacks: [] };
+		applyPhaseToCards();
 	}
 
-	buildArrivalTechCard();
-	// Re-filter now that the arrival card exists: it is built AFTER the
-	// mount-time applyPhaseToCards() above, so without this a workspace
-	// restored outside the arrival phase would show the arrival dropdown until
-	// the first phase switch.
-	applyPhaseToCards();
+	refreshArrivalTechControl();
 
 	function renderDiagBox(parent, d, cssClass) {
 		var box = document.createElement("div");
@@ -2611,6 +2647,7 @@ export function createMissionView(opts) {
 		renderComplianceBar(results);
 		updateShipCard();
 		updateDepartureInfo();
+		updateArrivalInfo();
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
 		depSlider.update(dep
 			? { start: dep.start, end: dep.end, jd: world.jd, marks: dep.marks, defaulted: dep.defaulted,

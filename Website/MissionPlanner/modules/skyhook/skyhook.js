@@ -36,22 +36,35 @@
  * The ESCAPE physics lives downstream in the headless departure legs, never
  * here. The AIMING control (release phase) is this platform's own slider.
  *
- * THE CATCH is the same tether run in reverse. The symmetry is exact: a tip
- * that releases a payload at v_tip can catch one arriving at v_tip, and
- * whatever speed gap remains between the approach hyperbola's periapsis speed
- * at the catch radius and the tip's own speed is a TRIM BURN the ship performs
- * at the catch point:
+ * THE PLANE: every skyhook orbits in its body's EQUATORIAL plane, turning the
+ * way the body spins — the rotor's normal is the body's spin pole
+ * (Shared/orbit.js `pole`, the right-hand-rule spin pole, so a retrograde
+ * rotator's hook turns retrograde with no special case). Phase 0 is the
+ * ecliptic +X (equinox) direction projected into that plane, so a body whose
+ * equator lies near the ecliptic (the Moon, 1.5°) keeps phase 0 close to +X.
+ * A body with no published pole falls back to the ecliptic plane.
  *
- *   v_catch(ship) = sqrt(v∞² + 2GM/r_catch)   — hyperbolic periapsis speed
- *   v_tip         = ω_CoM · r_catch           — the tether tip, inertial
- *   trim Δv       = v_catch − v_tip           — chemistry closes the gap
+ * THE CATCH is the same tether run in reverse, with the same three controls:
+ * CoM altitude, catch altitude (the release altitude's role) and catch phase
+ * (the release phase's). The phase is pinned at the ship's closest approach,
+ * so it states where the tip is at the moment the ship is closest. Two
+ * figures describe the rendezvous:
+ *
+ *   catch speed   v_tip = ω_CoM · r_catch — the tip's inertial speed
+ *   Δθ            the angle, seen from the body's centre, between the ship at
+ *                 closest approach and the tip at that same instant — 0 when
+ *                 the tip is exactly where the ship is
+ *
+ * plus the TRIM the ship would need to match the tip's speed, taking its own
+ * speed at the catch radius off the approach hyperbola:
+ *
+ *   v_ship(r_catch) = sqrt(v∞² + 2GM/r_catch)
+ *   trim Δv         = v_ship − v_tip
  *
  * Unlike a RELEASE, a catch is legitimate with a sub-escape tip — that is the
  * whole attraction: the hook soaks up hyperbolic speed the ship never has to
  * burn off. Hence the escape gate belongs to the release half alone. NOT
- * modelled: the catch WINDOW/phasing geometry (the tip being at the right
- * place at the right time, the approach plane, the post-catch unload down the
- * tether). The figures assume the catch happens; they do not check that it can.
+ * modelled: the post-catch unload down the tether.
  *
  * DEFAULT GEOMETRY (defaultGeometryFor): the CoM orbit radius defaults to a
  * candidate satellite's orbit.semiMajor when the body has one (Mars → Phobos),
@@ -68,9 +81,9 @@
 
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
-import { rotorElement } from "../../../Shared/kinematic-chain.js";
+import { rotorElement, planeBasis, applyElement } from "../../../Shared/kinematic-chain.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { resolvePlatformParams, RELEASE, CATCH } from "../platform/platform-spec.js";
+import { resolvePlatformParams } from "../platform/platform-spec.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -194,12 +207,42 @@ export function tetherKinematics(params) {
 	return gated ? { ok: false, diagnostic: gated } : geo;
 }
 
-// This carrier's rotor element for the given kinematics and release anchor:
-// ecliptic plane (normal +z, phase 0 along +x), phase pinned at the anchor so
-// evaluating the chain there lands exactly on releasePhaseDeg.
-export function rotorFor(kin, anchorJd) {
-	return rotorElement([0, 0, 1], [1, 0, 0], kin.rRel, kin.omega,
-		kin.releasePhaseDeg * Math.PI / 180, anchorJd);
+// The skyhook's orbital plane at `body`, as a rotor's { normal, ref } in
+// heliocentric-ecliptic axes: the equator, normal along the spin pole, phase 0
+// along the equinox direction projected into it (kinematic-chain.js's
+// planeBasis does the projection). No published pole: the ecliptic.
+var EQUINOX = [1, 0, 0];
+export function equatorPlane(body) {
+	var sys = systems.get(body);
+	var pole = sys && sys.pole;
+	if (!pole) { return { normal: [0, 0, 1], ref: EQUINOX }; }
+	var n = O.poleVectorEcliptic(pole.ra, pole.dec);
+	// A pole lying along the equinox would leave nothing to project; take +Y.
+	return { normal: n, ref: Math.abs(n[0]) > 0.999 ? [0, 1, 0] : EQUINOX };
+}
+
+// The skyhook's rotor element for the given kinematics, pinned at `pinJd`
+// (the release anchor, or the catch's closest approach) so evaluating it
+// there lands exactly on releasePhaseDeg — the release or catch phase.
+export function rotorFor(kin, pinJd) {
+	var plane = equatorPlane(kin.body);
+	return rotorElement(plane.normal, plane.ref, kin.rRel, kin.omega,
+		kin.releasePhaseDeg * Math.PI / 180, pinJd);
+}
+
+// The catch's rendezvous figures, pure: the tip's speed, the angle between
+// the ship at closest approach and the tip then, and the trim. `approach`
+// carries the pass epoch and the ship's body-centric position there
+// (`rShip`); without one Δθ is null.
+export function catchFigures(geo, approach) {
+	var vShip = Math.sqrt(approach.vInf * approach.vInf + 2 * geo.GM / geo.rRel);
+	var dTheta = null;
+	if (approach.rShip && O.vMag(approach.rShip) > 0) {
+		var tip = applyElement({ r: [0, 0, 0], v: [0, 0, 0] }, rotorFor(geo, approach.jd), approach.jd).r;
+		var c = O.vDot(O.vUnit(tip), O.vUnit(approach.rShip));
+		dTheta = Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
+	}
+	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel };
 }
 
 // ---- view helpers (browser only — THREE via the global) -------------------
@@ -213,11 +256,19 @@ function disposeChildren(group) {
 	}
 }
 
-function circleLine(radiusU, colorHex, opacity) {
+// The unit vector at angle `a` in a planeBasis { e1, e2 }, as a THREE vector.
+function inPlane(basis, a) {
+	var c = Math.cos(a), s = Math.sin(a);
+	return new THREE.Vector3(
+		basis.e1[0] * c + basis.e2[0] * s,
+		basis.e1[1] * c + basis.e2[1] * s,
+		basis.e1[2] * c + basis.e2[2] * s);
+}
+
+function circleLine(radiusU, basis, colorHex, opacity) {
 	var pts = [], N = 96;
 	for (var k = 0; k <= N; k++) {
-		var a = 2 * Math.PI * k / N;
-		pts.push(new THREE.Vector3(radiusU * Math.cos(a), radiusU * Math.sin(a), 0));
+		pts.push(inPlane(basis, 2 * Math.PI * k / N).multiplyScalar(radiusU));
 	}
 	return new THREE.Line(
 		new THREE.BufferGeometry().setFromPoints(pts),
@@ -237,20 +288,17 @@ export var SKYHOOK = {
 
 	params: [
 		{ name: "comAlt", label: "CoM altitude", unit: "km", scale: 1e3, step: 25 },
-		// Release altitude is stored in metres but shown in km like every other
-		// altitude here. The nudge control (platform-roles.js) works directly on
-		// the stored SI value regardless of display scale, so the sub-metre drag
-		// precision a close destination pass needs is unaffected by the km
-		// display — only decimals needs to be wide enough to show it. The catch
-		// side has no such need, so it keeps the coarser step.
-		{ name: "relAlt", label: "release altitude", unit: "km", scale: 1e3, decimals: 3,
-		  step: 0.001, spinStep: 1, kind: "nudge", roles: [RELEASE] },
-		{ name: "relAlt", label: "catch altitude", unit: "km", scale: 1e3, step: 25,
-		  roles: [CATCH] },
-		// The carrier's aiming control. The catch's own phasing is set at the
-		// capture point instead, so this control is the release role's alone.
-		{ name: "releasePhaseDeg", label: "release phase", unit: "°", kind: "slider",
-		  min: 0, max: 360, step: 0.1, spinStep: 1, decimals: 1, roles: [RELEASE] }
+		// Release/catch altitude is stored in metres but shown in km like every
+		// other altitude here. The nudge control (platform-roles.js) works
+		// directly on the stored SI value regardless of display scale, so the
+		// sub-metre drag precision a close destination pass needs is unaffected
+		// by the km display — only decimals needs to be wide enough to show it.
+		{ name: "relAlt", label: "release altitude", labelFor: { catch: "catch altitude" },
+		  unit: "km", scale: 1e3, decimals: 3, step: 0.001, spinStep: 1, kind: "nudge" },
+		// The aiming control: where the tip is at the release anchor, or at the
+		// ship's closest approach for a catch.
+		{ name: "releasePhaseDeg", label: "release phase", labelFor: { catch: "catch phase" },
+		  unit: "°", kind: "slider", min: 0, max: 360, step: 0.1, spinStep: 1, decimals: 1 }
 	],
 
 	geometry: tetherGeometry,
@@ -262,9 +310,19 @@ export var SKYHOOK = {
 
 	capture: {
 		kind: "rendezvous",
-		figures: function (geo, approach) {
-			var vCatch = Math.sqrt(approach.vInf * approach.vInf + 2 * geo.GM / geo.rRel);
-			return { vCatch: vCatch, trimDv: vCatch - geo.vRel };
+		figures: catchFigures,
+		// The straddling box: the tip's speed, and how far round from the ship
+		// the tip is. burnDv (the trim, km/s) is not shown — it rides along for
+		// the mission report's arrival tech Δv.
+		readout: function (cap) {
+			return {
+				title: "Catch",
+				rows: [
+					{ label: "catch speed", value: (cap.catchSpeed / 1000).toFixed(2) + " km/s", tone: "spd" },
+					{ label: "Δθ", value: cap.dThetaDeg === null ? "—" : cap.dThetaDeg.toFixed(1) + "°", tone: "dv" }
+				],
+				burnDv: Math.abs(cap.trimDv) / 1000
+			};
 		},
 		eventLabel: function (cap) {
 			return "Skyhook catch at " + cap.body + " — trim Δv " +
@@ -272,11 +330,12 @@ export var SKYHOOK = {
 		}
 	},
 
-	// Tether hardware in the role's own body-centric frame: the CoM and release
-	// circles, the arm at its phase, and a constant-pixel dot at the release or
-	// catch point. The arm sits at the platform's chosen phase on `pinJd` (the
-	// release anchor, or the committed arrival) and turns at ω away from it, so
-	// scrubbing the clock winds the hook toward — or away from — its moment.
+	// Tether hardware in the role's own body-centric frame, in the body's
+	// equatorial plane: the CoM and release circles, the arm at its phase, and
+	// a constant-pixel dot at the release or catch point. The arm sits at the
+	// platform's chosen phase on `pinJd` (the release anchor, or the ship's
+	// closest approach) and turns at ω away from it, so scrubbing the clock
+	// winds the hook toward — or away from — its moment.
 	draw: function (view, snap, ctx) {
 		disposeChildren(view.group);
 		var params = ctx.params;
@@ -288,15 +347,16 @@ export var SKYHOOK = {
 		var rPoint = (R + params.relAlt) / U;
 		var rBase = (R + 20e3) / U;
 
-		view.group.add(circleLine(rPoint, 0x9fb6ff, 0.8));
-		view.group.add(circleLine(rCom, 0xffd24a, 0.8));
+		var plane = equatorPlane(params.body);
+		var basis = planeBasis(plane.normal, plane.ref);
+		view.group.add(circleLine(rPoint, basis, 0x9fb6ff, 0.8));
+		view.group.add(circleLine(rCom, basis, 0xffd24a, 0.8));
 
-		// Ecliptic plane — the body's axial tilt is a visual nicety the shell
-		// skips. Drawn static at the chosen phase if no epoch resolves.
+		// Drawn static at the chosen phase if no epoch resolves.
 		var omega = O.angularVelocity(GM, R + params.comAlt);
 		var phase = (params.releasePhaseDeg * Math.PI / 180) +
 			(ctx.pinJd !== null ? omega * (snap.jd - ctx.pinJd) * DAY : 0);
-		var dir = new THREE.Vector3(Math.cos(phase), Math.sin(phase), 0);
+		var dir = inPlane(basis, phase);
 		view.group.add(new THREE.Line(
 			new THREE.BufferGeometry().setFromPoints(
 				[dir.clone().multiplyScalar(rBase), dir.clone().multiplyScalar(rPoint)]),

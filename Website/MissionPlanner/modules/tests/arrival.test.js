@@ -53,9 +53,10 @@ test("computeCatch: trim Δv is the gap between hyperbolic periapsis speed and t
 	// Mars defaults seed the CoM at Phobos's orbit radius
 	var geo = tetherGeometry(resolveSkyhookParams({ body: "Mars" }));
 	assert.ok(Math.abs(cat.geo.rCom - geo.rCom) < 1e-6);
-	var vCatch = Math.sqrt(vInf * vInf + 2 * geo.GM / geo.rRel);
-	assert.ok(Math.abs(cat.vCatch - vCatch) < 1e-9);
-	assert.ok(Math.abs(cat.trimDv - (vCatch - geo.vRel)) < 1e-9);
+	var vShip = Math.sqrt(vInf * vInf + 2 * geo.GM / geo.rRel);
+	assert.ok(Math.abs(cat.vShip - vShip) < 1e-9);
+	assert.ok(Math.abs(cat.trimDv - (vShip - geo.vRel)) < 1e-9);
+	assert.equal(cat.catchSpeed, geo.vRel, "catch speed is the tip's own speed, ω·r_catch");
 	assert.deepEqual(cat.warnings, []);
 });
 
@@ -258,14 +259,13 @@ test("arrival-leg stateAtElapsed: a malformed/missing leg returns null", functio
 
 // ---- the arrival-tech catalog (ui/tech-options.js) --------------------------
 
-test("arrivalTechOptionsFor: generic techs for any body, the elevator only at Ceres", function () {
-	var ceres = arrivalTechOptionsFor("Ceres").map(function (o) { return o.id; });
-	assert.deepEqual(ceres, ["capture-burn", "arrival-skyhook", "ceres-elevator-catch"]);
-	var mars = arrivalTechOptionsFor("Mars").map(function (o) { return o.id; });
-	assert.deepEqual(mars, ["capture-burn", "arrival-skyhook"]);
+test("arrivalTechOptionsFor: the skyhook plus the future techs, at any body", function () {
+	var ids = ["arrival-skyhook", "space-elevator-catch", "ring-mass-driver", "tugs"];
+	assert.deepEqual(arrivalTechOptionsFor("Ceres").map(function (o) { return o.id; }), ids);
+	assert.deepEqual(arrivalTechOptionsFor("Mars").map(function (o) { return o.id; }), ids);
 	assert.deepEqual(arrivalTechOptionsFor(""), []);
 	assert.deepEqual(arrivalTechOptionsFor(null), []);
-	// built entries carry a moduleId + moduleUrl; the future one carries neither
+	// built entries carry a moduleId + moduleUrl; future ones carry neither
 	ARRIVAL_TECH_OPTIONS.forEach(function (o) {
 		if (o.future) { assert.equal(o.moduleId, undefined); }
 		else { assert.ok(o.moduleId && o.moduleUrl); }

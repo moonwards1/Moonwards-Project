@@ -83,14 +83,9 @@
  *                          reads it as this element's own inclination to the
  *                          ecliptic (an implicit zero-inclination reference,
  *                          used whenever there is no real BEFORE orbit to diff
- *                          against). A platform confined to the ecliptic
- *                          plane by construction (today's skyhook: rotorFor's
- *                          normal is always [0,0,1]) genuinely reads 0° there
- *                          — not a limitation of this readout. A platform
- *                          riding a body's tilted equatorial plane (a future
- *                          space elevator) or a linear track along its
- *                          rotating surface (a future mass driver) would read
- *                          that body's real axial tilt instead.
+ *                          against). A platform riding its body's equatorial
+ *                          plane (the skyhook: rotorFor's normal is the spin
+ *                          pole) reads that equator's real tilt.
  *
  *   capture              the arrival half, or null:
  *     kind                 "rendezvous" — the ship meets moving hardware and
@@ -108,6 +103,11 @@
  *                          way the release side does (see readouts, below); a
  *                          "pass-through" platform has no discrete burn to
  *                          report and simply gets no box.
+ *     readout(cap)         optional: the platform's own straddling box, in
+ *                          place of the default trim box — { title, rows:
+ *                          [{ label, value, tone: "dv" | "spd" }], burnDv }.
+ *                          `burnDv` (km/s) is not drawn; it is what the
+ *                          mission report counts as the arrival tech's Δv.
  *     warnings(figures)    optional platform-specific warnings. The generic
  *                          "did the coast actually reach the body" check is
  *                          the adapter's, not the platform's.
@@ -116,7 +116,7 @@
  *   draw(view, snap, ctx)  the hardware, in the role's own frame. `ctx` is
  *                        { role, params, computed, pinJd, failed } — `pinJd`
  *                        is the epoch at which the platform sits at its chosen
- *                        phase (the release anchor, or the committed arrival),
+ *                        phase (the release anchor, or the closest approach),
  *                        resolved by the adapter so the substance never has to
  *                        know which end of the mission it is on.
  *

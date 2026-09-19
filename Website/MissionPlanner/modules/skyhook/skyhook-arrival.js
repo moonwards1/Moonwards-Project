@@ -18,4 +18,4 @@ export function computeCatch(params, data, pass) {
 	return computeCapture(SKYHOOK, params, data, pass);
 }
 
-export default makeTerminal(SKYHOOK, { id: "arrival-skyhook", title: "Orbital skyhook catch" });
+export default makeTerminal(SKYHOOK, { id: "arrival-skyhook", title: "Skyhook" });

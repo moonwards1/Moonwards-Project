@@ -69,10 +69,10 @@ function speedKmS(v) { return Math.hypot(v[0], v[1], v[2]) / 1000; }
 //                 arrows' job, not this box's.
 //   plane change  the element's own inclination against an implicit ecliptic
 //                 reference (Shared/geo-leg.js's stateDeltaEffect), NOT a diff
-//                 against the mount's orbit. A skyhook's rotor is confined to
-//                 the ecliptic by construction (skyhook.js's rotorFor), so
-//                 this reads a true 0° today; it becomes a live number when a
-//                 platform can be given a plane of its own.
+//                 against the mount's orbit. A skyhook's rotor lies in its
+//                 body's equator (skyhook.js's rotorFor), so this reads that
+//                 equator's tilt to the ecliptic — ~25° at Mars, ~1.5° at the
+//                 Moon, 0° for a body with no published pole.
 export function carrierReadout(geo, element, upstream, anchorJd) {
 	var own = applyElement({ r: [0, 0, 0], v: [0, 0, 0] }, element, anchorJd);
 	var eff = stateDeltaEffect(geo.GM, [0, 0, 0], [0, 0, 0], own.r, own.v);
@@ -221,8 +221,10 @@ function arrivalPassOf(world) {
 // closest nor the fastest point.
 //
 // Returns { ok: true, body, geo, approach, jd, warnings, ...figures } or
-// { ok: false, diagnostic }. The platform's own figures are spread at the top
-// level so a card, a draw hook or a test reads them directly.
+// { ok: false, diagnostic }. `jd` is the approach's own epoch — the pass, when
+// there is one — which is where the platform's drawn phase is pinned. The
+// platform's own figures are spread at the top level so a card, a draw hook or
+// a test reads them directly.
 export function computeCapture(spec, params, data, pass) {
 	var p = resolvePlatformParams(spec, params);
 	if (!p.body) { return { ok: false, diagnostic: noBodyDiagnostic(spec, CATCH) }; }
@@ -247,11 +249,12 @@ export function computeCapture(spec, params, data, pass) {
 	}
 
 	return Object.assign({ ok: true, body: p.body, geo: geo, approach: approach,
-	                       jd: data.jd, warnings: warnings, figures: figures }, figures);
+	                       jd: approach.jd, warnings: warnings, figures: figures }, figures);
 }
 
-// The straddling readout box's data for a capture role: a "rendezvous"
-// platform's trimDv (m/s, signed — see platform-spec.js's capture.figures
+// The DEFAULT straddling readout box's data for a capture role, used when the
+// platform supplies no capture.readout of its own (the skyhook does). A
+// "rendezvous" platform's trimDv (m/s, signed — see platform-spec.js's capture.figures
 // doc) IS the whole burn, and it is by definition along the hardware's own
 // velocity direction (a speed-matching trim, not a targeted 3-axis burn), so
 // there is no separate plane to change. A platform whose figures carry no
@@ -293,8 +296,8 @@ export function makeTerminal(spec, opts) {
 			var data = input.data.frame === "helio" ? input.data : Frames.convert(input.data, "helio");
 			var cap = computeCapture(spec, ctx.params, data, arrivalPassOf(ctx.world));
 			cache.remember(ctx.world, ctx.stageId, cap);
-			readoutCache.remember(ctx.world, ctx.stageId,
-				cap.ok ? captureReadout(cap.figures, cap.geo) : null);
+			readoutCache.remember(ctx.world, ctx.stageId, !cap.ok ? null
+				: spec.capture.readout ? spec.capture.readout(cap) : captureReadout(cap.figures, cap.geo));
 			if (!cap.ok) { return cap.diagnostic; }
 
 			return {
@@ -638,7 +641,9 @@ function drawPlatform(spec, view, snap, role, cache, pinJd, readoutCache, hostCa
 	view.readoutEntries = [];
 	var data = readoutCache.get(snap.world, snap.stageId);
 	var host = hostCache.get(snap.world, snap.stageId);
-	if (data && host) { view.readoutEntries.push({ host: host, data: data }); }
+	if (data && host) {
+		view.readoutEntries.push({ host: host, data: data, title: data.title, rows: data.rows });
+	}
 
 	if (!spec.draw) { return; }
 	spec.draw(view, snap, {

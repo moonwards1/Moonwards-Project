@@ -91,7 +91,11 @@ test("tetherKinematics: a low release point is bound at the Moon, with a fix", f
 test("rotorFor: the kinematic-chain rotor pins the release phase at the anchor", function () {
 	var kin = tetherKinematics(MOON_SKYHOOK);
 	var rotor = rotorFor(kin, JD_ANCHOR);
-	assert.deepEqual(rotor.normal, [0, 0, 1]);   // ecliptic plane, plotter convention
+	// The Moon's equator, turning with its spin: normal along its spin pole,
+	// which sits ~1.5° off ecliptic north.
+	var pole = systems.get("Moon").pole;
+	assert.deepEqual(rotor.normal, O.poleVectorEcliptic(pole.ra, pole.dec));
+	assert.ok(rotor.normal[2] > Math.cos(2 * Math.PI / 180));
 	assert.deepEqual(rotor.ref, [1, 0, 0]);
 	assert.equal(rotor.radius, kin.rRel);
 	assert.equal(rotor.rate, kin.omega);

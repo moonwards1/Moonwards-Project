@@ -1,13 +1,13 @@
-﻿// MissionPlanner/ui/tech-options.js — the departure and arrival "technology"
+// MissionPlanner/ui/tech-options.js — the departure and arrival "technology"
 // dropdowns' own small catalog, distinct from core/registry.js (the module
 // registry: what's LOADED and how the recompute chain calls it). This one is
 // about what's OFFERABLE in a dropdown and to which body it applies — UI data,
 // not a module descriptor. Consumed by mission-view.js's departure-technology
-// card (addCarrier) and arrival-technology card (swapTechStage).
+// card (addCarrier) and arrival-technology card (addArrivalTech).
 //
 // Each entry:
 //   { id, label, bodies, moduleId, moduleUrl }  — built: selectable, and adds
-//     or swaps a stage carrying that module. moduleUrl is dynamic-imported only
+//     a stage carrying that module. moduleUrl is dynamic-imported only
 //     if the registry doesn't already have moduleId — every built module is
 //     eager-loaded by planner.js's MODULE_URLS, so this is the fallback for
 //     techs that are NOT in that eager list.
@@ -59,10 +59,11 @@ export function techOptionsFor(body) {
 // plan's arrival body instead of the chain's base. The one built entry is the
 // same skyhook platform in its arrival role: the tether run in reverse.
 export var ARRIVAL_TECH_OPTIONS = [
-	{ id: "capture-burn", label: "Chemical capture burn", bodies: "*", future: true },
-	{ id: "arrival-skyhook", label: "Orbital skyhook catch", platform: SKYHOOK,
+	{ id: "arrival-skyhook", label: "Skyhook", platform: SKYHOOK,
 	  moduleId: "arrival-skyhook", moduleUrl: "../modules/skyhook/skyhook-arrival.js" },
-	{ id: "ceres-elevator-catch", label: "Ceres elevator catch port", bodies: ["Ceres"], future: true }
+	{ id: "space-elevator-catch", label: "Space elevator", bodies: "*", future: true },
+	{ id: "ring-mass-driver", label: "Ring mass driver", bodies: "*", future: true },
+	{ id: "tugs", label: "Tugs", bodies: "*", future: true }
 ];
 
 // Arrival entries applicable to `body`: the generic "*" entries for any known

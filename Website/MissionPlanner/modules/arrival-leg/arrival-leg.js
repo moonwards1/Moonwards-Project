@@ -326,8 +326,10 @@ export function passFor(world, stageId) {
 	if (!leg || !leg.ok || !leg.ca) { return null; }
 	var c = bodyConstants(leg.body);
 	var vInf = (typeof leg.vInf0 === "number" && isFinite(leg.vInf0)) ? leg.vInf0 : null;
+	var at = stateAtElapsed(leg, leg.ca.t);
 	return {
 		jd: leg.jd0 + leg.ca.t / DAY,
+		r: at ? at.r : null,          // the ship's body-centric position at the pass
 		rmin: leg.ca.r,
 		altitude: leg.ca.r - c.R,
 		vInf: vInf,

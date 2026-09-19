@@ -51,6 +51,22 @@ export function renderReadoutBoxes(layer, boxes, entries, opts) {
 	var planeChangeLabel = opts.planeChangeLabel || "plane change";
 	entries.forEach(function (en) {
 		if (!en.data || !en.host) { return; }
+		// An entry may carry its own rows instead of the burn's three — a
+		// catch reports where the hardware is, not an impulse. Compact layout
+		// only: title over label/value rows, each coloured by its tone.
+		if (opts.compact && Array.isArray(en.rows)) {
+			var rbox = document.createElement("div");
+			rbox.className = cls + "-readout " + cls + "-readout-compact";
+			rbox.innerHTML = '<div class="' + cls + '-readout-title">' + (en.title || "") + '</div>'
+				+ en.rows.map(function (row) {
+					return '<div class="' + cls + '-readout-row"><span class="' + cls + '-readout-label">' + row.label + '</span>'
+						+ '<span class="' + cls + '-readout-val" style="color:' + (row.tone === "spd" ? opts.spdHex : opts.dvHex) + '">'
+						+ row.value + '</span></div>';
+				}).join("");
+			layer.appendChild(rbox);
+			next.push({ el: rbox, host: en.host });
+			return;
+		}
 		var prograde = fmtPrograde(en.data);
 		// Not every box describes an impulse. A DEPARTURE box's magnitude is a
 		// v∞ — the ship's speed relative to the body it is leaving, which no
