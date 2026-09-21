@@ -51,9 +51,13 @@
  * figures describe the rendezvous:
  *
  *   catch speed   v_tip = ω_CoM · r_catch — the tip's inertial speed
- *   Δθ            the angle, seen from the body's centre, between the ship at
- *                 closest approach and the tip at that same instant — 0 when
- *                 the tip is exactly where the ship is
+ *   Δθ            the angle the ship's drawn arc meets the tether's plane at:
+ *                 the plane (the body's equator, extended past the tether)
+ *                 is crossed by the arc, and Δθ is the angle between the
+ *                 arc's direction there — the ship's velocity relative to the
+ *                 body — and the plane. 0 skimming along it, 90 piercing it
+ *                 square. It is the arc's FIRST crossing. It states the
+ *                 approach alone: the tether's phase and altitude do not move it.
  *
  * plus the TRIM the ship would need to match the tip's speed, taking its own
  * speed at the catch radius off the approach hyperbola:
@@ -81,7 +85,7 @@
 
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
-import { rotorElement, planeBasis, applyElement } from "../../../Shared/kinematic-chain.js";
+import { rotorElement, planeBasis } from "../../../Shared/kinematic-chain.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { resolvePlatformParams } from "../platform/platform-spec.js";
 
@@ -230,17 +234,17 @@ export function rotorFor(kin, pinJd) {
 		kin.releasePhaseDeg * Math.PI / 180, pinJd);
 }
 
-// The catch's rendezvous figures, pure: the tip's speed, the angle between
-// the ship at closest approach and the tip then, and the trim. `approach`
-// carries the pass epoch and the ship's body-centric position there
-// (`rShip`); without one Δθ is null.
+// The catch's rendezvous figures, pure: the tip's speed, the angle the ship's
+// arc meets the tether's plane at, and the trim. `approach` carries the flown
+// arc (`path`, body-centric); without one, or with an arc that never reaches
+// the plane, Δθ is null.
 export function catchFigures(geo, approach) {
 	var vShip = Math.sqrt(approach.vInf * approach.vInf + 2 * geo.GM / geo.rRel);
 	var dTheta = null;
-	if (approach.rShip && O.vMag(approach.rShip) > 0) {
-		var tip = applyElement({ r: [0, 0, 0], v: [0, 0, 0] }, rotorFor(geo, approach.jd), approach.jd).r;
-		var c = O.vDot(O.vUnit(tip), O.vUnit(approach.rShip));
-		dTheta = Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
+	var path = approach.path;
+	if (path) {
+		var x = O.pathPlaneCrossing(path.stateAt, path.jd0, path.jd1, equatorPlane(geo.body).normal);
+		if (x) { dTheta = x.angleDeg; }
 	}
 	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel };
 }
@@ -311,9 +315,9 @@ export var SKYHOOK = {
 	capture: {
 		kind: "rendezvous",
 		figures: catchFigures,
-		// The straddling box: the tip's speed, and how far round from the ship
-		// the tip is. burnDv (the trim, km/s) is not shown — it rides along for
-		// the mission report's arrival tech Δv.
+		// The straddling box: the tip's speed, and the angle the ship's arc
+		// meets the tether's plane at. burnDv (the trim, km/s) is not shown — it
+		// rides along for the mission report's arrival tech Δv.
 		readout: function (cap) {
 			return {
 				title: "Catch",

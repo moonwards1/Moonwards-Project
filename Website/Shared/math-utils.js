@@ -323,6 +323,63 @@ export const OrbitalMath = {
 			var c = (a[0]*b[0] + a[1]*b[1] + a[2]*b[2]) / m;
 			return Math.acos(Math.max(-1, Math.min(1, c))) * 180 / Math.PI;
 		},
+		// The angle between a direction and a plane through the origin, in degrees
+		// (0..90): 0 with the direction lying in the plane, 90 piercing it square.
+		// `normal` need not be unit length. A zero-length direction or normal has no
+		// angle to give, so that case reads 0 rather than NaN.
+		lineToPlaneDeg: function (dir, normal) {
+			var n = OrbitalMath.vUnit(normal);
+			if (!(n[0] || n[1] || n[2]) || !OrbitalMath.vMag(dir)) { return 0; }
+			var through = Math.abs(OrbitalMath.vDot(dir, n));
+			var along = OrbitalMath.vMag(OrbitalMath.vCross(dir, n));   // the part lying in the plane
+			return Math.atan2(through, along) * 180 / Math.PI;
+		},
+		// Where a path first crosses a plane through the origin. `stateAt(t)` gives
+		// the path's { r, v } at parameter t (any unit: seconds, days), scanned in
+		// increasing t over [t0, t1]; `normal` is the plane's normal. Returns the
+		// EARLIEST crossing as { t, r, v, angleDeg } — angleDeg the angle the path's
+		// direction makes with the plane there (lineToPlaneDeg) — or null when the
+		// path never reaches the plane. A path lying in the plane crosses it nowhere
+		// and everywhere: it reads as meeting it at t0, edge-on.
+		//
+		// The path is scanned on a grid of `steps` (default 720) for its first change
+		// of side, which is then bisected down to the crossing itself; a path that
+		// dips through the plane and back within one grid step reads as never
+		// reaching it.
+		pathPlaneCrossing: function (stateAt, t0, t1, normal, steps) {
+			var O = OrbitalMath;
+			var n = O.vUnit(normal);
+			if (!(n[0] || n[1] || n[2]) || !(t1 > t0)) { return null; }
+			var N = steps || 720;
+			// Height above the plane, and how small counts as "in it" for this radius.
+			function probe(t) {
+				var st = stateAt(t);
+				return st ? { s: O.vDot(st.r, n), tol: 1e-9 * O.vMag(st.r) } : null;
+			}
+			function at(t) {
+				var st = stateAt(t);
+				return { t: t, r: st.r, v: st.v, angleDeg: O.lineToPlaneDeg(st.v, n) };
+			}
+			var a = probe(t0);
+			if (!a) { return null; }
+			var flat = Math.abs(a.s) <= a.tol;
+			for (var i = 1; i <= N; i++) {
+				var tA = t0 + (t1 - t0) * (i - 1) / N, tB = t0 + (t1 - t0) * i / N;
+				var b = probe(tB);
+				if (!b) { return null; }
+				if (Math.abs(b.s) > b.tol) { flat = false; }
+				if ((a.s < 0 && b.s >= 0) || (a.s > 0 && b.s <= 0)) {
+					var lo = tA, hi = tB, sLo = a.s;
+					for (var k = 0; k < 60; k++) {
+						var mid = (lo + hi) / 2, sMid = probe(mid).s;
+						if (sMid !== 0 && (sMid < 0) === (sLo < 0)) { lo = mid; } else { hi = mid; }
+					}
+					return at((lo + hi) / 2);
+				}
+				a = b;
+			}
+			return flat ? at(t0) : null;
+		},
 
 		// A body's true rotation-axis direction, as a unit vector in the
 		// heliocentric-ecliptic J2000 frame this codebase places bodies in (X

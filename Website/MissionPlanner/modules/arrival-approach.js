@@ -33,9 +33,9 @@ var AU = 149597870700;   // m
 // `vInfVec` is the relative velocity AT closest approach, not the asymptote —
 // its magnitude is deliberately not used for `vInf`, which takes the pass's own
 // asymptotic figure. Nothing currently reads the vector; it is kept so the
-// shape matches approachAt's. `rShip` is the ship's body-centric position at
-// that same instant (null when the pass doesn't carry one) — where a catch has
-// to meet it.
+// shape matches approachAt's. `path` is the flown arc the pass sits on — the
+// ship's body-centric { r, v } at any epoch in [jd0, jd1] — which is what a
+// catch has to meet (null when the pass doesn't carry one).
 export function approachFromPass(body, pass) {
 	var sys = systems.get(body);
 	if (!sys || !sys.orbit || !pass) { return null; }
@@ -44,7 +44,7 @@ export function approachFromPass(body, pass) {
 		missAU: pass.rmin / AU,
 		vInf: (typeof pass.vInf === "number" && isFinite(pass.vInf)) ? pass.vInf : pass.speed,
 		vInfVec: pass.vRel || null,
-		rShip: pass.r || null,
+		path: pass.path || null,
 		jd: pass.jd
 	};
 }
@@ -68,7 +68,7 @@ export function approachAt(body, data) {
 		missAU: O.vMag(rShip) / AU,
 		vInf: O.vMag(vInfVec),
 		vInfVec: vInfVec,
-		rShip: rShip,
+		path: null,
 		jd: data.jd
 	};
 }

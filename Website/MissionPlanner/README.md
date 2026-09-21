@@ -345,8 +345,11 @@ never when it started.
   terminal role: a CATCH at the destination, the very same tether geometry run
   in reverse, with the same card: CoM altitude, catch altitude and catch
   phase, the phase pinned at the ship's closest approach. Its readout box
-  gives the tip's speed and the angle between the ship at closest approach and
-  the tip then. Consumes the coast's delivered ship-state and emits nothing.
+  gives the tip's speed and Δθ, the angle the ship's drawn arc meets the
+  tether's plane (the body's equator) at — the arc's direction where it
+  crosses, against that plane; the first crossing along the arc, and "—" when
+  the arc never reaches the plane inside the arrival window. Δθ describes the approach alone: the tether's phase and altitude do
+  not move it. Consumes the coast's delivered ship-state and emits nothing.
   Not modelled: the post-catch unload down the tether.
 - **`modules/arrival-approach.js`** — not a stage module, a shared helper
   (`approachFromPass`, `approachAt`, `interceptWarning`) imported by the

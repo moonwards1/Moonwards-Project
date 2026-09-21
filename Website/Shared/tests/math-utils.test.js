@@ -425,3 +425,74 @@ test("angleBetweenDeg: resolves a small angle at a realistic v-infinity", () => 
 	var a = [6740, 0, 0], b = [6740 * Math.cos(t), 6740 * Math.sin(t), 0];
 	assert.ok(Math.abs(O.angleBetweenDeg(a, b) - 0.35) < 1e-9);
 });
+
+test("lineToPlaneDeg: in the plane 0, square through it 90, a 30 degree tilt reads 30", () => {
+	assert.equal(O.lineToPlaneDeg([3, 4, 0], [0, 0, 1]), 0);
+	assert.ok(Math.abs(O.lineToPlaneDeg([0, 0, -2], [0, 0, 1]) - 90) < 1e-12, "either side of the plane");
+	var t = 30 * Math.PI / 180;
+	assert.ok(Math.abs(O.lineToPlaneDeg([Math.cos(t), 0, Math.sin(t)], [0, 0, 7]) - 30) < 1e-12,
+		"the normal need not be unit length");
+	assert.equal(O.lineToPlaneDeg([0, 0, 0], [0, 0, 1]), 0, "no direction, no angle");
+	assert.equal(O.lineToPlaneDeg([1, 0, 0], [0, 0, 0]), 0, "no plane, no angle");
+});
+
+// A straight path r = r0 + v t, the simplest thing with a known crossing.
+function straight(r0, v) {
+	return function (t) {
+		return { r: [r0[0] + v[0] * t, r0[1] + v[1] * t, r0[2] + v[2] * t], v: v };
+	};
+}
+
+test("pathPlaneCrossing: a straight path is met where it reaches the plane, at its own tilt", () => {
+	var x = O.pathPlaneCrossing(straight([0, 0, -3], [4, 0, 3]), 0, 10, [0, 0, 1]);
+	assert.ok(Math.abs(x.t - 1) < 1e-9);
+	assert.ok(Math.abs(x.r[2]) < 1e-9 && Math.abs(x.r[0] - 4) < 1e-9);
+	assert.ok(Math.abs(x.angleDeg - Math.atan2(3, 4) * 180 / Math.PI) < 1e-9);
+});
+
+test("pathPlaneCrossing: a path that never reaches the plane, or stops short of it, is null", () => {
+	assert.equal(O.pathPlaneCrossing(straight([0, 0, 5], [1, 0, 0.1]), 0, 10, [0, 0, 1]), null);
+	assert.equal(O.pathPlaneCrossing(straight([0, 0, -3], [4, 0, 3]), 0, 0.5, [0, 0, 1]), null,
+		"the crossing at t=1 lies past the scanned span");
+	assert.equal(O.pathPlaneCrossing(function () { return null; }, 0, 1, [0, 0, 1]), null);
+});
+
+test("pathPlaneCrossing: with two crossings, the first", () => {
+	// A circle tilted 40 degrees about x crosses z = 0 at both nodes, half a turn apart.
+	var i = 40 * Math.PI / 180, R = 7e6, w = 1e-3;
+	function circle(t) {
+		var c = Math.cos(w * t), s = Math.sin(w * t);
+		return { r: [R * c, R * s * Math.cos(i), R * s * Math.sin(i)],
+		         v: [-R * w * s, R * w * c * Math.cos(i), R * w * c * Math.sin(i)] };
+	}
+	var half = Math.PI / w;
+	var first = O.pathPlaneCrossing(circle, -0.5 * half, 1.5 * half, [0, 0, 1]);
+	assert.ok(Math.abs(first.t) < 1e-6, "the ascending node at t=0, not the descending one at t=half");
+	// A circle meets its own plane crossing at the orbit's inclination.
+	assert.ok(Math.abs(first.angleDeg - 40) < 1e-9);
+	var second = O.pathPlaneCrossing(circle, 0.1 * half, 1.5 * half, [0, 0, 1]);
+	assert.ok(Math.abs(second.t - half) < 1e-6, "start the scan after the first and the next is found");
+});
+
+test("pathPlaneCrossing: a bent flyby dips through the plane and back — no capture needed", () => {
+	// A slow, close Mars pass (e about 1.6, turned about 78 degrees), periapsis on +x.
+	// The plane's line of nodes is perpendicular to periapsis, so the ship crosses it on
+	// the way in, passes periapsis on the far side, and crosses back on the way out.
+	var GM = 4.2828e13, rp = 3.6e6, vInf = 2650;
+	var r0 = [rp, 0, 0], v0 = [0, Math.sqrt(vInf * vInf + 2 * GM / rp), 0];
+	var tilt = 30 * Math.PI / 180;
+	var normal = [Math.sin(tilt), 0, Math.cos(tilt)];        // holds the y axis as its line of nodes
+	function flyby(t) { return O.propagateState(GM, r0, v0, t); }
+	var T = 1e5;
+	var inbound = O.pathPlaneCrossing(flyby, -T, T, normal);
+	var outbound = O.pathPlaneCrossing(flyby, 0, T, normal);
+	assert.ok(inbound.t < 0 && outbound.t > 0, "one before periapsis, one after");
+	assert.ok(Math.abs(inbound.t + outbound.t) < 1, "the flyby is symmetric about periapsis");
+	assert.ok(O.vMag(inbound.r) < 4 * rp, "both crossings are close to the planet");
+});
+
+test("pathPlaneCrossing: a path lying in the plane meets it at the start, edge-on", () => {
+	var x = O.pathPlaneCrossing(straight([1, 2, 0], [3, -1, 0]), 2, 10, [0, 0, 1]);
+	assert.equal(x.t, 2);
+	assert.equal(x.angleDeg, 0);
+});

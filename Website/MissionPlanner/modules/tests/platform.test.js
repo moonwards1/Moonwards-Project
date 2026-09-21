@@ -13,7 +13,7 @@ import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
 import { makeCarrier, makeTerminal, computeCapture,
          carrierReadout, captureReadout } from "../platform/platform-roles.js";
 import { fmtPrograde } from "../../../Shared/sim/readout-panes.js";
-import { SKYHOOK, tetherGeometry, defaultGeometryFor, rotorFor, catchFigures, equatorPlane } from "../skyhook/skyhook.js";
+import { SKYHOOK, tetherGeometry, defaultGeometryFor, catchFigures, equatorPlane } from "../skyhook/skyhook.js";
 import { systems } from "../../../Shared/orbit.js";
 import skyhookDeparture from "../skyhook/skyhook-departure.js";
 import skyhookArrival from "../skyhook/skyhook-arrival.js";
@@ -370,13 +370,51 @@ test("the skyhook's catch box: catch speed and Δθ, with the trim carried for t
 	assert.ok(Math.abs(box.burnDv - Math.abs(cap.trimDv) / 1000) < 1e-12);
 });
 
-test("Δθ: 0 with the tip on the ship at closest approach, 180 with it opposite", function () {
+// A straight body-centric arc that meets Mars's equatorial plane at 2e7 m from
+// the centre on the equinox side, `tiltDeg` out of the plane, at JD_ANCHOR. The
+// arc is the shape a catch is handed: { jd0, jd1, stateAt(jd) }, one hour each side.
+function arcThroughEquator(tiltDeg) {
+	var n = equatorPlane("Mars").normal;
+	var e1 = O.vUnit(O.vCross(n, [1, 0, 0]));
+	var t = tiltDeg * Math.PI / 180;
+	var v = O.vAdd(O.vScale(e1, 5000 * Math.cos(t)), O.vScale(n, 5000 * Math.sin(t)));
+	var cross = O.vScale(e1, 2e7);
+	return {
+		jd0: JD_ANCHOR - 1 / 24, jd1: JD_ANCHOR + 1 / 24,
+		stateAt: function (jd) { return { r: O.vAdd(cross, O.vScale(v, (jd - JD_ANCHOR) * 86400)), v: v }; }
+	};
+}
+
+test("Δθ: the angle the arc meets the tether's plane at — 0 skimming it, 90 piercing it", function () {
 	var geo = tetherGeometry({ body: "Mars", comAlt: 9000e3, relAlt: 11000e3, releasePhaseDeg: 30 });
-	var tip = evaluateChain({ base: "Mars", rotors: [rotorFor(geo, JD_ANCHOR)] }, JD_ANCHOR).r;
-	function at(r) { return catchFigures(geo, { vInf: 3000, jd: JD_ANCHOR, rShip: r }).dThetaDeg; }
-	assert.ok(at(O.vScale(tip, 2)) < 1e-6, "same direction, any distance");
-	assert.ok(Math.abs(at(O.vScale(tip, -1)) - 180) < 1e-6);
-	assert.equal(catchFigures(geo, { vInf: 3000, jd: JD_ANCHOR, rShip: null }).dThetaDeg, null);
+	function at(tilt) {
+		return catchFigures(geo, { vInf: 3000, jd: JD_ANCHOR, path: arcThroughEquator(tilt) }).dThetaDeg;
+	}
+	assert.ok(at(0) < 1e-6, "an arc lying in the equator skims the plane");
+	assert.ok(Math.abs(at(25) - 25) < 1e-6);
+	assert.ok(Math.abs(at(-25) - 25) < 1e-6, "which side it heads for does not matter");
+	assert.ok(Math.abs(at(90) - 90) < 1e-6);
+});
+
+test("Δθ states the approach alone: the tether's phase and altitude do not move it", function () {
+	var path = arcThroughEquator(25);
+	function at(params) {
+		return catchFigures(tetherGeometry(params), { vInf: 3000, jd: JD_ANCHOR, path: path }).dThetaDeg;
+	}
+	var base = at({ body: "Mars", comAlt: 9000e3, relAlt: 11000e3, releasePhaseDeg: 30 });
+	assert.equal(at({ body: "Mars", comAlt: 9000e3, relAlt: 11000e3, releasePhaseDeg: 200 }), base);
+	assert.equal(at({ body: "Mars", comAlt: 6000e3, relAlt: 14000e3, releasePhaseDeg: 30 }), base);
+});
+
+test("Δθ: null with no arc to meet, or an arc that never reaches the plane", function () {
+	var geo = tetherGeometry({ body: "Mars", comAlt: 9000e3, relAlt: 11000e3 });
+	assert.equal(catchFigures(geo, { vInf: 3000, jd: JD_ANCHOR, path: null }).dThetaDeg, null);
+	var clear = arcThroughEquator(25);
+	var above = { jd0: clear.jd0, jd1: clear.jd1, stateAt: function (jd) {
+		var s = clear.stateAt(jd);
+		return { r: O.vAdd(s.r, O.vScale(equatorPlane("Mars").normal, 1e8)), v: s.v };
+	} };
+	assert.equal(catchFigures(geo, { vInf: 3000, jd: JD_ANCHOR, path: above }).dThetaDeg, null);
 });
 
 test("the carrier's chain element: the tip rides Mars's equator, turning with its spin", function () {
