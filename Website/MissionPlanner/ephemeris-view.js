@@ -1333,7 +1333,16 @@ export function createEphemerisView(opts) {
 			}
 		}
 
-		m._targetDv = dvMag; m._targetMsg = null;
+		// The row shows the whole plan's Δv: the solved terminal burn plus the
+		// departure card and every other waypoint, which stay as authored.
+		var totalDv = dvMag;
+		var allBurns = [state.leg.burn].concat(state.leg.waypoints.map(function (w) { return w.burn; }));
+		for (var bi = 0; bi < allBurns.length; bi++) {
+			var ob = allBurns[bi];
+			if (ob === term.burn) { continue; }
+			totalDv += Math.sqrt((ob.pro || 0) * (ob.pro || 0) + (ob.nrm || 0) * (ob.nrm || 0) + (ob.rad || 0) * (ob.rad || 0));
+		}
+		m._targetDv = totalDv; m._targetMsg = null;
 		if (dvMag > (m.dvBudget || 0)) { restoreBase(); m._encT = null; m._released = true; return; }   // over budget
 
 		term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
@@ -1343,12 +1352,9 @@ export function createEphemerisView(opts) {
 	// Switch the marker behaviour. Entering Target adopts the current
 	// arrival date and snapshots BOTH the terminal burn and the marker's own
 	// position (so each can be restored); leaving Target restores that manual
-	// burn and puts the marker back where it was. Restoring the position is
-	// what keeps repeated Free<->Target toggles stable: the held arrival date
-	// is derived from the marker's path-fraction, and the fraction means
-	// different absolute times under the solved arc vs the manual arc, so
-	// feeding a drifted fraction back in would walk the arrival date — and
-	// the required Δv — further each round trip until it released.
+	// burn. The marker keeps its path-fraction across the switch; the held
+	// arrival date comes from the trajectory's own closest approach, never from
+	// the marker, so toggling does not walk it.
 	function setMarkerMode(mode, keepBurn) {
 		var m = state.marker;
 		if (!m) { return; }
@@ -1356,10 +1362,8 @@ export function createEphemerisView(opts) {
 		if (m.mode === "target" && mode !== "target" && m._baseBurn && !keepBurn) {
 			term.pro = m._baseBurn.pro; term.rad = m._baseBurn.rad; term.nrm = m._baseBurn.nrm;
 			m._baseBurn = null;
-			if (m._savedF0 != null) { m.f0 = m._savedF0; m.angle = m._savedAngle; m._savedF0 = null; }
 		}
 		if (mode === "target") {
-			m._savedF0 = m.f0; m._savedAngle = m.angle;      // restore here on leaving Target
 			// The date to hold is the trajectory's OWN closest approach to the
 			// destination (destApproach) — the same fixed point the card's
 			// arrival / phasing / capture rows report. Taking it from the
