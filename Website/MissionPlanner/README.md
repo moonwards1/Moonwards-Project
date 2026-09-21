@@ -344,7 +344,7 @@ never when it started.
 - **`modules/skyhook/skyhook-arrival.js`** — the same skyhook platform in its
   terminal role: a CATCH at the destination, the very same tether geometry run
   in reverse, with the same card: CoM altitude, catch altitude and catch
-  phase, the phase pinned at the ship's closest approach. Its readout box
+  phase, the phase pinned at the mission's start (the release epoch) and turning at ω from there. Its readout box
   gives the tip's speed and Δθ, the angle the ship's drawn arc meets the
   tether's plane (the body's equator) at — the arc's direction where it
   crosses, against that plane; the first crossing along the arc, and "—" when

@@ -25,7 +25,7 @@ export var moonCeres2032PartialMission = {
 			"params": {
 				"body": "Moon",
 				"comAlt": 275000,
-				"releasePhaseDeg": 92.6,
+				"releasePhaseDeg": 82.85,
 				"relAlt": 6276450.124643876
 			}
 		},

@@ -13,7 +13,7 @@
 // tech empty like the default.
 //
 //   release   2033-01-10 (jd 2463607.5) — lunar skyhook, CoM 275 km,
-//             release from the tether top at 6000 km, phase 195 deg (chosen
+//             release from the tether top at 6000 km, phase 175.48 deg (chosen
 //             by scanning release phase for a low, sanely-aimed v∞ at this
 //             anchor — see the solving note below)
 //   hand-off  2033-01-12 (jd 2463610.059797283) — Earth-SOI exit, v∞
@@ -79,7 +79,7 @@ export var earthMarsReferenceMission = {
 				body: "Moon",
 				comAlt: 275e3,
 				relAlt: 6000e3,
-				releasePhaseDeg: 195
+				releasePhaseDeg: 175.48
 			}
 		},
 		{

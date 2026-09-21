@@ -9,7 +9,7 @@
 //
 //   release   2031-12-19 ~19:06 UT (jd 2463220.2961 — the plan's adopted
 //             release ANCHOR; see TIMING below) — lunar skyhook, CoM 275 km,
-//             release from the tether top at 6000 km, phase 92 deg
+//             release from the tether top at 6000 km, phase 94.49 deg
 //   injection 2031-12-20 06:00 UT (jd 2463220.75) — the epoch the plan's
 //             departure impulse was authored at, one SOI crossing before the
 //             hand-off (see THE HAND-OFF below)
@@ -92,7 +92,7 @@ export var defaultMission = {
 				body: "Moon",
 				comAlt: 275e3,
 				relAlt: 6000e3,
-				releasePhaseDeg: 92
+				releasePhaseDeg: 94.49
 			}
 		},
 		{

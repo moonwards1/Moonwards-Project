@@ -139,7 +139,7 @@ test("a technology's own stored dials each get a row", function () {
 	var rows = planSummaryOf(defaultMission).rows;
 	var dial = rows.filter(function (r) { return /release phase deg/.test(r.label); })[0];
 	assert.ok(dial, "the skyhook's release phase is reported");
-	assert.equal(dial.value, 92);
+	assert.equal(dial.value, 94.49);
 	assert.match(dial.label, /^orbital-skyhook · /);
 });
 
@@ -147,7 +147,7 @@ test("re-tuning a technology shows up as a change", function () {
 	var after = planWith(function (w) { w.stages[1].params.releasePhaseDeg = 100; });
 	var moved = changesBetween(defaultMission, after).filter(function (c) { return c.changed; });
 	assert.equal(moved.length, 1);
-	assert.equal(moved[0].was, 92);
+	assert.equal(moved[0].was, 94.49);
 	assert.equal(moved[0].now, 100);
 });
 

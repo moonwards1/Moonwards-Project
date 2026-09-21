@@ -116,7 +116,7 @@
  *   draw(view, snap, ctx)  the hardware, in the role's own frame. `ctx` is
  *                        { role, params, computed, pinJd, failed } — `pinJd`
  *                        is the epoch at which the platform sits at its chosen
- *                        phase (the release anchor, or the closest approach),
+ *                        phase (the release anchor; for a catch, the mission's start),
  *                        resolved by the adapter so the substance never has to
  *                        know which end of the mission it is on.
  *

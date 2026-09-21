@@ -13,7 +13,7 @@ import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
 import { makeCarrier, makeTerminal, computeCapture,
          carrierReadout, captureReadout } from "../platform/platform-roles.js";
 import { fmtPrograde } from "../../../Shared/sim/readout-panes.js";
-import { SKYHOOK, tetherGeometry, defaultGeometryFor, catchFigures, equatorPlane } from "../skyhook/skyhook.js";
+import { SKYHOOK, tetherGeometry, defaultGeometryFor, catchFigures, equatorPlane, retrogradeDirection } from "../skyhook/skyhook.js";
 import { systems } from "../../../Shared/orbit.js";
 import skyhookDeparture from "../skyhook/skyhook-departure.js";
 import skyhookArrival from "../skyhook/skyhook-arrival.js";
@@ -430,9 +430,10 @@ test("the carrier's chain element: the tip rides Mars's equator, turning with it
 	assert.ok(Math.abs(O.vDot(st.r, n)) < 1e-3, "position in the equatorial plane");
 	assert.ok(Math.abs(O.vDot(st.v, n)) < 1e-9, "velocity in the equatorial plane");
 	assert.ok(O.vDot(O.vCross(st.r, st.v), n) > 0, "turning the way Mars spins");
-	// Phase 0 is the equinox direction projected into the equator.
-	assert.ok(Math.abs(O.vDot(st.r, O.vUnit(O.vCross(n, [1, 0, 0])))) < 1e-3, "phase 0 lies under +x");
-	assert.ok(st.r[0] > 0);
+	// Phase 0 is the body's retrograde direction projected into the equator.
+	var retro = O.vScale(O.bodyStateAtJD(systems.get("Sun").GM, systems.get("Mars").orbit, JD_ANCHOR).v, -1);
+	assert.ok(Math.abs(O.vDot(st.r, O.vUnit(O.vCross(n, retro)))) < 1e-3, "phase 0 lies under the retrograde");
+	assert.ok(O.vDot(st.r, retro) > 0);
 });
 
 test("equatorPlane: the spin pole, and the ecliptic for a body with no pole", function () {

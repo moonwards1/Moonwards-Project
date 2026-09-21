@@ -40,14 +40,17 @@
  * way the body spins — the rotor's normal is the body's spin pole
  * (Shared/orbit.js `pole`, the right-hand-rule spin pole, so a retrograde
  * rotator's hook turns retrograde with no special case). Phase 0 is the
- * ecliptic +X (equinox) direction projected into that plane, so a body whose
- * equator lies near the ecliptic (the Moon, 1.5°) keeps phase 0 close to +X.
- * A body with no published pole falls back to the ecliptic plane.
+ * RETROGRADE direction of the body's heliocentric orbit (the Moon takes
+ * Earth's), taken on the pin date and projected into that plane — the
+ * direction opposite the body's motion around the Sun. A body with no
+ * published pole falls back to the ecliptic plane; with no orbit or no date,
+ * phase 0 falls back to the ecliptic +X (equinox) direction.
  *
  * THE CATCH is the same tether run in reverse, with the same three controls:
  * CoM altitude, catch altitude (the release altitude's role) and catch phase
- * (the release phase's). The phase is pinned at the ship's closest approach,
- * so it states where the tip is at the moment the ship is closest. Two
+ * (the release phase's). The phase is pinned at the mission's start (the
+ * release epoch): it states where the tip is when the mission opens, 0° being
+ * the retrograde direction, and the tip turns at ω from there. Two
  * figures describe the rendezvous:
  *
  *   catch speed   v_tip = ω_CoM · r_catch — the tip's inertial speed
@@ -211,25 +214,38 @@ export function tetherKinematics(params) {
 	return gated ? { ok: false, diagnostic: gated } : geo;
 }
 
+// The direction phase 0 points along, before projection into the plane: the
+// retrograde of the body's heliocentric velocity at `jd` (the Moon rides
+// Earth's orbit). The equinox direction when there is no orbit or no date.
+var EQUINOX = [1, 0, 0];
+var GM_SUN = systems.get("Sun").GM;
+export function retrogradeDirection(body, jd) {
+	var sys = systems.get(body === "Moon" ? "Earth" : body);
+	if (jd === null || jd === undefined || !sys || !sys.orbit) { return EQUINOX; }
+	return O.vScale(O.bodyStateAtJD(GM_SUN, sys.orbit, jd).v, -1);
+}
+
 // The skyhook's orbital plane at `body`, as a rotor's { normal, ref } in
 // heliocentric-ecliptic axes: the equator, normal along the spin pole, phase 0
-// along the equinox direction projected into it (kinematic-chain.js's
-// planeBasis does the projection). No published pole: the ecliptic.
-var EQUINOX = [1, 0, 0];
-export function equatorPlane(body) {
+// along retrogradeDirection(body, jd) projected into it (kinematic-chain.js's
+// planeBasis does the projection). No published pole: the ecliptic. `jd` is
+// the date phase 0 is pinned at; the normal does not depend on it.
+export function equatorPlane(body, jd) {
 	var sys = systems.get(body);
 	var pole = sys && sys.pole;
-	if (!pole) { return { normal: [0, 0, 1], ref: EQUINOX }; }
+	var ref = retrogradeDirection(body, jd);
+	if (!pole) { return { normal: [0, 0, 1], ref: ref }; }
 	var n = O.poleVectorEcliptic(pole.ra, pole.dec);
-	// A pole lying along the equinox would leave nothing to project; take +Y.
-	return { normal: n, ref: Math.abs(n[0]) > 0.999 ? [0, 1, 0] : EQUINOX };
+	// A pole along the reference would leave nothing to project; take +Y.
+	var along = Math.abs(O.vDot(n, O.vUnit(ref))) > 0.999;
+	return { normal: n, ref: along ? [0, 1, 0] : ref };
 }
 
 // The skyhook's rotor element for the given kinematics, pinned at `pinJd`
-// (the release anchor, or the catch's closest approach) so evaluating it
+// (the release anchor, or for a catch the mission's start) so evaluating it
 // there lands exactly on releasePhaseDeg — the release or catch phase.
 export function rotorFor(kin, pinJd) {
-	var plane = equatorPlane(kin.body);
+	var plane = equatorPlane(kin.body, pinJd);
 	return rotorElement(plane.normal, plane.ref, kin.rRel, kin.omega,
 		kin.releasePhaseDeg * Math.PI / 180, pinJd);
 }
@@ -300,7 +316,7 @@ export var SKYHOOK = {
 		{ name: "relAlt", label: "release altitude", labelFor: { catch: "catch altitude" },
 		  unit: "km", scale: 1e3, decimals: 3, step: 0.001, spinStep: 1, kind: "nudge" },
 		// The aiming control: where the tip is at the release anchor, or at the
-		// ship's closest approach for a catch.
+		// mission's start for a catch.
 		{ name: "releasePhaseDeg", label: "release phase", labelFor: { catch: "catch phase" },
 		  unit: "°", kind: "slider", min: 0, max: 360, step: 0.1, spinStep: 1, decimals: 1 }
 	],
@@ -337,8 +353,8 @@ export var SKYHOOK = {
 	// Tether hardware in the role's own body-centric frame, in the body's
 	// equatorial plane: the CoM and release circles, the arm at its phase, and
 	// a constant-pixel dot at the release or catch point. The arm sits at the
-	// platform's chosen phase on `pinJd` (the release anchor, or the ship's
-	// closest approach) and turns at ω away from it, so scrubbing the clock
+	// platform's chosen phase on `pinJd` (the release anchor, or for a catch the
+	// mission's start) and turns at ω away from it, so scrubbing the clock
 	// winds the hook toward — or away from — its moment.
 	draw: function (view, snap, ctx) {
 		disposeChildren(view.group);
@@ -351,7 +367,7 @@ export var SKYHOOK = {
 		var rPoint = (R + params.relAlt) / U;
 		var rBase = (R + 20e3) / U;
 
-		var plane = equatorPlane(params.body);
+		var plane = equatorPlane(params.body, ctx.pinJd !== null ? ctx.pinJd : snap.jd);
 		var basis = planeBasis(plane.normal, plane.ref);
 		view.group.add(circleLine(rPoint, basis, 0x9fb6ff, 0.8));
 		view.group.add(circleLine(rCom, basis, 0xffd24a, 0.8));

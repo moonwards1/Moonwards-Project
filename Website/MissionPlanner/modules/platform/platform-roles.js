@@ -222,7 +222,7 @@ function arrivalPassOf(world) {
 //
 // Returns { ok: true, body, geo, approach, jd, warnings, ...figures } or
 // { ok: false, diagnostic }. `jd` is the approach's own epoch — the pass, when
-// there is one — which is where the platform's drawn phase is pinned. The
+// there is one — which the event timeline marks. The
 // platform's own figures are spread at the top level so a card, a draw hook or
 // a test reads them directly.
 export function computeCapture(spec, params, data, pass) {
@@ -312,11 +312,10 @@ export function makeTerminal(spec, opts) {
 		init: function (ctx) { buildPlatformCard(spec, ctx, CATCH, cache, hostCache); },
 
 		draw: function (view, snap) {
-			// Pinned at the catch this stage computed, which sits on the coast's
-			// measured closest approach. There is no committed arrival date to
-			// pin to instead — the mission arrives when it arrives.
-			var cached = cache.get(snap.world, snap.stageId);
-			var pinJd = (cached && cached.ok) ? cached.jd : null;
+			// Pinned at the mission's start, the release epoch: the tether sits
+			// at its chosen phase (0° by default) when the mission opens and
+			// turns at ω from there, whatever the approach does.
+			var pinJd = releaseEpochFor(snap.world);
 			drawPlatform(spec, view, snap, CATCH, cache, pinJd, readoutCache, hostCache);
 		},
 

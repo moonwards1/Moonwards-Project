@@ -13,7 +13,7 @@ import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import moonPlatform, { moonFigures } from "../moon-platform/moon-platform.js";
 import skyhook from "../skyhook/skyhook-departure.js";
-import { tetherKinematics, rotorFor } from "../skyhook/skyhook.js";
+import { tetherKinematics, rotorFor, retrogradeDirection } from "../skyhook/skyhook.js";
 import departureLeg, { computeDepartureLeg, stateAtElapsed as depStateAtElapsed }
 	from "../departure-leg/departure-leg.js";
 import adoptedPlan from "../adopted-plan/adopted-plan.js";
@@ -96,7 +96,7 @@ test("rotorFor: the kinematic-chain rotor pins the release phase at the anchor",
 	var pole = systems.get("Moon").pole;
 	assert.deepEqual(rotor.normal, O.poleVectorEcliptic(pole.ra, pole.dec));
 	assert.ok(rotor.normal[2] > Math.cos(2 * Math.PI / 180));
-	assert.deepEqual(rotor.ref, [1, 0, 0]);
+	assert.deepEqual(rotor.ref, retrogradeDirection("Moon", JD_ANCHOR));
 	assert.equal(rotor.radius, kin.rRel);
 	assert.equal(rotor.rate, kin.omega);
 	assert.ok(Math.abs(rotor.phase0 - 92 * Math.PI / 180) < 1e-12);
