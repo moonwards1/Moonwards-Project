@@ -342,6 +342,13 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		if (e.button !== 0) { return; }
 		var w = toWorld(toVB(e)), idx = pickAxis(w[0], w[1]);
 		if (idx < 0) { return; }
+		// A number field left focused (mid-typing skip in redraw(), above)
+		// otherwise never lets go once the user instead drags an arrow — the
+		// drag would keep updating values while the stale focused field's
+		// display sits frozen. Blur it here so redraw()'s guard drops and the
+		// field starts tracking the drag like the other two.
+		var focused = document.activeElement;
+		if (focused === nums.pro || focused === nums.rad || focused === nums.nrm) { focused.blur(); }
 		dragIdx = idx; lastWorld = w;
 		setAxisAbsolute(w, axes[idx]);
 		try { svg.setPointerCapture(e.pointerId); } catch (err) {}
