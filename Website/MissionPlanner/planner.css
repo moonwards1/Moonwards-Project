@@ -126,7 +126,6 @@ body {
 	font-size: 12.5px; padding: 7px 14px; border-radius: 999px; white-space: nowrap;
 }
 .mp-bar-mission .mp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.mp-check:not(:disabled) { border-color: #3c5788; color: var(--bright); }
 .mp-update:not(:disabled) { border-color: var(--ok); color: var(--ok); }
 .mp-update:not(:disabled):hover { background: var(--ok); color: #101613; }
 .mp-report, .mp-copy-mission {
@@ -420,12 +419,22 @@ body {
 }
 .mp-shipcard:hover { border-color: #3c5788; }
 .mp-ship-top { background: #121f36; padding: 8px 10px 6px; display: flex; flex-direction: column; gap: 4px; }
-.mp-ship-head { display: flex; align-items: flex-start; justify-content: space-between; cursor: grab; }
+.mp-ship-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; cursor: grab; }
 .mp-ship-head:active { cursor: grabbing; }
 .mp-ship-title { font-size: 19px; letter-spacing: 1px; color: var(--bright); line-height: 1.1; }
+/* Departure's re-solve: centred between the title and the checkmark's spot,
+   a plain .mp-btn sized down for the card's own scale. Coast hides it
+   (showRefine) — there is nothing there to re-solve. */
+.mp-ship-refine { flex: none; align-self: center; font-size: 11.5px; padding: 4px 10px; cursor: pointer; }
+.mp-ship-refine:not(:disabled) { border-color: #3c5788; color: var(--bright); }
 /* The on-course check: hidden until the delivered hand-off matches the plan. */
 .mp-ship-oncourse { display: none; font-size: 21px; line-height: 1; color: var(--ok); }
 .mp-shipcard.on-course .mp-ship-oncourse { display: block; }
+/* With Refine showing (Departure), the checkmark's spot is reserved even
+   while the mark itself isn't earned yet, so the button stays centred
+   between the title and that spot rather than drifting right. */
+.mp-shipcard.has-refine .mp-ship-oncourse { display: block; visibility: hidden; }
+.mp-shipcard.has-refine.on-course .mp-ship-oncourse { visibility: visible; }
 .mp-ship-align {
 	display: flex; align-items: center; gap: 6px; cursor: pointer;
 	font-size: 12px; color: #7fd4f0;

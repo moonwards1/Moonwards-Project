@@ -370,8 +370,9 @@ function makeLine(dir, len, colorHex, radius) {
 //   background  — gizmo clear colour; matches the card's own CSS background so
 //                 the scissored render is seamless with the DOM around it
 //
-// Returns { el, gizmoEl, setOnCourse, setGizmo, showGizmo, setComponents,
-// setSpeed, setSubtitle, setBPlane, setApproach, setExtra, render, dispose }.
+// Returns { el, gizmoEl, refineBtn, setOnCourse, setGizmo, showGizmo,
+// showRefine, setComponents, setSpeed, setSubtitle, setBPlane, setApproach,
+// setExtra, render, dispose }.
 export function createShipCard(opts) {
 	opts = opts || {};
 	var host = opts.host;
@@ -396,6 +397,14 @@ export function createShipCard(opts) {
 	titleWrap.appendChild(subtitle);
 	var badge = el("span", "mp-ship-oncourse", "✓");
 	badge.title = "On course";
+	// Departure's own control: a three-way split with the title-and-readouts
+	// column on the left, the button centred, and the on-course checkmark's
+	// spot held on the right. Hidden for Coast, which has no re-solve.
+	var refineBtn = document.createElement("button");
+	refineBtn.type = "button";
+	refineBtn.className = "mp-btn mp-ship-refine";
+	refineBtn.textContent = "Refine";
+	refineBtn.style.display = "none";
 	// The approach square is Coast's; it stays out of the layout until a
 	// caller fills it (setBPlane). Shown, it takes all the head's width beside
 	// the title as a square, making the band above the speed bar two columns:
@@ -409,6 +418,7 @@ export function createShipCard(opts) {
 	leftCol.appendChild(titleWrap);
 	leftCol.appendChild(approachEl);
 	head.appendChild(leftCol);
+	head.appendChild(refineBtn);
 	head.appendChild(badge);
 	head.appendChild(bPlaneEl);
 	top.appendChild(head);
@@ -518,6 +528,17 @@ export function createShipCard(opts) {
 		gizmoEl.style.display = on ? "" : "none";
 		alignLabel.style.display = on ? "" : "none";
 	}
+
+	// Whether Departure's Refine control shows at all — Coast has nothing to
+	// re-solve. The caller (mission-view.js) owns the button's click, disabled
+	// state and title, same as it owns every other reading behind this card.
+	function showRefine(on) {
+		refineBtn.style.display = on ? "" : "none";
+		root.classList.toggle("has-refine", !!on);
+	}
+	// The head doubles as a drag handle (see bindCardDrag); without this a
+	// press on the button starts dragging the card instead of clicking it.
+	refineBtn.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
 
 	// ---- readouts---------------------------------------------------------
 
@@ -781,9 +802,11 @@ export function createShipCard(opts) {
 	return {
 		el: root,
 		gizmoEl: gizmoEl,
+		refineBtn: refineBtn,
 		setOnCourse: setOnCourse,
 		setGizmo: setGizmo,
 		showGizmo: showGizmo,
+		showRefine: showRefine,
 		setComponents: setComponents,
 		setSpeed: setSpeed,
 		setSubtitle: setSubtitle,

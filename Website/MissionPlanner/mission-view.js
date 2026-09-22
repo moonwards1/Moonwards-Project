@@ -253,7 +253,6 @@ export function createMissionView(opts) {
 	metricEls.vInfIn.dataset.marker = "mp-m-vinfin";
 	var approachChipEl = q(".mp-approach-chip");
 	var approachValueEl = q(".mp-approach-value");
-	var checkBtn = q(".mp-check");
 	var updateBtn = q(".mp-update");
 	var reportPopupEl = q(".mp-report-popup");
 
@@ -583,6 +582,11 @@ export function createMissionView(opts) {
 	shipCard.el.style.left = "12px";
 	shipCard.el.style.top = "56px";   // clear of the frame caption + events readout
 	bindCardDrag(shipCard.el, shipCard.el.querySelector(".mp-ship-head"));
+	// Re-solving what the departure has to deliver is Departure's own question
+	// — Coast has no single correct answer to check against — so the control
+	// lives on the card itself (showRefine, in updateShipCard) rather than the
+	// mission bar.
+	var refineBtn = shipCard.refineBtn;
 
 	function bindCardDrag(cardEl, handle) {
 		var startX, startY, startLeft, startTop;
@@ -1722,7 +1726,7 @@ export function createMissionView(opts) {
 		msgPara(wrap, applied
 			? "The Needed column now states this, and the coast's waypoints have " +
 				"moved with it. The trajectory changes when you re-tune the technology " +
-				"towards those figures — then Check again, and each pass asks less " +
+				"towards those figures — then Refine again, and each pass asks less " +
 				"than the last."
 			: (sol.withinTolerance
 				? "Nothing written. Re-tune towards the new Needed figures, then Update."
@@ -1736,12 +1740,12 @@ export function createMissionView(opts) {
 		return d.innerHTML;
 	}
 
-	checkBtn.addEventListener("click", function () {
+	refineBtn.addEventListener("click", function () {
 		var sol = retargetSolveNow();
 		var dest = (adoptedPlanStage() && (adoptedPlanStage().params.arrival || {}).body) || "the destination";
 		checked = sol.ok ? Object.assign({ plan: planKeyOf(adoptedPlanStage()) }, sol) : null;
 		nowSnapshot = snapshotForReport();   // the report's "now" row's own refresh point
-		showMessage("Check — nothing written", function (wrap) {
+		showMessage("Refine — nothing written", function (wrap) {
 			solveMessage(wrap, sol, dest, false);
 		});
 		// The Needed column and the buttons both read `checked`; nothing in the
@@ -1781,7 +1785,7 @@ export function createMissionView(opts) {
 	var history = [];
 
 	// The report's "now" row: the mission's CURRENT figures, but not a live
-	// read — a checkpoint, refreshed only at Check (checkBtn, below) or by an
+	// read — a checkpoint, refreshed only at Refine (refineBtn, below) or by an
 	// Update starting a fresh one (updateBtn, below), plus one lazy initial
 	// capture the first time a flight exists at all (so "now" is never blank
 	// on a freshly created or freshly imported mission; a link that already
@@ -1977,7 +1981,7 @@ export function createMissionView(opts) {
 			setMetric(metricEls.vInfIn, "v∞ in", "—", null, null);
 			approachChipEl.className = "mp-approach-chip";
 			approachValueEl.textContent = "—";
-			checkBtn.disabled = true;
+			refineBtn.disabled = true;
 			updateBtn.disabled = true;
 		}
 		if (!planRes) { blankBar(); return; }       // this mission carries no adopted plan
@@ -2019,7 +2023,7 @@ export function createMissionView(opts) {
 			: (!!comp.delivered && comp.rows.every(function (r) { return r.ok; }));
 		setMetric(metricEls.vInfOut, "v∞ out", cbarKms(f.vInfOut), met ? "ok" : "warn",
 			"What the ship actually leaves with. " +
-			(checked ? "The Check target is " : "The plan requires ") + cbarKms(wantVInf) +
+			(checked ? "The Refine target is " : "The plan requires ") + cbarKms(wantVInf) +
 			(rV && !rV.ok && !checked ? " — " + (planRes.warnings || []).map(function (w) {
 				return w.code === "vinf-mismatch" ? w.fix : "";
 			}).join("") : ""));
@@ -2042,14 +2046,13 @@ export function createMissionView(opts) {
 			? passAltitudeReason(checkPassAltitude(alt), destName)
 			: "This mission commits to no destination.";
 
-		// CHECK is read-only, so it is offered whenever there is a delivery to
+		// REFINE is read-only, so it is offered whenever there is a delivery to
 		// measure — its report is worth having even while the departure is still
-		// off course. UPDATE writes, so it waits until a Check has shown what
+		// off course. UPDATE writes, so it waits until a Refine has shown what
 		// the write would do.
-		checkBtn.disabled = !destName;
-		checkBtn.title = destName
-			? "Re-solve what the departure has to deliver from the point it actually " +
-				"leaves from, and report what that would buy. Writes nothing."
+		refineBtn.disabled = !destName;
+		refineBtn.title = destName
+			? "Re-calculate where the ship exits the origin system, according to departure setup. The more accurate this is, the truer the aim."
 			: "This mission commits to no destination, so there is nothing to re-target towards.";
 		var canCommit = !!checked && checked.withinTolerance;
 		updateBtn.disabled = !canCommit;
@@ -2057,8 +2060,8 @@ export function createMissionView(opts) {
 			? "Commit the re-solved departure requirement and redraw the trajectory."
 			: (checked
 				? "The departure technology isn't close enough to deliver this yet " +
-					"— see the Check message for what to build up."
-				: "Press Check first — Update commits what it finds.");
+					"— see the Refine message for what to build up."
+				: "Press Refine first — Update commits what it finds.");
 	}
 	// The readout's "active" event is the latest one at or before the clock
 	// (the one whose date the mission is currently living in); before the
@@ -2437,6 +2440,7 @@ export function createMissionView(opts) {
 		shipCard.setOnCourse(false);
 		shipCard.setGizmo(null);
 		shipCard.showGizmo(false);
+		shipCard.showRefine(false);
 
 		var stage = coastStage();
 		var desc = registry.get("transfer-leg");
@@ -2538,6 +2542,7 @@ export function createMissionView(opts) {
 		if (workspace.phase === "coast") { updateCoastCard(); return; }
 		shipCard.setSubtitle("Departure");
 		shipCard.showGizmo(true);
+		shipCard.showRefine(true);
 		shipCard.setBPlane(null);
 		shipCard.setApproach(null);
 
