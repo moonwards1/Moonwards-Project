@@ -560,6 +560,7 @@ export default {
 		}
 		view.pxScaled = [];
 		view.readoutEntries = [];
+		view.focusPoints = [];   // click-to-focus targets (Vector3, group space)
 		var leg = legFor(snap.world, snap.stageId);
 		if (!leg || !leg.ok || snap.result.status !== "ok") { view.chevron = null; return; }
 		var U = view.metresPerUnit;
@@ -592,6 +593,22 @@ export default {
 			}
 		}
 		view.group.add(dot(caSample.r, 0xe8ecf5, 6));
+
+		// Where the arc crosses the destination's equatorial plane (green): each
+		// sign change of height along the spin pole, placed by linear
+		// interpolation between the two samples. A body with no published pole
+		// takes the ecliptic, as the skyhook's equatorPlane does.
+		var pole = systems.get(leg.body).pole;
+		var north = pole ? O.poleVectorEcliptic(pole.ra, pole.dec) : [0, 0, 1];
+		for (var k = 1; k < leg.samples.length; k++) {
+			var a = leg.samples[k - 1].r, b = leg.samples[k].r;
+			var ha = O.vDot(a, north), hb = O.vDot(b, north);
+			if (ha === hb || (ha > 0) === (hb > 0) && ha !== 0 && hb !== 0) { continue; }
+			var f = ha / (ha - hb);
+			var cross = [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2])];
+			view.group.add(dot(cross, 0x3ddc84, 7));
+			view.focusPoints.push(new THREE.Vector3(cross[0] / U, cross[1] / U, cross[2] / U));
+		}
 
 		// wv.eff (geo-leg's burnEffect) carries the burnDv/planeChange/progradeDv
 		// trio for the straddling readout box, paired with that waypoint's own

@@ -752,7 +752,13 @@ export function createMissionView(opts) {
 		var list = [];
 		Object.keys(stageViews).forEach(function (stageId) {
 			stageViews[stageId].forEach(function (view) {
-				if (view.frame === frameId && view.chevron) { list.push({ stageId: stageId, chevron: view.chevron }); }
+				if (view.frame !== frameId) { return; }
+				if (view.chevron) { list.push({ stageId: stageId, chevron: view.chevron }); }
+				// A module's own focusable points (view.focusPoints, Vector3s in the
+				// frame) pick and lock like a chevron, keyed "<stageId>#<index>".
+				(view.focusPoints || []).forEach(function (p, i) {
+					list.push({ stageId: stageId + "#" + i, chevron: { sprite: { position: p } } });
+				});
 			});
 		});
 		return list;
@@ -2776,6 +2782,10 @@ export function createMissionView(opts) {
 					// own phase's timeline is scrubbed.
 					if (frame.focusChevron === stageId) { frame.cam.target.copy(chevron.sprite.position); }
 				}
+				// The same follow for a module's focus points, which a redraw replaces.
+				(view.focusPoints || []).forEach(function (p, i) {
+					if (frame.focusChevron === stageId + "#" + i) { frame.cam.target.copy(p); }
+				});
 				if (view.pxScaled) {
 					view.pxScaled.forEach(function (g) {
 						g.obj.scale.setScalar(
