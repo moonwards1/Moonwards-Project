@@ -308,8 +308,12 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		// Dead zone is a constant 15 SCREEN px along the axis, not a fixed world
 		// distance — so at high zoom, where 15px is a small fraction of a km/s,
 		// clicking near the 0 point still repositions the arrow instead of being
-		// swallowed by an oversized dead zone.
-		var best = -1, bestPerp = 18, rx = px - OX, ry = py - OY, deadZone = 15 / zoom;
+		// swallowed by an oversized dead zone. The perpendicular tolerance (how
+		// far off the axis line a click can land and still grab it) is likewise
+		// a constant SCREEN px, not world units, so it stays a tight few-px hit
+		// zone at any zoom instead of ballooning as you zoom in.
+		var PERP_TOL = 9 / zoom;
+		var best = -1, bestPerp = PERP_TOL, rx = px - OX, ry = py - OY, deadZone = 15 / zoom;
 		for (var i = 0; i < axes.length; i++) {
 			var a = axes[i];
 			var proj = rx*a.dx + ry*a.dy, perp = Math.abs(rx*a.dy - ry*a.dx);
