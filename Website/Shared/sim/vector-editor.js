@@ -208,6 +208,17 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		var inp = document.createElement("input");
 		inp.type = "number"; inp.step = numStep;
 		inp.value = ((values[a.key] - baseline[a.key]) / dispDiv).toFixed(decimals);
+		// Shift held while a nudge fires (spinner-arrow click or ArrowUp/Down
+		// key) swaps the field's step to a tenth of its normal size for that
+		// one nudge — the browser reads `step` at the moment it applies
+		// stepUp/stepDown, so setting it here on mousedown/keydown (before
+		// that happens) is enough; no need to restore it afterward since the
+		// next nudge sets it fresh.
+		var fineStep = numStep / 10;
+		inp.addEventListener("mousedown", function (e) { inp.step = e.shiftKey ? fineStep : numStep; });
+		inp.addEventListener("keydown", function (e) {
+			if (e.key === "ArrowUp" || e.key === "ArrowDown") { inp.step = e.shiftKey ? fineStep : numStep; }
+		});
 		inp.addEventListener("change", function () {
 			var v = parseFloat(inp.value); if (!isFinite(v)) { v = 0; }
 			var delta = v * dispDiv;

@@ -939,7 +939,7 @@ export default {
 						list[i].burn[axis] = mps;
 						commitWaypoints(list);
 					}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS,
-					     displayDiv: 1, decimals: 1, step: 0.1, unitLabel: "m/s" });
+					     displayDiv: 1, decimals: 2, step: 0.1, unitLabel: "m/s" });
 				}
 				drawBurnEditor(wp.burn);
 

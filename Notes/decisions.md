@@ -24,10 +24,9 @@ exit initially, and then at the calculated exit once an exit can be calculated. 
 
 Each axis of a coast waypoint burn moves at most ±100 m/s from its baseline
 (`WAYPOINT_AXIS_CAP_MPS`), and typed entry is hard-clamped to that too. The
-numeric fields step 0.1 m/s; shift-drag on an arrow is the fine mode.
+numeric fields step 0.01 m/s; shift-drag on an arrow is the fine mode.
 
-Why: a waypoint is a trim, not an injection, and below ~0.1 m/s the effect
-drops under the model's own fidelity.
+Why: a waypoint is a trim, not an injection.
 
 ### Carrier release phase is free
 
@@ -138,10 +137,13 @@ data change, not new DOM code.
 ### Every skyhook orbits its primary's equator, turning with its spin
 
 The skyhook's rotor normal is its body's spin pole (`sys.pole`), in both
-roles and at every body; phase 0 is the body's heliocentric retrograde direction (the Moon's: Earth's) on the pin date, projected into the
-equator. A body with no published pole falls back to the ecliptic. A catch has
-the same three controls as a release, and its phase is pinned at the mission's
-start (the release epoch), so it opens at 0° and turns at ω.
+roles and at every body; phase 0 is the body's heliocentric retrograde direction (the Moon's: Earth's), projected into the equator. A body with no
+published pole falls back to the ecliptic. A catch has the same three controls
+as a release, and its tip position is pinned at the mission's start (the
+release epoch), so it opens at its chosen phase and turns at ω from there. For
+a RELEASE, 0° is taken on the release (pin) date; for a CATCH, 0° is taken on
+the approach's own equatorial-crossing date instead — it slides as the
+trajectory is tuned, since that changes when the arc crosses the plane.
 
 Why: one geometry for every skyhook until a real case calls for another
 plane. Retrograde rotators need no special case, because `pole` is the spin

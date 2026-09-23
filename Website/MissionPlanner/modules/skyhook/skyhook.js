@@ -48,9 +48,12 @@
  *
  * THE CATCH is the same tether run in reverse, with the same three controls:
  * CoM altitude, catch altitude (the release altitude's role) and catch phase
- * (the release phase's). The phase is pinned at the mission's start (the
- * release epoch): it states where the tip is when the mission opens, 0° being
- * the retrograde direction, and the tip turns at ω from there. Two
+ * (the release phase's). The tip's position is still pinned at the mission's
+ * start (the release epoch): it states where the tip is when the mission
+ * opens, and turns at ω from there. But 0° itself is the retrograde direction
+ * taken at the approach's OWN equatorial crossing (catchFigures's
+ * crossingJd), not the mission start — it slides as the trajectory is tuned,
+ * since that changes when and where the arc crosses the plane. Two
  * figures describe the rendezvous:
  *
  *   catch speed   v_tip = ω_CoM · r_catch — the tip's inertial speed
@@ -90,7 +93,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { rotorElement, planeBasis } from "../../../Shared/kinematic-chain.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { resolvePlatformParams } from "../platform/platform-spec.js";
+import { resolvePlatformParams, CATCH } from "../platform/platform-spec.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -256,13 +259,14 @@ export function rotorFor(kin, pinJd) {
 // the plane, Δθ is null.
 export function catchFigures(geo, approach) {
 	var vShip = Math.sqrt(approach.vInf * approach.vInf + 2 * geo.GM / geo.rRel);
-	var dTheta = null;
+	var dTheta = null, crossingJd = null;
 	var path = approach.path;
 	if (path) {
 		var x = O.pathPlaneCrossing(path.stateAt, path.jd0, path.jd1, equatorPlane(geo.body).normal);
-		if (x) { dTheta = x.angleDeg; }
+		if (x) { dTheta = x.angleDeg; crossingJd = x.t; }
 	}
-	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel };
+	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel,
+	         crossingJd: crossingJd };
 }
 
 // ---- view helpers (browser only — THREE via the global) -------------------
@@ -368,7 +372,15 @@ export var SKYHOOK = {
 		var rPoint = (R + params.relAlt) / U;
 		var rBase = (R + 20e3) / U;
 
-		var plane = equatorPlane(params.body, ctx.pinJd !== null ? ctx.pinJd : snap.jd);
+		// A catch's phase-0 direction is the retrograde at the approach's OWN
+		// equatorial crossing (catchFigures's crossingJd), not the pin epoch —
+		// it slides as the trajectory is tuned. Falls back to the pin epoch
+		// when the arc never reaches the plane (no crossing to take it from).
+		var refJd = ctx.pinJd !== null ? ctx.pinJd : snap.jd;
+		if (ctx.role === CATCH && ctx.computed && isFinite(ctx.computed.crossingJd)) {
+			refJd = ctx.computed.crossingJd;
+		}
+		var plane = equatorPlane(params.body, refJd);
 		var basis = planeBasis(plane.normal, plane.ref);
 		view.group.add(circleLine(rPoint, basis, 0x9fb6ff, 0.8));
 		view.group.add(circleLine(rCom, basis, 0xffd24a, 0.8));
