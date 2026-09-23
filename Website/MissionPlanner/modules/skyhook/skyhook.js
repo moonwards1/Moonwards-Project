@@ -358,6 +358,7 @@ export var SKYHOOK = {
 	// winds the hook toward — or away from — its moment.
 	draw: function (view, snap, ctx) {
 		disposeChildren(view.group);
+		view.focusPoints = [];   // click-to-focus targets (Vector3, group space) — the release/catch dot, below
 		var params = ctx.params;
 		var phys = bodyPhysics(params.body);
 		if (!phys) { return; }
@@ -383,12 +384,17 @@ export var SKYHOOK = {
 			new THREE.LineBasicMaterial({ color: 0xeaf0ff })));
 
 		// Release/catch point: magenta when the chain computes, red when this
-		// stage is the one that failed.
+		// stage is the one that failed. Focusable like a leg's chevron (see
+		// view.focusPoints, above) — mission-view.js reads it generically, so the
+		// camera can lock onto it, track it as the clock turns the arm, and be
+		// rotated/zoomed around it the same way as any other focus target.
+		var point = dir.clone().multiplyScalar(rPoint);
 		var dotGeo = new THREE.BufferGeometry();
-		dotGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
-			dir.x * rPoint, dir.y * rPoint, dir.z * rPoint]), 3));
+		dotGeo.setAttribute("position", new THREE.BufferAttribute(
+			new Float32Array([point.x, point.y, point.z]), 3));
 		view.group.add(new THREE.Points(dotGeo, new THREE.PointsMaterial({
 			color: ctx.failed ? 0xe06a5a : 0xff5fd0, size: 6, sizeAttenuation: false,
 			transparent: true, depthTest: false })));
+		view.focusPoints.push(point);
 	}
 };

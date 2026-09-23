@@ -964,8 +964,10 @@ export function createMissionView(opts) {
 	// ---- each frame's display date. Only the MAIN pane follows the clock; a
 	// float holds its phase at the seam it shares with the flight, so scrubbing
 	// one phase never moves the others. Departure is held at the end of its arc
-	// (the hand-off), Arrival at the start of its arc (the seam window's start),
-	// and Coast at whichever of its two ends meets the focused phase. The
+	// (the hand-off), Arrival at the equatorial-plane crossing nearest closest
+	// approach (arrivalDefaultJd — falls back to the window start with no
+	// crossing to anchor on), and Coast at whichever of its two ends meets the
+	// focused phase. The
 	// frame's bodies are placed at the same date as its chevron, so a held
 	// float is one consistent instant. framePins is refreshed from each
 	// recompute pass's results (updateFramePins); a pin with nothing to anchor
@@ -2339,12 +2341,25 @@ export function createMissionView(opts) {
 		onSetJd: setClock, stamp: shortStamp
 	});
 
+	// The live arrival-leg stage's own last computed leg, plus its descriptor
+	// (for equatorialCrossings) — a live registry read, the same access rule
+	// arrivalDvSplit already follows to reach the leg without a static import.
+	// Returns null when there is no arrival-leg stage or it hasn't resolved.
+	function arrivalLegNow() {
+		var legStage = world.stages().filter(function (s) { return s.moduleId === "arrival-leg"; })[0];
+		if (!legStage) { return null; }
+		var legDesc = registry.get("arrival-leg");
+		var leg = legDesc && legDesc.legFor ? legDesc.legFor(world, legStage.id) : null;
+		return (leg && leg.ok) ? { desc: legDesc, leg: leg } : null;
+	}
+
 	// The arrival phase's own flight events, as marks. Same flight-only rule
 	// the departure slider uses; arrivalSliderState drops any falling outside
 	// the window. Since 7.1 the arrival leg spans exactly this window, so its
 	// events land inside by construction — its own closest approach is the one
-	// deliberate exception, flagged flight:false so it doesn't draw a second
-	// mark a few hours from the seam's .mp-mark-ca.
+	// deliberate exception, flagged flight:false, and (since it sits within
+	// minutes of the equatorial crossing below) not drawn as a mark at all —
+	// see phase-slider.js's arrivalSliderState header.
 	function arrivalEvents(results) {
 		var evs = [];
 		results.forEach(function (res) {
@@ -2352,6 +2367,15 @@ export function createMissionView(opts) {
 			if (!stage || stagePhaseOf(stage) !== "arrival") { return; }
 			res.events.forEach(function (e) { if (e.flight !== false) { evs.push(e); } });
 		});
+		// Equatorial-plane crossings (arrival-leg.js's own green marker dots) as
+		// timeline marks too — not part of leg.events, since those also gate the
+		// module's own Node tests.
+		var now = arrivalLegNow();
+		if (now && now.desc.equatorialCrossings) {
+			now.desc.equatorialCrossings(now.leg).forEach(function (cr) {
+				evs.push({ jd: cr.jd, label: cr.label });
+			});
+		}
 		return evs;
 	}
 
@@ -2628,7 +2652,24 @@ export function createMissionView(opts) {
 		framePins.depEnd = depEvs.length ? depEvs[depEvs.length - 1].jd : (dep ? dep.end : null);
 		framePins.coastStart = span ? span.start : null;
 		framePins.coastEnd = span ? span.end : null;
-		framePins.arrStart = arr ? arr.start : framePins.coastEnd;
+		framePins.arrStart = arr ? arrivalDefaultJd(arr) : framePins.coastEnd;
+	}
+
+	// The epoch the Arrival phase's held float (and, via frameJd, a fresh
+	// switch into the phase) opens on: the equatorial-plane crossing nearest
+	// closest approach, so the chevron lands right where the pass crosses the
+	// destination's equator rather than at the window's raw edge. Falls back
+	// to the window start with no crossing to anchor on (an unburned pass that
+	// never dips through the plane, or the leg hasn't resolved yet).
+	function arrivalDefaultJd(arr) {
+		var now = arrivalLegNow();
+		var crossings = (now && now.desc.equatorialCrossings) ? now.desc.equatorialCrossings(now.leg) : [];
+		if (!crossings.length) { return arr.start; }
+		var best = crossings[0];
+		crossings.forEach(function (cr) {
+			if (Math.abs(cr.jd - arr.ca) < Math.abs(best.jd - arr.ca)) { best = cr; }
+		});
+		return Math.max(arr.start, Math.min(arr.end, best.jd));
 	}
 
 	// A view pass with no recompute behind it: Check writes nothing to the

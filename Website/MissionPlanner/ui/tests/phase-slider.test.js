@@ -202,22 +202,18 @@ test("arrivalSliderState: linear over the window, playhead at (jd-start)/span", 
 	assert.equal(arrivalSliderState({ start: AW.start, end: AW.end, jd: 99, ca: CA, stamp }).playheadFrac, 0.5);
 });
 
-test("arrivalSliderState: closest approach is marked on the track", () => {
+test("arrivalSliderState: closest approach is not a track mark (see the header — the crossing carries it)", () => {
 	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
-	var ca = s.marks.filter(function (m) { return m.cls === "mp-mark-ca"; });
-	assert.equal(ca.length, 1);
-	assert.equal(ca[0].frac, 0.75);
-	assert.equal(ca[0].jd, CA);
+	assert.equal(s.marks.length, 0);
 });
 
 test("arrivalSliderState: arrival events inside the window become marks, outside are dropped", () => {
 	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp,
 		marks: [{ jd: 98, label: "SOI entry" }, { jd: 120, label: "way past the window" },
 		        { jd: 50, label: "still in the coast" }] });
-	var evs = s.marks.filter(function (m) { return m.cls !== "mp-mark-ca"; });
-	assert.equal(evs.length, 1);
-	assert.equal(evs[0].title, "SOI entry");
-	assert.equal(evs[0].frac, 0.25);
+	assert.equal(s.marks.length, 1);
+	assert.equal(s.marks[0].title, "SOI entry");
+	assert.equal(s.marks[0].frac, 0.25);
 });
 
 test("arrivalSliderState: the playhead readout is relative to closest approach", () => {
@@ -241,15 +237,19 @@ test("arrivalSliderState: the clock outside the window pins the playhead, readou
 
 test("arrivalSliderState: BOTH edges move with the encounter, and the marks move with them", () => {
 	// the same window shifted 8 hours later, as tuning the coast would do: every
-	// fraction is unchanged, because both edges derive from ca.
-	var a = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
+	// fraction is unchanged, because both edges derive from ca — a mark riding
+	// along with it (e.g. the equatorial crossing mission-view.js adds) moves too.
+	var a = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp,
+		marks: [{ jd: CA, label: "crossing" }] });
 	var d = 1 / 3;
-	var b = arrivalSliderState({ start: AW.start + d, end: AW.end + d, jd: CA + d, ca: CA + d, stamp });
+	var b = arrivalSliderState({ start: AW.start + d, end: AW.end + d, jd: CA + d, ca: CA + d, stamp,
+		marks: [{ jd: CA + d, label: "crossing" }] });
 	assert.equal(b.playheadFrac, a.playheadFrac);
 	assert.equal(b.marks[0].frac, a.marks[0].frac);
 	assert.equal(b.marks[0].jd, CA + d);
-	// and a Δt that CHANGES (v∞ shifted) rescales the track: Δt 5 -> ca at 5/6
-	var wide = arrivalSliderState({ start: CA - 5, end: CA + 1, jd: CA, ca: CA, stamp });
+	// and a Δt that CHANGES (v∞ shifted) rescales the track: Δt 5 -> the mark at 5/6
+	var wide = arrivalSliderState({ start: CA - 5, end: CA + 1, jd: CA, ca: CA, stamp,
+		marks: [{ jd: CA, label: "crossing" }] });
 	assert.ok(Math.abs(wide.marks[0].frac - 5 / 6) < 1e-12);
 });
 

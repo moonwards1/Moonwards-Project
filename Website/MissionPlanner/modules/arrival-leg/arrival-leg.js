@@ -282,11 +282,13 @@ export function computeArrivalLeg(params, spec) {
 
 	events.unshift({ jd: spec.jd0,
 	                 label: "Arrival hand-off — " + body + " approach begins" });
-	// display/mark policy: the seam's own closest approach is already marked on
-	// the Arrival slider's track (mission-view's arrivalSpan, .mp-mark-ca), so
-	// this finer figure carries flight:false to avoid a second mark a few hours
-	// away from the first. It keeps transfer-leg's structured shape so it reads
-	// as the same kind of thing.
+	// display/mark policy: closest approach is never a timeline mark at all —
+	// the equatorial-plane crossing mission-view.js adds sits within minutes of
+	// it on any real pass, so a second tick there would just double up (see
+	// phase-slider.js's arrivalSliderState header). This finer figure carries
+	// flight:false and stays scene-only (arrival-leg's white dot on the arc). It
+	// keeps transfer-leg's structured event shape so it reads as the same kind
+	// of thing.
 	events.push({ jd: spec.jd0 + ca.t / DAY, flight: false,
 	              kind: "closest-approach", body: body, vInf: vInf0, rmin: ca.r,
 	              label: "Closest approach — " + kmOf(Math.max(0, ca.r - c.R)) + " km above " + body });
@@ -342,6 +344,31 @@ export function passFor(world, stageId) {
 		insideSoi: leg.ca.r < c.SOI,
 		atEdge: !!leg.caAtEdge
 	};
+}
+
+// Where the flown arc crosses the destination's equatorial plane: each sign
+// change of height along the spin pole, placed by linear interpolation
+// between the two straddling samples (body-centric, seconds-since-hand-off).
+// A body with no published pole takes the ecliptic, matching the skyhook's
+// equatorPlane. Pure, Node-testable — feeds both the green marker dots
+// (draw(), below) and the Arrival slider's timeline marks (mission-view.js).
+export function equatorialCrossings(leg) {
+	if (!leg || !leg.ok || !leg.samples.length) { return []; }
+	var pole = systems.get(leg.body).pole;
+	var north = pole ? O.poleVectorEcliptic(pole.ra, pole.dec) : [0, 0, 1];
+	var c = bodyConstants(leg.body);
+	var out = [];
+	for (var k = 1; k < leg.samples.length; k++) {
+		var a = leg.samples[k - 1], b = leg.samples[k];
+		var ha = O.vDot(a.r, north), hb = O.vDot(b.r, north);
+		if (ha === hb || ((ha > 0) === (hb > 0) && ha !== 0 && hb !== 0)) { continue; }
+		var f = ha / (ha - hb);
+		var r = [a.r[0] + f * (b.r[0] - a.r[0]), a.r[1] + f * (b.r[1] - a.r[1]), a.r[2] + f * (b.r[2] - a.r[2])];
+		var t = a.t + f * (b.t - a.t);
+		out.push({ jd: leg.jd0 + t / DAY, t: t, r: r,
+		           label: "Equatorial plane crossing — " + kmOf(Math.max(0, O.vMag(r) - c.R)) + " km above " + leg.body });
+	}
+	return out;
 }
 
 export function legFor(world, stageId) {
@@ -594,21 +621,12 @@ export default {
 		}
 		view.group.add(dot(caSample.r, 0xe8ecf5, 6));
 
-		// Where the arc crosses the destination's equatorial plane (green): each
-		// sign change of height along the spin pole, placed by linear
-		// interpolation between the two samples. A body with no published pole
-		// takes the ecliptic, as the skyhook's equatorPlane does.
-		var pole = systems.get(leg.body).pole;
-		var north = pole ? O.poleVectorEcliptic(pole.ra, pole.dec) : [0, 0, 1];
-		for (var k = 1; k < leg.samples.length; k++) {
-			var a = leg.samples[k - 1].r, b = leg.samples[k].r;
-			var ha = O.vDot(a, north), hb = O.vDot(b, north);
-			if (ha === hb || (ha > 0) === (hb > 0) && ha !== 0 && hb !== 0) { continue; }
-			var f = ha / (ha - hb);
-			var cross = [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2])];
-			view.group.add(dot(cross, 0x3ddc84, 7));
-			view.focusPoints.push(new THREE.Vector3(cross[0] / U, cross[1] / U, cross[2] / U));
-		}
+		// Where the arc crosses the destination's equatorial plane (green) —
+		// see equatorialCrossings() above.
+		equatorialCrossings(leg).forEach(function (cr) {
+			view.group.add(dot(cr.r, 0x3ddc84, 7));
+			view.focusPoints.push(new THREE.Vector3(cr.r[0] / U, cr.r[1] / U, cr.r[2] / U));
+		});
 
 		// wv.eff (geo-leg's burnEffect) carries the burnDv/planeChange/progradeDv
 		// trio for the straddling readout box, paired with that waypoint's own
@@ -657,5 +675,6 @@ export default {
 	// Exposed on the descriptor (not just as a named export) so the shell can
 	// reach the last computed leg via registry.get("arrival-leg") without a
 	// static import — the same access rule the departure legs follow.
-	legFor: legFor
+	legFor: legFor,
+	equatorialCrossings: equatorialCrossings
 };

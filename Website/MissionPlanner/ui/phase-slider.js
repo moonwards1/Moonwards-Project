@@ -81,8 +81,9 @@ export function approachStamp(jd, ca) {
 
 // ---- the DOM primitive -----------------------------------------------------
 // opts.onScrub(fraction) — called with a 0..1 track fraction on click/drag/
-//   wheel (plain click/drag jumps and tracks 1:1; Shift-drag or the mouse
-//   wheel fine-tune at 10x-slower sensitivity — see onDown/onMove/onWheel).
+//   wheel (plain click/drag jumps and tracks 1:1; Shift or Ctrl held on a
+//   drag or the mouse wheel fine-tune instead, at 10x- or 12x-slower
+//   sensitivity respectively — see dragSensitivity/onDown/onMove/onWheel).
 // Returns { root, setSegments(segs), setEmpty(msg), setPlayhead(fraction,
 //   pinned, daysText, timeText), dispose() }.
 export function createSegmentedSlider(container, opts) {
@@ -116,29 +117,59 @@ export function createSegmentedSlider(container, opts) {
 		return r.width > 0 ? clamp01((clientX - r.left) / r.width) : 0;
 	}
 
+	// A plain click near a mark (event tick / closest-approach) snaps to that
+	// mark's exact fraction instead of the raw cursor position, within a small
+	// pixel leeway -- clicking "on" a mark should land precisely on its epoch,
+	// not a few minutes off from where the pointer happened to land on a thin
+	// tick. Only a fresh click snaps (see onDown); dragging and the Shift/wheel
+	// fine-tune paths use the raw position throughout, so a drag that starts on
+	// a mark is free to move away from it immediately.
+	var SNAP_PX = 8;
+	var markFractions = [];   // current setMarks() fractions, for the leeway above
+	function snapFraction(frac, width) {
+		var tolFrac = SNAP_PX / Math.max(1, width);
+		var best = frac, bestDist = tolFrac;
+		markFractions.forEach(function (mf) {
+			var d = Math.abs(mf - frac);
+			if (d <= bestDist) { bestDist = d; best = mf; }
+		});
+		return best;
+	}
+
 	// A plain click/drag jumps to the cursor and tracks it 1:1. Holding Shift
 	// instead fine-tunes RELATIVELY from wherever the playhead already is, at
 	// 10x-slower sensitivity, without jumping — matching Shared/sim/date-bar.js's
-	// Shift-drag. Rolling the mouse wheel over the track reaches that same
-	// 10x-slower scrub without dragging: each wheel notch moves the playhead as
-	// if the mouse had dragged that many pixels, at the same 0.1 sensitivity.
+	// Shift-drag. Ctrl is the same idea at a coarser 1/12 sensitivity (Shift
+	// wins if somehow both are held). Rolling the mouse wheel over the track
+	// reaches the same slower scrub without dragging, at whichever of the two
+	// rates the held modifier picks (plain wheel keeps the 0.1 default): each
+	// notch moves the playhead as if the mouse had dragged that many pixels.
 	var currentFraction = 0;
 	var dragging = false, lastX = 0;
+	// null means "jump to the cursor"; otherwise the drag sensitivity to
+	// fine-tune relatively at, without jumping.
+	function dragSensitivity(e) {
+		if (e.shiftKey) { return 0.1; }
+		if (e.ctrlKey) { return 1 / 12; }
+		return null;
+	}
 	function onDown(e) {
 		dragging = true;
 		lastX = e.clientX;
-		if (!e.shiftKey) {
-			currentFraction = fractionAt(e.clientX);
+		if (dragSensitivity(e) === null) {
+			var width = track.getBoundingClientRect().width || 1;
+			currentFraction = snapFraction(fractionAt(e.clientX), width);
 			onScrub(currentFraction);
 		}
 		e.preventDefault();
 	}
 	function onMove(e) {
 		if (!dragging) { return; }
-		if (e.shiftKey) {
+		var sens = dragSensitivity(e);
+		if (sens !== null) {
 			var width = track.getBoundingClientRect().width || 1;
 			var dx = e.clientX - lastX;
-			currentFraction = clamp01(currentFraction + (dx / width) * 0.1);
+			currentFraction = clamp01(currentFraction + (dx / width) * sens);
 		} else {
 			currentFraction = fractionAt(e.clientX);
 		}
@@ -149,7 +180,8 @@ export function createSegmentedSlider(container, opts) {
 	function onWheel(e) {
 		e.preventDefault();
 		var width = track.getBoundingClientRect().width || 1;
-		currentFraction = clamp01(currentFraction - (e.deltaY / width) * 0.1);
+		var sens = e.ctrlKey ? 1 / 12 : 0.1;
+		currentFraction = clamp01(currentFraction - (e.deltaY / width) * sens);
 		onScrub(currentFraction);
 	}
 	track.addEventListener("mousedown", onDown);
@@ -206,6 +238,7 @@ export function createSegmentedSlider(container, opts) {
 		setMarks: function (marks) {
 			Array.prototype.slice.call(track.querySelectorAll(".mp-mark"))
 				.forEach(function (m) { track.removeChild(m); });
+			markFractions = (marks || []).map(function (m) { return clamp01(m.frac); });
 			(marks || []).forEach(function (m) {
 				var el = document.createElement("div");
 				el.className = "mp-mark" + (m.cls ? " " + m.cls : "");
@@ -394,10 +427,13 @@ export function createDepartureSlider(container, opts) {
 // hands over two fresh edge jds each update, exactly as the other two do.
 // What IS particular to this slider:
 //
-//   - Closest approach is marked on the track (mp-mark-ca), because it is the
-//     thing the window exists to bracket, and it is not either edge.
-//   - The playhead readout is signed time relative to that mark
-//     (approachStamp) rather than "T+" since the phase started.
+//   - The playhead readout is signed time relative to closest approach
+//     (approachStamp) rather than "T+" since the phase started. Closest
+//     approach itself is NOT drawn as a track mark: the equatorial-plane
+//     crossing mission-view.js adds (arrivalEvents) sits within minutes of it
+//     on any real pass, so a second tick a hair away just doubles up — the
+//     crossing carries the marker, and closest approach stays a scene-only
+//     marker on the trajectory arc (arrival-leg.js's white dot).
 //   - With no encounter at all, the seam collapses to a single point at the
 //     coast's own end (core/arrival-seam.js's fallback). A
 //     zero-length span is the empty state here, not an error —
@@ -417,13 +453,6 @@ export function arrivalSliderState(opts) {
 	var segments = buildTickSegments(start, end, ticks, stamp);
 
 	var marks = [];
-	if (isFinite(ca)) {
-		var caFrac = (ca - start) / span;
-		if (caFrac > 0.001 && caFrac < 0.999) {
-			marks.push({ frac: caFrac, jd: ca, cls: "mp-mark-ca",
-			             title: "Closest approach - " + stamp(ca) });
-		}
-	}
 	(opts.marks || [])
 		.filter(function (m) { return m && isFinite(m.jd); })
 		.map(function (m) { return { frac: (m.jd - start) / span, title: m.label, jd: m.jd }; })
