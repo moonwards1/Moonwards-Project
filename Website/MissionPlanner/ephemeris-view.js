@@ -308,6 +308,79 @@ export function createEphemerisView(opts) {
 		destFocused: false     // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
 	};
 
+	// ==== origin/destination body rings: which two bodies the leg is FOR,
+	// drawn as an equator-aligned ring so they read at a glance among the
+	// dozen dots a heliocentric view otherwise shows. Chevron-sized on screen
+	// (worldSizeAtPointForPx, same technique as the waypoint gizmos and ship
+	// marker below) so they stay legible at any zoom, not scaled to the
+	// body's true radius or SOI. One shared unit-circle geometry serves both
+	// rings and every body: only its per-body orientation (the real pole, so
+	// "aligned with their equators" is literal) and colour differ.
+	//
+	// A MOON origin is the one case a ring can't just sit on its own body: at
+	// solar-system scale the Moon collapses onto Earth's dot (scene-frames.js's
+	// MOON_MIN_SEPARATION_PX gate) until the camera is close enough to tell
+	// them apart, so the ring tracks EARTH's position in that state — still
+	// oriented to the MOON's own equator — and switches to a distinct colour
+	// so it reads as "this marks the Moon" rather than a second Earth ring.
+	var ORIGIN_RING_COLOR = 0x5ad1a0;
+	var ORIGIN_MOON_RING_COLOR = 0xc9a8ff;
+	var DEST_RING_COLOR = 0xffae42;
+	var BODY_RING_PX = 13;   // half the ship chevron's own on-screen size
+	function unitCirclePoints(n) {
+		var pts = [];
+		for (var k = 0; k <= n; k++) {
+			var a = 2 * Math.PI * k / n;
+			pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0));
+		}
+		return pts;
+	}
+	var ringGeometry = new THREE.BufferGeometry().setFromPoints(unitCirclePoints(64));
+	function makeBodyMarkerRing() {
+		var line = new THREE.Line(ringGeometry,
+			new THREE.LineBasicMaterial({ color: ORIGIN_RING_COLOR, transparent: true, opacity: 0.95, depthTest: false }));
+		line.renderOrder = 14;
+		line.visible = false;
+		frame.scene.add(line);
+		return line;
+	}
+	var originRing = makeBodyMarkerRing();
+	var destRing = makeBodyMarkerRing();
+	function poleQuaternionFor(name) {
+		var sys = systems.get(name);
+		var q = new THREE.Quaternion();
+		if (!sys) { return q; }
+		if (sys.pole) {
+			var v = O.poleVectorEcliptic(sys.pole.ra, sys.pole.dec);
+			q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(v[0], v[1], v[2]).normalize());
+		} else if (sys.axialTilt) {
+			q.setFromEuler(new THREE.Euler(sys.axialTilt, 0, 0));
+		}
+		return q;
+	}
+	function updateBodyRing(ring, color, bodyName) {
+		if (!bodyName) { ring.visible = false; return; }
+		var trackName = bodyName;
+		if (bodyName === "Moon") {
+			var moonShown = false;
+			for (var i = 0; i < frame.scaleList.length; i++) {
+				if (frame.scaleList[i].name === "Moon") {
+					moonShown = frame.scaleList[i].core.visible || frame.scaleList[i].point.visible;
+					break;
+				}
+			}
+			trackName = moonShown ? "Moon" : "Earth";
+			color = ORIGIN_MOON_RING_COLOR;
+		}
+		var node = frame.bodyNode(trackName);
+		if (!node) { ring.visible = false; return; }
+		ring.visible = true;
+		ring.position.copy(node.position);
+		ring.quaternion.copy(poleQuaternionFor(bodyName));
+		ring.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, ring.position, BODY_RING_PX));
+		ring.material.color.setHex(color);
+	}
+
 	// WHEN THE DRAWN HELIOCENTRIC ARC STARTS — the hand-off's epoch, which every
 	// "t seconds along the leg" reading is measured from. That is the date bar's
 	// own value at every origin but the Moon, where the bar states the RELEASE
@@ -2586,6 +2659,8 @@ export function createEphemerisView(opts) {
 		updateCamera(frame.camera, frame.cam);
 		brUpdateScales(frame.camera, paneMainEl, frame.scaleList, { wantSOI: frame.wantSOI });
 		brUpdateLabels(frame.camera, paneMainEl, frame.labelList);
+		updateBodyRing(originRing, ORIGIN_RING_COLOR, state.origin);
+		updateBodyRing(destRing, DEST_RING_COLOR, state.leg.destination || null);
 
 		wpMarkers.forEach(function (g) {
 			g.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, g.position, GIZMO_PX));
