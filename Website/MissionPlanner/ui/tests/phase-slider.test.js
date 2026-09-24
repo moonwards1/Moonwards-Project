@@ -8,7 +8,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { coastSliderState, departureSliderState, arrivalSliderState,
-         elapsedStamp, approachStamp } from "../phase-slider.js";
+         elapsedStamp, approachStamp, coastArrivalBoundaryFrac,
+         coastFracForJd, coastJdForFrac } from "../phase-slider.js";
 
 function shortDate(jd) { return "jd" + Math.round(jd); }
 function stamp(jd) { return "t" + jd; }
@@ -94,6 +95,84 @@ test("coastSliderState: honors a custom tick count, labeling only the first and 
 	assert.equal(s.segments.length, 2);
 	assert.equal(s.segments[0].label, shortDate(0));
 	assert.equal(s.segments[1].label, shortDate(10));
+});
+
+// ---- the Coast slider's tacked-on Arrival tail (stretch + slowdown) -------
+
+test("coastArrivalBoundaryFrac: no arrival duration keeps the whole track for coast", () => {
+	assert.equal(coastArrivalBoundaryFrac(900, 0), 1);
+	assert.equal(coastArrivalBoundaryFrac(900, NaN), 1);
+	assert.equal(coastArrivalBoundaryFrac(900, -5), 1);
+});
+
+test("coastArrivalBoundaryFrac: a short tail gets 3x its natural (linear-time) share", () => {
+	// natural = 100/(900+100) = 0.1 -> stretched to 0.3 -> boundary at 0.7
+	assert.ok(Math.abs(coastArrivalBoundaryFrac(900, 100) - 0.7) < 1e-12);
+});
+
+test("coastArrivalBoundaryFrac: the stretch never claims more than 90% of the track", () => {
+	// natural = 90/100 = 0.9 -> stretched would be 2.7, clamped to 0.9
+	assert.ok(Math.abs(coastArrivalBoundaryFrac(10, 90) - 0.1) < 1e-12);
+});
+
+test("coastArrivalBoundaryFrac: no coast duration at all leaves nothing for it", () => {
+	assert.equal(coastArrivalBoundaryFrac(0, 100), 0);
+});
+
+test("coastFracForJd / coastJdForFrac: round-trip through both pieces of the track", () => {
+	var start = 0, end = 900, arrivalEnd = 1000, boundary = 0.7;
+	[0, 0.25, 0.5, 0.699, 0.7, 0.71, 0.9, 1].forEach((frac) => {
+		var jd = coastJdForFrac(frac, start, end, arrivalEnd, boundary);
+		var back = coastFracForJd(jd, start, end, arrivalEnd, boundary);
+		assert.ok(Math.abs(back - frac) < 1e-9, frac + " -> " + jd + " -> " + back);
+	});
+});
+
+test("coastFracForJd: the three landmark jds map to 0, boundary, and 1", () => {
+	var start = 0, end = 900, arrivalEnd = 1000, boundary = 0.7;
+	assert.equal(coastFracForJd(start, start, end, arrivalEnd, boundary), 0);
+	assert.equal(coastFracForJd(end, start, end, arrivalEnd, boundary), boundary);
+	assert.equal(coastFracForJd(arrivalEnd, start, end, arrivalEnd, boundary), 1);
+});
+
+test("coastFracForJd: the tail is denser per-unit-time than the coast portion", () => {
+	// coast: 900 days over frac-width 0.7 -> ~1286 days per unit frac.
+	// tail: 100 days over frac-width 0.3 -> ~333 days per unit frac -- far denser.
+	var start = 0, end = 900, arrivalEnd = 1000, boundary = 0.7;
+	var coastRate = (end - start) / boundary;
+	var tailRate = (arrivalEnd - end) / (1 - boundary);
+	assert.ok(tailRate < coastRate);
+	assert.ok(Math.abs(coastRate / tailRate - 900 / 100 / (0.7 / 0.3)) < 1e-9);
+});
+
+test("coastSliderState: the arrival segment sits at [boundary, 1], stretched past its natural share", () => {
+	var s = coastSliderState({ start: 0, end: 900, jd: 0, ticks: 5, shortDate, arrivalEnd: 1000 });
+	var boundary = coastArrivalBoundaryFrac(900, 100);
+	var arrivalSeg = s.segments[s.segments.length - 1];
+	assert.equal(arrivalSeg.cls, "mp-seg-arrival");
+	assert.ok(Math.abs(arrivalSeg.frac0 - boundary) < 1e-12);
+	assert.equal(arrivalSeg.frac1, 1);
+	// far wider than its 100/1000 = 10% natural share
+	assert.ok((1 - boundary) > 0.1);
+});
+
+test("coastSliderState: playheadFrac follows the piecewise (stretched) mapping past `end`", () => {
+	var start = 0, end = 900, arrivalEnd = 1000;
+	var boundary = coastArrivalBoundaryFrac(end - start, arrivalEnd - end);
+	// halfway through the tail in time (jd 950) lands halfway across ITS
+	// (wider) share of the track, not at the same frac a linear map would give
+	var s = coastSliderState({ start: start, end: end, jd: 950, ticks: 5, shortDate, arrivalEnd: arrivalEnd });
+	var expected = boundary + (1 - boundary) * 0.5;
+	assert.ok(Math.abs(s.playheadFrac - expected) < 1e-9);
+	// a naive time-linear map would put jd 950 at 0.95; the stretch pulls it
+	// back, since the tail now claims far more than its natural 10% share
+	assert.ok(s.playheadFrac < 950 / 1000);
+});
+
+test("coastSliderState: with no arrival tail, boundary is 1 and behavior is unchanged", () => {
+	var s = coastSliderState({ start: 0, end: 100, jd: 25, shortDate });
+	assert.equal(s.segments[s.segments.length - 1].cls, undefined);
+	assert.equal(s.playheadFrac, 0.25);
 });
 
 // ---- B3: the linear-time Departure slider ---------------------------------

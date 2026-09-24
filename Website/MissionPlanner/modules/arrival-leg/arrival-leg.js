@@ -82,7 +82,12 @@ var O = OrbitalMath;
 var GM_SUN = systems.get("Sun").GM;
 var DAY = 86400;
 
-var MAX_POLY_SAMPLES = 400;   // per segment, decimated from the RK4 trail
+// Per segment, decimated from the RK4 trail. This whole leg IS the seam
+// window the Coast slider's tacked-on Arrival tail stretches 3x and scrubs
+// 12x slower (ui/phase-slider.js's ARRIVAL_STRETCH/ARRIVAL_SLOWDOWN,
+// transfer-leg.js's matching OVERRUN_POLYLINE_DENSITY) — the same factor here
+// keeps this leg's own drawn line just as dense at that close-up.
+var MAX_POLY_SAMPLES = 1200;
 
 var DV_COLOR = 0xff5fd0, DSPEED_COLOR = 0xffd24a;
 var GIZMO_PX = 42;

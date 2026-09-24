@@ -23,6 +23,9 @@
  * All three sliders are linear in time over a span the CALLER computes
  * (mission-view.js's departureSpan / coastSpan / arrivalSpan); they differ
  * only in which edges are anchored and how the playhead readout is stamped.
+ * Coast alone is piecewise: its own span stays linear, but the tacked-on
+ * Arrival tail past it is stretched and slowed relative to that — see its
+ * own section below.
  */
 
 function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
@@ -82,6 +85,12 @@ export function approachStamp(jd, zero) {
 //   wheel (plain click/drag jumps and tracks 1:1; Shift or Ctrl held on a
 //   drag or the mouse wheel fine-tune instead, at 10x- or 12x-slower
 //   sensitivity respectively — see dragSensitivity/onDown/onMove/onWheel).
+// opts.speedAt(fraction) — optional. Returns a multiplier on drag/wheel
+//   movement, sampled at the playhead's CURRENT fraction every move — the
+//   Coast slider's own tacked-on Arrival tail uses this for its extra
+//   ARRIVAL_SLOWDOWN (below); every other slider omits it and gets 1
+//   everywhere. A fresh click still jumps straight to the clicked point
+//   (onDown), unaffected — only continued dragging/wheeling is scaled.
 // Returns { root, setSegments(segs), setEmpty(msg), setPlayhead(fraction,
 //   pinned, daysText, timeText), dispose() }.
 export function createSegmentedSlider(container, opts) {
@@ -161,16 +170,19 @@ export function createSegmentedSlider(container, opts) {
 		}
 		e.preventDefault();
 	}
+	// Both the plain 1:1 track and the Shift/Ctrl fine-tune are the same move:
+	// the cursor's raw per-event delta, scaled. Plain-drag's scale is 1 — over
+	// a burst of mousemove events that telescopes to exactly the same result
+	// as jumping straight to the cursor, so this is a lossless generalization,
+	// not a behavior change — until opts.speedAt narrows it further inside a
+	// slow zone, which a single "jump to cursor" couldn't express at all.
 	function onMove(e) {
 		if (!dragging) { return; }
+		var width = track.getBoundingClientRect().width || 1;
+		var dx = e.clientX - lastX;
 		var sens = dragSensitivity(e);
-		if (sens !== null) {
-			var width = track.getBoundingClientRect().width || 1;
-			var dx = e.clientX - lastX;
-			currentFraction = clamp01(currentFraction + (dx / width) * sens);
-		} else {
-			currentFraction = fractionAt(e.clientX);
-		}
+		var scale = (sens === null ? 1 : sens) * (opts.speedAt ? opts.speedAt(currentFraction) : 1);
+		currentFraction = clamp01(currentFraction + (dx / width) * scale);
 		lastX = e.clientX;
 		onScrub(currentFraction);
 	}
@@ -179,7 +191,8 @@ export function createSegmentedSlider(container, opts) {
 		e.preventDefault();
 		var width = track.getBoundingClientRect().width || 1;
 		var sens = e.ctrlKey ? 1 / 12 : 0.1;
-		currentFraction = clamp01(currentFraction - (e.deltaY / width) * sens);
+		var scale = sens * (opts.speedAt ? opts.speedAt(currentFraction) : 1);
+		currentFraction = clamp01(currentFraction - (e.deltaY / width) * scale);
 		onScrub(currentFraction);
 	}
 	track.addEventListener("mousedown", onDown);
@@ -254,6 +267,56 @@ export function createSegmentedSlider(container, opts) {
 }
 
 // ---- the Coast slider ------------------------------------------------------
+// The tacked-on Arrival tail (coastSliderState's arrivalEnd) is short — a
+// seam window of a few days — next to a coast that routinely runs hundreds of
+// days, so a strictly time-linear track would render it as a sliver a pixel
+// or two wide and scrub it at the same breakneck days-per-pixel rate as the
+// rest of the trip. Two independent fixes, applied together:
+//
+//   - ARRIVAL_STRETCH renders the tail at 3x its natural (linear-time) share
+//     of the track (coastArrivalBoundaryFrac), so it is wide enough to see
+//     and to click inside even on a long trip.
+//   - ARRIVAL_SLOWDOWN then scrubs it an EXTRA 4x slower on top of that (the
+//     widget's own opts.speedAt hook), because 3x more pixels alone still
+//     isn't fine enough for a window this consequential.
+//
+// Combined, dragging through the tail moves the clock at 1/12th the rate
+// dragging through the coast does. The track is otherwise still linear in
+// time within each of its two pieces — see coastFracForJd/coastJdForFrac.
+export var ARRIVAL_STRETCH = 3;
+export var ARRIVAL_SLOWDOWN = 4;
+
+// The [0,1] track fraction at the coast/arrival boundary. Capped so the tail
+// never claims more than 90% of the track, which would otherwise happen for
+// an unusually short coast (leaving the coast portion unusably thin instead).
+// No DOM — Node-testable.
+export function coastArrivalBoundaryFrac(coastDur, arrivalDur) {
+	if (!(coastDur > 0)) { return 0; }
+	if (!(arrivalDur > 0)) { return 1; }
+	var natural = arrivalDur / (coastDur + arrivalDur);
+	return 1 - Math.min(0.9, natural * ARRIVAL_STRETCH);
+}
+
+// jd -> track fraction: linear over [start, end] up to `boundary`, linear (at
+// the tail's own, denser rate) from `boundary` to 1 across [end, arrivalEnd].
+// The inverse of coastJdForFrac. No DOM — Node-testable.
+export function coastFracForJd(jd, start, end, arrivalEnd, boundary) {
+	if (jd <= end) {
+		var coastDur = end - start;
+		return coastDur > 0 ? boundary * (jd - start) / coastDur : 0;
+	}
+	var arrDur = arrivalEnd - end;
+	return arrDur > 0 ? boundary + (1 - boundary) * (jd - end) / arrDur : boundary;
+}
+
+// track fraction -> jd, the inverse of coastFracForJd. No DOM — Node-testable.
+export function coastJdForFrac(frac, start, end, arrivalEnd, boundary) {
+	if (frac <= boundary) {
+		return boundary > 0 ? start + (frac / boundary) * (end - start) : start;
+	}
+	return end + ((frac - boundary) / (1 - boundary)) * (arrivalEnd - end);
+}
+
 // Pure: given the coast span (start/end jd, from the adopted plan's committed
 // dates ending at the arrival seam — see mission-view.js's coastSpan()), the
 // shared clock's jd, a tick count and a shortDate(jd) formatter for the tick
@@ -261,11 +324,12 @@ export function createSegmentedSlider(container, opts) {
 //
 // opts.arrivalEnd, when finite and past `end`, tacks the arrival window
 // (coastSeam.start..arrivalSeam.end) onto the track as one extra segment past
-// the coast's own tick segments, so the heliocentric approach+arrival reads
-// as one continuous scrub — see mission-view.js's coastSpan/arrivalSpan and
-// Notes/decisions.md. Its own tick segments are unchanged (still spaced over
-// [start, end]), just rescaled to share the track with the tacked-on piece;
-// the playhead/pin/stamp all move to cover the full [start, arrivalEnd].
+// the coast's own tick segments (stretched — see the header above), so the
+// heliocentric approach+arrival reads as one continuous scrub — see
+// mission-view.js's coastSpan/arrivalSpan and Notes/decisions.md. Its own
+// tick segments are unchanged (still spaced over [start, end]), just rescaled
+// to share the track with the tacked-on piece; the playhead/pin/stamp all
+// move to cover the full [start, arrivalEnd].
 export function coastSliderState(opts) {
 	var start = opts.start, end = opts.end, jd = opts.jd;
 	var ticks = opts.ticks || 5;
@@ -277,19 +341,20 @@ export function coastSliderState(opts) {
 	}
 	var hasArrival = isFinite(arrivalEnd) && arrivalEnd > end;
 	var total = hasArrival ? arrivalEnd : end;
-	var totalSpan = total - start;
-	var coastFrac = (end - start) / totalSpan;
+	var boundary = hasArrival ? coastArrivalBoundaryFrac(end - start, arrivalEnd - end) : 1;
 
 	var segments = buildTickSegments(start, end, ticks, shortDate).map(function (s) {
-		return { frac0: s.frac0 * coastFrac, frac1: s.frac1 * coastFrac,
+		return { frac0: s.frac0 * boundary, frac1: s.frac1 * boundary,
 		         label: s.label, tickOnly: s.tickOnly };
 	});
 	if (hasArrival) {
-		segments.push({ frac0: coastFrac, frac1: 1, cls: "mp-seg-arrival" });
+		segments.push({ frac0: boundary, frac1: 1, cls: "mp-seg-arrival" });
 	}
 
 	var pinnedAt = jd < start ? "start" : (jd > total ? "end" : null);
-	var playheadFrac = pinnedAt === "start" ? 0 : (pinnedAt === "end" ? 1 : (jd - start) / totalSpan);
+	var playheadFrac = pinnedAt === "start" ? 0
+		: pinnedAt === "end" ? 1
+		: coastFracForJd(jd, start, end, hasArrival ? arrivalEnd : end, boundary);
 	// The readout always shows the true clock time, even when the handle itself
 	// is pinned at an edge because the clock has wandered outside the span —
 	// that's the point of showing it. `start` IS the departure/release epoch
@@ -305,17 +370,21 @@ export function coastSliderState(opts) {
 // recompute/clock change — it just rebuilds a handful of DOM nodes and
 // repositions the playhead. `arrivalEnd` (optional, NaN when there's no
 // arrival window) is coastSliderState's own tack-on edge; scrubbing follows
-// it too, so dragging into the dim-blue tail sets the clock into the arrival
-// phase exactly as dragging within the coast portion does.
+// it too (through the same stretched/slowed mapping), so dragging into the
+// dim-blue tail sets the clock into the arrival phase exactly as dragging
+// within the coast portion does, just more precisely.
 export function createCoastSlider(container, opts) {
 	var onSetJd = opts.onSetJd;
 	var shortDate = opts.shortDate;
 	var ticks = opts.ticks;
-	var span = null;   // { start, end } — end is the tacked-on total when present
+	var span = null;   // { start, end, arrivalEnd, boundary } — null while empty
 
 	var slider = createSegmentedSlider(container, {
 		onScrub: function (fraction) {
-			if (span) { onSetJd(span.start + fraction * (span.end - span.start)); }
+			if (span) { onSetJd(coastJdForFrac(fraction, span.start, span.end, span.arrivalEnd, span.boundary)); }
+		},
+		speedAt: function (fraction) {
+			return (span && fraction > span.boundary) ? 1 / ARRIVAL_SLOWDOWN : 1;
 		}
 	});
 
@@ -328,7 +397,9 @@ export function createCoastSlider(container, opts) {
 			return;
 		}
 		var hasArrival = isFinite(state.arrivalEnd) && state.arrivalEnd > state.end;
-		span = { start: state.start, end: hasArrival ? state.arrivalEnd : state.end };
+		var arrivalEnd = hasArrival ? state.arrivalEnd : state.end;
+		span = { start: state.start, end: state.end, arrivalEnd: arrivalEnd,
+			boundary: hasArrival ? coastArrivalBoundaryFrac(state.end - state.start, arrivalEnd - state.end) : 1 };
 		slider.setSegments(s.segments);
 		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadDays, s.playheadTime);
 	}

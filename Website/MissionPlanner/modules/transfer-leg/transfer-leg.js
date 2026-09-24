@@ -85,6 +85,11 @@ export var WAYPOINT_AXIS_CAP_MPS = 100;
 // Warn when the leg ends farther than this from the destination body.
 export var MISS_WARN_AU = 0.02;
 
+// The display-only overrun's polyline density multiplier — see coastStretch's
+// own comment. Matches ui/phase-slider.js's ARRIVAL_STRETCH so the line looks
+// as dense at that zoom as it would un-stretched.
+export var OVERRUN_POLYLINE_DENSITY = 3;
+
 export var defaultParams = {
 	waypoints: [],                       // up to 2: { days, burn: {pro,rad,nrm} }
 	legDays: 480,                        // duration from leg start to the emitted state
@@ -224,6 +229,17 @@ function findFirstEncounter(r, v, jdAbs, durS, insideBody) {
 // overrun) no segs or events are recorded.
 function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 	var remaining = durS, t0 = tStart;
+	// The display-only overrun (`out.quiet`) IS the Coast slider's tacked-on
+	// Arrival tail (ui/phase-slider.js's ARRIVAL_STRETCH) — the one span the
+	// user now views stretched 3x and scrubs 12x slower, in close-up. The
+	// chevron's own position stays exact regardless of any of this
+	// (stateAtElapsedDrawn propagates Kepler stretches analytically and reads
+	// an "enc" stretch's full, undecimated RK4 trail — see seg.leg.samples
+	// below); what actually goes coarse at that stretch is the DRAWN line
+	// through it, built from a `n`- or stride-decimated subset of the same
+	// flight. OVERRUN_POLYLINE_DENSITY multiplies both so the line the
+	// chevron visibly rides stays smooth at close-up instead of faceting.
+	var density = out.quiet ? OVERRUN_POLYLINE_DENSITY : 1;
 	for (var guard = 0; guard < 12 && remaining > 1; guard++) {
 		var enc = findFirstEncounter(r, v, jdAbs, remaining, insideBody);
 		insideBody = null;   // only ever applies to the stretch's own start
@@ -235,7 +251,7 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 			// EVENTS only — the overrun is display-only and must not put entries
 			// in the events bar or move the arrival seam.
 			out.segs.push({ type: "kepler", r0: r, v0: v, tStart: t0, dur: kepDur });
-			var n = Math.max(60, Math.min(240, Math.round(kepDur / DAY * 0.5)));
+			var n = Math.max(60 * density, Math.min(240 * density, Math.round(kepDur / DAY * 0.5 * density)));
 			var arc = O.sampleArc(GM_SUN, r, v, kepDur, n);
 			for (var k = (out.samples.length ? 1 : 0); k < arc.length; k++) {
 				out.samples.push({ r: arc[k].r, v: arc[k].v, t: t0 + arc[k].t });
@@ -274,7 +290,7 @@ function coastStretch(r, v, jdAbs, tStart, durS, out, insideBody) {
 		// Velocity is lifted alongside position — the ship card's speed bar
 		// reads its profile straight off these samples, and a pass through an
 		// SOI is exactly where the speed is most worth seeing.
-		var stride = Math.max(1, Math.floor(res.samples.length / 400));
+		var stride = Math.max(1, Math.floor(res.samples.length / (400 * density)));
 		var lastIdx = res.samples.length - 1;
 		for (var si2 = 1; si2 <= lastIdx; si2 += stride) {
 			var idx = (si2 + stride > lastIdx) ? lastIdx : si2;   // never skip the exit point
