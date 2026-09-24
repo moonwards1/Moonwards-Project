@@ -21,7 +21,7 @@ import { LunarEphemeris } from "../Shared/lunar-ephemeris.js";
 import { createCam } from "../Shared/sim/camera-controller.js";
 import {
 	createBody, createSunBody, makePoint, makeSOIShell, soiRadiusAU, tiltBody,
-	addLabel as brAddLabel
+	addLabel as brAddLabel, worldSizeAtPointForPx
 } from "../Shared/sim/body-renderer.js";
 import { createKeplerOrbitRing, makeArcLine } from "../Shared/sim/orbit-rings.js";
 
@@ -55,6 +55,85 @@ export var ORIGIN_BODIES = HELIO_BODIES.concat(["Moon"]);
 // all in the heliocentric frame. Below this it is not a body the camera can
 // resolve, only a second dot on top of the first.
 export var MOON_MIN_SEPARATION_PX = 15;
+
+// ---- origin/destination body-marker rings ---------------------------------
+// A small equator-aligned ring, held at a constant on-screen size, over
+// whichever body a leg starts or ends at — used by both the Ephemeris tab and
+// the Coast phase's own helio frame, so a mission drawn in either place marks
+// its origin and destination the same way. Only meaningful on a
+// buildHelioFrame() result: it leans on that frame's own Moon-collapse
+// handling (MOON_MIN_SEPARATION_PX above) so a Moon origin's ring tracks
+// Earth's dot, in a distinct colour, until the camera is close enough to
+// resolve the Moon on its own — oriented to the MOON's own equator even while
+// sitting at Earth's position, since "aligned with their equators" means the
+// real body, not wherever it is currently drawn.
+//
+// Every ring gets its OWN unit-circle geometry (only its per-body orientation
+// — the real pole — and colour, set fresh each updateBodyMarkerRing call,
+// differ) rather than sharing one: each mission tab's frame is disposed
+// independently (mission-view.js's dispose() -> disposeScene, which calls
+// .dispose() on every traversed geometry), and a geometry shared across
+// frames would go with whichever mission closed first, breaking the rings in
+// every other still-open tab.
+function unitCirclePoints(n) {
+	var pts = [];
+	for (var k = 0; k <= n; k++) {
+		var a = 2 * Math.PI * k / n;
+		pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0));
+	}
+	return pts;
+}
+
+// Not added to any scene — the caller adds it (matches createKeplerOrbitRing's
+// own convention) and tracks it for updateBodyMarkerRing to re-place each frame.
+export function makeBodyMarkerRing() {
+	var line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(unitCirclePoints(64)),
+		new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthTest: false }));
+	line.renderOrder = 14;
+	line.visible = false;
+	return line;
+}
+
+function poleQuaternionFor(name) {
+	var sys = systems.get(name);
+	var q = new THREE.Quaternion();
+	if (!sys) { return q; }
+	if (sys.pole) {
+		var v = O.poleVectorEcliptic(sys.pole.ra, sys.pole.dec);
+		q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(v[0], v[1], v[2]).normalize());
+	} else if (sys.axialTilt) {
+		q.setFromEuler(new THREE.Euler(sys.axialTilt, 0, 0));
+	}
+	return q;
+}
+
+// frame: a buildHelioFrame() result. holderEl: the DOM element the frame is
+// rendered into (worldSizeAtPointForPx's viewport). bodyName: the origin or
+// destination body, or "Moon" (origin only) — falsy hides the ring.
+// colorHex/moonColorHex: this ring's normal colour and the distinct colour
+// used while it stands in for the Moon on Earth's dot. px: on-screen radius.
+export function updateBodyMarkerRing(frame, holderEl, ring, bodyName, colorHex, moonColorHex, px) {
+	if (!bodyName) { ring.visible = false; return; }
+	var trackName = bodyName, color = colorHex;
+	if (bodyName === "Moon") {
+		var moonShown = false;
+		for (var i = 0; i < frame.scaleList.length; i++) {
+			if (frame.scaleList[i].name === "Moon") {
+				moonShown = frame.scaleList[i].core.visible || frame.scaleList[i].point.visible;
+				break;
+			}
+		}
+		trackName = moonShown ? "Moon" : "Earth";
+		color = moonColorHex;
+	}
+	var node = frame.bodyNode(trackName);
+	if (!node) { ring.visible = false; return; }
+	ring.visible = true;
+	ring.position.copy(node.position);
+	ring.quaternion.copy(poleQuaternionFor(bodyName));
+	ring.scale.setScalar(worldSizeAtPointForPx(frame.camera, holderEl, ring.position, px));
+	ring.material.color.setHex(color);
+}
 
 export function makeStars(radius, count) {
 	var g = new THREE.BufferGeometry();

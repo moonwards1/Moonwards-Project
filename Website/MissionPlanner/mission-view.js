@@ -55,7 +55,10 @@ import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, spee
 	spinLayout, BPLANE_SCALE }
 	from "./ui/ship-card.js";
 import { techOptionsFor, arrivalTechOptionsFor } from "./ui/tech-options.js";
-import { buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene } from "./scene-frames.js";
+import {
+	buildHelioFrame, buildEarthMoonFrame, buildBodyFrame, disposeScene,
+	makeBodyMarkerRing, updateBodyMarkerRing
+} from "./scene-frames.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
 import { solveDepartureTarget, rebaseWaypoints } from "./core/retarget.js";
 import { deliveredFlight, signatureOf } from "./core/delivered-flight.js";
@@ -311,6 +314,19 @@ export function createMissionView(opts) {
 	if (arrivalFrameId && !frames[arrivalFrameId]) {
 		frames[arrivalFrameId] = buildBodyFrame(arrivalBody);
 	}
+
+	// Origin/destination body rings on the Coast phase's own helio frame — the
+	// same marker the Ephemeris tab draws (ephemeris-view.js), so a mission
+	// promoted from a plan there keeps reading the same way. originBody can be
+	// "Moon"; arrivalBody, from HELIO_BODIES, never is.
+	var ORIGIN_RING_COLOR = 0x5ad1a0;
+	var ORIGIN_MOON_RING_COLOR = 0xc9a8ff;
+	var DEST_RING_COLOR = 0xffae42;
+	var BODY_RING_PX = 13;   // half the ship chevron's own on-screen size
+	var originRing = makeBodyMarkerRing();
+	var destRing = makeBodyMarkerRing();
+	frames.helio.scene.add(originRing);
+	frames.helio.scene.add(destRing);
 
 	// The Arrival phase is reachable exactly when its frame exists; the button
 	// ships disabled in planner.html for the no-commitment case.
@@ -2939,6 +2955,14 @@ export function createMissionView(opts) {
 	function render() {
 		if (!active) { return; }
 		updateChevrons();
+		// Same one-tick-behind camera/scaleList read updateChevrons above
+		// already accepts (its scale/orientation are also read before this
+		// tick's per-pane brUpdateScales/updateCamera run) — imperceptible at
+		// frame rate, and keeps every constant-on-screen-size update together.
+		updateBodyMarkerRing(frames.helio, paneMainEl, originRing, originBody,
+			ORIGIN_RING_COLOR, ORIGIN_MOON_RING_COLOR, BODY_RING_PX);
+		updateBodyMarkerRing(frames.helio, paneMainEl, destRing, arrivalBody,
+			DEST_RING_COLOR, ORIGIN_MOON_RING_COLOR, BODY_RING_PX);
 		updateOcclusion();
 		var canvasRect = renderer.domElement.getBoundingClientRect();
 		renderPane(mainPane, canvasRect);
