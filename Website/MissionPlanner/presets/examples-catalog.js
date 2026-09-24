@@ -24,6 +24,7 @@ import { moonMars2039Mission, moonMars2039Workspace } from "./moon-mars-2039.js"
 import { moonCeres2032Mission, moonCeres2032Workspace } from "./moon-ceres-2032.js";
 import { moonCeres2032PartialMission, moonCeres2032PartialWorkspace } from "./moon-ceres-2032-partial.js";
 import { ceresMercury2030Mission, ceresMercury2030Workspace } from "./ceres-mercury-2030.js";
+import { ceresMars2038PartialMission, ceresMars2038PartialWorkspace } from "./ceres-mars-2038-partial.js";
 
 export var EXAMPLE_MISSIONS = [
 	{
@@ -53,5 +54,12 @@ export var EXAMPLE_MISSIONS = [
 		blurb: "Lunar skyhook, a departure burn and a coast correction reach Ceres — the arrival is left to you.",
 		mission: moonCeres2032PartialMission,
 		workspace: moonCeres2032PartialWorkspace
+	},
+	{
+		id: "ceres-mars-2038-partial",
+		label: "Ceres → Mars 2038 (partly solved)",
+		blurb: "Departure AND arrival skyhooks both configured — opens on the Arrival phase, catch already aimed.",
+		mission: ceresMars2038PartialMission,
+		workspace: ceresMars2038PartialWorkspace
 	}
 ];

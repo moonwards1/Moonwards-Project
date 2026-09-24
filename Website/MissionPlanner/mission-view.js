@@ -669,6 +669,12 @@ export function createMissionView(opts) {
 		var entryJd = frameId ? frameJd(frameId) : world.jd;
 		var entrySpan = phaseSpans[phase];
 		var clockOutside = !!entrySpan && (world.jd < entrySpan.start || world.jd > entrySpan.end);
+		// Arrival's own entry epoch is never "wherever the clock already was":
+		// per Notes/decisions.md's Coast->Arrival seam entry, the phase always
+		// opens on the arrival mark (the equatorial crossing, or closest
+		// approach with none in reach), not just when the clock lands outside
+		// the seam window.
+		var forceEntry = phase === "arrival";
 		workspace.phase = phase;
 		if (frameId) { promoteFrame(frameId); }
 		syncPhaseButtons();
@@ -676,7 +682,7 @@ export function createMissionView(opts) {
 		syncSliderVisibility();
 		saveWorkspace();
 		// Moving the clock redraws everything through the engine's clock pass.
-		if (clockOutside && entryJd !== world.jd) { setClock(entryJd); return; }
+		if ((clockOutside || forceEntry) && entryJd !== world.jd) { setClock(entryJd); return; }
 		// Otherwise redraw everything against the new phase immediately: which
 		// frame follows the clock and where each float is held (frameJd) both
 		// change with it, as does transfer-leg's seam clamp, and without this
