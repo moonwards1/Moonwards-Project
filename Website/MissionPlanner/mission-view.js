@@ -2810,7 +2810,8 @@ export function createMissionView(opts) {
 		updateShipCard();
 		updateDepartureInfo();
 		updateArrivalInfo();
-		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd });
+		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd,
+			arrivalEnd: arr ? arr.end : NaN });
 		depSlider.update(dep
 			? { start: dep.start, end: dep.end, jd: world.jd, marks: dep.marks, defaulted: dep.defaulted,
 			    releaseJd: dep.releaseJd }

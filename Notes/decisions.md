@@ -366,9 +366,13 @@ workable; the upper is presentation. Never derive it from an emitted event:
 an event is absent or truncated when the pass sits near the leg's end, and the
 window jumps.
 
-- **Coast** ends at the window's left edge. While Coast is active the chevron
-  is clamped there; the line is drawn through closest approach and the
-  overrun, dimmed past the seam.
+- **Coast** ends at the window's left edge, but its slider tacks the whole
+  arrival window on past that edge as one dim-blue segment (the polyline's
+  own dimmed tone past the seam, `ui/phase-slider.js`'s `coastSliderState`),
+  so the heliocentric approach and arrival scrub as one continuous track.
+  While Coast is active the chevron follows the clock into that tail but
+  clamps at the window's own right edge — the line is drawn through closest
+  approach and the overrun regardless, dimmed past the seam.
 - **Arrival** spans the whole window; both edges slide with closest approach.
   Its zero, and the epoch it opens on, is the arrival mark (see the skyhook
   entry), which is not clamped into the window.

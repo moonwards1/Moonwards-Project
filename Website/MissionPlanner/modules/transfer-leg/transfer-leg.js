@@ -454,6 +454,22 @@ export function stateAtElapsed(leg, t) {
 	return O.propagateState(GM_SUN, seg.r0, seg.v0, dt);
 }
 
+// stateAtElapsed, but continuing into the leg's own display-only overrun
+// (computeLeg's overrun/overrunSegs) for t past the leg's committed end,
+// instead of pinning there. Whatever wants the ship's TRUE position anywhere
+// within the drawn extent — nearestApproach's own time-scan, and the Coast
+// chevron once it can be scrubbed into the tacked-on Arrival span (the seam
+// window, ui/phase-slider.js's coastSliderState) — needs this, not the pinned
+// version: pinning at the leg's own end there freezes the chevron short of
+// where the clock actually is, by as much as the seam's own width.
+export function stateAtElapsedDrawn(leg, t) {
+	if (!leg || !leg.segs || !leg.segs.length) { return null; }
+	var oSegs = leg.overrunSegs || [];
+	if (!oSegs.length) { return stateAtElapsed(leg, t); }
+	var legEnd = leg.segs[leg.segs.length - 1].tStart + leg.segs[leg.segs.length - 1].dur;
+	return t <= legEnd ? stateAtElapsed(leg, t) : stateAtElapsed({ segs: oSegs }, t);
+}
+
 // The closest the drawn flight comes to `body`, and how fast it is going
 // relative to it there. ONE measurement, whether or not the arc enters the
 // body's SOI — which is the point of it.
@@ -497,9 +513,7 @@ export function nearestApproach(leg, body) {
 	var end = oSegs.length ? spanEndOf(oSegs) : legEnd;
 
 	function sep(t) {
-		var s = (t <= legEnd || !oSegs.length)
-			? stateAtElapsed(leg, t)
-			: stateAtElapsed({ segs: oSegs }, t);
+		var s = stateAtElapsedDrawn(leg, t);
 		if (!s) { return Infinity; }
 		var b = O.bodyStateAtJD(GM_SUN, sys.orbit, leg.jd0 + t / DAY);
 		return O.vMag(O.vSub(s.r, b.r));
@@ -530,9 +544,7 @@ export function nearestApproach(leg, body) {
 	}
 	if (!isFinite(bestD)) { return null; }
 
-	var s = (bestT <= legEnd || !oSegs.length)
-		? stateAtElapsed(leg, bestT)
-		: stateAtElapsed({ segs: oSegs }, bestT);
+	var s = stateAtElapsedDrawn(leg, bestT);
 	var b = O.bodyStateAtJD(GM_SUN, sys.orbit, leg.jd0 + bestT / DAY);
 	var rRel = O.vSub(s.r, b.r), vRel = O.vSub(s.v, b.v);
 	var vRelMag = O.vMag(vRel);
@@ -1039,12 +1051,13 @@ export default {
 		// Past it the drawn line switches to the same dimmed treatment as the
 		// destination overrun below, so the hand-off point reads clearly on
 		// sight instead of only being visible as where the chevron stops.
-		var seam = null, seamT = null;
+		var seam = null, seamT = null, seamEndT = null;
 		if (params.destination && systems.get(params.destination)) {
 			seam = computeArrivalSeam({ destination: params.destination,
 			                             pass: nearestApproach(leg, params.destination),
 			                             fallbackArrivalJd: leg.end.jd });
 			seamT = (seam.start - leg.jd0) * DAY;
+			seamEndT = (seam.end - leg.jd0) * DAY;
 		}
 
 		function ptsFrom(samples) {
@@ -1100,7 +1113,7 @@ export default {
 				transparent: true, depthTest: false }));
 		}
 		if (seam && systems.get(params.destination)) {
-			var caState = stateAtElapsed(leg, (seam.jd - leg.jd0) * DAY);
+			var caState = stateAtElapsedDrawn(leg, (seam.jd - leg.jd0) * DAY);
 			if (caState) { view.group.add(dot(caState.r, 0xe8ecf5, 6)); }
 			var destAtCA = O.bodyStateAtJD(GM_SUN, systems.get(params.destination).orbit, seam.jd);
 			view.group.add(dot(destAtCA.r, 0xe0a84a, 8));
@@ -1218,16 +1231,17 @@ export default {
 		// draw() itself is never called with).
 		//
 		// WHILE COAST IS THE ACTIVE PHASE (snap.phase, supplied by
-		// mission-view.js's drawStage), the chevron cannot be scrubbed past the
-		// Coast->Arrival seam (core/arrival-seam.js). The drawn trajectory line
-		// above continues through closest approach and the overrun regardless;
-		// only the marker is held back, so a stray clock move past the seam (e.g.
-		// clicking the plan's own arrival event) can't show the ship somewhere the
-		// Coast phase has no business displaying. In any other phase the clamp
-		// lifts and the same marker continues on to the real encounter.
+		// mission-view.js's drawStage), the chevron follows the clock through
+		// the tacked-on Arrival window too (the Coast slider's own dim-blue
+		// tail, ui/phase-slider.js's coastSliderState) but no further: past the
+		// window's own right edge (seamEndT) there is no business showing the
+		// ship from the Coast phase at all, so it holds there instead of
+		// running off into whatever the clock is doing elsewhere. In any other
+		// phase the clamp lifts and the same marker continues on to the real
+		// encounter.
 		var t = (snap.jd - leg.jd0) * DAY;
-		if (snap.phase === "coast" && seamT !== null && t > seamT) { t = seamT; }
-		var s = stateAtElapsed(leg, t);
+		if (snap.phase === "coast" && seamEndT !== null && t > seamEndT) { t = seamEndT; }
+		var s = stateAtElapsedDrawn(leg, t);
 		if (s) {
 			var chevron = makeShipSprite();
 			chevron.position.set(s.r[0] / U, s.r[1] / U, s.r[2] / U);

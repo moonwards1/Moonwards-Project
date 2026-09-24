@@ -253,6 +253,14 @@ body {
 	background: transparent; border: none; border-left: 1px solid var(--line2);
 	border-radius: 0; justify-content: flex-start; padding-left: 5px; color: #5f6a82;
 }
+/* The Coast slider's tacked-on Arrival span (coastSliderState's arrivalEnd):
+   the dim-blue fill matches the polyline's own dimmed-arrival tone
+   (transfer-leg.js's overrun treatment, 0x66f0ff at 0.3 opacity), so the
+   scrub track reads as a continuation of the same trajectory rather than a
+   second, unrelated phase. */
+.mp-seg-arrival {
+	background: rgba(102, 240, 255, 0.14); border: 1px solid rgba(102, 240, 255, 0.35);
+}
 .mp-seg-empty {
 	flex: 1; display: flex; align-items: center; justify-content: center;
 	color: var(--dim); font-size: 12px; border: 1px dashed var(--line2); border-radius: 4px;

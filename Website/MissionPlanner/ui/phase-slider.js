@@ -195,12 +195,12 @@ export function createSegmentedSlider(container, opts) {
 
 	return {
 		root: root,
-		// segs: [{ frac0, frac1, label, sub, tickOnly }]
+		// segs: [{ frac0, frac1, label, sub, tickOnly, cls }]
 		setSegments: function (segs) {
 			clearSegments();
 			segs.forEach(function (s) {
 				var el = document.createElement("div");
-				el.className = "mp-seg" + (s.tickOnly ? " mp-seg-tick" : "");
+				el.className = "mp-seg" + (s.tickOnly ? " mp-seg-tick" : "") + (s.cls ? " " + s.cls : "");
 				el.style.flex = Math.max(s.frac1 - s.frac0, 0.001);
 				if (s.label) { el.appendChild(document.createTextNode(s.label)); }
 				if (s.sub) {
@@ -258,17 +258,38 @@ export function createSegmentedSlider(container, opts) {
 // dates ending at the arrival seam — see mission-view.js's coastSpan()), the
 // shared clock's jd, a tick count and a shortDate(jd) formatter for the tick
 // captions, compute what the widget should show. No DOM — Node-testable.
+//
+// opts.arrivalEnd, when finite and past `end`, tacks the arrival window
+// (coastSeam.start..arrivalSeam.end) onto the track as one extra segment past
+// the coast's own tick segments, so the heliocentric approach+arrival reads
+// as one continuous scrub — see mission-view.js's coastSpan/arrivalSpan and
+// Notes/decisions.md. Its own tick segments are unchanged (still spaced over
+// [start, end]), just rescaled to share the track with the tacked-on piece;
+// the playhead/pin/stamp all move to cover the full [start, arrivalEnd].
 export function coastSliderState(opts) {
 	var start = opts.start, end = opts.end, jd = opts.jd;
 	var ticks = opts.ticks || 5;
 	var shortDate = opts.shortDate;
+	var arrivalEnd = opts.arrivalEnd;
 
 	if (!(isFinite(start) && isFinite(end) && end > start)) {
 		return { empty: true };
 	}
-	var segments = buildTickSegments(start, end, ticks, shortDate);
-	var pinnedAt = jd < start ? "start" : (jd > end ? "end" : null);
-	var playheadFrac = pinnedAt === "start" ? 0 : (pinnedAt === "end" ? 1 : (jd - start) / (end - start));
+	var hasArrival = isFinite(arrivalEnd) && arrivalEnd > end;
+	var total = hasArrival ? arrivalEnd : end;
+	var totalSpan = total - start;
+	var coastFrac = (end - start) / totalSpan;
+
+	var segments = buildTickSegments(start, end, ticks, shortDate).map(function (s) {
+		return { frac0: s.frac0 * coastFrac, frac1: s.frac1 * coastFrac,
+		         label: s.label, tickOnly: s.tickOnly };
+	});
+	if (hasArrival) {
+		segments.push({ frac0: coastFrac, frac1: 1, cls: "mp-seg-arrival" });
+	}
+
+	var pinnedAt = jd < start ? "start" : (jd > total ? "end" : null);
+	var playheadFrac = pinnedAt === "start" ? 0 : (pinnedAt === "end" ? 1 : (jd - start) / totalSpan);
 	// The readout always shows the true clock time, even when the handle itself
 	// is pinned at an edge because the clock has wandered outside the span —
 	// that's the point of showing it. `start` IS the departure/release epoch
@@ -280,14 +301,17 @@ export function coastSliderState(opts) {
 }
 
 // opts: { onSetJd(jd), shortDate(jd), ticks? }. Returns { update({start,end,
-// jd}), dispose() }. update() is cheap to call on every recompute/clock
-// change — it just rebuilds a handful of DOM nodes and repositions the
-// playhead.
+// jd,arrivalEnd}), dispose() }. update() is cheap to call on every
+// recompute/clock change — it just rebuilds a handful of DOM nodes and
+// repositions the playhead. `arrivalEnd` (optional, NaN when there's no
+// arrival window) is coastSliderState's own tack-on edge; scrubbing follows
+// it too, so dragging into the dim-blue tail sets the clock into the arrival
+// phase exactly as dragging within the coast portion does.
 export function createCoastSlider(container, opts) {
 	var onSetJd = opts.onSetJd;
 	var shortDate = opts.shortDate;
 	var ticks = opts.ticks;
-	var span = null;   // { start, end } — null while empty
+	var span = null;   // { start, end } — end is the tacked-on total when present
 
 	var slider = createSegmentedSlider(container, {
 		onScrub: function (fraction) {
@@ -297,13 +321,14 @@ export function createCoastSlider(container, opts) {
 
 	function update(state) {
 		var s = coastSliderState({ start: state.start, end: state.end, jd: state.jd, ticks: ticks,
-			shortDate: shortDate });
+			shortDate: shortDate, arrivalEnd: state.arrivalEnd });
 		if (s.empty) {
 			span = null;
 			slider.setEmpty("No computed span yet — departure and the leg both need to resolve.");
 			return;
 		}
-		span = { start: state.start, end: state.end };
+		var hasArrival = isFinite(state.arrivalEnd) && state.arrivalEnd > state.end;
+		span = { start: state.start, end: hasArrival ? state.arrivalEnd : state.end };
 		slider.setSegments(s.segments);
 		slider.setPlayhead(s.playheadFrac, !!s.pinnedAt, s.playheadDays, s.playheadTime);
 	}
