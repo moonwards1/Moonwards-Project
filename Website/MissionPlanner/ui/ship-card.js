@@ -10,11 +10,15 @@
  * Coast has no gizmo and no on-course state: many passes arrive successfully,
  * so the card shows the speed along the coast and where around the
  * destination the pass goes and how high, and grades nothing.
+ * Arrival's gizmo is the catch seen from the tether: its three axes at the
+ * point the ship meets it, prograde as long as that point's speed, and the
+ * ship's trajectory into it (contactLines), with the one Incoming row below.
  *
  * OPTIONAL PARTS. Every section is filled by a setter and renders nothing until
  * one is called, so a phase takes only the parts it needs and the card stays
- * phase-agnostic: the gizmo, setComponents and setOnCourse are Departure's,
- * setBPlane is Coast's, and the speed bar serves both.
+ * phase-agnostic: setGizmo, setComponents and setOnCourse are Departure's,
+ * setBPlane is Coast's, setContact and setNote are Arrival's, and the speed
+ * bar and component table serve several.
  *
  * The gizmo is a scissored viewport off the shell's single shared renderer —
  * the same mechanism the floating panes use — so the card costs no extra WebGL
@@ -25,11 +29,10 @@
  * supplies the gizmo's vectors; what those mean is the phase adapter's
  * business, not this file's.
  *
- * The pure halves (vInfComponents, gizmoScale, speedModel, speedAlong,
- * speedRange, peakSpeed, bearingPoint, altitudeRadius, bPlaneLayout,
- * approachRows) take and
- * return plain
- * values and are Node-tested in tests/ship-card.test.js.
+ * The pure halves (vInfComponents, gizmoScale, contactLines, speedModel,
+ * speedAlong, speedRange, peakSpeed, bearingPoint, altitudeRadius,
+ * bPlaneLayout, approachRows, spinLayout) take and return plain values and
+ * are Node-tested in tests/ship-card.test.js.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
  */
@@ -86,6 +89,37 @@ export function gizmoScale(needed, current) {
 		});
 	});
 	return m > 0 ? m : 1;
+}
+
+// Length, in gizmo units, of the contact gizmo's radial and normal axes. They
+// mark directions only; prograde alone is scaled to a speed.
+export var INDICATOR_LENGTH = 0.5;
+
+// The Arrival card's contact gizmo as line specs, pure. spec: { axes: { pro,
+// rad, nrm } unit vectors, pointSpeed: km/s of the tether point the ship
+// meets, ship: { dir, speed } | null — the ship's velocity relative to that
+// point, unit vector and km/s }. Prograde is bright and as long as the point's
+// speed; radial and normal are dim, fixed-length indicators. The ship's line
+// is its trajectory arriving at the contact point, so it lies on the side it
+// came from and ends at the origin, as long as its speed. Both speeds share
+// one scale, the larger of the two filling the box. Returns [{ dir, len,
+// color, bright }], len in gizmo units.
+export function contactLines(spec) {
+	if (!spec || !spec.axes) { return []; }
+	var ship = spec.ship && isFinite(spec.ship.speed) ? spec.ship : null;
+	var scale = Math.max(isFinite(spec.pointSpeed) ? spec.pointSpeed : 0, ship ? ship.speed : 0) || 1;
+	var out = [
+		{ dir: spec.axes.rad, len: INDICATOR_LENGTH, color: SHIP_COLORS.dim.rad, bright: false },
+		{ dir: spec.axes.nrm, len: INDICATOR_LENGTH, color: SHIP_COLORS.dim.nrm, bright: false }
+	];
+	if (isFinite(spec.pointSpeed)) {
+		out.push({ dir: spec.axes.pro, len: spec.pointSpeed / scale, color: SHIP_COLORS.bright.pro, bright: true });
+	}
+	if (ship) {
+		out.push({ dir: ship.dir.map(function (x) { return -x; }), len: ship.speed / scale,
+			color: SHIP_COLORS.bright.net, bright: true });
+	}
+	return out;
 }
 
 // The speed bar's model, km/s. Peak pins the right edge and is recomputed with
@@ -370,9 +404,9 @@ function makeLine(dir, len, colorHex, radius) {
 //   background  — gizmo clear colour; matches the card's own CSS background so
 //                 the scissored render is seamless with the DOM around it
 //
-// Returns { el, gizmoEl, refineBtn, setOnCourse, setGizmo, showGizmo,
-// showRefine, setComponents, setSpeed, setSubtitle, setBPlane, setApproach,
-// setExtra, render, dispose }.
+// Returns { el, gizmoEl, refineBtn, setOnCourse, setGizmo, setContact,
+// showGizmo, showRefine, setComponents, setComponentRows, setNote, setSpeed,
+// setSubtitle, setBPlane, setApproach, setExtra, render, dispose }.
 export function createShipCard(opts) {
 	opts = opts || {};
 	var host = opts.host;
@@ -423,6 +457,8 @@ export function createShipCard(opts) {
 	head.appendChild(bPlaneEl);
 	top.appendChild(head);
 
+	// Stacked under the title in the left column, so anything a phase adds to
+	// the head sits beside the pair.
 	var alignLabel = el("label", "mp-ship-align");
 	var alignBox = document.createElement("input");
 	alignBox.type = "checkbox";
@@ -430,8 +466,10 @@ export function createShipCard(opts) {
 	alignLabel.appendChild(alignBox);
 	alignLabel.appendChild(el("span", null, "Align to view"));
 	alignLabel.title = "Match the main pane's viewing angle. Off, the gizmo " +
-		"rotates and zooms on its own so the gap between needed and current is easier to read.";
-	top.appendChild(alignLabel);
+		"rotates and zooms on its own so the vectors are easier to compare.";
+	leftCol.insertBefore(alignLabel, approachEl);
+	// Inside the drag handle, like Refine: a press here is a click.
+	alignLabel.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
 	root.appendChild(top);
 
 	var gizmoEl = el("div", "mp-ship-gizmo");
@@ -442,6 +480,8 @@ export function createShipCard(opts) {
 
 	var tableEl = el("div", "mp-ship-table");
 	bodyEl.appendChild(tableEl);
+	var noteEl = el("div", "mp-ship-note");
+	bodyEl.appendChild(noteEl);
 	var speedEl = el("div", "mp-ship-speed");
 	bodyEl.appendChild(speedEl);
 	var extraEl = el("div", "mp-ship-extra");
@@ -522,6 +562,17 @@ export function createShipCard(opts) {
 			});
 	}
 
+	// Arrival's gizmo: the tether's axes at the contact point and the ship's
+	// trajectory into it (contactLines). One layer, so it all draws in a
+	// single pass. null clears it.
+	function setContact(spec) {
+		clearGroup();
+		contactLines(spec).forEach(function (l) {
+			var m = makeLine(l.dir, l.len, l.color, LINE_RADIUS.bright);
+			if (m) { currentGroup.add(m); }
+		});
+	}
+
 	// Whether the phase uses the gizmo at all. Hidden, the strip and its
 	// "Align to view" toggle leave the layout, and render draws nothing there.
 	function showGizmo(on) {
@@ -542,12 +593,13 @@ export function createShipCard(opts) {
 
 	// ---- readouts---------------------------------------------------------
 
-	// The Needed/Current comparison: one column per axis plus the net, needed
-	// on a filled chip (the plan's demand) and current as plain text (what the
-	// mission does). Either row may be null.
-	function setComponents(needed, current) {
+	// The component table: one column per axis plus the net, one row per
+	// entry. rows: [{ label, comp: { pro, rad, nrm, net } km/s | null, kind }]
+	// — kind "needed" puts the figures on filled chips (a demand), "current"
+	// prints them plain (what the mission does). An empty list clears it.
+	function setComponentRows(rows) {
 		tableEl.innerHTML = "";
-		if (!needed && !current) { return; }
+		if (!rows || !rows.length) { return; }
 		var head2 = el("div", "mp-ship-row mp-ship-row-head");
 		head2.appendChild(el("span", "mp-ship-rowlabel", ""));
 		AXIS_KEYS.forEach(function (k) {
@@ -556,15 +608,30 @@ export function createShipCard(opts) {
 		head2.appendChild(el("span", "mp-ship-cell mp-ship-h-net", "Net"));
 		tableEl.appendChild(head2);
 
-		[["Needed", needed, "needed"], ["Current", current, "current"]].forEach(function (r) {
-			var row = el("div", "mp-ship-row mp-ship-row-" + r[2]);
-			row.appendChild(el("span", "mp-ship-rowlabel", r[0]));
+		rows.forEach(function (r) {
+			var row = el("div", "mp-ship-row mp-ship-row-" + r.kind);
+			row.appendChild(el("span", "mp-ship-rowlabel", r.label));
 			AXIS_KEYS.forEach(function (k) {
-				row.appendChild(el("span", "mp-ship-cell mp-ship-c-" + k, r[1] ? kms(r[1][k]) : "—"));
+				row.appendChild(el("span", "mp-ship-cell mp-ship-c-" + k, r.comp ? kms(r.comp[k]) : "—"));
 			});
-			row.appendChild(el("span", "mp-ship-cell mp-ship-c-net", r[1] ? kms(r[1].net) : "—"));
+			row.appendChild(el("span", "mp-ship-cell mp-ship-c-net", r.comp ? kms(r.comp.net) : "—"));
 			tableEl.appendChild(row);
 		});
+	}
+
+	// Departure's Needed/Current comparison. Either row may be null; both null
+	// clears the table.
+	function setComponents(needed, current) {
+		setComponentRows((needed || current) ? [
+			{ label: "Needed", comp: needed, kind: "needed" },
+			{ label: "Current", comp: current, kind: "current" }
+		] : []);
+	}
+
+	// One line of plain text under the table, for a phase's own status (the
+	// Arrival card's reason there is no contact yet). "" or null clears it.
+	function setNote(text) {
+		noteEl.textContent = text || "";
 	}
 
 	// The speed section: a headline, then a bar whose right edge is the top of
@@ -576,9 +643,14 @@ export function createShipCard(opts) {
 	// bar when a close pass of a body on the way was left out of the bar's span
 	// — the bar shows the cruise, and the pass overflows it rather than
 	// flattening it. The two agree whenever nothing was left out.
-	function setSpeed(model) {
+	//
+	// The tick is Departure's "Needed" unless `mark` names it otherwise:
+	// { label, title } — Arrival's is the tether tip's speed.
+	function setSpeed(model, mark) {
 		speedEl.innerHTML = "";
 		if (!model) { return; }
+		var markLabel = (mark && mark.label) || "Needed";
+		var markTitle = (mark && mark.title) || "Needed at hand-off";
 		var line = el("div", "mp-ship-speedhead");
 		var left = el("span", "mp-ship-speednow");
 		left.appendChild(el("b", null, "Speed"));
@@ -607,7 +679,7 @@ export function createShipCard(opts) {
 		if (model.neededFrac != null) {
 			var tick = el("div", "mp-ship-bar-need");
 			tick.style.left = (model.neededFrac * 100).toFixed(2) + "%";
-			tick.title = "Needed at hand-off: " + kms(model.needed) + " km/s";
+			tick.title = markTitle + ": " + kms(model.needed) + " km/s";
 			bar.appendChild(tick);
 		}
 		speedEl.appendChild(bar);
@@ -628,7 +700,7 @@ export function createShipCard(opts) {
 			var mark = el("span", "mp-ship-bar-marker", "▲");
 			mark.style.left = pct;
 			foot.appendChild(mark);
-			var lab = el("span", "mp-ship-bar-needlabel", "Needed");
+			var lab = el("span", "mp-ship-bar-needlabel", markLabel);
 			lab.style.left = pct;
 			// The label is wider than the mark it hangs off, so near either end it
 			// would overflow the card (which clips). Swing it to one side there
@@ -808,6 +880,9 @@ export function createShipCard(opts) {
 		showGizmo: showGizmo,
 		showRefine: showRefine,
 		setComponents: setComponents,
+		setComponentRows: setComponentRows,
+		setNote: setNote,
+		setContact: setContact,
 		setSpeed: setSpeed,
 		setSubtitle: setSubtitle,
 		setBPlane: setBPlane,

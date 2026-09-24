@@ -154,6 +154,14 @@ is tuned, and is also the Arrival timeline's zero and where Δθ is taken (Δθ
 is null when the mark is closest approach). A mark over the pole keeps the
 retrograde 0°.
 
+CONTACT (2026-09-24, `tetherContact`) is at the mark too: the ship touches
+the tether if its crossing lies on the arm, within `CATCH_REACH` (1 km) to one
+side and anywhere from the arm's base to the catch point, not only the tip.
+Otherwise there is no catch solution yet. The Arrival ship card's frame is the
+tether point's own, on the burn-frame convention: prograde along its motion,
+normal along the spin pole, radial down the arm. That point moves at ω·r,
+because the tether turns rigidly at its CoM's orbital rate.
+
 Why: one geometry for every skyhook until a real case calls for another
 plane. Retrograde rotators need no special case, because `pole` is the spin
 pole. Aiming a catch costs nothing physically: the hook's phase at mission

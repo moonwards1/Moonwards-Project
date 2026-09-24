@@ -326,7 +326,12 @@ export function makeTerminal(spec, opts) {
 		// The straddling readout box's own data (captureReadout, above) — the
 		// hardware's own trim figure, for anything outside this stage that wants
 		// it (the mission report's arrival tech Δv).
-		readoutFor: function (world, stageId) { return readoutCache.get(world, stageId); }
+		readoutFor: function (world, stageId) { return readoutCache.get(world, stageId); },
+
+		// The last computed capture (computeCapture, above), for the Arrival
+		// ship card: the platform's own figures, including a rendezvous
+		// platform's contact.
+		captureFor: function (world, stageId) { return cache.get(world, stageId); }
 	};
 }
 

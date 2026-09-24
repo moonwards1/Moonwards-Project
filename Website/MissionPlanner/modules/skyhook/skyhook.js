@@ -74,6 +74,11 @@
  *   v_ship(r_catch) = sqrt(v∞² + 2GM/r_catch)
  *   trim Δv         = v_ship − v_tip
  *
+ * and the CONTACT (tetherContact): whether the ship's crossing at the mark
+ * lies on the arm — anywhere from its base to the catch point — and if so,
+ * its velocity relative to the tether point it meets, on the tether's own
+ * prograde/radial/normal axes. No contact means no catch solution yet.
+ *
  * Unlike a RELEASE, a catch is legitimate with a sub-escape tip — that is the
  * whole attraction: the hook soaks up hyperbolic speed the ship never has to
  * burn off. Hence the escape gate belongs to the release half alone. NOT
@@ -257,16 +262,79 @@ export function rotorFor(kin, pinJd) {
 		kin.releasePhaseDeg * Math.PI / 180, pinJd);
 }
 
+// The tether's inner end, metres above the surface: the arm runs from here
+// out to the catch point, as drawn and as a catch reaches.
+export var TETHER_BASE_ALT = 20e3;
+
+// How far to one side of the arm, in metres, the ship's crossing of the
+// equator may pass and still count as crossing the tether.
+export var CATCH_REACH = 1e3;
+
+// Where the ship meets the tether, pure. Contact is at the arrival mark
+// (`mark`, arrival-approach.js), the one place the arc is in the tether's
+// plane: the ship touches the arm if its crossing lies on it — within
+// CATCH_REACH to one side, and between the arm's base (TETHER_BASE_ALT) and
+// the catch point. Anywhere along it counts, not only the tip.
+//
+// The frame is the tether's own at the contact point, on the app's burn-frame
+// convention: prograde along the point's motion, normal along the spin pole
+// the tether turns about, radial = normal × prograde, straight down the arm.
+// The tether turns rigidly at its CoM's orbital rate, so the point under the
+// ship moves at ω·r there, slower than the tip when the ship meets it lower.
+//
+// Returns { ok: true, jd, altitude, belowTip, pointSpeed, axes, vRel,
+// components: { pro, rad, nrm, net } } (m, m/s), or { ok: false, reason, ... }
+// with reason "no-mark" (no arc to meet), "no-crossing" (the mark is closest
+// approach: the arc never meets the plane within reach), "off-arm" (the
+// crossing misses the arm to one side: `aheadDeg` is how far round it lies,
+// positive in the direction the arm turns, `sideways` the distance), or
+// "above-tip" / "below-base" (on the arm's line but past an end, by `gap`).
+// Every failure past "no-mark" also carries the tip's own `axes` and
+// `pointSpeed`, so the tether can still be shown.
+export function tetherContact(geo, mark) {
+	if (!mark) { return { ok: false, reason: "no-mark" }; }
+	var n = equatorPlane(geo.body).normal;
+	var basis = planeBasis(n, equatorPlane(geo.body, mark.jd, mark.r).ref);
+	var phi = geo.releasePhaseDeg * Math.PI / 180;
+	var arm = O.vAdd(O.vScale(basis.e1, Math.cos(phi)), O.vScale(basis.e2, Math.sin(phi)));
+	var pro = O.vCross(n, arm);
+	var axes = { pro: pro, rad: O.vScale(arm, -1), nrm: n };
+	var tip = { axes: axes, pointSpeed: geo.vRel };
+	if (mark.kind !== "crossing") { return Object.assign({ ok: false, reason: "no-crossing" }, tip); }
+
+	var p = O.vSub(mark.r, O.vScale(n, O.vDot(n, mark.r)));
+	var along = O.vDot(arm, p);
+	var sideways = O.vDot(pro, p);
+	if (Math.abs(sideways) > CATCH_REACH || along <= 0) {
+		return Object.assign({ ok: false, reason: "off-arm", sideways: Math.abs(sideways),
+			aheadDeg: Math.atan2(sideways, along) * 180 / Math.PI }, tip);
+	}
+	var rBase = geo.R + TETHER_BASE_ALT;
+	if (along > geo.rRel) { return Object.assign({ ok: false, reason: "above-tip", gap: along - geo.rRel }, tip); }
+	if (along < rBase) { return Object.assign({ ok: false, reason: "below-base", gap: rBase - along }, tip); }
+
+	var pointSpeed = geo.omega * along;
+	var vRel = O.vSub(mark.v, O.vScale(pro, pointSpeed));
+	return {
+		ok: true, jd: mark.jd, altitude: along - geo.R, belowTip: geo.rRel - along,
+		pointSpeed: pointSpeed, axes: axes, vRel: vRel,
+		components: { pro: O.vDot(vRel, axes.pro), rad: O.vDot(vRel, axes.rad),
+		              nrm: O.vDot(vRel, axes.nrm), net: O.vMag(vRel) }
+	};
+}
+
 // The catch's rendezvous figures, pure: the tip's speed, the angle the ship's
-// arc meets the tether's plane at, and the trim. Δθ is taken at the
-// approach's arrival mark (`mark`, arrival-approach.js); it is null with no
-// mark, or when the mark is closest approach rather than a crossing.
+// arc meets the tether's plane at, the trim, and the contact (tetherContact).
+// Δθ is taken at the approach's arrival mark (`mark`, arrival-approach.js); it
+// is null with no mark, or when the mark is closest approach rather than a
+// crossing.
 export function catchFigures(geo, approach) {
 	var vShip = Math.sqrt(approach.vInf * approach.vInf + 2 * geo.GM / geo.rRel);
 	var mark = approach.mark;
 	var dTheta = mark && mark.kind === "crossing"
 		? O.lineToPlaneDeg(mark.v, equatorPlane(geo.body).normal) : null;
-	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel };
+	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel,
+	         contact: tetherContact(geo, mark) };
 }
 
 // ---- view helpers (browser only — THREE via the global) -------------------
@@ -371,7 +439,7 @@ export var SKYHOOK = {
 		var U = view.metresPerUnit;
 		var rCom = (R + params.comAlt) / U;
 		var rPoint = (R + params.relAlt) / U;
-		var rBase = (R + 20e3) / U;
+		var rBase = (R + TETHER_BASE_ALT) / U;
 
 		var plane = equatorPlane(params.body, ctx.pinJd !== null ? ctx.pinJd : snap.jd, ctx.aim);
 		var basis = planeBasis(plane.normal, plane.ref);

@@ -13,7 +13,8 @@ import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
 import { makeCarrier, makeTerminal, computeCapture,
          carrierReadout, captureReadout } from "../platform/platform-roles.js";
 import { fmtPrograde } from "../../../Shared/sim/readout-panes.js";
-import { SKYHOOK, tetherGeometry, defaultGeometryFor, catchFigures, equatorPlane, retrogradeDirection } from "../skyhook/skyhook.js";
+import { SKYHOOK, tetherGeometry, defaultGeometryFor, catchFigures, equatorPlane, retrogradeDirection,
+         tetherContact, TETHER_BASE_ALT } from "../skyhook/skyhook.js";
 import { arrivalMark } from "../arrival-approach.js";
 import { systems } from "../../../Shared/orbit.js";
 import skyhookDeparture from "../skyhook/skyhook-departure.js";
@@ -484,4 +485,91 @@ test("equatorPlane: the spin pole, and the ecliptic for a body with no pole", fu
 	assert.deepEqual(equatorPlane("Psyche").normal, [0, 0, 1]);
 	var venus = equatorPlane("Venus").normal;
 	assert.ok(venus[2] < 0, "Venus spins retrograde, so its hook's normal points south");
+});
+
+// ---- the contact: where the ship meets the tether at the arrival mark ------
+
+// The crossing mark for arcThroughEquator(tilt) — 2e7 m from Mars's centre.
+function crossingMark(tilt) {
+	return arrivalMark("Mars", arcThroughEquator(tilt), JD_ANCHOR);
+}
+function catchGeo(relAltM, phaseDeg) {
+	return tetherGeometry({ body: "Mars", comAlt: 9000e3, relAlt: relAltM, releasePhaseDeg: phaseDeg || 0 });
+}
+var MARS_R = +systems.get("Mars").radius;
+
+test("contact: at 0° the ship meets the arm, and anywhere along it counts, not only the tip", function () {
+	var geo = catchGeo(2.2e7 - MARS_R);          // tip 2,000 km above the crossing
+	var c = tetherContact(geo, crossingMark(25));
+	assert.equal(c.ok, true);
+	assert.ok(Math.abs(c.belowTip - 2e6) < 1, "meets the arm 2,000 km below the tip");
+	assert.ok(Math.abs(c.altitude - (2e7 - MARS_R)) < 1);
+	assert.ok(Math.abs(c.pointSpeed - geo.omega * 2e7) < 1e-6,
+		"the point it meets moves at ω·r there, slower than the tip");
+	assert.ok(c.pointSpeed < geo.vRel);
+});
+
+test("contact: the tether's frame is the burn-frame convention, radial straight down the arm", function () {
+	var mark = crossingMark(25);
+	var c = tetherContact(catchGeo(2.2e7 - MARS_R), mark);
+	var n = equatorPlane("Mars").normal;
+	var f = O.burnFrame(mark.r, O.vScale(c.axes.pro, c.pointSpeed), n);
+	["pro", "rad", "nrm"].forEach(function (k) {
+		assert.ok(O.vMag(O.vSub(f[k], c.axes[k])) < 1e-9, k + " matches burnFrame with the pole as up");
+	});
+	assert.ok(O.vMag(O.vAdd(c.axes.rad, O.vUnit(mark.r))) < 1e-9, "radial points at the body's centre");
+	assert.ok(O.vDot(c.axes.pro, O.vCross(n, mark.r)) > 0, "prograde is the way the tether turns");
+});
+
+test("contact: Incoming is the ship's velocity less the tether point's, split onto its axes", function () {
+	var mark = crossingMark(25);
+	var c = tetherContact(catchGeo(2.2e7 - MARS_R), mark);
+	var expect = O.vSub(mark.v, O.vScale(c.axes.pro, c.pointSpeed));
+	assert.ok(O.vMag(O.vSub(c.vRel, expect)) < 1e-9);
+	var k = c.components;
+	assert.ok(Math.abs(Math.hypot(k.pro, k.rad, k.nrm) - k.net) < 1e-6);
+	assert.ok(Math.abs(k.nrm - O.vDot(mark.v, equatorPlane("Mars").normal)) < 1e-9,
+		"the tether has no out-of-plane motion, so Normal is the ship's own");
+});
+
+test("contact null control: a ship moving with the tether point arrives at zero relative speed", function () {
+	var geo = catchGeo(2.2e7 - MARS_R);
+	var mark = crossingMark(25);
+	var n = equatorPlane("Mars").normal;
+	var coMoving = Object.assign({}, mark, { v: O.vScale(O.vCross(n, mark.r), geo.omega) });
+	var c = tetherContact(geo, coMoving);
+	assert.equal(c.ok, true);
+	assert.ok(c.components.net < 1e-6);
+});
+
+test("contact: an arm turned off the crossing misses it, and says which way and how far", function () {
+	var c = tetherContact(catchGeo(2.2e7 - MARS_R, 10), crossingMark(25));
+	assert.equal(c.ok, false);
+	assert.equal(c.reason, "off-arm");
+	assert.ok(Math.abs(c.aheadDeg + 10) < 1e-6, "the arm has turned 10° on, so the crossing is behind it");
+	assert.ok(Math.abs(c.sideways - 2e7 * Math.sin(10 * Math.PI / 180)) < 1);
+	assert.ok(c.axes && c.pointSpeed === catchGeo(2.2e7 - MARS_R, 10).vRel, "the tip's frame, for the gizmo");
+	assert.equal(tetherContact(catchGeo(2.2e7 - MARS_R, 180), crossingMark(25)).reason, "off-arm",
+		"an arm pointing away is not crossed through the body");
+});
+
+test("contact: past either end of the arm is no contact", function () {
+	var short = tetherContact(catchGeo(1.9e7 - MARS_R), crossingMark(25));
+	assert.equal(short.reason, "above-tip");
+	assert.ok(Math.abs(short.gap - 1e6) < 1);
+	var n = equatorPlane("Mars").normal;
+	var low = { kind: "crossing", jd: JD_ANCHOR, v: [0, 0, 1],
+		r: O.vScale(O.vUnit(O.vCross(n, [1, 0, 0])), MARS_R + TETHER_BASE_ALT / 2) };
+	var c = tetherContact(catchGeo(2.2e7 - MARS_R), low);
+	assert.equal(c.reason, "below-base");
+	assert.ok(Math.abs(c.gap - TETHER_BASE_ALT / 2) < 1e-3);
+});
+
+test("contact: none without a mark, or when the mark is closest approach", function () {
+	var geo = catchGeo(2.2e7 - MARS_R);
+	assert.equal(tetherContact(geo, null).reason, "no-mark");
+	var far = arcThroughEquator(25, 4e7);
+	assert.equal(tetherContact(geo, arrivalMark("Mars", far, JD_ANCHOR)).reason, "no-crossing");
+	assert.equal(catchFigures(geo, approachOn(arcThroughEquator(25))).contact.ok, true,
+		"the catch's figures carry it");
 });

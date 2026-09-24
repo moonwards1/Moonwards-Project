@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { vInfComponents, gizmoScale, speedModel, speedAlong, peakSpeed, speedRange,
+import { vInfComponents, gizmoScale, contactLines, INDICATOR_LENGTH, SHIP_COLORS, speedModel, speedAlong, peakSpeed, speedRange,
 	bearingPoint, altitudeRadius, bPlaneLayout, BPLANE_SCALE, approachRows, spinLayout } from "../ship-card.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 
@@ -278,4 +278,26 @@ test("spinLayout: a tilted pole tilts the equator; its ends are on the disc edge
 	// side, so the near half of the equator bows upward (toward north).
 	var mid = lay.equator[16];
 	assert.ok(mid.y < -1, JSON.stringify(mid));
+});
+
+test("contactLines: prograde and the ship share one scale; radial and normal are fixed dim indicators", function () {
+	var axes = { pro: [1, 0, 0], rad: [0, -1, 0], nrm: [0, 0, 1] };
+	var lines = contactLines({ axes: axes, pointSpeed: 2, ship: { dir: [0.6, 0.8, 0], speed: 4 } });
+	assert.equal(lines.length, 4);
+	var pro = lines.filter(function (l) { return l.color === SHIP_COLORS.bright.pro; })[0];
+	var ship = lines.filter(function (l) { return l.color === SHIP_COLORS.bright.net; })[0];
+	assert.equal(ship.len, 1, "the faster of the two fills the box");
+	assert.equal(pro.len, 0.5);
+	assert.deepEqual(ship.dir, [-0.6, -0.8, -0], "the trajectory lies on the side it came from");
+	lines.filter(function (l) { return !l.bright; }).forEach(function (l) {
+		assert.equal(l.len, INDICATOR_LENGTH);
+	});
+});
+
+test("contactLines: with no contact, the tether's axes alone, prograde filling the box", function () {
+	var axes = { pro: [1, 0, 0], rad: [0, -1, 0], nrm: [0, 0, 1] };
+	var lines = contactLines({ axes: axes, pointSpeed: 1.7, ship: null });
+	assert.equal(lines.length, 3);
+	assert.equal(lines.filter(function (l) { return l.bright; })[0].len, 1);
+	assert.deepEqual(contactLines(null), []);
 });

@@ -2408,8 +2408,8 @@ export function createMissionView(opts) {
 	}
 
 	// ---- the ship card's phase contexts -------------------------------------
-	// Departure and Coast each have one; the card hides in the others rather
-	// than showing an empty shell.
+	// Each phase has one. Arrival's hides when the mission has no arrival leg,
+	// rather than showing an empty shell.
 	//
 	// Departure reads ONE comparison, the same one adopted-plan makes: the v∞ the
 	// plan requires at hand-off against the v∞ the configured technology and
@@ -2427,7 +2427,8 @@ export function createMissionView(opts) {
 	// actually steering: how close the pass comes, how fast it arrives, when,
 	// and which side of the body it goes by. Update hands the live coast over.
 	function shipCardShown() {
-		return workspace.phase === "departure" || workspace.phase === "coast";
+		return workspace.phase === "departure" || workspace.phase === "coast" ||
+			(workspace.phase === "arrival" && !!arrivalLegStage());
 	}
 
 	function adoptedPlanStage() {
@@ -2478,6 +2479,7 @@ export function createMissionView(opts) {
 	function updateCoastCard() {
 		shipCard.setSubtitle("Coast");
 		shipCard.setComponents(null, null);
+		shipCard.setNote("");
 		shipCard.setOnCourse(false);
 		shipCard.setGizmo(null);
 		shipCard.showGizmo(false);
@@ -2574,6 +2576,88 @@ export function createMissionView(opts) {
 		});
 	}
 
+	// Why the catching technology has no contact yet, in a line — the reasons
+	// tetherContact (modules/skyhook/skyhook.js) returns.
+	function noContactNote(contact, body) {
+		var km = function (m) { return Math.round(m / 1000).toLocaleString("en-US") + " km"; };
+		switch (contact.reason) {
+		case "no-crossing":
+			return "No contact: the ship doesn't cross " + body + "'s equator within reach of a tether.";
+		case "off-arm":
+			return "No contact: the ship crosses the equator " + Math.abs(contact.aheadDeg).toFixed(1) +
+				"° " + (contact.aheadDeg > 0 ? "ahead of" : "behind") + " the tether (" +
+				km(contact.sideways) + " to the side).";
+		case "above-tip":
+			return "No contact: the ship crosses the tether's line " + km(contact.gap) + " above the tip.";
+		case "below-base":
+			return "No contact: the ship crosses the tether's line " + km(contact.gap) + " below its base.";
+		default:
+			return "No contact: there is no approach to meet yet.";
+		}
+	}
+
+	// The Arrival card: the catch seen from the tether at the moment of
+	// contact — its axes at the point the ship meets it, the ship's trajectory
+	// into that point, and the one Incoming row — over the ship's speed
+	// relative to the destination at the chevron. Contact and every figure
+	// here come from the catching technology's own capture (captureFor); a
+	// technology with no contact to report leaves the gizmo out, and with no
+	// technology at all the card is the speed bar alone.
+	function updateArrivalCard() {
+		shipCard.setSubtitle("Arrival");
+		shipCard.showRefine(false);
+		shipCard.setOnCourse(false);
+		shipCard.setBPlane(null);
+		shipCard.setApproach(null);
+
+		var techStage = arrivalTechStage();
+		var techDesc = techStage ? registry.get(techStage.moduleId) : null;
+		var cap = (techDesc && typeof techDesc.captureFor === "function")
+			? techDesc.captureFor(world, techStage.id) : null;
+		var contact = (cap && cap.ok && cap.contact) || null;
+
+		shipCard.showGizmo(!!contact);
+		if (!contact) {
+			shipCard.setContact(null);
+			shipCard.setComponentRows([]);
+			shipCard.setNote("");
+		} else {
+			var ship = contact.ok ? { dir: O.vUnit(contact.vRel), speed: contact.components.net / 1000 } : null;
+			shipCard.setContact(contact.axes
+				? { axes: contact.axes, pointSpeed: contact.pointSpeed / 1000, ship: ship } : null);
+			var c = contact.ok ? contact.components : null;
+			shipCard.setComponentRows([{ label: "Incoming", kind: "current",
+				comp: c ? { pro: c.pro / 1000, rad: c.rad / 1000, nrm: c.nrm / 1000, net: c.net / 1000 } : null }]);
+			// Meeting the arm below its tip is still contact, and says so, to
+			// the kilometre: the point it meets moves slower than the tip does.
+			var belowKm = contact.ok ? Math.round(contact.belowTip / 1000) : 0;
+			shipCard.setNote(!contact.ok ? noContactNote(contact, cap.body)
+				: (belowKm >= 1
+					? "Meets the tether " + belowKm.toLocaleString("en-US") + " km below the tip."
+					: ""));
+		}
+
+		// The speed bar: the ship's speed relative to the destination at the
+		// chevron, spanning the arrival window's slowest to fastest — the
+		// chevron's whole reach — widened to take in the tip's speed, which is
+		// ticked as the speed a catch has to match.
+		var now = arrivalLegNow();
+		if (!now) { shipCard.setSpeed(null); return; }
+		var leg = now.leg;
+		var samples = [];
+		leg.segs.forEach(function (seg) {
+			seg.leg.samples.forEach(function (s) { samples.push({ v: s.v, t: seg.tStart + s.t }); });
+		});
+		var range = speedRange(samples);
+		if (!range) { shipCard.setSpeed(null); return; }
+		var tip = (cap && cap.ok && cap.geo && isFinite(cap.geo.vRel)) ? cap.geo.vRel : NaN;
+		var lo = isFinite(tip) ? Math.min(range.min, tip) : range.min;
+		var hi = isFinite(tip) ? Math.max(range.max, tip) : range.max;
+		var speed = speedAlong(samples, (world.jd - leg.jd0) * 86400);
+		shipCard.setSpeed(speedModel(speed == null ? NaN : speed / 1000, tip / 1000, hi / 1000, lo / 1000),
+			{ label: "Tip", title: "The tether tip's speed" });
+	}
+
 	function updateShipCard() {
 		var show = shipCardShown();
 		shipCard.el.style.display = show ? "" : "none";
@@ -2581,11 +2665,13 @@ export function createMissionView(opts) {
 		// Every section the OTHER phase owns is cleared on the way in, so a card
 		// switching phases can never leave a stale row behind.
 		if (workspace.phase === "coast") { updateCoastCard(); return; }
+		if (workspace.phase === "arrival") { updateArrivalCard(); return; }
 		shipCard.setSubtitle("Departure");
 		shipCard.showGizmo(true);
 		shipCard.showRefine(true);
 		shipCard.setBPlane(null);
 		shipCard.setApproach(null);
+		shipCard.setNote("");
 
 		var dep = planDepartureState();
 		var planStage = adoptedPlanStage();
