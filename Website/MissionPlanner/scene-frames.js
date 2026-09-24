@@ -112,24 +112,32 @@ function poleQuaternionFor(name) {
 // destination body, or "Moon" (origin only) — falsy hides the ring.
 // colorHex/moonColorHex: this ring's normal colour and the distinct colour
 // used while it stands in for the Moon on Earth's dot. px: on-screen radius.
-export function updateBodyMarkerRing(frame, holderEl, ring, bodyName, colorHex, moonColorHex, px) {
+// posOverride (optional, a THREE.Vector3): draw the ring HERE instead of at
+// the body's own current position — the Ephemeris tab's own use, once a
+// marker exists: its "×" already marks the destination body at the marker's
+// time of flight, so the ring moves onto the × rather than the body's "now"
+// position, still oriented to the body's own equator.
+export function updateBodyMarkerRing(frame, holderEl, ring, bodyName, colorHex, moonColorHex, px, posOverride) {
 	if (!bodyName) { ring.visible = false; return; }
-	var trackName = bodyName, color = colorHex;
-	if (bodyName === "Moon") {
-		var moonShown = false;
-		for (var i = 0; i < frame.scaleList.length; i++) {
-			if (frame.scaleList[i].name === "Moon") {
-				moonShown = frame.scaleList[i].core.visible || frame.scaleList[i].point.visible;
-				break;
+	var trackName = bodyName, color = colorHex, pos = posOverride;
+	if (!pos) {
+		if (bodyName === "Moon") {
+			var moonShown = false;
+			for (var i = 0; i < frame.scaleList.length; i++) {
+				if (frame.scaleList[i].name === "Moon") {
+					moonShown = frame.scaleList[i].core.visible || frame.scaleList[i].point.visible;
+					break;
+				}
 			}
+			trackName = moonShown ? "Moon" : "Earth";
+			color = moonColorHex;
 		}
-		trackName = moonShown ? "Moon" : "Earth";
-		color = moonColorHex;
+		var node = frame.bodyNode(trackName);
+		if (!node) { ring.visible = false; return; }
+		pos = node.position;
 	}
-	var node = frame.bodyNode(trackName);
-	if (!node) { ring.visible = false; return; }
 	ring.visible = true;
-	ring.position.copy(node.position);
+	ring.position.copy(pos);
 	ring.quaternion.copy(poleQuaternionFor(bodyName));
 	ring.scale.setScalar(worldSizeAtPointForPx(frame.camera, holderEl, ring.position, px));
 	ring.material.color.setHex(color);

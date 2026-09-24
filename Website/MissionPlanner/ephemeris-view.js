@@ -2607,8 +2607,13 @@ export function createEphemerisView(opts) {
 		brUpdateLabels(frame.camera, paneMainEl, frame.labelList);
 		updateBodyMarkerRing(frame, paneMainEl, originRing, state.origin,
 			ORIGIN_RING_COLOR, ORIGIN_MOON_RING_COLOR, BODY_RING_PX);
+		// Once a marker exists, draw the ring on updateDestinationMarker's own
+		// "×" instead of the body's live position — the × already states the
+		// destination at the marker's time of flight, so the ring rides along
+		// with it rather than pointing somewhere the body no longer is.
 		updateBodyMarkerRing(frame, paneMainEl, destRing, state.leg.destination || null,
-			DEST_RING_COLOR, ORIGIN_MOON_RING_COLOR, BODY_RING_PX);
+			DEST_RING_COLOR, ORIGIN_MOON_RING_COLOR, BODY_RING_PX,
+			(state.marker && destSprite && destSprite.visible) ? destSprite.position : null);
 
 		wpMarkers.forEach(function (g) {
 			g.scale.setScalar(worldSizeAtPointForPx(frame.camera, paneMainEl, g.position, GIZMO_PX));
