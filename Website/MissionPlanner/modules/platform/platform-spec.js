@@ -114,11 +114,14 @@
  *     eventLabel(figures)  the timeline event's text.
  *
  *   draw(view, snap, ctx)  the hardware, in the role's own frame. `ctx` is
- *                        { role, params, computed, pinJd, failed } — `pinJd`
- *                        is the epoch at which the platform sits at its chosen
- *                        phase (the release anchor; for a catch, the mission's start),
- *                        resolved by the adapter so the substance never has to
- *                        know which end of the mission it is on.
+ *                        { role, params, computed, pinJd, aim, failed } —
+ *                        `pinJd` is the epoch at which the platform sits at its
+ *                        chosen phase (the release anchor; for a catch, the
+ *                        approach's arrival mark) and `aim` the direction its
+ *                        phase 0 points along (a catch's mark position; null
+ *                        for the platform's default), both resolved by the
+ *                        adapter so the substance never has to know which end
+ *                        of the mission it is on.
  *
  * ---- PARAM SPEC -----------------------------------------------------------
  *

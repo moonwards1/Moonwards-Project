@@ -137,17 +137,25 @@ data change, not new DOM code.
 ### Every skyhook orbits its primary's equator, turning with its spin
 
 The skyhook's rotor normal is its body's spin pole (`sys.pole`), in both
-roles and at every body; phase 0 is the body's heliocentric retrograde direction (the Moon's: Earth's), projected into the equator. A body with no
-published pole falls back to the ecliptic. A catch has the same three controls
-as a release, and its tip position is pinned at the mission's start (the
-release epoch), so it opens at its chosen phase and turns at ω from there. For
-a RELEASE, 0° is taken on the release (pin) date; for a CATCH, 0° is taken on
-the approach's own equatorial-crossing date instead — it slides as the
-trajectory is tuned, since that changes when the arc crosses the plane.
+roles and at every body. A body with no published pole falls back to the
+ecliptic. A RELEASE's phase is pinned at the release epoch, 0° being the
+body's heliocentric retrograde direction (the Moon's: Earth's) on that date,
+projected into the equator.
+
+A CATCH has the same three controls, but its phase is pinned at the
+approach's **arrival mark** (`arrivalMark`, `modules/arrival-approach.js`),
+and 0° points at the ship's position there, projected into the equator. At 0°
+the tether lies along the ship's line at that epoch; the catch phase is an
+offset from that aim. The mark is the flown arc's FIRST equatorial crossing
+within `MAX_PASS_ALTITUDE`, else closest approach. It slides as the trajectory
+is tuned, and is also the Arrival timeline's zero and where Δθ is taken (Δθ
+is null when the mark is closest approach). A mark over the pole keeps the
+retrograde 0°.
 
 Why: one geometry for every skyhook until a real case calls for another
 plane. Retrograde rotators need no special case, because `pole` is the spin
-pole.
+pole. Aiming a catch costs nothing physically: the hook's phase at mission
+start is a free choice, and aiming it at the mark is that choice made.
 
 ### Each waypoint readout pane tracks ONE lever, live
 
@@ -352,6 +360,8 @@ window jumps.
   is clamped there; the line is drawn through closest approach and the
   overrun, dimmed past the seam.
 - **Arrival** spans the whole window; both edges slide with closest approach.
+  Its zero, and the epoch it opens on, is the arrival mark (see the skyhook
+  entry), which is not clamped into the window.
 - **With no encounter** the seam collapses to the coast's own end. The Arrival
   slider shows its empty state, and arrival-leg places a standard-width window
   there.

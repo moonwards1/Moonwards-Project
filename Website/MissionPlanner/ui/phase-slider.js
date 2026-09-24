@@ -63,18 +63,16 @@ export function elapsedStamp(jd, start) {
 // The Arrival slider's playhead readout. "T+ since the phase started" is the
 // wrong anchor for a window only 3-6 days wide whose BOTH edges move: what the
 // user is judging is how far the clock sits from the encounter itself, so this
-// is signed time relative to closest approach ("-2 d 06:00" approaching,
-// "+0 d 14:32" past it). Closest approach is also the point both edges are
-// derived from (core/arrival-seam.js), so it is the one stable thing on the
-// track to measure against. Same two-line days/HH:MM shape as elapsedStamp,
-// same carry handling. No DOM, Node-testable.
-export function approachStamp(jd, ca) {
-	var delta = jd - ca;
+// is signed time relative to the timeline's zero, the arrival mark
+// ("-2 d 06:00" approaching, "+0 d 14:32" past it). Same two-line days/HH:MM
+// shape as elapsedStamp, same carry handling. No DOM, Node-testable.
+export function approachStamp(jd, zero) {
+	var delta = jd - zero;
 	var mag = Math.abs(delta);
 	var days = Math.floor(mag);
 	var totalMin = Math.round((mag - days) * 1440);
 	if (totalMin >= 1440) { totalMin -= 1440; days += 1; }
-	// exactly at closest approach reads "+0 d 00:00", not "-0 d"
+	// exactly at the zero reads "+0 d 00:00", not "-0 d"
 	var sign = (delta < 0 && (days > 0 || totalMin > 0)) ? "-" : "+";
 	return { days: sign + days + " d", time: pad2(Math.floor(totalMin / 60)) + ":" + pad2(totalMin % 60) };
 }
@@ -427,13 +425,16 @@ export function createDepartureSlider(container, opts) {
 // hands over two fresh edge jds each update, exactly as the other two do.
 // What IS particular to this slider:
 //
-//   - The playhead readout is signed time relative to closest approach
-//     (approachStamp) rather than "T+" since the phase started. Closest
-//     approach itself is NOT drawn as a track mark: the equatorial-plane
-//     crossing mission-view.js adds (arrivalEvents) sits within minutes of it
-//     on any real pass, so a second tick a hair away just doubles up — the
-//     crossing carries the marker, and closest approach stays a scene-only
-//     marker on the trajectory arc (arrival-leg.js's white dot).
+//   - The playhead readout is signed time relative to the timeline's zero
+//     (approachStamp) rather than "T+" since the phase started. The zero is
+//     the arrival mark (modules/arrival-approach.js's arrivalMark): the
+//     arc's first equatorial crossing within reach of a tether, else closest
+//     approach. Closest approach itself is NOT drawn as a track mark: the
+//     equatorial-plane crossing mission-view.js adds (arrivalEvents) sits
+//     within minutes of it on any real pass, so a second tick a hair away
+//     just doubles up — the crossing carries the marker, and closest
+//     approach stays a scene-only marker on the trajectory arc
+//     (arrival-leg.js's white dot).
 //   - With no encounter at all, the seam collapses to a single point at the
 //     coast's own end (core/arrival-seam.js's fallback). A
 //     zero-length span is the empty state here, not an error —
@@ -444,7 +445,7 @@ export function createDepartureSlider(container, opts) {
 // events, filtered to those actually inside the window (an event outside it
 // is simply not on this track — same rule departureSliderState uses).
 export function arrivalSliderState(opts) {
-	var start = opts.start, end = opts.end, jd = opts.jd, ca = opts.ca;
+	var start = opts.start, end = opts.end, jd = opts.jd, zero = opts.zero;
 	var ticks = opts.ticks || 5;
 	var stamp = opts.stamp;
 	if (!(isFinite(start) && isFinite(end) && end > start)) { return { empty: true }; }
@@ -463,20 +464,20 @@ export function arrivalSliderState(opts) {
 	var playheadFrac = pinnedAt === "start" ? 0
 		: pinnedAt === "end" ? 1
 		: (jd - start) / span;
-	// Relative to the encounter, not to the window's start — see approachStamp.
+	// Relative to the zero, not to the window's start — see approachStamp.
 	// The readout always shows the TRUE clock offset even while the handle is
-	// pinned at an edge, matching the other two sliders. With no usable
-	// closest approach (shouldn't happen for a non-empty window, but the
-	// caller owns that invariant, not this function), fall back to elapsed
-	// time since the window opened.
-	var stampVal = isFinite(ca) ? approachStamp(jd, ca) : elapsedStamp(jd, start);
+	// pinned at an edge, matching the other two sliders. With no usable zero
+	// (shouldn't happen for a non-empty window, but the caller owns that
+	// invariant, not this function), fall back to elapsed time since the
+	// window opened.
+	var stampVal = isFinite(zero) ? approachStamp(jd, zero) : elapsedStamp(jd, start);
 	return { empty: false, segments: segments, marks: marks,
 	         playheadFrac: playheadFrac, pinnedAt: pinnedAt,
 	         playheadDays: stampVal.days, playheadTime: stampVal.time };
 }
 
 // opts: { onSetJd(jd), stamp(jd), ticks?, emptyMsg }. Returns { update({
-// start, end, jd, ca, marks }), dispose() }, plus an `empty` flag on the
+// start, end, jd, zero, marks }), dispose() }, plus an `empty` flag on the
 // widget so the caller can decide what provides the clock while there is no
 // window (mission-view's syncSliderVisibility). update() is cheap to call on
 // every recompute/clock change.
@@ -498,7 +499,7 @@ export function createArrivalSlider(container, opts) {
 		empty: true,
 		update: function (state) {
 			var s = arrivalSliderState({ start: state.start, end: state.end, jd: state.jd,
-				ca: state.ca, ticks: ticks, stamp: stamp, marks: state.marks });
+				zero: state.zero, ticks: ticks, stamp: stamp, marks: state.marks });
 			api.empty = !!s.empty;
 			if (s.empty) {
 				span = null;

@@ -964,9 +964,8 @@ export function createMissionView(opts) {
 	// ---- each frame's display date. Only the MAIN pane follows the clock; a
 	// float holds its phase at the seam it shares with the flight, so scrubbing
 	// one phase never moves the others. Departure is held at the end of its arc
-	// (the hand-off), Arrival at the equatorial-plane crossing nearest closest
-	// approach (arrivalDefaultJd — falls back to the window start with no
-	// crossing to anchor on), and Coast at whichever of its two ends meets the
+	// (the hand-off), Arrival at the arrival mark, the timeline's zero
+	// (arrivalDefaultJd), and Coast at whichever of its two ends meets the
 	// focused phase. The
 	// frame's bodies are placed at the same date as its chevron, so a held
 	// float is one consistent instant. framePins is refreshed from each
@@ -2342,7 +2341,7 @@ export function createMissionView(opts) {
 	});
 
 	// The live arrival-leg stage's own last computed leg, plus its descriptor
-	// (for equatorialCrossings) — a live registry read, the same access rule
+	// (for equatorialCrossings and markFor) — a live registry read, the same access rule
 	// arrivalDvSplit already follows to reach the leg without a static import.
 	// Returns null when there is no arrival-leg stage or it hasn't resolved.
 	function arrivalLegNow() {
@@ -2387,7 +2386,18 @@ export function createMissionView(opts) {
 	function arrivalSpan(results) {
 		var seam = coastSeam(results);
 		if (!seam || !seam.hasEncounter) { return null; }
-		return { start: seam.start, end: seam.end, ca: seam.jd, marks: arrivalEvents(results) };
+		return { start: seam.start, end: seam.end, zero: arrivalZeroJd(seam), marks: arrivalEvents(results) };
+	}
+
+	// The Arrival timeline's zero: the arrival leg's arrival mark
+	// (arrival-approach.js's arrivalMark — its first equatorial crossing
+	// within reach of a tether, else closest approach), the same epoch the
+	// catching skyhook is aimed at. The seam's own closest approach until the
+	// leg has resolved.
+	function arrivalZeroJd(seam) {
+		var now = arrivalLegNow();
+		var mark = (now && now.desc.markFor) ? now.desc.markFor(now.leg) : null;
+		return mark ? mark.jd : seam.jd;
 	}
 
 	// ---- the ship card's phase contexts -------------------------------------
@@ -2656,20 +2666,11 @@ export function createMissionView(opts) {
 	}
 
 	// The epoch the Arrival phase's held float (and, via frameJd, a fresh
-	// switch into the phase) opens on: the equatorial-plane crossing nearest
-	// closest approach, so the chevron lands right where the pass crosses the
-	// destination's equator rather than at the window's raw edge. Falls back
-	// to the window start with no crossing to anchor on (an unburned pass that
-	// never dips through the plane, or the leg hasn't resolved yet).
+	// switch into the phase) opens on: the timeline's zero, the arrival mark,
+	// so the chevron lands where the catch is aimed rather than at the
+	// window's raw edge.
 	function arrivalDefaultJd(arr) {
-		var now = arrivalLegNow();
-		var crossings = (now && now.desc.equatorialCrossings) ? now.desc.equatorialCrossings(now.leg) : [];
-		if (!crossings.length) { return arr.start; }
-		var best = crossings[0];
-		crossings.forEach(function (cr) {
-			if (Math.abs(cr.jd - arr.ca) < Math.abs(best.jd - arr.ca)) { best = cr; }
-		});
-		return Math.max(arr.start, Math.min(arr.end, best.jd));
+		return Math.max(arr.start, Math.min(arr.end, arr.zero));
 	}
 
 	// A view pass with no recompute behind it: Check writes nothing to the
@@ -2706,7 +2707,7 @@ export function createMissionView(opts) {
 			    releaseJd: dep.releaseJd }
 			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
 		arrSlider.update(arr
-			? { start: arr.start, end: arr.end, ca: arr.ca, jd: world.jd, marks: arr.marks }
+			? { start: arr.start, end: arr.end, zero: arr.zero, jd: world.jd, marks: arr.marks }
 			: { start: NaN, end: NaN, jd: world.jd, marks: [] });
 		// the arrival slider's empty state decides whether the date bar has to
 		// stand in as the Arrival phase's clock — re-check it whenever it moves

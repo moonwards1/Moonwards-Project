@@ -312,11 +312,15 @@ export function makeTerminal(spec, opts) {
 		init: function (ctx) { buildPlatformCard(spec, ctx, CATCH, cache, hostCache); },
 
 		draw: function (view, snap) {
-			// Pinned at the mission's start, the release epoch: the tether sits
-			// at its chosen phase (0° by default) when the mission opens and
-			// turns at ω from there, whatever the approach does.
-			var pinJd = releaseEpochFor(snap.world);
-			drawPlatform(spec, view, snap, CATCH, cache, pinJd, readoutCache, hostCache);
+			// Pinned at the approach's arrival mark (arrival-approach.js), with
+			// 0° aimed at the ship's position there: at its default phase the
+			// tether meets the ship's line at that epoch. With no mark, pinned
+			// at the mission's start with the release's 0°.
+			var cap = cache.get(snap.world, snap.stageId);
+			var mark = cap && cap.ok && cap.approach && cap.approach.mark;
+			drawPlatform(spec, view, snap, CATCH, cache,
+				mark ? mark.jd : releaseEpochFor(snap.world), readoutCache, hostCache,
+				mark ? mark.r : null);
 		},
 
 		// The straddling readout box's own data (captureReadout, above) — the
@@ -631,12 +635,13 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 }
 
 // The platform's own draw, given everything role-dependent already resolved:
-// which role it is in, and the epoch its chosen phase is pinned to. Fills
+// which role it is in, the epoch its chosen phase is pinned to, and (a
+// catch's) the direction phase 0 aims along, or null for the default. Fills
 // view.readoutEntries (the shell's convention — mission-view.js's
 // refreshReadouts, same as every leg module's own draw()) BEFORE the
 // spec.draw() early-return, so the straddling box shows even for a platform
 // with no hardware of its own left to draw.
-function drawPlatform(spec, view, snap, role, cache, pinJd, readoutCache, hostCache) {
+function drawPlatform(spec, view, snap, role, cache, pinJd, readoutCache, hostCache, aim) {
 	view.readoutEntries = [];
 	var data = readoutCache.get(snap.world, snap.stageId);
 	var host = hostCache.get(snap.world, snap.stageId);
@@ -650,6 +655,7 @@ function drawPlatform(spec, view, snap, role, cache, pinJd, readoutCache, hostCa
 		params: resolvePlatformParams(spec, snap.params),
 		computed: cache.get(snap.world, snap.stageId),
 		pinJd: pinJd,
+		aim: aim || null,
 		failed: !!(snap.result && snap.result.status === "diagnostic")
 	});
 }

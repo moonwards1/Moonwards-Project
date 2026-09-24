@@ -70,6 +70,7 @@ import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
+import { arrivalMark, equatorNormal } from "../arrival-approach.js";
 import { computeArrivalSeam, SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
 import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed,
 	nearestApproach as coastNearestApproach }
@@ -333,10 +334,7 @@ export function passFor(world, stageId) {
 	var vInf = (typeof leg.vInf0 === "number" && isFinite(leg.vInf0)) ? leg.vInf0 : null;
 	return {
 		jd: leg.jd0 + leg.ca.t / DAY,
-		path: {
-			jd0: leg.jd0, jd1: leg.jd0 + leg.T / DAY,
-			stateAt: function (jd) { return stateAtElapsed(leg, (jd - leg.jd0) * DAY); }
-		},
+		path: pathOf(leg),
 		rmin: leg.ca.r,
 		altitude: leg.ca.r - c.R,
 		vInf: vInf,
@@ -346,16 +344,32 @@ export function passFor(world, stageId) {
 	};
 }
 
+// The flown arc as a catch reads it: body-centric { r, v } at any epoch in
+// the leg's span.
+function pathOf(leg) {
+	return {
+		jd0: leg.jd0, jd1: leg.jd0 + leg.T / DAY,
+		stateAt: function (jd) { return stateAtElapsed(leg, (jd - leg.jd0) * DAY); }
+	};
+}
+
+// The leg's arrival mark (arrival-approach.js's arrivalMark): its first
+// equatorial crossing within reach of a tether, else closest approach. null
+// for a leg that did not compute.
+export function markFor(leg) {
+	if (!leg || !leg.ok || !leg.ca) { return null; }
+	return arrivalMark(leg.body, pathOf(leg), leg.jd0 + leg.ca.t / DAY);
+}
+
 // Where the flown arc crosses the destination's equatorial plane: each sign
 // change of height along the spin pole, placed by linear interpolation
 // between the two straddling samples (body-centric, seconds-since-hand-off).
-// A body with no published pole takes the ecliptic, matching the skyhook's
-// equatorPlane. Pure, Node-testable — feeds both the green marker dots
+// The plane is arrival-approach.js's equatorNormal, the one the skyhook and
+// the arrival mark use. Pure, Node-testable — feeds both the green marker dots
 // (draw(), below) and the Arrival slider's timeline marks (mission-view.js).
 export function equatorialCrossings(leg) {
 	if (!leg || !leg.ok || !leg.samples.length) { return []; }
-	var pole = systems.get(leg.body).pole;
-	var north = pole ? O.poleVectorEcliptic(pole.ra, pole.dec) : [0, 0, 1];
+	var north = equatorNormal(leg.body);
 	var c = bodyConstants(leg.body);
 	var out = [];
 	for (var k = 1; k < leg.samples.length; k++) {
@@ -676,5 +690,6 @@ export default {
 	// reach the last computed leg via registry.get("arrival-leg") without a
 	// static import — the same access rule the departure legs follow.
 	legFor: legFor,
-	equatorialCrossings: equatorialCrossings
+	equatorialCrossings: equatorialCrossings,
+	markFor: markFor
 };

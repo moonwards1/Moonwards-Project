@@ -190,25 +190,25 @@ test("approachStamp: just before closest approach is negative, never '-0 d 00:00
 
 test("arrivalSliderState: empty when the window collapses (the no-encounter case)", () => {
 	// 1.1's fallback puts start === end at the plan's committed arrival epoch
-	assert.equal(arrivalSliderState({ start: CA, end: CA, jd: CA, ca: CA, stamp }).empty, true);
+	assert.equal(arrivalSliderState({ start: CA, end: CA, jd: CA, zero: CA, stamp }).empty, true);
 	assert.equal(arrivalSliderState({ start: NaN, end: 101, jd: 100, stamp }).empty, true);
 	assert.equal(arrivalSliderState({ start: 101, end: 97, jd: 100, stamp }).empty, true);   // inverted
 });
 
 test("arrivalSliderState: linear over the window, playhead at (jd-start)/span", () => {
-	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, zero: CA, stamp });
 	assert.equal(s.empty, false);
 	assert.equal(s.playheadFrac, 0.75);            // closest approach, 3 of 4 days in
-	assert.equal(arrivalSliderState({ start: AW.start, end: AW.end, jd: 99, ca: CA, stamp }).playheadFrac, 0.5);
+	assert.equal(arrivalSliderState({ start: AW.start, end: AW.end, jd: 99, zero: CA, stamp }).playheadFrac, 0.5);
 });
 
 test("arrivalSliderState: closest approach is not a track mark (see the header — the crossing carries it)", () => {
-	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp });
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, zero: CA, stamp });
 	assert.equal(s.marks.length, 0);
 });
 
 test("arrivalSliderState: arrival events inside the window become marks, outside are dropped", () => {
-	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp,
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, zero: CA, stamp,
 		marks: [{ jd: 98, label: "SOI entry" }, { jd: 120, label: "way past the window" },
 		        { jd: 50, label: "still in the coast" }] });
 	assert.equal(s.marks.length, 1);
@@ -217,20 +217,20 @@ test("arrivalSliderState: arrival events inside the window become marks, outside
 });
 
 test("arrivalSliderState: the playhead readout is relative to closest approach", () => {
-	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: 98, ca: CA, stamp });
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: 98, zero: CA, stamp });
 	assert.equal(s.playheadDays, "-2 d");
 	assert.equal(s.playheadTime, "00:00");
 	// and past it
-	assert.equal(arrivalSliderState({ start: AW.start, end: AW.end, jd: 100.5, ca: CA, stamp }).playheadDays, "+0 d");
+	assert.equal(arrivalSliderState({ start: AW.start, end: AW.end, jd: 100.5, zero: CA, stamp }).playheadDays, "+0 d");
 });
 
 test("arrivalSliderState: the clock outside the window pins the playhead, readout still true", () => {
 	// the common case on entering the phase: the clock is still back in the coast
-	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: 60, ca: CA, stamp });
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: 60, zero: CA, stamp });
 	assert.equal(s.pinnedAt, "start");
 	assert.equal(s.playheadFrac, 0);
 	assert.equal(s.playheadDays, "-40 d");   // the readout reports where the clock REALLY is
-	var e = arrivalSliderState({ start: AW.start, end: AW.end, jd: 200, ca: CA, stamp });
+	var e = arrivalSliderState({ start: AW.start, end: AW.end, jd: 200, zero: CA, stamp });
 	assert.equal(e.pinnedAt, "end");
 	assert.equal(e.playheadFrac, 1);
 });
@@ -239,22 +239,22 @@ test("arrivalSliderState: BOTH edges move with the encounter, and the marks move
 	// the same window shifted 8 hours later, as tuning the coast would do: every
 	// fraction is unchanged, because both edges derive from ca — a mark riding
 	// along with it (e.g. the equatorial crossing mission-view.js adds) moves too.
-	var a = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, stamp,
+	var a = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, zero: CA, stamp,
 		marks: [{ jd: CA, label: "crossing" }] });
 	var d = 1 / 3;
-	var b = arrivalSliderState({ start: AW.start + d, end: AW.end + d, jd: CA + d, ca: CA + d, stamp,
+	var b = arrivalSliderState({ start: AW.start + d, end: AW.end + d, jd: CA + d, zero: CA + d, stamp,
 		marks: [{ jd: CA + d, label: "crossing" }] });
 	assert.equal(b.playheadFrac, a.playheadFrac);
 	assert.equal(b.marks[0].frac, a.marks[0].frac);
 	assert.equal(b.marks[0].jd, CA + d);
 	// and a Δt that CHANGES (v∞ shifted) rescales the track: Δt 5 -> the mark at 5/6
-	var wide = arrivalSliderState({ start: CA - 5, end: CA + 1, jd: CA, ca: CA, stamp,
+	var wide = arrivalSliderState({ start: CA - 5, end: CA + 1, jd: CA, zero: CA, stamp,
 		marks: [{ jd: CA, label: "crossing" }] });
 	assert.ok(Math.abs(wide.marks[0].frac - 5 / 6) < 1e-12);
 });
 
 test("arrivalSliderState: even time ticks across the window, labeled only at the ends", () => {
-	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, ca: CA, ticks: 4, stamp });
+	var s = arrivalSliderState({ start: AW.start, end: AW.end, jd: CA, zero: CA, ticks: 4, stamp });
 	assert.equal(s.segments.length, 4);
 	assert.equal(s.segments[0].frac0, 0);
 	assert.equal(s.segments[3].frac1, 1);

@@ -220,7 +220,9 @@ resolvable span:
 - **Coast** — spans from the hand-off to the Coast→Arrival seam
   (`core/arrival-seam.js`'s window), reading `transfer-leg`'s own events.
 - **Arrival** — the window around closest approach, sliding bodily as the
-  coast is tuned; the playhead reads signed time relative to closest approach.
+  coast is tuned; the playhead reads signed time relative to the arrival mark
+  (`modules/arrival-approach.js`'s `arrivalMark`: the arc's first equatorial
+  crossing within 30,000 km of the surface, else closest approach).
 
 The Departure→Coast seam is a **compliance boundary**, reached via the
 registry so the shell stays dynamically loaded rather than statically
@@ -349,17 +351,20 @@ never when it started.
 - **`modules/skyhook/skyhook-arrival.js`** — the same skyhook platform in its
   terminal role: a CATCH at the destination, the very same tether geometry run
   in reverse, with the same card: CoM altitude, catch altitude and catch
-  phase, the phase pinned at the mission's start (the release epoch) and turning at ω from there. Its readout box
+  phase, the phase pinned at the approach's arrival mark with 0° pointing at
+  the ship's position there, turning at ω from it. Its readout box
   gives the tip's speed and Δθ, the angle the ship's drawn arc meets the
   tether's plane (the body's equator) at — the arc's direction where it
-  crosses, against that plane; the first crossing along the arc, and "—" when
-  the arc never reaches the plane inside the arrival window. Δθ describes the approach alone: the tether's phase and altitude do
+  crosses, against that plane; taken at the arrival mark, and "—" when the
+  mark is closest approach (no crossing within 30,000 km). Δθ describes the approach alone: the tether's phase and altitude do
   not move it. Consumes the coast's delivered ship-state and emits nothing.
   Not modelled: the post-catch unload down the tether.
 - **`modules/arrival-approach.js`** — not a stage module, a shared helper
-  (`approachFromPass`, `approachAt`, `interceptWarning`) imported by the
-  platform layer so the "does the coast actually reach the destination, and how
-  fast" measurement is one computation, not several.
+  (`approachFromPass`, `approachAt`, `interceptWarning`, `arrivalMark`)
+  imported by the platform layer so the "does the coast actually reach the
+  destination, and how fast" measurement is one computation, not several.
+  `arrivalMark` is the one epoch the Arrival phase is measured from — the
+  timeline's zero, the catch's aim and where Δθ is taken.
 
 **Technology platforms** — one platform, one folder; two thin role adapters.
 

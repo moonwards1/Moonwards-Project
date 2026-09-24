@@ -48,13 +48,15 @@
  *
  * THE CATCH is the same tether run in reverse, with the same three controls:
  * CoM altitude, catch altitude (the release altitude's role) and catch phase
- * (the release phase's). The tip's position is still pinned at the mission's
- * start (the release epoch): it states where the tip is when the mission
- * opens, and turns at ω from there. But 0° itself is the retrograde direction
- * taken at the approach's OWN equatorial crossing (catchFigures's
- * crossingJd), not the mission start — it slides as the trajectory is tuned,
- * since that changes when and where the arc crosses the plane. Two
- * figures describe the rendezvous:
+ * (the release phase's). The phase is pinned at the approach's ARRIVAL MARK
+ * (arrival-approach.js's arrivalMark — the arc's first equatorial crossing
+ * within reach, else closest approach) and 0° points AT the mark, projected
+ * into the equator: at 0° the arm lies along the ship's position at that
+ * epoch, and it turns at ω away from it. Both slide as the trajectory is
+ * tuned, so 0° stays aimed and the catch phase reads as an offset from that
+ * aim. With no arc to take a mark from, the catch falls back to the
+ * release's rule, pinned at the mission's start. Two figures describe the
+ * rendezvous:
  *
  *   catch speed   v_tip = ω_CoM · r_catch — the tip's inertial speed
  *   Δθ            the angle the ship's drawn arc meets the tether's plane at:
@@ -62,7 +64,8 @@
  *                 is crossed by the arc, and Δθ is the angle between the
  *                 arc's direction there — the ship's velocity relative to the
  *                 body — and the plane. 0 skimming along it, 90 piercing it
- *                 square. It is the arc's FIRST crossing. It states the
+ *                 square. It is taken at the arrival mark, and is null
+ *                 when the mark is closest approach. It states the
  *                 approach alone: the tether's phase and altitude do not move it.
  *
  * plus the TRIM the ship would need to match the tip's speed, taking its own
@@ -93,7 +96,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { rotorElement, planeBasis } from "../../../Shared/kinematic-chain.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { resolvePlatformParams, CATCH } from "../platform/platform-spec.js";
+import { resolvePlatformParams } from "../platform/platform-spec.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -232,16 +235,17 @@ export function retrogradeDirection(body, jd) {
 // heliocentric-ecliptic axes: the equator, normal along the spin pole, phase 0
 // along retrogradeDirection(body, jd) projected into it (kinematic-chain.js's
 // planeBasis does the projection). No published pole: the ecliptic. `jd` is
-// the date phase 0 is pinned at; the normal does not depend on it.
-export function equatorPlane(body, jd) {
+// the date phase 0 is pinned at; the normal does not depend on it. `aim`,
+// when given, replaces the retrograde as phase 0's direction (a catch's
+// arrival mark), unless it lies too near the pole to project.
+export function equatorPlane(body, jd, aim) {
 	var sys = systems.get(body);
 	var pole = sys && sys.pole;
-	var ref = retrogradeDirection(body, jd);
-	if (!pole) { return { normal: [0, 0, 1], ref: ref }; }
-	var n = O.poleVectorEcliptic(pole.ra, pole.dec);
+	var n = pole ? O.poleVectorEcliptic(pole.ra, pole.dec) : [0, 0, 1];
+	function projectable(v) { return O.vMag(v) > 0 && Math.abs(O.vDot(n, O.vUnit(v))) <= 0.999; }
+	var ref = aim && projectable(aim) ? aim : retrogradeDirection(body, jd);
 	// A pole along the reference would leave nothing to project; take +Y.
-	var along = Math.abs(O.vDot(n, O.vUnit(ref))) > 0.999;
-	return { normal: n, ref: along ? [0, 1, 0] : ref };
+	return { normal: n, ref: projectable(ref) ? ref : [0, 1, 0] };
 }
 
 // The skyhook's rotor element for the given kinematics, pinned at `pinJd`
@@ -254,19 +258,15 @@ export function rotorFor(kin, pinJd) {
 }
 
 // The catch's rendezvous figures, pure: the tip's speed, the angle the ship's
-// arc meets the tether's plane at, and the trim. `approach` carries the flown
-// arc (`path`, body-centric); without one, or with an arc that never reaches
-// the plane, Δθ is null.
+// arc meets the tether's plane at, and the trim. Δθ is taken at the
+// approach's arrival mark (`mark`, arrival-approach.js); it is null with no
+// mark, or when the mark is closest approach rather than a crossing.
 export function catchFigures(geo, approach) {
 	var vShip = Math.sqrt(approach.vInf * approach.vInf + 2 * geo.GM / geo.rRel);
-	var dTheta = null, crossingJd = null;
-	var path = approach.path;
-	if (path) {
-		var x = O.pathPlaneCrossing(path.stateAt, path.jd0, path.jd1, equatorPlane(geo.body).normal);
-		if (x) { dTheta = x.angleDeg; crossingJd = x.t; }
-	}
-	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel,
-	         crossingJd: crossingJd };
+	var mark = approach.mark;
+	var dTheta = mark && mark.kind === "crossing"
+		? O.lineToPlaneDeg(mark.v, equatorPlane(geo.body).normal) : null;
+	return { catchSpeed: geo.vRel, dThetaDeg: dTheta, vShip: vShip, trimDv: vShip - geo.vRel };
 }
 
 // ---- view helpers (browser only — THREE via the global) -------------------
@@ -357,9 +357,10 @@ export var SKYHOOK = {
 	// Tether hardware in the role's own body-centric frame, in the body's
 	// equatorial plane: the CoM and release circles, the arm at its phase, and
 	// a constant-pixel dot at the release or catch point. The arm sits at the
-	// platform's chosen phase on `pinJd` (the release anchor, or for a catch the
-	// mission's start) and turns at ω away from it, so scrubbing the clock
-	// winds the hook toward — or away from — its moment.
+	// platform's chosen phase on `pinJd` (the release anchor, or for a catch its
+	// arrival mark) and turns at ω away from it, so scrubbing the clock winds
+	// the hook toward — or away from — its moment. `ctx.aim`, a catch's mark
+	// position, is phase 0's direction when present.
 	draw: function (view, snap, ctx) {
 		disposeChildren(view.group);
 		view.focusPoints = [];   // click-to-focus targets (Vector3, group space) — the release/catch dot, below
@@ -372,15 +373,7 @@ export var SKYHOOK = {
 		var rPoint = (R + params.relAlt) / U;
 		var rBase = (R + 20e3) / U;
 
-		// A catch's phase-0 direction is the retrograde at the approach's OWN
-		// equatorial crossing (catchFigures's crossingJd), not the pin epoch —
-		// it slides as the trajectory is tuned. Falls back to the pin epoch
-		// when the arc never reaches the plane (no crossing to take it from).
-		var refJd = ctx.pinJd !== null ? ctx.pinJd : snap.jd;
-		if (ctx.role === CATCH && ctx.computed && isFinite(ctx.computed.crossingJd)) {
-			refJd = ctx.computed.crossingJd;
-		}
-		var plane = equatorPlane(params.body, refJd);
+		var plane = equatorPlane(params.body, ctx.pinJd !== null ? ctx.pinJd : snap.jd, ctx.aim);
 		var basis = planeBasis(plane.normal, plane.ref);
 		view.group.add(circleLine(rPoint, basis, 0x9fb6ff, 0.8));
 		view.group.add(circleLine(rCom, basis, 0xffd24a, 0.8));
