@@ -19,8 +19,10 @@
  * delivers. With no burn programmed the drawn arrival trajectory is the drawn
  * coast trajectory, continuing.
  *
- * Waypoints (up to 2, the standard vector-editor interface) put burns on it —
- * a retro burn near the pass drops or captures, a nudge earlier moves the pass.
+ * Waypoints (up to 2) put burns on it — a retro burn near the pass drops or
+ * captures, a nudge earlier moves the pass. Each axis is a ±100 m/s trim
+ * (WAYPOINT_AXIS_CAP_MPS, transfer-leg.js), same as a coast course
+ * correction — see Notes/decisions.md.
  *
  * WHERE THE STARTING STATE COMES FROM, and why it is not simply the input
  * packet. The chain hands this stage the coast's emitted state, which sits at
@@ -73,7 +75,7 @@ import { makeDiagnostic } from "../../core/diagnostics.js";
 import { arrivalMark, equatorNormal } from "../arrival-approach.js";
 import { computeArrivalSeam, SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
 import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed,
-	nearestApproach as coastNearestApproach }
+	nearestApproach as coastNearestApproach, WAYPOINT_AXIS_CAP_MPS }
 	from "../transfer-leg/transfer-leg.js";
 
 var O = OrbitalMath;
@@ -542,6 +544,9 @@ export default {
 					var list = stageParams().waypoints.slice(); list[i].t = v * 3600;
 					setParam("waypoints", list);
 				});
+				var hint = document.createElement("div"); hint.className = "mp-muted";
+				hint.textContent = "up to ±" + WAYPOINT_AXIS_CAP_MPS + " m/s per axis";
+				card.appendChild(hint);
 				var burnHost = document.createElement("div"); burnHost.className = "mp-pane-host"; card.appendChild(burnHost);
 				var burnObj = Object.assign({ pro: 0, rad: 0, nrm: 0 }, wp.burn);
 				buildVectorEditor(burnHost, burnObj, function (axis, mps) {
@@ -549,7 +554,7 @@ export default {
 					list[i].burn = Object.assign({ pro: 0, rad: 0, nrm: 0 }, list[i].burn);
 					list[i].burn[axis] = mps;
 					setParam("waypoints", list);
-				}, { unitLabel: "km/s" });
+				}, { maxDeltaMps: WAYPOINT_AXIS_CAP_MPS, displayDiv: 1, decimals: 2, step: 0.1, unitLabel: "m/s" });
 				wpHost.appendChild(card);
 				burnHosts.push(burnHost);
 			});

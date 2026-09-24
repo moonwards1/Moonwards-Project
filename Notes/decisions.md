@@ -20,11 +20,13 @@ The Departure slider spans the departure flight itself: pinned at the release
 epoch (the departure leg's `releaseJd`), ending at the estimated origin-SOI
 exit initially, and then at the calculated exit once an exit can be calculated. Same for every origin. 
 
-### Waypoint impulse controls, coast
+### Waypoint impulse controls, coast and arrival
 
-Each axis of a coast waypoint burn moves at most ±100 m/s from its baseline
-(`WAYPOINT_AXIS_CAP_MPS`), and typed entry is hard-clamped to that too. The
-numeric fields step 0.01 m/s; shift-drag on an arrow is the fine mode.
+Each axis of a waypoint burn — a coast course correction or an arrival-phase
+waypoint — moves at most ±100 m/s from its baseline (`WAYPOINT_AXIS_CAP_MPS`,
+transfer-leg.js), and typed entry is hard-clamped to that too. The numeric
+fields step 0.1 m/s (shift-drag or a shifted nudge steps 0.01 m/s, the fine
+mode).
 
 Why: a waypoint is a trim, not an injection.
 

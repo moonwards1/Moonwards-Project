@@ -1340,9 +1340,9 @@ export function createMissionView(opts) {
 	// explicitly (the body convention). Removing it leaves the arrival leg as
 	// the terminal stage, a flyby.
 	//
-	// In the sidebar the order mirrors the Departure phase — info strip, the
-	// technology control card, the tech's own card, then the leg with its
-	// waypoints — whatever order the stages take in the chain.
+	// In the sidebar the order is info strip, then the leg with its waypoints,
+	// then the technology control card and the tech's own card — the waypoint
+	// burns fire before the ship is caught, so their card sits above the catch.
 	var ARR_TECH_KEY = "__arrival-tech__";
 
 	function isArrivalTechStage(stage) {
@@ -1423,8 +1423,9 @@ export function createMissionView(opts) {
 		}
 
 		var legCard = cards[legStage.id] ? cards[legStage.id].cardEl : null;
-		panelEl.insertBefore(card, legCard);
-		if (tech && cards[tech.id]) { panelEl.insertBefore(cards[tech.id].cardEl, legCard); }
+		var afterLeg = legCard ? legCard.nextSibling : null;
+		panelEl.insertBefore(card, afterLeg);
+		if (tech && cards[tech.id]) { panelEl.insertBefore(cards[tech.id].cardEl, card.nextSibling); }
 		cards[ARR_TECH_KEY] = { cardEl: card, phase: "arrival", callbacks: [] };
 		applyPhaseToCards();
 	}
