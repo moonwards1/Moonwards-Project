@@ -359,7 +359,7 @@ function el(tag, cls, text) {
 	return n;
 }
 
-function kms(x) { return (x == null || !isFinite(x)) ? "—" : x.toFixed(2); }
+function kms(x, decimals) { return (x == null || !isFinite(x)) ? "—" : x.toFixed(decimals || 2); }
 
 // Line thickness in gizmo units (radius, so the drawn width is twice this).
 // Needed is drawn fat and current thin, and the current layer is drawn over it
@@ -612,9 +612,9 @@ export function createShipCard(opts) {
 			var row = el("div", "mp-ship-row mp-ship-row-" + r.kind);
 			row.appendChild(el("span", "mp-ship-rowlabel", r.label));
 			AXIS_KEYS.forEach(function (k) {
-				row.appendChild(el("span", "mp-ship-cell mp-ship-c-" + k, r.comp ? kms(r.comp[k]) : "—"));
+				row.appendChild(el("span", "mp-ship-cell mp-ship-c-" + k, r.comp ? kms(r.comp[k], 3) : "—"));
 			});
-			row.appendChild(el("span", "mp-ship-cell mp-ship-c-net", r.comp ? kms(r.comp.net) : "—"));
+			row.appendChild(el("span", "mp-ship-cell mp-ship-c-net", r.comp ? kms(r.comp.net, 3) : "—"));
 			tableEl.appendChild(row);
 		});
 	}
@@ -623,8 +623,8 @@ export function createShipCard(opts) {
 	// clears the table.
 	function setComponents(needed, current) {
 		setComponentRows((needed || current) ? [
-			{ label: "Needed", comp: needed, kind: "needed" },
-			{ label: "Current", comp: current, kind: "current" }
+			{ label: "Need", comp: needed, kind: "needed" },
+			{ label: "Have", comp: current, kind: "current" }
 		] : []);
 	}
 
