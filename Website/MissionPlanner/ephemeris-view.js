@@ -166,6 +166,9 @@ import { deserializeWorld } from "./core/world.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
 import { readSets, latestOf } from "./core/revisions.js";
+import { originWindow, destinationWindow } from "./core/pov-window.js";
+import { equatorNormal, arrivalMark } from "./modules/arrival-approach.js";
+import { createPovScenes, drawPov as drawPovScene, setPovChevron, scalePovOverlays } from "./ephemeris-pov.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -308,7 +311,9 @@ export function createEphemerisView(opts) {
 		handoff: { mode: "derived", offset: null },
 		marker: null,          // { f0, angle (deg), mode: "free"|"target", dvBudget, ... }
 		markerFocused: false,  // camera pivots on the marker
-		destFocused: false     // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
+		destFocused: false,    // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
+		pov: null,             // null (the heliocentric view) | "origin" | "dest" — see the POV block below
+		povFocus: null         // in a POV, what the camera pivots on: "body" | "chevron" | null (released)
 	};
 
 	// ==== origin/destination body rings: which two bodies the leg is FOR,
@@ -1398,6 +1403,7 @@ export function createEphemerisView(opts) {
 			m._baseBurn = { pro: term.pro || 0, rad: term.rad || 0, nrm: term.nrm || 0 };
 			if (m.dvBudget == null) { m.dvBudget = 10000; }
 			m._released = false;
+			m._scrubbed = false;   // start glued to the solved encounter until dragged
 		}
 		m.mode = mode;
 		updateModeButtons();
@@ -1636,6 +1642,22 @@ export function createEphemerisView(opts) {
 		} else if (tempRing) { tempRing.visible = false; }
 
 		updateStartMissionButton({ hasDest: true, prox: prox, destName: dn });
+
+		// Target mode with a live solve: the gate above just checked the
+		// SCRUBBED display point, but once locked (_scrubbed) that point can be
+		// anywhere on the path — Start Mission Plan must gate on the held
+		// encounter (_encT) instead, same one buildadoptSpec commits, so
+		// scrubbing to inspect the route never toggles whether the real target
+		// is adoptable.
+		if (state.marker && state.marker.mode === "target" && !state.marker._released
+			&& state.marker._encT != null && trajTotalT > 0) {
+			var cs = stateAtGlobalTime(state.marker._encT);
+			if (cs) {
+				var cArrJd = legStartJd() + state.marker._encT / DAY;
+				var cProx = checkProximity(GM_SUN, orbit, cs.r, cArrJd);
+				updateStartMissionButton({ hasDest: true, prox: cProx, destName: dn });
+			}
+		}
 	}
 
 	// Enable/disable the marker card's "Start Mission Plan" button and set its
@@ -1690,9 +1712,15 @@ export function createEphemerisView(opts) {
 			onHoldChange: function (mode) { if (state.marker) { state.marker.holdMode = mode; } },
 			onSliderChange: function (deg) {
 				if (!state.marker) { return; }
-				var t = timeAtDeg(deg);
+				// In a POV the slider reads days through its window, not degrees.
+				var t = (state.pov && povWin) ? povWin.t0 + deg * DAY : timeAtDeg(deg);
 				state.marker.f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, t / trajTotalT)) : 0;
 				state.marker.angle = 0;
+				// Target mode otherwise glues position to the solved encounter every
+				// refresh (see updateMarker) — a drag takes over the DISPLAY only;
+				// the held arrival date and the Lambert solve never read f0/angle,
+				// so the lock is untouched.
+				if (state.marker.mode === "target") { state.marker._scrubbed = true; }
 				updateMarker();
 			},
 			onRemove: function () { removeMarker(); },
@@ -1796,7 +1824,13 @@ export function createEphemerisView(opts) {
 
 		var hand = departureState();
 		var rw = resolveWaypoints(hand.r, hand.v, state.leg);
-		var tof = mcMarkerFraction(state.marker.f0, state.marker.angle) * trajTotalT;
+		// In Target mode the marker's f0/angle may just be a scrubbed viewing
+		// position (see updateMarker's _scrubbed) — what gets adopted is always
+		// the held encounter, never wherever the inspector happens to be.
+		var m = state.marker;
+		var tof = (m.mode === "target" && !m._released && m._encT != null && trajTotalT > 0)
+			? m._encT
+			: mcMarkerFraction(m.f0, m.angle) * trajTotalT;
 		var s = stateAtGlobalTime(tof);
 		if (!s) { return { ok: false, reason: "The marker isn't on a valid trajectory." }; }
 
@@ -2078,21 +2112,30 @@ export function createEphemerisView(opts) {
 			setCardEmpty(true);
 			updateStartMissionButton({ noMarker: true });
 			frame.place(dateState.jd);
+			if (pov) { setPovChevron(pov, null); }
 			return;
 		}
 		if (!state.marker.mode) { state.marker.mode = "free"; }
 		if (!markerSprite) { markerSprite = makeShipSprite(); frame.scene.add(markerSprite); }
-		if (state.marker.mode === "target") {
+		if (state.marker.mode === "target" && !state.marker._scrubbed) {
 			if (!state.marker._released && state.marker._encT != null && trajTotalT > 0) {
 				state.marker.f0 = Math.max(0, Math.min(1, state.marker._encT / trajTotalT));
 				state.marker.angle = 0;                          // sit at the solved encounter
 			} else { followCrossing(); }                         // released -> falls back to geometric tracking
 		}
+		// Once dragged (_scrubbed), the chevron/slider are free to inspect the
+		// whole path — the held arrival date and Lambert solve (applyTargeting)
+		// never read the marker's f0/angle, so the target itself stays locked.
 
 		var f = mcMarkerFraction(state.marker.f0, state.marker.angle);
 		var minF = 0;   // the flight starts at the hand-off, so nothing precedes it
 		if (f < minF) { state.marker.f0 = minF; state.marker.angle = 0; f = minF; }
 		var tof = f * trajTotalT;
+		// A POV shows only its window, so the marker stays inside it.
+		if (state.pov && povWin && (tof < povWin.t0 || tof > povWin.t1)) {
+			tof = Math.max(povWin.t0, Math.min(povWin.t1, tof));
+			state.marker.f0 = tof / trajTotalT; state.marker.angle = 0;
+		}
 		var s = stateAtGlobalTime(tof);
 		if (!s) {
 			markerSprite.visible = false;
@@ -2103,6 +2146,7 @@ export function createEphemerisView(opts) {
 			setHint("No drawn trajectory to probe — fix the leg, then click it to place a marker.");
 			updateStartMissionButton({ noMarker: true });
 			frame.place(dateState.jd);
+			if (pov) { setPovChevron(pov, null); }
 			return;
 		}
 
@@ -2128,7 +2172,7 @@ export function createEphemerisView(opts) {
 
 		updateDestinationMarker(s.r, tof);
 
-		mk.slider.disabled = (state.marker.mode !== "free");      // position driven in Target mode
+		mk.slider.disabled = false;   // free to scrub for inspection in every mode (see _scrubbed above)
 		mk.slider.max = trajTotalT > 0 ? degAtTime(trajTotalT) : 360;
 		if (document.activeElement !== mk.slider) { mk.slider.value = degAtTime(tof); }
 
@@ -2152,6 +2196,7 @@ export function createEphemerisView(opts) {
 		updateModeButtons();
 		if (state.markerFocused) { frame.cam.target.copy(markerSprite.position); }
 		if (state.destFocused && destSprite && destSprite.visible) { frame.cam.target.copy(destSprite.position); }
+		if (state.pov && pov && povWin) { updatePovMarker(tof); }
 	}
 
 	// Make the marker the camera's pivot — the view then rotates and zooms
@@ -2213,6 +2258,286 @@ export function createEphemerisView(opts) {
 		});
 	}
 
+	// =======================================================================
+	//  POV: the flight seen from one end, in that body's own frame.
+	//  The POV buttons in the date bar (Origin / Destination / Solar system),
+	//  or a double-click on the origin body or the destination "×", switch the
+	//  pane to ephemeris-pov.js's scene for that body. The physics is the same
+	//  drawn leg — computeLeg's segments, integrated through any SOI they enter —
+	//  re-expressed relative to the body; nothing is recomputed differently.
+	//
+	//  What changes is what the pane and the marker card cover:
+	//   - only the POV window (core/pov-window.js) is drawn, and the card's
+	//     slider spans that window in DAYS rather than the whole flight in
+	//     swept degrees;
+	//   - the card's position rows read against the body — distance, speed,
+	//     latitude over its equator — and, at a destination, time to closest
+	//     approach;
+	//   - the scene is placed at the MARKER's epoch rather than the date bar's,
+	//     since the body's surroundings (the Sun direction, the Moon) are what
+	//     they are when the ship is there. The heliocentric view's "×" is the
+	//     same thing — the destination at the marker's time — which the planet
+	//     itself now stands in for.
+	//  A click focuses the chevron or a body; it never moves the marker.
+	// =======================================================================
+	var povScenes = createPovScenes();
+	var pov = null;         // the active POV scene (ephemeris-pov.js), null in the helio view
+	var povWin = null;      // { t0, t1 } global s — the window the POV shows
+	var lastHand = null;    // refresh()'s hand-off, for the Moon-origin escape drawing
+	var GM_EARTH = systems.get("Earth").GM;
+	var POV_BODY_PX = 60;   // how wide the body appears on entering a POV
+
+	function viewFrame() { return pov ? pov.frame : frame; }
+
+	// The body a POV is FOR: its camera focus and the name on its buttons. For
+	// a Moon origin that is the Moon, drawn in the Earth-centred scene.
+	function povBody(kind) { return kind === "origin" ? state.origin : state.leg.destination; }
+
+	function povAvailable(kind) {
+		if (!trajLeg || !(trajTotalT > 0)) { return false; }
+		return kind === "origin" || !!(state.leg.destination && destApproach);
+	}
+
+	// The ship relative to the POV scene's centre body at global time t:
+	// { r, v, jd } in m, m/s.
+	function povRelState(t) {
+		var s = stateAtGlobalTime(t);
+		if (!s) { return null; }
+		var jd = legStartJd() + t / DAY;
+		var loc = Frames.helioToLocal(pov.centre, jd, s.r, s.v);
+		return { r: loc.r, v: loc.v, jd: jd };
+	}
+
+	function computePovWindow(kind) {
+		if (kind === "origin") { return originWindow(trajTotalT); }
+		var dn = state.leg.destination;
+		var soiR = soiRadiusAU(systems.get(dn), SUN.mass, 1);   // m
+		return destinationWindow(function (t) {
+			var s = stateAtGlobalTime(t);
+			if (!s) { return Infinity; }
+			return O.vMag(O.vSub(s.r, Frames.bodyHelioState(dn, legStartJd() + t / DAY).r));
+		}, destApproach.t, soiR, trajTotalT);
+	}
+
+	// Body-relative points over [t0, t1], stepped by distance over speed so a
+	// close pass is as smooth as the slow approach to it: ~100 steps per
+	// e-fold of distance, never coarser than 1/300 of the window.
+	function samplePovPath(t0, t1) {
+		var pts = [], t = t0, maxStep = (t1 - t0) / 300;
+		for (var guard = 0; guard < 20000; guard++) {
+			var st = povRelState(t);
+			if (st) { pts.push(st.r); }
+			if (t >= t1) { break; }
+			var dt = maxStep;
+			var sp = st ? O.vMag(st.v) : 0;
+			if (sp > 0) { dt = Math.min(maxStep, Math.max(10, 0.01 * O.vMag(st.r) / sp)); }
+			t = Math.min(t1, t + dt);
+		}
+		return pts;
+	}
+
+	// A Moon origin's escape, from the release out to the Earth-SOI crossing
+	// the drawn leg starts at: the geocentric hyperbola core/lunar-departure.js
+	// propagated to find that crossing, re-flown here to draw it. Absent for a
+	// departure that swings past Earth (that flight carries no single
+	// hyperbola to re-fly).
+	function lunarEscapePoints(hand) {
+		var L = hand && hand.lunar;
+		if (!L || !L.ok || !L.soiExit || !L.rMoon || !L.vMoon || !L.u) { return null; }
+		var v0 = O.vAdd(L.vMoon, L.u), T = L.soiExit.dt, pts = [];
+		// Quadratic spacing: the hyperbola turns hardest right after release.
+		for (var k = 0; k <= 240; k++) {
+			var f = k / 240;
+			pts.push(O.propagateState(GM_EARTH, L.rMoon, v0, T * f * f).r);
+		}
+		return pts;
+	}
+
+	// The destination's arrival mark (modules/arrival-approach.js): where the
+	// pass first crosses the equatorial catch disc, else closest approach.
+	function povArrivalMark() {
+		if (!destApproach) { return null; }
+		var path = {
+			jd0: legStartJd() + povWin.t0 / DAY,
+			jd1: legStartJd() + povWin.t1 / DAY,
+			stateAt: function (jd) { return povRelState((jd - legStartJd()) * DAY); }
+		};
+		return arrivalMark(pov.centre, path, destApproach.jd);
+	}
+
+	// Swap the pane to the scene for the current POV's body, if it isn't
+	// already showing it. Returns true when the scene changed.
+	function attachPovScene() {
+		var next = povScenes.get(povBody(state.pov));
+		var changed = next !== pov;
+		if (changed) {
+			viewFrame().labelLayer.remove();
+			pov = next;
+			paneMainEl.appendChild(pov.frame.labelLayer);
+		}
+		paneCapEl.textContent = pov.frame.caption + " · " + povBody(state.pov) + " POV";
+		return changed;
+	}
+
+	// Redraw the active POV from the current leg: its window, its path and
+	// markings. `refit` re-aims the camera at the body, close enough that it
+	// is POV_BODY_PX across.
+	// Drops back to the helio view if the POV no longer has anything to show.
+	function drawPov(refit) {
+		if (!state.pov) { return; }
+		if (!povAvailable(state.pov)) { setPov(null); return; }
+		if (attachPovScene()) { refit = true; }
+		povWin = computePovWindow(state.pov);
+		if (!povWin) { setPov(null); return; }
+		var isDest = state.pov === "dest";
+		var path = samplePovPath(povWin.t0, povWin.t1);
+		var escape = (!isDest && state.origin === "Moon") ? lunarEscapePoints(lastHand) : null;
+		var start = (!isDest && povWin.t0 === 0 && path.length) ? path[0] : null;
+		drawPovScene(pov, {
+			path: path, escape: escape, start: start,
+			mark: isDest ? povArrivalMark() : null,
+			catchDisc: isDest
+		});
+		if (refit) {
+			var f = pov.frame;
+			// A sphere of radius R at distance d spans R·h / (d·tan(fov/2))
+			// pixels on a pane h pixels tall; solved for d.
+			var R = systems.get(povBody(state.pov)).radius / 1e6;   // scene units
+			var h = paneMainEl.clientHeight || 600;
+			var d = R * h / (POV_BODY_PX * Math.tan(f.camera.fov * Math.PI / 360));
+			f.cam.radius = Math.max(f.zoomMin, Math.min(f.zoomMax, d));
+			state.povFocus = "body";
+			f.focusBody = povBody(state.pov);
+			var node = f.bodyNode(f.focusBody);
+			if (node) { f.cam.target.copy(node.position); }
+		}
+	}
+
+	// Enter a POV ("origin" | "dest") or return to the helio view (null).
+	// Entering puts the marker inside the window — at closest approach for a
+	// destination, at the hand-off for an origin — unless it is already there,
+	// placing one if there is none.
+	function setPov(kind) {
+		if (kind && !povAvailable(kind)) { updatePovButtons(); return; }
+		if (!kind) {
+			if (pov) {
+				pov.frame.labelLayer.remove();
+				paneMainEl.appendChild(frame.labelLayer);
+			}
+			state.pov = null; pov = null; povWin = null;
+			paneCapEl.textContent = frame.caption;
+		} else {
+			state.pov = kind;
+			drawPov(true);
+			if (state.pov) { putMarkerInPovWindow(); }
+		}
+		updateCardForPov();
+		updateMarker();
+		updatePovButtons();
+	}
+
+	function putMarkerInPovWindow() {
+		var want = state.pov === "dest" ? destApproach.t : povWin.t0;
+		if (!state.marker) {
+			state.marker = { f0: want / trajTotalT, angle: 0, mode: "free", dvBudget: 10000, holdMode: "deg" };
+			return;
+		}
+		var now = mcMarkerFraction(state.marker.f0, state.marker.angle) * trajTotalT;
+		if (now < povWin.t0 || now > povWin.t1) {
+			state.marker.f0 = want / trajTotalT;
+			state.marker.angle = 0;
+			// A Target lock holds its solved encounter regardless; moving the
+			// marker to look at the approach is a scrub, as on the slider.
+			if (state.marker.mode === "target") { state.marker._scrubbed = true; }
+		}
+	}
+
+	// The marker card's words for the frame it is read in. The helio labels
+	// are the ones buildCard gave the rows; a POV re-words the position rows
+	// and hides the hold radios, which choose what a DATE scrub holds and are
+	// not about the window.
+	var baseLabels = null, baseSliderTitle = null;
+	var POV_SLIDER_TITLE = "drag to slide the marker through this view's stretch of the flight, " +
+		"left to right in time.";
+	function updateCardForPov() {
+		if (!mk) { return; }
+		if (!baseLabels) {
+			baseLabels = {};
+			Object.keys(mk.labels).forEach(function (k) { baseLabels[k] = mk.labels[k].textContent; });
+			baseSliderTitle = mk.slider.title;
+		}
+		Object.keys(baseLabels).forEach(function (k) { mk.labels[k].textContent = baseLabels[k]; });
+		mk.vals.deg.parentNode.style.display = "";
+		Object.keys(mk.holdRadios).forEach(function (k) { mk.holdRadios[k].style.display = state.pov ? "none" : ""; });
+		mk.slider.title = state.pov ? POV_SLIDER_TITLE : baseSliderTitle;
+		mk.slider.step = state.pov ? "any" : 0.1;
+		mk.slider.min = 0;
+		if (!state.pov) { return; }
+		var c = pov.centre;
+		mk.labels.rad.textContent = "distance from " + c;
+		mk.labels.spd.textContent = "speed relative to " + c;
+		mk.labels.lat.textContent = "latitude over " + c + "'s equator";
+		if (state.pov === "dest") { mk.labels.deg.textContent = "to closest approach"; }
+		else { mk.vals.deg.parentNode.style.display = "none"; }
+	}
+
+	// "2 d 03 h 12 m" — the POV card's time format, fine enough for a pass
+	// that is over in hours.
+	function fmtDhm(sec) {
+		var s = Math.abs(sec);
+		var d = Math.floor(s / DAY), h = Math.floor((s % DAY) / 3600), m = Math.floor((s % 3600) / 60);
+		return (d ? d + " d " : "") + String(h).padStart(2, "0") + " h " + String(m).padStart(2, "0") + " m";
+	}
+
+	// The POV half of updateMarker: the scene at the marker's epoch, the
+	// chevron, the body-relative rows, and the window slider.
+	function updatePovMarker(tof) {
+		var st = povRelState(tof);
+		pov.frame.place(st ? st.jd : legStartJd() + tof / DAY);
+		setPovChevron(pov, st ? st.r : null, st ? st.v : null);
+		if (!st) { return; }
+		var c = pov.centre, R = systems.get(c).radius;
+		var d = O.vMag(st.r);
+		mk.vals.rad.textContent = fmtKm(d);
+		mk.vals.radKm.textContent = d >= R ? "altitude " + fmtKm(d - R) : "below the surface";
+		mk.vals.spd.textContent = (O.vMag(st.v) / 1000).toFixed(2) + " km/s";
+		var n = equatorNormal(c);
+		var lat = Math.asin(Math.max(-1, Math.min(1, O.vDot(st.r, n) / (d || 1)))) * 180 / Math.PI;
+		mk.vals.lat.textContent = (lat >= 0 ? "+" : "−") + Math.abs(lat).toFixed(1) + "°";
+		if (state.pov === "dest" && destApproach) {
+			var dt = tof - destApproach.t;
+			mk.vals.deg.textContent = Math.abs(dt) < 60 ? "at closest approach"
+				: (dt < 0 ? "−" : "+") + fmtDhm(dt);
+		}
+		mk.vals.tof.textContent = fmtDhm(Math.max(0, tof));
+		mk.slider.max = (povWin.t1 - povWin.t0) / DAY;
+		if (document.activeElement !== mk.slider) { mk.slider.value = (tof - povWin.t0) / DAY; }
+		if (state.povFocus === "chevron") { pov.frame.cam.target.copy(pov.chevron.position); }
+	}
+
+	// ---- the POV buttons, in the date bar ----------------------------------
+	var povBtns = {
+		origin: q(".mp-pov-btn[data-pov='origin']"),
+		dest: q(".mp-pov-btn[data-pov='dest']"),
+		sun: q(".mp-pov-btn[data-pov='sun']")
+	};
+	povBtns.origin.addEventListener("click", function () { setPov("origin"); });
+	povBtns.dest.addEventListener("click", function () { setPov("dest"); });
+	povBtns.sun.addEventListener("click", function () { setPov(null); });
+	function updatePovButtons() {
+		var o = povAvailable("origin"), d = povAvailable("dest");
+		povBtns.origin.disabled = !o;
+		povBtns.dest.disabled = !d;
+		povBtns.origin.title = o ? "View the start of the flight from " + state.origin + "."
+			: "No flight drawn yet.";
+		povBtns.dest.title = d ? "View the approach from " + state.leg.destination + "."
+			: (state.leg.destination ? "No flight drawn yet." : "Choose a destination first.");
+		povBtns.sun.title = "Back to the whole solar system.";
+		povBtns.origin.classList.toggle("active", state.pov === "origin");
+		povBtns.dest.classList.toggle("active", state.pov === "dest");
+		povBtns.sun.classList.toggle("active", !state.pov);
+	}
+
 	// ==== recompute + draw: the one function every input change calls --------
 	function refresh() {
 		// trajTotalT (the drawn leg's total duration) can change from this very
@@ -2253,6 +2578,7 @@ export function createEphemerisView(opts) {
 		syncBurnInputs();
 
 		var hand = departureState();
+		lastHand = hand;
 		var dep = hand.body;
 		var depEst = departureEstimateFor(hand);
 		// No flight to draw: a lunar card this planner cannot fly, or a card
@@ -2434,8 +2760,13 @@ export function createEphemerisView(opts) {
 			{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex, compact: true });
 		positionReadoutBoxes(readoutBoxes, mainEl, panelEl, 15);
 
+		// The POV's window and path come from this same leg, and the marker
+		// update below clamps into that window, so it is redrawn first.
+		drawPov(false);
+
 		// keep the marker on the (possibly reshaped) path + refresh its card
 		updateMarker();
+		updatePovButtons();
 
 		updateMoonWidgets(dep, depEst, hand);
 	}
@@ -2512,6 +2843,7 @@ export function createEphemerisView(opts) {
 	var PICK_PX = 10;
 
 	function handlePick(e) {
+		if (state.pov) { handlePovPick(e); return; }
 		var rect = paneMainEl.getBoundingClientRect();
 		var px = e.clientX - rect.left, py = e.clientY - rect.top;
 
@@ -2566,28 +2898,91 @@ export function createEphemerisView(opts) {
 		frame.focusBody = null;
 	}
 
-	// ---- camera controls: one frame, so the view config never changes. Like
-	// the standalone plotters, this view binds once for the page's life and
-	// ignores the unbind return value (Shared/sim/camera-controller.js).
+	// Within a POV a click focuses: the chevron, or a body (never the Sun,
+	// which sits AUs off across the scene). Empty space releases the focus.
+	// The marker is moved only by its slider here.
+	function handlePovPick(e) {
+		var f = pov.frame;
+		var rect = paneMainEl.getBoundingClientRect();
+		var px = e.clientX - rect.left, py = e.clientY - rect.top;
+		if (pov.chevron.visible) {
+			var cv = pov.chevron.position.clone().project(f.camera);
+			if (cv.z <= 1) {
+				var cx = (cv.x * 0.5 + 0.5) * rect.width, cy = (-cv.y * 0.5 + 0.5) * rect.height;
+				if (Math.hypot(cx - px, cy - py) < 16) {
+					state.povFocus = "chevron";
+					f.focusBody = null;
+					f.cam.target.copy(pov.chevron.position);
+					return;
+				}
+			}
+		}
+		var name = pickBodyName(f.camera, paneMainEl, e, f.scaleList, PICK_PX);
+		if (name && name !== "Sun") {
+			state.povFocus = "body";
+			f.focusBody = name;
+			var node = f.bodyNode(name);
+			if (node) { f.cam.target.copy(node.position); }
+			return;
+		}
+		state.povFocus = null;
+		f.focusBody = null;
+	}
+
+	// Double-click in the helio view: the destination "×" or the destination
+	// body opens its POV, the origin body its own. At solar-system zoom the
+	// Moon is drawn on top of Earth, so from a Moon origin Earth's dot stands
+	// for it (Earth is never a Moon origin's destination).
+	function handleDoubleClick(e) {
+		if (state.pov) { return; }
+		var rect = paneMainEl.getBoundingClientRect();
+		var px = e.clientX - rect.left, py = e.clientY - rect.top;
+		if (destSprite && destSprite.visible) {
+			var xv = destSprite.position.clone().project(frame.camera);
+			if (xv.z <= 1) {
+				var xx = (xv.x * 0.5 + 0.5) * rect.width, xy = (-xv.y * 0.5 + 0.5) * rect.height;
+				if (Math.hypot(xx - px, xy - py) < 16) { setPov("dest"); return; }
+			}
+		}
+		var name = pickBodyName(frame.camera, paneMainEl, e, frame.scaleList, PICK_PX);
+		if (!name) { return; }
+		if (name === state.leg.destination) { setPov("dest"); }
+		else if (name === state.origin || (state.origin === "Moon" && name === "Earth")) { setPov("origin"); }
+	}
+
+	// ---- camera controls: bound once for the page's life (like the standalone
+	// plotters, the unbind return value is ignored — Shared/sim/camera-controller.js).
+	// The config is read fresh on every event, so it follows whichever scene is
+	// showing: the helio frame, or the active POV's.
 	bindCameraControls(paneMainEl, function () {
+		var f = viewFrame();
 		return {
-			cam: frame.cam, camera: frame.camera,
-			zoomMin: frame.zoomMin, zoomMax: frame.zoomMax,
+			cam: f.cam, camera: f.camera,
+			zoomMin: f.zoomMin, zoomMax: f.zoomMax,
 			pickPoint: function (e) {
-				return raycastPickPoint(frame.camera, paneMainEl, e,
-					{ meshes: frame.pickMeshes, soiSpheres: frame.pickSoiSpheres });
+				return raycastPickPoint(f.camera, paneMainEl, e,
+					{ meshes: f.pickMeshes, soiSpheres: f.pickSoiSpheres });
 			},
-			onPan: function () { frame.focusBody = null; state.markerFocused = false; state.destFocused = false; },
+			onPan: function () {
+				f.focusBody = null;
+				if (state.pov) { state.povFocus = null; return; }
+				state.markerFocused = false; state.destFocused = false;
+			},
 			lockedZoomTarget: function () {
-				if (state.markerFocused && markerSprite && markerSprite.visible) { return markerSprite.position; }
-				if (state.destFocused && destSprite && destSprite.visible) { return destSprite.position; }
-				if (frame.focusBody) {
-					var node = frame.bodyNode(frame.focusBody);
+				if (state.pov) {
+					if (state.povFocus === "chevron" && pov.chevron.visible) { return pov.chevron.position; }
+				} else {
+					if (state.markerFocused && markerSprite && markerSprite.visible) { return markerSprite.position; }
+					if (state.destFocused && destSprite && destSprite.visible) { return destSprite.position; }
+				}
+				if (f.focusBody) {
+					var node = f.bodyNode(f.focusBody);
 					if (node) { return node.position; }
 				}
 				return null;
 			},
-			onPick: handlePick
+			onPick: handlePick,
+			onDoubleClick: handleDoubleClick
 		};
 	});
 
@@ -2599,6 +2994,21 @@ export function createEphemerisView(opts) {
 		if (w < 2 || h < 2) { return; }
 		var x = r.left - canvasRect.left;
 		var y = canvasRect.height - (r.top - canvasRect.top + h);   // GL origin: bottom-left
+
+		if (state.pov && pov) {
+			var pf = pov.frame;
+			pf.camera.aspect = w / h;
+			pf.camera.updateProjectionMatrix();
+			updateCamera(pf.camera, pf.cam);
+			brUpdateScales(pf.camera, paneMainEl, pf.scaleList, { wantSOI: pf.wantSOI });
+			brUpdateLabels(pf.camera, paneMainEl, pf.labelList);
+			scalePovOverlays(pov, paneMainEl);
+			positionReadoutBoxes(readoutBoxes, mainEl, panelEl, 15);
+			renderer.setViewport(x, y, w, h);
+			renderer.setScissor(x, y, w, h);
+			renderer.render(pf.scene, pf.camera);
+			return;
+		}
 
 		frame.camera.aspect = w / h;
 		frame.camera.updateProjectionMatrix();

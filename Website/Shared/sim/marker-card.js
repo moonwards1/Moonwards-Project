@@ -366,7 +366,9 @@ function makeCardDraggable(card, handle) {
 // }
 //
 // Returns { el, slider, modeBtns, vals (row key -> value <span>, plus
-// "radKm" if a "rad" row was present), budgetRow, budgetInput, tdvRow, valTdv }.
+// "radKm" if a "rad" row was present), labels (row key -> label <span>,
+// for a caller that re-words its rows), holdRadios, budgetRow, budgetInput,
+// tdvRow, valTdv }.
 export function buildMarkerCard(opts) {
 	var cls = opts.classPrefix;
 	var card = document.createElement("div");
@@ -423,6 +425,7 @@ export function buildMarkerCard(opts) {
 	// time-of-flight). opts.holdMode names the initially-checked value;
 	// opts.onHoldChange(value) fires when the reader picks a different one.
 	var vals = {};
+	var labels = {};
 	var holdRadios = {};
 	function row(key, label, holdValue) {
 		var r = document.createElement("div"); r.className = cls + "-marker-row";
@@ -441,6 +444,7 @@ export function buildMarkerCard(opts) {
 		var v = document.createElement("span"); v.className = cls + "-marker-val";
 		r.appendChild(left); r.appendChild(v); card.appendChild(r);
 		vals[key] = v;
+		labels[key] = l;
 	}
 	opts.rows.forEach(function (r) {
 		row(r.key, r.label, r.hold);
@@ -470,7 +474,7 @@ export function buildMarkerCard(opts) {
 
 	opts.hostEl.appendChild(card);
 
-	return { el: card, slider: slider, modeBtns: modeBtns, vals: vals, holdRadios: holdRadios,
+	return { el: card, slider: slider, modeBtns: modeBtns, vals: vals, labels: labels, holdRadios: holdRadios,
 		budgetRow: budgetRow, budgetInput: budgetInput, tdvRow: tdvRow, valTdv: valTdv };
 }
 

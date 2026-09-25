@@ -105,9 +105,7 @@
  *                          report and simply gets no box.
  *     readout(cap)         optional: the platform's own straddling box, in
  *                          place of the default trim box — { title, rows:
- *                          [{ label, value, tone: "dv" | "spd" }], burnDv }.
- *                          `burnDv` (km/s) is not drawn; it is what the
- *                          mission report counts as the arrival tech's Δv.
+ *                          [{ label, value, tone: "dv" | "spd" }] }.
  *     warnings(figures)    optional platform-specific warnings. The generic
  *                          "did the coast actually reach the body" check is
  *                          the adapter's, not the platform's.

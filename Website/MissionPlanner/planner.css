@@ -148,6 +148,10 @@ body {
 }
 .mp-date-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
 .mp-date-caption { font-size: 13px; color: var(--bright); }
+/* POV: which body the pane views the flight from (ephemeris-view.js) */
+.mp-pov { display: inline-flex; align-items: baseline; gap: 6px; }
+.mp-pov-btn { padding: 2px 9px; }
+.mp-pov-btn.active { background: #24406b; border-color: #3c5f9b; color: #dceafc; }
 .mp-date-field {
 	background: #0f1424; border: 1px solid var(--line2); color: var(--text);
 	border-radius: 6px; padding: 2px 7px; font: inherit; font-size: 12.5px;

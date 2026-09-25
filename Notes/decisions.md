@@ -274,7 +274,14 @@ of km past any flyby — the line bends, the conic does not. Waypoint SNAPS
 **Check reads.** It re-solves at the real departure exit point, writes nothing to the
 World, and revises the Ship card's Needed column. 
 
-**Update writes.** It populates the columns in the mission report, and writes to the serialized world
+**Update writes.** It populates the columns in the mission report, and writes to the serialized world.
+It is offered after a Refine within tolerance (a re-target), or on a successful catch — contact
+under `MAX_CATCH_SPEED`, 250 m/s, relative to the arrival hardware — when the mission differs from
+its last commit (a record of the mission as it stands, nothing re-solved).
+
+**Arrival Δv in the report**: total is the ship's unburned speed at the catch radius (v∞ in plus
+the fall), counted to rest relative to the destination — the mirror of departure tech, which counts
+from rest at the origin. Fuel is the arrival waypoints; tech is the remainder, blank without a catch.
 
 ### A mission carries a plan history; a link carries two sets of it
 

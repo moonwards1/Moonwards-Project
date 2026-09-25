@@ -145,3 +145,37 @@ export function proximityReason(res, subject, destName) {
 	return subject + "'s timing is off by " + Math.abs(res.dtDays).toFixed(1) + " d — needs to be " +
 		"within " + TEMP_FAR + " d of " + destName + " passing this point.";
 }
+
+// THE CATCH'S standard: the ship's speed relative to the catching hardware at
+// the point they meet (tetherContact's `components.net`, m/s). A flat first
+// cut for every technology and body; the honest bound is the technology's
+// own, and comes from its module once one states it.
+export var MAX_CATCH_SPEED = 250;       // m/s
+
+// Did the arrival technology catch the ship? `contact` is a capture's contact
+// (modules/skyhook/skyhook.js's tetherContact), or null when the technology
+// reports none. Returns { ok, relSpeed } — relSpeed NaN with no contact.
+export function checkCatch(contact) {
+	var rel = (contact && contact.ok && contact.components) ? contact.components.net : NaN;
+	return { ok: isFinite(rel) && rel < MAX_CATCH_SPEED, relSpeed: rel };
+}
+
+// The arrival's Δv budget, split the way the mission report reads it (m/s).
+//
+// TOTAL is the ship's speed relative to the destination at the catch point
+// as it would be with no arrival burns at all — the v∞ it comes in with,
+// deepened by the fall to that radius (`rCatch`, m from the body's centre).
+// It is counted down to rest relative to the destination, the mirror of the
+// departure side, where a technology's share is the speed its hardware gives
+// the ship from rest relative to the origin: the hardware that catches the
+// ship at its own speed carries it from there. FUEL is the arrival
+// waypoints' burns, added as magnitudes. TECH is whatever of the total the
+// fuel did not pay for.
+//
+// Tech is a remainder, so a waypoint burn spent on anything but slowing down
+// (a plane change) shrinks it without the hardware doing any less.
+export function arrivalDvBudget(vInfIn, GM, rCatch, fuel) {
+	var total = (isFinite(vInfIn) && isFinite(rCatch) && rCatch > 0)
+		? Math.sqrt(vInfIn * vInfIn + 2 * GM / rCatch) : NaN;
+	return { total: total, fuel: fuel, tech: (isFinite(total) && isFinite(fuel)) ? total - fuel : NaN };
+}

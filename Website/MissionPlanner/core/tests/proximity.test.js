@@ -10,7 +10,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { checkProximity, proximityReason, checkPassAltitude, passAltitudeReason,
-	APPROACH_FAR, TEMP_FAR, MAX_PASS_ALTITUDE, AIM_PASS_ALTITUDE } from "../proximity.js";
+	APPROACH_FAR, TEMP_FAR, MAX_PASS_ALTITUDE, AIM_PASS_ALTITUDE,
+	checkCatch, arrivalDvBudget, MAX_CATCH_SPEED } from "../proximity.js";
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 
@@ -140,4 +141,25 @@ test("passAltitudeReason states the figure and the limit", () => {
 	assert.match(msg, /needs to be within [\d,]+ km/);
 
 	assert.match(passAltitudeReason(checkPassAltitude(Infinity), "Ceres"), /never comes near Ceres/);
+});
+
+test("checkCatch: contact slower than MAX_CATCH_SPEED is a catch", () => {
+	const contact = (net) => ({ ok: true, components: { net } });
+	assert.equal(checkCatch(contact(MAX_CATCH_SPEED - 1)).ok, true);
+	assert.equal(checkCatch(contact(MAX_CATCH_SPEED)).ok, false, "the threshold itself is out");
+	assert.equal(checkCatch(contact(900)).relSpeed, 900);
+	assert.equal(checkCatch(null).ok, false, "no contact, no catch");
+	assert.equal(checkCatch({ ok: false, reason: "above-tip" }).ok, false);
+	assert.ok(Number.isNaN(checkCatch(null).relSpeed));
+});
+
+test("arrivalDvBudget: total is the unburned speed at the catch radius; tech is the remainder", () => {
+	const GM = 4.2828e13, r = 3.3895e6 + 3e5;   // Mars
+	const b = arrivalDvBudget(3000, GM, r, 400);
+	const vAtR = O.visVivaVelocity(GM, r, -GM / (3000 * 3000));
+	assert.ok(Math.abs(b.total - vAtR) < 1e-6, "vis-viva on the incoming hyperbola");
+	assert.equal(b.fuel, 400);
+	assert.ok(Math.abs(b.fuel + b.tech - b.total) < 1e-9, "fuel + tech = total");
+	assert.ok(Number.isNaN(arrivalDvBudget(3000, GM, NaN, 400).tech), "no catch radius, no split");
+	assert.ok(Number.isNaN(arrivalDvBudget(3000, GM, r, NaN).tech), "no fuel figure, no remainder");
 });

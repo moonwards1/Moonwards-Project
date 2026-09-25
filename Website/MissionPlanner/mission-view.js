@@ -62,7 +62,7 @@ import {
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
 import { solveDepartureTarget, rebaseWaypoints } from "./core/retarget.js";
 import { deliveredFlight, signatureOf } from "./core/delivered-flight.js";
-import { checkPassAltitude, passAltitudeReason } from "./core/proximity.js";
+import { checkPassAltitude, passAltitudeReason, checkCatch, arrivalDvBudget, MAX_CATCH_SPEED } from "./core/proximity.js";
 import { VINF_TOL, AIM_TOL_DEG } from "./modules/adopted-plan/adopted-plan.js";
 
 var O = OrbitalMath;
@@ -1780,6 +1780,9 @@ export function createMissionView(opts) {
 	updateBtn.addEventListener("click", function () {
 		var planStage = adoptedPlanStage();
 		if (!planStage) { return; }
+		// A standing Refine within tolerance is a re-target to commit; without
+		// one, the only other thing Update offers is to record a catch.
+		if (!checked || !checked.withinTolerance) { recordCatch(); return; }
 		var sol = retargetSolveNow();           // from the CURRENT delivery, not Check's
 		var dest = (planStage.params.arrival || {}).body || "the destination";
 		var applied = sol.ok && sol.withinTolerance;
@@ -1800,6 +1803,34 @@ export function createMissionView(opts) {
 			function (wrap) { solveMessage(wrap, sol, dest, applied); });
 		refreshViews();
 	});
+
+	// Update on a caught mission: nothing is re-solved, so nothing moves. The
+	// mission as it stands is committed to the plan history and becomes a new
+	// report line, read fresh — the figures being committed are the arrival
+	// cards' own, which the report's "now" checkpoint may not yet have seen.
+	function recordCatch() {
+		var c = catchNow();
+		if (!c.verdict.ok || committedAsNow()) { return; }
+		var snap = snapshotForReport();
+		history.push(snap);
+		planHistory = recordUpdate(planHistory, world.serialize());
+		if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
+		nowSnapshot = snap;
+		showMessage("Update " + history.length + " — caught at " + c.cap.body, function (wrap) {
+			msgPara(wrap, "The ship meets the " + escapeText(stageTitle(arrivalTechStage()).toLowerCase()) +
+				" at <b>" + Math.round(c.verdict.relSpeed) + " m/s</b> relative to it — inside the " +
+				MAX_CATCH_SPEED + " m/s a catch allows. Recorded as a new line in the mission report.");
+		});
+		refreshViews();
+	}
+
+	// Is the mission exactly what the plan history last committed? Compared
+	// on the stages alone: the clock is not part of what a commit states.
+	function committedAsNow() {
+		var steps = planHistory.steps;
+		var last = steps.length ? steps[steps.length - 1].world : planHistory.original;
+		return !!last && JSON.stringify(last.stages) === JSON.stringify(world.serialize().stages);
+	}
 
 	// ---- the mission report ------------------------------------------------
 	// Preliminary: the figures the bar shows, per iteration, so the improvement
@@ -1844,26 +1875,35 @@ export function createMissionView(opts) {
 		return { fuel: fuel, tech: tech };
 	}
 
-	// Arrival's own Δv split, the same shape: FUEL is the arrival leg's own
-	// waypoint burns; TECH is the arrival technology's own hardware figure
-	// (a skyhook catch's trim burn, captureReadout's burnDv) — not a waypoint,
-	// so it is tech by the same rule.
-	function arrivalDvSplit() {
-		var legStage = world.stages().filter(function (s) { return s.moduleId === "arrival-leg"; })[0];
+	// The catching technology's last capture and its verdict under the catch
+	// standard (core/proximity.js's checkCatch): { cap, contact, verdict }.
+	// `cap` is null with no arrival technology, or one that reports none.
+	function catchNow() {
+		var techStage = arrivalTechStage();
+		var desc = techStage ? registry.get(techStage.moduleId) : null;
+		var cap = (desc && typeof desc.captureFor === "function")
+			? desc.captureFor(world, techStage.id) : null;
+		var contact = (cap && cap.ok && cap.contact) || null;
+		return { cap: cap, contact: contact, verdict: checkCatch(contact) };
+	}
+
+	// Arrival's own Δv split (core/proximity.js's arrivalDvBudget): FUEL is
+	// the arrival leg's own waypoint burns; TECH is whatever of the arrival's
+	// total they leave for the catching hardware. `vInfIn` is the v∞ the ship
+	// comes in with, before any arrival burn. Without a successful catch there
+	// is no hardware share to state, so tech (and the total) is NaN.
+	function arrivalDvSplit(vInfIn) {
+		var legStage = arrivalLegStage();
 		var fuel = NaN;
 		if (legStage) {
 			var legDesc = registry.get("arrival-leg");
 			var leg = legDesc && legDesc.legFor ? legDesc.legFor(world, legStage.id) : null;
 			if (leg && leg.ok) { fuel = leg.totalDv; }
 		}
-		var tech = 0;
-		var techStage = arrivalTechStage();
-		if (techStage) {
-			var desc = registry.get(techStage.moduleId);
-			var r = desc && desc.readoutFor ? desc.readoutFor(world, techStage.id) : null;
-			if (r && isFinite(r.burnDv)) { tech = r.burnDv * 1000; }
-		}
-		return { fuel: fuel, tech: tech };
+		var c = catchNow();
+		if (!c.verdict.ok || !c.cap.geo) { return { fuel: fuel, tech: NaN }; }
+		var b = arrivalDvBudget(vInfIn, c.cap.geo.GM, c.cap.geo.R + c.contact.altitude, fuel);
+		return { fuel: fuel, tech: b.tech };
 	}
 
 	// One row's worth of the live figures: what the departure/coast/arrival
@@ -1875,12 +1915,13 @@ export function createMissionView(opts) {
 	function snapshotForReport() {
 		var f = flightAsDelivered();
 		var dep = departureDvSplit();
-		var arr = arrivalDvSplit();
+		var vInfIn = (f && f.pass) ? f.pass.vInf : NaN;
+		var arr = arrivalDvSplit(vInfIn);
 		return {
 			vInfOut: f ? f.vInfOut : NaN,
 			depFuel: dep.fuel, depTech: dep.tech,
 			coastDv: f ? f.coastDv : NaN,
-			vInfIn: (f && f.pass) ? f.pass.vInf : NaN,
+			vInfIn: vInfIn,
 			arrFuel: arr.fuel, arrTech: arr.tech
 		};
 	}
@@ -2078,14 +2119,23 @@ export function createMissionView(opts) {
 		refineBtn.title = destName
 			? "Re-calculate where the ship exits the origin system, according to departure setup. The more accurate this is, the truer the aim."
 			: "This mission commits to no destination, so there is nothing to re-target towards.";
-		var canCommit = !!checked && checked.withinTolerance;
-		updateBtn.disabled = !canCommit;
-		updateBtn.title = canCommit
+		// Two things are worth committing: a Refine's re-solved departure, and a
+		// mission the arrival technology catches — the latter only once it
+		// differs from what was last committed, so Update never writes the same
+		// line twice.
+		var canRetarget = !!checked && checked.withinTolerance;
+		var caught = catchNow();
+		var canRecordCatch = caught.verdict.ok && !committedAsNow();
+		updateBtn.disabled = !(canRetarget || canRecordCatch);
+		updateBtn.title = canRetarget
 			? "Commit the re-solved departure requirement and redraw the trajectory."
-			: (checked
-				? "The departure technology isn't close enough to deliver this yet " +
-					"— see the Refine message for what to build up."
-				: "Press Refine first — Update commits what it finds.");
+			: canRecordCatch
+				? "Record this mission, caught at " + caught.cap.body + ", as a new line in the mission report."
+				: (checked
+					? "The departure technology isn't close enough to deliver this yet " +
+						"— see the Refine message for what to build up."
+					: "Press Refine first, or have the arrival technology catch the ship — " +
+						"Update commits what they find.");
 	}
 	// The readout's "active" event is the latest one at or before the clock
 	// (the one whose date the mission is currently living in); before the
@@ -2626,11 +2676,8 @@ export function createMissionView(opts) {
 		shipCard.setBPlane(null);
 		shipCard.setApproach(null);
 
-		var techStage = arrivalTechStage();
-		var techDesc = techStage ? registry.get(techStage.moduleId) : null;
-		var cap = (techDesc && typeof techDesc.captureFor === "function")
-			? techDesc.captureFor(world, techStage.id) : null;
-		var contact = (cap && cap.ok && cap.contact) || null;
+		var caught = catchNow();
+		var cap = caught.cap, contact = caught.contact;
 
 		shipCard.showGizmo(!!contact);
 		if (!contact) {

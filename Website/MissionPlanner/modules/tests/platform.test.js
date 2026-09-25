@@ -369,7 +369,6 @@ test("the skyhook's catch box: catch speed and Δθ, with the trim carried for t
 	assert.equal(box.title, "Catch");
 	assert.deepEqual(box.rows.map(function (r) { return r.label; }), ["catch speed", "Δθ"]);
 	assert.equal(box.rows[0].value, (cap.geo.vRel / 1000).toFixed(2) + " km/s");
-	assert.ok(Math.abs(box.burnDv - Math.abs(cap.trimDv) / 1000) < 1e-12);
 });
 
 // A straight body-centric arc that meets Mars's equatorial plane at 2e7 m from

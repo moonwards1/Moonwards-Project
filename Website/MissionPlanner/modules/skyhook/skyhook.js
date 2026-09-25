@@ -404,16 +404,14 @@ export var SKYHOOK = {
 		kind: "rendezvous",
 		figures: catchFigures,
 		// The straddling box: the tip's speed, and the angle the ship's arc
-		// meets the tether's plane at. burnDv (the trim, km/s) is not shown — it
-		// rides along for the mission report's arrival tech Δv.
+		// meets the tether's plane at.
 		readout: function (cap) {
 			return {
 				title: "Catch",
 				rows: [
 					{ label: "catch speed", value: (cap.catchSpeed / 1000).toFixed(2) + " km/s", tone: "spd" },
 					{ label: "Δθ", value: cap.dThetaDeg === null ? "—" : cap.dThetaDeg.toFixed(1) + "°", tone: "dv" }
-				],
-				burnDv: Math.abs(cap.trimDv) / 1000
+				]
 			};
 		},
 		eventLabel: function (cap) {
