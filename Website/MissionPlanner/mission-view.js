@@ -2730,11 +2730,13 @@ export function createMissionView(opts) {
 
 		// The speed bar: the ship's speed relative to the destination at the
 		// chevron, spanning the arrival window's slowest to fastest — the
-		// chevron's whole reach. The tip's speed, the speed a catch has to
-		// match, is ticked on the bar when the ship passes through it; outside
-		// that span it is a label under the bar instead, since the ship never
-		// reaches it here. Widening the bar to take it in would flatten the
-		// ship's own variation, which is often well under 1 m/s at a small body.
+		// chevron's whole reach. The mark is the speed a catch has to match:
+		// the tether's own speed at the point the ship meets it (the arrival
+		// mark's crossing), or the tip's when there is no contact. It is ticked
+		// on the bar when the ship passes through that speed; outside the span
+		// it is a label under the bar instead, since the ship never reaches it
+		// here. Widening the bar to take it in would flatten the ship's own
+		// variation, which is often well under 1 m/s at a small body.
 		var now = arrivalLegNow();
 		if (!now) { shipCard.setSpeed(null); return; }
 		var leg = now.leg;
@@ -2744,13 +2746,16 @@ export function createMissionView(opts) {
 		});
 		var range = speedRange(samples);
 		if (!range) { shipCard.setSpeed(null); return; }
-		var tip = (cap && cap.ok && cap.geo && isFinite(cap.geo.vRel)) ? cap.geo.vRel : NaN;
-		var onBar = isFinite(tip) && tip >= range.min && tip <= range.max;
+		var met = !!(contact && contact.ok && isFinite(contact.pointSpeed));
+		var target = met ? contact.pointSpeed
+			: ((cap && cap.ok && cap.geo && isFinite(cap.geo.vRel)) ? cap.geo.vRel : NaN);
+		var onBar = isFinite(target) && target >= range.min && target <= range.max;
 		var speed = speedAlong(samples, (world.jd - leg.jd0) * 86400);
-		shipCard.setSpeed(speedModel(speed == null ? NaN : speed / 1000, onBar ? tip / 1000 : NaN,
+		shipCard.setSpeed(speedModel(speed == null ? NaN : speed / 1000, onBar ? target / 1000 : NaN,
 			range.max / 1000, range.min / 1000),
-			{ label: "Tip", title: "The tether tip's speed",
-			  off: (isFinite(tip) && !onBar) ? { value: tip / 1000, below: tip < range.min } : null });
+			{ label: met ? "Contact" : "Tip",
+			  title: met ? "The tether's speed where the ship meets it" : "The tether tip's speed",
+			  off: (isFinite(target) && !onBar) ? { value: target / 1000, below: target < range.min } : null });
 	}
 
 	function updateShipCard() {
