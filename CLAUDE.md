@@ -59,8 +59,7 @@ and a history of how it got that way:
   replacement.** A log holding several versions of one rule is worse than no
   log, and it will be read as current. Tracked in git: the READMEs link to it.
 - **Changelog** — `Notes/changelog.md`. Transient, plain-language notes for
-  Kim after a natural chunk of work, ending in a suggested commit message.
-  Cleared once the change is committed — git log is the permanent record after
+  Kim after a natural chunk of work, ending in a suggested commit message. Only used for local work, not for cloud sessions. Cleared once the change is committed — git log is the permanent record after
   that. Gitignored, since tracking drafts that get deleted is pure churn.
 
 Code comments state the current invariant only — no chronology, no rejected
@@ -116,13 +115,13 @@ rather than growing this file, which loads in full every session.
 - New orbital-mechanics maths goes in `Shared/math-utils.js` with a Node test,
   never inline.
 
-## Git: In local sessions, Kim commits. In cloud sessions, Claude makes commits to the 'feature' branch.
+## Git: In local sessions, Kim commits. In cloud sessions, Claude pushes and commits to its own branch.
 
 - **The local repo is operated from Kim's side (GitHub Desktop):** Claude edits
   files; Kim reviews the diff in Desktop, commits, and pushes. This is a
   review workflow, not a technical limit — do not run `git add`/`commit`/
   `checkout`/`branch` unless Kim asks for it in so many words.
-- During cloud sessions, Claude edits files and commits them to a new branch from master created for that work. Claude continues to work in that branch until such time as Kim merges the work into `master` and deletes the branch, or until Kim asks Claude to create a new working branch. All such branches have the structure `claude/[name]`.
+- **During cloud sessions**, Claude edits files, pushes, and commits them to a new branch from master created for that work. Claude continues to work in that branch until such time as Kim merges the work into `master` and deletes the branch, or until Kim asks Claude to create a new working branch. All such branches have the structure `claude/[name]`.
 - Read-only commands (`git log`, `git show`, `git diff`, `git status`) from
   the shell are fine
 - The repo is `https://github.com/moonwards1/Moonwards-Project` (org `moonwards1`), default branch **`master`**. The published site is `Website/` via GitHub Pages (workflow: `.github/workflows/deploy-pages.yml`, deploys on push). `Notes-and-Obsolete/` is untracked by `.gitignore`.

@@ -507,7 +507,7 @@ export function createMissionView(opts) {
 		return handle;
 	}
 
-	// Default placement is a row along the bottom-right, just above the HUD's
+	// Default placement is a row along the bottom-left, just above the HUD's
 	// mouse-actions line: 12px from the right edge, FLOAT_GAP_X between panes,
 	// expressed as CSS right/bottom offsets rather than
 	// computed left pixels — the container may not be laid out yet (this runs
@@ -517,7 +517,7 @@ export function createMissionView(opts) {
 	// converts the pane to explicit left/top.
 	var FLOAT_GAP_X = 20, FLOAT_BOTTOM = 34, FLOAT_DEFAULT_W = 210;
 	function positionFloatDefault(el, index) {
-		el.style.right = (12 + index * (FLOAT_DEFAULT_W + FLOAT_GAP_X)) + "px";
+		el.style.left = (12 + index * (FLOAT_DEFAULT_W + FLOAT_GAP_X)) + "px";
 		el.style.bottom = FLOAT_BOTTOM + "px";
 	}
 
