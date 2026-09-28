@@ -520,6 +520,10 @@ body {
 	font-size: 10px; color: var(--dim);
 }
 
+/* A mark speed outside the bar's span, printed on the side it lies beyond. */
+.mp-ship-bar-off { font-size: 10px; color: var(--bright); margin-top: 2px; }
+.mp-ship-bar-off-above { text-align: right; }
+
 .mp-ship-extra { display: flex; flex-direction: column; gap: 2px; }
 .mp-ship-extrarow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .mp-ship-extralabel { font-size: 11px; color: var(--dim); }
