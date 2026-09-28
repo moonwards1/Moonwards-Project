@@ -445,6 +445,8 @@ export function createMissionView(opts) {
 			startLeft = el.offsetLeft; startTop = el.offsetTop;
 			el.style.right = "auto";
 			el.style.left = startLeft + "px";
+			el.style.bottom = "auto";
+			el.style.top = startTop + "px";
 			window.addEventListener("pointermove", onMove);
 			window.addEventListener("pointerup", onUp);
 			dragCleanup = onUp;
@@ -505,16 +507,18 @@ export function createMissionView(opts) {
 		return handle;
 	}
 
-	// Default stacking is a plain column (top-right, 12px margin, 10px gaps),
-	// expressed as CSS right/top offsets rather than
+	// Default placement is a row along the bottom-right, just above the HUD's
+	// mouse-actions line: 12px from the right edge, FLOAT_GAP_X between panes,
+	// expressed as CSS right/bottom offsets rather than
 	// computed left pixels — the container may not be laid out yet (this runs
 	// while building a background or not-yet-shown mission tab), so anything
 	// depending on sceneEl.clientWidth here would see zero. right/top resolve
 	// live whenever the pane is actually shown. Dragging (bindFloatDrag) later
 	// converts the pane to explicit left/top.
+	var FLOAT_GAP_X = 20, FLOAT_BOTTOM = 34, FLOAT_DEFAULT_W = 210;
 	function positionFloatDefault(el, index) {
-		el.style.right = "12px";
-		el.style.top = (12 + index * (148 + 10)) + "px";
+		el.style.right = (12 + index * (FLOAT_DEFAULT_W + FLOAT_GAP_X)) + "px";
+		el.style.bottom = FLOAT_BOTTOM + "px";
 	}
 
 	Object.keys(frames).forEach(function (frameId) {
