@@ -44,7 +44,7 @@ import { systems, constants } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Frames } from "../Shared/frames.js";
 import { Exchange, encodeFragmentZ } from "../Shared/exchange.js";
-import { packMissionLink } from "./ui/share-link.js";
+import { packMissionLink, WINDOW_ID } from "./ui/share-link.js";
 import { createHistory, recordUpdate, packSets } from "./core/revisions.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
@@ -740,17 +740,33 @@ export function createMissionView(opts) {
 	// the same reason — there is no synchronous deflate — so the clipboard
 	// write is chained rather than immediate.
 	// Called from the mission menu (the bar's "Mission report" dropdown).
+	//
+	// The link also carries a `sketch`: the plan as the report's "now" row states
+	// it. The World holds the plan's REQUIREMENT, but "now" reads the flight the
+	// technology DELIVERS (flightSpecNow), so the sketch swaps the delivered
+	// hand-off in for the requirement — that is what the Ephemeris tab reopens.
+	// A Moon origin keeps its release record, which is what reopens it.
+	function sketchNow() {
+		var planStage = adoptedPlanStage();
+		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		if (!planStage || !legStage) { return null; }
+		var plan = JSON.parse(JSON.stringify(planStage.params));
+		var spec = flightSpecNow();
+		if (spec && plan.origin !== "Moon") {
+			plan.departure = { r: spec.delivered.r.slice(), v: spec.delivered.v.slice(), jd: spec.delivered.jd };
+		}
+		return { plan: plan, leg: JSON.parse(JSON.stringify(legStage.params)) };
+	}
+
 	function shareMission() {
 		var payload = packMissionLink(opts.getTitle ? opts.getTitle() : null,
-			world.serialize(), packSets(planHistory));
+			world.serialize(), packSets(planHistory), sketchNow(),
+			{ window: WINDOW_ID, mission: missionId });
 		encodeFragmentZ(payload).then(function (frag) {
 			var url = location.origin + location.pathname + "#mission=" + frag;
-			var sets = packSets(planHistory);
-			var note = (sets && sets.latest)
-				? "A link that opens this exact mission is on the clipboard. It also " +
-					"carries the plan as originally adopted, so pasting it into the " +
-					"Ephemeris tab starts from where this mission began."
-				: "A link that opens this exact mission is on the clipboard.";
+			var note = "A link that opens this exact mission is on the clipboard. Pasting " +
+				"it into the Ephemeris tab loads the flight shown in the report's " +
+				"\"now\" row.";
 			return navigator.clipboard.writeText(url).then(function () {
 				showMessage("Mission link copied", function (wrap) { msgPara(wrap, note); });
 			}, function () {

@@ -47,7 +47,18 @@ export var MISSION_LINK_VERSION = 2;
 // revised from where it started. A link with no `plan` (v1, or a mission whose
 // history was lost) still opens a tab — the receiving side falls back to the
 // old single-World behaviour rather than refusing.
-export function packMissionLink(title, worldData, planSets) {
+//
+// Two optional additions ride along, both compact:
+//   - `sketch` — { plan, leg }: the adopted-plan and transfer-leg params as the
+//     Ephemeris tab should reopen them. For a link copied from a mission tab
+//     these state the flight the mission's report "now" row shows (the
+//     DELIVERED hand-off, not the plan's requirement). Preferred over
+//     `plan.original` when present.
+//   - `source` — { window, mission }: which page load and mission tab the link
+//     was copied from, so the receiving side can tell a paste from a tab that is
+//     still open in the same window (no new tab wanted) from one arriving from
+//     elsewhere.
+export function packMissionLink(title, worldData, planSets, sketch, source) {
 	var out = {
 		kind: MISSION_LINK_KIND,
 		version: MISSION_LINK_VERSION,
@@ -55,8 +66,13 @@ export function packMissionLink(title, worldData, planSets) {
 		world: worldData
 	};
 	if (planSets && planSets.original) { out.plan = planSets; }
+	if (sketch && sketch.plan && sketch.leg) { out.sketch = sketch; }
+	if (source && typeof source.window === "string") { out.source = source; }
 	return out;
 }
+
+// Identifies this page load. Stamped into every link it copies (`source`).
+export var WINDOW_ID = Math.random().toString(36).slice(2, 10);
 
 // Decoded fragment -> { ok: true, title: string|null, world, plan: object|null }
 // or { ok: false, reason }. Accepts the v2 envelope, the v1 envelope (no
@@ -68,7 +84,7 @@ export function unpackMissionLink(decoded) {
 		return { ok: false, reason: "not a mission link" };
 	}
 	if (decoded.kind === "moonwards-world") {           // a bare world, no envelope
-		return { ok: true, title: null, world: decoded, plan: null };
+		return { ok: true, title: null, world: decoded, plan: null, sketch: null, source: null };
 	}
 	if (decoded.kind !== MISSION_LINK_KIND) {
 		return { ok: false, reason: "unrecognised link kind" };
@@ -83,7 +99,12 @@ export function unpackMissionLink(decoded) {
 	var title = (typeof decoded.title === "string" && decoded.title.trim())
 		? decoded.title.trim() : null;
 	var plan = (decoded.plan && typeof decoded.plan === "object") ? decoded.plan : null;
-	return { ok: true, title: title, world: decoded.world, plan: plan };
+	var sk = decoded.sketch;
+	var sketch = (sk && typeof sk === "object" && sk.plan && typeof sk.plan === "object" &&
+		sk.leg && typeof sk.leg === "object") ? sk : null;
+	var src = decoded.source;
+	var source = (src && typeof src === "object" && typeof src.window === "string") ? src : null;
+	return { ok: true, title: title, world: decoded.world, plan: plan, sketch: sketch, source: source };
 }
 
 // Pasted text -> the base64url fragment string, or null if none is found.

@@ -273,6 +273,12 @@ var ephView = createEphemerisView({
 	// own tab, so a pasted mission arrives as both the place it started and
 	// the place it got to. A link with no later set never calls this — it
 	// loads into the scratchpad alone, exactly as before.
+	// Is this mission tab open right now? A pasted link stamped with this
+	// window's id and a live tab needs no second tab.
+	hasMissionTab: function (missionId) {
+		return missions.some(function (m) { return m.id === missionId; });
+	},
+
 	onOpenPastedMission: function (worldData, title, planSets) {
 		var res = deserializeWorld(worldData);
 		if (!res.ok) { return { ok: false, reason: res.reason }; }

@@ -150,3 +150,14 @@ test("missionFragmentFrom carries the compression marker through reflow", async 
 	assert.equal(missionFragmentFrom(z.slice(0, mid) + "\n" + z.slice(mid)), z);
 	assert.equal(missionFragmentFrom(z.slice(0, mid) + "\u200B" + z.slice(mid)), z);
 });
+
+test("sketch and source ride along and unpack; absent ones unpack to null", () => {
+	var sketch = { plan: { origin: "Earth" }, leg: { legDays: 100 } };
+	var src = { window: "abc123", mission: "m2" };
+	var u = unpackMissionLink(packMissionLink("T", worldData, null, sketch, src));
+	assert.deepEqual(u.sketch, sketch);
+	assert.deepEqual(u.source, src);
+	var bare = unpackMissionLink(packMissionLink("T", worldData, null));
+	assert.equal(bare.sketch, null);
+	assert.equal(bare.source, null);
+});

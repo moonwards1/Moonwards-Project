@@ -164,7 +164,7 @@ import {
 } from "./core/proximity.js";
 import { deserializeWorld } from "./core/world.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
-import { unpackMissionLink, missionFragmentFrom } from "./ui/share-link.js";
+import { unpackMissionLink, missionFragmentFrom, WINDOW_ID } from "./ui/share-link.js";
 import { readSets, latestOf } from "./core/revisions.js";
 import { originWindow, destinationWindow } from "./core/pov-window.js";
 import { equatorNormal, arrivalMark } from "./modules/arrival-approach.js";
@@ -251,11 +251,12 @@ var LUNAR_FAILURES = {
 //    onOpenPastedMission(worldData, title, planSets) — same, for the LATER
 //                          plan a pasted link carries when the mission has
 //                          been updated since it was adopted
+//    hasMissionTab(missionId) — is that mission tab open in this window?
 //  }
-//  "Paste mission link…" loads a link's ORIGINAL plan into this tab's own
-//  scratchpad (loadadoptedPlanIntoState). When the link also carries a later
-//  commit, that one opens as its own mission tab through onOpenPastedMission —
-//  see loadPastedMission.
+//  "Paste mission link…" loads a link's plan into this tab's own scratchpad
+//  (loadPlanParamsIntoState). A link from a mission still open in this window
+//  stops there; otherwise a later commit opens as its own mission tab through
+//  onOpenPastedMission — see loadPastedMission.
 //  Returns { show, hide, render, resize }.
 // =======================================================================
 export function createEphemerisView(opts) {
@@ -1908,8 +1909,12 @@ export function createEphemerisView(opts) {
 		if (!fpStage || !legStage) {
 			return { ok: false, reason: "That mission has no adopted flight plan to load here." };
 		}
-		var p = fpStage.params || {};
-		var lp = legStage.params || {};
+		return loadPlanParamsIntoState(fpStage.params || {}, legStage.params || {});
+	}
+
+	// The body of the above, over the two stages' params directly — a link's
+	// `sketch` (ui/share-link.js) carries exactly these.
+	function loadPlanParamsIntoState(p, lp) {
 		if (!p.origin || !p.departure || !p.arrival) {
 			return { ok: false, reason: "That mission's flight plan is incomplete." };
 		}
@@ -1982,29 +1987,51 @@ export function createEphemerisView(opts) {
 	}
 
 	// A pasted link, unpacked (ui/share-link.js), turned into whatever it
-	// describes. A mission link carries up to two plans — the ORIGINAL as it
-	// was first adopted, and the LATEST commit if the mission has been updated
-	// since — and each has a different destination here:
+	// describes. This scratchpad is where a plan is authored and revised, so it
+	// always receives the plan; what else happens depends on the link:
 	//
-	//   - the ORIGINAL loads into this scratchpad, because this tab is where a
-	//     plan is authored and revised. Starting from where the mission began
-	//     is the useful place to pick it up from.
-	//   - the LATEST opens as its own mission tab, because a committed plan
-	//     with a technology stack behind it is a mission, not a sketch.
-	//
-	// A link with no plan sets (v1, or a mission never updated) has only one
-	// thing to do with, and does exactly what paste has always done: loads it
-	// here and spawns nothing.
+	//   - a link from a mission tab's Copy Mission carries a `sketch` — the
+	//     plan as that tab's report "now" row states it — and loads exactly
+	//     that. If the source tab is still open in THIS window, that is all:
+	//     the mission already exists here, so no tab is spawned.
+	//   - otherwise a link carrying a LATER commit also opens it as its own
+	//     mission tab, because a committed plan with a technology stack behind
+	//     it is a mission, not a sketch.
+	//   - a link without a sketch (older links) loads the plan as originally
+	//     adopted, or the bare World when it has no plan sets.
 	function loadPastedMission(unp) {
+		// A link copied from a mission tab carries a `sketch`: the plan as that
+		// tab's report "now" row states it. It wins over the original.
+		if (unp.sketch) {
+			var lp0 = unp.sketch.plan;
+			if (!lp0.origin || !lp0.departure || !lp0.arrival) {
+				return { ok: false, reason: "That mission's flight plan is incomplete." };
+			}
+			var fromSketch = loadPlanParamsIntoState(lp0, unp.sketch.leg);
+			if (!fromSketch.ok) { return fromSketch; }
+			// The mission is already open here as a tab, so the paste only moves
+			// its values into this scratchpad; a mission from elsewhere still
+			// arrives as a tab of its own below.
+			if (unp.source && unp.source.window === WINDOW_ID && opts.hasMissionTab &&
+				opts.hasMissionTab(unp.source.mission)) {
+				return { ok: true };
+			}
+			return openLatestOf(unp);
+		}
+
 		var sets = readSets(unp.plan);
-		var latest = latestOf(sets);
 		var sketchWorld = sets ? sets.original : unp.world;
 
 		var res = deserializeWorld(sketchWorld);
 		if (!res.ok) { return { ok: false, reason: "Couldn't load the mission: " + res.reason + "." }; }
 		var loaded = loadadoptedPlanIntoState(res.world);
 		if (!loaded.ok) { return loaded; }
+		return openLatestOf(unp);
+	}
 
+	// The later plan of a link, if it carries one, as a mission tab of its own.
+	function openLatestOf(unp) {
+		var latest = latestOf(readSets(unp.plan));
 		if (latest && opts.onOpenPastedMission) {
 			var spawned = opts.onOpenPastedMission(latest.world, unp.title, unp.plan);
 			// The scratchpad already holds the original; a tab that won't open
