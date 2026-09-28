@@ -5,8 +5,7 @@
  * buildEarthMoonFrame for Earth and the Moon), so the planet itself stands at
  * the centre where the heliocentric view shows only a dot or the "×". This
  * file owns the scene objects laid over such a frame: the stretch of path the
- * POV window covers, the Moon-origin escape out to Earth's SOI, the hand-off
- * dot, the ship chevron, and at a destination the equatorial catch disc and
+ * POV window covers, the hand-off dot, the ship chevron, and at a destination the equatorial catch disc and
  * the arrival mark. ephemeris-view.js does the physics — every point handed in
  * here is already a body-relative position in metres — and decides the window
  * (core/pov-window.js).
@@ -19,17 +18,13 @@
 /* global THREE */
 
 import { systems } from "../Shared/orbit.js";
-import { OrbitalMath } from "../Shared/math-utils.js";
 import { buildBodyFrame, buildEarthMoonFrame, U } from "./scene-frames.js";
 import { makeShipSprite, orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { worldSizeAtPointForPx } from "../Shared/sim/body-renderer.js";
 import { equatorNormal } from "./modules/arrival-approach.js";
 import { MAX_PASS_ALTITUDE } from "./core/proximity.js";
 
-var O = OrbitalMath;
-
 var PATH_COLOR = 0x66f0ff;      // the helio view's own trajectory colour
-var ESCAPE_COLOR = 0x66f0ff;    // the Moon-origin escape, before the hand-off — drawn dashed
 var START_COLOR = 0xff5fd0;     // the hand-off dot, as in the helio view
 // The arrival mark in the mission tab's own colours (arrival-leg.js's draw()):
 // green for an equatorial crossing, white for closest approach.
@@ -84,7 +79,7 @@ export function createPovScenes() {
 		var frame = id.key === "Earth-Moon" ? buildEarthMoonFrame() : buildBodyFrame(id.key);
 		var pov = {
 			frame: frame, centre: id.centre,
-			path: null, escape: null,
+			path: null,
 			startDot: dotAt(START_COLOR, 6),
 			markDot: dotAt(CROSSING_COLOR, 7),
 			catchDisc: makeCatchDisc(id.centre),
@@ -101,16 +96,13 @@ export function createPovScenes() {
 	return { get: get };
 }
 
-// dash: dash length in SCENE units for a dashed line, or null for solid.
-function replaceLine(pov, key, pts, colorHex, dash) {
+function replaceLine(pov, key, pts, colorHex) {
 	var old = pov[key];
 	if (old) { pov.frame.scene.remove(old); old.geometry.dispose(); old.material.dispose(); pov[key] = null; }
 	if (!pts || pts.length < 2) { return; }
 	var line = new THREE.Line(
 		new THREE.BufferGeometry().setFromPoints(pts.map(toScene)),
-		dash ? new THREE.LineDashedMaterial({ color: colorHex, dashSize: dash, gapSize: dash, transparent: true, opacity: 0.8 })
-		     : new THREE.LineBasicMaterial({ color: colorHex }));
-	if (dash) { line.computeLineDistances(); }
+		new THREE.LineBasicMaterial({ color: colorHex }));
 	pov.frame.scene.add(line);
 	pov[key] = line;
 }
@@ -124,14 +116,12 @@ function placeDot(dot, r) {
 	dot.geometry.computeBoundingSphere();
 }
 
-// Redraw everything but the chevron. d: { path, escape, start, mark,
+// Redraw everything but the chevron. d: { path, start, mark,
 // catchDisc } — point lists and single points in metres relative to the
 // scene's centre body, any of them null to hide it. `mark` is
 // arrival-approach.js's arrivalMark result ({ kind, r }) or null.
 export function drawPov(pov, d) {
 	replaceLine(pov, "path", d.path, PATH_COLOR);
-	// The escape's dashes scale with its own size, about 60 along it.
-	replaceLine(pov, "escape", d.escape, ESCAPE_COLOR, d.escape ? povExtent(d.escape) / 1e6 / 60 : null);
 	placeDot(pov.startDot, d.start);
 	placeDot(pov.markDot, d.mark ? d.mark.r : null);
 	if (d.mark) { pov.markDot.material.color.setHex(d.mark.kind === "crossing" ? CROSSING_COLOR : CA_COLOR); }
@@ -154,12 +144,4 @@ export function scalePovOverlays(pov, paneEl) {
 		pov.chevron.scale.setScalar(worldSizeAtPointForPx(cam, paneEl, pov.chevron.position, CHEVRON_PX));
 		if (pov.chevronDir) { orientMarkerSprite(cam, pov.chevron, pov.chevronDir); }
 	}
-}
-
-// Largest distance from the centre over a point list (m) — what the camera
-// frames on entering a POV.
-export function povExtent(pts) {
-	var m = 0;
-	(pts || []).forEach(function (r) { m = Math.max(m, O.vMag(r)); });
-	return m;
 }

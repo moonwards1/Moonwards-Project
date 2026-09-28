@@ -195,13 +195,14 @@ The flight starts at the origin's SOI crossing. The Departure card's vector is
 the ship's velocity there. The tab's clock is
 the hand-off epoch at every origin but the Moon. `core/adopt.js`
 commits that state verbatim, so adopt and "Paste mission link…" round-trip
-exactly.
+exactly for a plan authored here.
 
-Where on the SOI sphere the ship exits is `state.handoff`. DERIVED mode, when
-authoring, places it one SOI radius along the heading. ADOPTED mode, when
-pasting, holds the plan's own body-relative offset, because a real chain's
-exit point can't be reconstructed. Changing origin or "re-derive exit point"
-returns to derived.
+The exit point on the SOI sphere is always this tab's own model: one SOI
+radius along the heading, or for a Moon origin the crossing its nominal
+release reaches. A pasted mission whose technology left from elsewhere is
+NOT pinned to that point: the Ephemeris tab is a sketching tool, and
+disagreeing with the mission tab by the difference between the two departure
+models is expected (~100,000 km at Ceres in the Moon → Ceres example).
 
 At every origin the departure estimate (`departure-estimate.js`)
 is information only: read backwards from the hand-off for the Moon widget and
@@ -373,7 +374,7 @@ workable; the upper is presentation. Never derive it from an emitted event:
 an event is absent or truncated when the pass sits near the leg's end, and the
 window jumps.
 
-- **Coast** ends at the window's left edge, but its slider tacks the whole
+- **Coast** ends at the window's incoming edge, but its slider tacks the whole
   arrival window on past that edge as one dim-blue segment (the polyline's
   own dimmed tone past the seam, `ui/phase-slider.js`'s `coastSliderState`),
   so the heliocentric approach and arrival scrub as one continuous track.

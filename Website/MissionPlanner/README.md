@@ -155,11 +155,13 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   the date bar is that hand-off's epoch, and the drawn flight starts there —
   the same state, verbatim, that the adopt commits as the mission's
   Departure→Coast boundary, so a plan adopted here and pasted back is exact.
-  Where on the SOI sphere the ship exits is either derived from the heading
-  (authoring) or adopted from a pasted mission's own departure chain.
-  **A MOON origin differs on both counts:** its exit point is neither derived
-  nor adopted but computed — the Earth-SOI crossing the release's escape
-  hyperbola reaches — and the date bar states the RELEASE, so the hand-off
+  Where on the SOI sphere the ship exits is always this tab's own: one SOI
+  radius along the heading. A pasted mission whose departure chain left from
+  elsewhere is drawn from that point, so the two tabs can disagree by that much.
+  **A MOON origin differs on both counts:** its exit point is computed — the
+  Earth-SOI crossing the release's escape hyperbola reaches (a pasted
+  mission's card is re-solved to match its crossing velocity, not its
+  point) — and the date bar states the RELEASE, so the hand-off
   epoch is ~2 days later than the clock. The release travels with the mission
   separately, as `releaseJd` and `lunarRelease`. How
   much impulse that hand-off costs, and when the launch must happen, are read
@@ -184,8 +186,8 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   closest approach), and the scene is placed at the MARKER's epoch. A click
   there focuses the chevron or a body and never moves the marker.
 - **`ephemeris-pov.js`** — the POV scenes' own objects over a
-  `scene-frames.js` body frame: the window's path, a Moon origin's dashed
-  escape out to Earth's SOI, the hand-off dot, the chevron, and at a
+  `scene-frames.js` body frame: the window's path, the hand-off dot, the
+  chevron, and at a
   destination the equatorial catch disc (out to `MAX_PASS_ALTITUDE`) and the
   arrival mark. One scene per body, built on first use.
 - **`scene-frames.js`** — Three.js frame factories shared by both

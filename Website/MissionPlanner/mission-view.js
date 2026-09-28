@@ -745,15 +745,23 @@ export function createMissionView(opts) {
 	// it. The World holds the plan's REQUIREMENT, but "now" reads the flight the
 	// technology DELIVERS (flightSpecNow), so the sketch swaps the delivered
 	// hand-off in for the requirement — that is what the Ephemeris tab reopens.
-	// A Moon origin keeps its release record, which is what reopens it.
+	// A Moon origin's release record takes the departure phase's own release
+	// epoch: the delivered crossing is where THAT release got to, and the
+	// Ephemeris tab solves its own card from there (its lunarCardFor). The
+	// record's burn is kept only as the seed that solve starts from.
 	function sketchNow() {
 		var planStage = adoptedPlanStage();
 		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
 		if (!planStage || !legStage) { return null; }
 		var plan = JSON.parse(JSON.stringify(planStage.params));
 		var spec = flightSpecNow();
-		if (spec && plan.origin !== "Moon") {
+		if (spec) {
 			plan.departure = { r: spec.delivered.r.slice(), v: spec.delivered.v.slice(), jd: spec.delivered.jd };
+			var releaseJd = releaseEpochFor(world);
+			if (plan.origin === "Moon" && releaseJd != null && isFinite(releaseJd)) {
+				var burn = (plan.lunarRelease && plan.lunarRelease.burn) || { pro: 0, rad: 0, nrm: 0 };
+				plan.lunarRelease = { jd: releaseJd, burn: burn };
+			}
 		}
 		return { plan: plan, leg: JSON.parse(JSON.stringify(legStage.params)) };
 	}

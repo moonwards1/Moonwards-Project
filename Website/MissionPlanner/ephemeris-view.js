@@ -69,16 +69,14 @@
  * the compliance boundary cannot see the difference: it compares speed, epoch
  * and aim, never position.
  *
- * WHERE ON THE SOI SPHERE the ship exits is `state.handoff` (see departureState
- * below), for those other origins. Authoring from scratch it is DERIVED — one
- * SOI radius along the outbound asymptote, the minimal reading of "this is my
- * heading leaving" — so it tracks the heading as the card is edited. Pasting a
- * mission ADOPTS the plan's own offset verbatim, because that geometry came
- * from a real departure chain (a platform, carriers, departure waypoints) and
- * this tab has no way to re-derive it. An adopted offset is body-relative, so
- * it survives date scrubs; changing the origin drops back to derived, as does
- * the card's reset control. A Moon origin uses neither: its exit point is not
- * chosen at all but computed — the Earth-SOI crossing its release reaches.
+ * WHERE ON THE SOI SPHERE the ship exits, for those other origins, is one SOI
+ * radius along the outbound asymptote — the minimal reading of "this is my
+ * heading leaving" — so it tracks the heading as the card is edited. A Moon
+ * origin's exit point is the Earth-SOI crossing its release reaches. Either
+ * way it is this tab's own model, pasted missions included: a mission's
+ * departure chain (a skyhook's real geometry, departure waypoints) leaves from
+ * a point this tab does not reproduce, and the two tabs are expected to
+ * disagree by that much.
  *
  * THE SHIP MARKER is a slidable probe on the drawn path with Free / Target
  * modes, plus the destination-at-arrival "×" and the
@@ -101,12 +99,14 @@
  * serialized World to planner.js's onStartMission, which registers it as a new
  * mission tab and switches to it.
  *
- * "PASTE MISSION LINK…" does NOT spawn a tab. It decodes a shared link
- * (ui/share-link.js parses URL/fragment/blob) and loads the adopted plan's
+ * "PASTE MISSION LINK…" decodes a shared link
+ * (ui/share-link.js parses URL/fragment/blob) and loads the plan's
  * origin/burn/waypoints/destination back into THIS tab's own scratchpad state
- * (loadadoptedPlanIntoState), placing the marker at the original rendezvous — so
+ * (loadPastedMission), placing the marker at the plan's rendezvous — so
  * a pasted mission is revised here and then adopted into a new tab through the
- * same path as anything authored from scratch.
+ * same path as anything authored from scratch. It also opens a mission tab
+ * only when the link carries a later commit from a mission that is not
+ * already open in this window.
  *
  * THE ORBIT-APPROACH RING SCAN rounds out the proximity markers: hollow rings
  * where the drawn path passes near the SELECTED DESTINATION's orbit
@@ -303,13 +303,6 @@ export function createEphemerisView(opts) {
 			legDays: 0,
 			destination: legDefaults.destination
 		},
-		// Where on the origin's SOI sphere the flight starts, as a BODY-RELATIVE
-		// offset (see departureState). mode "derived" recomputes it from the
-		// current heading every refresh; mode "adopted" holds the vector a
-		// pasted mission's departure chain actually produced. A MOON origin
-		// uses neither: its exit point is computed, not chosen — the Earth-SOI
-		// crossing core/lunar-departure.js propagates the release out to.
-		handoff: { mode: "derived", offset: null },
 		marker: null,          // { f0, angle (deg), mode: "free"|"target", dvBudget, ... }
 		markerFocused: false,  // camera pivots on the marker
 		destFocused: false,    // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
@@ -619,28 +612,11 @@ export function createEphemerisView(opts) {
 	});
 	originRow.appendChild(originSel); depHost.appendChild(originRow);
 	var originInfo = muted(depHost, "");
-	// Only meaningful while an exit point is ADOPTED from a pasted mission:
-	// drops back to deriving it from the current heading (departureState).
-	var handoffResetBtn = document.createElement("button");
-	handoffResetBtn.type = "button";
-	handoffResetBtn.className = "mp-btn mp-ghost";
-	handoffResetBtn.textContent = "re-derive exit point";
-	handoffResetBtn.title = "Stop using the pasted mission's own SOI exit point and put it " +
-		"back on the current heading, one SOI radius out.";
-	handoffResetBtn.style.display = "none";
-	handoffResetBtn.addEventListener("click", function () {
-		state.handoff = { mode: "derived", offset: null };
-		refresh();
-	});
-	depHost.appendChild(handoffResetBtn);
 	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
 
-	// A different origin means a different SOI entirely, so an adopted exit
-	// point no longer describes anything — back to deriving it. The destination
-	// list narrows with the origin too.
+	// The destination list narrows with the origin.
 	originSel.addEventListener("change", function () {
 		state.origin = originSel.value;
-		state.handoff = { mode: "derived", offset: null };
 		legStart = null;
 		rebuildDestinationOptions();
 		refresh();
@@ -1045,24 +1021,20 @@ export function createEphemerisView(opts) {
 	// hand-off velocity is the body's heliocentric velocity plus that vector
 	// (O.applyBurn is exactly that sum, and O.burnComponents its exact
 	// inverse, which is what makes the adopt/paste round trip lossless), and
-	// the epoch is the clock's. The position is the body's plus an offset onto
-	// its SOI sphere:
-	//   derived  — one SOI radius along the outbound asymptote (the heading
-	//              itself), so editing the card moves the exit point with it;
-	//   adopted  — the body-relative offset a pasted mission's departure chain
-	//              actually produced, held fixed (see loadadoptedPlanIntoState).
+	// the epoch is the clock's. The position is the body's plus one SOI
+	// radius along the outbound asymptote (the heading itself), so editing
+	// the card moves the exit point with it.
 	// A ship with no meaningful v-infinity has no asymptote to sit on and no
 	// flight to start, so it departs from the body's own position.
 	//
 	// A MOON ORIGIN — the card states only the SHIP's share of the v∞, on the
 	// same Earth heliocentric axes as every other origin's. The Moon's own
 	// motion is added by core/lunar-departure.js, which works out what that
-	// motion is still worth once Earth's well has been climbed. Neither
-	// derived nor adopted applies: there is no offset to choose, because the
-	// release fixes an escape hyperbola outright and its Earth-SOI crossing is
-	// computed rather than constructed.
+	// motion is still worth once Earth's well has been climbed. There is no
+	// offset to choose: the release fixes an escape hyperbola outright and its
+	// Earth-SOI crossing is computed rather than constructed.
 	//
-	// Returns { body, r, v, jd, vInfVec, vInf, offset, adopted, lunar }, where
+	// Returns { body, r, v, jd, vInfVec, vInf, offset, lunar, escapes }, where
 	// `jd` is the epoch of the returned state. That is the clock at every
 	// origin but the Moon, where the clock is the RELEASE and the returned
 	// state is the crossing a couple of days later.
@@ -1101,7 +1073,6 @@ export function createEphemerisView(opts) {
 		if (!lunar.ok || !lunar.soiExit) {
 			return { body: body, r: moon.r, v: moon.v, jd: jd,
 			         vInfVec: [0, 0, 0], vInf: 0, offset: [0, 0, 0],
-			         adopted: false,
 			         lunar: lunar.ok ? { ok: false, reason: "no-coast" } : lunar,
 			         escapes: false };
 		}
@@ -1133,7 +1104,6 @@ export function createEphemerisView(opts) {
 			vInfVec: exit.v.slice(),
 			vInf: O.vMag(exit.v),
 			offset: exit.r.slice(),
-			adopted: false,
 			lunar: lunar,
 			escapes: true
 		};
@@ -1159,17 +1129,11 @@ export function createEphemerisView(opts) {
 		var v = O.applyBurn(body.r, body.v, b.pro || 0, b.nrm || 0, b.rad || 0);
 		var vInfVec = O.vSub(v, body.v), vInf = O.vMag(vInfVec);   // the card, at the SOI edge
 		var flown = flownVInfVec(vInfVec, state.origin);
-		var adopted = state.handoff.mode === "adopted" && state.handoff.offset;
-		var offset;
-		if (adopted) {
-			offset = state.handoff.offset;
-		} else {
-			var R = originSoiRadius(state.origin);
-			offset = (R > 0 && vInf > 1e-6) ? O.vScale(O.vUnit(vInfVec), R) : [0, 0, 0];
-		}
+		var R = originSoiRadius(state.origin);
+		var offset = (R > 0 && vInf > 1e-6) ? O.vScale(O.vUnit(vInfVec), R) : [0, 0, 0];
 		return { body: body, r: O.vAdd(body.r, offset),
 		         v: flown ? O.vAdd(body.v, flown) : body.v.slice(), jd: dateState.jd,
-		         vInfVec: vInfVec, vInf: vInf, offset: offset, adopted: !!adopted,
+		         vInfVec: vInfVec, vInf: vInf, offset: offset,
 		         lunar: null, escapes: !!flown };
 	}
 
@@ -1188,15 +1152,6 @@ export function createEphemerisView(opts) {
 		}
 		return estimateDeparture({ origin: state.origin, vInfVec: hand.vInfVec,
 			jdHandoff: dateState.jd });
-	}
-
-	// The card carries no hand-off prose — the numbers it would have stated are
-	// already on the card itself (the vector), the date bar (the epoch) and the
-	// Moon widget (the release lead). All that is left to keep in sync is the
-	// re-derive control, which only means anything while an exit point is
-	// ADOPTED from a pasted mission.
-	function updateHandoffControls(hand) {
-		handoffResetBtn.style.display = hand.adopted ? "" : "none";
 	}
 
 	// The burn Target mode re-solves: the departure burn if there are no
@@ -1261,8 +1216,7 @@ export function createEphemerisView(opts) {
 		//
 		// A derived exit point sits on the heading, so re-solving the heading
 		// moves it: solve, re-place the exit point on the answer, solve once
-		// more. Two bounded passes, never an iteration — and with an adopted
-		// exit point the second pass is a no-op, because the geometry is fixed.
+		// more. Two bounded passes, never an iteration.
 		function frameAt() {
 			var hand = departureState();
 			if (term.isDeparture) {
@@ -1344,7 +1298,7 @@ export function createEphemerisView(opts) {
 		// A Moon origin takes it too: its exit point is the SOI crossing the
 		// release flies to, so a new card moves it just as a new heading moves
 		// a derived one.
-		if (term.isDeparture && state.handoff.mode !== "adopted") {
+		if (term.isDeparture) {
 			var keep = { pro: term.burn.pro, rad: term.burn.rad, nrm: term.burn.nrm };
 			term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
 			var f2 = frameAt();
@@ -1764,11 +1718,11 @@ export function createEphemerisView(opts) {
 		mk.startNote = muted(mk.el, "");
 
 		// "Paste mission link…": a link copied with a mission tab's "Copy mission
-		// link" loads its ORIGINAL plan back into THIS tab's own scratchpad
-		// (loadPastedMission), so it can be revised before Start Mission Plan is
+		// link" loads its plan back into THIS tab's own scratchpad
+		// (loadPastedMission — which plan, and whether a tab opens too, is
+		// decided there), so it can be revised before Start Mission Plan is
 		// clicked — the same adopt/spawn path as anything authored from
-		// scratch. A link that also carries a later commit opens that as a
-		// mission tab at the same time. The dialog's input auto-fills from the
+		// scratch. The dialog's input auto-fills from the
 		// OS clipboard as soon as it opens (best-effort — silently stays blank
 		// if the browser withholds clipboard-read permission).
 		mk.pasteBtn = document.createElement("button");
@@ -1881,14 +1835,14 @@ export function createEphemerisView(opts) {
 	// Whatever composed to produce it — a skyhook release, a carrier chain,
 	// departure waypoints — is upstream's business and opaque from here.
 	//
-	// So this loads it VERBATIM: the clock opens at departure.jd, the velocity
-	// decomposes against the origin body's own motion there (O.burnComponents,
-	// the exact inverse of the O.applyBurn departureState re-applies), and the
-	// POSITION is kept as a body-relative offset the tab then ADOPTS rather
-	// than re-deriving — because a real departure chain's exit point on the
-	// SOI sphere is not something this tab can reconstruct. Nothing is
-	// estimated, netted or back-propagated anywhere in here, which is what
-	// makes the round trip exact for any plan, however it was produced.
+	// So this loads its VELOCITY verbatim: the clock opens at departure.jd,
+	// and the velocity decomposes against the origin body's own motion there
+	// (O.burnComponents, the exact inverse of the O.applyBurn departureState
+	// re-applies). The POSITION is this tab's own — one SOI radius along that
+	// heading — which is exactly where a plan authored here started, so such
+	// a plan round-trips exactly. A plan whose departure chain left from
+	// somewhere else on the SOI sphere is drawn from this tab's point instead,
+	// and the two tabs disagree by that much.
 	// `injectionJd` on older saves is provenance now, and ignored.
 	//
 	// A MOON ORIGIN reopens from the other end. Its card is a release, not a
@@ -1928,8 +1882,9 @@ export function createEphemerisView(opts) {
 		// goes to the release epoch and the card takes its impulse verbatim.
 		// The hand-off then comes back out of the same integration that
 		// produced it, so the round trip is exact without solving anything
-		// backwards. A lunar plan adopted without that record (there is nothing
-		// else it could have come from) is reported rather than guessed at.
+		// backwards. A plan whose departure that release does NOT reach gets a
+		// re-solved card instead (lunarCardFor). A lunar plan with no release
+		// record is reported rather than guessed at.
 		var burn;
 		if (p.origin === "Moon") {
 			if (!p.lunarRelease || !isFinite(p.lunarRelease.jd)) {
@@ -1938,7 +1893,7 @@ export function createEphemerisView(opts) {
 			var lr = p.lunarRelease.burn || {};
 			burn = { pro: lr.pro || 0, rad: lr.rad || 0, nrm: lr.nrm || 0 };
 			dateBar.setJd(p.lunarRelease.jd);
-			state.handoff = { mode: "derived", offset: null };
+			burn = lunarCardFor(p.lunarRelease.jd, burn, p.departure) || burn;
 		} else {
 			dateBar.setJd(p.departure.jd);
 			var natural = O.bodyStateAtJD(GM_SUN, originSys.orbit, p.departure.jd);
@@ -1946,10 +1901,6 @@ export function createEphemerisView(opts) {
 			burn = O.vMag(vInfVec) > 1e-6
 				? O.burnComponents(natural.r, natural.v, vInfVec)
 				: { pro: 0, rad: 0, nrm: 0 };
-			// Adopt the plan's own exit point on the SOI sphere, as an offset
-			// from the origin body so it still means something if the clock is
-			// scrubbed.
-			state.handoff = { mode: "adopted", offset: O.vSub(p.departure.r, natural.r) };
 		}
 		frame.place(dateState.jd);
 
@@ -1984,6 +1935,31 @@ export function createEphemerisView(opts) {
 			placeMarkerAtGlobalTime(Math.min(tof, trajTotalT));
 		}
 		return { ok: true };
+	}
+
+	// A Moon-origin plan whose departure is NOT the crossing its recorded
+	// release flies to — a mission's technology delivered it (a skyhook's real
+	// geometry, the departure leg's own burns), or Update committed a new one.
+	// This tab models the departure only as a nominal release, so it solves the
+	// card whose crossing VELOCITY is the plan's. That release crosses Earth's
+	// SOI at its own point and time, not the plan's, and the drawn flight
+	// differs from the mission's by that much. Null when the recorded release
+	// already flies to the plan's departure (it then reopens exactly as it was
+	// authored) or when no card reaches it.
+	function lunarCardFor(releaseJd, card, departure) {
+		var f0 = flyLunarDeparture({ jd: releaseJd, card: card });
+		if (f0.ok && f0.soiExit) {
+			var jd0 = releaseJd + f0.soiExit.dt / DAY;
+			var e0 = Frames.bodyHelioState("Earth", jd0);
+			if (O.vMag(O.vSub(O.vAdd(e0.r, f0.soiExit.r), departure.r)) < 1e3 &&
+				O.vMag(O.vSub(O.vAdd(e0.v, f0.soiExit.v), departure.v)) < 1e-2 &&
+				Math.abs(jd0 - departure.jd) * DAY < 1) { return null; }
+		}
+		var earth = Frames.bodyHelioState("Earth", departure.jd);
+		var sol = solveLunarCard({ jd: releaseJd, vInfVec: O.vSub(departure.v, earth.v),
+			seedCard: card, at: "exit" });
+		if (!sol.ok) { return null; }
+		return { pro: sol.card.pro, rad: sol.card.rad, nrm: sol.card.nrm };
 	}
 
 	// A pasted link, unpacked (ui/share-link.js), turned into whatever it
@@ -2310,8 +2286,6 @@ export function createEphemerisView(opts) {
 	var povScenes = createPovScenes();
 	var pov = null;         // the active POV scene (ephemeris-pov.js), null in the helio view
 	var povWin = null;      // { t0, t1 } global s — the window the POV shows
-	var lastHand = null;    // refresh()'s hand-off, for the Moon-origin escape drawing
-	var GM_EARTH = systems.get("Earth").GM;
 	var POV_BODY_PX = 60;   // how wide the body appears on entering a POV
 
 	function viewFrame() { return pov ? pov.frame : frame; }
@@ -2363,23 +2337,6 @@ export function createEphemerisView(opts) {
 		return pts;
 	}
 
-	// A Moon origin's escape, from the release out to the Earth-SOI crossing
-	// the drawn leg starts at: the geocentric hyperbola core/lunar-departure.js
-	// propagated to find that crossing, re-flown here to draw it. Absent for a
-	// departure that swings past Earth (that flight carries no single
-	// hyperbola to re-fly).
-	function lunarEscapePoints(hand) {
-		var L = hand && hand.lunar;
-		if (!L || !L.ok || !L.soiExit || !L.rMoon || !L.vMoon || !L.u) { return null; }
-		var v0 = O.vAdd(L.vMoon, L.u), T = L.soiExit.dt, pts = [];
-		// Quadratic spacing: the hyperbola turns hardest right after release.
-		for (var k = 0; k <= 240; k++) {
-			var f = k / 240;
-			pts.push(O.propagateState(GM_EARTH, L.rMoon, v0, T * f * f).r);
-		}
-		return pts;
-	}
-
 	// The destination's arrival mark (modules/arrival-approach.js): where the
 	// pass first crosses the equatorial catch disc, else closest approach.
 	function povArrivalMark() {
@@ -2418,10 +2375,9 @@ export function createEphemerisView(opts) {
 		if (!povWin) { setPov(null); return; }
 		var isDest = state.pov === "dest";
 		var path = samplePovPath(povWin.t0, povWin.t1);
-		var escape = (!isDest && state.origin === "Moon") ? lunarEscapePoints(lastHand) : null;
 		var start = (!isDest && povWin.t0 === 0 && path.length) ? path[0] : null;
 		drawPovScene(pov, {
-			path: path, escape: escape, start: start,
+			path: path, start: start,
 			mark: isDest ? povArrivalMark() : null,
 			catchDisc: isDest
 		});
@@ -2605,7 +2561,6 @@ export function createEphemerisView(opts) {
 		syncBurnInputs();
 
 		var hand = departureState();
-		lastHand = hand;
 		var dep = hand.body;
 		var depEst = departureEstimateFor(hand);
 		// No flight to draw: a lunar card this planner cannot fly, or a card
@@ -2702,7 +2657,6 @@ export function createEphemerisView(opts) {
 		// above says why instead.
 		if (!leg.ok || noFlight) {
 			trajLeg = null; trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
-			updateHandoffControls(hand);
 			clearApproachMarks();
 			// The chip stays short — the reason itself is already spelled out in
 			// the readout right below it.
@@ -2731,7 +2685,6 @@ export function createEphemerisView(opts) {
 			trajSampleCount = leg.samples.length;
 			trajSamples = leg.samples;
 
-			updateHandoffControls(hand);
 
 			// "deg" hold mode: override the tof-based re-anchor above with the
 			// time-of-flight where the NEW leg's own conic reaches the SAME
