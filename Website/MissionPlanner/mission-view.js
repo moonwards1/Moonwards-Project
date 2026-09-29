@@ -760,7 +760,8 @@ export function createMissionView(opts) {
 			var releaseJd = releaseEpochFor(world);
 			if (plan.origin === "Moon" && releaseJd != null && isFinite(releaseJd)) {
 				var burn = (plan.lunarRelease && plan.lunarRelease.burn) || { pro: 0, rad: 0, nrm: 0 };
-				plan.lunarRelease = { jd: releaseJd, burn: burn };
+				var way = (plan.lunarRelease && plan.lunarRelease.way) || "short";
+				plan.lunarRelease = { jd: releaseJd, way: way, burn: burn };
 			}
 		}
 		return { plan: plan, leg: JSON.parse(JSON.stringify(legStage.params)) };

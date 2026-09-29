@@ -250,11 +250,12 @@ test("a Moon origin's release travels with the plan, and nothing else carries on
 	// the plan on the same departure.
 	var spec = makeSpec();
 	spec.releaseJd = spec.jd - 3.25;
-	spec.lunarRelease = { jd: spec.jd - 3.25, burn: { pro: 120, rad: 2900, nrm: -40 } };
+	spec.lunarRelease = { jd: spec.jd - 3.25, way: "long", burn: { pro: 120, rad: 2900, nrm: -40 } };
 	var world = adoptMissionWorld(spec);
 	var plan = paramsOf(world, "adopted-plan");
 
 	assert.equal(plan.lunarRelease.jd, spec.jd - 3.25);
+	assert.equal(plan.lunarRelease.way, "long");
 	assert.deepEqual(plan.lunarRelease.burn, { pro: 120, rad: 2900, nrm: -40 });
 	// The stored release is a copy: editing the plan must not reach back into
 	// whatever the caller still holds.

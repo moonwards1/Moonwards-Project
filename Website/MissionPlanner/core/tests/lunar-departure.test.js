@@ -23,7 +23,8 @@ import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
 import { flyLunarDeparture, cardVInf, cardFromVector, vInfFromState, solveShipVelocity,
          solveLunarCard, hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE,
-         passiveReleaseFor, flyEarthPassDeparture, MIN_PERIGEE }
+         passiveReleaseFor, flyEarthPassDeparture, MIN_PERIGEE,
+         releaseForHandoff, solveLunarCardAtHandoff }
 	from "../lunar-departure.js";
 import { edgeVInf } from "../departure-estimate.js";
 
@@ -577,4 +578,111 @@ test("the seam: a card both pipelines could fly goes to the outward one", functi
 		}
 	}
 	assert.ok(gaps < 8, gaps + " of 32 days unreachable");
+});
+
+// ---------------------------------------------------------------------------
+// Two ways round Earth, and the release solved back from the hand-off
+// ---------------------------------------------------------------------------
+
+test("the long-way backtrace recovers a coast that bends past half a turn", function () {
+	var r = [384400e3, 0, 0], v = [-2500, 1200, 0];
+	var out = vInfFromState(r, v);
+	var back = passiveReleaseFor(r, out.vec, -1);
+	assert.ok(O.vMag(O.vSub(back, v)) < 1e-3, "got " + back);
+});
+
+test("the long way leaves on its card's heading after a close pass", function () {
+	var seen = 0;
+	for (var k = 0; k < 16; k++) {
+		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 16,
+		                            card: { pro: 3000, rad: 0, nrm: 0 }, way: "long" });
+		if (!f.ok) { assert.equal(f.reason, "pass-hits-Earth"); continue; }
+		seen++;
+		assert.equal(f.way, "long");
+		assert.ok(f.perigee !== null && f.perigee >= MIN_PERIGEE);
+		assert.ok(angleBetween(f.vInf.vec, f.cardVec) < 1e-4);
+	}
+	assert.ok(seen >= 6, "long way flew on " + seen + " of 16 dates");
+});
+
+test("the long way comes far closer to Earth than the short way ever does", function () {
+	// The short way never nears Earth; the close passes are all the long way's.
+	var nearest = { short: Infinity, long: Infinity };
+	for (var k = 0; k < 32; k++) {
+		["short", "long"].forEach(function (way) {
+			var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
+			                            card: { pro: 3000, rad: 0, nrm: 0 }, way: way });
+			if (f.ok && f.perigee !== null) { nearest[way] = Math.min(nearest[way], f.perigee); }
+		});
+	}
+	assert.ok(nearest.short > 100000e3, "short way came to " + nearest.short);
+	assert.ok(nearest.long < 20000e3, "long way came only to " + nearest.long);
+});
+
+test("the release solved back from a hand-off crosses Earth's SOI exactly then", function () {
+	var seed = { short: null, long: null }, flown = { short: 0, long: 0 };
+	for (var k = 0; k < 20; k++) {
+		var H = JD + k * LUNAR_MONTH / 20;
+		["short", "long"].forEach(function (way) {
+			var f = releaseForHandoff({ jdHandoff: H, card: { pro: 3000, rad: 0, nrm: 0 },
+			                            way: way, seedJd: seed[way] });
+			if (!f.ok) { return; }
+			seed[way] = f.jd; flown[way]++;
+			assert.equal(f.way, way);
+			assert.equal(f.jdHandoff, H);
+			assert.ok(Math.abs(f.jd + f.soiExit.dt / 86400 - H) * 86400 < 1,
+				way + " misses the hand-off by " + (f.jd + f.soiExit.dt / 86400 - H) * 86400 + " s");
+			assert.ok(f.jd < H);
+		});
+	}
+	assert.ok(flown.short >= 18 && flown.long >= 10, JSON.stringify(flown));
+});
+
+test("the two ways leave from different Moons for the same hand-off", function () {
+	var H = JD + 12;
+	var s = releaseForHandoff({ jdHandoff: H, card: { pro: 3000, rad: 0, nrm: 0 }, way: "short" });
+	var l = releaseForHandoff({ jdHandoff: H, card: { pro: 3000, rad: 0, nrm: 0 }, way: "long" });
+	assert.ok(s.ok && l.ok, (s.reason || "") + " " + (l.reason || ""));
+	assert.ok(Math.abs(s.jd - l.jd) > 0.25, "releases " + s.jd + " and " + l.jd);
+	// Same card, so the same technology share; what the Moon gives differs.
+	assert.ok(Math.abs(O.vMag(s.vInf.vec) - O.vMag(l.vInf.vec)) > 100);
+});
+
+test("a release that cannot reach the hand-off is refused with the reason", function () {
+	// On these dates the long way's pass would hit Earth.
+	var f = releaseForHandoff({ jdHandoff: JD, card: { pro: 3000, rad: 0, nrm: 0 }, way: "long" });
+	if (!f.ok) { assert.equal(f.reason, "pass-hits-Earth"); }
+});
+
+test("target mode at a fixed hand-off returns a card and release that deliver the ask", function () {
+	["short", "long"].forEach(function (way) {
+		var H = JD + 10;
+		var ref = releaseForHandoff({ jdHandoff: H, card: { pro: 2600, rad: 500, nrm: 100 }, way: way });
+		assert.ok(ref.ok, ref.reason);
+		var s = solveLunarCardAtHandoff({ jdHandoff: H, vInfVec: ref.soiExit.v, at: "exit",
+		                                  way: way, seedCard: { pro: 2000, rad: 0, nrm: 0 } });
+		assert.ok(s.ok, way + ": " + s.reason);
+		assert.ok(s.err < 0.1, way + " err " + s.err);
+		assert.ok(Math.abs(s.flight.jd + s.flight.soiExit.dt / 86400 - H) * 86400 < 1);
+		assert.ok(Math.abs(s.flight.jd - ref.jd) < 1e-4, way + " released at " + s.flight.jd + " not " + ref.jd);
+	});
+});
+
+test("where the short way has no route, the long way usually does", function () {
+	// A small technology share: on some dates the Moon works against every
+	// short route; the long way swings round and still leaves.
+	var gaps = 0, filled = 0;
+	for (var k = 0; k < 20; k++) {
+		for (var az = 0; az < 360; az += 45) {
+			var a = az * Math.PI / 180;
+			var card = { pro: 1500 * Math.cos(a), rad: 1500 * Math.sin(a), nrm: 0 };
+			var jd = JD + k * LUNAR_MONTH / 20;
+			var f = flyLunarDeparture({ jd: jd, card: card });
+			if (f.ok || f.reason !== "no-pass-route") { continue; }
+			gaps++;
+			if (flyLunarDeparture({ jd: jd, card: card, way: "long" }).ok) { filled++; }
+		}
+	}
+	assert.ok(gaps > 0, "expected some short-way gaps");
+	assert.ok(filled >= 0.8 * gaps, filled + " of " + gaps + " gaps filled");
 });

@@ -72,6 +72,22 @@
  * release speed. The same card on either side of the seam is a different
  * flight, so a scrub across it moves the arc abruptly.
  *
+ * TWO WAYS ROUND EARTH. For a given release speed and heading there are two
+ * coasting routes: the SHORT way (`way: "short"`, the two pipelines above),
+ * bending less than half a turn and never nearer Earth than ~21,000 km
+ * altitude, and the LONG way (`way: "long"`), bending more than half a turn,
+ * which is where every close pass lives. They leave the same Moon on the same
+ * heading at different speeds and take different times to reach Earth's SOI,
+ * so which one the Moon helps more changes through the month; on some dates
+ * only one exists. The long way always reads the card as the Earth-pass
+ * pipeline does.
+ *
+ * THE CLOCK IS THE HAND-OFF. The Ephemeris tab's date is the Earth-SOI
+ * crossing, as at every other origin. releaseForHandoff solves the release
+ * backwards from it along the chosen way — the date whose flight reaches the
+ * SOI exactly then — and that release is where the Moon is and when the
+ * mission's Departure phase begins.
+ *
  * Pure (no DOM, no THREE) and Node-testable, like the rest of core/.
  */
 
@@ -224,8 +240,9 @@ var CARD_SOLVE_TOL = 0.05;
  * the edges of the supported region it can crawl or oscillate, and a damped
  * Newton on the same function picks those up.
  *
- * spec = { jd, vInfVec, seedCard, at } — seedCard is the card in force, which
- * is usually close, and `at` says WHERE vInfVec is measured:
+ * spec = { jd, vInfVec, seedCard, at, way } — seedCard is the card in force,
+ * which is usually close, `way` which way round Earth the answer flies, and
+ * `at` says WHERE vInfVec is measured:
  *
  *   "asymptote" (default) — the wanted TOTAL hyperbolic excess, geocentric,
  *                           what flyLunarDeparture reports as vInf.vec.
@@ -264,7 +281,7 @@ export function solveLunarCard(spec) {
 	}
 
 	function fly(card) {
-		var f = flyLunarDeparture({ jd: jd, card: card });
+		var f = flyLunarDeparture({ jd: jd, card: card, way: spec.way });
 		return (f.ok && (!atExit || f.soiExit)) ? f : null;
 	}
 	function errOf(f) {
@@ -289,7 +306,7 @@ export function solveLunarCard(spec) {
 	// The Earth-pass reading, solved outright: trace the wanted heading back to
 	// the Moon, and the release that route needs gives the card's length. It
 	// is exact whenever the answer lands on the Earth-pass side of the seam.
-	var passSeed = earthPassCardFor(jd, wantIter);
+	var passSeed = earthPassCardFor(jd, wantIter, spec.way === "long" ? -1 : 1);
 	if (passSeed) { seeds.push(passSeed); }
 
 	for (var s = 0; s < seeds.length; s++) {
@@ -301,7 +318,7 @@ export function solveLunarCard(spec) {
 				// it, halve the step and try again; with none, this seed is
 				// simply not a departure and the next seed gets its turn.
 				if (!lastGood) {
-					if (!firstReason) { firstReason = flyLunarDeparture({ jd: jd, card: card }).reason; }
+					if (!firstReason) { firstReason = flyLunarDeparture({ jd: jd, card: card, way: spec.way }).reason; }
 					break;
 				}
 				card = { pro: 0.5 * (lastGood.pro + card.pro), rad: 0.5 * (lastGood.rad + card.rad),
@@ -363,9 +380,9 @@ export function solveLunarCard(spec) {
 // traced-back release supplies. Null when there is no route or no escaping
 // share. Whether this card is actually flown by the Earth-pass pipeline
 // depends on which side of the seam it falls.
-function earthPassCardFor(jd, want) {
+function earthPassCardFor(jd, want, sense) {
 	var rMoon = moonGeoPos(jd);
-	var v = passiveReleaseFor(rMoon, want);
+	var v = passiveReleaseFor(rMoon, want, sense);
 	if (!v) { return null; }
 	var uMag = O.vMag(O.vSub(v, moonGeoVel(jd)));
 	var share2 = uMag * uMag - 2 * GM_EARTH / O.vMag(rMoon);
@@ -404,23 +421,29 @@ export function hyperbolicCoastTime(vInf, e, r1, r2, inbound) {
 // outbound asymptote steadily from rMoon's own direction right round through
 // a full turn — first outward releases, then releases falling toward Earth
 // that swing past it — so every heading in the plane is met exactly once.
-// That is the SHORT way round Earth. The long way, bending past perigee by
-// more than half a turn, also exists; it dives far deeper for the same
-// heading and is not used.
+// That is the SHORT way round Earth (sense +1). The LONG way (sense -1) turns
+// the other way about Earth, so it must bend by more than half a turn to meet
+// the same heading and swings far closer past perigee to do it: the same
+// sweep, with the turning direction reversed.
 //
 // Returns the velocity at rMoon, or null for a heading straight back down
-// rMoon (no plane to bend in) or no excess at all.
-export function passiveReleaseFor(rMoon, w) {
+// rMoon (no plane to bend in), a radial heading taken the long way, or no
+// excess at all.
+export function passiveReleaseFor(rMoon, w, sense) {
+	var dir = sense === -1 ? -1 : 1;
 	var rm = O.vMag(rMoon), wm = O.vMag(w);
 	if (!(wm > 1e-6)) { return null; }
 	var speed = Math.sqrt(wm * wm + 2 * GM_EARTH / rm);
 	var rHat = O.vUnit(rMoon);
 	var n = O.vCross(rMoon, w);
 	if (O.vMag(n) < 1e-9 * rm * wm) {
-		return O.vDot(rMoon, w) > 0 ? O.vScale(rHat, speed) : null;
+		return (dir === 1 && O.vDot(rMoon, w) > 0) ? O.vScale(rHat, speed) : null;
 	}
-	var nHat = O.vUnit(n), tHat = O.vCross(nHat, rHat);
-	var psi = Math.atan2(O.vDot(w, tHat), O.vDot(w, rHat));   // in (0, PI)
+	var nHat = O.vUnit(n), tHat = O.vScale(O.vCross(nHat, rHat), dir);
+	// The heading's angle from rMoon, turning toward tHat: in (0, PI) the
+	// short way, in (PI, 2 PI) the long.
+	var psi = Math.atan2(O.vDot(w, tHat), O.vDot(w, rHat));
+	if (psi < 0) { psi += 2 * Math.PI; }
 	function velocity(theta) {
 		return O.vScale(O.vAdd(O.vScale(rHat, Math.cos(theta)),
 		                       O.vScale(tHat, Math.sin(theta))), speed);
@@ -432,8 +455,9 @@ export function passiveReleaseFor(rMoon, w) {
 		var a = Math.atan2(O.vDot(out.vec, tHat), O.vDot(out.vec, rHat));
 		return a < 0 ? a + 2 * Math.PI : a;
 	}
+	// 48 halvings of PI: under 1e-14 rad.
 	var lo = 1e-9, hi = Math.PI - 1e-9;
-	for (var i = 0; i < 60; i++) {
+	for (var i = 0; i < 48; i++) {
 		var mid = 0.5 * (lo + hi);
 		if (heading(mid) < psi) { lo = mid; } else { hi = mid; }
 	}
@@ -441,15 +465,15 @@ export function passiveReleaseFor(rMoon, w) {
 }
 
 // Perigee a falling release may not go below: Earth's radius plus 100 km of
-// atmosphere. The short way round keeps passes far above this across the
-// month (the lowest seen is ~180,000 km), so it guards a degenerate edge
-// rather than shaping ordinary flights.
+// atmosphere. The short way never comes near it; the long way is refused
+// below it on the dates where its pass would graze or hit Earth.
 var R_EARTH = Number(systems.get("Earth").radius);
 export var MIN_PERIGEE = R_EARTH + 100e3;
 
-// THE EARTH-PASS PIPELINE — the departures the outward pipeline refuses.
-// Called by flyLunarDeparture with the same spec; returns a flight in the same
-// shape, plus `route: "earth-pass"` and `perigee` (m, or null when the release
+// THE EARTH-PASS PIPELINE — the departures the outward pipeline refuses, and
+// every departure taken the long way (spec.way "long"). Called by
+// flyLunarDeparture with the same spec; returns a flight in the same shape,
+// plus `route: "earth-pass"` and `perigee` (m, or null when the release
 // already heads outward and the perigee lies behind it, never flown).
 //
 // The card's LENGTH is the technology's share, which fixes the release speed:
@@ -467,6 +491,7 @@ export var MIN_PERIGEE = R_EARTH + 100e3;
 // "pass-hits-Earth" (the route found would dip below MIN_PERIGEE).
 export function flyEarthPassDeparture(spec) {
 	var jd = spec.jd;
+	var way = spec.way === "long" ? "long" : "short", sense = way === "long" ? -1 : 1;
 	var cardVec = cardVInf(jd, spec.card);
 	var cardMag = O.vMag(cardVec);
 	var share = asymptoticVInf(cardMag, "Moon");
@@ -476,11 +501,13 @@ export function flyEarthPassDeparture(spec) {
 	var uWant = Math.sqrt(share * share + 2 * GM_EARTH / rm);
 
 	function mismatch(S) {
-		var v = passiveReleaseFor(rMoon, O.vScale(heading, S));
+		var v = passiveReleaseFor(rMoon, O.vScale(heading, S), sense);
 		return v ? O.vMag(O.vSub(v, vMoon)) - uWant : null;
 	}
-	// Bracket on a geometric scan from 10 m/s to 50 km/s, then bisect.
-	var S_LO = 10, S_HI = 5e4, STEPS = 80;
+	// Bracket on a geometric scan from 10 m/s to 50 km/s, then bisect: each
+	// bracket spans under a quarter of its speed, and 40 halvings take that
+	// below a micrometre per second.
+	var S_LO = 10, S_HI = 5e4, STEPS = 40;
 	var sPrev = null, gPrev = null, bracket = null;
 	for (var k = 0; k <= STEPS && !bracket; k++) {
 		var S = S_LO * Math.pow(S_HI / S_LO, k / STEPS), g = mismatch(S);
@@ -490,11 +517,11 @@ export function flyEarthPassDeparture(spec) {
 	}
 	if (!bracket) { return { ok: false, reason: "no-pass-route" }; }
 	var lo = bracket[0], hi = bracket[1], gLo = mismatch(lo);
-	for (var i = 0; i < 60; i++) {
+	for (var i = 0; i < 40; i++) {
 		var mid = 0.5 * (lo + hi), gm = mismatch(mid);
 		if ((gm > 0) === (gLo > 0)) { lo = mid; gLo = gm; } else { hi = mid; }
 	}
-	var vTotal = passiveReleaseFor(rMoon, O.vScale(heading, 0.5 * (lo + hi)));
+	var vTotal = passiveReleaseFor(rMoon, O.vScale(heading, 0.5 * (lo + hi)), sense);
 	var total = vInfFromState(rMoon, vTotal);
 	var inbound = O.vDot(rMoon, vTotal) < 0;
 	if (inbound && total.rp < MIN_PERIGEE) { return { ok: false, reason: "pass-hits-Earth" }; }
@@ -506,7 +533,7 @@ export function flyEarthPassDeparture(spec) {
 	var turn = Math.acos(Math.max(-1, Math.min(1, O.vDot(O.vUnit(vTotal), O.vUnit(total.vec)))));
 	var residual = O.vSub(total.vec, w);
 	return {
-		ok: true, route: "earth-pass", jd: jd, cardVec: cardVec, cardAsym: w,
+		ok: true, route: "earth-pass", way: way, jd: jd, cardVec: cardVec, cardAsym: w,
 		u: u, uMag: O.vMag(u),
 		releaseSpeed: releaseSpeedFor(O.vMag(u), spec.releaseRadius),
 		vInf: total,
@@ -521,12 +548,14 @@ export function flyEarthPassDeparture(spec) {
 
 // The departure. spec = {
 //   jd,    // the release epoch — the Departure phase's own start
-//   card   // { pro, rad, nrm } m/s, the SHIP's v-infinity at Earth's SOI
+//   card,  // { pro, rad, nrm } m/s, the technology's share at Earth's SOI
+//   way    // "short" (default) or "long" — which way round Earth
 // }
 //
 // Returns, on success:
 //   { ok: true, route, jd, u, uMag, releaseSpeed,
 //     route,       // "outward", or "earth-pass" from flyEarthPassDeparture
+//     way,         // "short" or "long"
 //     perigee,     // m — a pass's flown perigee; null when none is flown
 //     cardVec,     // the card as typed — the ship's speed AT Earth's SOI edge
 //     cardAsym,    // the same, as the hyperbolic excess behind it
@@ -554,6 +583,9 @@ export function flyLunarDeparture(spec) {
 	var cardAsym = asymptoticVInf(cardMag, "Moon");
 	if (!(cardMag > 1e-6)) { return { ok: false, reason: "no-card" }; }
 	if (!(cardAsym > 1e-6)) { return { ok: false, reason: "card-below-escape" }; }
+	if (spec.way === "long") {
+		return flyEarthPassDeparture(spec) || { ok: false, reason: "no-pass-route" };
+	}
 	var w = O.vScale(cardVec, cardAsym / cardMag);
 	var rMoon = moonGeoPos(jd), vMoon = moonGeoVel(jd);
 
@@ -595,7 +627,7 @@ export function flyLunarDeparture(spec) {
 	// the anomaly), which is a departure with no hand-off to state.
 	var exitState = coast == null ? null : O.propagateState(GM_EARTH, rMoon, vTotal, coast);
 	return {
-		ok: true, route: "outward", perigee: null, jd: jd, cardVec: cardVec, cardAsym: w,
+		ok: true, route: "outward", way: "short", perigee: null, jd: jd, cardVec: cardVec, cardAsym: w,
 		u: solved.u, uMag: O.vMag(solved.u),
 		releaseSpeed: releaseSpeedFor(O.vMag(solved.u), spec.releaseRadius),
 		vInf: total,
@@ -605,4 +637,171 @@ export function flyLunarDeparture(spec) {
 		coastDays: coast == null ? null : coast / DAY,
 		soiExit: exitState ? { r: exitState.r, v: exitState.v, dt: coast } : null
 	};
+}
+
+// How near the solved release's flight has to land on the hand-off epoch:
+// 1e-7 d is under a hundredth of a second.
+var RELEASE_TOL_DAYS = 1e-7;
+// The span searched for a release when the quick solve does not settle:
+// every route out takes between these many days to reach Earth's SOI.
+var LEAD_MIN_DAYS = 0.3, LEAD_MAX_DAYS = 12;
+
+/* THE RELEASE FROM THE HAND-OFF. The Ephemeris tab's clock is the Earth-SOI
+ * crossing; this finds the release that crosses exactly then, along the
+ * chosen way round Earth:
+ *
+ *   release + T(release) = hand-off
+ *
+ * where T is the flight's own time from the Moon to Earth's SOI, flown from
+ * that release (the Moon, and so the route, depend on the date). It is the
+ * route's exact time in this sketch's model, not an estimate. Across the
+ * lunar month each hand-off date has exactly one release per way.
+ *
+ * A secant solve from `seedJd` (the last answer, usually close) settles in a
+ * few flights. If it does not, the whole span of possible leads is scanned
+ * and the crossing bracketed, taking the one nearest the seed.
+ *
+ * spec = { jdHandoff, card, way, seedJd, releaseRadius }. Returns the flight
+ * (flyLunarDeparture's shape, its `jd` the release) with `jdHandoff` added, or
+ * { ok: false, reason } — the refusal most of the searched dates met, or
+ * "no-release-date" when every date flies but none reaches the SOI then.
+ */
+export function releaseForHandoff(spec) {
+	var H = spec.jdHandoff;
+	function flyAt(rel) {
+		return flyLunarDeparture({ jd: rel, card: spec.card, way: spec.way,
+		                           releaseRadius: spec.releaseRadius });
+	}
+	// Signed miss (days) of the flight released at `rel`; null if it has no
+	// crossing to time.
+	function miss(rel) {
+		var f = flyAt(rel);
+		return (f.ok && f.soiExit) ? { f: f, F: rel + f.soiExit.dt / DAY - H } : null;
+	}
+	function done(m) {
+		var f = m.f;
+		f.jdHandoff = H;
+		return f;
+	}
+	var lead0 = spec.way === "long" ? 4.6 : 2.5;
+	var seed = isFinite(spec.seedJd) ? spec.seedJd : H - lead0;
+	if (!(seed < H - LEAD_MIN_DAYS && seed > H - LEAD_MAX_DAYS)) { seed = H - lead0; }
+
+	// Quick solve: secant on the miss, steps capped at a day.
+	var a = seed, ma = miss(a);
+	if (ma) {
+		var b = H - ma.f.soiExit.dt / DAY, mb = miss(b);
+		for (var i = 0; mb && i < 12; i++) {
+			if (Math.abs(mb.F) < RELEASE_TOL_DAYS) { return done(mb); }
+			var slope = (mb.F - ma.F) / (b - a);
+			var step = (isFinite(slope) && Math.abs(slope) > 1e-6) ? -mb.F / slope : -mb.F;
+			step = Math.max(-1, Math.min(1, step));
+			a = b; ma = mb;
+			b = b + step;
+			if (!(b < H - LEAD_MIN_DAYS && b > H - LEAD_MAX_DAYS)) { break; }
+			mb = miss(b);
+		}
+	}
+
+	// Fallback: scan every possible lead for a sign change, bisect each, and
+	// keep the root nearest the seed. A jump in the miss larger than a day is
+	// a seam between routes, not a crossing, and is stepped over.
+	var best = null, prev = null, refusals = {};
+	for (var rel = H - LEAD_MAX_DAYS; rel <= H - LEAD_MIN_DAYS + 1e-9; rel += 0.1) {
+		var m = miss(rel);
+		if (!m) {
+			var why = flyAt(rel).reason || "no-coast";
+			refusals[why] = (refusals[why] || 0) + 1;
+		}
+		if (m && prev && (m.F > 0) !== (prev.m.F > 0) && Math.abs(m.F - prev.m.F) < 1) {
+			var lo = prev.rel, hi = rel, flo = prev.m.F, mid = null;
+			for (var k = 0; k < 50; k++) {
+				var c = 0.5 * (lo + hi), mc = miss(c);
+				if (!mc) { break; }
+				mid = mc;
+				if (Math.abs(mc.F) < RELEASE_TOL_DAYS) { break; }
+				if ((mc.F > 0) === (flo > 0)) { lo = c; flo = mc.F; } else { hi = c; }
+			}
+			if (mid && Math.abs(mid.F) < 1e-5 &&
+				(!best || Math.abs(mid.f.jd - seed) < Math.abs(best.f.jd - seed))) { best = mid; }
+		}
+		prev = m ? { rel: rel, m: m } : null;
+	}
+	if (best) { return done(best); }
+	// No release crosses then. The refusal met most often over the span says
+	// why better than a bare "no date" — typically that the pass the timing
+	// needs would hit Earth.
+	var worst = null;
+	Object.keys(refusals).forEach(function (k) { if (!worst || refusals[k] > refusals[worst]) { worst = k; } });
+	return { ok: false, reason: worst || "no-release-date" };
+}
+
+/* TARGET MODE AT A FIXED HAND-OFF: which card, released when, leaves Earth's
+ * SOI at the hand-off epoch on the wanted v∞? The card depends on the release
+ * date (the Moon does) and the flight time on the card, so the solve runs on
+ * the release date alone: at each trial date solveLunarCard finds the card
+ * that gives the wanted v∞ from there, and the date moves by the miss between
+ * that card's crossing and the hand-off — a secant, as releaseForHandoff's,
+ * with the same fallback scan over every possible lead when it does not
+ * settle.
+ *
+ * spec = { jdHandoff, vInfVec, seedCard, at, way, seedJd }, the same meanings
+ * as solveLunarCard's and releaseForHandoff's. Returns { ok: true, card,
+ * flight, err } with `flight` released at the solved date, or { ok: false,
+ * reason }.
+ */
+export function solveLunarCardAtHandoff(spec) {
+	var H = spec.jdHandoff, card = spec.seedCard, firstReason = null;
+	function at(rel) {
+		var s = solveLunarCard({ jd: rel, vInfVec: spec.vInfVec, seedCard: card,
+		                         at: spec.at, way: spec.way });
+		if (!s.ok || !s.flight.soiExit) {
+			if (!firstReason) { firstReason = s.reason || "no-coast"; }
+			return null;
+		}
+		card = s.card;
+		return { s: s, F: rel + s.flight.soiExit.dt / DAY - H };
+	}
+	function done(m) {
+		m.s.flight.jdHandoff = H;
+		return { ok: true, card: m.s.card, flight: m.s.flight, err: m.s.err };
+	}
+	var lead0 = spec.way === "long" ? 4.6 : 2.5;
+	var seed = isFinite(spec.seedJd) ? spec.seedJd : H - lead0;
+	if (!(seed < H - LEAD_MIN_DAYS && seed > H - LEAD_MAX_DAYS)) { seed = H - lead0; }
+
+	var a = seed, ma = at(a);
+	if (ma) {
+		var b = H - ma.s.flight.soiExit.dt / DAY, mb = at(b);
+		for (var i = 0; mb && i < 12; i++) {
+			if (Math.abs(mb.F) < RELEASE_TOL_DAYS) { return done(mb); }
+			var slope = (mb.F - ma.F) / (b - a);
+			var step = (isFinite(slope) && Math.abs(slope) > 1e-6) ? -mb.F / slope : -mb.F;
+			step = Math.max(-1, Math.min(1, step));
+			a = b; ma = mb;
+			b = b + step;
+			if (!(b < H - LEAD_MIN_DAYS && b > H - LEAD_MAX_DAYS)) { break; }
+			mb = at(b);
+		}
+	}
+
+	var best = null, prev = null;
+	for (var rel = H - LEAD_MAX_DAYS; rel <= H - LEAD_MIN_DAYS + 1e-9; rel += 0.5) {
+		var m = at(rel);
+		if (m && prev && (m.F > 0) !== (prev.m.F > 0) && Math.abs(m.F - prev.m.F) < 2) {
+			var lo = prev.rel, hi = rel, flo = prev.m.F, mid = null;
+			for (var k = 0; k < 50; k++) {
+				var c = 0.5 * (lo + hi), mc = at(c);
+				if (!mc) { break; }
+				mid = mc;
+				if (Math.abs(mc.F) < RELEASE_TOL_DAYS) { break; }
+				if ((mc.F > 0) === (flo > 0)) { lo = c; flo = mc.F; } else { hi = c; }
+			}
+			if (mid && Math.abs(mid.F) < 1e-5 &&
+				(!best || Math.abs(mid.s.flight.jd - seed) < Math.abs(best.s.flight.jd - seed))) { best = mid; }
+		}
+		prev = m ? { rel: rel, m: m } : null;
+	}
+	if (best) { return done(best); }
+	return { ok: false, reason: firstReason || "no-card-solution" };
 }

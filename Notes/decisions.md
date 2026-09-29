@@ -337,8 +337,13 @@ generic `body-departure-leg` with a self-originating skyhook.
   `soiExit`. The drawn arc starts there. Committing the Moon's own position
   instead is the tempting shortcut. It fails silently, because compliance
   never compares position.
-- **The clock is the release**, alone among the origins. The crossing is about
-  2 days later; the release travels as `releaseJd` and `lunarRelease`.
+- **The clock is the hand-off, and the release is solved back from it**, as
+  at every origin. `releaseForHandoff` finds the release whose flight crosses
+  Earth's SOI exactly at the clock, on the chosen way round Earth; it travels
+  as `releaseJd` and `lunarRelease` (with its `way`) and is where the
+  mission's Departure phase begins. Why: the time to reach Earth's SOI
+  depends on the way round Earth (2 to 6 days), so holding the hand-off and
+  moving the release is what shows which Moon each way leaves from.
 - **v∞ is measured against Earth** (`Frames.escapeReferenceFor`); against the
   Moon, its monthly 1 km/s swing would make the same plan grade differently by
   lunar phase.
@@ -353,9 +358,10 @@ generic `body-departure-leg` with a self-originating skyhook.
   exactly.
 - **Target mode solves for the card, not the total.** `solveLunarCard`
   iterates card = wanted − residual(card) with a damped Newton fallback, asked
-  at the crossing (`at: "exit"`) at the release epoch. It refuses rather than
-  answering when no card reaches the ask. Writing Lambert's total into the
-  card bills the ship for the Moon and overshoots on every refresh.
+  at the crossing (`at: "exit"`); `solveLunarCardAtHandoff` wraps it to move
+  the release until that card's crossing lands on the hand-off. It refuses
+  rather than answering when no card reaches the ask. Writing Lambert's total
+  into the card bills the ship for the Moon and overshoots on every refresh.
 - **Two pipelines, switched where the outward one refuses.** The outward
   pipeline reads the card as the share's own vector. When it cannot deliver
   the card (the ship would have to swing past Earth), `flyEarthPassDeparture`
@@ -367,6 +373,15 @@ generic `body-departure-leg` with a self-originating skyhook.
   on either side (a few degrees of heading), and near it some coasting
   flights have no card, because the outward pipeline claims the card they
   would need.
+- **Two ways round Earth, chosen by the user.** For a release speed and
+  heading there is a short way (bending under half a turn, never nearer
+  Earth than ~21,000 km altitude) and a long way (bending past half a turn,
+  where every close pass lives). The Ephemeris tab offers both and always
+  states what the other way would give. Why: they differ in exit speed by up
+  to ~1 km/s for the same technology share, which of them the Moon favours
+  changes through the month, and on some dates only one exists; picking one
+  silently would hide the difference the tab is there to teach. The long way
+  is refused where its pass would dip below 100 km altitude.
 
 ### The Coast→Arrival seam
 

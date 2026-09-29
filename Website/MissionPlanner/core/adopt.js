@@ -34,9 +34,9 @@
  * a departure leg flies until it exits the origin's SOI and delivers the ship
  * THERE (departure-leg.js step 4, body-departure-leg.js the same). The
  * Ephemeris tab authors that same hand-off directly — its departure card IS the
- * v-infinity there, and its clock IS the hand-off epoch at every origin but the
- * Moon, where the clock is the release and the hand-off is the Earth-SOI
- * crossing it flies to (ephemeris-view.js's departureState) — so adopt COMMITS
+ * v-infinity there, and its clock IS the hand-off epoch at every origin — for
+ * the Moon, the Earth-SOI crossing its solved release reaches
+ * (ephemeris-view.js's departureState) — so adopt COMMITS
  * spec.handoff verbatim. It re-derives
  * nothing across this seam, which is what makes a plan adopted here and pasted
  * back into the tab exact, whatever geometry produced the hand-off: an
@@ -79,10 +79,11 @@
  *   windowDays,                   // optional — hand-off window half-width
  *   releaseJd                     // optional — the release epoch the planner
  *                                 //   was actually shown. A Moon origin has
- *                                 //   solved its whole departure to place the
- *                                 //   hand-off, so it passes that epoch in
- *                                 //   rather than letting it be re-estimated
- *                                 //   into a different answer
+ *                                 //   solved its release back from the
+ *                                 //   hand-off on its chosen way round Earth,
+ *                                 //   so it passes that epoch in rather than
+ *                                 //   letting it be re-estimated into a
+ *                                 //   different answer
  * }
  *
  * Waypoints are sorted chronologically and any at/after the rendezvous are
@@ -147,9 +148,10 @@ export function adoptMissionWorld(spec) {
 	// the SOI exit, so the crossing is counted once. The plan's own window
 	// half-width defaults to ±1 d.
 	// A Moon origin already knows its release epoch exactly — the Ephemeris tab
-	// FLEW the departure from that epoch to place the hand-off, so re-deriving
-	// it here would be a second, worse answer to a settled question. Every
-	// other origin takes the estimate.
+	// solved it back from the hand-off along the chosen way round Earth and
+	// flew the departure from it, so re-deriving it here would be a second,
+	// worse answer to a settled question. Every other origin takes the
+	// estimate.
 	var est = estimateDeparture({
 		origin: spec.origin,
 		vInfVec: O.vSub(handoff.v, bodyHelioV(spec.origin, handoff.jd)),
@@ -186,15 +188,15 @@ export function adoptMissionWorld(spec) {
 		handoffWindowDays: windowDays,
 		waypoints: waypoints.map(function (wp) { return { days: wp.days, burn: copyBurn(wp.burn) }; })
 	};
-	// A Moon origin's departure is authored FORWARD, from a release the
-	// Ephemeris tab flew out to Earth's SOI. The hand-off above is that
-	// flight's result, and the release cannot be recovered from it without
-	// solving backwards, so it is stored alongside — which is what lets a
-	// pasted mission reopen the same departure. Provenance only: no stage
-	// computes from it.
+	// A Moon origin's departure is the release the Ephemeris tab solved back
+	// from this hand-off, on one of two ways round Earth. The release, its
+	// card and its way are stored alongside, which is what lets a pasted
+	// mission reopen the same departure. Provenance only: no stage computes
+	// from it.
 	if (spec.lunarRelease) {
 		planParams.lunarRelease = {
 			jd: spec.lunarRelease.jd,
+			way: spec.lunarRelease.way === "long" ? "long" : "short",
 			burn: copyBurn(spec.lunarRelease.burn)
 		};
 	}

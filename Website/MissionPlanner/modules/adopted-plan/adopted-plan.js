@@ -124,10 +124,10 @@ export var defaultParams = {
 	arrival: { body: "", vInf: null },
 	handoffWindowDays: null,   // half-width (d); null → DEFAULT_WINDOW_DAYS
 	waypoints: [],
-	// A Moon origin only: { jd, burn: { pro, rad, nrm } } — the release the
-	// departure was authored from, an impulse in the Moon's own geocentric
-	// frame (core/lunar-departure.js). Carried so a pasted mission reopens
-	// that departure; nothing here computes from it.
+	// A Moon origin only: { jd, way, burn: { pro, rad, nrm } } — the release
+	// the departure was authored from, the way round Earth it took ("short" |
+	// "long") and its card (core/lunar-departure.js). Carried so a pasted
+	// mission reopens that departure; nothing here computes from it.
 	lunarRelease: null
 };
 

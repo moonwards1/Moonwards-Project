@@ -57,15 +57,16 @@ restate its content in code comments — cite the entry and its date.
   month is a different trajectory. Never add the two before showing them: the
   split is the whole point, and conflating them is the mistake this origin
   invites.
-- **A MOON origin's hand-off is the EARTH-SOI CROSSING, and its clock is the
-  RELEASE.** Alone among the origins, the tab's date is not the hand-off epoch:
-  the release fixes an escape hyperbola, `core/lunar-departure.js` propagates it
-  to Earth's SOI (`soiExit`), and that crossing — position, edge velocity, epoch
-  ~2 days later — is what the plan commits and what **Needed** reads. The
-  release travels separately as `releaseJd`/`lunarRelease`. Committing the
-  Moon's own position instead is the tempting shortcut and fails silently:
-  compliance compares speed, epoch and aim, never position. See
-  `Notes/decisions.md`, 2026-09-09.
+- **A MOON origin's hand-off is the EARTH-SOI CROSSING, and its release is
+  solved back from it.** The tab's date is the hand-off, as at every origin;
+  `core/lunar-departure.js`'s `releaseForHandoff` finds the release whose
+  flight, on the chosen way round Earth (short, or long with a close pass),
+  crosses Earth's SOI exactly then. That crossing — position, edge velocity,
+  epoch — is what the plan commits and what **Needed** reads; the release
+  travels separately as `releaseJd`/`lunarRelease` and starts the Departure
+  phase. Committing the Moon's own position instead is the tempting shortcut
+  and fails silently: compliance compares speed, epoch and aim, never
+  position. See `Notes/decisions.md`, "A Moon origin".
 - **The flown flight is the clock.** `adopted-plan` emits what the departure
   technology actually DELIVERED — position, velocity and epoch — so the drawn
   coast is the ship's flight and the Coast timeline starts where the Departure

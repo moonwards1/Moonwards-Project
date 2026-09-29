@@ -160,19 +160,24 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   Where on the SOI sphere the ship exits is always this tab's own: one SOI
   radius along the heading. A pasted mission whose departure chain left from
   elsewhere is drawn from that point, so the two tabs can disagree by that much.
-  **A MOON origin differs on both counts:** its exit point is computed — the
-  Earth-SOI crossing the release's escape hyperbola reaches (a pasted
-  mission's card is re-solved to match its crossing velocity, not its
-  point) — and the date bar states the RELEASE, so the hand-off
-  epoch is ~2 days later than the clock. The release travels with the mission
-  separately, as `releaseJd` and `lunarRelease`. Its card is flown by one of
-  two pipelines in `core/lunar-departure.js`: the outward one while the Moon
-  is on the departure's side of Earth, and the Earth-pass one — which reads
-  the card's direction as the heading flown and traces a coasting route back
-  to the Moon — while the ship would have to swing past Earth. How
-  much impulse that hand-off costs, and when the launch must happen, are read
-  BACKWARDS from it by `core/departure-estimate.js` — information for the
-  Moon-phase widget and the release anchor, never a change to the drawn arc.
+  **A MOON origin's exit point is computed instead** — the Earth-SOI
+  crossing its release reaches (a pasted mission's card is re-solved to match
+  its crossing velocity, not its point). The date bar is still the hand-off;
+  the release is solved back from it (`releaseForHandoff`) along the **way
+  round Earth** the user picks: the short way, or the long way that swings
+  close past Earth. The two ways take different times, so they leave from
+  different Moons; the Moon widget shows the chosen way's, and the readout
+  states the other's. The release travels with the mission as `releaseJd`
+  and `lunarRelease`, and is where its Departure phase begins. The short way
+  is flown by one of two pipelines in `core/lunar-departure.js`: the outward
+  one while the Moon is on the departure's side of Earth, and the Earth-pass
+  one — which reads the card's direction as the heading flown and traces a
+  coasting route back to the Moon — while the ship would have to swing past
+  Earth; the long way always reads the card the Earth-pass way. At every
+  other origin, how much impulse the hand-off costs and when the launch must
+  happen are read BACKWARDS from it by `core/departure-estimate.js` —
+  information for the Moon-phase widget and the release anchor, never a
+  change to the drawn arc.
   Physics is not forked — the actual leg goes through
   `transfer-leg.js`'s exported `computeLeg`, the same function the adopted
   Coast phase uses. **"Paste mission link…" splits a link's two sets by what

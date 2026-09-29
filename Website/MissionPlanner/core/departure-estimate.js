@@ -22,11 +22,11 @@
  * flight that edge can sit slightly away from where the SOI-exit event will
  * actually land.
  *
- * NOTHING HERE SHAPES A LUNAR DEPARTURE. A Moon origin is authored forward —
- * core/lunar-departure.js propagates a two-body escape hyperbola (Earth only)
- * from a release the planner set to Earth's SOI crossing, and its release
- * epoch is the Ephemeris tab's own clock, carried
- * into the mission by core/adopt.js. The Moon branch below exists only for a
+ * NOTHING HERE SHAPES A LUNAR DEPARTURE. A Moon origin's release is solved
+ * exactly in core/lunar-departure.js (releaseForHandoff): the date whose
+ * two-body flight, on the chosen way round Earth, crosses Earth's SOI at the
+ * Ephemeris tab's clock. That release is carried into the mission by
+ * core/adopt.js. The Moon branch below exists only for a
  * plan that reached adopt WITHOUT that record, and it is a seed: the
  * two-body crossing from lunar distance out to Earth's SOI, since a lunar
  * departure starts a quarter of the way out rather than at Earth's surface.
