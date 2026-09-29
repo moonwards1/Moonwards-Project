@@ -343,7 +343,8 @@ generic `body-departure-leg` with a self-originating skyhook.
   Moon, its monthly 1 km/s swing would make the same plan grade differently by
   lunar phase.
 - **The card is the ship's share; the Moon's is a bonus.** The card states
-  what the ship's own release and burns deliver at Earth's SOI. The Moon's
+  what the release delivers at Earth's SOI; the Ephemeris tab assumes no
+  burns after it. The Moon's
   motion rides on top for free as a residual (sometimes more reach, on the
   wrong phase a penalty), so the flown arc is card + residual. The two cannot
   be propagated separately and added, because energy goes as speed squared.
@@ -355,11 +356,17 @@ generic `body-departure-leg` with a self-originating skyhook.
   at the crossing (`at: "exit"`) at the release epoch. It refuses rather than
   answering when no card reaches the ask. Writing Lambert's total into the
   card bills the ship for the Moon and overshoots on every refresh.
-- **Only departures heading away from Earth are supported.** Others are
-  refused by name and not drawn: the state left over is the Moon's own, and
-  its arc looks plausible while not being the flight. Every refusal routes
-  through `flyEarthPassDeparture`, the placeholder for the Earth-pass
-  departure.
+- **Two pipelines, switched where the outward one refuses.** The outward
+  pipeline reads the card as the share's own vector. When it cannot deliver
+  the card (the ship would have to swing past Earth), `flyEarthPassDeparture`
+  reads the same card as the share's LENGTH along the heading actually flown,
+  and traces the coasting route back to the Moon (`passiveReleaseFor`, the
+  short way round Earth). Why: past Earth, the direction the share alone
+  would leave on points where the ship never goes, while the length still
+  fixes the release. The cost is a seam: the same card is a different flight
+  on either side (a few degrees of heading), and near it some coasting
+  flights have no card, because the outward pipeline claims the card they
+  would need.
 
 ### The Coast→Arrival seam
 

@@ -11,6 +11,9 @@
 //   - the residual is not the Moon's speed. It is what that speed is WORTH
 //     out at Earth's SOI, which is a different and usually larger number.
 //   - the supported region is enforced, not assumed.
+//   - the Earth-pass pipeline: the asteroid backtrace inverts a coast exactly,
+//     a pass leaves along its card's direction on a release its card's length
+//     fixes, and it lands on Earth's SOI when it says it does.
 
 import test from "node:test";
 import assert from "node:assert";
@@ -19,7 +22,8 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
 import { flyLunarDeparture, cardVInf, cardFromVector, vInfFromState, solveShipVelocity,
-         solveLunarCard, hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE }
+         solveLunarCard, hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE,
+         passiveReleaseFor, flyEarthPassDeparture, MIN_PERIGEE }
 	from "../lunar-departure.js";
 import { edgeVInf } from "../departure-estimate.js";
 
@@ -212,19 +216,19 @@ test("the card is what the ship pays, and never contains the Moon", function () 
 	assert.ok(Math.max.apply(null, totals) - Math.min.apply(null, totals) > 500);
 });
 
-test("half the lunar month is refused, and that is the stated limit", function () {
+test("the whole lunar month flies: the outward pipeline, then the Earth-pass one", function () {
 	// A card fixed on Earth's heliocentric axes points the same way all month
-	// while the Moon goes round it. When the Moon is on the far side, the only
-	// trajectory that would deliver that card has to pass Earth — out of scope
-	// here, and refused by name rather than drawn wrong.
-	var ok = 0, pass = 0;
+	// while the Moon goes round it. When the Moon is on the far side the
+	// outward pipeline cannot deliver that card, and the Earth-pass pipeline
+	// takes it instead — so every phase flies, by one route or the other.
+	var routes = { outward: 0, "earth-pass": 0 };
 	for (var k = 0; k < 32; k++) {
 		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
 		                            card: { pro: 3000, rad: 0, nrm: 0 } });
-		if (f.ok) { ok++; } else if (f.reason === "card-needs-earth-pass") { pass++; }
+		assert.ok(f.ok, "day " + k + ": " + f.reason);
+		routes[f.route]++;
 	}
-	assert.ok(ok > 0 && pass > 0, "expected both supported and refused phases");
-	assert.equal(ok + pass, 32, "every phase is either supported or named");
+	assert.ok(routes.outward > 0 && routes["earth-pass"] > 0, JSON.stringify(routes));
 });
 
 // ---------------------------------------------------------------------------
@@ -246,7 +250,8 @@ test("no card is a named refusal, not a throw or a zero", function () {
 
 test("every refusal carries a reason a caller can show", function () {
 	var known = ["no-card", "card-below-escape", "card-toward-Earth",
-	             "card-needs-earth-pass", "heads-into-Earth", "no-escape"];
+	             "card-needs-earth-pass", "heads-into-Earth", "no-escape",
+	             "no-pass-route", "pass-hits-Earth"];
 	[{ pro: 0, rad: 0, nrm: 0 }, { pro: -4000, rad: 0, nrm: 0 },
 	 { pro: 10, rad: 0, nrm: 0 }].forEach(function (card) {
 		var f = flyLunarDeparture({ jd: JD, card: card });
@@ -471,4 +476,105 @@ test("an exit solve refuses an ask below Earth's escape at the SOI", function ()
 	var down = O.vScale(O.vUnit(moonGeoPos(JD)), 300);
 	var s = solveLunarCard({ jd: JD, vInfVec: down, at: "exit" });
 	assert.ok(!s.ok && typeof s.reason === "string");
+});
+
+// ---------------------------------------------------------------------------
+// The Earth-pass pipeline
+// ---------------------------------------------------------------------------
+
+// Every day of the month the fixed card goes to the Earth-pass pipeline.
+function passFlights() {
+	var out = [];
+	for (var k = 0; k < 32; k++) {
+		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
+		                            card: { pro: 3000, rad: 0, nrm: 0 } });
+		if (f.ok && f.route === "earth-pass") { out.push(f); }
+	}
+	return out;
+}
+
+test("the asteroid backtrace recovers a coast, falling in or heading out", function () {
+	// Each of these bends less than half a turn from the Moon's radius — the
+	// short way round, which is the route the backtrace returns.
+	var r = [384400e3, 0, 0];
+	[[2000, 2600, 0], [-1500, 2600, 300], [-900, 3300, 0]].forEach(function (v) {
+		var out = vInfFromState(r, v);
+		var back = passiveReleaseFor(r, out.vec);
+		assert.ok(O.vMag(O.vSub(back, v)) < 1e-3, "for " + v + ": got " + back);
+	});
+});
+
+test("the backtrace takes the short way round, not the long", function () {
+	// This coast swings more than half a turn past Earth; the backtrace finds
+	// the other coast that leaves on the same heading, bending less.
+	var r = [384400e3, 0, 0], v = [-2500, 1200, 0];
+	var out = vInfFromState(r, v);
+	var back = passiveReleaseFor(r, out.vec);
+	assert.ok(O.vMag(O.vSub(back, v)) > 100);
+	assert.ok(O.vMag(O.vSub(vInfFromState(r, back).vec, out.vec)) < 1e-3);
+});
+
+test("a pass leaves along its card's direction, on the release its length fixes", function () {
+	var flights = passFlights();
+	assert.ok(flights.length >= 4);
+	flights.forEach(function (f) {
+		assert.ok(angleBetween(f.vInf.vec, f.cardVec) < 1e-4);
+		var share = O.vMag(f.cardAsym), rm = O.vMag(f.rMoon);
+		assert.ok(Math.abs(f.uMag - Math.sqrt(share * share + 2 * GM_EARTH / rm)) < 1e-3);
+		// And that release, added to the Moon's motion, is the flight.
+		var flown = vInfFromState(f.rMoon, O.vAdd(f.u, f.vMoon));
+		assert.ok(O.vMag(O.vSub(flown.vec, f.vInf.vec)) < 1e-3);
+	});
+});
+
+test("a pass that falls toward Earth swings through perigee and still lands on the SOI", function () {
+	var inbound = passFlights().filter(function (f) { return f.perigee !== null; });
+	assert.ok(inbound.length >= 2, "expected passes that fall in first");
+	inbound.forEach(function (f) {
+		assert.ok(f.perigee >= MIN_PERIGEE);
+		assert.ok(O.vDot(f.rMoon, O.vAdd(f.u, f.vMoon)) < 0);
+		assert.ok(Math.abs(O.vMag(f.soiExit.r) - SOI_EARTH) < 1e3);
+		assert.ok(O.vDot(f.soiExit.r, f.soiExit.v) > 0, "leaving, not arriving");
+	});
+});
+
+test("an inbound coast time counts the fall to perigee", function () {
+	var r1 = 384400e3, r = [r1, 0, 0], v = [-2600, 700, 0];
+	var out = vInfFromState(r, v);
+	var t = hyperbolicCoastTime(out.mag, out.e, r1, SOI_EARTH, true);
+	assert.ok(t > hyperbolicCoastTime(out.mag, out.e, r1, SOI_EARTH));
+	var at = O.propagateState(GM_EARTH, r, v, t);
+	assert.ok(Math.abs(O.vMag(at.r) - SOI_EARTH) < 1e3);
+});
+
+test("the Earth-pass pipeline declines a card with nothing to fly", function () {
+	assert.equal(flyEarthPassDeparture({ jd: JD, card: { pro: 0, rad: 0, nrm: 0 } }), null);
+});
+
+test("target mode finds cards on the Earth-pass side of the seam", function () {
+	// Aim for the exit a pass flight actually leaves on; the solve must hand
+	// back a card that flies it.
+	var f = passFlights()[0];
+	var s = solveLunarCard({ jd: f.jd, vInfVec: f.vInf.vec });
+	assert.ok(s.ok, s.reason);
+	assert.equal(s.flight.route, "earth-pass");
+	assert.ok(O.vMag(O.vSub(s.flight.vInf.vec, f.vInf.vec)) < 0.05);
+});
+
+test("the seam: a card both pipelines could fly goes to the outward one", function () {
+	// The stated limit. Near the seam some coasting flights are reachable only
+	// by a card the OUTWARD pipeline also accepts under its own reading, so it
+	// is flown outward and the pass flight has no card. Pinned so that a change
+	// to how the seam is drawn is a deliberate one.
+	var gaps = 0;
+	for (var k = 0; k < 32; k++) {
+		var jd = JD + k * LUNAR_MONTH / 32;
+		var s = solveLunarCard({ jd: jd, vInfVec: [2000, 1500, 300] });
+		if (!s.ok) {
+			var rM = moonGeoPos(jd), v = passiveReleaseFor(rM, [2000, 1500, 300]);
+			assert.ok(v, "a coasting route exists");
+			gaps++;
+		}
+	}
+	assert.ok(gaps < 8, gaps + " of 32 days unreachable");
 });
