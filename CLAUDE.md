@@ -158,6 +158,20 @@ Two traps:
   for each changed module, then reload the page. When a verified-correct
   change appears to do nothing, suspect this before suspecting the code.
 
+## Release is not launch
+
+In this project a **release** is a ship let go by fixed launch
+infrastructure — principally skyhooks and space elevators — not a rocket
+burn. The energy comes from the infrastructure (its rotation, its power
+supply, reboost of its momentum), not from the ship's propellant, so rocket
+fuel reasoning does not transfer: a faster release, or one aimed differently,
+is not a propellant bill for the ship, and one release direction is not
+"harder for the ship" than another (`Notes/decisions.md`, "Carrier release
+phase is free"). The departure card's "technology's share" is what the
+infrastructure delivers. Keep this in mind whenever a discussion or a
+readout involves release speed, release direction, or the cost of a
+departure; the code says "release" rather than "launch" deliberately.
+
 ## Who does what
 
 **Kim** — founder and owner, years into this project. Does the design side:

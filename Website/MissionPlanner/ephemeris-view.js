@@ -29,6 +29,20 @@
  * by X AU" check — with no defined arrival time, "did you arrive on time" is not
  * yet a coherent question. Judging an encounter is the ship marker's job.
  *
+ * A SKETCH, NOT A FLIGHT. This tab answers "is this mission viable?" — which
+ * departure, on which date, reaches which destination, and roughly what the
+ * ship has to supply to do it. It does not model how the departure impulses
+ * are actually achieved. Its departure models are deliberately simple (the
+ * hand-off at the SOI edge; for a Moon origin, a two-body escape from Earth
+ * with the Moon treated as a point), and that is sufficient approximation for
+ * viability. Working out how a technology stack actually delivers the
+ * hand-off belongs to a mission tab's Departure phase, where the real carrier
+ * geometry and waypoint impulses are integrated and the user tunes them
+ * against the plan's vector, refining as they go. The trajectory composed
+ * there differs from this sketch in its details, noticeably so on a long
+ * coast. Neither tab is wrong when they disagree; do not bend this tab's
+ * models to chase the mission tab's flight.
+ *
  * THE DEPARTURE CARD MEANS TWO DIFFERENT THINGS, one per origin family, and
  * departureState below is where that split lives.
  *
@@ -230,8 +244,12 @@ var LUNAR_FAILURES = {
 	           + "another date will clear it.",
 	"card-toward-Earth": "This departure points back at Earth from the Moon.",
 	"card-needs-earth-pass": "Not from this side of the Moon's orbit: reaching "
-	           + "this departure would mean swinging past Earth on the way out, "
-	           + "which is not modelled yet. Try another date in the month.",
+	           + "this departure would mean swinging past Earth on the way out.",
+	"no-pass-route": "No coasting path from the Moon leaves Earth on this heading "
+	           + "with this release, even swinging past Earth. Try another date "
+	           + "in the month or a different speed.",
+	"pass-hits-Earth": "The only coasting path to this heading dips into Earth's "
+	           + "atmosphere on the way past.",
 	"heads-into-Earth": "With the Moon's motion added the ship falls back toward "
 	           + "Earth rather than heading out.",
 	"no-coast": "This departure escapes, but its coast out to Earth's SOI cannot "
@@ -2599,8 +2617,17 @@ export function createEphemerisView(opts) {
 			var lun = hand.lunar;
 			if (lun.ok) {
 				var shipEdge = O.vMag(lun.cardVec), gain = hand.vInf - shipEdge;
-				depReadout.textContent =
-					"Ship supplies " + fmtKmS(shipEdge) + " km/s at Earth's SOI; the Moon's motion "
+				// On the Earth-pass route the card's direction IS the heading
+				// flown (core/lunar-departure.js, "two pipelines, one seam"), so
+				// the readout says so — and where the ship falls toward Earth
+				// first, how close it swings.
+				var route = lun.route !== "earth-pass" ? ""
+					: lun.perigee !== null
+						? "Swings past Earth at " + Math.round(lun.perigee / 1e3).toLocaleString()
+						  + " km and leaves along the card's heading. "
+						: "Leaves along the card's heading. ";
+				depReadout.textContent = route
+					+ "The release supplies " + fmtKmS(shipEdge) + " km/s at Earth's SOI; the Moon's motion "
 					+ (gain >= 0 ? "adds " : "costs ") + fmtKmS(Math.abs(gain))
 					+ " km/s, leaving " + fmtKmS(hand.vInf) + " km/s there. "
 					+ "Resulting arc: " + depKind + ".";
