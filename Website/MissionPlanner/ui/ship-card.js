@@ -11,8 +11,9 @@
  * so the card shows the speed along the coast and where around the
  * destination the pass goes and how high, and grades nothing.
  * Arrival's gizmo is the catch seen from the tether: its three axes at the
- * point the ship meets it, prograde as long as that point's speed, and the
- * ship's trajectory into it (contactLines), with the one Incoming row below.
+ * point the ship meets it, each a 500 m/s yardstick, and the ship's
+ * trajectory into it on that scale (contactLines), with the one Incoming row
+ * below.
  *
  * OPTIONAL PARTS. Every section is filled by a setter and renders nothing until
  * one is called, so a phase takes only the parts it needs and the card stays
@@ -91,35 +92,60 @@ export function gizmoScale(needed, current) {
 	return m > 0 ? m : 1;
 }
 
-// Length, in gizmo units, of the contact gizmo's radial and normal axes. They
-// mark directions only; prograde alone is scaled to a speed.
-export var INDICATOR_LENGTH = 0.5;
+// The speed, km/s, each of the contact gizmo's three axes stands for. They
+// mark directions; the length is a yardstick for the ship's line.
+export var AXIS_SPEED = 0.5;
 
 // The Arrival card's contact gizmo as line specs, pure. spec: { axes: { pro,
-// rad, nrm } unit vectors, pointSpeed: km/s of the tether point the ship
-// meets, ship: { dir, speed } | null — the ship's velocity relative to that
-// point, unit vector and km/s }. Prograde is bright and as long as the point's
-// speed; radial and normal are dim, fixed-length indicators. The ship's line
-// is its trajectory arriving at the contact point, so it lies on the side it
-// came from and ends at the origin, as long as its speed. Both speeds share
-// one scale, the larger of the two filling the box. Returns [{ dir, len,
-// color, bright }], len in gizmo units.
+// rad, nrm } unit vectors, ship: { dir, speed } | null — the ship's velocity
+// relative to the tether point it meets, unit vector and km/s }. The three
+// axes are bright indicators of one fixed length, AXIS_SPEED. The ship's line is its trajectory arriving at the contact
+// point, so it lies on the side it came from and ends at the origin, as long
+// as its speed on the axes' scale. The longer of the ship's line and an axis
+// fills the box, so the ship's line is always easy to read at any speed.
+// Returns [{ dir, len, color, bright }], len in gizmo units.
 export function contactLines(spec) {
 	if (!spec || !spec.axes) { return []; }
 	var ship = spec.ship && isFinite(spec.ship.speed) ? spec.ship : null;
-	var scale = Math.max(isFinite(spec.pointSpeed) ? spec.pointSpeed : 0, ship ? ship.speed : 0) || 1;
+	var scale = Math.max(AXIS_SPEED, ship ? ship.speed : 0);
+	var axisLen = AXIS_SPEED / scale;
 	var out = [
-		{ dir: spec.axes.rad, len: INDICATOR_LENGTH, color: SHIP_COLORS.dim.rad, bright: false },
-		{ dir: spec.axes.nrm, len: INDICATOR_LENGTH, color: SHIP_COLORS.dim.nrm, bright: false }
+		{ dir: spec.axes.pro, len: axisLen, color: SHIP_COLORS.bright.pro, bright: true },
+		{ dir: spec.axes.rad, len: axisLen, color: SHIP_COLORS.bright.rad, bright: true },
+		{ dir: spec.axes.nrm, len: axisLen, color: SHIP_COLORS.bright.nrm, bright: true }
 	];
-	if (isFinite(spec.pointSpeed)) {
-		out.push({ dir: spec.axes.pro, len: spec.pointSpeed / scale, color: SHIP_COLORS.bright.pro, bright: true });
-	}
 	if (ship) {
 		out.push({ dir: ship.dir.map(function (x) { return -x; }), len: ship.speed / scale,
 			color: SHIP_COLORS.bright.net, bright: true });
 	}
 	return out;
+}
+
+// The sphere the camera frames: one around every point given (line ends and
+// the origin they start from), centred on their bounding box. points: [[x, y,
+// z], ...]. Returns { center, radius }, radius never below a small floor so an
+// empty gizmo still has something to frame.
+export function fitSphere(points) {
+	var lo = [0, 0, 0], hi = [0, 0, 0];
+	(points || []).forEach(function (p) {
+		for (var k = 0; k < 3; k++) {
+			lo[k] = Math.min(lo[k], p[k]);
+			hi[k] = Math.max(hi[k], p[k]);
+		}
+	});
+	var center = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+	var radius = O.vMag(O.vSub(hi, center));
+	(points || []).forEach(function (p) { radius = Math.max(radius, O.vMag(O.vSub(p, center))); });
+	return { center: center, radius: Math.max(radius, 0.05) };
+}
+
+// How far back a camera with vertical field of view `fovDeg` and `aspect`
+// (width / height) sits so a sphere of `radius` spans `fill` of the narrower
+// side of the view.
+export function fitDistance(radius, fovDeg, aspect, fill) {
+	var halfV = fovDeg * Math.PI / 360;
+	var halfH = Math.atan(Math.tan(halfV) * aspect);
+	return radius / Math.sin(Math.min(halfV, halfH)) / fill;
 }
 
 // The speed bar's model, km/s. Peak pins the right edge and is recomputed with
@@ -367,8 +393,12 @@ function kms(x, decimals) { return (x == null || !isFinite(x)) ? "—" : x.toFix
 // which is exactly when the card is being read most closely.
 var LINE_RADIUS = { dim: 0.032, bright: 0.014 };
 
-// The gizmo camera's resting distance.
+// The gizmo camera's starting distance, before its first fit.
 var GIZMO_REF_RADIUS = 3.4;
+
+// How much of the gizmo's narrower side the fitted lines span.
+var GIZMO_FILL = 0.92;
+var GIZMO_FOV = 38;
 
 // A unit cylinder (radius 1, height 1, centred on the origin, running up +Y)
 // that every line scales and orients. Shared across all instances and never
@@ -493,10 +523,10 @@ export function createShipCard(opts) {
 	var scene = new THREE.Scene();
 	var bgColor = new THREE.Color(bg);
 	scene.background = bgColor;
-	var camera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
-	// Radius is fixed and the content is normalized into it, so the gizmo needs
-	// no per-frame rescaling; the zoom range only exists for the free-rotate
-	// mode's wheel.
+	var camera = new THREE.PerspectiveCamera(GIZMO_FOV, 1, 0.01, 200);
+	// The camera frames the lines whenever they change shape (refit, below),
+	// and is otherwise the user's to rotate and zoom: a rebuild that draws the
+	// same lines, as every clock move does, leaves their view alone.
 	var cam = createCam(GIZMO_REF_RADIUS, Math.PI * 0.25, Math.PI * 0.42, new THREE.Vector3(0, 0, 0));
 	// The two layers live in their own groups so render can draw them as
 	// separate depth passes.
@@ -506,8 +536,25 @@ export function createShipCard(opts) {
 	scene.add(currentGroup);
 
 	var unbindCamera = bindCameraControls(gizmoEl, function () {
-		return { cam: cam, camera: camera, zoomMin: 1.2, zoomMax: 12 };
+		return { cam: cam, camera: camera, zoomMin: 0.4, zoomMax: 12 };
 	});
+
+	// The sphere last framed, and one waiting for render to frame it (it
+	// needs the strip's aspect, which only render knows).
+	var fitted = null, pendingFit = null;
+	function refit() {
+		var pts = [];
+		[neededGroup, currentGroup].forEach(function (g) {
+			// Each line is centred on its own midpoint, so its far end is twice that.
+			g.children.forEach(function (m) { pts.push([m.position.x * 2, m.position.y * 2, m.position.z * 2]); });
+		});
+		if (!pts.length) { return; }
+		var sph = fitSphere(pts);
+		if (fitted && Math.abs(sph.radius - fitted.radius) <= 0.01 * fitted.radius &&
+			O.vMag(O.vSub(sph.center, fitted.center)) <= 0.01 * fitted.radius) { return; }
+		fitted = sph;
+		pendingFit = sph;
+	}
 
 	// MATERIALS ONLY. Every line shares the module-level cylinder geometry, so
 	// disposing geometry here would blank the next rebuild. The materials carry
@@ -560,6 +607,7 @@ export function createShipCard(opts) {
 					if (n) { g.add(n); }
 				}
 			});
+		refit();
 	}
 
 	// Arrival's gizmo: the tether's axes at the contact point and the ship's
@@ -571,6 +619,7 @@ export function createShipCard(opts) {
 			var m = makeLine(l.dir, l.len, l.color, LINE_RADIUS.bright);
 			if (m) { currentGroup.add(m); }
 		});
+		refit();
 	}
 
 	// Whether the phase uses the gizmo at all. Hidden, the strip and its
@@ -839,6 +888,11 @@ export function createShipCard(opts) {
 		}
 		camera.aspect = w / h;
 		camera.updateProjectionMatrix();
+		if (pendingFit) {
+			cam.target.set(pendingFit.center[0], pendingFit.center[1], pendingFit.center[2]);
+			cam.radius = fitDistance(pendingFit.radius, GIZMO_FOV, camera.aspect, GIZMO_FILL);
+			pendingFit = null;
+		}
 		updateCamera(camera, cam);
 		var x = r.left - canvasRect.left;
 		var y = canvasRect.height - (r.top - canvasRect.top + h);   // GL origin: bottom-left

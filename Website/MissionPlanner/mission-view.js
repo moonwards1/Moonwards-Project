@@ -2715,7 +2715,7 @@ export function createMissionView(opts) {
 		} else {
 			var ship = contact.ok ? { dir: O.vUnit(contact.vRel), speed: contact.components.net / 1000 } : null;
 			shipCard.setContact(contact.axes
-				? { axes: contact.axes, pointSpeed: contact.pointSpeed / 1000, ship: ship } : null);
+				? { axes: contact.axes, ship: ship } : null);
 			var c = contact.ok ? contact.components : null;
 			shipCard.setComponentRows([{ label: "Incoming", kind: "current",
 				comp: c ? { pro: c.pro / 1000, rad: c.rad / 1000, nrm: c.nrm / 1000, net: c.net / 1000 } : null }]);
