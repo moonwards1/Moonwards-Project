@@ -7,6 +7,16 @@
  * 66,168 km from the Moon and still deep inside Earth's well, so a lunar
  * departure is not over until it crosses EARTH's boundary.
  *
+ * A SKETCHING MODEL. This file serves the Ephemeris tab, which sketches a
+ * trajectory to judge whether a mission is viable; it is not the flight. It
+ * is two-body throughout: Earth's gravity alone from the Moon's CENTRE out to
+ * Earth's SOI, the Sun ignored, and the Moon's own well paid once, by radius
+ * only, in releaseSpeedFor. A mission tab's Departure phase flies the real
+ * thing — modules/departure-leg integrates Earth + Moon + Sun from the
+ * carrier's actual release point, with the user's own waypoint impulses — and
+ * that trajectory differs from this one in its details, noticeably over a long
+ * coast. The difference is expected, not an error to reconcile here.
+ *
  * WHAT THE DEPARTURE CARD HOLDS. The card is the speed the SHIP's own actions
  * deliver AT Earth's SOI edge — the skyhook release plus any burns it makes on
  * the way out — stated on Earth's heliocentric prograde/normal/radial axes,

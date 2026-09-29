@@ -29,6 +29,20 @@
  * by X AU" check — with no defined arrival time, "did you arrive on time" is not
  * yet a coherent question. Judging an encounter is the ship marker's job.
  *
+ * A SKETCH, NOT A FLIGHT. This tab answers "is this mission viable?" — which
+ * departure, on which date, reaches which destination, and roughly what the
+ * ship has to supply to do it. It does not model how the departure impulses
+ * are actually achieved. Its departure models are deliberately simple (the
+ * hand-off at the SOI edge; for a Moon origin, a two-body escape from Earth
+ * with the Moon treated as a point), and that is sufficient approximation for
+ * viability. Working out how a technology stack actually delivers the
+ * hand-off belongs to a mission tab's Departure phase, where the real carrier
+ * geometry and waypoint impulses are integrated and the user tunes them
+ * against the plan's vector, refining as they go. The trajectory composed
+ * there differs from this sketch in its details, noticeably so on a long
+ * coast. Neither tab is wrong when they disagree; do not bend this tab's
+ * models to chase the mission tab's flight.
+ *
  * THE DEPARTURE CARD MEANS TWO DIFFERENT THINGS, one per origin family, and
  * departureState below is where that split lives.
  *

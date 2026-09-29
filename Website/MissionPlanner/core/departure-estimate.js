@@ -23,8 +23,9 @@
  * actually land.
  *
  * NOTHING HERE SHAPES A LUNAR DEPARTURE. A Moon origin is authored forward —
- * core/lunar-departure.js integrates Earth + Moon + Sun from a release the
- * planner set, and its release epoch is the Ephemeris tab's own clock, carried
+ * core/lunar-departure.js propagates a two-body escape hyperbola (Earth only)
+ * from a release the planner set to Earth's SOI crossing, and its release
+ * epoch is the Ephemeris tab's own clock, carried
  * into the mission by core/adopt.js. The Moon branch below exists only for a
  * plan that reached adopt WITHOUT that record, and it is a seed: the
  * two-body crossing from lunar distance out to Earth's SOI, since a lunar
