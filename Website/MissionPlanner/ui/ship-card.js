@@ -645,7 +645,10 @@ export function createShipCard(opts) {
 	// flattening it. The two agree whenever nothing was left out.
 	//
 	// The tick is Departure's "Needed" unless `mark` names it otherwise:
-	// { label, title } — Arrival's is the tether tip's speed.
+	// { label, title, off } — Arrival's is the tether tip's speed. `off`
+	// ({ value, below }) is a mark speed outside the bar's span: it gets no
+	// tick, and is printed under the bar on the side it lies beyond, saying the
+	// ship never reaches it.
 	function setSpeed(model, mark) {
 		speedEl.innerHTML = "";
 		if (!model) { return; }
@@ -694,12 +697,19 @@ export function createShipCard(opts) {
 			speedEl.appendChild(ends);
 		}
 
+		if (mark && mark.off && isFinite(mark.off.value)) {
+			var below = !!mark.off.below;
+			speedEl.appendChild(el("div", "mp-ship-bar-off" + (below ? "" : " mp-ship-bar-off-above"),
+				(below ? "◂ " : "") + markLabel + " " + kms(mark.off.value) + " km/s: the ship never " +
+				(below ? "slows to it" : "reaches it") + (below ? "" : " ▸")));
+		}
+
 		if (model.neededFrac != null) {
 			var pct = (model.neededFrac * 100).toFixed(2) + "%";
 			var foot = el("div", "mp-ship-bar-foot");
-			var mark = el("span", "mp-ship-bar-marker", "▲");
-			mark.style.left = pct;
-			foot.appendChild(mark);
+			var arrow = el("span", "mp-ship-bar-marker", "▲");
+			arrow.style.left = pct;
+			foot.appendChild(arrow);
 			var lab = el("span", "mp-ship-bar-needlabel", markLabel);
 			lab.style.left = pct;
 			// The label is wider than the mark it hangs off, so near either end it
