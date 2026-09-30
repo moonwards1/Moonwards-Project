@@ -488,7 +488,10 @@ export var MIN_PERIGEE = R_EARTH + 100e3;
 // slowest is taken.
 //
 // Refuses, by name, with "no-pass-route" (no S meets the release), or
-// "pass-hits-Earth" (the route found would dip below MIN_PERIGEE).
+// "pass-hits-Earth" (the route found would dip below MIN_PERIGEE). With
+// spec.allowImpact that last one is flown instead, marked `hitsEarth`: the
+// conic through Earth's centre point, which a view can draw up to the
+// surface and must not treat as a departure.
 export function flyEarthPassDeparture(spec) {
 	var jd = spec.jd;
 	var way = spec.way === "long" ? "long" : "short", sense = way === "long" ? -1 : 1;
@@ -524,7 +527,8 @@ export function flyEarthPassDeparture(spec) {
 	var vTotal = passiveReleaseFor(rMoon, O.vScale(heading, 0.5 * (lo + hi)), sense);
 	var total = vInfFromState(rMoon, vTotal);
 	var inbound = O.vDot(rMoon, vTotal) < 0;
-	if (inbound && total.rp < MIN_PERIGEE) { return { ok: false, reason: "pass-hits-Earth" }; }
+	var hitsEarth = inbound && total.rp < MIN_PERIGEE;
+	if (hitsEarth && !spec.allowImpact) { return { ok: false, reason: "pass-hits-Earth" }; }
 
 	var u = O.vSub(vTotal, vMoon);
 	var w = O.vScale(heading, share);
@@ -533,7 +537,8 @@ export function flyEarthPassDeparture(spec) {
 	var turn = Math.acos(Math.max(-1, Math.min(1, O.vDot(O.vUnit(vTotal), O.vUnit(total.vec)))));
 	var residual = O.vSub(total.vec, w);
 	return {
-		ok: true, route: "earth-pass", way: way, jd: jd, cardVec: cardVec, cardAsym: w,
+		ok: true, route: "earth-pass", way: way, hitsEarth: hitsEarth,
+		jd: jd, cardVec: cardVec, cardAsym: w,
 		u: u, uMag: O.vMag(u),
 		releaseSpeed: releaseSpeedFor(O.vMag(u), spec.releaseRadius),
 		vInf: total,
@@ -556,6 +561,8 @@ export function flyEarthPassDeparture(spec) {
 //   { ok: true, route, jd, u, uMag, releaseSpeed,
 //     route,       // "outward", or "earth-pass" from flyEarthPassDeparture
 //     way,         // "short" or "long"
+//     hitsEarth,   // true only under spec.allowImpact: a pass below
+//                  //   MIN_PERIGEE, flown for drawing, not a departure
 //     perigee,     // m — a pass's flown perigee; null when none is flown
 //     cardVec,     // the card as typed — the ship's speed AT Earth's SOI edge
 //     cardAsym,    // the same, as the hyperbolic excess behind it
@@ -627,7 +634,7 @@ export function flyLunarDeparture(spec) {
 	// the anomaly), which is a departure with no hand-off to state.
 	var exitState = coast == null ? null : O.propagateState(GM_EARTH, rMoon, vTotal, coast);
 	return {
-		ok: true, route: "outward", way: "short", perigee: null, jd: jd, cardVec: cardVec, cardAsym: w,
+		ok: true, route: "outward", way: "short", hitsEarth: false, perigee: null, jd: jd, cardVec: cardVec, cardAsym: w,
 		u: solved.u, uMag: O.vMag(solved.u),
 		releaseSpeed: releaseSpeedFor(O.vMag(solved.u), spec.releaseRadius),
 		vInf: total,
@@ -661,7 +668,8 @@ var LEAD_MIN_DAYS = 0.3, LEAD_MAX_DAYS = 12;
  * few flights. If it does not, the whole span of possible leads is scanned
  * and the crossing bracketed, taking the one nearest the seed.
  *
- * spec = { jdHandoff, card, way, seedJd, releaseRadius }. Returns the flight
+ * spec = { jdHandoff, card, way, seedJd, releaseRadius, allowImpact } —
+ * allowImpact passes through to flyEarthPassDeparture. Returns the flight
  * (flyLunarDeparture's shape, its `jd` the release) with `jdHandoff` added, or
  * { ok: false, reason } — the refusal most of the searched dates met, or
  * "no-release-date" when every date flies but none reaches the SOI then.
@@ -670,13 +678,18 @@ export function releaseForHandoff(spec) {
 	var H = spec.jdHandoff;
 	function flyAt(rel) {
 		return flyLunarDeparture({ jd: rel, card: spec.card, way: spec.way,
-		                           releaseRadius: spec.releaseRadius });
+		                           releaseRadius: spec.releaseRadius,
+		                           allowImpact: spec.allowImpact });
 	}
 	// Signed miss (days) of the flight released at `rel`; null if it has no
-	// crossing to time.
+	// crossing to time, with the refusal tallied for the report below.
+	var refusals = {};
 	function miss(rel) {
 		var f = flyAt(rel);
-		return (f.ok && f.soiExit) ? { f: f, F: rel + f.soiExit.dt / DAY - H } : null;
+		if (f.ok && f.soiExit) { return { f: f, F: rel + f.soiExit.dt / DAY - H }; }
+		var why = f.reason || "no-coast";
+		refusals[why] = (refusals[why] || 0) + 1;
+		return null;
 	}
 	function done(m) {
 		var f = m.f;
@@ -704,15 +717,24 @@ export function releaseForHandoff(spec) {
 	}
 
 	// Fallback: scan every possible lead for a sign change, bisect each, and
-	// keep the root nearest the seed. A jump in the miss larger than a day is
-	// a seam between routes, not a crossing, and is stepped over.
-	var best = null, prev = null, refusals = {};
-	for (var rel = H - LEAD_MAX_DAYS; rel <= H - LEAD_MIN_DAYS + 1e-9; rel += 0.1) {
+	// keep the root nearest the seed. A half-day pass first finds which leads
+	// fly at all — on a date where this way has no route, usually none do, and
+	// that settles it cheaply — then tenth-of-a-day steps search only within
+	// half a day of a lead that flew (coarser steps step over crossings that
+	// sit close to a seam between routes). A jump in the miss larger than a
+	// day is such a seam, not a crossing, and is stepped over.
+	var COARSE = 0.5, FINE = 0.1, flies = [];
+	for (var rc = H - LEAD_MAX_DAYS; rc <= H - LEAD_MIN_DAYS + 1e-9; rc += COARSE) {
+		if (miss(rc)) { flies.push(rc); }
+	}
+	function nearFlying(rel) {
+		for (var j = 0; j < flies.length; j++) { if (Math.abs(flies[j] - rel) <= COARSE + 1e-9) { return true; } }
+		return false;
+	}
+	var best = null, prev = null;
+	for (var rel = H - LEAD_MAX_DAYS; flies.length && rel <= H - LEAD_MIN_DAYS + 1e-9; rel += FINE) {
+		if (!nearFlying(rel)) { prev = null; continue; }
 		var m = miss(rel);
-		if (!m) {
-			var why = flyAt(rel).reason || "no-coast";
-			refusals[why] = (refusals[why] || 0) + 1;
-		}
 		if (m && prev && (m.F > 0) !== (prev.m.F > 0) && Math.abs(m.F - prev.m.F) < 1) {
 			var lo = prev.rel, hi = rel, flo = prev.m.F, mid = null;
 			for (var k = 0; k < 50; k++) {
@@ -804,4 +826,40 @@ export function solveLunarCardAtHandoff(spec) {
 	}
 	if (best) { return done(best); }
 	return { ok: false, reason: firstReason || "no-card-solution" };
+}
+
+/* THE DEPARTURE LEG AS POINTS, for drawing: geocentric positions (m) along
+ * the flight from the release at the Moon to Earth's SOI, stepped by distance
+ * over speed so the pass past perigee is as smooth as the slow climb out
+ * (~100 steps per e-fold of distance, never coarser than 1/400 of the leg).
+ * A flight marked `hitsEarth` stops where it meets Earth's surface.
+ *
+ * Returns { points, hitsEarth, tEnd } (tEnd in seconds after release), or
+ * null for a flight with no crossing to run to.
+ */
+export function departurePath(flight) {
+	if (!flight || !flight.ok || !flight.soiExit) { return null; }
+	var r0 = flight.rMoon, v0 = O.vAdd(flight.u, flight.vMoon);
+	var T = flight.soiExit.dt, maxStep = T / 400;
+	function at(t) { return t > 0 ? O.propagateState(GM_EARTH, r0, v0, t) : { r: r0, v: v0 }; }
+	var pts = [], t = 0, prevT = 0;
+	for (var guard = 0; guard < 20000; guard++) {
+		var st = at(t);
+		if (O.vMag(st.r) <= R_EARTH) {
+			// Into the surface between the last point and this one: bisect.
+			var lo = prevT, hi = t;
+			for (var k = 0; k < 40; k++) {
+				var mid = 0.5 * (lo + hi);
+				if (O.vMag(at(mid).r) > R_EARTH) { lo = mid; } else { hi = mid; }
+			}
+			pts.push(at(hi).r);
+			return { points: pts, hitsEarth: true, tEnd: hi };
+		}
+		pts.push(st.r);
+		if (t >= T) { break; }
+		var dt = Math.min(maxStep, Math.max(10, 0.01 * O.vMag(st.r) / O.vMag(st.v)));
+		prevT = t;
+		t = Math.min(T, t + dt);
+	}
+	return { points: pts, hitsEarth: false, tEnd: T };
 }

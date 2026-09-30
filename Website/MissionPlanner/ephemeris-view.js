@@ -72,10 +72,13 @@
  * kilometres and two to six days from the Moon. The RELEASE is solved
  * backwards from it (core/lunar-departure.js's releaseForHandoff) — the date
  * whose flight crosses Earth's SOI exactly at the clock — along the WAY ROUND
- * EARTH the user picks (state.lunarWay): the short way, or the long way that
- * swings close past Earth. The two ways take different times, so they leave
- * from different Moons: the Moon widget shows the Moon at the chosen way's
- * release, and the readout states what the other way would give. The arc
+ * EARTH: the short way (the direct route out), or, with the "flyby" box
+ * ticked (state.flyby), the long way that swings close past Earth. On a date
+ * where the chosen way has no route the other is drawn instead and the
+ * readout says so, so a trajectory is drawn all month. The two ways take
+ * different times, so they leave from different Moons: the Moon widget shows
+ * the Moon at the drawn way's release, and the readout states what the other
+ * way would give. The arc
  * starts at the crossing, and buildadoptSpec commits the crossing as the
  * plan's departure while the release travels separately as `releaseJd` and
  * `lunarRelease` — which is where the mission's Departure phase begins.
@@ -245,6 +248,21 @@ function isoDay(jd) {
 	return d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
 }
 
+// The two ways round Earth as the readout names them.
+var WAY_NAMES = { short: "direct route", long: "flyby" };
+
+// A refusal in a few words, for the readout's "why the other way is drawn".
+var LUNAR_REASONS_SHORT = {
+	"pass-hits-Earth": "its pass would hit Earth",
+	"no-pass-route": "it cannot escape Earth on this heading",
+	"no-release-date": "no release date reaches it",
+	"no-escape": "it cannot escape Earth",
+	"card-below-escape": "it cannot escape Earth",
+	"heads-into-Earth": "it falls back toward Earth",
+	"card-toward-Earth": "it points back at Earth",
+	"no-coast": "its coast cannot be timed"
+};
+
 // Why a lunar release produced no departure, in the planner's terms rather
 // than the solver's (core/lunar-departure.js's own reason codes).
 var LUNAR_FAILURES = {
@@ -255,13 +273,13 @@ var LUNAR_FAILURES = {
 	"card-toward-Earth": "This departure points back at Earth from the Moon.",
 	"card-needs-earth-pass": "Not from this side of the Moon's orbit: reaching "
 	           + "this departure would mean swinging past Earth on the way out.",
-	"no-pass-route": "No coasting path this way round Earth leaves on this heading "
-	           + "with this release. Try the other way, another date, or a "
-	           + "different speed.",
-	"pass-hits-Earth": "This way round Earth, the pass on this date dips into "
-	           + "Earth's atmosphere. Try the other way, or another date.",
-	"no-release-date": "No release this way round Earth reaches Earth's SOI on "
-	           + "this date. Try the other way, or another date.",
+	"no-pass-route": "With this release the ship cannot escape Earth on this heading "
+	           + "on this date, by either route: the Moon's motion is working "
+	           + "against it. Try another date or a larger card.",
+	"pass-hits-Earth": "On this date the only route to this heading passes into "
+	           + "Earth's atmosphere. Try another date.",
+	"no-release-date": "No release reaches Earth's SOI at this hand-off by either "
+	           + "route. Try another date.",
 	"heads-into-Earth": "With the Moon's motion added the ship falls back toward "
 	           + "Earth rather than heading out.",
 	"no-coast": "This departure escapes, but its coast out to Earth's SOI cannot "
@@ -333,7 +351,7 @@ export function createEphemerisView(opts) {
 			legDays: 0,
 			destination: legDefaults.destination
 		},
-		lunarWay: "short",     // a Moon origin's way round Earth: "short" | "long"
+		flyby: false,          // a Moon origin: prefer the long way round Earth (a close pass)
 		marker: null,          // { f0, angle (deg), mode: "free"|"target", dvBudget, ... }
 		markerFocused: false,  // camera pivots on the marker
 		destFocused: false,    // camera pivots on the destination "×" (updateDestinationMarker's destSprite)
@@ -643,17 +661,16 @@ export function createEphemerisView(opts) {
 	});
 	originRow.appendChild(originSel); depHost.appendChild(originRow);
 	var originInfo = muted(depHost, "");
-	// A Moon origin's way round Earth on the way out (core/lunar-departure.js,
-	// "two ways round Earth"); refresh() shows the row for that origin only.
-	var wayRow = document.createElement("div"); wayRow.className = "mp-inrow";
-	var wayLab = document.createElement("label"); wayLab.textContent = "way out"; wayRow.appendChild(wayLab);
-	var waySel = document.createElement("select");
-	[["short", "short way round Earth"], ["long", "long way — close pass"]].forEach(function (o) {
-		var opt = document.createElement("option"); opt.value = o[0]; opt.textContent = o[1];
-		waySel.appendChild(opt);
-	});
-	waySel.addEventListener("change", function () { state.lunarWay = waySel.value; refresh(); });
-	wayRow.appendChild(waySel); depHost.appendChild(wayRow);
+	// A Moon origin's flyby switch: ticked, the departure takes the long way
+	// round Earth, the close pass (core/lunar-departure.js, "two ways round
+	// Earth"); unticked, the short way, straight out. refresh() shows it for
+	// that origin only.
+	var flybyRow = document.createElement("div"); flybyRow.className = "mp-inrow";
+	var flybyLab = document.createElement("label");
+	var flybyBox = document.createElement("input"); flybyBox.type = "checkbox";
+	flybyLab.appendChild(flybyBox); flybyLab.appendChild(document.createTextNode(" flyby"));
+	flybyRow.appendChild(flybyLab); depHost.appendChild(flybyRow);
+	flybyBox.addEventListener("change", function () { state.flyby = flybyBox.checked; refresh(); });
 	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
 
 	// The destination list narrows with the origin.
@@ -1116,11 +1133,27 @@ export function createEphemerisView(opts) {
 		if (f.ok) { lastRelease[way] = f.jd; }
 		return f;
 	}
+	// The way the flyby switch asks for, and the other one.
+	function preferredWay() { return state.flyby ? "long" : "short"; }
+	function otherWayOf(way) { return way === "long" ? "short" : "long"; }
+	// The departure to draw: the preferred way's, or on a date where that way
+	// has no route, the other way's, with `fellBack` holding the preferred
+	// way's refusal. Only when neither flies is there nothing to draw, and the
+	// preferred way's refusal is the one reported.
+	function lunarFlightDrawn(jdHandoff) {
+		var want = preferredWay();
+		var f = lunarFlightFor(want, jdHandoff);
+		if (f.ok || f.reason === "no-card") { return f; }
+		var alt = lunarFlightFor(otherWayOf(want), jdHandoff);
+		if (!alt.ok) { return f; }
+		alt.fellBack = { way: want, reason: f.reason };
+		return alt;
+	}
 	function lunarDepartureState() {
 		var jd = dateState.jd;
 		var body = Frames.bodyHelioState("Earth", jd);
 		var moon = Frames.bodyHelioState("Moon", jd);
-		var lunar = lunarFlightFor(state.lunarWay, jd);
+		var lunar = lunarFlightDrawn(jd);
 		if (!lunar.ok || !lunar.soiExit) {
 			return { body: body, r: moon.r, v: moon.v, jd: jd,
 			         vInfVec: [0, 0, 0], vInf: 0, offset: [0, 0, 0],
@@ -1325,12 +1358,18 @@ export function createEphemerisView(opts) {
 				// turns into most of a million kilometres.
 				//
 				// The hand-off stays at the clock; the release that reaches it is
-				// solved together with the card, on the chosen way round Earth.
-				var s = solveLunarCardAtHandoff({ jdHandoff: dateState.jd, seedCard: term.burn,
-				                                  seedJd: lastRelease[state.lunarWay],
-				                                  vInfVec: dvVec, at: "exit", way: state.lunarWay });
-				if (!s.ok) { return null; }
-				lastRelease[state.lunarWay] = s.flight.jd;
+				// solved together with the card — on the way the flyby switch
+				// asks for, or the other way where that one has no answer, as
+				// the drawn departure does.
+				var s = null;
+				[preferredWay(), otherWayOf(preferredWay())].some(function (way) {
+					var got = solveLunarCardAtHandoff({ jdHandoff: dateState.jd, seedCard: term.burn,
+					                                    seedJd: lastRelease[way],
+					                                    vInfVec: dvVec, at: "exit", way: way });
+					if (got.ok) { s = got; lastRelease[way] = got.flight.jd; }
+					return got.ok;
+				});
+				if (!s) { return null; }
 				return { c: s.card, mag: O.vMag(s.flight.cardVec) };
 			}
 			var vec = dvVec;
@@ -1867,7 +1906,7 @@ export function createEphemerisView(opts) {
 				// same departure rather than trying to recover it from the
 				// hand-off — which cannot be done without solving backwards.
 				lunarRelease: (state.origin === "Moon" && hand.lunar && hand.lunar.ok)
-					? { jd: hand.lunar.jd, way: state.lunarWay,
+					? { jd: hand.lunar.jd, way: hand.lunar.way,
 					    burn: { pro: state.leg.burn.pro || 0,
 					            rad: state.leg.burn.rad || 0,
 					            nrm: state.leg.burn.nrm || 0 } }
@@ -1945,11 +1984,12 @@ export function createEphemerisView(opts) {
 			}
 			var lr = p.lunarRelease.burn || {};
 			burn = { pro: lr.pro || 0, rad: lr.rad || 0, nrm: lr.nrm || 0 };
-			state.lunarWay = p.lunarRelease.way === "long" ? "long" : "short";
-			waySel.value = state.lunarWay;
-			lastRelease[state.lunarWay] = p.lunarRelease.jd;
+			var way = p.lunarRelease.way === "long" ? "long" : "short";
+			state.flyby = way === "long";
+			flybyBox.checked = state.flyby;
+			lastRelease[way] = p.lunarRelease.jd;
 			dateBar.setJd(p.departure.jd);
-			burn = lunarCardFor(p.departure, burn) || burn;
+			burn = lunarCardFor(p.departure, burn, way) || burn;
 		} else {
 			dateBar.setJd(p.departure.jd);
 			var natural = O.bodyStateAtJD(GM_SUN, originSys.orbit, p.departure.jd);
@@ -2002,8 +2042,7 @@ export function createEphemerisView(opts) {
 	// plan's, and the drawn flight differs from the mission's by that much.
 	// Null when the recorded card already flies to the plan's departure (it
 	// then reopens exactly as it was authored) or when no card reaches it.
-	function lunarCardFor(departure, card) {
-		var way = state.lunarWay;
+	function lunarCardFor(departure, card, way) {
 		var f0 = releaseForHandoff({ jdHandoff: departure.jd, card: card, way: way,
 		                             seedJd: lastRelease[way] });
 		if (f0.ok && f0.soiExit) {
@@ -2177,7 +2216,7 @@ export function createEphemerisView(opts) {
 			setCardEmpty(true);
 			updateStartMissionButton({ noMarker: true });
 			frame.place(dateState.jd);
-			if (pov) { setPovChevron(pov, null); }
+			if (pov) { setPovChevron(pov, null); if (state.pov && !povWin) { pov.frame.place(dateState.jd); } }
 			return;
 		}
 		if (!state.marker.mode) { state.marker.mode = "free"; }
@@ -2211,7 +2250,7 @@ export function createEphemerisView(opts) {
 			setHint("No drawn trajectory to probe — fix the leg, then click it to place a marker.");
 			updateStartMissionButton({ noMarker: true });
 			frame.place(dateState.jd);
-			if (pov) { setPovChevron(pov, null); }
+			if (pov) { setPovChevron(pov, null); if (state.pov) { pov.frame.place(dateState.jd); } }
 			return;
 		}
 
@@ -2262,6 +2301,7 @@ export function createEphemerisView(opts) {
 		if (state.markerFocused) { frame.cam.target.copy(markerSprite.position); }
 		if (state.destFocused && destSprite && destSprite.visible) { frame.cam.target.copy(destSprite.position); }
 		if (state.pov && pov && povWin) { updatePovMarker(tof); }
+		else if (state.pov && pov) { pov.frame.place(dateState.jd); setPovChevron(pov, null); }
 	}
 
 	// Make the marker the camera's pivot — the view then rotates and zooms
@@ -2356,9 +2396,11 @@ export function createEphemerisView(opts) {
 	// a Moon origin that is the Moon, drawn in the Earth-centred scene.
 	function povBody(kind) { return kind === "origin" ? state.origin : state.leg.destination; }
 
+	// A view opens whenever it has a body to centre on: the origin always, the
+	// destination once one is chosen. Whether a flight is drawn in it is a
+	// separate matter — an empty view is still the view the user asked for.
 	function povAvailable(kind) {
-		if (!trajLeg || !(trajTotalT > 0)) { return false; }
-		return kind === "origin" || !!(state.leg.destination && destApproach);
+		return kind === "origin" || !!state.leg.destination;
 	}
 
 	// The ship relative to the POV scene's centre body at global time t:
@@ -2372,7 +2414,9 @@ export function createEphemerisView(opts) {
 	}
 
 	function computePovWindow(kind) {
+		if (!trajLeg || !(trajTotalT > 0)) { return null; }
 		if (kind === "origin") { return originWindow(trajTotalT); }
+		if (!destApproach) { return null; }
 		var dn = state.leg.destination;
 		var soiR = soiRadiusAU(systems.get(dn), SUN.mass, 1);   // m
 		return destinationWindow(function (t) {
@@ -2428,14 +2472,23 @@ export function createEphemerisView(opts) {
 	// Redraw the active POV from the current leg: its window, its path and
 	// markings. `refit` re-aims the camera at the body, close enough that it
 	// is POV_BODY_PX across.
-	// Drops back to the helio view if the POV no longer has anything to show.
+	// With no flight to show (none drawn, or no approach to the destination)
+	// the view stays, empty, at the clock's date: the user chose it, and only
+	// the user leaves it. The one way out is a destination POV whose
+	// destination has been cleared, which has no body left to centre on.
 	function drawPov(refit) {
 		if (!state.pov) { return; }
 		if (!povAvailable(state.pov)) { setPov(null); return; }
 		if (attachPovScene()) { refit = true; }
 		povWin = computePovWindow(state.pov);
-		if (!povWin) { setPov(null); return; }
 		var isDest = state.pov === "dest";
+		if (!povWin) {
+			drawPovScene(pov, { path: null, start: null, mark: null, catchDisc: isDest });
+			setPovChevron(pov, null);
+			pov.frame.place(dateState.jd);
+			if (refit) { refitPov(); }
+			return;
+		}
 		var path = samplePovPath(povWin.t0, povWin.t1);
 		var start = (!isDest && povWin.t0 === 0 && path.length) ? path[0] : null;
 		drawPovScene(pov, {
@@ -2443,19 +2496,21 @@ export function createEphemerisView(opts) {
 			mark: isDest ? povArrivalMark() : null,
 			catchDisc: isDest
 		});
-		if (refit) {
-			var f = pov.frame;
-			// A sphere of radius R at distance d spans R·h / (d·tan(fov/2))
-			// pixels on a pane h pixels tall; solved for d.
-			var R = systems.get(povBody(state.pov)).radius / 1e6;   // scene units
-			var h = paneMainEl.clientHeight || 600;
-			var d = R * h / (POV_BODY_PX * Math.tan(f.camera.fov * Math.PI / 360));
-			f.cam.radius = Math.max(f.zoomMin, Math.min(f.zoomMax, d));
-			state.povFocus = "body";
-			f.focusBody = povBody(state.pov);
-			var node = f.bodyNode(f.focusBody);
-			if (node) { f.cam.target.copy(node.position); }
-		}
+		if (refit) { refitPov(); }
+	}
+
+	function refitPov() {
+		var f = pov.frame;
+		// A sphere of radius R at distance d spans R·h / (d·tan(fov/2))
+		// pixels on a pane h pixels tall; solved for d.
+		var R = systems.get(povBody(state.pov)).radius / 1e6;   // scene units
+		var h = paneMainEl.clientHeight || 600;
+		var d = R * h / (POV_BODY_PX * Math.tan(f.camera.fov * Math.PI / 360));
+		f.cam.radius = Math.max(f.zoomMin, Math.min(f.zoomMax, d));
+		state.povFocus = "body";
+		f.focusBody = povBody(state.pov);
+		var node = f.bodyNode(f.focusBody);
+		if (node) { f.cam.target.copy(node.position); }
 	}
 
 	// Enter a POV ("origin" | "dest") or return to the helio view (null).
@@ -2482,7 +2537,8 @@ export function createEphemerisView(opts) {
 	}
 
 	function putMarkerInPovWindow() {
-		var want = state.pov === "dest" ? destApproach.t : povWin.t0;
+		if (!povWin) { return; }
+		var want = (state.pov === "dest" && destApproach) ? destApproach.t : povWin.t0;
 		if (!state.marker) {
 			state.marker = { f0: want / trajTotalT, angle: 0, mode: "free", dvBudget: 10000, holdMode: "deg" };
 			return;
@@ -2573,10 +2629,9 @@ export function createEphemerisView(opts) {
 		var o = povAvailable("origin"), d = povAvailable("dest");
 		povBtns.origin.disabled = !o;
 		povBtns.dest.disabled = !d;
-		povBtns.origin.title = o ? "View the start of the flight from " + state.origin + "."
-			: "No flight drawn yet.";
+		povBtns.origin.title = "View the start of the flight from " + state.origin + ".";
 		povBtns.dest.title = d ? "View the approach from " + state.leg.destination + "."
-			: (state.leg.destination ? "No flight drawn yet." : "Choose a destination first.");
+			: "Choose a destination first.";
 		povBtns.sun.title = "Back to the whole solar system.";
 		povBtns.origin.classList.toggle("active", state.pov === "origin");
 		povBtns.dest.classList.toggle("active", state.pov === "dest");
@@ -2632,7 +2687,7 @@ export function createEphemerisView(opts) {
 		// The origin body itself, where and when the ship leaves it. For a Moon
 		// origin that is the MOON at the release epoch — `dep` there is Earth,
 		// the frame the card is measured against, not the body being departed.
-		wayRow.style.display = state.origin === "Moon" ? "" : "none";
+		flybyRow.style.display = state.origin === "Moon" ? "" : "none";
 		var releaseJd = (state.origin === "Moon" && hand.lunar && hand.lunar.ok) ? hand.lunar.jd : dateState.jd;
 		var originAt = state.origin === "Moon"
 			? Frames.bodyHelioState("Moon", releaseJd) : dep;
@@ -2674,21 +2729,32 @@ export function createEphemerisView(opts) {
 						: "Leaves along the card's heading. ";
 				// The other way round Earth, from the same hand-off: its Moon,
 				// its gain or loss, so the choice is always visible as a
-				// difference in what the Moon gives for the same release.
-				var otherWay = state.lunarWay === "long" ? "short" : "long";
-				var other = lunarFlightFor(otherWay, dateState.jd);
-				var otherTxt;
-				if (other.ok && other.soiExit) {
-					var oGain = O.vMag(other.soiExit.v) - shipEdge;
-					otherTxt = " The " + otherWay + " way would release "
-						+ fmtLead(dateState.jd - other.jd) + " before hand-off"
-						+ (other.perigee !== null ? ", pass Earth " + fmtAltKm(other.perigee) + " up," : "")
-						+ " and the Moon would " + (oGain >= 0 ? "add " : "cost ")
-						+ fmtKmS(Math.abs(oGain)) + " km/s.";
+				// difference in what the Moon gives for the same release. When
+				// the drawn way is itself the fallback, what is said instead is
+				// why the asked-for way is not drawn.
+				var otherWay = otherWayOf(lun.way);
+				var otherTxt, lead = "";
+				if (lun.fellBack) {
+					lead = (lun.fellBack.way === "long"
+						? "No flyby reaches this hand-off (" : "No direct route reaches this hand-off (")
+						+ (LUNAR_REASONS_SHORT[lun.fellBack.reason] || "no route")
+						+ "), so the " + WAY_NAMES[lun.way] + " is drawn. ";
+					otherTxt = "";
 				} else {
-					otherTxt = " The " + otherWay + " way has no route to this hand-off.";
+					var other = lunarFlightFor(otherWay, dateState.jd);
+					if (other.ok && other.soiExit) {
+						var oGain = O.vMag(other.soiExit.v) - shipEdge;
+						otherTxt = " The " + WAY_NAMES[otherWay] + " would release "
+							+ fmtLead(dateState.jd - other.jd) + " before hand-off"
+							+ (other.perigee !== null ? ", pass Earth " + fmtAltKm(other.perigee) + " up," : "")
+							+ " and the Moon would " + (oGain >= 0 ? "add " : "cost ")
+							+ fmtKmS(Math.abs(oGain)) + " km/s.";
+					} else {
+						otherTxt = otherWay === "long" ? " No flyby reaches this hand-off."
+							: " No direct route reaches this hand-off.";
+					}
 				}
-				depReadout.textContent = route
+				depReadout.textContent = lead + route
 					+ "Released " + fmtLead(dateState.jd - lun.jd) + " before hand-off. "
 					+ "The release supplies " + fmtKmS(shipEdge) + " km/s at Earth's SOI; the Moon's motion "
 					+ (gain >= 0 ? "adds " : "costs ") + fmtKmS(Math.abs(gain))

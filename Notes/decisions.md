@@ -376,8 +376,11 @@ generic `body-departure-leg` with a self-originating skyhook.
 - **Two ways round Earth, chosen by the user.** For a release speed and
   heading there is a short way (bending under half a turn, never nearer
   Earth than ~21,000 km altitude) and a long way (bending past half a turn,
-  where every close pass lives). The Ephemeris tab offers both and always
-  states what the other way would give. Why: they differ in exit speed by up
+  where every close pass lives). The Ephemeris tab's "flyby" box picks the
+  long way; on a date where the picked way has no route the other is drawn
+  and the readout says why, and otherwise the readout states what the other
+  way would give. Nothing is drawn only on an impact or a failure to escape
+  by either way. Why: they differ in exit speed by up
   to ~1 km/s for the same technology share, which of them the Moon favours
   changes through the month, and on some dates only one exists; picking one
   silently would hide the difference the tab is there to teach. The long way
