@@ -93,8 +93,9 @@
  * disagree by that much.
  *
  * THE SHIP MARKER is a slidable probe on the drawn path with Free / Target
- * modes, plus the destination-at-arrival "×" and the
- * temporal-proximity ring (both inside updateDestinationMarker). The
+ * modes, plus the destination-at-arrival "×" (updateDestinationMarker). The
+ * temporal-proximity rings and the Start gate follow the
+ * trajectory's orbit-approach passes instead (updateApproachGate). The
  * mechanical layer — sprites, card skeleton, slider physics, the
  * closest-approach search — is Shared/sim/marker-card.js; the mode state
  * machine stays local, per that file's header. Placement is click-to-place on
@@ -174,7 +175,7 @@ import { flyLunarDeparture, solveLunarCard, RELEASE_ALTITUDE } from "./core/luna
 import { Frames } from "../Shared/frames.js";
 import {
 	APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE, TEMP_FAR, TEMP_NEAR, TEMP_CLOSE,
-	checkProximity, proximityReason
+	checkProximity
 } from "./core/proximity.js";
 import { deserializeWorld } from "./core/world.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
@@ -368,7 +369,10 @@ export function createEphemerisView(opts) {
 	var trajTotalT = 0;       // total drawn-leg duration (s)
 	var trajSampleCount = 0;  // polyline sample count (sets followCrossing's search window)
 	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input
-	var markerSprite = null, destSprite = null, destSoi = null, tempRing = null;
+	var markerSprite = null, destSprite = null, destSoi = null;
+	var tempRings = [];            // temporal rings, one per qualifying orbit-approach pass
+	var approachPasses = [];       // orbit-approach passes inside APPROACH_FAR (computeOrbitApproaches)
+	var gatePass = null;           // the qualifying pass "Start Mission Plan" adopts: { t, r, v }
 	var orbitApproachMarks = [];   // hollow-ring sprites where the path nears a body's orbit
 	var markerVelDir = null;  // THREE.Vector3 — ship heading, for the sprite's per-frame orientation
 	var mk = null;            // the built marker card's refs (Shared/sim/marker-card.js)
@@ -1436,10 +1440,14 @@ export function createEphemerisView(opts) {
 	function clearApproachMarks() {
 		orbitApproachMarks.forEach(function (m) { frame.scene.remove(m); if (m.material) { m.material.dispose(); } });
 		orbitApproachMarks = [];
+		tempRings.forEach(function (m) { frame.scene.remove(m); if (m.material) { m.material.dispose(); } });
+		tempRings = [];
+		approachPasses = [];
 	}
 	function rebuildApproachMarks() {
 		clearApproachMarks();
-		computeOrbitApproaches().forEach(function (c) {
+		approachPasses = computeOrbitApproaches();
+		approachPasses.forEach(function (c) {
 			var sp = makeApproachRing(c.tier);
 			sp.position.copy(c.pos);
 			frame.scene.add(sp); orbitApproachMarks.push(sp);
@@ -1482,6 +1490,7 @@ export function createEphemerisView(opts) {
 				var tier = r ? pickProximityTier(r.dist, APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE) : -1;
 				if (tier >= 0) {
 					out.push({ pos: new THREE.Vector3(r.r[0] / AU, r.r[1] / AU, r.r[2] / AU),
+					           r: r.r, t: r.t, jd: legStartJd() + r.t / DAY,
 					           dist: r.dist, tier: tier, body: name });
 				}
 			}
@@ -1585,21 +1594,17 @@ export function createEphemerisView(opts) {
 	}
 
 	// Position the destination "×" (body at the marker's implied arrival) and
-	// the temporal ring, given the meeting point markerR (m) and TOF (s) —
-	// these track wherever the marker is scrubbed to, the manual side of
-	// choosing a rendezvous. Also drives the "Start Mission Plan" gate:
-	// enabled only when the marker sits inside BOTH closest-approach rings —
-	// space (nearOrbit, the same APPROACH_FAR threshold as the space-ring
-	// tiers) and time (the temporal ring's own tier >= 0). See
-	// updateStartMissionButton. The card's arrival/phasing/closest-approach/
-	// capture rows are NOT set here — see updateApproachReadouts.
-	function updateDestinationMarker(markerR, tofSec) {
+	// its SOI sphere, given the meeting point's TOF (s) — these track wherever
+	// the marker is scrubbed to, the manual side of choosing a rendezvous. The
+	// temporal ring and the "Start Mission Plan" gate do NOT follow the marker:
+	// see updateApproachGate. The card's arrival/phasing/closest-approach/
+	// capture rows are likewise fixed to the trajectory — see
+	// updateApproachReadouts.
+	function updateDestinationMarker(tofSec) {
 		var dn = state.leg.destination;
 		if (!dn) {
 			if (destSprite) { destSprite.visible = false; }
 			if (destSoi) { destSoi.visible = false; }
-			if (tempRing) { tempRing.visible = false; }
-			updateStartMissionButton({ hasDest: false });
 			return;
 		}
 		var destSys = systems.get(dn);
@@ -1627,56 +1632,55 @@ export function createEphemerisView(opts) {
 		destSoi.material.color.set(destSys.color || "#ffffff");
 		destSoi.position.copy(destSprite.position);
 		destSoi.scale.setScalar(soiRadiusAU(destSys, SUN.mass, AU));
-
-		// The gate itself is core/proximity.js — the same predicate, and the
-		// same two thresholds, mission-view.js gates "adopt delivered" on.
-		// The ring SPRITES below are this view's own rendering of the tiers.
-		var prox = checkProximity(GM_SUN, orbit, markerR, arrJd);
-		var tier = prox.timeOk
-			? pickProximityTier(Math.abs(prox.dtDays), TEMP_FAR, TEMP_NEAR, TEMP_CLOSE) : -1;
-		if (tier >= 0) {
-			if (!tempRing) { tempRing = makeTempRing(); frame.scene.add(tempRing); }
-			applyTierToSprite(tempRing, TEMPORAL_TIERS[tier]);
-			tempRing.visible = true;
-			if (markerSprite) { tempRing.position.copy(markerSprite.position); }
-		} else if (tempRing) { tempRing.visible = false; }
-
-		updateStartMissionButton({ hasDest: true, prox: prox, destName: dn });
-
-		// Target mode with a live solve: the gate above just checked the
-		// SCRUBBED display point, but once locked (_scrubbed) that point can be
-		// anywhere on the path — Start Mission Plan must gate on the held
-		// encounter (_encT) instead, same one buildadoptSpec commits, so
-		// scrubbing to inspect the route never toggles whether the real target
-		// is adoptable.
-		if (state.marker && state.marker.mode === "target" && !state.marker._released
-			&& state.marker._encT != null && trajTotalT > 0) {
-			var cs = stateAtGlobalTime(state.marker._encT);
-			if (cs) {
-				var cArrJd = legStartJd() + state.marker._encT / DAY;
-				var cProx = checkProximity(GM_SUN, orbit, cs.r, cArrJd);
-				updateStartMissionButton({ hasDest: true, prox: cProx, destName: dn });
-			}
-		}
 	}
 
-	// Enable/disable the marker card's "Start Mission Plan" button and set its
-	// explanatory note — which always says why, whether enabled or not. info:
-	// { noMarker } or { hasDest, prox (core/proximity.js's verdict), destName }.
-	// The no-marker case exists because the card is always visible, so the gate
-	// has to explain itself before anything is placed too.
-	function updateStartMissionButton(info) {
-		if (!mk || !mk.startBtn) { return; }
-		var reason;
-		if (info.noMarker) {
-			reason = "Place a marker first — click the drawn trajectory, then bring the marker " +
-				"inside both closest-approach rings (space and time).";
-		} else if (!info.hasDest) {
+	// The temporal rings and the marker card's "Start Mission Plan" gate, driven
+	// by the trajectory's orbit-approach passes (computeOrbitApproaches) — fixed
+	// properties of the drawn path, so they hold whether or not a marker has
+	// been placed or where it sits. A pass is a closest approach to the
+	// destination's orbit ring that already clears the SPACE limit; the TIME
+	// question is then how far apart the ship and the destination pass through
+	// that point (core/proximity.js's checkProximity). Each pass inside the
+	// time limit gets a temporal ring on the ship's position there, tiered by
+	// that offset; the pass with the smallest offset is the one Start Mission
+	// Plan adopts. The button's note always says why, enabled or not.
+	function updateApproachGate() {
+		var dn = state.leg.destination;
+		tempRings.forEach(function (m) { frame.scene.remove(m); if (m.material) { m.material.dispose(); } });
+		tempRings = [];
+		gatePass = null;
+
+		var reason, enabled = false;
+		if (!dn) {
 			reason = "Select a destination to enable — no destination chosen for this leg.";
+		} else if (!approachPasses.length) {
+			reason = "The trajectory never comes within " + (APPROACH_FAR / AU).toFixed(3) + " AU of " +
+				dn + "'s orbit.";
 		} else {
-			reason = proximityReason(info.prox, "Marker", info.destName);
+			var orbit = systems.get(dn).orbit, bestDt = Infinity, best = null;
+			approachPasses.forEach(function (c) {
+				var prox = checkProximity(GM_SUN, orbit, c.r, c.jd);
+				if (prox.dtDays != null && Math.abs(prox.dtDays) < bestDt) { bestDt = Math.abs(prox.dtDays); best = c; }
+				if (!prox.ok) { return; }
+				var tier = pickProximityTier(Math.abs(prox.dtDays), TEMP_FAR, TEMP_NEAR, TEMP_CLOSE);
+				var ring = makeTempRing();
+				applyTierToSprite(ring, TEMPORAL_TIERS[tier]);
+				ring.position.copy(c.pos);
+				frame.scene.add(ring); tempRings.push(ring);
+			});
+			if (bestDt < TEMP_FAR) {
+				var sAt = stateAtGlobalTime(best.t);
+				if (sAt) { gatePass = { t: best.t, r: sAt.r, v: sAt.v }; enabled = true; }
+				reason = "The trajectory reaches " + dn + " inside both closest-approach limits " +
+					"(space and time) — passing within " + bestDt.toFixed(1) + " d of it.";
+			} else {
+				reason = "The trajectory's nearest pass of " + dn + "'s orbit is timed " + bestDt.toFixed(1) +
+					" d off — needs to be within " + TEMP_FAR + " d of " + dn + " passing that point.";
+			}
 		}
-		mk.startBtn.disabled = !(info.hasDest && info.prox && info.prox.ok);
+
+		if (!mk || !mk.startBtn) { return; }
+		mk.startBtn.disabled = !enabled;
 		mk.startNote.textContent = reason;
 	}
 
@@ -1736,9 +1740,9 @@ export function createEphemerisView(opts) {
 		markerHint.textContent = HINT_DEFAULT;
 		mk.el.appendChild(markerHint);
 
-		// "Start Mission Plan": enabled only when the marker sits inside both
-		// closest-approach rings, space and time (see updateStartMissionButton,
-		// fed by updateDestinationMarker's nearOrbit/timing computation). Click:
+		// "Start Mission Plan": enabled when the trajectory has an orbit-approach
+		// pass inside both closest-approach limits, space and time (see
+		// updateApproachGate). Click:
 		// name dialog → core/adopt.js → planner.js spawns the tab.
 		mk.startBtn = document.createElement("button");
 		mk.startBtn.type = "button";
@@ -1817,22 +1821,17 @@ export function createEphemerisView(opts) {
 	// preconditions somehow aren't met.
 	function buildadoptSpec() {
 		var dn = state.leg.destination;
-		if (!state.marker || !trajSegs.length || !(trajTotalT > 0)) {
-			return { ok: false, reason: "No marker on a drawn trajectory." };
+		if (!trajSegs.length || !(trajTotalT > 0) || !gatePass) {
+			return { ok: false, reason: "No drawn trajectory reaches the destination." };
 		}
 		if (!dn) { return { ok: false, reason: "No destination selected." }; }
 
 		var hand = departureState();
 		var rw = resolveWaypoints(hand.r, hand.v, state.leg);
-		// In Target mode the marker's f0/angle may just be a scrubbed viewing
-		// position (see updateMarker's _scrubbed) — what gets adopted is always
-		// the held encounter, never wherever the inspector happens to be.
-		var m = state.marker;
-		var tof = (m.mode === "target" && !m._released && m._encT != null && trajTotalT > 0)
-			? m._encT
-			: mcMarkerFraction(m.f0, m.angle) * trajTotalT;
-		var s = stateAtGlobalTime(tof);
-		if (!s) { return { ok: false, reason: "The marker isn't on a valid trajectory." }; }
+		// The rendezvous is the qualifying pass (updateApproachGate), wherever
+		// the marker happens to sit.
+		var tof = gatePass.t;
+		var s = { r: gatePass.r, v: gatePass.v };
 
 		var arrJd = legStartJd() + tof / DAY;
 		var b = O.bodyStateAtJD(GM_SUN, systems.get(dn).orbit, arrJd);
@@ -2156,9 +2155,7 @@ export function createEphemerisView(opts) {
 			if (markerSprite) { markerSprite.visible = false; }
 			if (destSprite) { destSprite.visible = false; }
 			if (destSoi) { destSoi.visible = false; }
-			if (tempRing) { tempRing.visible = false; }
 			setCardEmpty(true);
-			updateStartMissionButton({ noMarker: true });
 			frame.place(dateState.jd);
 			if (pov) { setPovChevron(pov, null); }
 			return;
@@ -2189,10 +2186,8 @@ export function createEphemerisView(opts) {
 			markerSprite.visible = false;
 			if (destSprite) { destSprite.visible = false; }
 			if (destSoi) { destSoi.visible = false; }
-			if (tempRing) { tempRing.visible = false; }
 			setCardEmpty(true);
 			setHint("No drawn trajectory to probe — fix the leg, then click it to place a marker.");
-			updateStartMissionButton({ noMarker: true });
 			frame.place(dateState.jd);
 			if (pov) { setPovChevron(pov, null); }
 			return;
@@ -2218,7 +2213,7 @@ export function createEphemerisView(opts) {
 		mk.vals.tof.textContent = fmtTof(Math.max(0, tof));
 		mk.vals.tof.title = "From the hand-off at the origin's SOI edge — the tab's own clock.";
 
-		updateDestinationMarker(s.r, tof);
+		updateDestinationMarker(tof);
 
 		mk.slider.disabled = false;   // free to scrub for inspection in every mode (see _scrubbed above)
 		var sw = markerSoiWeight();
@@ -2790,6 +2785,7 @@ export function createEphemerisView(opts) {
 		// was just cleared above.
 		destApproach = computeDestinationApproach();
 		updateApproachReadouts();
+		updateApproachGate();
 
 		readoutBoxes = renderReadoutBoxes(readoutLayer, readoutBoxes, entries,
 			{ classPrefix: "mp", dvHex: dvHex, spdHex: spdHex, compact: true });
@@ -3080,7 +3076,7 @@ export function createEphemerisView(opts) {
 				destSoi.visible = projectedRadiusPx(frame.camera, paneMainEl, destSoi.scale.x, soiDist) >= 2.0;
 			}
 		}
-		if (tempRing && tempRing.visible) { scaleApproachMark(frame.camera, paneMainEl, tempRing); }
+		tempRings.forEach(function (sp) { scaleApproachMark(frame.camera, paneMainEl, sp); });
 		orbitApproachMarks.forEach(function (sp) { scaleApproachMark(frame.camera, paneMainEl, sp); });
 		positionReadoutBoxes(readoutBoxes, mainEl, panelEl, 15);
 

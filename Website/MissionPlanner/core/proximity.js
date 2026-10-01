@@ -45,9 +45,9 @@ export var APPROACH_NEAR = 0.001 * AU;     // m — inner ring tiers, display on
 export var APPROACH_CLOSE = 0.0002 * AU;   // m
 
 // Time: how far off the destination's own pass through that point is.
-export var TEMP_FAR = 30;    // days — the gate
-export var TEMP_NEAR = 10;   // days — inner ring tiers, display only
-export var TEMP_CLOSE = 3;
+export var TEMP_FAR = 20;    // days — the gate
+export var TEMP_NEAR = 2;   // days — inner ring tiers, display only
+export var TEMP_CLOSE = 0.25;
 
 // Is `r` (m, heliocentric) a real encounter with the body on `orbit` at epoch
 // `jd`? A hyperbolic/parabolic destination has no closed ring to measure

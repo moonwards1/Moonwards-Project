@@ -38,7 +38,7 @@ The user first finds viable interplanetary trajectories using the Ephemeris tab.
 
 * Click the trajectory to place a chevron on it
 
-  * This causes an X to be drawn where the destination would be when the ship has been flying for the time it takes to reach that point
+  * This causes an X to be drawn where the destination would be when the ship has been flying for the time it takes it to reach that point
 
   * The marker card then displays important data about the trajectory
 
@@ -52,10 +52,16 @@ Shown in above image:
 
   * A reset button to start fresh
 
-  * The slider that moves the chevron along the trajectory at the real rate it would do so, very helpful for finding the closest approach
+  * The slider that moves the chevron along the trajectory, very helpful for finding the closest approach
 
     * Scrubbing of this slider can be made finer by holding shift or control while dragging
 
     * The chevron also scrubs even slower whenever it is inside an SOI (as it is here) permitting better analysis of encounters 
 
-    * The radio buttons in the list underneath provide options useful for
+    * The radio buttons in the list underneath select how the chevron moves - by swept angle (radial from origin), or by time interval (time of flight).  'Radial from origin' is useful to setting up encounters, as it stays steady as the trajectory and date is changed. 'Time of flight' is useful for showing how speed would change along the trajectory.
+
+    * Other values listed are there to assist in judging the merit of a flight
+
+    * The 'Free' and 'Target' buttons near the top are for switching between a solve being found by Lambert search, and free manipulation of the trajectory - see below
+
+    * 

@@ -24,6 +24,7 @@ import { moonMars2039Mission, moonMars2039Workspace } from "./moon-mars-2039.js"
 import { moonCeres2032Mission, moonCeres2032Workspace } from "./moon-ceres-2032.js";
 import { moonCeres2032PartialMission, moonCeres2032PartialWorkspace } from "./moon-ceres-2032-partial.js";
 import { ceresMercury2030Mission, ceresMercury2030Workspace } from "./ceres-mercury-2030.js";
+import { earthMars2035Mission, earthMars2035Workspace } from "./earth-mars-2035.js";
 import { ceresMars2038PartialMission, ceresMars2038PartialWorkspace } from "./ceres-mars-2038-partial.js";
 
 export var EXAMPLE_MISSIONS = [
@@ -33,6 +34,13 @@ export var EXAMPLE_MISSIONS = [
 		blurb: "Adopted plan only — no departure or arrival technology configured.",
 		mission: moonMars2039Mission,
 		workspace: moonMars2039Workspace
+	},
+	{
+		id: "earth-mars-2035",
+		label: "Earth → Mars 2035",
+		blurb: "Adopted plan only — the coast reaches Mars's orbit inside both proximity limits.",
+		mission: earthMars2035Mission,
+		workspace: earthMars2035Workspace
 	},
 	{
 		id: "moon-ceres-2032",
