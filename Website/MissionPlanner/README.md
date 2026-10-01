@@ -1,16 +1,18 @@
 # Website/MissionPlanner — the integrated mission simulator
 
-The Mission Planner teaches users about spaceflight orbital mechanics, and how various advanced technologies for the launch and capture of spaceships compare, to each other, and to traditional rockets. The main technologies explored are skyhooks and space elevators, sometimes with augmentations. The interface is designed to teach users how such technology can optimize space flight, and how to use it effectively in mission planning.
+## Purpose
 
-This folder is where the standalone calculators compose into one mission
-simulator. Three other documents carry the rest of the picture:
+The Mission Planner teaches users about spaceflight orbital mechanics, in an advanced setting where permanent infrastructure launches space ships, and catches them at their destination. The main technologies explored are skyhooks (of the gravity gradient kind), space elevators, and several mass driver designs. Sometimes mass drivers are combined with skyhooks or space elevators. The user learns how such infrastructure can be used to drastically reduce the fuel space ships must carry, expand launch windows, and enable interplanetary traffic at a scale sufficient for heavy industry in space. Traditional rockets, and space tugs, are modelled for comparison or for supporting roles.
+
+The Mission Planner is integrated with the rest of the website. It exchanges data with various calculators and tools that determine the design of infrastructure pieces. It is also used to establish delivery schedules, fleet sizes, and ship cargo capacities, for industrial inputs and finished products.
+
+## Main reference documents
 
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — the general model shared with
   the calculators: modules, packets, the recompute chain, frames.
 - [`../../Notes/decisions.md`](../../Notes/decisions.md)
   — settled rules that cut across several files (phase seams, timelines,
-  waypoint controls, the technology-platform shape), stated once there rather
-  than restated here.
+  waypoint controls, the technology-platform shape), stated once there rather than restated here.
   - Don't put dates on edits to it. Don't make it chronological, edit it to keep it an integrated, coherent description of standing policy.
 
 This README describes what the code does **now**.

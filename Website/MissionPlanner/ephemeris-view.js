@@ -434,19 +434,40 @@ export function createEphemerisView(opts) {
 		return seg._degTable;
 	}
 
-	// Degrees swept over part of one segment, dt seconds into it.
-	function segDegAt(seg, dt) {
+	// How the marker slider spaces an SOI stretch. "radial from origin": a third
+	// of its body-centred degrees. "time of flight": the slider is linear in
+	// time across the whole flight, so the chevron moves at a constant rate of
+	// time (weight LINEAR_TIME, spanning 0-360). The waypoint controls pass no
+	// weight and use the full body-centred degrees.
+	var SOI_SLIDER_WEIGHT = 1 / 3, LINEAR_TIME = -1;
+	function markerSoiWeight() {
+		return (state.marker && state.marker.holdMode === "tof") ? LINEAR_TIME : SOI_SLIDER_WEIGHT;
+	}
+
+	// Whether the marker slider spaces this encounter by duration alone: the
+	// origin's own SOI.
+	function timeShared(seg, w) {
+		return w != null && seg.body === Frames.escapeReferenceFor(state.origin);
+	}
+
+	// Degrees swept over part of one segment, dt seconds into it; an encounter's
+	// degrees are scaled by w.
+	function segDegAt(seg, dt, w) {
 		if (seg.type === "enc") {
+			w = w == null ? 1 : w;
+			if (timeShared(seg, w)) {
+				return trajTotalT > 0 ? Math.max(0, Math.min(seg.dur, dt)) / trajTotalT * 360 : 0;
+			}
 			var tb = encTable(seg);
 			var t = Math.max(0, Math.min(tb.t[tb.t.length - 1], dt));
 			for (var k = 1; k < tb.t.length; k++) {
 				if (tb.t[k] >= t) {
 					var span = tb.t[k] - tb.t[k - 1];
 					var f = span > 1e-9 ? (t - tb.t[k - 1]) / span : 0;
-					return tb.deg[k - 1] + f * (tb.deg[k] - tb.deg[k - 1]);
+					return w * (tb.deg[k - 1] + f * (tb.deg[k] - tb.deg[k - 1]));
 				}
 			}
-			return tb.deg[tb.deg.length - 1];
+			return w * tb.deg[tb.deg.length - 1];
 		}
 		var el = segElements(seg);
 		return O.sweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, dt) * 180 / Math.PI;
@@ -454,34 +475,40 @@ export function createEphemerisView(opts) {
 
 	// Swept degrees at global time t, accumulated across whichever segments
 	// (waypoint burns, SOI encounters) precede it.
-	function degAtTime(t) {
+	function degAtTime(t, w) {
 		if (!trajSegs.length) { return 0; }
+		if (w === LINEAR_TIME) { return trajTotalT > 0 ? Math.max(0, Math.min(1, t / trajTotalT)) * 360 : 0; }
 		var offset = 0;
 		for (var i = 0; i < trajSegs.length; i++) {
 			var seg = trajSegs[i];
 			var isLast = i === trajSegs.length - 1;
 			if (isLast || t <= seg.tStart + seg.dur) {
-				return offset + segDegAt(seg, t - seg.tStart);
+				return offset + segDegAt(seg, t - seg.tStart, w);
 			}
-			offset += segDegAt(seg, seg.dur);
+			offset += segDegAt(seg, seg.dur, w);
 		}
 		return offset;
 	}
 
 	// Inverse of degAtTime: global time at which the accumulated swept angle
 	// reaches deg, resolved on whichever segment's own span it falls in.
-	function timeAtDeg(deg) {
+	function timeAtDeg(deg, w) {
+		w = w == null ? 1 : w;
 		if (!trajSegs.length) { return 0; }
+		if (w === LINEAR_TIME) { return Math.max(0, Math.min(1, deg / 360)) * trajTotalT; }
 		var offset = 0;
 		for (var i = 0; i < trajSegs.length; i++) {
 			var seg = trajSegs[i];
 			var isLast = i === trajSegs.length - 1;
-			var span = (isLast && seg.type !== "enc") ? Infinity : segDegAt(seg, seg.dur);
+			var span = (isLast && seg.type !== "enc") ? Infinity : segDegAt(seg, seg.dur, w);
 			if (isLast || deg <= offset + span) {
 				if (seg.type === "enc") {
 					// The table is non-decreasing, so the crossing is a straight
 					// walk with a linear read inside the step it falls in.
-					var target = deg - offset, tb = encTable(seg);
+					if (timeShared(seg, w)) {
+						return seg.tStart + Math.max(0, Math.min(seg.dur, (deg - offset) / 360 * trajTotalT));
+					}
+					var target = (deg - offset) / w, tb = encTable(seg);
 					if (target <= 0) { return seg.tStart; }
 					for (var k = 1; k < tb.deg.length; k++) {
 						if (tb.deg[k] >= target) {
@@ -1682,11 +1709,11 @@ export function createEphemerisView(opts) {
 			removeLabel: "Reset",
 			removeTitle: "Delete marker and start fresh",
 			holdMode: (state.marker && state.marker.holdMode) || "deg",
-			onHoldChange: function (mode) { if (state.marker) { state.marker.holdMode = mode; } },
+			onHoldChange: function (mode) { if (state.marker) { state.marker.holdMode = mode; updateMarker(); } },
 			onSliderChange: function (deg) {
 				if (!state.marker) { return; }
 				// In a POV the slider reads days through its window, not degrees.
-				var t = (state.pov && povWin) ? povWin.t0 + deg * DAY : timeAtDeg(deg);
+				var t = (state.pov && povWin) ? povWin.t0 + deg * DAY : timeAtDeg(deg, markerSoiWeight());
 				state.marker.f0 = trajTotalT > 0 ? Math.max(0, Math.min(1, t / trajTotalT)) : 0;
 				state.marker.angle = 0;
 				// Target mode otherwise glues position to the solved encounter every
@@ -2194,8 +2221,9 @@ export function createEphemerisView(opts) {
 		updateDestinationMarker(s.r, tof);
 
 		mk.slider.disabled = false;   // free to scrub for inspection in every mode (see _scrubbed above)
-		mk.slider.max = trajTotalT > 0 ? degAtTime(trajTotalT) : 360;
-		if (document.activeElement !== mk.slider) { mk.slider.value = degAtTime(tof); }
+		var sw = markerSoiWeight();
+		mk.slider.max = trajTotalT > 0 ? degAtTime(trajTotalT, sw) : 360;
+		if (document.activeElement !== mk.slider) { mk.slider.value = degAtTime(tof, sw); }
 
 		// Target-mode controls/readouts (budget input + solved Δv); hidden otherwise
 		var isTarget = state.marker.mode === "target";
