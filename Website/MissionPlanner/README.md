@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The Mission Planner teaches users about spaceflight orbital mechanics, in an advanced setting where permanent infrastructure launches space ships, and catches them at their destination. The main technologies explored are skyhooks (of the gravity gradient kind), space elevators, and several mass driver designs. Sometimes mass drivers are combined with skyhooks or space elevators. The user learns how such infrastructure can be used to drastically reduce the fuel space ships must carry, expand launch windows, and enable interplanetary traffic at a scale sufficient for heavy industry in space. Traditional rockets, and space tugs, are modelled for comparison or for supporting roles.
+The Mission Planner teaches users about spaceflight orbital mechanics, in an advanced setting where permanent infrastructure launches space ships, and catches them at their destination. The main technologies explored are skyhooks (of the gravity gradient kind), space elevators, and several mass driver designs. Sometimes mass drivers are combined with skyhooks or space elevators. The user learns how such infrastructure can be used to drastically reduce the fuel space ships must carry, make viable launch windows longer and more frequent, and enable interplanetary traffic at a scale sufficient for heavy industry in space. Traditional rockets, and space tugs, are modelled for comparison or for supporting roles.
 
 The Mission Planner is integrated with the rest of the website. It exchanges data with various calculators and tools that determine the design of infrastructure pieces. It is also used to establish delivery schedules, fleet sizes, and ship cargo capacities, for industrial inputs and finished products.
 

@@ -2347,7 +2347,7 @@ export function createEphemerisView(opts) {
 		if (!s) { return null; }
 		var jd = legStartJd() + t / DAY;
 		var loc = Frames.helioToLocal(pov.centre, jd, s.r, s.v);
-		return { r: loc.r, v: loc.v, jd: jd };
+		return { r: loc.r, v: loc.v, vHelio: s.v, jd: jd };
 	}
 
 	function computePovWindow(kind) {
@@ -2518,7 +2518,8 @@ export function createEphemerisView(opts) {
 	function updatePovMarker(tof) {
 		var st = povRelState(tof);
 		pov.frame.place(st ? st.jd : legStartJd() + tof / DAY);
-		setPovChevron(pov, st ? st.r : null, st ? st.v : null);
+		// The nose points along the heliocentric trajectory.
+		setPovChevron(pov, st ? st.r : null, st ? st.vHelio : null);
 		if (!st) { return; }
 		var c = pov.centre, R = systems.get(c).radius;
 		var d = O.vMag(st.r);

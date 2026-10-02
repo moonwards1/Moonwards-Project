@@ -128,7 +128,8 @@ export function drawPov(pov, d) {
 	pov.catchDisc.visible = !!d.catchDisc;
 }
 
-// The ship chevron at a body-relative state (m, m/s); null hides it.
+// The ship chevron at a body-relative position r (m), its nose along the
+// direction v (any scale); null hides it.
 export function setPovChevron(pov, r, v) {
 	pov.chevron.visible = !!r;
 	if (!r) { return; }
@@ -136,8 +137,8 @@ export function setPovChevron(pov, r, v) {
 	pov.chevronDir = new THREE.Vector3(v[0], v[1], v[2]).normalize();
 }
 
-// Per-frame: hold the chevron at a constant on-screen size, nose along its
-// body-relative heading.
+// Per-frame: hold the chevron at a constant on-screen size, nose along the
+// direction it was given.
 export function scalePovOverlays(pov, paneEl) {
 	var cam = pov.frame.camera;
 	if (pov.chevron.visible) {
