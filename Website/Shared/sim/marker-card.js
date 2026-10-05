@@ -376,7 +376,7 @@ export function buildMarkerCard(opts) {
 
 	var head = document.createElement("div"); head.className = cls + "-marker-head";
 	var title = document.createElement("span"); title.className = cls + "-marker-title";
-	title.textContent = "Marker";
+	title.textContent = opts.title || "Marker";
 	var rm = document.createElement("button"); rm.type = "button"; rm.className = cls + "-marker-x";
 	rm.textContent = opts.removeLabel || "✕"; rm.title = opts.removeTitle || "remove marker";
 	rm.addEventListener("click", function () { opts.onRemove(); });

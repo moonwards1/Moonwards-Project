@@ -49,7 +49,7 @@ export var DESTINATION_BODIES = HELIO_BODIES;
 // true heliocentric path is a wobble narrower than Earth's own ring is wide.
 // Departing it is still ordinary — Shared/frames.js's `escapeReferenceFor`
 // says the SOI such a departure leaves is Earth's.
-export var ORIGIN_BODIES = HELIO_BODIES.concat(["Moon"]);
+export var ORIGIN_BODIES = HELIO_BODIES.slice(0, 3).concat(["Moon"], HELIO_BODIES.slice(3));
 
 // How far, in screen pixels, the Moon must be from Earth before it is drawn at
 // all in the heliocentric frame. Below this it is not a body the camera can

@@ -291,7 +291,6 @@ export function createEphemerisView(opts) {
 	var paneCapEl = paneMainEl.querySelector(".mp-pane-cap");
 	var panelEl = q(".mp-panel");
 	var depHost = q(".mp-eph-departure");
-	var statusChip = q(".mp-eph-status");
 	var wpHost = q(".mp-eph-waypoints");
 
 	var frame = buildHelioFrame();
@@ -315,7 +314,7 @@ export function createEphemerisView(opts) {
 	// real duration only becomes meaningful at adopt, where core/adopt.js
 	// decides legDays from the marker's resolved rendezvous.
 	var state = {
-		origin: "Moon",
+		origin: "Earth",
 		leg: {
 			burn: { pro: 0, rad: 0, nrm: 0 },
 			waypoints: [],
@@ -652,7 +651,7 @@ export function createEphemerisView(opts) {
 	// ==== Departure card: origin, burn, destination. No duration field — the
 	// drawn arc's length is physics-derived (finalCoastDays). ----------------
 	var originRow = document.createElement("div"); originRow.className = "mp-inrow";
-	var originLab = document.createElement("label"); originLab.textContent = "origin"; originRow.appendChild(originLab);
+	var originLab = document.createElement("label"); originLab.textContent = "origin"; originLab.className = "mp-keylabel";originRow.appendChild(originLab);
 	var originSel = document.createElement("select");
 	ORIGIN_BODIES.forEach(function (name) {
 		var opt = document.createElement("option"); opt.value = name; opt.textContent = name;
@@ -671,14 +670,8 @@ export function createEphemerisView(opts) {
 		refresh();
 	});
 
-	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
-	buildVectorEditor(depBurnHost, state.leg.burn, function (axis, mps) {
-		state.leg.burn[axis] = mps; refresh();
-	}, { unitLabel: "km/s" });
-	var depReadout = muted(depHost, "");
-
 	var destRow = document.createElement("div"); destRow.className = "mp-inrow";
-	var destLab = document.createElement("label"); destLab.textContent = "destination"; destRow.appendChild(destLab);
+	var destLab = document.createElement("label"); destLab.textContent = "destination"; destLab.className = "mp-keylabel";destRow.appendChild(destLab);
 	var destSel = document.createElement("select");
 	// Which bodies this origin may aim at. Never the origin itself; and never
 	// Earth from the Moon, because that flight never leaves Earth's sphere of
@@ -710,6 +703,16 @@ export function createEphemerisView(opts) {
 	var destInfo = muted(depHost, "");
 	var arrMoon = buildMoonWidget(depHost, "Moon phase at arrival");
 	destSel.addEventListener("change", function () { state.leg.destination = destSel.value; refresh(); });
+
+	// The impulse editor closes the card: origin and destination first, then
+	// the velocity that connects them.
+	var depTitle = document.createElement("h3"); depTitle.innerHTML = "<span>Departure impulse</span>";
+	depHost.appendChild(depTitle);
+	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
+	buildVectorEditor(depBurnHost, state.leg.burn, function (axis, mps) {
+		state.leg.burn[axis] = mps; refresh();
+	}, { unitLabel: "km/s" });
+	var depReadout = muted(depHost, "");
 
 	// ==== Waypoints card: up to MAX_WAYPOINTS, each with snap-to + burn -------
 	var wpAddBtn = document.createElement("button");
@@ -1022,11 +1025,6 @@ export function createEphemerisView(opts) {
 		burnArrows = [];
 	}
 
-	function setStatus(cls, text) {
-		statusChip.className = "mp-chip mp-eph-status" + (cls ? " " + cls : "");
-		statusChip.textContent = text;
-	}
-
 	// =======================================================================
 	//  Ship marker: a slidable probe on the drawn trajectory, with Free / Target
 	//  modes, over this view's trajSegs/trajTotalT representation.
@@ -1040,8 +1038,7 @@ export function createEphemerisView(opts) {
 	// CSS-hidden via .mp-empty.
 	var markerHost = q(".mp-eph-marker");
 	var markerHint = null;   // assigned by buildCard()
-	var HINT_DEFAULT = "Click the drawn trajectory to place a marker: probes radius, speed, " +
-		"flight time, and the destination's phasing at any point along it.";
+	var HINT_DEFAULT = "Click the trajectory to place a ship marker";
 	function setHint(text) { if (markerHint) { markerHint.textContent = text; } }
 	function setCardEmpty(empty) { if (mk) { mk.el.classList.toggle("mp-empty", empty); } }
 
@@ -1657,7 +1654,7 @@ export function createEphemerisView(opts) {
 
 		var reason, enabled = false;
 		if (!dn) {
-			reason = "Select a destination to enable — no destination chosen for this leg.";
+			reason = "Select a destination to enable";
 		} else if (!approachPasses.length) {
 			reason = "The trajectory never comes within " + (APPROACH_FAR / AU).toFixed(3) + " AU of " +
 				dn + "'s orbit.";
@@ -1695,6 +1692,7 @@ export function createEphemerisView(opts) {
 	function buildCard() {
 		mk = mcBuildMarkerCard({
 			classPrefix: "mp",
+			title: "Ship marker",
 			hostEl: markerHost,
 			sliderTitle: "drag to slide the marker along the whole path — left is the flight's start, "
 				+ "right is the drawn arc's end, mapped by swept degrees around the Sun.",
@@ -2619,12 +2617,12 @@ export function createEphemerisView(opts) {
 		// the frame the card is measured against, not the body being departed.
 		var originAt = state.origin === "Moon"
 			? Frames.bodyHelioState("Moon", dateState.jd) : dep;
-		originInfo.textContent = "Heliocentric speed " + fmtKmS(O.vMag(originAt.v)) +
-			" km/s, distance " + (O.vMag(originAt.r) / AU).toFixed(3) + " AU from the Sun.";
+		originInfo.textContent = "Now " + (O.vMag(originAt.r) / AU).toFixed(3) +
+			" AU from the Sun, moving " + fmtKmS(O.vMag(originAt.v)) + " km/s";
 		if (state.leg.destination) {
 			var dnow = O.bodyStateAtJD(GM_SUN, systems.get(state.leg.destination).orbit, dateState.jd);
-			destInfo.textContent = "Now at " + (O.vMag(dnow.r) / AU).toFixed(3) + " AU, " +
-				fmtKmS(O.vMag(dnow.v)) + " km/s.";
+			destInfo.textContent = "Now " + (O.vMag(dnow.r) / AU).toFixed(3) +
+				" AU from the Sun, moving " + fmtKmS(O.vMag(dnow.v)) + " km/s";
 		} else {
 			destInfo.textContent = "No destination selected.";
 		}
@@ -2714,9 +2712,6 @@ export function createEphemerisView(opts) {
 		if (!leg.ok || noFlight) {
 			trajLeg = null; trajSegs = []; trajTotalT = 0; trajSampleCount = 0; trajSamples = [];   // marker + rings hide until it recovers
 			clearApproachMarks();
-			// The chip stays short — the reason itself is already spelled out in
-			// the readout right below it.
-			setStatus("err", noFlight ? "no flight to draw" : leg.diagnostic.message);
 		} else {
 			// Marker support: the leg's own segment chain (Kepler stretches and
 			// integrated SOI encounters), so the marker sits on the drawn line at
@@ -2779,7 +2774,6 @@ export function createEphemerisView(opts) {
 			});
 
 			rebuildApproachMarks();
-			setStatus("ok", "ok");
 		}
 
 		rw.entries.forEach(function (e) { updateWaypointRowUI(wpRows[e.originalIndex], e, e.originalIndex); });

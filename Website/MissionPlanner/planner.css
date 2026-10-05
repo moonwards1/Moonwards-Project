@@ -599,6 +599,7 @@ body {
 	margin: 0 0 8px; font-size: 13px; color: var(--bright); letter-spacing: 0.3px;
 	display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
+.mp-eph-departure > h3 { margin-top: 10px; }
 .mp-chip {
 	font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid;
 	font-weight: 400; white-space: nowrap;
@@ -613,6 +614,7 @@ body {
 	gap: 10px; padding: 3px 0; font-size: 13px;
 }
 .mp-inrow label { color: var(--dim); }
+.mp-inrow label.mp-keylabel { color: #cfe6ff; font-weight: 700; }
 /* Technology cards' own param rows (platform-roles.js's buildPlatformCard):
    the label sits ~20px off the card's left edge so the card's straddling
    readout box (mp-readout-compact, poking in from that same edge) doesn't
@@ -810,7 +812,7 @@ body {
    note, appended after the card's own rows. */
 .mp-eph-marker .mp-card .mp-muted { margin-top: 6px; line-height: 1.4; }
 .mp-marker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.mp-marker-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #cfe0ff; }
+.mp-marker-title { font-size: 19px; letter-spacing: 1px; color: var(--bright); line-height: 1.1; }
 .mp-marker-x {
 	padding: 3px 10px; font-size: 11px; border-radius: 4px; color: var(--dim);
 	background: #141a28; border: 1px solid var(--line2); cursor: pointer;
