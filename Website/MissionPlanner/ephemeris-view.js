@@ -1484,9 +1484,14 @@ export function createEphemerisView(opts) {
 			if (rho < B - GATE || rho > A + GATE) { dists[k] = Infinity; continue; }
 			dists[k] = Math.hypot(O.distancePointEllipse(A, B, x, yy), z);
 		}
-		for (var m = 1; m < n - 1; m++) {
-			if (dists[m] < CAND && dists[m] < dists[m-1] && dists[m] <= dists[m+1]) {
-				var r = mcRefineApproach(orbit, stateAtGlobalTime, trajSamples[m-1].t, trajSamples[m+1].t);
+		// The last sample is a candidate too: a flight aimed at the body itself
+		// (Target mode) ends there on impact, so its closest approach to the ring
+		// is the leg's final point, with no later sample to confirm a minimum.
+		for (var m = 1; m < n; m++) {
+			var next = m < n - 1 ? dists[m+1] : Infinity;
+			if (dists[m] < CAND && dists[m] < dists[m-1] && dists[m] <= next) {
+				var r = mcRefineApproach(orbit, stateAtGlobalTime, trajSamples[m-1].t,
+					trajSamples[Math.min(m+1, n-1)].t);
 				var tier = r ? pickProximityTier(r.dist, APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE) : -1;
 				if (tier >= 0) {
 					out.push({ pos: new THREE.Vector3(r.r[0] / AU, r.r[1] / AU, r.r[2] / AU),

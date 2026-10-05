@@ -78,4 +78,8 @@ The user first finds viable interplanetary trajectories using the Ephemeris tab.
 
   ---
 
-* With a chevron on the trajectory, it's time to fine tune an encounter
+* With a chevron on the trajectory, it's much easier to set up a good encounter suitable for a mission
+
+  * The chevron and the x mark show the spatial relation between ship and destination all along the trajectory. This informs tuning in the vector editor to get a closer pass 
+
+  * Switching to the Destination view by clicking its POV button in the top timeline section slows the trajectory near closest approach in the destination's reference frame. 
