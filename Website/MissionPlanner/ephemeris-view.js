@@ -160,6 +160,8 @@ import {
 	buildMarkerCard as mcBuildMarkerCard, updateMarkerModeButtons as mcUpdateMarkerModeButtons,
 	bindAbsoluteDragSlider, fmtKm, fmtTof, fmtDate
 } from "../Shared/sim/marker-card.js";
+import { confirmDialog } from "./ui/confirm-dialog.js";
+import { createInfoButton } from "./ui/info-button.js";
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
 import {
 	buildHelioFrame, ORIGIN_BODIES, DESTINATION_BODIES,
@@ -707,7 +709,12 @@ export function createEphemerisView(opts) {
 	// The impulse editor closes the card: origin and destination first, then
 	// the velocity that connects them.
 	var depTitle = document.createElement("h3"); depTitle.innerHTML = "<span>Departure impulse</span>";
+	depTitle.appendChild(createInfoButton("Departure impulse"));
 	depHost.appendChild(depTitle);
+	var wpTitle = document.querySelector(".mp-eph-waypoints").parentNode.querySelector("h3");
+	if (wpTitle) { wpTitle.appendChild(createInfoButton("Waypoints")); }
+	var ephTab = document.getElementById("mp-tab-eph");
+	if (ephTab && !ephTab.querySelector(".mp-info")) { ephTab.appendChild(createInfoButton("Ephemeris")); }
 	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
 	buildVectorEditor(depBurnHost, state.leg.burn, function (axis, mps) {
 		state.leg.burn[axis] = mps; refresh();
@@ -1714,7 +1721,7 @@ export function createEphemerisView(opts) {
 				{ key: "captureIncl", label: "capture inclination" }
 			],
 			removeLabel: "Reset",
-			removeTitle: "Delete marker and start fresh",
+			removeTitle: "Delete trajectory and start fresh",
 			holdMode: (state.marker && state.marker.holdMode) || "deg",
 			onHoldChange: function (mode) { if (state.marker) { state.marker.holdMode = mode; updateMarker(); } },
 			onSliderChange: function (deg) {
@@ -1730,10 +1737,13 @@ export function createEphemerisView(opts) {
 				if (state.marker.mode === "target") { state.marker._scrubbed = true; }
 				updateMarker();
 			},
-			onRemove: function () { removeMarker(); },
+			onRemove: function () { resetSetup(); },
 			onModeClick: function (mode, e) { setMarkerMode(mode, !!(e && e.shiftKey)); },
 			onBudgetChange: function (dvBudget) { if (state.marker) { state.marker.dvBudget = dvBudget; refresh(); } }
 		});
+		// Head bar is space-between, so a third child lands midway between the
+		// title and the Reset button.
+		mk.el.querySelector(".mp-marker-title").after(createInfoButton("Ship marker"));
 		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
 
 		// The no-marker hint, shown only in the .mp-empty state — the card is
@@ -2266,12 +2276,27 @@ export function createEphemerisView(opts) {
 		frame.cam.target.copy(destSprite.position);
 	}
 
-	function removeMarker() {
-		state.marker = null;
-		state.markerFocused = false;
-		state.destFocused = false;
-		setHint("Marker removed — click the drawn trajectory to place a new one.");
-		updateMarker();
+	// The marker card's Reset: the whole authored setup goes — marker, waypoints,
+	// departure speeds, destination. The origin and the date bar stay.
+	function resetSetup() {
+		confirmDialog({
+			title: "Are you sure you want to clear this setup?",
+			okLabel: "Confirm"
+		}).then(function (yes) {
+			if (!yes) { return; }
+			state.marker = null;
+			state.markerFocused = false;
+			state.destFocused = false;
+			legStart = null;
+			// Mutate the burn in place: the vector editor closes over this object.
+			state.leg.burn.pro = 0; state.leg.burn.rad = 0; state.leg.burn.nrm = 0;
+			state.leg.waypoints = [];
+			state.leg.destination = "";
+			destSel.value = "";
+			setHint(HINT_DEFAULT);
+			rebuildWaypointRows();
+			refresh();
+		});
 	}
 
 	// Place (or move) the marker at a global time along the path; that point
@@ -2695,13 +2720,13 @@ export function createEphemerisView(opts) {
 		// propagated from — the same pair at every origin, including the Moon.
 		// They are shown even when the rest of the leg is invalid, since the
 		// hand-off itself is always resolvable.
-		// "v∞ / speed", not "Δv / impulse": the departure's magnitude is the
+		// "v∞ speed / heading", not "Δv / impulse": the departure's magnitude is the
 		// ship's speed relative to the body it is leaving, which no single burn
 		// delivered — a skyhook release and the Moon's own motion are both in
 		// it at a Moon origin. Waypoint boxes below keep the impulse labels,
 		// which are true of them.
 		var entries = [{ host: depBurnHost, data: departureReadout(hand),
-		                 title: "v∞", magLabel: "speed" }];
+		                 title: "v∞ speed", magLabel: "heading" }];
 		addDepartureArrows(hand);
 
 		// A lunar departure core/lunar-departure.js does not model has no

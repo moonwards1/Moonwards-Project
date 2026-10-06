@@ -600,6 +600,16 @@ body {
 	display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
 .mp-eph-departure > h3 { margin-top: 10px; }
+/* Help "i" beside a component title (ui/info-button.js) */
+.mp-info {
+	flex: none; width: 15px; height: 15px; padding: 0; border: 0; border-radius: 50%;
+	background: #e8501e; color: #fff; cursor: pointer;
+	font: italic 700 11px/15px Georgia, "Times New Roman", serif; text-align: center;
+	text-transform: none; letter-spacing: 0;
+}
+.mp-info:hover { background: #ff6a36; }
+.mp-info:focus-visible { outline: 2px solid var(--bright); outline-offset: 1px; }
+h3 > .mp-info { margin-right: auto; }
 .mp-chip {
 	font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid;
 	font-weight: 400; white-space: nowrap;
