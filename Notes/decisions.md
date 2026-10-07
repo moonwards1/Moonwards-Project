@@ -423,3 +423,25 @@ and draws the spin arrowheads counter-clockwise about +Z.
 
 Why: the equator ring alone looks the same for either pole, but the arrows
 don't. With the IAU convention a retrograde rotator's arrows would be backwards.
+
+### Sun-orbiting bodies carry mean elements fitted to Horizons, 2030–2130
+
+Every body with `orbit.system` "Sun" in `Shared/orbit.js` holds mean Keplerian
+elements least-squares fitted to JPL Horizons positions over 2030-01-01 to
+2130-01-01, referred to epoch JD 2480764.5 (2080-01-01), through the same
+`OrbitalMath.bodyStateAtJD` the app flies. They are not osculating elements and
+are only valid inside that window — the planner's own date range. Mean motion
+comes from `semiMajor` and the Sun's GM, so there is no separate `period` field
+to disagree with it. Earth's orbit is the Earth–Moon barycentre's, held in the
+ecliptic. `Shared/tools/fit-mean-elements.mjs` regenerates the values;
+`Shared/tests/orbit-ephemeris.test.js` pins the result against Horizons
+checkpoints.
+
+Why: one fixed osculating ellipse drifts from the real orbit as perturbations
+act, by up to 20% of Saturn's orbit radius by 2130; a window fit turns that
+into a bounded wobble (worst 1.8% of orbit radius, for Psyche; under 0.4% for
+every planet).
+
+Consequence: missions authored against other positions (the example missions,
+`presets/default-mission.js`) arrive only as well as their authoring ephemeris
+matched this one — re-target them with Update after the elements change.

@@ -84,6 +84,15 @@ Copy `Calculators/_template/` to `Calculators/<YourCalc>/`, rename the three
 `template.*` files to match, and build on the shared utilities. That template is
 the canonical example of the standard wiring.
 
+## Heliocentric orbit data
+
+`orbit.js` places every Sun-orbiting body from mean Keplerian elements fitted to
+JPL Horizons over 2030–2130 (epoch JD 2480764.5); they are accurate only inside
+that window. Worst-case position error is under 0.4% of orbit radius for each
+planet, 0.7–1.8% for Vesta, Ceres and Psyche. `tools/fit-mean-elements.mjs`
+re-fits them (it downloads from Horizons); `tests/orbit-ephemeris.test.js`
+checks the result. See `Notes/decisions.md`.
+
 ## Testing
 
 The repo root's `package.json` sets `"type": "module"`, so the pure modules

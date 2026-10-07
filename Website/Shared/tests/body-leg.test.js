@@ -9,9 +9,11 @@
 // and run side by side on identical Mars releases — and came out BIT-IDENTICAL
 // (every sample's r and v to the last bit, same branch / sample count /
 // duration, and the same SOI to the metre). The figures pinned here are that
-// run's outputs for body="Mars". If one drifts, either the ephemeris/orbit
-// data changed (re-pin deliberately) or the integrator changed (a real
-// behaviour change — re-check against the plotter).
+// run's outputs for body="Mars"; vinfBody alone tracks Mars's heliocentric
+// velocity, so it is re-pinned whenever Shared/orbit.js's Mars elements change.
+// If any other figure drifts, either the orbit data changed (re-pin
+// deliberately) or the integrator changed (a real behaviour change — re-check
+// against the plotter).
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -45,7 +47,7 @@ test("escape release: pinned against the plotter's own code (see header)", () =>
 	assert.equal(res.entry, null);
 	assert.equal(res.samples.length, 211);
 	assert.ok(Math.abs(res.duration / DAY - 42.825) < 0.01, "dur " + (res.duration / DAY).toFixed(4));
-	assert.ok(Math.abs(res.vinfBody - 6011.29) < 0.05, "vinfBody " + res.vinfBody.toFixed(3));
+	assert.ok(Math.abs(res.vinfBody - 6014.72) < 0.05, "vinfBody " + res.vinfBody.toFixed(3));
 	// Mars-relative escape (v∞ vs Mars > 0) but still bound to the Sun at only
 	// ~6 km/s — a transfer, not a solar escape.
 	assert.ok(res.vinfBody > 0, "hyperbolic vs Mars");

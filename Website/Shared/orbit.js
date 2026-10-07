@@ -5,6 +5,15 @@
 // The Orbit / System / Vector / Time / Transfer classes and the `constants`
 // object are also exported (see the export list at the end of the file).
 // Pure data + maths (no DOM), so it imports directly in Node for tests.
+//
+// Heliocentric orbits (every body whose orbit.system is "Sun") hold MEAN
+// Keplerian elements, least-squares fitted to JPL Horizons positions over
+// 2030-01-01..2130-01-01 and referred to epoch JD 2480764.5. They are not
+// osculating elements and are only good inside that window; regenerate them with
+// Shared/tools/fit-mean-elements.mjs. Earth's orbit is the Earth-Moon
+// barycentre's, held in the ecliptic (inclination and node 0). Mean motion is
+// derived from semiMajor and the Sun's GM, so the fitted semiMajor carries the
+// fitted period.
 
 function roughFloatsAbsolute(float1,float2){
 	return Math.abs(float1 - float2) < 0.00001;
@@ -1198,15 +1207,15 @@ vp^2 = mu * (2/P - 1/a)
 	satellites: ["Moon"],
 	orbit: {
 		system: "Sun",
-		apoapsis: 152100000e3,
-		periapsis: 147095000e3,
-		eccentricity: 0.0167086,
-		period: 31558149.7635,
+		apoapsis: 152092343526.311,
+		periapsis: 147103101802.977,
+		semiMajor: 149597722664.644,
+		eccentricity: 0.0166755269881966,
 		inclination: 0,
 		longitude: 0,
-		argument: 102.93768193*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 357.52688973*(Math.PI/180)
+		argument: 103.195522380*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 356.274070709*(Math.PI/180)
 	},
 	geology: {
 		liquidCore: true,
@@ -1338,16 +1347,15 @@ vp^2 = mu * (2/P - 1/a)
 	},
 	orbit: {
 		system: "Sun",
-		apoapsis: 69816900e3,
-		periapsis: 46001200e3,
-		semiMajor: 57909050e3,
-		eccentricity: 0.205630,
-		period: 87.9691*86400,
-		inclination: 7.005*(Math.PI/180),
-		longitude: 48.331*(Math.PI/180),
-		argument: 29.124*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 174.79252722*(Math.PI/180)
+		apoapsis: 69818059306.5374,
+		periapsis: 46000210880.4016,
+		semiMajor: 57909135093.4695,
+		eccentricity: 0.205648455875675,
+		inclination: 7.00019938705*(Math.PI/180),
+		longitude: 48.2305082839*(Math.PI/180),
+		argument: 29.3526309143*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 230.761359264*(Math.PI/180)
 	}
 },
 {
@@ -1473,15 +1481,15 @@ vp^2 = mu * (2/P - 1/a)
 	},
 	orbit: {
 		system: "Sun",
-		apoapsis: 108939000e3,
-		periapsis: 107477000e3,
-		semiMajor: 108208000e3,
-		eccentricity: 0.006772,
-		inclination: 3.39467605*(Math.PI/180),
-		longitude: 76.67984255*(Math.PI/180),
-		argument: 54.92262463*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 50.37663232*(Math.PI/180)
+		apoapsis: 108937522297.833,
+		periapsis: 107480225364.128,
+		semiMajor: 108208873830.981,
+		eccentricity: 0.00673372193107431,
+		inclination: 3.39392499193*(Math.PI/180),
+		longitude: 76.4574971331*(Math.PI/180),
+		argument: 55.1058308271*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 63.8682839299*(Math.PI/180)
 	}
 },
 {
@@ -1527,16 +1535,15 @@ vp^2 = mu * (2/P - 1/a)
 	},
 	orbit: {
 		system: "Sun",
-		apoapsis: 249200000e3,
-		periapsis: 206700000e3,
-		semiMajor: 227939200e3,
-		eccentricity: 0.0934,
-		period: 686.971*86400,
-		inclination: 1.850*(Math.PI/180),
-		longitude: 49.55953891*(Math.PI/180),
-		argument: 286.49683150*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 19.39019754*(Math.PI/180)
+		apoapsis: 249247898263.790,
+		periapsis: 206634130130.899,
+		semiMajor: 227941014197.344,
+		eccentricity: 0.0934754289019636,
+		inclination: 1.84316128201*(Math.PI/180),
+		longitude: 49.3224825007*(Math.PI/180),
+		argument: 287.092360287*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 211.010244402*(Math.PI/180)
 	}
 },
 {
@@ -1579,17 +1586,15 @@ vp^2 = mu * (2/P - 1/a)
 	
 	orbit: {
 		system: "Sun",
-		// JPL SBDB solution 48 (full precision), epoch JD 2461200.5, equinox J2000
-		apoapsis: 2.985945828685327*constants.AU,
-		periapsis: 2.545159361382861*constants.AU,
-		semiMajor: 2.765552595034094*constants.AU,
-		eccentricity: 0.07969229514816586,
-		period: 1679.853119758983*86400,
-		inclination: 10.58802780183462*(Math.PI/180),
-		longitude: 80.24862682043221*(Math.PI/180),
-		argument: 73.29421453021587*(Math.PI/180),
-		epoch: 2461200.5,
-		meanAnomaly: 274.4193463761342*(Math.PI/180)
+		apoapsis: 2.98151875999080*constants.AU,
+		periapsis: 2.55337319721085*constants.AU,
+		semiMajor: 2.76744597860083*constants.AU,
+		eccentricity: 0.0773539151424396,
+		inclination: 10.5814319374*(Math.PI/180),
+		longitude: 79.3612179811*(Math.PI/180),
+		argument: 75.1439509695*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 141.704813455*(Math.PI/180)
 	}
 },
 {
@@ -1602,17 +1607,15 @@ vp^2 = mu * (2/P - 1/a)
 	color: "#8f9a55",
 	orbit: {
 		system: "Sun",
-		// JPL SBDB solution 92 (full precision), epoch JD 2461200.5, equinox J2000
-		apoapsis: 3.320495166708687*constants.AU,
-		periapsis: 2.53094576621639*constants.AU,
-		semiMajor: 2.925720466462538*constants.AU,
-		eccentricity: 0.1349324738201893,
-		period: 1827.87996016922*86400,
-		inclination: 3.098749116151128*(Math.PI/180),
-		longitude: 149.9753859305033*(Math.PI/180),
-		argument: 230.0326782748359*(Math.PI/180),
-		epoch: 2461200.5,
-		meanAnomaly: 79.76939505329617*(Math.PI/180)
+		apoapsis: 3.32287194205251*constants.AU,
+		periapsis: 2.52249491878993*constants.AU,
+		semiMajor: 2.92268343042122*constants.AU,
+		eccentricity: 0.136925028371483,
+		inclination: 3.11644690398*(Math.PI/180),
+		longitude: 149.275240799*(Math.PI/180),
+		argument: 230.435131465*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 339.633290221*(Math.PI/180)
 	}
 },
 {
@@ -1627,17 +1630,15 @@ vp^2 = mu * (2/P - 1/a)
 	color: "#e87fae",
 	orbit: {
 		system: "Sun",
-		// JPL SBDB solution 36 (full precision), epoch JD 2461200.5, equinox J2000
-		apoapsis: 2.574370015730939*constants.AU,
-		periapsis: 2.148361914524259*constants.AU,
-		semiMajor: 2.361365965127599*constants.AU,
-		eccentricity: 0.09020374382834395,
-		period: 1325.389042911101*86400,
-		inclination: 7.143925545058711*(Math.PI/180),
-		longitude: 103.701293265032*(Math.PI/180),
-		argument: 151.4686478221564*(Math.PI/180),
-		epoch: 2461200.5,
-		meanAnomaly: 81.19015607686903*(Math.PI/180)
+		apoapsis: 2.57345056149142*constants.AU,
+		periapsis: 2.14993058291865*constants.AU,
+		semiMajor: 2.36169057220503*constants.AU,
+		eccentricity: 0.0896645783230917,
+		inclination: 7.14169261527*(Math.PI/180),
+		longitude: 103.237036703*(Math.PI/180),
+		argument: 152.040610763*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 354.096180521*(Math.PI/180)
 	}
 },
 {
@@ -1659,15 +1660,15 @@ vp^2 = mu * (2/P - 1/a)
 	color: "#cf9356",
 	orbit: {
 		system: "Sun",
-		apoapsis: 816.62e9,
-		periapsis: 740.52e9,
-		semiMajor: 778.57e9,
-		eccentricity: 0.0489,
-		inclination: 1.303*(Math.PI/180),
-		longitude: 100.464*(Math.PI/180),
-		argument: 273.867*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 19.66796068*(Math.PI/180)
+		apoapsis: 815716915889.618,
+		periapsis: 740527363040.138,
+		semiMajor: 778122139464.878,
+		eccentricity: 0.0483147497263015,
+		inclination: 1.30239943655*(Math.PI/180),
+		longitude: 100.642063279*(Math.PI/180),
+		argument: 274.274524073*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 287.184191761*(Math.PI/180)
 	}
 },
 {
@@ -1686,15 +1687,15 @@ vp^2 = mu * (2/P - 1/a)
 	color: "#e6cf8a",
 	orbit: {
 		system: "Sun",
-		semiMajor: 1433.53e9,
-		apoapsis: 1514.50e9,
-		periapsis: 1352.55e9,
-		eccentricity: 0.05386179,
-		inclination: 2.48599187*(Math.PI/180),
-		longitude: 113.66242448*(Math.PI/180),
-		argument: 338.93645383*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 317.35536592*(Math.PI/180)
+		apoapsis: 1503719850623.59,
+		periapsis: 1349106331553.11,
+		semiMajor: 1426413091088.35,
+		eccentricity: 0.0541966138829090,
+		inclination: 2.48899578394*(Math.PI/180),
+		longitude: 113.424019040*(Math.PI/180),
+		argument: 338.745557082*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 215.917638621*(Math.PI/180)
 	}
 },
 {
@@ -1709,16 +1710,15 @@ vp^2 = mu * (2/P - 1/a)
 	pole: { ra: 77.31*(Math.PI/180), dec: 15.18*(Math.PI/180) },
 	orbit: {
 		system: "Sun",
-		period: 30687.153*86400,
-		semiMajor: 2875.04e9,
-		periapsis: 2742e9,
-		apoapsis: 3008e9,
-		eccentricity: 0.046381,
-		inclination: 0.77263783*(Math.PI/180),
-		longitude: 74.01692503*(Math.PI/180),
-		argument: 96.93735127*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 142.28382821*(Math.PI/180)
+		apoapsis: 3004970071956.16,
+		periapsis: 2733753307963.17,
+		semiMajor: 2869361689959.67,
+		eccentricity: 0.0472608184848263,
+		inclination: 0.771222641927*(Math.PI/180),
+		longitude: 74.0185978239*(Math.PI/180),
+		argument: 97.0404110346*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 125.003018983*(Math.PI/180)
 	}
 },
 {
@@ -1732,16 +1732,15 @@ vp^2 = mu * (2/P - 1/a)
 	color: "#3a5fd6",
 	orbit: {
 		system: "Sun",
-		period: 60190.03*86400,
-		periapsis: 4459500000000,
-		apoapsis: 4537300000000,
-		semiMajor: 4504400000000,
-		eccentricity: 0.009456,
-		inclination: 1.77004347*(Math.PI/180),
-		longitude: 131.78422574*(Math.PI/180),
-		argument: 273.18053653*(Math.PI/180),
-		epoch: 2451545.0,
-		meanAnomaly: 259.91520804*(Math.PI/180)
+		apoapsis: 4538230244057.17,
+		periapsis: 4459140025714.51,
+		semiMajor: 4498685134885.84,
+		eccentricity: 0.00879037051619059,
+		inclination: 1.77031833009*(Math.PI/180),
+		longitude: 131.782090793*(Math.PI/180),
+		argument: 274.840933802*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 73.0074544103*(Math.PI/180)
 	}
 },
 {
@@ -1766,16 +1765,15 @@ vp^2 = mu * (2/P - 1/a)
 	},
 	orbit: {
 		system: "Sun",
-		apoapsis: 7.37593e12,
-		periapsis: 4.43682e12,
-		semiMajor: 5.90638e12,
-		eccentricity: 0.2488,
-		period: 90560*86400,
-		inclination: 17.16*(Math.PI/180),
-		longitude: 110.299*(Math.PI/180),
-		argument: 113.834*(Math.PI/180),
-		epoch: 2457588.5,
-		meanAnomaly: 38.68366347*(Math.PI/180)
+		apoapsis: 7378466320759.30,
+		periapsis: 4440739112772.68,
+		semiMajor: 5909602716765.99,
+		eccentricity: 0.248555389320170,
+		inclination: 17.1404252406*(Math.PI/180),
+		longitude: 110.300760172*(Math.PI/180),
+		argument: 113.877896011*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 130.869138295*(Math.PI/180)
 	}
 },
 {
@@ -1784,8 +1782,15 @@ vp^2 = mu * (2/P - 1/a)
 	GM: 1.108e12,
 	orbit: {
 		system: "Sun",
-		apoapsis: 14.579e12,
-		periapsis: 5.725e12
+		apoapsis: 97.6071996388809*constants.AU,
+		periapsis: 38.1556163348808*constants.AU,
+		semiMajor: 67.8814079868808*constants.AU,
+		eccentricity: 0.437907706006114,
+		inclination: 43.9926619991*(Math.PI/180),
+		longitude: 35.9770202114*(Math.PI/180),
+		argument: 151.130873463*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 245.535932119*(Math.PI/180)
 	}
 },
 {
