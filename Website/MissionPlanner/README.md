@@ -29,11 +29,15 @@ independent of any UI; `planner.js` + `mission-view.js` + `ephemeris-view.js`
 
 + `scene-frames.js` are the browser shell over it; `modules/` holds the
   mission-profile stages; `ui/` holds shell-local widgets; `presets/` holds the
-  shipped mission and the example-mission catalog.
+  example-mission catalog; `tests/fixtures/` holds sample data for the Node
+  tests.
 
 ## core/ — the headless mission core
 
-Pure ES modules, named exports, no DOM. One responsibility per file:
+Pure ES modules, named exports, no DOM. One responsibility per file. Files
+named `sketch-*.js` serve only the Ephemeris tab's departure sketch; the
+mission's Departure phase is `modules/departure-leg` and
+`modules/body-departure-leg`, with `release-epoch.js`.
 
 | File                    | Named exports                                                                                  | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ----------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,8 +47,9 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 | `recompute.js`          | `createEngine`                                                                                 | The chain-recompute engine. Subscribes to the World; on any change recomputes from the dirty index **downstream, in order, synchronously**. Per-stage results keyed by stage id: `ok` (with the output packet), `diagnostic`, or `blocked` (waiting on the failed stage, `update()` not called, params intact); results also carry `warnings` and `events` arrays (see the module contract below). Locks the World during a pass, so modules cannot `set()` from `update()`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `adopt.js`              | (see header — assembles a serialized World)                                                    | The "Start Mission Plan" contract: turns a plan authored on the Ephemeris tab into a fresh serialized World — `[ departure scaffold ] → [ adopted-plan ] → [ transfer-leg ] → [ arrival-leg ]` — with the departure carrier slot and the arrival-technology slot both left empty for the mission tab to fill in. The hand-off it commits is `spec.handoff` verbatim — the state the Ephemeris tab authored at the origin's SOI edge, where a departure leg actually delivers a ship — and `spec.jd` is that hand-off's own epoch, so waypoint days and the coast's duration need no re-basing. Nothing is re-derived across this seam, which is what makes the adopt/paste round trip exact. Pure; the caller resolves every view-side number first and hands in plain data.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `departure-estimate.js` | (see header — estimates the departure leg's duration)                                          | How long the departure leg lasts, estimated from the adopted plan alone (before any departure tech is chosen): the required v∞ and the hand-off epoch. Every body origin is timed as a two-body escape from its low orbit (`Shared/orbit.js` `lowOrbit`) to its SOI edge; a Moon origin from lunar distance. Feeds the read-only release anchor `adopt.js` bakes into the plan, the Ephemeris tab's Moon-phase widget, and the Departure slider's default span.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `release-arc.js`        | `releaseArc`, `releaseArcStateAt`, `releaseArcSamples`                                           | The escape hyperbola from an origin body's low orbit to its SOI edge, for the Ephemeris tab's Origin view: periapsis at the low-orbit radius, energy and heading from the Departure card, release point on the equator moving prograde, chosen so the arc leaves along the heading (the nearest reachable one when it cannot). Its flight time is `departure-estimate.js`'s estimate. Pure. |
-| `lunar-release-leg.js`  | `lunarReleaseLeg`, `lunarReleaseLegStateAt`, `lunarMoonLegSamples`, `lunarSeamGap`, `lunarPatchedExit` | A lunar departure's path BEFORE the Earth-SOI crossing, for the Origin view: the escape hyperbola about the Moon from a low lunar orbit (`release-arc.js`), then the Earth-frame coast `lunar-departure.js` flies, in time since the release. The two pieces are the sketch's own and not a patched conic; `lunarSeamGap` and `lunarPatchedExit` measure how far apart they are. Pure. |
+| `sketch-lunar-departure.js` | `sketchLunarDeparture`, `solveLunarCard`, `cardVInf`, `cardFromVector`, `releaseSpeedFor`, … | The Ephemeris tab's two-body sketch of a departure from the Moon: from the release on the tab's date, the escape hyperbola about Earth to Earth's SOI crossing, which is the hand-off the tab commits. Two pipelines — outward, and Earth-pass when the ship would have to swing past Earth. Not the mission's Departure phase, which `modules/departure-leg` integrates. Pure. |
+| `sketch-release-arc.js`        | `releaseArc`, `releaseArcStateAt`, `releaseArcSamples`                                           | The escape hyperbola from an origin body's low orbit to its SOI edge, for the Ephemeris tab's Origin view: periapsis at the low-orbit radius, energy and heading from the Departure card, release point on the equator moving prograde, chosen so the arc leaves along the heading (the nearest reachable one when it cannot). Its flight time is `departure-estimate.js`'s estimate. Pure. |
+| `sketch-lunar-release-path.js`  | `lunarReleasePath`, `lunarReleasePathStateAt`, `lunarMoonArcSamples`, `lunarSeamGap`, `lunarPatchedExit` | A lunar departure's path BEFORE the Earth-SOI crossing, for the Origin view: the escape hyperbola about the Moon from a low lunar orbit (`sketch-release-arc.js`), then the Earth-frame coast `sketch-lunar-departure.js` flies, in time since the release. The two pieces are the sketch's own and not a patched conic; `lunarSeamGap` and `lunarPatchedExit` measure how far apart they are. Pure. |
 | `arrival-seam.js`       | `computeArrivalSeam`                                                                           | The Coast→Arrival seam derivation: a window `[closest approach − Δt, closest approach + ~1 day]` around the coast's own closest-approach event, `Δt = clamp(R_SOI/v∞, 2 d, 5 d)`. Nothing is stored — recomputed live from `transfer-leg`'s emitted events every recompute, so the window moves as the coast is tuned. No encounter at all: the window collapses to a point at the coast's own end — there is no committed arrival date, the mission arriving at whatever closest approach it measures.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `proximity.js`          | `checkProximity`, `checkPassAltitude`, `checkCatch`, `arrivalDvBudget`                         | The arrival standards, in one place. `checkProximity` is the EPHEMERIS TAB's gate on "Start Mission Plan": the marker within `APPROACH_FAR` (0.004 AU) of the destination's orbit ELLIPSE, and the destination passing through that point within `TEMP_FAR` (30 d) — ring-scale tolerances, right for judging a scrubbable marker. `MAX_PASS_ALTITUDE` (30,000 km) is the stricter bound a FLOWN mission has to pass the body within, and `AIM_PASS_ALTITUDE` (15,000 km) is what a re-target aims for — deliberately inside the bound, so an iteration's residual has room to land. Both measured as altitude ABOVE THE SURFACE, at closest approach; both provisional until the arrival technology can state what it can actually catch. `checkCatch` is the CATCH standard: contact slower than `MAX_CATCH_SPEED` (250 m/s, a flat first cut) relative to the catching hardware. `arrivalDvBudget` splits the arrival for the mission report: total is the unburned speed at the catch radius (v∞ in plus the fall), fuel the arrival waypoints, tech the remainder. The ring tier TABLES stay with the views that draw them — those are colours and pixel sizes, not standards. Pure. |
 | `delivered-flight.js`   | `deliveredFlight`, `signatureOf`, `waypointDv`                                                 | The flight the ship is ACTUALLY on: flown from what the departure technology delivers, through the waypoints as they stand. The drawn coast now flies from that same delivered hand-off, so the two agree; and both now fly the coast's own `legDays`, no arrival date being committed. It stays the one place a hypothetical hand-off can be flown, which is what `core/retarget.js` verifies its solves with. One call yields every figure the mission bar shows (v∞ out, coast Δv, closest approach, v∞ in). The answer never depends on the clock, so `signatureOf` gives the view a key to memoize on across scrubbing; one call costs about one leg integration. Pure.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -135,7 +140,7 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
 - **`planner.js`** — the multi-mission host: the shared module registry, the
   ONE renderer/canvas (browsers cap live WebGL contexts, so only the active
   mission's view renders), the initial mission load (persisted missions
-  merged with a share-link fragment, or the shipped preset) with its failure
+  merged with a share-link fragment) with its failure
   banner — ASYNC, because a share link is compressed and there is no
   synchronous inflate — the per-mission plan history it persists alongside
   each World, the tab bar (the Ephemeris tab + one tab per mission, active
@@ -162,7 +167,7 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   the same state, verbatim, that the adopt commits as the mission's
   Departure→Coast boundary, so a plan adopted here and pasted back is exact.
   Where on the SOI sphere the ship exits is always this tab's own: the end of
-  the escape hyperbola `core/release-arc.js` traces from a low orbit at the
+  the escape hyperbola `core/sketch-release-arc.js` traces from a low orbit at the
   body (an equatorial release, prograde, chosen so the arc leaves along the
   card's heading), which the Origin POV draws ahead of the SOI exit. A pasted mission whose departure chain left from
   elsewhere is drawn from that point, so the two tabs can disagree by that much.
@@ -172,7 +177,7 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   point) — and the date bar states the RELEASE, so the hand-off
   epoch is ~2 days later than the clock. The release travels with the mission
   separately, as `releaseJd` and `lunarRelease`. Its card is flown by one of
-  two pipelines in `core/lunar-departure.js`: the outward one while the Moon
+  two pipelines in `core/sketch-lunar-departure.js`: the outward one while the Moon
   is on the departure's side of Earth, and the Earth-pass one — which reads
   the card's direction as the heading flown and traces a coasting route back
   to the Moon — while the ship would have to swing past Earth. How
@@ -431,32 +436,18 @@ never when it started.
 | `share-link.js`     | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope (v2) wrapping `{ title, world, plan }` under its own kind stamp — a bare serialized World has no title, and `plan` is `core/revisions.js`'s two sets: the mission as first adopted, plus its latest commit when it has one. `world` is what opens in a tab; `plan.original` is what the Ephemeris tab reconstructs. v1 envelopes and bare Worlds still load, with no plan. Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button, through `Shared/exchange.js`'s **compressed** `encodeFragmentZ` — two sets don't fit in a Discord message otherwise.                   |
 | `tech-options.js`   | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                           | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add a stage; unbuilt entries show disabled with a "(future)" label.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-## presets/ — the example catalog and test fixtures
+## presets/ — the example catalog
 
 A fresh visit with nothing saved and no share link opens on the Ephemeris
 tab with no mission tabs — new missions are started there, not from a
 shipped starter mission.
 
-`default-mission.js` is a Node-test fixture only, not wired into the running
-app: a serialized World checked in as plain data — a Moon → Ceres flight
-through a lunar skyhook whose real integrated departure under-delivers
-against the plan's required v∞, on purpose, exercising the non-compliant
-case across the test suites. It also exports `defaultWorkspaceMain`, the
-generic fallback main-pane id used when a mission tab is spawned with none
-specified — that part IS still live in the app.
-
 `examples-catalog.js` drives the tab bar's example-mission dropdown, in two titled
 sections: **Unbuilt** (a mission as it arrives from the Ephemeris tab — the
 adopted plan, no technology set up) and **Built** (the same missions solved).
-Each other file in this folder that it imports is one catalog entry, a
-serialized World; a catalog entry's `mission` is deserialized fresh on every
-pick, so stateless data is never shared live across tabs. The other files here
-(`moon-mars-2039.js`, `moon-ceres-2032.js` and the rest) are the previous
-examples and are not in the catalog.
-
-`earth-mars-reference.js` is not in the catalog — it's a fixture
-`core/tests/retarget.test.js` depends on (a plan authored around a flyby
-offset outside `MAX_PASS_ALTITUDE`), kept only for that.
+Each other file in this folder is one catalog entry, a serialized World; a
+catalog entry's `mission` is deserialized fresh on every pick, so stateless
+data is never shared live across tabs.
 
 ## Save format
 
@@ -475,9 +466,11 @@ engine's diagnostic, not a data-layer validity condition.
 the recompute/diagnostic/blocked/
 boundary/comply semantics, the carrier chain and integrated legs (departure
 and arrival, Earth-origin and generic-origin), the adopted-plan compliance
-rows, the phase-slider state functions, and the shipped preset plus every
-catalog entry end to end (deserialize, recompute, survive the share-link
-round trip). Run from the repo root:
+rows, the phase-slider state functions, and a whole mission end to end
+(deserialize, recompute, survive the share-link round trip). The whole
+mission is `tests/fixtures/moon-ceres-test-mission.js`, sample data the
+running app never loads; its header says what it holds and how current it
+is. Run from the repo root:
 
 ```
 node --test Website/MissionPlanner/core/tests/*.test.js

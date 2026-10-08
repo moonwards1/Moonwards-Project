@@ -64,7 +64,7 @@ export function arrivalMark(body, path, caJd) {
 // Why it exists: approachAt below measures at whatever epoch the packet
 // carries, which is the emitting leg's END. A leg routinely ends before its own
 // closest approach, so that instant is neither the closest the ship gets nor
-// the speed it gets there at — on the shipped Ceres mission a pass 1,649 km
+// the speed it gets there at — on a Ceres mission a pass 1,649 km
 // from the body reads as 182,000 km away, and the epoch never moves at all when
 // waypoints are tuned, because a leg's end is `jd0 + legDays` by construction.
 // The pass is the physical event those figures are meant to describe.

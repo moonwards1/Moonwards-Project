@@ -36,7 +36,7 @@
  * Ephemeris tab authors that same hand-off directly — its departure card IS the
  * v-infinity there, and its clock IS the hand-off epoch at every origin but the
  * Moon, where the clock is the release and the hand-off is the Earth-SOI
- * crossing it flies to (ephemeris-view.js's departureState) — so adopt COMMITS
+ * crossing it flies to (ephemeris-view.js's sketchHandoff) — so adopt COMMITS
  * spec.handoff verbatim. It re-derives
  * nothing across this seam, which is what makes a plan adopted here and pasted
  * back into the tab exact, whatever geometry produced the hand-off: an
@@ -224,7 +224,7 @@ export function adoptMissionWorld(spec) {
 }
 
 // "Earth → Ceres 2031" — the name dialog's suggested title. The year is the
-// DEPARTURE year, matching the shipped preset's own "Moon → Ceres 2031".
+// DEPARTURE year, as in "Moon → Ceres 2031".
 export function defaultMissionTitle(origin, destination, depJd) {
 	var y = OrbitalMath.dateFromJulian(depJd).Y;
 	return origin + " → " + destination + " " + y;

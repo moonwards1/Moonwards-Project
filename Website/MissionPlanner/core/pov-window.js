@@ -7,7 +7,7 @@
  * Ephemeris tab reads).
  *
  *   ORIGIN      — from the release, when the caller has a release arc to show
- *                 (core/release-arc.js; its flight time arrives as `leadS`),
+ *                 (core/sketch-release-arc.js; its flight time arrives as `leadS`),
  *                 to POV_MIN_DAYS after the SOI exit. Time 0 is the SOI exit —
  *                 the flight's start — so the release sits at -leadS.
  *   DESTINATION — from where the ship enters the destination's SOI to

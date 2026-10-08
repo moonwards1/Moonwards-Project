@@ -353,7 +353,7 @@ export function createEngine(world, registry) {
 		// `world.jd` in a module is inside draw() or a card renderer.)
 		//
 		// Recomputing for it re-integrated the whole chain on every tick of a
-		// slider drag — on the shipped Moon->Ceres plan, 4.4 ms of leg
+		// slider drag — on a Moon->Ceres plan, 4.4 ms of leg
 		// integration in transfer-leg alone, doubled to 8.9 ms whenever a
 		// waypoint edit is pending and both the live and hand-off arcs fly.
 		// Dozens of times a second, for an answer that could not have changed.

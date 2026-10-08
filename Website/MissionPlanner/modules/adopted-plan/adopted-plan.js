@@ -126,7 +126,7 @@ export var defaultParams = {
 	waypoints: [],
 	// A Moon origin only: { jd, burn: { pro, rad, nrm } } — the release the
 	// departure was authored from, an impulse in the Moon's own geocentric
-	// frame (core/lunar-departure.js). Carried so a pasted mission reopens
+	// frame (core/sketch-lunar-departure.js). Carried so a pasted mission reopens
 	// that departure; nothing here computes from it.
 	lunarRelease: null
 };

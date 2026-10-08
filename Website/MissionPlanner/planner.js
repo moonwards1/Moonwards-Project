@@ -32,7 +32,6 @@
 
 import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
-import { defaultWorkspaceMain } from "./presets/default-mission.js";
 import { EXAMPLE_SECTIONS, EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink } from "./ui/share-link.js";
@@ -66,6 +65,9 @@ var MODULE_URLS = [
 	// tether run in reverse. Missions ship with the arrival-tech slot empty.
 	"./modules/skyhook/skyhook-arrival.js"
 ];
+// The main-pane frame a mission tab opens on when its spawner names none.
+var DEFAULT_WORKSPACE_MAIN = "body:Earth-Moon";
+
 var registry = createRegistry();
 var loaded = await Promise.all(MODULE_URLS.map(function (u) { return import(u); }));
 loaded.forEach(function (m) { registry.register(m.default); });
@@ -131,10 +133,10 @@ function nextMissionId(existing) {
 
 // ---- initial missions: persisted missions (if any) merged with a share-link
 // fragment (if the URL carries one — a share link opens in a new browser tab,
-// so its mission is added alongside saved work, never replacing it), else the
-// shipped worked-example preset. A bad fragment or an unreadable saved mission
-// falls back gracefully WITH a banner, never a blank page (missions are user
-// data; refusals are polite).
+// so its mission is added alongside saved work, never replacing it). With
+// neither, only the Ephemeris tab opens. A bad fragment or an unreadable saved
+// mission falls back gracefully WITH a banner, never a blank page (missions
+// are user data; refusals are polite).
 var loadNotice = null;
 
 // Async because a mission link is DEFLATE-compressed (Shared/exchange.js's
@@ -233,7 +235,7 @@ function makeMissionView(world, missionId, defaultMainId, plan) {
 		container: viewsEl,
 		template: missionTemplate,
 		missionId: missionId,
-		defaultMain: defaultMainId || defaultWorkspaceMain,
+		defaultMain: defaultMainId || DEFAULT_WORKSPACE_MAIN,
 		getTitle: function () { return titleFor(missionId); }
 	});
 }
@@ -385,7 +387,7 @@ exampleSelectEl.addEventListener("change", function () {
 	var ex = EXAMPLE_MISSIONS.find(function (x) { return x.id === id; });
 	if (!ex) { return; }
 	var res = deserializeWorld(ex.mission);
-	if (!res.ok) { return; }   // shouldn't happen: the catalog is shipped, tested data
+	if (!res.ok) { return; }   // shouldn't happen: the catalog is checked-in data
 	spawnMissionTab(res.world, nextUniqueTitle(ex.label), ex.workspace);
 });
 

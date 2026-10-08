@@ -2,7 +2,7 @@
 // point a technology actually leaves from. Run from the repo root:
 //   node --test Website/MissionPlanner/core/tests/retarget.test.js
 //
-// The cases are built on the SHIPPED Moon->Ceres plan rather than a synthetic
+// The cases are built on the Moon->Ceres test mission rather than a synthetic
 // one, so the solver is exercised against a real flight with a real mid-course
 // waypoint. That plan passes 17,185 km above Ceres as authored; the Earth->Mars
 // reference was authored around a ~44,100 km flyby offset. BOTH re-target,
@@ -17,7 +17,7 @@ import { solveDepartureTarget, propagateWithWaypoints, solveArrivalVelocity,
 	passAltitudeFrom, rebaseWaypoints } from "../retarget.js";
 import { MAX_PASS_ALTITUDE, AIM_PASS_ALTITUDE } from "../proximity.js";
 import { deliveredFlight } from "../delivered-flight.js";
-import { defaultMission } from "../../presets/default-mission.js";
+import { moonCeresTestMission } from "../../tests/fixtures/moon-ceres-test-mission.js";
 import { earthMarsReferenceMission } from "../../presets/earth-mars-reference.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
@@ -25,7 +25,7 @@ import { systems } from "../../../Shared/orbit.js";
 var GM_SUN = systems.get("Sun").GM;
 
 function planOf(mission) {
-	var st = (mission || defaultMission).stages;
+	var st = (mission || moonCeresTestMission).stages;
 	var fp = st.filter(function (s) { return s.moduleId === "adopted-plan"; })[0].params;
 	var tl = st.filter(function (s) { return s.moduleId === "transfer-leg"; })[0].params;
 	// The coast's HORIZON — its own duration, which is what the solve aims
@@ -52,10 +52,10 @@ test("the plan's own hand-off already arrives — that is the control", () => {
 	var pl = planOf();
 	var alt = passAltitudeFrom(pl.dep, pl.wps, pl.horizon, pl.arr.body);
 	assert.ok(alt < MAX_PASS_ALTITUDE,
-		"the shipped plan should reach Ceres inside the bound, got " + Math.round(alt / 1000) + " km");
+		"the test mission should reach Ceres inside the bound, got " + Math.round(alt / 1000) + " km");
 });
 
-// 200,000 km is the scale of a real difference: the shipped Moon->Ceres chain
+// 200,000 km is the scale of a real difference: the Moon->Ceres test mission chain
 // exits 209,335 km from the point its plan assumes.
 test("a 200,000 km offset exit point wrecks the arrival, and the solve recovers it", () => {
 	var res = solveDepartureTarget(specFor(deliveredOffsetBy(2e8)));   // 2e8 m = 200,000 km
@@ -151,7 +151,7 @@ test("propagateWithWaypoints applies each burn at its own day, in order", () => 
 	var pl = planOf();
 	var noBurn = propagateWithWaypoints(pl.dep.r, pl.dep.v, [], 600);
 	var withBurn = propagateWithWaypoints(pl.dep.r, pl.dep.v, pl.wps, 600);
-	// the shipped plan's waypoint fires on day 473, so by day 600 the two paths
+	// the test mission's plan's waypoint fires on day 473, so by day 600 the two paths
 	// have genuinely diverged
 	assert.ok(O.vMag(O.vSub(noBurn.r, withBurn.r)) > 1e9, "the burn should bend the path");
 	// and before the burn they are identical

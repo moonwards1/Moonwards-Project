@@ -24,20 +24,20 @@ import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_
 import { findClosestApproach as findClosestApproachEvent,
 	computeArrivalSeam as computeArrivalSeamFor } from "../../core/arrival-seam.js";
 import arrivalLeg, { legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
-import { defaultMission } from "../../presets/default-mission.js";
+import { moonCeresTestMission } from "../../tests/fixtures/moon-ceres-test-mission.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH } from "../../../Shared/geo-leg.js";
 
-// The shipped preset's release epoch (2031-12-19 ~16:20 UT — the departure
-// leg's own releaseJd; presets/default-mission.js's header records how it is
+// The test mission's release epoch (2031-12-19 ~16:20 UT — the departure
+// leg's own releaseJd; tests/fixtures/moon-ceres-test-mission.js's header records how it is
 // seeded) and its committed hand-off epoch, at Earth's SOI edge.
 var JD_ANCHOR = 2463220.180402478;
 var JD_HANDOFF = 2463222.384503543;
 var DAY = 86400;
 
-// The worked-example lunar skyhook geometry (the shipped preset's own values),
+// The worked-example lunar skyhook geometry (the test mission's own values),
 // now carried on the unified orbital-skyhook with its `body` named explicitly.
 var MOON_SKYHOOK = { body: "Moon", comAlt: 275e3, relAlt: 6000e3, releasePhaseDeg: 92 };
 
@@ -48,7 +48,7 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(adoptedPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
+	reg.register(arrivalLeg);    // the test mission's terminal stage — the arrival
 	                             // flyby leg; arrival tech is empty by default
 	return reg;
 }
@@ -114,16 +114,16 @@ test("moonFigures: the Moon's heading/impulse contribution at the anchor", funct
 
 // ---- computeDepartureLeg (pure integrated flight) ---------------------------
 
-// The preset's own carrier chain, hand-built.
+// The test mission's own carrier chain, hand-built.
 function presetChainData() {
 	var kin = tetherKinematics(MOON_SKYHOOK);
 	return { base: "Moon", rotors: [rotorFor(kin, JD_ANCHOR)] };
 }
 
-test("departure flight: the preset chain escapes to a hand-off at Earth-SOI exit", function () {
+test("departure flight: the test mission chain escapes to a hand-off at Earth-SOI exit", function () {
 	var leg = computeDepartureLeg({ waypoints: [] }, presetChainData(), JD_ANCHOR);
 	assert.equal(leg.ok, true);
-	// The shipped chain's own figures: v∞ ≈ 5.32 km/s asymptotic,
+	// The test mission chain's own figures: v∞ ≈ 5.32 km/s asymptotic,
 	// SOI exit ≈ 2.68 d after release — 0.47 d late against the committed
 	// hand-off, inside the ±1 d window.
 	assert.ok(leg.vinfEarth > 4900 && leg.vinfEarth < 5800, "v∞ ~5.3 km/s, got " + leg.vinfEarth);
@@ -470,15 +470,15 @@ test("chain: moving the clock leaves the mission exactly as it was", function ()
 	assert.equal(c.engine.resultFor(c.ids.leg).output, before);
 });
 
-// ---- the shipped worked-example preset -------------------------------------
+// ---- the Moon->Ceres test mission -------------------------------------
 
-test("preset: deserializes to the carrier-chain profile; the coast genuinely rendezvouses", function () {
+test("test mission: deserializes to the carrier-chain profile; the coast genuinely rendezvouses", function () {
 	// The integrated departure honestly under-delivers the committed 6.55
 	// km/s (the folded-in injection has no modelled tech yet — see the
-	// preset's header), but the hand-off lands INSIDE the ±1 d window, so
+	// fixture's header), but the hand-off lands INSIDE the ±1 d window, so
 	// the plan warns on v∞ and aim only. The coast still flies the adopted
 	// plan's state regardless, so it still arrives clean.
-	var res = deserializeWorld(defaultMission);
+	var res = deserializeWorld(moonCeresTestMission);
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();
@@ -508,13 +508,13 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 		["misses-destination"]);
 });
 
-// The same preset with its departure stack removed, so nothing is delivered
+// The same test mission with its departure stack removed, so nothing is delivered
 // and the coast falls back to the plan's own adopted state (adopted-plan.js's
 // boundary fallback). That is the plan AS adopted — the flight the Ephemeris
 // tab authored — and it is the fixture for everything below that needs a
 // coast which genuinely reaches Ceres.
 function planFlownPreset() {
-	var res = deserializeWorld(defaultMission);
+	var res = deserializeWorld(moonCeresTestMission);
 	assert.equal(res.ok, true, res.reason);
 	["moon-platform", "orbital-skyhook", "departure-leg"].forEach(function (moduleId) {
 		var s = res.world.stages().filter(function (x) { return x.moduleId === moduleId; })[0];
@@ -523,7 +523,7 @@ function planFlownPreset() {
 	return res.world;
 }
 
-test("preset flying its own plan: the coast rendezvouses and the arrival leg pins to the pass", function () {
+test("test mission flying its own plan: the coast rendezvouses and the arrival leg pins to the pass", function () {
 	var world = planFlownPreset();
 	var engine = createEngine(world, makeRegistry());
 	var stages = world.stages();     // adopted-plan, transfer-leg, arrival-leg
@@ -547,7 +547,7 @@ test("preset flying its own plan: the coast rendezvouses and the arrival leg pin
 	// the coast's leg end, which merely happens to sit near it. The pass is the
 	// true periapsis and falls a few minutes INSIDE the coast leg.
 	var coastPass = nearestApproach(legFor(res.world, stages[1].id), "Ceres");
-	assert.ok(coastPass && coastPass.insideSoi, "the shipped coast must reach Ceres");
+	assert.ok(coastPass && coastPass.insideSoi, "the test mission coast must reach Ceres");
 	assert.ok(Math.abs(rArr.output.data.jd - (coastPass.jd + 1)) < 1e-9);
 	assert.ok(coastPass.jd < rLeg.output.data.jd, "closest approach should precede the leg's end");
 	assert.ok(rLeg.output.data.jd - coastPass.jd < 0.01, "but only just");
@@ -571,8 +571,8 @@ test("preset flying its own plan: the coast rendezvouses and the arrival leg pin
 	assert.match(rArr.events[1].label, /Closest approach/);
 });
 
-test("preset: survives the share-link fragment round trip", function () {
-	var res = deserializeWorld(defaultMission);
+test("test mission: survives the share-link fragment round trip", function () {
+	var res = deserializeWorld(moonCeresTestMission);
 	var frag = encodeFragment(res.world.serialize());
 	var back = deserializeWorld(decodeFragment(frag));
 	assert.equal(back.ok, true);
@@ -691,10 +691,10 @@ test("coast: the emitted packet and dvUsed follow the waypoints as edited", func
 });
 
 test("coast: a waypoint edit reaches the arrival leg in the same recompute", function () {
-	// The shipped chain: plan → coast → arrival leg, edited through world.set
+	// The test mission chain: plan → coast → arrival leg, edited through world.set
 	// after the engine is running, the way the Coast card edits it.
 	function arrivalAfterEdit(waypoints) {
-		var res = deserializeWorld(defaultMission);
+		var res = deserializeWorld(moonCeresTestMission);
 		assert.equal(res.ok, true, res.reason);
 		var world = res.world;
 		var engine = createEngine(world, makeRegistry());
@@ -722,8 +722,8 @@ test("coast: a waypoint edit reaches the arrival leg in the same recompute", fun
 function ceresLeg(deltaPro) {
 	// planFlownPreset, so the coast starts from the plan's adopted hand-off and
 	// genuinely reaches Ceres — what these tests are measuring. Flown from the
-	// shipped skyhook's real delivery it misses by over an AU, which is the
-	// subject of the preset test above, not of this one.
+	// test mission skyhook's real delivery it misses by over an AU, which is the
+	// subject of the test-mission test above, not of this one.
 	var world = planFlownPreset();
 	var coast = world.stages().filter(function (s) { return s.moduleId === "transfer-leg"; })[0];
 	var wps = JSON.parse(JSON.stringify(coast.params.waypoints));

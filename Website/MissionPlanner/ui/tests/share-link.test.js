@@ -87,7 +87,7 @@ test("missionFragmentFrom: survives Notepad/messaging-app reflow of a pasted lin
 
 import { encodeFragmentZ, decodeFragmentAny } from "../../../Shared/exchange.js";
 import { createHistory, recordUpdate, packSets, readSets, latestOf } from "../../core/revisions.js";
-import { defaultMission } from "../../presets/default-mission.js";
+import { moonCeresTestMission } from "../../tests/fixtures/moon-ceres-test-mission.js";
 
 test("v2 pack carries the plan sets; unpack hands them back", () => {
 	var h = recordUpdate(createHistory({ kind: "moonwards-world", a: 1 }), { kind: "moonwards-world", a: 2 });
@@ -137,8 +137,8 @@ test("a compressed fragment round-trips, and the plain one still reads", async (
 test("compression is what keeps a two-set link inside a chat message", async () => {
 	// A Discord message stops at 2,000 characters, and a mission link is
 	// pasted into one as often as into a browser.
-	var h = recordUpdate(createHistory(defaultMission), defaultMission);
-	var payload = packMissionLink("Moon → Ceres 2031", defaultMission, packSets(h));
+	var h = recordUpdate(createHistory(moonCeresTestMission), moonCeresTestMission);
+	var payload = packMissionLink("Moon → Ceres 2031", moonCeresTestMission, packSets(h));
 	assert.ok(encodeFragment(payload).length > 2000, "two sets do NOT fit uncompressed");
 	assert.ok((await encodeFragmentZ(payload)).length < 2000, "two sets fit compressed");
 });

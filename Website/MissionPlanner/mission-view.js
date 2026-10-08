@@ -226,8 +226,8 @@ export function createMissionView(opts) {
 	var active = false;
 
 	// ---- the plan history (core/revisions.js): the mission as first adopted,
-	// plus a set per Update. A mission arriving without one — the shipped
-	// preset, a pre-history save, a v1 link — takes the World it opens with as
+	// plus a set per Update. A mission arriving without one — an example
+	// mission, a pre-history save, a v1 link — takes the World it opens with as
 	// its original, which is the honest reading: that IS the earliest plan this
 	// build can account for. The shell persists it and puts two of its sets in
 	// a share link; nothing here recomputes from it.

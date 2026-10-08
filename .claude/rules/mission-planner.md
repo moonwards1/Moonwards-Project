@@ -31,10 +31,32 @@ restate its content in code comments — cite the entry and its date.
   folder of substance plus two thin role adapters (`modules/platform/`).
 - `ui/` — shell-local widgets (phase slider, ship card, share link, the tech
   catalog).
-- `presets/` — the shipped mission and the example catalog, checked in as
-  serialized Worlds.
+- `presets/` — the example catalog, checked in as serialized Worlds.
+- `tests/fixtures/` — sample data for the Node tests (the Moon→Ceres test
+  mission); the running app never loads it.
 - `planner.js` + `mission-view.js` + `ephemeris-view.js` + `scene-frames.js` —
   the browser shell over `core/`.
+
+## Two departures: the sketch and the Departure phase
+
+The Ephemeris tab and a mission tab each model a departure, and they are
+different things that are allowed to disagree. Keep them apart by name:
+
+- **Ephemeris tab — the sketch.** A two-body judgement of viability, serving
+  the Departure card and the Origin view. Its code says `sketch`:
+  `core/sketch-lunar-departure.js` (`sketchLunarDeparture`),
+  `core/sketch-lunar-release-path.js`, `core/sketch-release-arc.js`, and in
+  `ephemeris-view.js` `sketchHandoff` / `sketchReleaseStateAt` /
+  `sketchDepartureTiming`. Nothing in `modules/` imports these.
+- **Mission tab — the Departure phase.** The integrated flight from a real
+  carrier's release to the SOI exit: `modules/departure-leg`,
+  `modules/body-departure-leg`, the platforms and carriers, and
+  `core/release-epoch.js`. "Leg" and "Departure phase" mean this side only.
+- `core/departure-estimate.js` is the one bridge: its estimate times the
+  sketch and seeds the phase's `releaseJd` at adopt, and nothing more.
+
+New code on either side follows the same split; never name sketch code
+`*-leg` or a phase function `departure*State`.
 
 ## Invariants worth knowing before you start
 
@@ -59,7 +81,7 @@ restate its content in code comments — cite the entry and its date.
   invites.
 - **A MOON origin's hand-off is the EARTH-SOI CROSSING, and its clock is the
   RELEASE.** Alone among the origins, the tab's date is not the hand-off epoch:
-  the release fixes an escape hyperbola, `core/lunar-departure.js` propagates it
+  the release fixes an escape hyperbola, `core/sketch-lunar-departure.js` propagates it
   to Earth's SOI (`soiExit`), and that crossing — position, edge velocity, epoch
   ~2 days later — is what the plan commits and what **Needed** reads. The
   release travels separately as `releaseJd`/`lunarRelease`. Committing the

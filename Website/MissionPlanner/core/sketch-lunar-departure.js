@@ -1,4 +1,4 @@
-/* MissionPlanner/core/lunar-departure — what a departure from the Moon is
+/* MissionPlanner/core/sketch-lunar-departure.js — what a departure from the Moon is
  * worth at Earth's sphere of influence.
  *
  * A Moon origin is the one origin where the body a ship leaves and the body
@@ -56,7 +56,7 @@
  * the departures that head away from Earth. When the Moon is on the wrong
  * side of its orbit for the card — the ship would have to swing past Earth to
  * leave that way — the outward pipeline refuses, and every refusal hands the
- * card to flyEarthPassDeparture, the EARTH-PASS pipeline, which reads the
+ * card to sketchEarthPassDeparture, the EARTH-PASS pipeline, which reads the
  * card differently:
  *
  *   outward     card = the share's own vector: its length is the technology's
@@ -209,7 +209,7 @@ var CARD_SOLVE_TOL = 0.05;
 
 /* SOLVING BACKWARDS: which card delivers a wanted TOTAL v∞?
  *
- * flyLunarDeparture runs card -> total. Target mode needs the other
+ * sketchLunarDeparture runs card -> total. Target mode needs the other
  * direction: Lambert states the total v∞ the arc has to leave on, and the
  * card holds only the ship's share of it. Writing the total into the card
  * would bill the ship for the Moon's contribution as well, and the next
@@ -228,7 +228,7 @@ var CARD_SOLVE_TOL = 0.05;
  * is usually close, and `at` says WHERE vInfVec is measured:
  *
  *   "asymptote" (default) — the wanted TOTAL hyperbolic excess, geocentric,
- *                           what flyLunarDeparture reports as vInf.vec.
+ *                           what sketchLunarDeparture reports as vInf.vec.
  *   "exit"                — the wanted geocentric velocity AT the Earth-SOI
  *                           crossing, i.e. soiExit.v. This is what a caller
  *                           holding a hand-off wants, and it is NOT the
@@ -246,7 +246,7 @@ var CARD_SOLVE_TOL = 0.05;
  *
  * Returns { ok: true, card, flight, err } — `flight` is the departure that
  * card flies, so a caller needs no second call — or { ok: false, reason },
- * with reason either a flyLunarDeparture refusal or "no-card-solution" when
+ * with reason either a sketchLunarDeparture refusal or "no-card-solution" when
  * the ask is escaping but no card reaches it.
  */
 export function solveLunarCard(spec) {
@@ -264,7 +264,7 @@ export function solveLunarCard(spec) {
 	}
 
 	function fly(card) {
-		var f = flyLunarDeparture({ jd: jd, card: card });
+		var f = sketchLunarDeparture({ jd: jd, card: card });
 		return (f.ok && (!atExit || f.soiExit)) ? f : null;
 	}
 	function errOf(f) {
@@ -301,7 +301,7 @@ export function solveLunarCard(spec) {
 				// it, halve the step and try again; with none, this seed is
 				// simply not a departure and the next seed gets its turn.
 				if (!lastGood) {
-					if (!firstReason) { firstReason = flyLunarDeparture({ jd: jd, card: card }).reason; }
+					if (!firstReason) { firstReason = sketchLunarDeparture({ jd: jd, card: card }).reason; }
 					break;
 				}
 				card = { pro: 0.5 * (lastGood.pro + card.pro), rad: 0.5 * (lastGood.rad + card.rad),
@@ -448,7 +448,7 @@ var R_EARTH = Number(systems.get("Earth").radius);
 export var MIN_PERIGEE = R_EARTH + 100e3;
 
 // THE EARTH-PASS PIPELINE — the departures the outward pipeline refuses.
-// Called by flyLunarDeparture with the same spec; returns a flight in the same
+// Called by sketchLunarDeparture with the same spec; returns a flight in the same
 // shape, plus `route: "earth-pass"` and `perigee` (m, or null when the release
 // already heads outward and the perigee lies behind it, never flown).
 //
@@ -465,7 +465,7 @@ export var MIN_PERIGEE = R_EARTH + 100e3;
 //
 // Refuses, by name, with "no-pass-route" (no S meets the release), or
 // "pass-hits-Earth" (the route found would dip below MIN_PERIGEE).
-export function flyEarthPassDeparture(spec) {
+export function sketchEarthPassDeparture(spec) {
 	var jd = spec.jd;
 	var cardVec = cardVInf(jd, spec.card);
 	var cardMag = O.vMag(cardVec);
@@ -526,7 +526,7 @@ export function flyEarthPassDeparture(spec) {
 //
 // Returns, on success:
 //   { ok: true, route, jd, u, uMag, releaseSpeed,
-//     route,       // "outward", or "earth-pass" from flyEarthPassDeparture
+//     route,       // "outward", or "earth-pass" from sketchEarthPassDeparture
 //     perigee,     // m — a pass's flown perigee; null when none is flown
 //     cardVec,     // the card as typed — the ship's speed AT Earth's SOI edge
 //     cardAsym,    // the same, as the hyperbolic excess behind it
@@ -543,7 +543,7 @@ export function flyEarthPassDeparture(spec) {
 // "pass-hits-Earth" — the outward pipeline's own refusals
 // ("card-needs-earth-pass", "heads-into-Earth", "no-escape") surface only if
 // the Earth-pass pipeline declines to answer at all.
-export function flyLunarDeparture(spec) {
+export function sketchLunarDeparture(spec) {
 	var jd = spec.jd;
 	var cardVec = cardVInf(jd, spec.card);
 	// The card states the ship's speed AT Earth's SOI edge, where Earth still
@@ -564,17 +564,17 @@ export function flyLunarDeparture(spec) {
 	if (!solved.ok) {
 		// No card at all is nothing to fly, by any route.
 		if (solved.reason === "no-card") { return { ok: false, reason: "no-card" }; }
-		return flyEarthPassDeparture(spec) || { ok: false, reason: solved.reason };
+		return sketchEarthPassDeparture(spec) || { ok: false, reason: solved.reason };
 	}
 
 	var vTotal = O.vAdd(vMoon, solved.u);
 	// Supported departures leave going outward, so the ship never passes Earth.
 	if (O.vDot(rMoon, vTotal) <= 0) {
-		return flyEarthPassDeparture(spec) || { ok: false, reason: "heads-into-Earth" };
+		return sketchEarthPassDeparture(spec) || { ok: false, reason: "heads-into-Earth" };
 	}
 
 	var total = vInfFromState(rMoon, vTotal);
-	if (!total) { return flyEarthPassDeparture(spec) || { ok: false, reason: "no-escape" }; }
+	if (!total) { return sketchEarthPassDeparture(spec) || { ok: false, reason: "no-escape" }; }
 
 	// Both shares as hyperbolic excesses, so they add: the card's own worth out
 	// there plus what the Moon's motion is still worth once Earth is behind.

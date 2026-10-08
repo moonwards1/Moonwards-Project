@@ -43,8 +43,13 @@
  * coast. Neither tab is wrong when they disagree; do not bend this tab's
  * models to chase the mission tab's flight.
  *
+ * The naming keeps the two apart: this tab's departure code says "sketch"
+ * (core/sketch-*.js, sketchHandoff, sketchLunarDeparture, sketchReleaseStateAt),
+ * and "leg" and "Departure phase" belong to the mission tab
+ * (modules/departure-leg, modules/body-departure-leg, core/release-epoch.js).
+ *
  * THE DEPARTURE CARD MEANS TWO DIFFERENT THINGS, one per origin family, and
- * departureState below is where that split lives.
+ * sketchHandoff below is where that split lives.
  *
  * FOR EVERY ORIGIN BUT THE MOON the card IS THE HAND-OFF, not a burn. Its
  * prograde/radial/normal vector IS the ship's v-infinity — speed and heading —
@@ -62,7 +67,7 @@
  * half of it. Its three numbers are the v∞ the ship's OWN actions deliver at
  * Earth's SOI — the release plus any burns — on the same EARTH heliocentric
  * axes, so "prograde" means one thing across the tab. The Moon's own motion is
- * not in that number: the ship gets it for free, and core/lunar-departure.js
+ * not in that number: the ship gets it for free, and core/sketch-lunar-departure.js
  * works out what it is still worth once Earth's well has been climbed. The
  * drawn arc uses the TOTAL, card plus that residual, so the same card on a
  * different day of the lunar month is a different trajectory — while the card
@@ -71,7 +76,7 @@
  * AND AT THIS ORIGIN ALONE THE CLOCK IS NOT THE HAND-OFF'S EPOCH. The clock is
  * the RELEASE at the Moon; the hand-off is where that release crosses Earth's
  * SOI, a couple of days and half a million kilometres later. Both are real and
- * both are kept: core/lunar-departure.js propagates the escape hyperbola to
+ * both are kept: core/sketch-lunar-departure.js propagates the escape hyperbola to
  * the crossing and returns its position, velocity and epoch, the arc starts
  * there, and buildadoptSpec commits the crossing as the plan's departure while
  * the release travels separately as `releaseJd` and `lunarRelease`.
@@ -84,7 +89,7 @@
  * and aim, never position.
  *
  * WHERE ON THE SOI SPHERE the ship exits, for those other origins, comes from
- * core/release-arc.js: an escape hyperbola from the body's low orbit, released
+ * core/sketch-release-arc.js: an escape hyperbola from the body's low orbit, released
  * at the equatorial point whose hyperbola leaves closest to the card's heading
  * and traced forward to the SOI edge, so the exit point tracks the card as it
  * is edited. That arc is also drawn, before time 0, in the Origin view: time 0
@@ -175,11 +180,11 @@ import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
 	originSoiRadius, originLowOrbitRadius, asymptoticVInf, edgeVInf, MIN_VINF
 } from "./core/departure-estimate.js";
-import { releaseArc, releaseArcStateAt } from "./core/release-arc.js";
+import { releaseArc, releaseArcStateAt } from "./core/sketch-release-arc.js";
 import {
-	lunarReleaseLeg, lunarReleaseLegStateAt, lunarMoonLegSamples
-} from "./core/lunar-release-leg.js";
-import { flyLunarDeparture, solveLunarCard, RELEASE_ALTITUDE } from "./core/lunar-departure.js";
+	lunarReleasePath, lunarReleasePathStateAt, lunarMoonArcSamples
+} from "./core/sketch-lunar-release-path.js";
+import { sketchLunarDeparture, solveLunarCard, RELEASE_ALTITUDE } from "./core/sketch-lunar-departure.js";
 import { Frames } from "../Shared/frames.js";
 import {
 	APPROACH_FAR, APPROACH_NEAR, APPROACH_CLOSE, TEMP_FAR, TEMP_NEAR, TEMP_CLOSE,
@@ -245,7 +250,7 @@ function isoDay(jd) {
 }
 
 // Why a lunar release produced no departure, in the planner's terms rather
-// than the solver's (core/lunar-departure.js's own reason codes).
+// than the solver's (core/sketch-lunar-departure.js's own reason codes).
 var LUNAR_FAILURES = {
 	"no-card": "No departure yet — give the ship a speed to leave Earth's SOI with.",
 	"no-escape": "The Moon is carrying the ship against this departure: with its "
@@ -356,7 +361,7 @@ export function createEphemerisView(opts) {
 	// "t seconds along the leg" reading is measured from. That is the date bar's
 	// own value at every origin but the Moon, where the bar states the RELEASE
 	// and the arc starts at the Earth-SOI crossing ~2 days later. Set by
-	// departureState() on each call, so anything reading it during a refresh
+	// sketchHandoff() on each call, so anything reading it during a refresh
 	// sees the epoch the arc was actually drawn from — never assume it is the
 	// clock.
 	var legStart = null;
@@ -374,8 +379,8 @@ export function createEphemerisView(opts) {
 	var trajLeg = null;       // computeLeg's result, the marker's position source
 	var trajSegs = [];        // trajLeg.segs: { type: "kepler", r0, v0 } | { type: "enc", body, leg }, each with tStart, dur (s)
 	var trajTotalT = 0;       // total drawn-leg duration (s)
-	var releaseArcNow = null; // core/release-arc.js's escape hyperbola for the current departure, or null (a Moon origin, or nothing escaping)
-	var lunarLegNow = null;   // core/lunar-release-leg.js's release-to-Earth-SOI path for a Moon origin, or null
+	var releaseArcNow = null; // core/sketch-release-arc.js's escape hyperbola for the current departure, or null (a Moon origin, or nothing escaping)
+	var lunarPathNow = null;   // core/sketch-lunar-release-path.js's release-to-Earth-SOI path for a Moon origin, or null
 	var trajSampleCount = 0;  // polyline sample count (sets followCrossing's search window)
 	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input
 	var markerSprite = null, destSprite = null, destSoi = null;
@@ -843,7 +848,7 @@ export function createEphemerisView(opts) {
 	// ORIGINAL array order so the caller can zip them back up with wpRows by
 	// index, and the trailing state (after the last waypoint's burn, or the
 	// hand-off itself if there are none) for finalCoastDays to size the drawn
-	// arc's last segment from. r0/v0 IS the hand-off state (departureState) —
+	// arc's last segment from. r0/v0 IS the hand-off state (sketchHandoff) —
 	// the coast's own start, with no burn left to apply at that seam. `days`
 	// are counted from it, the same zero core/adopt.js commits.
 	// -------------------------------------------------------------------------
@@ -987,7 +992,7 @@ export function createEphemerisView(opts) {
 	}
 
 	// True when there is no departure to describe: a Moon origin whose card
-	// core/lunar-departure.js cannot fly, or a card that does not escape the
+	// core/sketch-lunar-departure.js cannot fly, or a card that does not escape the
 	// reference's SOI at all. The second covers the tab's own opening state —
 	// with no card there is no trajectory, and drawing one would just be the
 	// origin body's own orbit around the Sun wearing a ship's colour.
@@ -1002,7 +1007,7 @@ export function createEphemerisView(opts) {
 	// at the Moon still has Earth's well to climb, so a box built from it
 	// states a heliocentric speed and plane the ship never actually flies. What
 	// the arc leaves on is card PLUS the Moon's residual, which is what
-	// hand.v holds (core/lunar-departure.js solves it).
+	// hand.v holds (core/sketch-lunar-departure.js solves it).
 	//
 	// A refused lunar departure has no hand-off: hand.v is the Moon's own
 	// motion, whose difference from Earth's is the Moon's orbital velocity and
@@ -1075,20 +1080,20 @@ export function createEphemerisView(opts) {
 	// (releaseArcNow) when there is one, null otherwise.
 	function stateAtGlobalTime(t) {
 		if (!trajSegs.length) { return null; }
-		if (t < 0) { return releaseStateAt(t); }
+		if (t < 0) { return sketchReleaseStateAt(t); }
 		return legStateAtElapsed(trajLeg, t);
 	}
 
-	function releaseStateAt(t) {
+	function sketchReleaseStateAt(t) {
 		if (releaseArcNow) {
 			if (t < -releaseArcNow.tExit) { return null; }
 			var rel = releaseArcStateAt(releaseArcNow, releaseArcNow.tExit + t);
 			var body = Frames.bodyHelioState(state.origin, legStartJd() + t / DAY);
 			return { r: O.vAdd(body.r, rel.r), v: O.vAdd(body.v, rel.v) };
 		}
-		if (lunarLegNow) {
-			if (t < -lunarLegNow.coast) { return null; }
-			var geo = lunarReleaseLegStateAt(lunarLegNow, lunarLegNow.coast + t);
+		if (lunarPathNow) {
+			if (t < -lunarPathNow.coast) { return null; }
+			var geo = lunarReleasePathStateAt(lunarPathNow, lunarPathNow.coast + t);
 			var earth = Frames.bodyHelioState("Earth", legStartJd() + t / DAY);
 			return { r: O.vAdd(earth.r, geo.r), v: O.vAdd(earth.v, geo.v) };
 		}
@@ -1098,7 +1103,7 @@ export function createEphemerisView(opts) {
 	// How long before the SOI exit the flight is drawn from: the release arc's
 	// flight time, or at a Moon origin the time from the release to Earth's SOI.
 	function leadBeforeExit() {
-		return releaseArcNow ? releaseArcNow.tExit : lunarLegNow ? lunarLegNow.coast : 0;
+		return releaseArcNow ? releaseArcNow.tExit : lunarPathNow ? lunarPathNow.coast : 0;
 	}
 
 	// The earliest time the marker may sit at: the SOI exit, or in the origin
@@ -1125,14 +1130,14 @@ export function createEphemerisView(opts) {
 	// (O.applyBurn is exactly that sum, and O.burnComponents its exact
 	// inverse, which is what makes the adopt/paste round trip lossless), and
 	// the epoch is the clock's. The position is the body's plus the point
-	// where the release arc (core/release-arc.js) reaches the SOI edge, so
+	// where the release arc (core/sketch-release-arc.js) reaches the SOI edge, so
 	// editing the card moves the exit point with it.
 	// A ship with no meaningful v-infinity has no asymptote to sit on and no
 	// flight to start, so it departs from the body's own position.
 	//
 	// A MOON ORIGIN — the card states only the SHIP's share of the v∞, on the
 	// same Earth heliocentric axes as every other origin's. The Moon's own
-	// motion is added by core/lunar-departure.js, which works out what that
+	// motion is added by core/sketch-lunar-departure.js, which works out what that
 	// motion is still worth once Earth's well has been climbed. There is no
 	// offset to choose: the release fixes an escape hyperbola outright and its
 	// Earth-SOI crossing is computed rather than constructed.
@@ -1147,8 +1152,8 @@ export function createEphemerisView(opts) {
 	// distance and carrying Earth's heliocentric velocity, so Earth is what
 	// the resulting v∞ is measured against (Shared/frames.js's
 	// escapeReferenceFor).
-	function departureState() {
-		var out = state.origin === "Moon" ? lunarDepartureState() : simpleDepartureState();
+	function sketchHandoff() {
+		var out = state.origin === "Moon" ? lunarSketchHandoff() : simpleSketchHandoff();
 		legStart = out.jd;
 		return out;
 	}
@@ -1168,21 +1173,21 @@ export function createEphemerisView(opts) {
 	// the Moon when a departure is refused would switch reference mid-scrub —
 	// a discontinuity in everything read off it, worth ~190 m/s in the Moon
 	// widget's speed bar right where a departure stops being supported.
-	function lunarDepartureState() {
+	function lunarSketchHandoff() {
 		var jd = dateState.jd;
 		var body = Frames.bodyHelioState("Earth", jd);
 		var moon = Frames.bodyHelioState("Moon", jd);
-		var lunar = flyLunarDeparture({ jd: jd, card: state.leg.burn });
+		var lunar = sketchLunarDeparture({ jd: jd, card: state.leg.burn });
 		if (!lunar.ok || !lunar.soiExit) {
 			return { body: body, r: moon.r, v: moon.v, jd: jd,
 			         vInfVec: [0, 0, 0], vInf: 0, offset: [0, 0, 0],
 			         lunar: lunar.ok ? { ok: false, reason: "no-coast" } : lunar,
-			         escapes: false, release: null, lunarLeg: null };
+			         escapes: false, release: null, lunarPath: null };
 		}
 		// THE HAND-OFF IS THE SOI CROSSING. The departure ends where the ship
 		// leaves Earth's sphere of influence, so that crossing — its position,
 		// its velocity and its epoch — is the state this tab commits and the
-		// state the drawn coast starts from. core/lunar-departure.js fixes all
+		// state the drawn coast starts from. core/sketch-lunar-departure.js fixes all
 		// three by propagating the escape hyperbola the release sets up.
 		//
 		// The epoch is therefore NOT the clock at this origin, alone among the
@@ -1210,7 +1215,7 @@ export function createEphemerisView(opts) {
 			lunar: lunar,
 			escapes: true,
 			release: null,
-			lunarLeg: lunarReleaseLeg(lunar)
+			lunarPath: lunarReleasePath(lunar)
 		};
 	}
 
@@ -1227,7 +1232,7 @@ export function createEphemerisView(opts) {
 		return (asym != null && asym >= MIN_VINF) ? O.vScale(vEdgeVec, asym / edge) : null;
 	}
 
-	function simpleDepartureState() {
+	function simpleSketchHandoff() {
 		var refName = Frames.escapeReferenceFor(state.origin);
 		var body = Frames.bodyHelioState(refName, dateState.jd);
 		var b = state.leg.burn;
@@ -1248,14 +1253,15 @@ export function createEphemerisView(opts) {
 		return { body: body, r: O.vAdd(body.r, offset),
 		         v: flown ? O.vAdd(body.v, flown) : body.v.slice(), jd: dateState.jd,
 		         vInfVec: vInfVec, vInf: vInf, offset: offset,
-		         lunar: null, escapes: !!flown, release: release, lunarLeg: null };
+		         lunar: null, escapes: !!flown, release: release, lunarPath: null };
 	}
 
-	// How long the departure phase lasts and when it starts. For a Moon origin
-	// both are measured off the flight that was just flown — the release epoch
+	// How long the sketched departure takes, release to hand-off, and when the
+	// release is — for the Moon-phase widget and the adopt seed. For a Moon
+	// origin both are measured off the sketch just flown — the release epoch
 	// IS the clock. Every other origin estimates it backwards from the
 	// hand-off, which is all that is knowable there.
-	function departureEstimateFor(hand) {
+	function sketchDepartureTiming(hand) {
 		if (state.origin === "Moon") {
 			var days = hand.lunar.ok ? hand.lunar.coastDays : null;
 			return (hand.lunar.ok && days != null)
@@ -1304,7 +1310,7 @@ export function createEphemerisView(opts) {
 	// vector reverts to its captured baseline and the marker falls back to
 	// geometric tracking. Runs at the start of refresh(), before anything is
 	// drawn, so the drawn arc reflects the solve. Decomposition is via
-	// O.burnComponents — the exact inverse of the O.applyBurn departureState
+	// O.burnComponents — the exact inverse of the O.applyBurn sketchHandoff
 	// re-applies it with (see header).
 	function applyTargeting() {
 		var m = state.marker;
@@ -1332,7 +1338,7 @@ export function createEphemerisView(opts) {
 		// moves it: solve, re-place the exit point on the answer, solve once
 		// more. Two bounded passes, never an iteration.
 		function frameAt() {
-			var hand = departureState();
+			var hand = sketchHandoff();
 			if (term.isDeparture) {
 				return { r1: hand.r, v1: hand.body.v, ref: hand.body, t1g: 0 };
 			}
@@ -1370,7 +1376,7 @@ export function createEphemerisView(opts) {
 		// as well — and the next recompute would add the residual on top of
 		// that again, overshooting further on every refresh. The card whose
 		// own flight delivers this total is solved for in
-		// core/lunar-departure.js, and the figure the budget is read against
+		// core/sketch-lunar-departure.js, and the figure the budget is read against
 		// is that card: the ship's bill, which is what the row is labelled.
 		//
 		// Returns null when no card reaches the ask — the departure is
@@ -1901,7 +1907,7 @@ export function createEphemerisView(opts) {
 		}
 		if (!dn) { return { ok: false, reason: "No destination selected." }; }
 
-		var hand = departureState();
+		var hand = sketchHandoff();
 		var rw = resolveWaypoints(hand.r, hand.v, state.leg);
 		// The rendezvous is the qualifying pass (updateApproachGate), wherever
 		// the marker happens to sit.
@@ -1956,7 +1962,7 @@ export function createEphemerisView(opts) {
 	//
 	// So this loads its VELOCITY verbatim: the clock opens at departure.jd,
 	// and the velocity decomposes against the origin body's own motion there
-	// (O.burnComponents, the exact inverse of the O.applyBurn departureState
+	// (O.burnComponents, the exact inverse of the O.applyBurn sketchHandoff
 	// re-applies). The POSITION is this tab's own — where the release arc
 	// from the card's heading reaches the SOI — which is exactly where a plan authored here started, so such
 	// a plan round-trips exactly. A plan whose departure chain left from
@@ -2066,7 +2072,7 @@ export function createEphemerisView(opts) {
 	// already flies to the plan's departure (it then reopens exactly as it was
 	// authored) or when no card reaches it.
 	function lunarCardFor(releaseJd, card, departure) {
-		var f0 = flyLunarDeparture({ jd: releaseJd, card: card });
+		var f0 = sketchLunarDeparture({ jd: releaseJd, card: card });
 		if (f0.ok && f0.soiExit) {
 			var jd0 = releaseJd + f0.soiExit.dt / DAY;
 			var e0 = Frames.bodyHelioState("Earth", jd0);
@@ -2525,15 +2531,15 @@ export function createEphemerisView(opts) {
 		// A Moon origin's first stretch is the hyperbola about the Moon, sampled
 		// on its own (it is far tighter than anything the stepping below would
 		// resolve at Earth's scale); the stepped path takes over where it ends.
-		var moonLeg = (!isDest && lunarLegNow) ? lunarMoonLegSamples(lunarLegNow, 200) : [];
+		var moonArc = (!isDest && lunarPathNow) ? lunarMoonArcSamples(lunarPathNow, 200) : [];
 		applyDatePin();
-		var path = moonLeg.map(function (s) { return s.r; })
-			.concat(samplePovPath(moonLeg.length ? -lunarLegNow.coast + lunarLegNow.tMoon : povWin.t0, povWin.t1));
+		var path = moonArc.map(function (s) { return s.r; })
+			.concat(samplePovPath(moonArc.length ? -lunarPathNow.coast + lunarPathNow.tMoon : povWin.t0, povWin.t1));
 		// The hand-off dot is the SOI exit (time 0); at an origin with a release
 		// arc, the release point is marked as well.
 		var exitState = isDest ? null : povRelState(0);
 		var start = exitState ? exitState.r : null;
-		var releaseR = releaseArcNow ? releaseArcNow.release.r : lunarLegNow ? lunarLegNow.release.r : null;
+		var releaseR = releaseArcNow ? releaseArcNow.release.r : lunarPathNow ? lunarPathNow.release.r : null;
 		drawPovScene(pov, {
 			path: path, start: start,
 			mark: isDest ? povArrivalMark()
@@ -2754,14 +2760,14 @@ export function createEphemerisView(opts) {
 		applyTargeting();
 		syncBurnInputs();
 
-		var hand = departureState();
+		var hand = sketchHandoff();
 		var dep = hand.body;
-		var depEst = departureEstimateFor(hand);
+		var depEst = sketchDepartureTiming(hand);
 		// No flight to draw: a lunar card this planner cannot fly, or a card
 		// that does not escape the origin's SOI at all.
 		var noFlight = noDeparture(hand);
 		releaseArcNow = noFlight ? null : hand.release;
-		lunarLegNow = noFlight ? null : hand.lunarLeg;
+		lunarPathNow = noFlight ? null : hand.lunarPath;
 
 		// The origin body itself, where and when the ship leaves it. For a Moon
 		// origin that is the MOON at the release epoch — `dep` there is Earth,
@@ -2796,7 +2802,7 @@ export function createEphemerisView(opts) {
 			if (lun.ok) {
 				var shipEdge = O.vMag(lun.cardVec), gain = hand.vInf - shipEdge;
 				// On the Earth-pass route the card's direction IS the heading
-				// flown (core/lunar-departure.js, "two pipelines, one seam"), so
+				// flown (core/sketch-lunar-departure.js, "two pipelines, one seam"), so
 				// the readout says so — and where the ship falls toward Earth
 				// first, how close it swings.
 				var route = lun.route !== "earth-pass" ? ""
@@ -2809,10 +2815,10 @@ export function createEphemerisView(opts) {
 					+ (gain >= 0 ? "adds " : "costs ") + fmtKmS(Math.abs(gain))
 					+ " km/s, leaving " + fmtKmS(hand.vInf) + " km/s there. "
 					+ "Resulting arc: " + depKind + ".";
-				if (hand.lunarLeg) {
+				if (hand.lunarPath) {
 					depReadout.textContent += " Released from a low lunar orbit "
-						+ fmtKm(hand.lunarLeg.moonArc ? hand.lunarLeg.moonArc.rLow - systems.get("Moon").radius.equator : 0)
-						+ " up, " + fmtDhm(hand.lunarLeg.coast) + " before the SOI exit.";
+						+ fmtKm(hand.lunarPath.moonArc ? hand.lunarPath.moonArc.rLow - systems.get("Moon").radius.equator : 0)
+						+ " up, " + fmtDhm(hand.lunarPath.coast) + " before the SOI exit.";
 				}
 			} else {
 				depReadout.textContent = LUNAR_FAILURES[lun.reason]
@@ -2864,7 +2870,7 @@ export function createEphemerisView(opts) {
 		                 title: "v∞ speed", magLabel: "heading" }];
 		addDepartureArrows(hand);
 
-		// A lunar departure core/lunar-departure.js does not model has no
+		// A lunar departure core/sketch-lunar-departure.js does not model has no
 		// flight, so there is no path to draw: `hand` there is the Moon's own
 		// state with no v∞, and propagating it would draw a plausible-looking
 		// arc that is just the Moon coasting on around the Sun. The readout
@@ -2980,7 +2986,7 @@ export function createEphemerisView(opts) {
 			// than assumed. `dep` is Earth at that same epoch, so the speed bar
 			// is read against the very axis the card's prograde component is
 			// stated on, and stays continuous whether or not the departure is
-			// supported (see lunarDepartureState).
+			// supported (see lunarSketchHandoff).
 			var lun = hand && hand.lunar;
 			depMoon.show({
 				elong: moonElongationDeg(dateState.jd),

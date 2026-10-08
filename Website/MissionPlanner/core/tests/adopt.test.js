@@ -21,7 +21,7 @@ var GM_SUN = systems.get("Sun").GM;
 // state at the origin's SOI edge, and waypoint days already count from it.
 // 260-day leg to Mars.
 //
-// The hand-off is built the way departureState does: v-infinity applied to the
+// The hand-off is built the way sketchHandoff does: v-infinity applied to the
 // origin body's own motion, at an exit point one SOI radius along the outbound
 // heading. VINF below is the v-infinity that state carries, for assertions.
 // The reference is the ESCAPE body, which is Earth for a Moon origin — a lunar

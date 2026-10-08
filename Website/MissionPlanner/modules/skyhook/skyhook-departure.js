@@ -6,7 +6,7 @@
  * defaults and the drawing are all in skyhook.js, and everything a carrier
  * does around them (the body checks, the chain plumbing, the release anchor,
  * the card) is in ../platform/platform-roles.js. Registered under the module
- * id `orbital-skyhook`, which missions and the shipped presets carry.
+ * id `orbital-skyhook`, which saved missions and the example missions carry.
  */
 
 import { makeCarrier } from "../platform/platform-roles.js";

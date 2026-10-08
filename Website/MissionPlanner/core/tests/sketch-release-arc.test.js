@@ -1,9 +1,9 @@
-// Node tests for core/release-arc.js. Run from the repo root:
-//   node --test Website/MissionPlanner/core/tests/release-arc.test.js
+// Node tests for core/sketch-release-arc.js. Run from the repo root:
+//   node --test Website/MissionPlanner/core/tests/sketch-release-arc.test.js
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { releaseArc, releaseArcStateAt, releaseArcSamples } from "../release-arc.js";
+import { releaseArc, releaseArcStateAt, releaseArcSamples } from "../sketch-release-arc.js";
 import { originSoiRadius } from "../departure-estimate.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";

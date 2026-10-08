@@ -2,7 +2,7 @@
 // on, as opposed to the plan's. Run from the repo root:
 //   node --test Website/MissionPlanner/core/tests/delivered-flight.test.js
 //
-// Built on the SHIPPED missions rather than synthetic ones, so the figures
+// Built on the Moon->Ceres test mission rather than synthetic ones, so the figures
 // asserted here are the ones the compliance bar really shows.
 
 import test from "node:test";
@@ -10,12 +10,12 @@ import assert from "node:assert/strict";
 
 import { deliveredFlight, waypointDv, vInfOf, signatureOf, rebaseWaypoints }
 	from "../delivered-flight.js";
-import { defaultMission } from "../../presets/default-mission.js";
+import { moonCeresTestMission } from "../../tests/fixtures/moon-ceres-test-mission.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 
 function planOf(mission) {
-	var st = (mission || defaultMission).stages;
+	var st = (mission || moonCeresTestMission).stages;
 	var fp = st.filter(function (s) { return s.moduleId === "adopted-plan"; })[0].params;
 	var tl = st.filter(function (s) { return s.moduleId === "transfer-leg"; })[0].params;
 	// The coast's own horizon: no arrival date is committed any more, so the
@@ -30,18 +30,18 @@ function specFor(delivered, mission) {
 	         waypoints: pl.wps, horizonJd: pl.horizon };
 }
 
-test("the shipped plan's own hand-off flies its own mission", function () {
+test("the test mission's plan's own hand-off flies its own mission", function () {
 	var pl = planOf();
 	var f = deliveredFlight(specFor(pl.dep));
 	assert.equal(f.ok, true, f.reason);
-	assert.ok(f.pass, "the shipped plan should reach Ceres");
+	assert.ok(f.pass, "the test mission should reach Ceres");
 	// the figures the bar quotes, all off this one flight
 	assert.ok(Math.abs(f.pass.altitude - 17.185e6) < 0.5e6,
 		"pass altitude " + Math.round(f.pass.altitude / 1000) + " km");
 	assert.ok(Math.abs(f.vInfOut - 6550) < 50, "v-inf out " + Math.round(f.vInfOut) + " m/s");
 	assert.ok(f.pass.vInf > 0 && f.pass.vInf < f.pass.speed,
 		"v-inf in sits below the speed at the pass");
-	assert.ok(f.coastDv > 0, "the shipped plan spends something on its waypoint");
+	assert.ok(f.coastDv > 0, "the test mission spends something on its waypoint");
 });
 
 // The whole reason this module exists: the plan's hand-off and the technology's

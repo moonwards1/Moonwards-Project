@@ -92,7 +92,7 @@ test("a Moon origin is seeded from lunar distance; an unknown origin refuses", (
 	// The Moon has no heliocentric orbit record, but it does have a departure:
 	// it escapes EARTH's SOI. This is only the SEED for a plan that arrived
 	// without a release of its own — a real lunar departure is solved from the
-	// card by core/lunar-departure.js — so what it must get right is the
+	// card by core/sketch-lunar-departure.js — so what it must get right is the
 	// stretch it covers: lunar distance out to Earth's SOI, not Earth's
 	// surface out to Earth's SOI.
 	var est = estimateDeparture({ origin: "Moon", vInfVec: [1900, -600, 120], jdHandoff: JD_BASE });

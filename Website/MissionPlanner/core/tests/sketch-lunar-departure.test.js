@@ -1,4 +1,4 @@
-// node --test MissionPlanner/core/tests/lunar-departure.test.js
+// node --test MissionPlanner/core/tests/sketch-lunar-departure.test.js
 //
 // The departure from a Moon origin. What is being pinned down here:
 //
@@ -21,10 +21,10 @@ import assert from "node:assert";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
-import { flyLunarDeparture, cardVInf, cardFromVector, vInfFromState, solveShipVelocity,
+import { sketchLunarDeparture, cardVInf, cardFromVector, vInfFromState, solveShipVelocity,
          solveLunarCard, hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE,
-         passiveReleaseFor, flyEarthPassDeparture, MIN_PERIGEE }
-	from "../lunar-departure.js";
+         passiveReleaseFor, sketchEarthPassDeparture, MIN_PERIGEE }
+	from "../sketch-lunar-departure.js";
 import { edgeVInf } from "../departure-estimate.js";
 
 var O = OrbitalMath;
@@ -149,7 +149,7 @@ test("the residual is close to the Moon's speed but never equal to it", function
 	var above = 0, below = 0, worst = 0;
 	for (var d = 0; d < 60; d += 3) {
 		[2000, 3000, 4000].forEach(function (pro) {
-			var f = flyLunarDeparture({ jd: JD + d, card: { pro: pro, rad: 0, nrm: 0 } });
+			var f = sketchLunarDeparture({ jd: JD + d, card: { pro: pro, rad: 0, nrm: 0 } });
 			if (!f.ok) { return; }
 			var ratio = f.residual.mag / O.vMag(moonGeoVel(JD + d));
 			if (ratio > 1) { above++; } else { below++; }
@@ -163,7 +163,7 @@ test("the residual is close to the Moon's speed but never equal to it", function
 test("the total is the card plus the residual, by construction", function () {
 	// All three as hyperbolic excesses — the card converted from the edge
 	// speed it states (cardAsym), since edge speeds do not add.
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 2500, rad: 300, nrm: -200 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 2500, rad: 300, nrm: -200 } });
 	assert.ok(f.ok, f.reason);
 	var sum = O.vAdd(f.cardAsym, f.residual.vec);
 	assert.ok(O.vMag(O.vSub(sum, f.vInf.vec)) < 1e-6);
@@ -172,7 +172,7 @@ test("the total is the card plus the residual, by construction", function () {
 test("the card states the SOI-edge speed, not the excess behind it", function () {
 	// Earth still holds 928.5 m/s at its SOI edge, so a card typed as 3000
 	// is worth less than 3000 once the ship is clear (Notes/decisions.md).
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
 	assert.ok(f.ok, f.reason);
 	assert.ok(Math.abs(O.vMag(f.cardVec) - 3000) < 1e-6, "card keeps what was typed");
 	assert.ok(Math.abs(O.vMag(f.cardAsym) - 2852.7) < 0.5,
@@ -183,7 +183,7 @@ test("a card that does not escape Earth on its own is refused by name", function
 	// The decomposition states the ship's share as an escape in its own
 	// right; below the SOI edge's 928.5 m/s there is no such trajectory to
 	// invert, whatever the Moon might add on top.
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 800, rad: 0, nrm: 0 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 800, rad: 0, nrm: 0 } });
 	assert.equal(f.ok, false);
 	assert.equal(f.reason, "card-below-escape");
 });
@@ -193,7 +193,7 @@ test("an unchanged card buys a different departure on a different date", functio
 	// card, same ship, different day of the lunar month, different trajectory.
 	var totals = [];
 	for (var k = 0; k < 16; k++) {
-		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 16,
+		var f = sketchLunarDeparture({ jd: JD + k * LUNAR_MONTH / 16,
 		                            card: { pro: 3000, rad: 0, nrm: 0 } });
 		if (f.ok) { totals.push(f.vInf.mag); }
 	}
@@ -207,7 +207,7 @@ test("the card is what the ship pays, and never contains the Moon", function () 
 	// with the Moon; only the TOTAL does.
 	var lens = [], totals = [];
 	for (var k = 0; k < 16; k++) {
-		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 16,
+		var f = sketchLunarDeparture({ jd: JD + k * LUNAR_MONTH / 16,
 		                            card: { pro: 3000, rad: 0, nrm: 0 } });
 		if (f.ok) { lens.push(O.vMag(f.cardVec)); totals.push(f.vInf.mag); }
 	}
@@ -223,7 +223,7 @@ test("the whole lunar month flies: the outward pipeline, then the Earth-pass one
 	// takes it instead — so every phase flies, by one route or the other.
 	var routes = { outward: 0, "earth-pass": 0 };
 	for (var k = 0; k < 32; k++) {
-		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
+		var f = sketchLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
 		                            card: { pro: 3000, rad: 0, nrm: 0 } });
 		assert.ok(f.ok, "day " + k + ": " + f.reason);
 		routes[f.route]++;
@@ -236,14 +236,14 @@ test("the whole lunar month flies: the outward pipeline, then the Earth-pass one
 // ---------------------------------------------------------------------------
 
 test("supported departures head outward at the Moon", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
 	assert.ok(f.ok, f.reason);
 	var vTotal = O.vAdd(f.vMoon, f.u);
 	assert.ok(O.vDot(f.rMoon, vTotal) > 0);
 });
 
 test("no card is a named refusal, not a throw or a zero", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 0, rad: 0, nrm: 0 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 0, rad: 0, nrm: 0 } });
 	assert.equal(f.ok, false);
 	assert.equal(f.reason, "no-card");
 });
@@ -254,7 +254,7 @@ test("every refusal carries a reason a caller can show", function () {
 	             "no-pass-route", "pass-hits-Earth"];
 	[{ pro: 0, rad: 0, nrm: 0 }, { pro: -4000, rad: 0, nrm: 0 },
 	 { pro: 10, rad: 0, nrm: 0 }].forEach(function (card) {
-		var f = flyLunarDeparture({ jd: JD, card: card });
+		var f = sketchLunarDeparture({ jd: JD, card: card });
 		if (!f.ok) { assert.ok(known.indexOf(f.reason) >= 0, "unknown reason " + f.reason); }
 	});
 });
@@ -264,15 +264,15 @@ test("every refusal carries a reason a caller can show", function () {
 // ---------------------------------------------------------------------------
 
 test("the coast out to Earth's SOI is days, not hours or months", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
 	assert.ok(f.ok, f.reason);
 	assert.ok(f.coastDays > 0.5 && f.coastDays < 20,
 		"coast of " + f.coastDays + " days is not plausible");
 });
 
 test("a slower departure takes longer to reach Earth's SOI", function () {
-	var slow = flyLunarDeparture({ jd: JD, card: { pro: 2000, rad: 0, nrm: 0 } });
-	var fast = flyLunarDeparture({ jd: JD, card: { pro: 5000, rad: 0, nrm: 0 } });
+	var slow = sketchLunarDeparture({ jd: JD, card: { pro: 2000, rad: 0, nrm: 0 } });
+	var fast = sketchLunarDeparture({ jd: JD, card: { pro: 5000, rad: 0, nrm: 0 } });
 	assert.ok(slow.ok && fast.ok, (slow.reason || "") + " " + (fast.reason || ""));
 	assert.ok(slow.coastDays > fast.coastDays);
 });
@@ -291,7 +291,7 @@ test("hyperbolic coast time matches a straight radial estimate", function () {
 });
 
 test("the release speed adds the Moon's own well on top of the excess", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 3000, rad: 0, nrm: 0 } });
 	assert.ok(f.ok, f.reason);
 	// Climbing out of the Moon costs something, so the release is always faster
 	// than the excess it is left with.
@@ -306,7 +306,7 @@ test("the card vector is built on Earth's axes, so its length is the card's", fu
 });
 
 test("the ship's velocity at the Moon exceeds Earth escape speed there", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 2000, rad: 0, nrm: 0 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 2000, rad: 0, nrm: 0 } });
 	assert.ok(f.ok, f.reason);
 	var vEsc = Math.sqrt(2 * GM_EARTH / O.vMag(moonGeoPos(JD)));
 	assert.ok(f.uMag > vEsc, "ship alone must be able to escape to state a v-infinity");
@@ -320,7 +320,7 @@ test("the ship's velocity at the Moon exceeds Earth escape speed there", functio
 // Every card that flies on a given date, so a sweep tests what is actually
 // supported rather than skipping quietly.
 function flyable(jd, cards) {
-	return cards.map(function (c) { return { card: c, f: flyLunarDeparture({ jd: jd, card: c }) }; })
+	return cards.map(function (c) { return { card: c, f: sketchLunarDeparture({ jd: jd, card: c }) }; })
 		.filter(function (x) { return x.f.ok; });
 }
 
@@ -338,7 +338,7 @@ test("a solved card flies to exactly the v-infinity it was asked for", function 
 			var s = solveLunarCard({ jd: jd, vInfVec: x.f.vInf.vec, seedCard: seed });
 			if (!s.ok) { return; }
 			solved++;
-			var check = flyLunarDeparture({ jd: jd, card: s.card });
+			var check = sketchLunarDeparture({ jd: jd, card: s.card });
 			assert.ok(check.ok, "a solved card must fly: " + check.reason);
 			assert.ok(O.vMag(O.vSub(check.vInf.vec, x.f.vInf.vec)) < 1,
 				"solved card lands " + O.vMag(O.vSub(check.vInf.vec, x.f.vInf.vec)) + " m/s off");
@@ -353,7 +353,7 @@ test("the solved card is the SHIP's share, not the total it was asked for", func
 	// bills the ship for the Moon's contribution too, and the next recompute
 	// adds the residual on top of it.
 	var jd = JD + 21;
-	var truth = flyLunarDeparture({ jd: jd, card: { pro: 2500, rad: 0, nrm: 0 } });
+	var truth = sketchLunarDeparture({ jd: jd, card: { pro: 2500, rad: 0, nrm: 0 } });
 	assert.ok(truth.ok, truth.reason);
 	var s = solveLunarCard({ jd: jd, vInfVec: truth.vInf.vec });
 	assert.ok(s.ok, s.reason);
@@ -369,12 +369,12 @@ test("naively writing the total into the card overshoots, and keeps overshooting
 	// The null control for the fix: run the OLD behaviour — card := the total
 	// Lambert asked for — and watch it walk away instead of settling.
 	var jd = JD + 21;
-	var want = flyLunarDeparture({ jd: jd, card: { pro: 2500, rad: 0, nrm: 0 } }).vInf.vec;
+	var want = sketchLunarDeparture({ jd: jd, card: { pro: 2500, rad: 0, nrm: 0 } }).vInf.vec;
 	var wm = O.vMag(want);
 	var naive = cardFromVector(jd, O.vScale(want, edgeVInf(wm, "Moon") / wm));
 	var errs = [];
 	for (var i = 0; i < 3; i++) {
-		var f = flyLunarDeparture({ jd: jd, card: naive });
+		var f = sketchLunarDeparture({ jd: jd, card: naive });
 		if (!f.ok) { break; }
 		errs.push(O.vMag(O.vSub(f.vInf.vec, want)));
 		var nm = O.vMag(f.vInf.vec);
@@ -400,14 +400,14 @@ test("an unreachable ask is refused, never answered with a wrong card", function
 // ---------------------------------------------------------------------------
 
 test("the hand-off lands exactly on Earth's SOI, not near it", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
 	assert.ok(f.ok && f.soiExit, "expected a supported departure with a crossing");
 	var r = O.vMag(f.soiExit.r);
 	assert.ok(Math.abs(r - SOI_EARTH) < 1, "crossing at " + r + " m, wanted " + SOI_EARTH);
 });
 
 test("the hand-off velocity is the EDGE speed, not the asymptote", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
 	// Vis-viva across Earth's well: the two differ by exactly the grip Earth
 	// still has at the SOI radius, so the edge figure is the larger one.
 	var want = Math.sqrt(f.vInf.mag * f.vInf.mag + 2 * GM_EARTH / SOI_EARTH);
@@ -418,7 +418,7 @@ test("the hand-off velocity is the EDGE speed, not the asymptote", function () {
 });
 
 test("the crossing epoch is the coast time, so the hand-off is not the release", function () {
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
 	assert.ok(Math.abs(f.soiExit.dt / 86400 - f.coastDays) < 1e-9);
 	assert.ok(f.coastDays > 0.5, "a lunar departure takes real time to reach the SOI");
 });
@@ -426,14 +426,14 @@ test("the crossing epoch is the coast time, so the hand-off is not the release",
 test("null control: the crossing is downrange of the Moon, not at it", function () {
 	// The whole point of the hand-off is that it is somewhere else. If this
 	// ever reads ~0 the propagation has silently degenerated to the release.
-	var f = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	var f = sketchLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
 	var moved = O.vMag(O.vSub(f.soiExit.r, f.rMoon));
 	assert.ok(moved > 400e6, "crossing only " + (moved / 1e3) + " km from the Moon");
 });
 
 test("a stronger card reaches the SOI sooner and faster", function () {
-	var slow = flyLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
-	var fast = flyLunarDeparture({ jd: JD, card: { pro: 3400, rad: 900, nrm: 300 } });
+	var slow = sketchLunarDeparture({ jd: JD, card: { pro: 2800, rad: 900, nrm: 300 } });
+	var fast = sketchLunarDeparture({ jd: JD, card: { pro: 3400, rad: 900, nrm: 300 } });
 	assert.ok(slow.ok && fast.ok);
 	assert.ok(fast.soiExit.dt < slow.soiExit.dt, "more energy should arrive earlier");
 	assert.ok(O.vMag(fast.soiExit.v) > O.vMag(slow.soiExit.v));
@@ -444,7 +444,7 @@ test("a stronger card reaches the SOI sooner and faster", function () {
 // ---------------------------------------------------------------------------
 
 test("an exit ask is met at the crossing, not merely near it", function () {
-	var ref = flyLunarDeparture({ jd: JD, card: { pro: 2900, rad: 1000, nrm: 400 } });
+	var ref = sketchLunarDeparture({ jd: JD, card: { pro: 2900, rad: 1000, nrm: 400 } });
 	assert.ok(ref.ok && ref.soiExit);
 	// Ask for a velocity a little off the one that card delivers.
 	var want = O.vAdd(ref.soiExit.v, [60, -40, 25]);
@@ -461,7 +461,7 @@ test("null control: rescaling the ask to asymptotic magnitude does NOT solve it"
 	// magnitude alone keeps the wrong DIRECTION — and the asymptote solve then
 	// answers a question nobody asked. If this ever passes under 1 m/s the two
 	// modes have collapsed into one and `at` is no longer buying anything.
-	var ref = flyLunarDeparture({ jd: JD, card: { pro: 2900, rad: 1000, nrm: 400 } });
+	var ref = sketchLunarDeparture({ jd: JD, card: { pro: 2900, rad: 1000, nrm: 400 } });
 	var want = O.vAdd(ref.soiExit.v, [60, -40, 25]);
 	var wm = O.vMag(want);
 	var asym = Math.sqrt(wm * wm - 2 * GM_EARTH / SOI_EARTH);
@@ -486,7 +486,7 @@ test("an exit solve refuses an ask below Earth's escape at the SOI", function ()
 function passFlights() {
 	var out = [];
 	for (var k = 0; k < 32; k++) {
-		var f = flyLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
+		var f = sketchLunarDeparture({ jd: JD + k * LUNAR_MONTH / 32,
 		                            card: { pro: 3000, rad: 0, nrm: 0 } });
 		if (f.ok && f.route === "earth-pass") { out.push(f); }
 	}
@@ -548,7 +548,7 @@ test("an inbound coast time counts the fall to perigee", function () {
 });
 
 test("the Earth-pass pipeline declines a card with nothing to fly", function () {
-	assert.equal(flyEarthPassDeparture({ jd: JD, card: { pro: 0, rad: 0, nrm: 0 } }), null);
+	assert.equal(sketchEarthPassDeparture({ jd: JD, card: { pro: 0, rad: 0, nrm: 0 } }), null);
 });
 
 test("target mode finds cards on the Earth-pass side of the seam", function () {

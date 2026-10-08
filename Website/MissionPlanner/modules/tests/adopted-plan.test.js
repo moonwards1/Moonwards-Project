@@ -20,7 +20,7 @@ import adoptedPlan, { computeCompliance, complianceWarnings, planSummary,
 	windowDaysOf,
 	VINF_TOL, AIM_TOL_DEG, DEFAULT_WINDOW_DAYS } from "../adopted-plan/adopted-plan.js";
 import { releaseEpochFor } from "../../core/release-epoch.js";
-import { defaultMission } from "../../presets/default-mission.js";
+import { moonCeresTestMission } from "../../tests/fixtures/moon-ceres-test-mission.js";
 import { estimateDeparture, originSoiRadius } from "../../core/departure-estimate.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { Frames } from "../../../Shared/frames.js";
@@ -34,7 +34,7 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(adoptedPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
+	reg.register(arrivalLeg);    // the test mission's terminal stage — the arrival
 	                             // flyby leg; arrival tech is empty by default
 	return reg;
 }
@@ -206,11 +206,11 @@ test("planSummary: a damaged plan degrades to nulls, not a throw", function () {
 
 // ---- the comply rule through the real engine --------------------------------
 
-// The shipped preset IS the comply-mode chain; deviations are dialled on the
+// The test mission IS the comply-mode chain; deviations are dialled on the
 // skyhook and observed on the plan stage, and on the coast, which flies from
 // what the skyhook really delivers.
 function presetChain() {
-	var res = deserializeWorld(defaultMission);
+	var res = deserializeWorld(moonCeresTestMission);
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();   // moon-platform, orbital-skyhook, departure-leg,
@@ -220,12 +220,12 @@ function presetChain() {
 	         plan: stages[3].id, leg: stages[4].id };
 }
 
-test("comply: the shipped preset's skyhook alone falls short of the full departure requirement", function () {
-	// The preset's departure.v folds the injection into the committed hand-off
-	// state (presets/default-mission.js's header), so the skyhook's own release
-	// physics does not cover the whole committed departure by itself. That gap
-	// is deliberate and shipped: the mission shows the real warning rather than
-	// having the skyhook retuned to paper over it. The plan still reports its
+test("comply: the test mission's skyhook alone falls short of the full departure requirement", function () {
+	// The test mission's departure.v folds the injection into the committed
+	// hand-off state, so the skyhook's own release physics does not cover the
+	// whole committed departure by itself. That gap is deliberate: the mission
+	// shows the real warning rather than having the skyhook retuned to paper
+	// over it. The plan still reports its
 	// own facts regardless of the tech's shortfall.
 	var c = presetChain();
 	var rPlan = c.engine.resultFor(c.plan);
@@ -236,7 +236,7 @@ test("comply: the shipped preset's skyhook alone falls short of the full departu
 	// delivers, not the plan's committed one, so the Coast timeline starts
 	// where the Departure timeline ends. The plan's own epoch is what the
 	// compliance rows grade against, and it is NOT this.
-	var presetPlan = defaultMission.stages[3].params;
+	var presetPlan = moonCeresTestMission.stages[3].params;
 	var delivered = c.engine.resultFor(c.dep).output.data;
 	assert.equal(rPlan.output.data.jd, delivered.jd);
 	assert.deepEqual(rPlan.output.data.r, delivered.r);
@@ -249,9 +249,9 @@ test("comply: the shipped preset's skyhook alone falls short of the full departu
 	assert.match(rPlan.events[0].label, /Exit origin SOI/);
 	assert.equal(rPlan.events[0].jd, delivered.jd);
 	assert.equal(presetPlan.arrival.jd, undefined,
-		"the shipped plan commits to a destination and a catch speed, not a date");
+		"the test mission commits to a destination and a catch speed, not a date");
 
-	// The coast flies that delivered hand-off, so the shipped shortfall is
+	// The coast flies that delivered hand-off, so the shortfall is
 	// visible as a real miss rather than hidden behind a clean drawn arc —
 	// the whole point of making the flown flight the clock.
 	var rLeg = c.engine.resultFor(c.leg);
@@ -297,7 +297,7 @@ test("boundary fallback: with nothing delivered the coast flies the PLAN's own s
 	c.world.set({ removeStage: c.sky });
 	c.world.set({ removeStage: c.moon });
 
-	var presetPlan = defaultMission.stages[3].params;
+	var presetPlan = moonCeresTestMission.stages[3].params;
 	var rPlan = c.engine.resultFor(c.plan);
 	assert.equal(rPlan.status, "ok");
 	assert.equal(rPlan.output.data.jd, presetPlan.departure.jd);
@@ -366,8 +366,8 @@ test("boundary: removing the last carrier (no-carrier) still leaves the coast fl
 	assert.deepEqual(rLeg.warnings, []);
 });
 
-test("comply: reverting the tech to its shipped params reproduces the same (still-short) warnings", function () {
-	// "Fixing" does not mean "clears every warning" here — the shipped skyhook
+test("comply: reverting the tech to the test mission params reproduces the same (still-short) warnings", function () {
+	// "Fixing" does not mean "clears every warning" here — the test mission skyhook
 	// alone never covers the whole committed departure (see the test above).
 	// What this checks is that recompute is deterministic and reversible: a
 	// detune changes the shortfall, and undoing it lands back on the exact
@@ -379,7 +379,7 @@ test("comply: reverting the tech to its shipped params reproduces the same (stil
 	c.world.set({ stage: c.sky, params: { relAlt: 5000e3 } });   // detune further
 	assert.notDeepEqual(c.engine.resultFor(c.plan).warnings, baseline);
 
-	c.world.set({ stage: c.sky, params: { relAlt: 6000e3 } });   // back to the shipped default
+	c.world.set({ stage: c.sky, params: { relAlt: 6000e3 } });   // back to the test mission value
 	assert.deepEqual(c.engine.resultFor(c.plan).warnings, baseline);
 });
 
@@ -402,13 +402,13 @@ test("update: a damaged plan fails hard (diagnostic), not as a warning", functio
 	assert.equal(out.code, "bad-params");
 });
 
-test("the baked preset plan is internally consistent: v∞, anchor, window", function () {
-	// Guards the preset's adopted numbers. The committed departure state is baked
+test("the test mission plan is internally consistent: v∞, anchor, window", function () {
+	// Guards the test mission's adopted numbers. The committed departure state is baked
 	// data, not something any live code re-derives, so what is checkable is its
 	// own internal consistency: the required v∞ it encodes, that the hand-off
 	// really sits on Earth's SOI edge (where a departure leg delivers, and where
 	// core/adopt.js commits), and that its timing fields hang together.
-	var planStage = defaultMission.stages[3];
+	var planStage = moonCeresTestMission.stages[3];
 	assert.equal(planStage.moduleId, "adopted-plan");
 	var p = planStage.params;
 	var earthAt = Frames.bodyHelioState("Earth", p.departure.jd);
@@ -426,13 +426,13 @@ test("the baked preset plan is internally consistent: v∞, anchor, window", fun
 	assert.equal(p.handoffWindowDays, 1);
 	// The departure leg's release leads the hand-off by a real lunar flight
 	// time. It is baked, not re-derivable: a Moon departure's release is the
-	// planner's own input (core/lunar-departure.js flies forward from it), so
+	// planner's own input (core/sketch-lunar-departure.js flies forward from it), so
 	// there is no formula here to check it against — only that it is sane.
-	var legParams = defaultMission.stages
+	var legParams = moonCeresTestMission.stages
 		.filter(function (s) { return s.moduleId === "departure-leg"; })[0].params;
 	var lead = p.departure.jd - legParams.releaseJd;
 	assert.ok(lead > 0.5 && lead < 20, "release leads the hand-off by " + lead.toFixed(3) + " d");
-	// This preset predates the forward model and carries no release of its
+	// This test mission predates the forward model and carries no release of its
 	// own, so the Ephemeris tab cannot reopen it for revision. Re-solving it
 	// is a separate decision; this records the state rather than asserting it
 	// is fine.

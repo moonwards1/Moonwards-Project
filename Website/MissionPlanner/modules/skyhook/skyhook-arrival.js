@@ -6,7 +6,7 @@
  * sub-escape tip) and the trim-Δv figures are in skyhook.js, and everything a
  * terminal stage does around them (the approach measurement, the intercept
  * check, the card) is in ../platform/platform-roles.js. Registered under the
- * module id `arrival-skyhook`, which missions and the shipped presets carry.
+ * module id `arrival-skyhook`, which saved missions and the example missions carry.
  */
 
 import { makeTerminal, computeCapture } from "../platform/platform-roles.js";

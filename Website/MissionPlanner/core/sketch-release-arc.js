@@ -1,4 +1,4 @@
-/* MissionPlanner/core/release-arc.js — the escape hyperbola from a low orbit
+/* MissionPlanner/core/sketch-release-arc.js — the escape hyperbola from a low orbit
  * out to the origin body's SOI edge, sketched for the Ephemeris tab's origin
  * view.
  *
