@@ -6,7 +6,10 @@
  * drawn leg (seconds from the hand-off, the same clock every "t" in the
  * Ephemeris tab reads).
  *
- *   ORIGIN      — the first POV_MIN_DAYS of the flight.
+ *   ORIGIN      — from the release, when the caller has a release arc to show
+ *                 (core/release-arc.js; its flight time arrives as `leadS`),
+ *                 to POV_MIN_DAYS after the SOI exit. Time 0 is the SOI exit —
+ *                 the flight's start — so the release sits at -leadS.
  *   DESTINATION — from where the ship enters the destination's SOI to
  *                 POV_AFTER_CA_DAYS past closest approach, and never less than
  *                 POV_MIN_DAYS long. At Mars that is the SOI plus a few days of
@@ -24,10 +27,11 @@ var DAY = 86400;
 export var POV_MIN_DAYS = 10;
 export var POV_AFTER_CA_DAYS = 1;
 
-// { t0, t1 } (s) for the origin view, or null with no flight.
-export function originWindow(totalT) {
+// { t0, t1 } (s) for the origin view, or null with no flight. `leadS` is the
+// time from the release to the SOI exit (0 or omitted: no release arc).
+export function originWindow(totalT, leadS) {
 	if (!(totalT > 0)) { return null; }
-	return { t0: 0, t1: Math.min(totalT, POV_MIN_DAYS * DAY) };
+	return { t0: leadS > 0 ? -leadS : 0, t1: Math.min(totalT, POV_MIN_DAYS * DAY) };
 }
 
 // The global time the ship last crosses INTO a sphere of radius soiR before

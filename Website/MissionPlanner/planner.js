@@ -33,7 +33,7 @@
 import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
 import { defaultWorkspaceMain } from "./presets/default-mission.js";
-import { EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
+import { EXAMPLE_SECTIONS, EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink } from "./ui/share-link.js";
 import { confirmDialog } from "./ui/confirm-dialog.js";
@@ -367,12 +367,17 @@ tabPlusEl.addEventListener("click", duplicateActiveMission);
 // from the catalog label with de-duplication, so opening the same example twice
 // doesn't collide.
 var exampleSelectEl = document.getElementById("mp-example-select");
-EXAMPLE_MISSIONS.forEach(function (ex) {
-	var opt = document.createElement("option");
-	opt.value = ex.id;
-	opt.textContent = ex.label;
-	if (ex.blurb) { opt.title = ex.blurb; }
-	exampleSelectEl.appendChild(opt);
+EXAMPLE_SECTIONS.forEach(function (section) {
+	var group = document.createElement("optgroup");
+	group.label = section.title;
+	section.missions.forEach(function (ex) {
+		var opt = document.createElement("option");
+		opt.value = ex.id;
+		opt.textContent = ex.label;
+		if (ex.blurb) { opt.title = ex.blurb; }
+		group.appendChild(opt);
+	});
+	exampleSelectEl.appendChild(group);
 });
 exampleSelectEl.addEventListener("change", function () {
 	var id = exampleSelectEl.value;

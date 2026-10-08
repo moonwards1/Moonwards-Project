@@ -31,9 +31,14 @@
  * two-body crossing from lunar distance out to Earth's SOI, since a lunar
  * departure starts a quarter of the way out rather than at Earth's surface.
  *
- * Every other origin, Earth included, uses the naive estimate (SOI radius /
- * v∞). Earth is not special here: a departure from Earth leaves from Earth,
- * the same as one from Mars leaves from Mars.
+ * Every other origin, Earth included, is timed from its low orbit: the ship
+ * releases at periapsis of the escape hyperbola (core/release-arc.js draws it)
+ * at the body's low-orbit radius (Shared/orbit.js `lowOrbit`), and the estimate
+ * is the two-body time from there to the SOI edge. Earth is not special here:
+ * a departure from Earth leaves from Earth, the same as one from Mars leaves
+ * from Mars. The time depends only on the excess speed, the low-orbit radius
+ * and the SOI radius — not on the heading, which only decides where the
+ * hyperbola meets the SOI.
  *
  * v∞ IS ASYMPTOTIC HERE. The hand-off vector is the ship's velocity AT the SOI
  * edge, where the primary's potential is not yet spent — 929 m/s worth for
@@ -83,6 +88,13 @@ export function originSoiRadius(origin) {
 	return O.sphereOfInfluence(semiMajor(sys.orbit), sys.GM, GM_SUN);
 }
 
+// The radius (m, from the body's centre) a departure from `origin` is released
+// at: the body's own low orbit. null for an origin with no system record.
+export function originLowOrbitRadius(origin) {
+	var sys = systems.get(origin);
+	return sys ? sys.lowOrbit.periapsis : null;
+}
+
 // The true hyperbolic excess behind a speed measured AT the SOI edge, where
 // the primary still has a grip. Returns 0 for an edge speed that is not
 // actually escaping, so a caller sees "no departure" rather than a NaN.
@@ -128,7 +140,7 @@ export function moonProgradeSpeed(jd, earthHelioV) {
 //   jdHandoff    // the plan's nominal Departure→Coast hand-off epoch
 // }
 // Returns { ok: true, seconds, days, jdLaunch, profile, vInf } with profile
-// "naive" or "lunar-seed", or { ok: false, reason } when there's no meaningful
+// "low-orbit" or "lunar-seed", or { ok: false, reason } when there's no meaningful
 // departure to time ("no-vinf"), the origin has no heliocentric orbit record
 // to escape from ("unknown-origin"), or the crossing is degenerate. `vInf` is
 // the TRUE hyperbolic excess, not the hand-off's edge speed.
@@ -156,7 +168,10 @@ export function estimateDeparture(spec) {
 		return done(t, "lunar-seed");
 	}
 
-	return done(rSoi / vInf, "naive");
+	var escape = systems.get(Frames.escapeReferenceFor(spec.origin));
+	var tLow = O.soiExitTimeDirect(escape.GM, vInf, originLowOrbitRadius(spec.origin), rSoi);
+	if (tLow == null) { return { ok: false, reason: "degenerate" }; }
+	return done(tLow, "low-orbit");
 }
 
 // The arrival mirror (destination Earth): time (s) to cross INBOUND from

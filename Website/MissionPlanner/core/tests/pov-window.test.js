@@ -11,6 +11,12 @@ function linePass(v, b, tc) {
 	return function (t) { return Math.hypot(v * (t - tc), b); };
 }
 
+test("originWindow reaches back to the release when there is a release arc", function () {
+	assert.deepEqual(originWindow(100 * DAY, 3 * DAY), { t0: -3 * DAY, t1: POV_MIN_DAYS * DAY });
+	assert.deepEqual(originWindow(2 * DAY, 3 * DAY), { t0: -3 * DAY, t1: 2 * DAY });
+	assert.equal(originWindow(0, 3 * DAY), null);
+});
+
 test("originWindow spans the first POV_MIN_DAYS, cut short by a shorter flight", function () {
 	assert.deepEqual(originWindow(100 * DAY), { t0: 0, t1: POV_MIN_DAYS * DAY });
 	assert.deepEqual(originWindow(3 * DAY), { t0: 0, t1: 3 * DAY });

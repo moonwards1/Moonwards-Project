@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 
 import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
-	originSoiRadius, MIN_VINF, MOON_DIST
+	originSoiRadius, originLowOrbitRadius, MIN_VINF, MOON_DIST
 } from "../departure-estimate.js";
 import { LunarEphemeris as LE } from "../../../Shared/lunar-ephemeris.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -62,16 +62,30 @@ test("tiny or missing v-infinity: nothing to time", () => {
 	assert.equal(estimateDeparture({ origin: "Earth", vInfVec: null, jdHandoff: JD_BASE }).ok, false);
 });
 
-test("non-Earth origin keeps the naive estimate, on the TRUE excess speed", () => {
+test("a body origin is timed from its low orbit, on the TRUE excess speed", () => {
 	var est = estimateDeparture({ origin: "Mars", vInfVec: [3000, 0, 0], jdHandoff: JD_BASE });
 	assert.ok(est.ok);
-	assert.equal(est.profile, "naive");
+	assert.equal(est.profile, "low-orbit");
 	// The card's 3,000 m/s is measured at the SOI edge, where Mars still has a
-	// grip; the excess behind it is smaller, so the crossing takes longer than
-	// dividing by the edge speed would say.
+	// grip; the excess behind it is smaller.
 	assert.ok(est.vInf < 3000, "excess is below the edge speed");
-	assert.ok(Math.abs(est.seconds - originSoiRadius("Mars") / est.vInf) < 1);
-	assert.ok(est.seconds > originSoiRadius("Mars") / 3000, "and longer than the naive edge-speed answer");
+	var mars = systems.get("Mars");
+	assert.equal(est.seconds,
+		O.soiExitTimeDirect(mars.GM, est.vInf, originLowOrbitRadius("Mars"), originSoiRadius("Mars")));
+	// The ship is fastest near the body, so crossing the SOI from a low orbit
+	// takes less than the straight-line SOI radius over the excess speed.
+	assert.ok(est.seconds < originSoiRadius("Mars") / est.vInf);
+	assert.ok(est.seconds > 0.5 * originSoiRadius("Mars") / est.vInf);
+});
+
+test("the departure time does not depend on the heading, only on the excess speed", () => {
+	var edge = Math.sqrt(3000 * 3000 + 2 * EARTH.GM / originSoiRadius("Earth"));
+	var a = estimateDeparture({ origin: "Earth", vInfVec: [edge, 0, 0], jdHandoff: JD_BASE });
+	var b = estimateDeparture({ origin: "Earth", vInfVec: [0, -edge * 0.6, edge * 0.8], jdHandoff: JD_BASE });
+	assert.equal(a.seconds, b.seconds);
+	// Earth at 3 km/s of excess: about three days, not the four a straight line
+	// across the SOI at that speed would say.
+	assert.ok(a.days > 2.8 && a.days < 3.4, "days " + a.days);
 });
 
 test("a Moon origin is seeded from lunar distance; an unknown origin refuses", () => {

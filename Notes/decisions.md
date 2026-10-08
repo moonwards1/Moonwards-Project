@@ -197,9 +197,10 @@ the hand-off epoch at every origin but the Moon. `core/adopt.js`
 commits that state verbatim, so adopt and "Paste mission link…" round-trip
 exactly for a plan authored here.
 
-The exit point on the SOI sphere is always this tab's own model: one SOI
-radius along the heading, or for a Moon origin the crossing its nominal
-release reaches. A pasted mission whose technology left from elsewhere is
+The exit point on the SOI sphere is always this tab's own model: the end of
+the escape hyperbola traced forward from a low-orbit release (see "The
+Origin view shows the release arc"), or for a Moon origin the crossing its
+nominal release reaches. A pasted mission whose technology left from elsewhere is
 NOT pinned to that point: the Ephemeris tab is a sketching tool, and
 disagreeing with the mission tab by the difference between the two departure
 models is expected (~100,000 km at Ceres in the Moon → Ceres example).
@@ -208,6 +209,24 @@ At every origin the departure estimate (`departure-estimate.js`)
 is information only: read backwards from the hand-off for the Moon widget and
 the release anchor, never bending the drawn arc. The marker's rendezvous is
 the destination body's own position.
+
+### The Origin view shows the release arc
+
+The flight's clock still starts at the SOI exit (t = 0): the interplanetary
+trajectory is what the Ephemeris tab sketches. Ahead of it, at every origin but
+the Moon, the Origin view draws the escape hyperbola from the body's low orbit
+(`core/release-arc.js`), at t < 0 down to the release.
+
+- The release is a point on the body's equator, moving in its spin sense,
+  chosen so the hyperbola leaves along the card's heading; the exit point is
+  wherever that arc reaches the SOI edge. A heading the equator cannot reach
+  gets the nearest release point, and the arc is not described further.
+- Periapsis is the body's low orbit (`lowOrbitAltitude` in `Shared/orbit.js`;
+  the gas giants are 1,000 km up). Flight time from there to the SOI edge is the
+  departure estimate, and depends on speed alone, never on the heading.
+- A card that does not escape draws nothing; the readout says why.
+- A Moon origin has no release arc here; it is flown by
+  `core/lunar-departure.js`.
 
 ### Recalculate the departure requirement once the real exit point is known
 

@@ -4,6 +4,12 @@
  * from a drop-down menu where users can choose from a small number of
  * example missions").
  *
+ * The catalog is two sections, each a titled group in the drop-down:
+ *   Unbuilt — the mission as it arrives from the Ephemeris tab: the adopted
+ *             plan, no departure or arrival technology set up.
+ *   Built   — the same missions, solved: technology and waypoints defined.
+ * Each Built mission shares its `id` suffix and label with its Unbuilt twin.
+ *
  * Each entry's `mission` is a serialized World (core/world.js's
  * deserializeWorld shape) and `workspace` is the suggested main-pane frame id
  * for a fresh spawn (mission-view.js's `defaultMain`, e.g. "body:Earth-Moon"
@@ -12,62 +18,30 @@
  * `mission` on every pick — the catalog entries are stateless data, shared
  * by reference across however many tabs get spawned from them, so each
  * spawn must never hand out a live object two tabs could both mutate.
- *
- * Most entries are just the adopted plan a freshly created mission carries
- * once it's adopted on the Ephemeris tab — no departure or arrival technology
- * configured. The "partly solved" entry also carries a configured departure
- * technology and a coast that reaches its destination, leaving the arrival
- * for the user.
  */
 
-import { moonMars2039Mission, moonMars2039Workspace } from "./moon-mars-2039.js";
-import { moonCeres2032Mission, moonCeres2032Workspace } from "./moon-ceres-2032.js";
-import { moonCeres2032PartialMission, moonCeres2032PartialWorkspace } from "./moon-ceres-2032-partial.js";
-import { ceresMercury2030Mission, ceresMercury2030Workspace } from "./ceres-mercury-2030.js";
-import { earthMars2035Mission, earthMars2035Workspace } from "./earth-mars-2035.js";
-import { ceresMars2038PartialMission, ceresMars2038PartialWorkspace } from "./ceres-mars-2038-partial.js";
+import { moonMars2035UnbuiltMission, moonMars2035UnbuiltWorkspace } from "./moon-mars-2035-unbuilt.js";
 
-export var EXAMPLE_MISSIONS = [
+export var EXAMPLE_SECTIONS = [
 	{
-		id: "moon-mars-2039",
-		label: "Moon → Mars 2039",
-		blurb: "Adopted plan only — no departure or arrival technology configured.",
-		mission: moonMars2039Mission,
-		workspace: moonMars2039Workspace
+		title: "Unbuilt",
+		missions: [
+			{
+				id: "unbuilt-moon-mars-2035",
+				label: "Moon → Mars 2035",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: moonMars2035UnbuiltMission,
+				workspace: moonMars2035UnbuiltWorkspace
+			}
+		]
 	},
 	{
-		id: "earth-mars-2035",
-		label: "Earth → Mars 2035",
-		blurb: "Adopted plan only — the coast reaches Mars's orbit inside both proximity limits.",
-		mission: earthMars2035Mission,
-		workspace: earthMars2035Workspace
-	},
-	{
-		id: "moon-ceres-2032",
-		label: "Moon → Ceres 2032",
-		blurb: "Adopted plan only — no departure or arrival technology configured.",
-		mission: moonCeres2032Mission,
-		workspace: moonCeres2032Workspace
-	},
-	{
-		id: "ceres-mercury-2030",
-		label: "Ceres → Mercury 2030",
-		blurb: "Adopted plan only — no departure or arrival technology configured.",
-		mission: ceresMercury2030Mission,
-		workspace: ceresMercury2030Workspace
-	},
-	{
-		id: "moon-ceres-2032-partial",
-		label: "Moon → Ceres 2032 (partly solved)",
-		blurb: "Lunar skyhook, a departure burn and a coast correction reach Ceres — the arrival is left to you.",
-		mission: moonCeres2032PartialMission,
-		workspace: moonCeres2032PartialWorkspace
-	},
-	{
-		id: "ceres-mars-2038-partial",
-		label: "Ceres → Mars 2038 (partly solved)",
-		blurb: "Departure AND arrival skyhooks both configured — opens on the Arrival phase, catch already aimed.",
-		mission: ceresMars2038PartialMission,
-		workspace: ceresMars2038PartialWorkspace
+		title: "Built",
+		missions: []
 	}
 ];
+
+// Every entry, flattened — for lookup by id.
+export var EXAMPLE_MISSIONS = EXAMPLE_SECTIONS.reduce(function (all, s) {
+	return all.concat(s.missions);
+}, []);

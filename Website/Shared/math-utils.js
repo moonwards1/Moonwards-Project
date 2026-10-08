@@ -691,6 +691,24 @@ export const OrbitalMath = {
 			return dt >= 0 ? dt : null;
 		},
 
+		// State on a hyperbola `tau` seconds from periapsis (negative before it),
+		// in the PERIFOCAL frame: x toward periapsis, y along the motion there.
+		// rp is the periapsis radius (m), e > 1 the eccentricity. Returns
+		// { r: [x, y], v: [vx, vy], rMag, nu } in m and m/s. Closed form through
+		// the hyperbolic Kepler equation, so it holds for any tau including 0.
+		hyperbolaPerifocal: function (GM, rp, e, tau) {
+			var a = rp / (e - 1);                        // |semi-major axis|
+			var F = OrbitalMath._keplerH(Math.sqrt(GM / (a * a * a)) * tau, e);
+			var nu = 2 * Math.atan2(Math.sqrt(e + 1) * Math.sinh(F / 2),
+			                        Math.sqrt(e - 1) * Math.cosh(F / 2));
+			var p = rp * (1 + e);
+			var rMag = p / (1 + e * Math.cos(nu));
+			var k = Math.sqrt(GM / p);
+			return { r: [rMag * Math.cos(nu), rMag * Math.sin(nu)],
+			         v: [-k * Math.sin(nu), k * (e + Math.cos(nu))],
+			         rMag: rMag, nu: nu };
+		},
+
 		// ---- SOI-exit duration estimates (Mission Planner task D7) -------------
 		// How long a departure takes to leave a primary's sphere of influence,
 		// knowing only the hyperbolic excess speed — no course, no release
