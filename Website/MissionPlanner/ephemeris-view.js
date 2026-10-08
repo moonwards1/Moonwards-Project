@@ -2198,7 +2198,7 @@ export function createEphemerisView(opts) {
 			if (destSoi) { destSoi.visible = false; }
 			setCardEmpty(true);
 			frame.place(dateState.jd);
-			if (pov) { setPovChevron(pov, null); }
+			if (pov) { setPovChevron(pov, null); pov.frame.place(dateState.jd); }
 			return;
 		}
 		if (!state.marker.mode) { state.marker.mode = "free"; }
@@ -2232,7 +2232,7 @@ export function createEphemerisView(opts) {
 			setCardEmpty(true);
 			setHint("No drawn trajectory to probe — fix the leg, then click it to place a marker.");
 			frame.place(dateState.jd);
-			if (pov) { setPovChevron(pov, null); }
+			if (pov) { setPovChevron(pov, null); pov.frame.place(dateState.jd); }
 			return;
 		}
 
@@ -2393,7 +2393,15 @@ export function createEphemerisView(opts) {
 	// a Moon origin that is the Moon, drawn in the Earth-centred scene.
 	function povBody(kind) { return kind === "origin" ? state.origin : state.leg.destination; }
 
+	// A view can be opened whenever it has a body to look at: the origin always
+	// does, the destination once one is chosen. Whether a flight is drawn in it
+	// is a separate matter (povHasFlight) — with none, the view shows the body
+	// and its surroundings at the date bar's epoch.
 	function povAvailable(kind) {
+		return kind === "origin" || !!state.leg.destination;
+	}
+
+	function povHasFlight(kind) {
 		if (!trajLeg || !(trajTotalT > 0)) { return false; }
 		return kind === "origin" || !!(state.leg.destination && destApproach);
 	}
@@ -2465,14 +2473,21 @@ export function createEphemerisView(opts) {
 	// Redraw the active POV from the current leg: its window, its path and
 	// markings. `refit` re-aims the camera at the body, close enough that it
 	// is POV_BODY_PX across.
-	// Drops back to the helio view if the POV no longer has anything to show.
+	// Drops back to the helio view only if the POV has no body left to look at
+	// (its destination was cleared). With no flight it draws the body alone.
 	function drawPov(refit) {
 		if (!state.pov) { return; }
 		if (!povAvailable(state.pov)) { setPov(null); return; }
 		if (attachPovScene()) { refit = true; }
-		povWin = computePovWindow(state.pov);
-		if (!povWin) { setPov(null); return; }
 		var isDest = state.pov === "dest";
+		povWin = povHasFlight(state.pov) ? computePovWindow(state.pov) : null;
+		if (!povWin) {
+			drawPovScene(pov, { path: null, start: null, mark: null, catchDisc: isDest });
+			pov.frame.place(dateState.jd);
+			setPovChevron(pov, null);
+			if (refit) { refitPov(); }
+			return;
+		}
 		var path = samplePovPath(povWin.t0, povWin.t1);
 		// The hand-off dot is the SOI exit (time 0); at an origin with a release
 		// arc, the release point is marked as well.
@@ -2484,19 +2499,21 @@ export function createEphemerisView(opts) {
 				: (releaseArcNow ? { kind: "release", r: releaseArcNow.release.r } : null),
 			catchDisc: isDest
 		});
-		if (refit) {
-			var f = pov.frame;
-			// A sphere of radius R at distance d spans R·h / (d·tan(fov/2))
-			// pixels on a pane h pixels tall; solved for d.
-			var R = systems.get(povBody(state.pov)).radius / 1e6;   // scene units
-			var h = paneMainEl.clientHeight || 600;
-			var d = R * h / (POV_BODY_PX * Math.tan(f.camera.fov * Math.PI / 360));
-			f.cam.radius = Math.max(f.zoomMin, Math.min(f.zoomMax, d));
-			state.povFocus = "body";
-			f.focusBody = povBody(state.pov);
-			var node = f.bodyNode(f.focusBody);
-			if (node) { f.cam.target.copy(node.position); }
-		}
+		if (refit) { refitPov(); }
+	}
+
+	function refitPov() {
+		var f = pov.frame;
+		// A sphere of radius R at distance d spans R·h / (d·tan(fov/2))
+		// pixels on a pane h pixels tall; solved for d.
+		var R = systems.get(povBody(state.pov)).radius / 1e6;   // scene units
+		var h = paneMainEl.clientHeight || 600;
+		var d = R * h / (POV_BODY_PX * Math.tan(f.camera.fov * Math.PI / 360));
+		f.cam.radius = Math.max(f.zoomMin, Math.min(f.zoomMax, d));
+		state.povFocus = "body";
+		f.focusBody = povBody(state.pov);
+		var node = f.bodyNode(f.focusBody);
+		if (node) { f.cam.target.copy(node.position); }
 	}
 
 	// Enter a POV ("origin" | "dest") or return to the helio view (null).
@@ -2515,7 +2532,7 @@ export function createEphemerisView(opts) {
 		} else {
 			state.pov = kind;
 			drawPov(true);
-			if (state.pov) { putMarkerInPovWindow(); }
+			if (state.pov && povWin) { putMarkerInPovWindow(); }
 		}
 		updateCardForPov();
 		updateMarker();
@@ -2618,10 +2635,11 @@ export function createEphemerisView(opts) {
 		var o = povAvailable("origin"), d = povAvailable("dest");
 		povBtns.origin.disabled = !o;
 		povBtns.dest.disabled = !d;
-		povBtns.origin.title = o ? "View the start of the flight from " + state.origin + "."
-			: "No flight drawn yet.";
-		povBtns.dest.title = d ? "View the approach from " + state.leg.destination + "."
-			: (state.leg.destination ? "No flight drawn yet." : "Choose a destination first.");
+		povBtns.origin.title = povHasFlight("origin") ? "View the start of the flight from " + state.origin + "."
+			: "View " + state.origin + " (no flight drawn yet).";
+		povBtns.dest.title = povHasFlight("dest") ? "View the approach from " + state.leg.destination + "."
+			: (state.leg.destination ? "View " + state.leg.destination + " (no flight drawn yet)."
+			: "Choose a destination first.");
 		povBtns.sun.title = "Back to the whole solar system.";
 		povBtns.origin.classList.toggle("active", state.pov === "origin");
 		povBtns.dest.classList.toggle("active", state.pov === "dest");

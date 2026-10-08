@@ -188,9 +188,11 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   loads here alone, as paste always did. The scratchpad is a singleton with no
   undo, so the dialog carries a standing warning to paste in another browser
   window if what is here is worth keeping.
-  **The POV buttons** in the date bar (Origin / Destination / Solar system),
-  or a double-click on the origin body or the destination "×", show the
-  flight from one end in that body's own frame: the same leg, re-expressed
+  **The POV buttons** in the date bar (Origin / Destination / Solar system) are
+  never blocked by the state of the flight: a view opens whenever it has a body
+  to show (the destination's needs one chosen), and with no flight drawn it shows
+  the body alone. With a flight, they (or a double-click on the origin body or
+  the destination "×") show the flight from one end in that body's own frame: the same leg, re-expressed
   relative to the body, over the window `core/pov-window.js` sets. The marker
   card's slider then spans that window in days, its position rows read
   against the body (distance, speed, latitude over its equator, time to
