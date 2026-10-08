@@ -225,8 +225,26 @@ the Moon, the Origin view draws the escape hyperbola from the body's low orbit
   the gas giants are 1,000 km up). Flight time from there to the SOI edge is the
   departure estimate, and depends on speed alone, never on the heading.
 - A card that does not escape draws nothing; the readout says why.
-- A Moon origin has no release arc here; it is flown by
-  `core/lunar-departure.js`.
+- A Moon origin is drawn the same way in the Origin view
+  (`core/lunar-release-leg.js`): a hyperbola about the Moon from a 100 km
+  equatorial low orbit to the Moon's SOI, then the Earth-frame coast
+  `core/lunar-departure.js` already flies, from the release epoch (the tab's
+  date, which is the Moon widget's phase) to the Earth-SOI crossing. The
+  release is at t = -coast, the same figure the Moon widget states in days;
+  the hyperbola adds no time. The two pieces are not a patched conic: the coast
+  starts at the Moon's centre and the join shows a gap of about 2,000-3,000 km
+  and a crossing time that would differ by up to ~40 minutes if patched
+  (`lunarSeamGap`, `lunarPatchedExit`).
+
+### The marker slider stays put while the date is scrubbed
+
+Scrubbing the Ephemeris date reshapes the flight (the window and the slider's
+span change, sharply at a Moon origin), and the thumb used to move with it.
+Now the first date change after the marker was last touched records the thumb's
+place as a fraction of its track, and every refresh the date drives puts it back
+there, in the heliocentric view and in a POV alike; the marker's flight time
+follows. Moving the marker, switching view, or any edit that is not a date
+change drops the pin, so the next scrub pins wherever the thumb is then.
 
 ### Recalculate the departure requirement once the real exit point is known
 

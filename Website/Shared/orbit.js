@@ -1302,6 +1302,7 @@ vp^2 = mu * (2/P - 1/a)
 	GM: 4.9048695e12,
 	mass: 7.342e22,
 	radius: 1737.1e3,
+	lowOrbitAltitude: 100e3,
 	radiusPolar: 1736.0e3,
 	radiusEquator: 1738.1e3,
 	volume: 2.1958e19,

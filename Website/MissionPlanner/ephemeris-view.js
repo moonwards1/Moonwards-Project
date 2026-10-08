@@ -176,6 +176,9 @@ import {
 	originSoiRadius, originLowOrbitRadius, asymptoticVInf, edgeVInf, MIN_VINF
 } from "./core/departure-estimate.js";
 import { releaseArc, releaseArcStateAt } from "./core/release-arc.js";
+import {
+	lunarReleaseLeg, lunarReleaseLegStateAt, lunarMoonLegSamples
+} from "./core/lunar-release-leg.js";
 import { flyLunarDeparture, solveLunarCard, RELEASE_ALTITUDE } from "./core/lunar-departure.js";
 import { Frames } from "../Shared/frames.js";
 import {
@@ -372,6 +375,7 @@ export function createEphemerisView(opts) {
 	var trajSegs = [];        // trajLeg.segs: { type: "kepler", r0, v0 } | { type: "enc", body, leg }, each with tStart, dur (s)
 	var trajTotalT = 0;       // total drawn-leg duration (s)
 	var releaseArcNow = null; // core/release-arc.js's escape hyperbola for the current departure, or null (a Moon origin, or nothing escaping)
+	var lunarLegNow = null;   // core/lunar-release-leg.js's release-to-Earth-SOI path for a Moon origin, or null
 	var trajSampleCount = 0;  // polyline sample count (sets followCrossing's search window)
 	var trajSamples = [];     // leg.samples verbatim ({ r (m), t (s) }) — the approach-ring scan's input
 	var markerSprite = null, destSprite = null, destSoi = null;
@@ -560,7 +564,20 @@ export function createEphemerisView(opts) {
 		spanDays: SPAN_DAYS,
 		shortDate: shortDate
 	});
-	dateBar.bind(function () { frame.place(dateState.jd); refresh(); });
+	// While the date is being scrubbed the marker's slider stays where the
+	// user had it. The first date change after the marker was last touched
+	// records the thumb's place along its track (datePin); every refresh the
+	// date drives puts the thumb back there, whatever the reshaped flight would
+	// have moved it to. Anything else — dragging the marker, a refresh that is
+	// not the date's, switching view — drops the pin, so the next date drag
+	// pins wherever the thumb is by then.
+	var datePin = null, inDateChange = false;
+	dateBar.bind(function () {
+		frame.place(dateState.jd);
+		if (!datePin) { datePin = captureDatePin(); }
+		inDateChange = true;
+		try { refresh(); } finally { inDateChange = false; }
+	});
 
 	// ==== small DOM helpers (the same numRow shape each module's own card
 	// builds — see modules/transfer-leg's init) --------------------------------
@@ -1063,15 +1080,30 @@ export function createEphemerisView(opts) {
 	}
 
 	function releaseStateAt(t) {
-		if (!releaseArcNow || t < -releaseArcNow.tExit) { return null; }
-		var rel = releaseArcStateAt(releaseArcNow, releaseArcNow.tExit + t);
-		var body = Frames.bodyHelioState(state.origin, legStartJd() + t / DAY);
-		return { r: O.vAdd(body.r, rel.r), v: O.vAdd(body.v, rel.v) };
+		if (releaseArcNow) {
+			if (t < -releaseArcNow.tExit) { return null; }
+			var rel = releaseArcStateAt(releaseArcNow, releaseArcNow.tExit + t);
+			var body = Frames.bodyHelioState(state.origin, legStartJd() + t / DAY);
+			return { r: O.vAdd(body.r, rel.r), v: O.vAdd(body.v, rel.v) };
+		}
+		if (lunarLegNow) {
+			if (t < -lunarLegNow.coast) { return null; }
+			var geo = lunarReleaseLegStateAt(lunarLegNow, lunarLegNow.coast + t);
+			var earth = Frames.bodyHelioState("Earth", legStartJd() + t / DAY);
+			return { r: O.vAdd(earth.r, geo.r), v: O.vAdd(earth.v, geo.v) };
+		}
+		return null;
+	}
+
+	// How long before the SOI exit the flight is drawn from: the release arc's
+	// flight time, or at a Moon origin the time from the release to Earth's SOI.
+	function leadBeforeExit() {
+		return releaseArcNow ? releaseArcNow.tExit : lunarLegNow ? lunarLegNow.coast : 0;
 	}
 
 	// The earliest time the marker may sit at: the SOI exit, or in the origin
 	// view the release before it.
-	function markerFloorT() { return (state.pov === "origin" && releaseArcNow) ? -releaseArcNow.tExit : 0; }
+	function markerFloorT() { return state.pov === "origin" ? -leadBeforeExit() : 0; }
 
 	// Heliocentric angle (deg, 0–360) swept around the Sun from the flight's
 	// start (the SOI-edge point) to r (m) — Shared/sim/marker-card.js's
@@ -1145,7 +1177,7 @@ export function createEphemerisView(opts) {
 			return { body: body, r: moon.r, v: moon.v, jd: jd,
 			         vInfVec: [0, 0, 0], vInf: 0, offset: [0, 0, 0],
 			         lunar: lunar.ok ? { ok: false, reason: "no-coast" } : lunar,
-			         escapes: false, release: null };
+			         escapes: false, release: null, lunarLeg: null };
 		}
 		// THE HAND-OFF IS THE SOI CROSSING. The departure ends where the ship
 		// leaves Earth's sphere of influence, so that crossing — its position,
@@ -1177,7 +1209,8 @@ export function createEphemerisView(opts) {
 			offset: exit.r.slice(),
 			lunar: lunar,
 			escapes: true,
-			release: null
+			release: null,
+			lunarLeg: lunarReleaseLeg(lunar)
 		};
 	}
 
@@ -1215,7 +1248,7 @@ export function createEphemerisView(opts) {
 		return { body: body, r: O.vAdd(body.r, offset),
 		         v: flown ? O.vAdd(body.v, flown) : body.v.slice(), jd: dateState.jd,
 		         vInfVec: vInfVec, vInf: vInf, offset: offset,
-		         lunar: null, escapes: !!flown, release: release };
+		         lunar: null, escapes: !!flown, release: release, lunarLeg: null };
 	}
 
 	// How long the departure phase lasts and when it starts. For a Moon origin
@@ -1758,6 +1791,7 @@ export function createEphemerisView(opts) {
 				var t = (state.pov && povWin) ? povWin.t0 + deg * DAY : timeAtDeg(deg, markerSoiWeight());
 				state.marker.f0 = trajTotalT > 0 ? Math.max(markerFloorT() / trajTotalT, Math.min(1, t / trajTotalT)) : 0;
 				state.marker.angle = 0;
+				datePin = null;
 				// Target mode otherwise glues position to the solved encounter every
 				// refresh (see updateMarker) — a drag takes over the DISPLAY only;
 				// the held arrival date and the Lambert solve never read f0/angle,
@@ -2417,7 +2451,7 @@ export function createEphemerisView(opts) {
 	}
 
 	function computePovWindow(kind) {
-		if (kind === "origin") { return originWindow(trajTotalT, releaseArcNow ? releaseArcNow.tExit : 0); }
+		if (kind === "origin") { return originWindow(trajTotalT, leadBeforeExit()); }
 		var dn = state.leg.destination;
 		var soiR = soiRadiusAU(systems.get(dn), SUN.mass, 1);   // m
 		return destinationWindow(function (t) {
@@ -2488,15 +2522,22 @@ export function createEphemerisView(opts) {
 			if (refit) { refitPov(); }
 			return;
 		}
-		var path = samplePovPath(povWin.t0, povWin.t1);
+		// A Moon origin's first stretch is the hyperbola about the Moon, sampled
+		// on its own (it is far tighter than anything the stepping below would
+		// resolve at Earth's scale); the stepped path takes over where it ends.
+		var moonLeg = (!isDest && lunarLegNow) ? lunarMoonLegSamples(lunarLegNow, 200) : [];
+		applyDatePin();
+		var path = moonLeg.map(function (s) { return s.r; })
+			.concat(samplePovPath(moonLeg.length ? -lunarLegNow.coast + lunarLegNow.tMoon : povWin.t0, povWin.t1));
 		// The hand-off dot is the SOI exit (time 0); at an origin with a release
 		// arc, the release point is marked as well.
 		var exitState = isDest ? null : povRelState(0);
 		var start = exitState ? exitState.r : null;
+		var releaseR = releaseArcNow ? releaseArcNow.release.r : lunarLegNow ? lunarLegNow.release.r : null;
 		drawPovScene(pov, {
 			path: path, start: start,
 			mark: isDest ? povArrivalMark()
-				: (releaseArcNow ? { kind: "release", r: releaseArcNow.release.r } : null),
+				: (releaseR ? { kind: "release", r: releaseR } : null),
 			catchDisc: isDest
 		});
 		if (refit) { refitPov(); }
@@ -2522,6 +2563,7 @@ export function createEphemerisView(opts) {
 	// placing one if there is none.
 	function setPov(kind) {
 		if (kind && !povAvailable(kind)) { updatePovButtons(); return; }
+		datePin = null;
 		if (!kind) {
 			if (pov) {
 				pov.frame.labelLayer.remove();
@@ -2646,8 +2688,39 @@ export function createEphemerisView(opts) {
 		povBtns.sun.classList.toggle("active", !state.pov);
 	}
 
+	// The marker slider's thumb as a fraction (0..1) of its track in the view it
+	// is read in: swept degrees along the whole flight, or in a POV the days
+	// through that view's window. null with no marker or no flight.
+	function captureDatePin() {
+		if (!state.marker || !(trajTotalT > 0)) { return null; }
+		var tof = mcMarkerFraction(state.marker.f0, state.marker.angle) * trajTotalT;
+		if (state.pov) {
+			if (!povWin || !(povWin.t1 > povWin.t0)) { return null; }
+			return { pov: state.pov, frac: (tof - povWin.t0) / (povWin.t1 - povWin.t0) };
+		}
+		var sw = markerSoiWeight(), span = degAtTime(trajTotalT, sw);
+		return span > 0 ? { pov: null, frac: degAtTime(tof, sw) / span } : null;
+	}
+
+	// Put the marker where the pin says, on the flight as it now is. Run once
+	// the leg (and, in a POV, its window) is in place.
+	function applyDatePin() {
+		if (!datePin || !state.marker || !(trajTotalT > 0) || datePin.pov !== state.pov) { return; }
+		var frac = Math.max(0, Math.min(1, datePin.frac)), tof;
+		if (state.pov) {
+			if (!povWin) { return; }
+			tof = povWin.t0 + frac * (povWin.t1 - povWin.t0);
+		} else {
+			var sw = markerSoiWeight();
+			tof = timeAtDeg(frac * degAtTime(trajTotalT, sw), sw);
+		}
+		state.marker.f0 = Math.max(markerFloorT() / trajTotalT, Math.min(1, tof / trajTotalT));
+		state.marker.angle = 0;
+	}
+
 	// ==== recompute + draw: the one function every input change calls --------
 	function refresh() {
+		if (!inDateChange) { datePin = null; }
 		// trajTotalT (the drawn leg's total duration) can change from this very
 		// recompute — e.g. adding a waypoint pushes the "one period past the
 		// last waypoint" tail further out (finalCoastDays) even though nothing
@@ -2666,13 +2739,9 @@ export function createEphemerisView(opts) {
 		// place (below) to override the tof-based f0. degAtTime/timeAtDeg are
 		// exact for any degree (Notes/decisions.md, 2026-08-28), so this can
 		// only land beyond the CURRENT trajTotalT — handled by the same f0
-		// clamp a "tof" hold past the end already needs. Swept angle is the
-		// more physically stable quantity to hold across a scrub — e.g.
-		// dragging the departure date reshapes the whole leg (the origin's own
-		// heliocentric position moves, sharply for the Moon), and "the ship is
-		// this far around its arc" keeps meaning the same thing where a fixed
-		// elapsed time can land somewhere very different once the origin has
-		// moved out from under it.
+		// clamp a "tof" hold past the end already needs. These holds govern
+		// edits to the departure or waypoints; a refresh driven by the date bar
+		// is overridden by datePin (above), which keeps the thumb where it was.
 		var prevTotalT = trajTotalT;
 		var markerAbsTof = (state.marker && prevTotalT > 0)
 			? mcMarkerFraction(state.marker.f0, state.marker.angle) * prevTotalT : null;
@@ -2692,6 +2761,7 @@ export function createEphemerisView(opts) {
 		// that does not escape the origin's SOI at all.
 		var noFlight = noDeparture(hand);
 		releaseArcNow = noFlight ? null : hand.release;
+		lunarLegNow = noFlight ? null : hand.lunarLeg;
 
 		// The origin body itself, where and when the ship leaves it. For a Moon
 		// origin that is the MOON at the release epoch — `dep` there is Earth,
@@ -2739,6 +2809,11 @@ export function createEphemerisView(opts) {
 					+ (gain >= 0 ? "adds " : "costs ") + fmtKmS(Math.abs(gain))
 					+ " km/s, leaving " + fmtKmS(hand.vInf) + " km/s there. "
 					+ "Resulting arc: " + depKind + ".";
+				if (hand.lunarLeg) {
+					depReadout.textContent += " Released from a low lunar orbit "
+						+ fmtKm(hand.lunarLeg.moonArc ? hand.lunarLeg.moonArc.rLow - systems.get("Moon").radius.equator : 0)
+						+ " up, " + fmtDhm(hand.lunarLeg.coast) + " before the SOI exit.";
+				}
 			} else {
 				depReadout.textContent = LUNAR_FAILURES[lun.reason]
 					|| "This departure from the Moon cannot be drawn.";
@@ -2833,6 +2908,7 @@ export function createEphemerisView(opts) {
 				state.marker.f0 = Math.max(0, Math.min(1, timeAtDeg(markerDeg) / trajTotalT));
 				state.marker.angle = 0;
 			}
+			applyDatePin();
 
 			var U = AU;
 			var pts = leg.samples.map(function (s) {
