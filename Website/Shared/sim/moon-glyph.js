@@ -1,7 +1,7 @@
 /* Shared/sim/moon-glyph.js
  *
  * The Moon-phase SVG glyph — a lit crescent/gibbous/half/full shape swept
- * from a Moon-Sun elongation angle (core/departure-estimate.js's
+ * from a Moon-Sun elongation angle (core/departure-phase-estimate.js's
  * moonElongationDeg). Shared between MissionPlanner's Ephemeris tab (the
  * "Moon phase at launch/arrival" widget) and the Departure sidebar's Moon
  * card. Styled by the mp-moonglyph* classes in planner.css; this file only

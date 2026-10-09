@@ -12,7 +12,7 @@
  *
  * READ-ONLY by design: there is no release-date knob here. The release epoch
  * is the departure leg's own release epoch (core/release-epoch.js), seeded at
- * mission creation from core/departure-estimate.js's flight-time estimate and
+ * mission creation from core/departure-phase-estimate.js's flight-time estimate and
  * never re-derived, so this card always shows ONE unchanging state: exactly the
  * Moon the user planned around (and already dated by the Departure info strip
  * above it, mission-view.js's updateDepartureInfo — this card doesn't repeat
@@ -48,7 +48,7 @@ import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
 import { baseState, emptyChain } from "../../../Shared/kinematic-chain.js";
 import { buildMoonGlyph } from "../../../Shared/sim/moon-glyph.js";
-import { moonElongationDeg, moonProgradeSpeed } from "../../core/departure-estimate.js";
+import { moonElongationDeg, moonProgradeSpeed } from "../../core/departure-phase-estimate.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseEpochFor } from "../../core/release-epoch.js";
 

@@ -8,7 +8,7 @@ import {
 	seamDeltaDays, findClosestApproach, computeArrivalSeam,
 	SEAM_MIN_DAYS, SEAM_MAX_DAYS, ARRIVAL_TAIL_DAYS
 } from "../arrival-seam.js";
-import { originSoiRadius } from "../departure-estimate.js";
+import { originSoiRadius } from "../departure-phase-estimate.js";
 import { computeLeg, nearestApproach } from "../../modules/transfer-leg/transfer-leg.js";
 import { bodyConstants } from "../../../Shared/body-leg.js";
 import { Frames } from "../../../Shared/frames.js";

@@ -13,7 +13,7 @@ import { createWorld, deserializeWorld } from "../../core/world.js";
 import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import { adoptMissionWorld } from "../../core/adopt.js";
-import { originSoiRadius } from "../../core/departure-estimate.js";
+import { originSoiRadius } from "../../core/departure-phase-estimate.js";
 import moonPlatform from "../moon-platform/moon-platform.js";
 import departureLeg from "../departure-leg/departure-leg.js";
 import adoptedPlan, { arrivalCommitmentFor } from "../adopted-plan/adopted-plan.js";

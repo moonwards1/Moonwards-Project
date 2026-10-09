@@ -1,4 +1,4 @@
-/* MissionPlanner/core/release-arc.js — the escape hyperbola from a low orbit
+/* MissionPlanner/core/ephemeris-release-arc.js — the escape hyperbola from a low orbit
  * out to the origin body's SOI edge, sketched for the Ephemeris tab's origin
  * view.
  *
@@ -33,7 +33,7 @@
  *
  * Timing is independent of all of that geometry: the time from periapsis to
  * the SOI edge depends only on the excess speed, the periapsis radius and the
- * SOI radius (O.soiExitTimeDirect), which is also what core/departure-estimate.js
+ * SOI radius (O.soiExitTimeDirect), which is also what core/departure-phase-estimate.js
  * uses, so the arc and the release-epoch seed agree.
  *
  * Frame: body-centred, ecliptic J2000 axes (the planner's own), SI units.

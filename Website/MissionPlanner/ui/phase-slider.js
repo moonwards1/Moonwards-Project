@@ -414,7 +414,7 @@ export function createCoastSlider(container, opts) {
 //
 // PINNED-START for every origin (mission-view.js's departureSpan): the LEFT
 // edge is the release epoch — the departure leg's own `releaseJd`, seeded by
-// core/adopt.js from core/departure-estimate.js's estimateDeparture() and
+// core/adopt.js from core/departure-phase-estimate.js's estimateDeparture() and
 // read via core/release-epoch.js. The RIGHT edge floats: the flight's own
 // predicted SOI exit once a departure tech resolves one, else departureSpan's
 // default estimate (SOI_radius / required v∞), stretched when needed to keep

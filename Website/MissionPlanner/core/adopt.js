@@ -96,7 +96,7 @@
  *     epoch row checks the integrated departure leg's delivered hand-off
  *     against it.
  *   releaseJd, on the DEPARTURE LEG — when the carrier chain lets go, seeded
- *     here at departure.jd minus core/departure-estimate.js's flight-time
+ *     here at departure.jd minus core/departure-phase-estimate.js's flight-time
  *     estimate (the same figure the Ephemeris tab's Moon widget presented
  *     while planning, so the Moon a user planned around is the Moon the
  *     mission shows). The plan does NOT own this: it states where the ship
@@ -108,7 +108,7 @@
 import { WORLD_KIND, WORLD_VERSION } from "./world.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Frames } from "../../Shared/frames.js";
-import { estimateDeparture } from "./departure-estimate.js";
+import { estimateDeparture } from "./departure-phase-estimate.js";
 
 var O = OrbitalMath;
 

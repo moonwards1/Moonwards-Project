@@ -1,4 +1,4 @@
-﻿/* MissionPlanner/core/departure-estimate.js — how long the departure leg
+﻿/* MissionPlanner/core/departure-phase-estimate.js — how long the departure leg
  * lasts, estimated from the plan alone.
  *
  * The adopted plan pins the Departure→Coast hand-off; the release happens
@@ -23,7 +23,7 @@
  * actually land.
  *
  * NOTHING HERE SHAPES A LUNAR DEPARTURE. A Moon origin is authored forward —
- * core/lunar-departure.js propagates a two-body escape hyperbola (Earth only)
+ * core/ephemeris-lunar-departure.js propagates a two-body escape hyperbola (Earth only)
  * from a release the planner set to Earth's SOI crossing, and its release
  * epoch is the Ephemeris tab's own clock, carried
  * into the mission by core/adopt.js. The Moon branch below exists only for a
@@ -32,7 +32,7 @@
  * departure starts a quarter of the way out rather than at Earth's surface.
  *
  * Every other origin, Earth included, is timed from its low orbit: the ship
- * releases at periapsis of the escape hyperbola (core/release-arc.js draws it)
+ * releases at periapsis of the escape hyperbola (core/ephemeris-release-arc.js draws it)
  * at the body's low-orbit radius (Shared/orbit.js `lowOrbit`), and the estimate
  * is the two-body time from there to the SOI edge. Earth is not special here:
  * a departure from Earth leaves from Earth, the same as one from Mars leaves
@@ -161,7 +161,7 @@ export function estimateDeparture(spec) {
 	// the stretch from lunar distance to Earth's SOI — the exact mirror of
 	// estimateArrival's inbound crossing. Two-body and closed form: this is a
 	// seed for a plan that arrived without one, never the flight itself, which
-	// core/lunar-departure.js integrates from the release.
+	// core/ephemeris-lunar-departure.js integrates from the release.
 	if (spec.origin === "Moon") {
 		var t = O.soiExitTimeDirect(EARTH.GM, vInf, MOON_DIST, rSoi);
 		if (t == null) { return { ok: false, reason: "degenerate" }; }

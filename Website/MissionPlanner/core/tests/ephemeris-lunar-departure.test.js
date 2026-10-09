@@ -1,4 +1,4 @@
-// node --test MissionPlanner/core/tests/lunar-departure.test.js
+// node --test MissionPlanner/core/tests/ephemeris-lunar-departure.test.js
 //
 // The departure from a Moon origin. What is being pinned down here:
 //
@@ -20,8 +20,8 @@ import { SOI_EARTH, moonGeoPos, moonGeoVel } from "../../../Shared/geo-leg.js";
 import { flyLunarDeparture, cardVInf, cardFromVector, vInfFromState,
          solveLunarCard, hyperbolicCoastTime, releaseSpeedFor, RELEASE_ALTITUDE,
          passiveReleaseFor, flyEarthPassDeparture, MIN_PERIGEE }
-	from "../lunar-departure.js";
-import { edgeVInf } from "../departure-estimate.js";
+	from "../ephemeris-lunar-departure.js";
+import { edgeVInf } from "../departure-phase-estimate.js";
 
 var O = OrbitalMath;
 var GM_EARTH = systems.get("Earth").GM;

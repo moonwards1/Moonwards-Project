@@ -1,4 +1,4 @@
-/* MissionPlanner/core/lunar-departure — what a departure from the Moon is
+/* MissionPlanner/core/ephemeris-lunar-departure — what a departure from the Moon is
  * worth at Earth's sphere of influence.
  *
  * A Moon origin is the one origin where the body a ship leaves and the body
@@ -64,7 +64,7 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 import { systems } from "../../Shared/orbit.js";
 import { Frames } from "../../Shared/frames.js";
 import { SOI_EARTH, SOI_MOON, moonGeoPos, moonGeoVel } from "../../Shared/geo-leg.js";
-import { asymptoticVInf, edgeVInf } from "./departure-estimate.js";
+import { asymptoticVInf, edgeVInf } from "./departure-phase-estimate.js";
 
 var O = OrbitalMath;
 var GM_EARTH = systems.get("Earth").GM;

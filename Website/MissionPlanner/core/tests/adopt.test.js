@@ -10,7 +10,7 @@ import { deserializeWorld } from "../world.js";
 import { computeCompliance } from "../../modules/adopted-plan/adopted-plan.js";
 import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
-import { originSoiRadius } from "../departure-estimate.js";
+import { originSoiRadius } from "../departure-phase-estimate.js";
 import { Frames } from "../../../Shared/frames.js";
 
 var O = OrbitalMath;
@@ -194,9 +194,9 @@ test("adopt bakes a hand-off window (default ±1 d) and seeds release ahead of t
 	var plan = paramsOf(world, "adopted-plan");
 	var releaseJd = paramsOf(world, "departure-leg").releaseJd;
 	assert.equal(plan.handoffWindowDays, 1);
-	// release leads departure.jd by the departure-estimate module's own
+	// release leads departure.jd by the departure-phase-estimate module's own
 	// figure for this spec — same source, so they must agree exactly
-	var DE = await import("../departure-estimate.js");
+	var DE = await import("../departure-phase-estimate.js");
 	var ref = Frames.bodyHelioState(Frames.escapeReferenceFor(spec.origin), plan.departure.jd);
 	var est = DE.estimateDeparture({
 		origin: spec.origin,

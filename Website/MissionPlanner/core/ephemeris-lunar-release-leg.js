@@ -1,7 +1,7 @@
-/* MissionPlanner/core/lunar-release-leg.js — the stretch of a lunar departure
+/* MissionPlanner/core/ephemeris-lunar-release-leg.js — the stretch of a lunar departure
  * BEFORE the Earth-SOI crossing, for the Ephemeris tab's Origin view.
  *
- * core/lunar-departure.js flies a departure from the release to Earth's SOI and
+ * core/ephemeris-lunar-departure.js flies a departure from the release to Earth's SOI and
  * reports only the crossing; this file lays out what lies before it, as one
  * geocentric path in time since the release (tau = 0 at the release epoch, the
  * tab's date; tau = coast at the crossing):
@@ -9,8 +9,8 @@
  *   tau in [0, tMoon]   the escape hyperbola about the MOON, from a low lunar
  *                       orbit (periapsis, at the release epoch) out to the
  *                       Moon's SOI edge, translating with the Moon
- *                       (core/release-arc.js, Moon-centred);
- *   tau in [tMoon, coast]   the Earth-frame coast core/lunar-departure.js flies:
+ *                       (core/ephemeris-release-arc.js, Moon-centred);
+ *   tau in [tMoon, coast]   the Earth-frame coast core/ephemeris-lunar-departure.js flies:
  *                       two-body about Earth from the Moon's CENTRE at the
  *                       release epoch, velocity the Moon's plus the card's
  *                       release share `u`.
@@ -27,7 +27,7 @@
  * for anyone judging the sketch; neither bends the drawn flight.
  *
  * Timing is therefore the flight's own: the release is the tab's epoch and the
- * crossing is `coast` later, exactly what core/departure-estimate.js and the
+ * crossing is `coast` later, exactly what core/departure-phase-estimate.js and the
  * Moon widget report. The hyperbola adds no time before the release.
  *
  * Pure (no DOM, no THREE) and Node-testable.
@@ -36,14 +36,14 @@
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { systems } from "../../Shared/orbit.js";
 import { SOI_MOON, SOI_EARTH, moonGeoPos, moonGeoVel } from "../../Shared/geo-leg.js";
-import { releaseArc, releaseArcStateAt } from "./release-arc.js";
+import { releaseArc, releaseArcStateAt } from "./ephemeris-release-arc.js";
 
 var O = OrbitalMath;
 var MOON = systems.get("Moon");
 var GM_EARTH = systems.get("Earth").GM;
 var DAY = 86400;
 
-// flight — a successful core/lunar-departure.js flyLunarDeparture result.
+// flight — a successful core/ephemeris-lunar-departure.js flyLunarDeparture result.
 // Returns null when it has no Earth-SOI crossing to end on; otherwise
 // { jd0, coast, rMoon, vMoon, vTotal, moonArc, tMoon, release }
 // where moonArc is null when the release share does not escape the Moon's

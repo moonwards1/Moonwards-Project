@@ -39,7 +39,7 @@
 import { createEngine } from "./core/recompute.js";
 import { computeArrivalSeam } from "./core/arrival-seam.js";
 import { releaseEpochFor } from "./core/release-epoch.js";
-import { estimateDeparture, originSoiRadius } from "./core/departure-estimate.js";
+import { estimateDeparture, originSoiRadius } from "./core/departure-phase-estimate.js";
 import { systems, constants } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { Frames } from "../Shared/frames.js";
@@ -2419,7 +2419,7 @@ export function createMissionView(opts) {
 		// (3 km/s is typical for interplanetary missions from Earth/similar bodies)
 		if (!(vEdge > 0)) { vEdge = 3000; }
 
-		// core/departure-estimate.js owns the crossing: it converts the SOI-edge
+		// core/departure-phase-estimate.js owns the crossing: it converts the SOI-edge
 		// speed to the true hyperbolic excess and, for a Moon origin, crosses
 		// only from lunar distance out. Same estimator core/adopt.js seeds the
 		// release epoch with, so this edge and that seed agree.

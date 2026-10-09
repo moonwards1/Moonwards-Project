@@ -1,12 +1,12 @@
-// Node tests for core/lunar-release-leg.js. Run from the repo root:
-//   node --test Website/MissionPlanner/core/tests/lunar-release-leg.test.js
+// Node tests for core/ephemeris-lunar-release-leg.js. Run from the repo root:
+//   node --test Website/MissionPlanner/core/tests/ephemeris-lunar-release-leg.test.js
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { flyLunarDeparture, releaseSpeedFor } from "../lunar-departure.js";
+import { flyLunarDeparture, releaseSpeedFor } from "../ephemeris-lunar-departure.js";
 import {
 	lunarReleaseLeg, lunarReleaseLegStateAt, lunarMoonLegSamples, lunarSeamGap, lunarPatchedExit
-} from "../lunar-release-leg.js";
+} from "../ephemeris-lunar-release-leg.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { moonGeoPos, moonGeoVel, SOI_MOON } from "../../../Shared/geo-leg.js";

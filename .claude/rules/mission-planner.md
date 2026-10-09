@@ -31,9 +31,19 @@ restate its content in code comments — cite the entry and its date.
   folder of substance plus two thin role adapters (`modules/platform/`).
 - `ui/` — shell-local widgets (phase slider, ship card, share link, the tech
   catalog).
-- `presets/` — the example catalog and the test fixtures, checked in as
-  serialized Worlds. There is no default mission: the app opens on the
-  Ephemeris tab unless missions are saved or a share link is present.
+- `presets/` — the example catalog, checked in as serialized Worlds. There is
+  no default mission: the app opens on the Ephemeris tab unless missions are
+  saved or a share link is present.
+- **Two different "departures", kept apart by name.** The Ephemeris tab's
+  departure is a *sketch* that authors the plan's requirement (the Departure
+  card, the origin view); its files carry an `ephemeris-` prefix
+  (`core/ephemeris-lunar-departure.js`, `ephemeris-release-arc.js`,
+  `ephemeris-lunar-release-leg.js`, `ephemeris-pov-window.js`,
+  `ephemeris-view.js`). A mission's Departure *phase* is the integrated flight
+  that tries to meet that requirement: `modules/departure-leg`,
+  `modules/body-departure-leg`, `modules/skyhook/skyhook-departure.js`,
+  `core/release-epoch.js`, `core/departure-phase-estimate.js`. A new file
+  takes the prefix of the side it serves.
 - `planner.js` + `mission-view.js` + `ephemeris-view.js` + `scene-frames.js` —
   the browser shell over `core/`.
 
@@ -60,7 +70,7 @@ restate its content in code comments — cite the entry and its date.
   invites.
 - **A MOON origin's hand-off is the EARTH-SOI CROSSING, and its clock is the
   RELEASE.** Alone among the origins, the tab's date is not the hand-off epoch:
-  the release fixes an escape hyperbola, `core/lunar-departure.js` propagates it
+  the release fixes an escape hyperbola, `core/ephemeris-lunar-departure.js` propagates it
   to Earth's SOI (`soiExit`), and that crossing — position, edge velocity, epoch
   ~2 days later — is what the plan commits and what **Needed** reads. The
   release travels separately as `releaseJd`/`lunarRelease`. Committing the

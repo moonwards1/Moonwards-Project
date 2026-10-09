@@ -33,7 +33,7 @@
  * without them coming along.
  */
 
-import { originSoiRadius } from "./departure-estimate.js";
+import { originSoiRadius } from "./departure-phase-estimate.js";
 
 var DAY = 86400;
 

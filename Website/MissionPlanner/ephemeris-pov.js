@@ -8,7 +8,7 @@
  * POV window covers, the hand-off dot, the ship chevron, and at a destination the equatorial catch disc and
  * the arrival mark. ephemeris-view.js does the physics — every point handed in
  * here is already a body-relative position in metres — and decides the window
- * (core/pov-window.js).
+ * (core/ephemeris-pov-window.js).
  *
  * One scene per body, built on first use and kept for the page's life, like
  * the Ephemeris tab itself.

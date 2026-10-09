@@ -1,5 +1,5 @@
-// Node tests for core/departure-estimate.js. Run from the repo
-// root:  node --test Website/MissionPlanner/core/tests/departure-estimate.test.js
+// Node tests for core/departure-phase-estimate.js. Run from the repo
+// root:  node --test Website/MissionPlanner/core/tests/departure-phase-estimate.test.js
 //
 // Dates here are real: quarter epochs are found by scanning the module's own
 // moonElongationDeg (the same signal the widget's glyph draws), and "prograde"
@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import {
 	estimateDeparture, estimateArrival, moonElongationDeg, moonProgradeSpeed,
 	originSoiRadius, originLowOrbitRadius, MIN_VINF, MOON_DIST
-} from "../departure-estimate.js";
+} from "../departure-phase-estimate.js";
 import { LunarEphemeris as LE } from "../../../Shared/lunar-ephemeris.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
@@ -92,7 +92,7 @@ test("a Moon origin is seeded from lunar distance; an unknown origin refuses", (
 	// The Moon has no heliocentric orbit record, but it does have a departure:
 	// it escapes EARTH's SOI. This is only the SEED for a plan that arrived
 	// without a release of its own — a real lunar departure is solved from the
-	// card by core/lunar-departure.js — so what it must get right is the
+	// card by core/ephemeris-lunar-departure.js — so what it must get right is the
 	// stretch it covers: lunar distance out to Earth's SOI, not Earth's
 	// surface out to Earth's SOI.
 	var est = estimateDeparture({ origin: "Moon", vInfVec: [1900, -600, 120], jdHandoff: JD_BASE });

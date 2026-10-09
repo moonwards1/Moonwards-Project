@@ -205,7 +205,7 @@ NOT pinned to that point: the Ephemeris tab is a sketching tool, and
 disagreeing with the mission tab by the difference between the two departure
 models is expected (~100,000 km at Ceres in the Moon → Ceres example).
 
-At every origin the departure estimate (`departure-estimate.js`)
+At every origin the departure estimate (`departure-phase-estimate.js`)
 is information only: read backwards from the hand-off for the Moon widget and
 the release anchor, never bending the drawn arc. The marker's rendezvous is
 the destination body's own position.
@@ -215,7 +215,7 @@ the destination body's own position.
 The flight's clock still starts at the SOI exit (t = 0): the interplanetary
 trajectory is what the Ephemeris tab sketches. Ahead of it, at every origin but
 the Moon, the Origin view draws the escape hyperbola from the body's low orbit
-(`core/release-arc.js`), at t < 0 down to the release.
+(`core/ephemeris-release-arc.js`), at t < 0 down to the release.
 
 - The release is a point on the body's equator, moving in its spin sense,
   chosen so the hyperbola leaves along the card's heading; the exit point is
@@ -226,9 +226,9 @@ the Moon, the Origin view draws the escape hyperbola from the body's low orbit
   departure estimate, and depends on speed alone, never on the heading.
 - A card that does not escape draws nothing; the readout says why.
 - A Moon origin is drawn the same way in the Origin view
-  (`core/lunar-release-leg.js`): a hyperbola about the Moon from a 100 km
+  (`core/ephemeris-lunar-release-leg.js`): a hyperbola about the Moon from a 100 km
   equatorial low orbit to the Moon's SOI, then the Earth-frame coast
-  `core/lunar-departure.js` already flies, from the release epoch (the tab's
+  `core/ephemeris-lunar-departure.js` already flies, from the release epoch (the tab's
   date, which is the Moon widget's phase) to the Earth-SOI crossing. The
   release is at t = -coast, the same figure the Moon widget states in days;
   the hyperbola adds no time. The two pieces are not a patched conic: the coast
@@ -347,7 +347,7 @@ control is not built yet.
 The Departure card states the ship's velocity AT the SOI edge, on the escape
 reference's heliocentric axes. It is not the hyperbolic excess: the primary
 still holds 928.5 m/s at Earth's edge. Anything working in energy terms
-converts first (`departure-estimate.js`'s `asymptoticVInf`, and `edgeVInf`
+converts first (`departure-phase-estimate.js`'s `asymptoticVInf`, and `edgeVInf`
 back):
 
 - the drawn arc leaves on the asymptote;
@@ -370,7 +370,7 @@ generic `body-departure-leg` with a self-originating skyhook.
 - **The hand-off is the Earth-SOI crossing.** A ship leaving the Moon is still
   deep inside Earth's SOI, so the plan's `departure.{r,v,jd}` (what Needed
   reads) is where the release's escape hyperbola crosses Earth's SOI: its
-  position, edge velocity and epoch, from `core/lunar-departure.js`'s
+  position, edge velocity and epoch, from `core/ephemeris-lunar-departure.js`'s
   `soiExit`. The drawn arc starts there. Committing the Moon's own position
   instead is the tempting shortcut. It fails silently, because compliance
   never compares position.
@@ -385,7 +385,7 @@ generic `body-departure-leg` with a self-originating skyhook.
   motion rides on top for free as a residual (sometimes more reach, on the
   wrong phase a penalty), so the flown arc is card + residual. The two cannot
   be propagated separately and added, because energy goes as speed squared.
-  `lunar-departure.js` inverts the card to the ship's velocity at the Moon,
+  `ephemeris-lunar-departure.js` inverts the card to the ship's velocity at the Moon,
   adds the Moon's velocity there, and takes the sum out through Earth's well
   exactly.
 - **Target mode solves for the card, not the total.** `solveLunarCard`

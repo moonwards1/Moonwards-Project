@@ -6,7 +6,7 @@
  * about how or when the ship got there. Release is one of the things the
  * departure phase decides in order to meet that requirement, so it is a param
  * on the departure leg stage (`releaseJd` on departure-leg /
- * body-departure-leg), seeded at adopt from core/departure-estimate.js and
+ * body-departure-leg), seeded at adopt from core/departure-phase-estimate.js and
  * owned by the phase thereafter.
  *
  * Everything upstream of the leg needs the same epoch to evaluate itself at —

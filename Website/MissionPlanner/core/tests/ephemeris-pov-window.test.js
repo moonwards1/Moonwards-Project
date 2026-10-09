@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
 	originWindow, soiEntryBefore, destinationWindow, POV_MIN_DAYS, POV_AFTER_CA_DAYS
-} from "../pov-window.js";
+} from "../ephemeris-pov-window.js";
 
 var DAY = 86400;
 
