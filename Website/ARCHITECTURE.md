@@ -239,7 +239,7 @@ no reason to depend on.
 The rule matters because a recompute is not free. Most of the physics is
 analytic two-body work (Kepler propagation, Lambert, impulsive burns), but a
 leg that passes through a body's sphere of influence is RK4-integrated, and
-that dominates: the shipped Moon→Ceres coast costs 4.4 ms per pass, doubling
+that dominates: a Moon→Ceres coast costs 4.4 ms per pass, doubling
 whenever a waypoint edit is pending and both the live and hand-off arcs fly.
 Multiplied by a slider drag's tick rate, recomputing for the clock was the
 single largest cost in the app.
@@ -467,7 +467,7 @@ the steps are now all built: the repo / Pages / ES-module conversion; the
 rings, approach markers, burn widget, readout panes, marker card); the
 `Shared/exchange.js` + `exchange-types.js` mailbox with real
 calculator-to-calculator pairings; `Shared/frames.js`; the headless mission
-core; the planner shell; and the worked-example default mission. Each
+core; the planner shell; and the example-mission catalog. Each
 module's own header explains what it covers and why it has the shape it has;
 `git log` holds the narrative of how it got there.
 

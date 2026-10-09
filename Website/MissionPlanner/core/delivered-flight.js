@@ -21,7 +21,7 @@
  * CHEAP ENOUGH TO BE LIVE, if it is not recomputed for nothing. The answer
  * depends on the delivered hand-off and the waypoints — never on the clock —
  * so `signatureOf` gives callers a key to memoize on across clock scrubbing.
- * One call costs about one leg integration (3.8 ms on the shipped Moon->Ceres
+ * One call costs about one leg integration (3.8 ms on a Moon->Ceres
  * plan), which is the right price on an edit and the wrong one per frame.
  *
  * Pure: plain values in, plain values out, no DOM and no THREE, so it is

@@ -93,7 +93,7 @@ export function decodeFragment(str) {
 // Discord message is cut off at 2,000 characters. Plain base64url of JSON runs
 // past that as soon as a link carries more than one plan; deflate brings it
 // back well under, because the sets in a mission link are near-copies of each
-// other and that is exactly what DEFLATE is good at (measured on the shipped
+// other and that is exactly what DEFLATE is good at (measured on the
 // Moon->Ceres mission: 1,351 chars plain, 639 deflated; twenty plans, 26,051
 // plain, 814 deflated).
 //

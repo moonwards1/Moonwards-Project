@@ -483,6 +483,6 @@ act, by up to 20% of Saturn's orbit radius by 2130; a window fit turns that
 into a bounded wobble (worst 1.8% of orbit radius, for Psyche; under 0.4% for
 every planet).
 
-Consequence: missions authored against other positions (the example missions,
-`presets/default-mission.js`) arrive only as well as their authoring ephemeris
+Consequence: missions authored against other positions (the example missions)
+arrive only as well as their authoring ephemeris
 matched this one — re-target them with Update after the elements change.

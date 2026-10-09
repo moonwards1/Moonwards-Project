@@ -29,7 +29,7 @@ independent of any UI; `planner.js` + `mission-view.js` + `ephemeris-view.js`
 
 + `scene-frames.js` are the browser shell over it; `modules/` holds the
   mission-profile stages; `ui/` holds shell-local widgets; `presets/` holds the
-  shipped mission and the example-mission catalog.
+  example-mission catalog and the Node-test fixtures.
 
 ## core/ — the headless mission core
 
@@ -135,8 +135,8 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
 - **`planner.js`** — the multi-mission host: the shared module registry, the
   ONE renderer/canvas (browsers cap live WebGL contexts, so only the active
   mission's view renders), the initial mission load (persisted missions
-  merged with a share-link fragment, or the shipped preset) with its failure
-  banner — ASYNC, because a share link is compressed and there is no
+  merged with a share-link fragment, or none — there is no default mission,
+  and an empty start opens on the Ephemeris tab) with its failure banner — ASYNC, because a share link is compressed and there is no
   synchronous inflate — the per-mission plan history it persists alongside
   each World, the tab bar (the Ephemeris tab + one tab per mission, active
   highlight, confirm-then-close, a "+" duplicate button, and the
@@ -431,32 +431,19 @@ never when it started.
 | `share-link.js`     | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope (v2) wrapping `{ title, world, plan }` under its own kind stamp — a bare serialized World has no title, and `plan` is `core/revisions.js`'s two sets: the mission as first adopted, plus its latest commit when it has one. `world` is what opens in a tab; `plan.original` is what the Ephemeris tab reconstructs. v1 envelopes and bare Worlds still load, with no plan. Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button, through `Shared/exchange.js`'s **compressed** `encodeFragmentZ` — two sets don't fit in a Discord message otherwise.                   |
 | `tech-options.js`   | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                           | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add a stage; unbuilt entries show disabled with a "(future)" label.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-## presets/ — the example catalog and test fixtures
+## presets/ — the example catalog
 
-A fresh visit with nothing saved and no share link opens on the Ephemeris
-tab with no mission tabs — new missions are started there, not from a
-shipped starter mission.
-
-`default-mission.js` is a Node-test fixture only, not wired into the running
-app: a serialized World checked in as plain data — a Moon → Ceres flight
-through a lunar skyhook whose real integrated departure under-delivers
-against the plan's required v∞, on purpose, exercising the non-compliant
-case across the test suites. It also exports `defaultWorkspaceMain`, the
-generic fallback main-pane id used when a mission tab is spawned with none
-specified — that part IS still live in the app.
+There is no default mission. A fresh visit with nothing saved and no share
+link opens on the Ephemeris tab with no mission tabs — new missions are
+started there.
 
 `examples-catalog.js` drives the tab bar's example-mission dropdown, in two titled
 sections: **Unbuilt** (a mission as it arrives from the Ephemeris tab — the
 adopted plan, no technology set up) and **Built** (the same missions solved).
 Each other file in this folder that it imports is one catalog entry, a
 serialized World; a catalog entry's `mission` is deserialized fresh on every
-pick, so stateless data is never shared live across tabs. The other files here
-(`moon-mars-2039.js`, `moon-ceres-2032.js` and the rest) are the previous
-examples and are not in the catalog.
-
-`earth-mars-reference.js` is not in the catalog — it's a fixture
-`core/tests/retarget.test.js` depends on (a plan authored around a flyby
-offset outside `MAX_PASS_ALTITUDE`), kept only for that.
+pick, so stateless data is never shared live across tabs. The Built section is
+currently empty.
 
 ## Save format
 
@@ -475,8 +462,7 @@ engine's diagnostic, not a data-layer validity condition.
 the recompute/diagnostic/blocked/
 boundary/comply semantics, the carrier chain and integrated legs (departure
 and arrival, Earth-origin and generic-origin), the adopted-plan compliance
-rows, the phase-slider state functions, and the shipped preset plus every
-catalog entry end to end (deserialize, recompute, survive the share-link
+rows, the phase-slider state functions, and every catalog entry end to end (deserialize, recompute, survive the share-link
 round trip). Run from the repo root:
 
 ```

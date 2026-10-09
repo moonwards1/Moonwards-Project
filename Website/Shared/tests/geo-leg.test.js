@@ -33,7 +33,7 @@ import { systems } from "../orbit.js";
 var EARTH = systems.get("Earth"), MOON = systems.get("Moon"), SUN = systems.get("Sun");
 var GM_E = EARTH.GM, GM_M = MOON.GM, GM_S = SUN.GM, R_M = MOON.radius;
 var DAY = 86400;
-var JD0 = 2463220.75;   // the shipped preset's release date (2031-12-20 06:00)
+var JD0 = 2463220.75;   // a release date (2031-12-20 06:00)
 
 // A tether-style release state: position relAlt above the Moon's centre at
 // ecliptic phase phi, velocity = Moon's + a tangential kick. Mirrors how

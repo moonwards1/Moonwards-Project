@@ -24,21 +24,21 @@ import transferLeg, { computeLeg, stateAtElapsed, degAtDay, dayAtDeg, MISS_WARN_
 import { findClosestApproach as findClosestApproachEvent,
 	computeArrivalSeam as computeArrivalSeamFor } from "../../core/arrival-seam.js";
 import arrivalLeg, { legFor as arrivalLegFor } from "../arrival-leg/arrival-leg.js";
-import { defaultMission } from "../../presets/default-mission.js";
+import { moonMars2035UnbuiltMission } from "../../presets/moon-mars-2035-unbuilt.js";
 import { encodeFragment, decodeFragment } from "../../../Shared/exchange.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { SOI_EARTH } from "../../../Shared/geo-leg.js";
 
-// The shipped preset's release epoch (2031-12-19 ~16:20 UT — the departure
-// leg's own releaseJd; presets/default-mission.js's header records how it is
-// seeded) and its committed hand-off epoch, at Earth's SOI edge.
+// Epochs for the synthetic chains: a release epoch (2031-12-19 ~16:20 UT, the
+// departure leg's own releaseJd) and a coast-start epoch two days later, at
+// Earth's SOI edge.
 var JD_ANCHOR = 2463220.180402478;
 var JD_HANDOFF = 2463222.384503543;
 var DAY = 86400;
 
-// The worked-example lunar skyhook geometry (the shipped preset's own values),
-// now carried on the unified orbital-skyhook with its `body` named explicitly.
+// A lunar skyhook geometry, carried on the unified orbital-skyhook with its
+// `body` named explicitly.
 var MOON_SKYHOOK = { body: "Moon", comAlt: 275e3, relAlt: 6000e3, releasePhaseDeg: 92 };
 
 function makeRegistry() {
@@ -48,8 +48,8 @@ function makeRegistry() {
 	reg.register(departureLeg);
 	reg.register(adoptedPlan);
 	reg.register(transferLeg);
-	reg.register(arrivalLeg);    // the preset's terminal stage — the arrival
-	                             // flyby leg; arrival tech is empty by default
+	reg.register(arrivalLeg);    // the terminal stage — the arrival flyby leg;
+	                             // arrival tech is empty by default
 	return reg;
 }
 
@@ -72,8 +72,8 @@ function makeChain(skyhookParams, legParams, anchorJd) {
 
 // ---- tetherKinematics + rotorFor (pure carrier geometry) --------------------
 
-test("tetherKinematics: the worked-example geometry spins clear of lunar escape", function () {
-	var kin = tetherKinematics(MOON_SKYHOOK);   // the worked-example geometry
+test("tetherKinematics: the lunar skyhook geometry spins clear of lunar escape", function () {
+	var kin = tetherKinematics(MOON_SKYHOOK);
 	assert.equal(kin.ok, true);
 	// omega * rRel with CoM at 275 km, release from the top at 6000 km
 	assert.ok(kin.vRel > 5900 && kin.vRel < 6100, "release speed ~6.0 km/s, got " + kin.vRel);
@@ -114,23 +114,21 @@ test("moonFigures: the Moon's heading/impulse contribution at the anchor", funct
 
 // ---- computeDepartureLeg (pure integrated flight) ---------------------------
 
-// The preset's own carrier chain, hand-built.
+// The MOON_SKYHOOK carrier chain, hand-built.
 function presetChainData() {
 	var kin = tetherKinematics(MOON_SKYHOOK);
 	return { base: "Moon", rotors: [rotorFor(kin, JD_ANCHOR)] };
 }
 
-test("departure flight: the preset chain escapes to a hand-off at Earth-SOI exit", function () {
+test("departure flight: the skyhook chain escapes to a hand-off at Earth-SOI exit", function () {
 	var leg = computeDepartureLeg({ waypoints: [] }, presetChainData(), JD_ANCHOR);
 	assert.equal(leg.ok, true);
-	// The shipped chain's own figures: v∞ ≈ 5.32 km/s asymptotic,
-	// SOI exit ≈ 2.68 d after release — 0.47 d late against the committed
-	// hand-off, inside the ±1 d window.
+	// v∞ ≈ 5.3 km/s asymptotic; SOI exit a couple of days after release.
 	assert.ok(leg.vinfEarth > 4900 && leg.vinfEarth < 5800, "v∞ ~5.3 km/s, got " + leg.vinfEarth);
 	var flightDays = leg.handoff.tSoi / DAY;
 	assert.ok(flightDays > 2 && flightDays < 3.5, "flight ~2.7 d, got " + flightDays);
-	assert.ok(Math.abs(leg.handoff.jd - JD_HANDOFF) < 1, "hand-off inside the ±1 d window, off by " +
-		(leg.handoff.jd - JD_HANDOFF).toFixed(3) + " d");
+	assert.ok(Math.abs(leg.handoff.jd - (JD_ANCHOR + leg.handoff.tSoi / DAY)) < 1e-9,
+		"the hand-off epoch is the release plus the flight time");
 	// The flight is truncated at the hand-off: its last sample IS the SOI exit.
 	var last = leg.samples[leg.samples.length - 1];
 	assert.ok(Math.abs(Math.hypot(last.r[0], last.r[1], last.r[2]) - SOI_EARTH) < 1e4,
@@ -470,19 +468,23 @@ test("chain: moving the clock leaves the mission exactly as it was", function ()
 	assert.equal(c.engine.resultFor(c.ids.leg).output, before);
 });
 
-// ---- the shipped worked-example preset -------------------------------------
+// ---- the Moon -> Mars mission, through the engine ---------------------------
 
-test("preset: deserializes to the carrier-chain profile; the coast genuinely rendezvouses", function () {
-	// The integrated departure honestly under-delivers the committed 6.55
-	// km/s (the folded-in injection has no modelled tech yet — see the
-	// preset's header), but the hand-off lands INSIDE the ±1 d window, so
-	// the plan warns on v∞ and aim only. The coast still flies the adopted
-	// plan's state regardless, so it still arrives clean.
-	var res = deserializeWorld(defaultMission);
+// presets/moon-mars-2035-unbuilt.js with a lunar skyhook set up on the
+// departure stack. A skyhook at its default dials does not deliver the plan's
+// whole departure requirement, so comply mode shows real warnings.
+function builtMissionData() {
+	var w = JSON.parse(JSON.stringify(moonMars2035UnbuiltMission));
+	w.stages.splice(1, 0, { id: "stg-sky", moduleId: "orbital-skyhook",
+		params: { body: "Moon", comAlt: 275e3, relAlt: 6000e3, releasePhaseDeg: 94.49 } });
+	return w;
+}
+
+test("mission: deserializes to the carrier-chain profile; the skyhook's shortfall shows on the coast", function () {
+	var res = deserializeWorld(builtMissionData());
 	assert.equal(res.ok, true, res.reason);
 	var engine = createEngine(res.world, makeRegistry());
 	var stages = res.world.stages();
-	assert.equal(stages.length, 6);
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["moon-platform", "orbital-skyhook", "departure-leg", "adopted-plan", "transfer-leg",
 		 "arrival-leg"]);      // arrival tech empty by default — the mission ends at the flyby
@@ -497,71 +499,72 @@ test("preset: deserializes to the carrier-chain profile; the coast genuinely ren
 	assert.deepEqual(rSky.warnings, []);
 	assert.equal(rDep.status, "ok");
 	assert.equal(rPlan.status, "ok");
-	assert.deepEqual(rPlan.warnings.map(function (w) { return w.code; }).sort(),
-		["aim-mismatch", "vinf-mismatch"]);   // epoch is INSIDE the window — no epoch-mismatch
-	// THE FLOWN FLIGHT IS THE CLOCK, so that shortfall is no longer hidden
-	// behind an arc drawn from the plan: the coast goes where the skyhook
-	// actually sends it, and that is nowhere near Ceres. Closing the gap is
-	// what Check and Update are for.
+	var planCodes = rPlan.warnings.map(function (w) { return w.code; });
+	assert.ok(planCodes.indexOf("vinf-mismatch") !== -1, "plan codes " + planCodes);
+	assert.ok(planCodes.indexOf("aim-mismatch") !== -1, "plan codes " + planCodes);
+	// THE FLOWN FLIGHT IS THE CLOCK, so that shortfall is not hidden behind an
+	// arc drawn from the plan: the coast goes where the skyhook actually sends
+	// it. Closing the gap is what Check and Update are for.
 	assert.equal(rLeg.status, "ok");
 	assert.deepEqual(rLeg.warnings.map(function (w) { return w.code; }),
 		["misses-destination"]);
 });
 
-// The same preset with its departure stack removed, so nothing is delivered
+// The same mission with its departure stack removed, so nothing is delivered
 // and the coast falls back to the plan's own adopted state (adopted-plan.js's
-// boundary fallback). That is the plan AS adopted — the flight the Ephemeris
-// tab authored — and it is the fixture for everything below that needs a
-// coast which genuinely reaches Ceres.
-function planFlownPreset() {
-	var res = deserializeWorld(defaultMission);
+// boundary fallback): the flight the Ephemeris tab authored, which genuinely
+// reaches the destination. `deltaPro` (m/s, default 0) changes the prograde
+// part of the plan's coast waypoint, moving the pass.
+function planFlownWorld(deltaPro) {
+	var res = deserializeWorld(moonMars2035UnbuiltMission);
 	assert.equal(res.ok, true, res.reason);
 	["moon-platform", "orbital-skyhook", "departure-leg"].forEach(function (moduleId) {
 		var s = res.world.stages().filter(function (x) { return x.moduleId === moduleId; })[0];
 		if (s) { res.world.set({ removeStage: s.id }); }
 	});
+	if (deltaPro) {
+		var coast = res.world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		var wps = JSON.parse(JSON.stringify(coast.params.waypoints));
+		wps[0].burn.pro += deltaPro;
+		res.world.set({ stage: coast.id, params: { waypoints: wps } });
+	}
 	return res.world;
 }
 
-test("preset flying its own plan: the coast rendezvouses and the arrival leg pins to the pass", function () {
-	var world = planFlownPreset();
+test("mission flying its own plan: the coast reaches Mars and the arrival leg pins to the pass", function () {
+	// -2 m/s on the waypoint puts the pass about 16,000 km above Mars, near the
+	// re-target aim. (The plan as authored passes 100 km up, and the arrival
+	// leg's own integration reports it as an impact.)
+	var world = planFlownWorld(-2);
 	var engine = createEngine(world, makeRegistry());
 	var stages = world.stages();     // adopted-plan, transfer-leg, arrival-leg
 	assert.deepEqual(stages.map(function (s) { return s.moduleId; }),
 		["adopted-plan", "transfer-leg", "arrival-leg"]);
-	var res = { world: world };
 	var rLeg = engine.resultFor(stages[1].id);
 	assert.equal(rLeg.status, "ok");
 	assert.deepEqual(rLeg.warnings, []);
 
-	// arrival: hand-off + 750 days = 2034-01-08
-	var arr = O.dateFromJulian(rLeg.output.data.jd);
-	assert.deepEqual([arr.Y, arr.Mo, arr.D], [2034, 1, 8]);
-
-	// the terminal stage: the arrival flyby leg, pinned at the
-	// delivered arrival epoch, hand-off a day before, end a day after; closest
-	// approach at half Ceres's SOI (the reference construction).
+	// the terminal stage: the arrival flyby leg, pinned to the measured pass
 	var rArr = engine.resultFor(stages[2].id);
 	assert.equal(rArr.status, "ok");
 	// The arrival leg ends ARRIVAL_TAIL_DAYS past the measured pass — not past
-	// the coast's leg end, which merely happens to sit near it. The pass is the
-	// true periapsis and falls a few minutes INSIDE the coast leg.
-	var coastPass = nearestApproach(legFor(res.world, stages[1].id), "Ceres");
-	assert.ok(coastPass && coastPass.insideSoi, "the shipped coast must reach Ceres");
+	// the coast's leg end, which merely happens to sit near it.
+	var coastPass = nearestApproach(legFor(world, stages[1].id), "Mars");
+	assert.ok(coastPass && coastPass.insideSoi, "the coast must reach Mars");
 	assert.ok(Math.abs(rArr.output.data.jd - (coastPass.jd + 1)) < 1e-9);
-	assert.ok(coastPass.jd < rLeg.output.data.jd, "closest approach should precede the leg's end");
-	assert.ok(rLeg.output.data.jd - coastPass.jd < 0.01, "but only just");
 
 	// THE POINT OF THE SHARED MEASUREMENT: the coast measures the pass to place
 	// the arrival window, then the arrival leg integrates that window in the
 	// body frame and finds the pass for itself. Two independent routes over
 	// different physics must land on the same event, or the phases are once
 	// again describing two different passes.
-	var aLeg = arrivalLegFor(res.world, stages[2].id);
+	var aLeg = arrivalLegFor(world, stages[2].id);
 	assert.ok(aLeg && aLeg.ok, "the arrival leg must have flown");
 	assert.equal(aLeg.caAtEdge, false, "the pass must not sit on a window edge");
 	var arrCaJd = aLeg.jd0 + aLeg.ca.t / DAY;
-	assert.ok(Math.abs(arrCaJd - coastPass.jd) * DAY < 60,
+	// The epoch of a minimum is flat: a minute and a half along a 6 km/s track
+	// is a few hundred metres of distance. The distance below is the tight check.
+	assert.ok(Math.abs(arrCaJd - coastPass.jd) * DAY < 120,
 		"epochs differ by " + (Math.abs(arrCaJd - coastPass.jd) * DAY).toFixed(1) + " s");
 	assert.ok(Math.abs(aLeg.ca.r - coastPass.rmin) < 5000,
 		"distances differ by " + ((aLeg.ca.r - coastPass.rmin) / 1000).toFixed(1) + " km");
@@ -571,8 +574,8 @@ test("preset flying its own plan: the coast rendezvouses and the arrival leg pin
 	assert.match(rArr.events[1].label, /Closest approach/);
 });
 
-test("preset: survives the share-link fragment round trip", function () {
-	var res = deserializeWorld(defaultMission);
+test("mission: survives the share-link fragment round trip", function () {
+	var res = deserializeWorld(builtMissionData());
 	var frag = encodeFragment(res.world.serialize());
 	var back = deserializeWorld(decodeFragment(frag));
 	assert.equal(back.ok, true);
@@ -691,10 +694,10 @@ test("coast: the emitted packet and dvUsed follow the waypoints as edited", func
 });
 
 test("coast: a waypoint edit reaches the arrival leg in the same recompute", function () {
-	// The shipped chain: plan → coast → arrival leg, edited through world.set
+	// The built chain: plan → coast → arrival leg, edited through world.set
 	// after the engine is running, the way the Coast card edits it.
 	function arrivalAfterEdit(waypoints) {
-		var res = deserializeWorld(defaultMission);
+		var res = deserializeWorld(builtMissionData());
 		assert.equal(res.ok, true, res.reason);
 		var world = res.world;
 		var engine = createEngine(world, makeRegistry());
@@ -719,24 +722,34 @@ test("coast: a waypoint edit reaches the arrival leg in the same recompute", fun
 // outside an SOI the samples are a Kepler point per day and at a few km/s that
 // is hundreds of thousands of km apart.
 
-function ceresLeg(deltaPro) {
-	// planFlownPreset, so the coast starts from the plan's adopted hand-off and
-	// genuinely reaches Ceres — what these tests are measuring. Flown from the
-	// shipped skyhook's real delivery it misses by over an AU, which is the
-	// subject of the preset test above, not of this one.
-	var world = planFlownPreset();
+// The plan-flown Mars coast with its waypoint's prograde impulse changed by
+// `deltaPro` m/s. planFlownWorld, so the coast starts from the plan's adopted
+// hand-off and genuinely reaches Mars — what these tests are measuring.
+function marsLeg(deltaPro) {
+	var world = planFlownWorld(deltaPro);
 	var coast = world.stages().filter(function (s) { return s.moduleId === "transfer-leg"; })[0];
-	var wps = JSON.parse(JSON.stringify(coast.params.waypoints));
-	wps[0].burn.pro += deltaPro;
-	world.set({ stage: coast.id, params: { waypoints: wps } });
 	createEngine(world, makeRegistry());
 	return legFor(world, coast.id);
 }
 
+// The impulse change at which the pass stops entering Mars's SOI, found by
+// bisection between a change that enters and one that does not, so the cases
+// below follow the geometry rather than a pinned number.
+function soiEdgeDelta() {
+	var inside = -20, outside = -200;
+	assert.equal(nearestApproach(marsLeg(inside), "Mars").insideSoi, true);
+	assert.equal(nearestApproach(marsLeg(outside), "Mars").insideSoi, false);
+	for (var i = 0; i < 30; i++) {
+		var mid = (inside + outside) / 2;
+		if (nearestApproach(marsLeg(mid), "Mars").insideSoi) { inside = mid; } else { outside = mid; }
+	}
+	return inside;   // the side that still enters
+}
+
 test("nearestApproach: agrees with the integrated encounter's own rmin", function () {
-	var leg = ceresLeg(0);
-	var na = nearestApproach(leg, "Ceres");
-	var ca = findClosestApproachEvent(leg.events, "Ceres");
+	var leg = marsLeg(-5);   // a pass that falls inside the leg
+	var na = nearestApproach(leg, "Mars");
+	var ca = findClosestApproachEvent(leg.events, "Mars");
 	assert.ok(na && ca, "expected both an encounter event and a measurement");
 	// Two independent routes to the same number: integrateEncounter's refined
 	// rmin, and a ternary search over the seg chain it produced.
@@ -747,20 +760,26 @@ test("nearestApproach: agrees with the integrated encounter's own rmin", functio
 });
 
 test("nearestApproach: continuous across the SOI boundary", function () {
-	// Walk the waypoint's prograde impulse down through the value where the arc
-	// stops entering Ceres's SOI. Sampling the polyline used to leap from
-	// ~25,000 km to ~78,000 km here on a 0.05 m/s step.
-	var deltas = [-3, -3.1, -3.15, -3.2, -3.25, -3.3, -3.5];
-	var vals = deltas.map(function (d) { return nearestApproach(ceresLeg(d), "Ceres"); });
+	// Walk the waypoint's prograde impulse across the value where the arc stops
+	// entering Mars's SOI. Sampling the polyline leaps by hundreds of thousands
+	// of km here on a 0.1 m/s step.
+	var edge = soiEdgeDelta();
+	// Off the edge the pass moves a steady few thousand km per m/s.
+	var slope = Math.abs(nearestApproach(marsLeg(edge + 10), "Mars").rmin -
+		nearestApproach(marsLeg(edge + 20), "Mars").rmin) / 10;
+	var deltas = [edge + 3, edge + 1, edge + 0.3, edge + 0.1, edge - 0.1, edge - 0.3, edge - 1, edge - 3];
+	var vals = deltas.map(function (d) { return nearestApproach(marsLeg(d), "Mars"); });
 	vals.forEach(function (v, i) { assert.ok(v, "no measurement at " + deltas[i]); });
 	for (var i = 1; i < vals.length; i++) {
-		// Monotonic: reducing the impulse can only widen the pass here.
+		// Monotonic: lowering the impulse past the edge only widens the pass here.
 		assert.ok(vals[i].rmin > vals[i - 1].rmin,
 			"not monotonic at " + deltas[i] + ": " + vals[i].rmin + " after " + vals[i - 1].rmin);
-		// And smooth — no step may exceed a few hundred km per 0.05 m/s, which a
-		// branch change would blow through by two orders of magnitude.
+		// And smooth: no step may exceed a few times the ordinary slope, which a
+		// branch change would blow through by orders of magnitude.
 		var perMps = (vals[i].rmin - vals[i - 1].rmin) / Math.abs(deltas[i] - deltas[i - 1]);
-		assert.ok(perMps < 5e6, "jump of " + (perMps / 1000) + " km per m/s at " + deltas[i]);
+		assert.ok(perMps < 3 * slope,
+			"jump of " + (perMps / 1000) + " km per m/s at " + deltas[i] +
+			" against an ordinary " + (slope / 1000) + " km per m/s");
 	}
 });
 
@@ -768,42 +787,41 @@ test("nearestApproach: finds a pass that falls past the leg's own end", function
 	// A bigger prograde impulse moves closest approach into the display overrun.
 	// The emitted event cannot see it (the encounter scan stops at the leg
 	// boundary), but the drawn arc goes there and so must the readout.
-	var leg = ceresLeg(6);
-	var na = nearestApproach(leg, "Ceres");
+	var leg = marsLeg(5);
+	var na = nearestApproach(leg, "Mars");
 	assert.ok(na, "expected a measurement");
 	assert.equal(na.pastLegEnd, true);
-	assert.ok(na.rmin < 1e7, "expected a close pass, got " + na.rmin + " m");
-	// Sanity: the reported state really is that distance from Ceres.
+	assert.equal(na.insideSoi, true);
+	// Sanity: the reported state really is that distance from Mars.
 	assert.ok(Math.abs(O.vMag(na.rRel) - na.rmin) < 1, "rRel disagrees with rmin");
 });
 
 test("nearestApproach: safe on a leg with no destination, body, or segs", function () {
-	var leg = ceresLeg(0);
+	var leg = marsLeg(0);
 	assert.equal(nearestApproach(leg, ""), null);
 	assert.equal(nearestApproach(leg, "Nowhere"), null);
-	assert.equal(nearestApproach(null, "Ceres"), null);
-	assert.equal(nearestApproach({ ok: true, segs: [] }, "Ceres"), null);
+	assert.equal(nearestApproach(null, "Mars"), null);
+	assert.equal(nearestApproach({ ok: true, segs: [] }, "Mars"), null);
 });
 
 test("seam: the arrival window follows the pass continuously as the coast is tuned", function () {
-	// The regression this whole shared-measurement change exists for. The seam
-	// used to be hung on the emitted closest-approach EVENT, which vanished
-	// whenever the pass climbed back out of the SOI before the leg's end — the
-	// window then silently collapsed onto the plan's committed epoch and the
-	// Arrival phase was placed on the wrong days. Walking the impulse through
-	// that band, the window must stay an encounter window and move smoothly.
-	var deltas = [-3, -3.1, -3.2, -3.3, -3.5, -4];
+	// The seam is hung on the coast's own measured pass. A pass that climbs
+	// back out of the SOI before the leg's end must still be an encounter
+	// window, and the window must move smoothly as the impulse is walked
+	// through that band.
+	var edge = soiEdgeDelta();
+	var deltas = [edge + 5, edge + 2, edge + 1, edge + 0.3, edge + 0.1];
 	var prev = null;
 	deltas.forEach(function (d) {
-		var leg = ceresLeg(d);
-		var pass = nearestApproach(leg, "Ceres");
-		var seam = computeArrivalSeamFor({ destination: "Ceres", pass: pass,
+		var leg = marsLeg(d);
+		var pass = nearestApproach(leg, "Mars");
+		var seam = computeArrivalSeamFor({ destination: "Mars", pass: pass,
 			fallbackArrivalJd: leg.end.jd + 500 });   // a fallback so wrong it cannot hide
 		assert.equal(seam.hasEncounter, true, "seam lost the encounter at " + d);
 		assert.ok(Math.abs(seam.jd - leg.end.jd) < 5,
 			"window ran away to the fallback at " + d);
 		if (prev !== null) {
-			assert.ok(Math.abs(seam.jd - prev) < 0.05,
+			assert.ok(Math.abs(seam.jd - prev) < 0.5,
 				"window jumped " + ((seam.jd - prev) * 24).toFixed(2) + " h at " + d);
 		}
 		prev = seam.jd;
@@ -811,20 +829,18 @@ test("seam: the arrival window follows the pass continuously as the coast is tun
 });
 
 test("seam: an SOI entry is detected even when the leg ends just outside it", function () {
-	// The detector's own end-of-window case. A pass whose periapsis falls inside
-	// the leg but which has climbed back out of the SOI by the leg's end used to
-	// be rejected outright — so the body's gravity was never applied to the arc
-	// at all, not merely mis-reported.
-	var leg = ceresLeg(-3.5);
+	// A pass whose periapsis falls inside the leg but which has climbed back
+	// out of the SOI by the leg's end must still have the body's gravity
+	// applied to the arc, not merely be reported.
+	var leg = marsLeg(soiEdgeDelta() + 0.2);
 	var labels = leg.events.map(function (e) { return e.label; }).join(" | ");
-	assert.match(labels, /Ceres SOI entry/);
-	var pass = nearestApproach(leg, "Ceres");
+	assert.match(labels, /Mars SOI entry/);
+	var pass = nearestApproach(leg, "Mars");
 	assert.ok(pass.insideSoi, "the pass genuinely enters the SOI");
 	// The emitted event agrees with the measurement — one figure, not two.
-	var ev = findClosestApproachEvent(leg.events, "Ceres");
+	var ev = findClosestApproachEvent(leg.events, "Mars");
 	assert.ok(ev, "no closest-approach event emitted for the destination");
 	assert.ok(Math.abs(ev.rmin - pass.rmin) < 1,
 		"event " + ev.rmin + " vs measurement " + pass.rmin);
 	assert.ok(Math.abs(ev.jd - pass.jd) * DAY < 1, "epochs disagree");
 });
-

@@ -8,10 +8,23 @@ import {
 	createHistory, recordUpdate, markFinished, latestOf, stateOf, isFinished,
 	packSets, readSets, readHistory, entriesOf, planSummaryOf, changesBetween
 } from "../revisions.js";
-import { defaultMission } from "../../presets/default-mission.js";
+import { moonMars2035UnbuiltMission } from "../../presets/moon-mars-2035-unbuilt.js";
+
+// A built Moon -> Mars mission: the unbuilt plan with a lunar skyhook set up
+// on the departure stack, so the technology rows have something to report.
+// Stage order: moon-platform, orbital-skyhook, departure-leg, adopted-plan,
+// transfer-leg, arrival-leg.
+var SKYHOOK = { body: "Moon", comAlt: 275e3, relAlt: 6000e3, releasePhaseDeg: 94.49 };
+var builtMission = (function () {
+	var w = JSON.parse(JSON.stringify(moonMars2035UnbuiltMission));
+	w.stages.splice(1, 0, { id: "stg-sky", moduleId: "orbital-skyhook", params: JSON.parse(JSON.stringify(SKYHOOK)) });
+	return w;
+})();
+var PLAN = builtMission.stages[3].params;       // adopted-plan
+var LEG = builtMission.stages[4].params;        // transfer-leg
 
 function planWith(changes) {
-	var w = JSON.parse(JSON.stringify(defaultMission));
+	var w = JSON.parse(JSON.stringify(builtMission));
 	changes(w);
 	return w;
 }
@@ -90,22 +103,22 @@ test("an unfamiliar state label is kept as a later plan, read as 'updated'", fun
 	assert.deepEqual(latestOf(h).world, { a: 2 });
 });
 
-test("planSummaryOf reads the shipped mission's stored values", function () {
-	var rows = planSummaryOf(defaultMission).rows;
+test("planSummaryOf reads the mission's stored values", function () {
+	var rows = planSummaryOf(builtMission).rows;
 	function val(k) { return rows.filter(function (r) { return r.key === k; })[0].value; }
 	assert.equal(val("origin"), "Moon");
-	assert.equal(val("destination"), "Ceres");
-	assert.equal(val("handoffJd"), 2463222.384503543);
-	assert.equal(val("releaseJd"), 2463220.296116752);
-	assert.equal(val("arrivalVInf"), 3776.34);
-	assert.equal(val("legDays"), 748.365496);
-	assert.equal(val("planWps"), 1);
+	assert.equal(val("destination"), "Mars");
+	assert.equal(val("handoffJd"), PLAN.departure.jd);
+	assert.equal(val("releaseJd"), PLAN.lunarRelease.jd);
+	assert.equal(val("arrivalVInf"), PLAN.arrival.vInf);
+	assert.equal(val("legDays"), LEG.legDays);
+	assert.equal(val("planWps"), PLAN.waypoints.length);
 	assert.equal(val("tech"), "moon-platform → orbital-skyhook");
 });
 
 test("a plan compared with itself shows no change (a JSON round trip is not an edit)", function () {
-	var copy = JSON.parse(JSON.stringify(defaultMission));
-	assert.equal(changesBetween(defaultMission, copy).filter(function (c) { return c.changed; }).length, 0);
+	var copy = JSON.parse(JSON.stringify(builtMission));
+	assert.equal(changesBetween(builtMission, copy).filter(function (c) { return c.changed; }).length, 0);
 });
 
 test("changesBetween names exactly what moved", function () {
@@ -113,10 +126,10 @@ test("changesBetween names exactly what moved", function () {
 		w.stages[4].params.legDays = 800;              // transfer-leg horizon
 		w.stages[3].params.arrival.vInf = 4000;        // adopted-plan commitment
 	});
-	var moved = changesBetween(defaultMission, after).filter(function (c) { return c.changed; });
+	var moved = changesBetween(builtMission, after).filter(function (c) { return c.changed; });
 	assert.deepEqual(moved.map(function (c) { return c.key; }).sort(), ["arrivalVInf", "legDays"]);
 	var horizon = moved.filter(function (c) { return c.key === "legDays"; })[0];
-	assert.equal(horizon.was, 748.365496);
+	assert.equal(horizon.was, LEG.legDays);
 	assert.equal(horizon.now, 800);
 });
 
@@ -124,7 +137,7 @@ test("a technology added to the stack shows up as a change", function () {
 	var after = planWith(function (w) {
 		w.stages.splice(2, 0, { id: "stg-9", moduleId: "some-carrier", params: {} });
 	});
-	var moved = changesBetween(defaultMission, after).filter(function (c) { return c.changed; });
+	var moved = changesBetween(builtMission, after).filter(function (c) { return c.changed; });
 	assert.deepEqual(moved.map(function (c) { return c.key; }), ["tech"]);
 	assert.match(moved[0].now, /some-carrier/);
 });
@@ -136,18 +149,18 @@ test("a plan missing stages summarises as nulls rather than throwing", function 
 });
 
 test("a technology's own stored dials each get a row", function () {
-	var rows = planSummaryOf(defaultMission).rows;
+	var rows = planSummaryOf(builtMission).rows;
 	var dial = rows.filter(function (r) { return /release phase deg/.test(r.label); })[0];
 	assert.ok(dial, "the skyhook's release phase is reported");
-	assert.equal(dial.value, 94.49);
+	assert.equal(dial.value, SKYHOOK.releasePhaseDeg);
 	assert.match(dial.label, /^orbital-skyhook · /);
 });
 
 test("re-tuning a technology shows up as a change", function () {
 	var after = planWith(function (w) { w.stages[1].params.releasePhaseDeg = 100; });
-	var moved = changesBetween(defaultMission, after).filter(function (c) { return c.changed; });
+	var moved = changesBetween(builtMission, after).filter(function (c) { return c.changed; });
 	assert.equal(moved.length, 1);
-	assert.equal(moved[0].was, 94.49);
+	assert.equal(moved[0].was, SKYHOOK.releasePhaseDeg);
 	assert.equal(moved[0].now, 100);
 });
 
@@ -157,7 +170,7 @@ test("a technology inserted ABOVE another doesn't make the other's dials read as
 	var after = planWith(function (w) {
 		w.stages.splice(1, 0, { id: "stg-9", moduleId: "mass-driver", params: { railKm: 12 } });
 	});
-	var moved = changesBetween(defaultMission, after).filter(function (c) { return c.changed; });
+	var moved = changesBetween(builtMission, after).filter(function (c) { return c.changed; });
 	var keys = moved.map(function (c) { return c.key; });
 	assert.ok(keys.indexOf("tech") >= 0, "the stack itself changed");
 	assert.ok(keys.some(function (k) { return /mass-driver/.test(k); }), "the new tech's dials appear");
@@ -176,12 +189,12 @@ test("two of the same module are told apart", function () {
 
 test("a dial only one side has reads null on the other, in both directions", function () {
 	var after = planWith(function (w) { w.stages[1].params.newDial = 5; });
-	var added = changesBetween(defaultMission, after).filter(function (c) { return c.changed; });
+	var added = changesBetween(builtMission, after).filter(function (c) { return c.changed; });
 	assert.equal(added.length, 1);
 	assert.equal(added[0].was, null);
 	assert.equal(added[0].now, 5);
 
-	var removed = changesBetween(after, defaultMission).filter(function (c) { return c.changed; });
+	var removed = changesBetween(after, builtMission).filter(function (c) { return c.changed; });
 	assert.equal(removed.length, 1);
 	assert.equal(removed[0].was, 5);
 	assert.equal(removed[0].now, null);

@@ -31,8 +31,9 @@ restate its content in code comments — cite the entry and its date.
   folder of substance plus two thin role adapters (`modules/platform/`).
 - `ui/` — shell-local widgets (phase slider, ship card, share link, the tech
   catalog).
-- `presets/` — the shipped mission and the example catalog, checked in as
-  serialized Worlds.
+- `presets/` — the example catalog and the test fixtures, checked in as
+  serialized Worlds. There is no default mission: the app opens on the
+  Ephemeris tab unless missions are saved or a share link is present.
 - `planner.js` + `mission-view.js` + `ephemeris-view.js` + `scene-frames.js` —
   the browser shell over `core/`.
 

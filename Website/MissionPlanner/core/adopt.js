@@ -224,7 +224,7 @@ export function adoptMissionWorld(spec) {
 }
 
 // "Earth → Ceres 2031" — the name dialog's suggested title. The year is the
-// DEPARTURE year, matching the shipped preset's own "Moon → Ceres 2031".
+// DEPARTURE year, e.g. "Moon → Ceres 2031".
 export function defaultMissionTitle(origin, destination, depJd) {
 	var y = OrbitalMath.dateFromJulian(depJd).Y;
 	return origin + " → " + destination + " " + y;

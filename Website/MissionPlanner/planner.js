@@ -32,7 +32,6 @@
 
 import { deserializeWorld } from "./core/world.js";
 import { createRegistry } from "./core/registry.js";
-import { defaultWorkspaceMain } from "./presets/default-mission.js";
 import { EXAMPLE_SECTIONS, EXAMPLE_MISSIONS } from "./presets/examples-catalog.js";
 import { decodeFragmentAny } from "../Shared/exchange.js";
 import { unpackMissionLink } from "./ui/share-link.js";
@@ -66,6 +65,10 @@ var MODULE_URLS = [
 	// tether run in reverse. Missions ship with the arrival-tech slot empty.
 	"./modules/skyhook/skyhook-arrival.js"
 ];
+// The main-pane frame a mission tab opens on when its spawner names none: the
+// departure system (mission-view.js's `defaultMain`).
+var DEFAULT_MAIN_FRAME = "body:Earth-Moon";
+
 var registry = createRegistry();
 var loaded = await Promise.all(MODULE_URLS.map(function (u) { return import(u); }));
 loaded.forEach(function (m) { registry.register(m.default); });
@@ -131,10 +134,11 @@ function nextMissionId(existing) {
 
 // ---- initial missions: persisted missions (if any) merged with a share-link
 // fragment (if the URL carries one — a share link opens in a new browser tab,
-// so its mission is added alongside saved work, never replacing it), else the
-// shipped worked-example preset. A bad fragment or an unreadable saved mission
-// falls back gracefully WITH a banner, never a blank page (missions are user
-// data; refusals are polite).
+// so its mission is added alongside saved work, never replacing it), else no
+// missions at all: there is no default mission, and a first visit opens on the
+// Ephemeris tab. A bad fragment or an unreadable saved mission falls back
+// gracefully WITH a banner, never a blank page (missions are user data;
+// refusals are polite).
 var loadNotice = null;
 
 // Async because a mission link is DEFLATE-compressed (Shared/exchange.js's
@@ -182,8 +186,8 @@ async function initialMissions() {
 	}
 
 	// No saved missions and no usable share link: open on the Ephemeris tab
-	// with no mission tabs at all — new missions are started from there (the
-	// "+" tab's title says as much), not from a shipped starter mission.
+	// with no mission tabs at all — there is no default mission; new missions are
+	// started from there (the "+" tab's title says as much).
 	if (hashFailReason) {
 		loadNotice = "Couldn't load the linked mission (" + hashFailReason + ") — opened the Ephemeris tab instead.";
 	}
@@ -233,7 +237,7 @@ function makeMissionView(world, missionId, defaultMainId, plan) {
 		container: viewsEl,
 		template: missionTemplate,
 		missionId: missionId,
-		defaultMain: defaultMainId || defaultWorkspaceMain,
+		defaultMain: defaultMainId || DEFAULT_MAIN_FRAME,
 		getTitle: function () { return titleFor(missionId); }
 	});
 }
