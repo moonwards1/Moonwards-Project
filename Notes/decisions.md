@@ -393,17 +393,21 @@ generic `body-departure-leg` with a self-originating skyhook.
   at the crossing (`at: "exit"`) at the release epoch. It refuses rather than
   answering when no card reaches the ask. Writing Lambert's total into the
   card bills the ship for the Moon and overshoots on every refresh.
-- **Two pipelines, switched where the outward one refuses.** The outward
-  pipeline reads the card as the share's own vector. When it cannot deliver
-  the card (the ship would have to swing past Earth), `flyEarthPassDeparture`
-  reads the same card as the share's LENGTH along the heading actually flown,
-  and traces the coasting route back to the Moon (`passiveReleaseFor`, the
-  short way round Earth). Why: past Earth, the direction the share alone
-  would leave on points where the ship never goes, while the length still
-  fixes the release. The cost is a seam: the same card is a different flight
-  on either side (a few degrees of heading), and near it some coasting
-  flights have no card, because the outward pipeline claims the card they
-  would need.
+- **The card is a length along the flown heading, all month.** Its length is
+  the technology's share, which fixes the release speed; its direction is the
+  heading the ship leaves Earth on. `flyEarthPassDeparture` traces that
+  heading's coasting route back to the Moon (`passiveReleaseFor`, the short
+  way round Earth), so the Moon's contribution is a gain or loss of speed
+  along the heading and never a turn of it. Why: reading the card as the
+  share's own vector made the flown heading card + residual, which swings up
+  to ~25° with the lunar phase and jumped where that reading gave out. Cost:
+  a weak card (below ~2 km/s) on an unfavourable phase has no route and is
+  refused ("no-pass-route") rather than flown on another reading.
+  The release aim is free: the release direction swings with the phase (up to
+  ~85° over the month) to hold the heading, because the Ephemeris tab finds the
+  trajectory and the mission tab works out what the technology must be to fly
+  it. A skyhook's pointing at any epoch depends on where it was placed, so
+  demanding a fixed aim here would be precision for its own sake.
 
 ### The Coast→Arrival seam
 

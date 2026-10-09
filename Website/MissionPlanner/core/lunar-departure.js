@@ -20,57 +20,42 @@
  * WHAT THE DEPARTURE CARD HOLDS. The card is the speed the RELEASE delivers
  * AT Earth's SOI edge — the technology's share: a skyhook or elevator lets go
  * and the ship coasts from there, with no burns of its own in this sketch —
- * stated on Earth's heliocentric prograde/normal/radial axes,
- * the same frame and the same meaning every other origin's card carries. It is
- * the ship's bill, and nothing the Moon contributes appears in it.
+ * stated on Earth's heliocentric prograde/normal/radial axes, the same frame
+ * and the same meaning every other origin's card carries. It is the ship's
+ * bill, and nothing the Moon contributes appears in it.
  *
  * That edge speed is NOT the hyperbolic excess: at 924,631 km Earth still holds
  * 928.5 m/s. The solve below inverts an escape hyperbola and so needs the
- * excess, and `cardAsym` is the card converted to it. A card below 928.5 m/s
- * describes a contribution that never escapes Earth on its own, which this
+ * excess, and `cardAsym` is the card's length converted to it. A card below
+ * 928.5 m/s describes a share that never escapes Earth on its own, which this
  * decomposition cannot express — refused as "card-below-escape".
+ *
+ * HOW THE CARD IS READ. Its LENGTH is the technology's share, and so the
+ * release speed; its DIRECTION is the heading the ship actually leaves Earth
+ * on. The Moon's contribution is therefore a gain or loss of speed ALONG that
+ * heading, never a turn of it: the arc's final heading is the card's heading
+ * on every day of the month, and only its speed moves with the lunar phase.
  *
  * WHAT THE MOON ADDS. The Moon is moving, and a ship that leaves it keeps that
  * motion for free. But the Moon hands it over at 384,400 km, deep inside
  * Earth's well, so what arrives at Earth's SOI is a RESIDUAL, not the Moon's
- * own ~1,022 m/s. It can be worth more than face value — velocity added deep
- * in a well buys more than the same velocity added outside one — or less, when
- * the Moon is carrying the ship across the departure rather than along it.
- * Sampled over dates and cards it runs from about 0.9 to 1.9 times the Moon's
- * speed, and above face value only about half the time. Its DIRECTION swings
- * right round with the Moon's phase, and that is what makes the departure date
- * change where the ship ends up.
+ * own ~1,022 m/s: velocity added deep in a well buys more than the same
+ * velocity added outside one, and less when the Moon is carrying the ship
+ * across the departure rather than along it. Squares do not split, so the
+ * Moon's share and the ship's cannot be sent out through Earth's well
+ * separately and added up afterwards; the chain runs through the one state
+ * where both are present together — the ship's velocity at the Moon:
  *
- * HOW THE TWO ARE COMBINED. Squares do not split: the Moon's share and the
- * ship's share cannot be sent out through Earth's well separately and added up
- * afterwards. Taken alone the Moon's 1,022 m/s does not even escape. So the
- * chain runs through the one state where both are simply present together —
- * the ship's velocity at the Moon:
+ *   heading + share  ->  the velocity at the Moon whose coast leaves on
+ *                        exactly that heading with that total excess
+ *                        (passiveReleaseFor, solved for the excess S)
+ *   minus the Moon's own velocity  ->  the release  u
+ *   residual = S - share, along the heading
  *
- *   card  ->  the ship's velocity at the Moon that delivers it  (solveShipVelocity)
- *         ->  plus the Moon's own velocity there                (the free part)
- *         ->  out through Earth's well, exactly                 (vInfFromState)
- *         ->  total v-infinity;  residual = total - card
- *
- * TWO PIPELINES, ONE SEAM. The chain above is the OUTWARD pipeline: it flies
- * the departures that head away from Earth. When the Moon is on the wrong
- * side of its orbit for the card — the ship would have to swing past Earth to
- * leave that way — the outward pipeline refuses, and every refusal hands the
- * card to flyEarthPassDeparture, the EARTH-PASS pipeline, which reads the
- * card differently:
- *
- *   outward     card = the share's own vector: its length is the technology's
- *               share, its direction the one that share alone would leave on.
- *               The flown heading is card + residual.
- *   Earth-pass  card = the share's LENGTH along the flown HEADING. Where the
- *               ship bends past Earth, the direction the share alone would
- *               take points somewhere the ship never goes, so the card's
- *               direction is the heading actually flown instead; the Moon's
- *               contribution is then a gain or loss of speed along it.
- *
- * The length means the same in both: the technology's share, and so the
- * release speed. The same card on either side of the seam is a different
- * flight, so a scrub across it moves the arc abruptly.
+ * Some cards on some dates have no coasting route at all, most often a weak
+ * card against an unfavourable phase. Those are refused by name rather than
+ * flown on a different reading of the card, so a card never changes meaning
+ * between dates.
  *
  * Pure (no DOM, no THREE) and Node-testable, like the rest of core/.
  */
@@ -137,62 +122,6 @@ export function vInfFromState(r, v) {
 	return { vec: O.vScale(dir, vInf), mag: vInf, e: e, rp: (hm * hm / GM_EARTH) / (1 + e) };
 }
 
-// The inverse: what velocity at rMoon escapes Earth along exactly this
-// v-infinity vector? Vis-viva fixes the SPEED outright; the orbital plane has
-// to contain both rMoon and the target, which leaves one angle to solve for.
-//
-// Only outward-heading solutions are considered, which both matches what this
-// file supports and picks a single branch out of the two that would otherwise
-// deliver the same v-infinity bending opposite ways.
-//
-// Returns { ok: true, u, turnDeg } or { ok: false, reason }.
-export function solveShipVelocity(rMoon, w) {
-	var rm = O.vMag(rMoon), wm = O.vMag(w);
-	if (!(wm > 1e-6)) { return { ok: false, reason: "no-card" }; }
-	var need = Math.sqrt(wm * wm + 2 * GM_EARTH / rm);
-	var rHat = O.vUnit(rMoon);
-	var n = O.vCross(rMoon, w);
-
-	// A card pointing straight out along the Moon's own radius needs a radial
-	// escape; straight back down it cannot be met heading outward at all.
-	if (O.vMag(n) < 1e-9 * rm * wm) {
-		if (O.vDot(rMoon, w) > 0) {
-			return { ok: true, u: O.vScale(rHat, need), turnDeg: 0 };
-		}
-		return { ok: false, reason: "card-toward-Earth" };
-	}
-	var nHat = O.vUnit(n), tHat = O.vCross(nHat, rHat);
-	var psi = Math.atan2(O.vDot(w, tHat), O.vDot(w, rHat));   // in (0, PI)
-
-	// theta measures the ship's velocity away from straight-out. Outward means
-	// theta in (0, PI/2]; PI/2 puts the release exactly at periapsis.
-	function asymptoteAngle(theta) {
-		var u = O.vScale(O.vAdd(O.vScale(rHat, Math.cos(theta)),
-		                        O.vScale(tHat, Math.sin(theta))), need);
-		var out = vInfFromState(rMoon, u);
-		if (!out) { return null; }
-		return Math.atan2(O.vDot(out.vec, tHat), O.vDot(out.vec, rHat));
-	}
-	var hi = Math.PI / 2, aHi = asymptoteAngle(hi);
-	if (aHi === null || psi > aHi + 1e-12) {
-		// The card points further round than an outward release can reach; only
-		// a trajectory that dives past Earth could deliver it.
-		return { ok: false, reason: "card-needs-earth-pass" };
-	}
-	var lo = 1e-9;
-	for (var i = 0; i < 100; i++) {
-		var mid = 0.5 * (lo + hi), a = asymptoteAngle(mid);
-		if (a === null || a < psi) { lo = mid; } else { hi = mid; }
-	}
-	var theta = 0.5 * (lo + hi);
-	var u = O.vScale(O.vAdd(O.vScale(rHat, Math.cos(theta)),
-	                        O.vScale(tHat, Math.sin(theta))), need);
-	var check = vInfFromState(rMoon, u);
-	var turn = Math.acos(Math.max(-1, Math.min(1,
-		O.vDot(O.vUnit(u), O.vUnit(check.vec)))));
-	return { ok: true, u: u, turnDeg: turn * 180 / Math.PI };
-}
-
 // The inverse of cardVInf: a geocentric vector back into card components, on
 // the same Earth heliocentric axes. Exact — burnComponents projects onto the
 // orthonormal frame cardVInf builds the vector from.
@@ -216,13 +145,12 @@ var CARD_SOLVE_TOL = 0.05;
  * recompute would add the residual on top of it — an arc that overshoots by
  * up to ~1.4 km/s and re-overshoots on every refresh instead of settling.
  *
- * The residual cannot simply be subtracted once, because it is a function of
- * the card: change the card and the ship leaves the Moon on a different
- * hyperbola, so what the Moon's motion is worth out at Earth's SOI changes
- * too. So this iterates the subtraction — card = wanted - residual(card) —
- * which converges in a handful of passes over most of the lunar month. Near
- * the edges of the supported region it can crawl or oscillate, and a damped
- * Newton on the same function picks those up.
+ * An asymptote ask has a closed-form answer: the card's direction is the
+ * wanted heading, and tracing that heading back to the Moon gives the release
+ * the route needs, whose length is the card's (earthPassCardFor). An exit ask
+ * differs from it in direction as well as size, so the same answer only seeds
+ * it; the iteration card = wanted - residual(card), and a damped Newton on the
+ * same function where that crawls or oscillates, close on the real quantity.
  *
  * spec = { jd, vInfVec, seedCard, at } — seedCard is the card in force, which
  * is usually close, and `at` says WHERE vInfVec is measured:
@@ -278,19 +206,17 @@ export function solveLunarCard(spec) {
 		return e;
 	}
 
-	// SEEDS. The card in force is the natural one — a scrub moves the answer
-	// only a little. The wanted total read as if it were the card is the
+	// SEEDS. The traced-back card is exact for an asymptote ask and close for
+	// an exit one. The card in force is the next natural one — a scrub moves the
+	// answer only a little. The wanted total read as if it were the card is the
 	// fallback: wrong by exactly the residual, but always inside the region
 	// where an escaping card is defined, which a stale seed may not be.
 	var wm = O.vMag(wantIter);
 	var seeds = [];
-	if (spec.seedCard) { seeds.push(spec.seedCard); }
-	seeds.push(cardFromVector(jd, O.vScale(wantIter, edgeVInf(wm, "Moon") / wm)));
-	// The Earth-pass reading, solved outright: trace the wanted heading back to
-	// the Moon, and the release that route needs gives the card's length. It
-	// is exact whenever the answer lands on the Earth-pass side of the seam.
 	var passSeed = earthPassCardFor(jd, wantIter);
 	if (passSeed) { seeds.push(passSeed); }
+	if (spec.seedCard) { seeds.push(spec.seedCard); }
+	seeds.push(cardFromVector(jd, O.vScale(wantIter, edgeVInf(wm, "Moon") / wm)));
 
 	for (var s = 0; s < seeds.length; s++) {
 		var card = seeds[s], lastGood = null;
@@ -358,11 +284,9 @@ export function solveLunarCard(spec) {
 	return { ok: true, card: best.card, flight: best.flight, err: best.err };
 }
 
-// The card the Earth-pass pipeline reads as leaving on exactly the TOTAL
-// hyperbolic excess `want`: its direction, at the length of the share the
-// traced-back release supplies. Null when there is no route or no escaping
-// share. Whether this card is actually flown by the Earth-pass pipeline
-// depends on which side of the seam it falls.
+// The card that leaves on exactly the TOTAL hyperbolic excess `want`: its
+// direction, at the length of the share the traced-back release supplies.
+// Null when there is no route or no escaping share.
 function earthPassCardFor(jd, want) {
 	var rMoon = moonGeoPos(jd);
 	var v = passiveReleaseFor(rMoon, want);
@@ -447,9 +371,8 @@ export function passiveReleaseFor(rMoon, w) {
 var R_EARTH = Number(systems.get("Earth").radius);
 export var MIN_PERIGEE = R_EARTH + 100e3;
 
-// THE EARTH-PASS PIPELINE — the departures the outward pipeline refuses.
-// Called by flyLunarDeparture with the same spec; returns a flight in the same
-// shape, plus `route: "earth-pass"` and `perigee` (m, or null when the release
+// THE DEPARTURE FLOWN FROM A CARD. Returns a flight in the shape
+// flyLunarDeparture documents, plus `perigee` (m, or null when the release
 // already heads outward and the perigee lies behind it, never flown).
 //
 // The card's LENGTH is the technology's share, which fixes the release speed:
@@ -460,11 +383,13 @@ export var MIN_PERIGEE = R_EARTH + 100e3;
 // Moon, and the release must supply exactly that velocity minus the Moon's
 // own. So S is the root of
 //   | passiveReleaseFor(rMoon, S * heading) - vMoon | = |u|
-// which across a lunar month has exactly one; should a date offer more, the
-// slowest is taken.
+// which across a lunar month has exactly one for most cards; should a date
+// offer more, the slowest is taken. Where the ship must fall toward Earth
+// first, it swings through perigee on the short way round.
 //
-// Refuses, by name, with "no-pass-route" (no S meets the release), or
-// "pass-hits-Earth" (the route found would dip below MIN_PERIGEE).
+// Refuses, by name, with "card-toward-Earth" (a heading straight back down the
+// Moon's radius has no plane to bend in), "no-pass-route" (no S meets the
+// release), or "pass-hits-Earth" (the route found would dip below MIN_PERIGEE).
 export function flyEarthPassDeparture(spec) {
 	var jd = spec.jd;
 	var cardVec = cardVInf(jd, spec.card);
@@ -506,14 +431,13 @@ export function flyEarthPassDeparture(spec) {
 	var turn = Math.acos(Math.max(-1, Math.min(1, O.vDot(O.vUnit(vTotal), O.vUnit(total.vec)))));
 	var residual = O.vSub(total.vec, w);
 	return {
-		ok: true, route: "earth-pass", jd: jd, cardVec: cardVec, cardAsym: w,
+		ok: true, perigee: inbound ? total.rp : null, jd: jd, cardVec: cardVec, cardAsym: w,
 		u: u, uMag: O.vMag(u),
 		releaseSpeed: releaseSpeedFor(O.vMag(u), spec.releaseRadius),
 		vInf: total,
 		residual: { vec: residual, mag: O.vMag(residual) },
 		rMoon: rMoon, vMoon: vMoon,
 		turnDeg: turn * 180 / Math.PI,
-		perigee: inbound ? total.rp : null,
 		coastDays: coast == null ? null : coast / DAY,
 		soiExit: exitState ? { r: exitState.r, v: exitState.v, dt: coast } : null
 	};
@@ -525,12 +449,13 @@ export function flyEarthPassDeparture(spec) {
 // }
 //
 // Returns, on success:
-//   { ok: true, route, jd, u, uMag, releaseSpeed,
-//     route,       // "outward", or "earth-pass" from flyEarthPassDeparture
-//     perigee,     // m — a pass's flown perigee; null when none is flown
+//   { ok: true, jd, u, uMag, releaseSpeed,
+//     perigee,     // m — the flown perigee when the ship falls toward Earth
+//                  //   first; null when the release already heads outward
 //     cardVec,     // the card as typed — the ship's speed AT Earth's SOI edge
 //     cardAsym,    // the same, as the hyperbolic excess behind it
-//     vInf,        // { vec, mag, e, rp } — the TOTAL excess, ship plus Moon
+//     vInf,        // { vec, mag, e, rp } — the TOTAL excess, ship plus Moon;
+//                  //   its direction is the card's
 //     residual,    // vec + mag: what the Moon's motion is worth at Earth's SOI
 //     soiExit,     // { r, v, dt } — the hand-off: the outward Earth-SOI
 //                  //   crossing in Earth's frame, dt seconds after release.
@@ -540,69 +465,13 @@ export function flyEarthPassDeparture(spec) {
 // with vInf.vec === cardAsym + residual.vec, all three hyperbolic excesses.
 // On failure { ok: false, reason } with reason one of "no-card",
 // "card-below-escape", "card-toward-Earth", "no-pass-route" or
-// "pass-hits-Earth" — the outward pipeline's own refusals
-// ("card-needs-earth-pass", "heads-into-Earth", "no-escape") surface only if
-// the Earth-pass pipeline declines to answer at all.
+// "pass-hits-Earth".
 export function flyLunarDeparture(spec) {
-	var jd = spec.jd;
-	var cardVec = cardVInf(jd, spec.card);
-	// The card states the ship's speed AT Earth's SOI edge, where Earth still
-	// holds 928.5 m/s (Notes/decisions.md). Everything below works in
-	// asymptotic terms — solveShipVelocity inverts an escape hyperbola, which
-	// only an escaping contribution has — so convert once, here.
-	var cardMag = O.vMag(cardVec);
-	var cardAsym = asymptoticVInf(cardMag, "Moon");
+	var cardMag = O.vMag(cardVInf(spec.jd, spec.card));
 	if (!(cardMag > 1e-6)) { return { ok: false, reason: "no-card" }; }
-	if (!(cardAsym > 1e-6)) { return { ok: false, reason: "card-below-escape" }; }
-	var w = O.vScale(cardVec, cardAsym / cardMag);
-	var rMoon = moonGeoPos(jd), vMoon = moonGeoVel(jd);
-
-	// Every departure refused here is one that would pass Earth on the way
-	// out, so each refusal is the seam: the card goes to the Earth-pass
-	// pipeline, which reads it as a heading (see the header).
-	var solved = solveShipVelocity(rMoon, w);
-	if (!solved.ok) {
-		// No card at all is nothing to fly, by any route.
-		if (solved.reason === "no-card") { return { ok: false, reason: "no-card" }; }
-		return flyEarthPassDeparture(spec) || { ok: false, reason: solved.reason };
-	}
-
-	var vTotal = O.vAdd(vMoon, solved.u);
-	// Supported departures leave going outward, so the ship never passes Earth.
-	if (O.vDot(rMoon, vTotal) <= 0) {
-		return flyEarthPassDeparture(spec) || { ok: false, reason: "heads-into-Earth" };
-	}
-
-	var total = vInfFromState(rMoon, vTotal);
-	if (!total) { return flyEarthPassDeparture(spec) || { ok: false, reason: "no-escape" }; }
-
-	// Both shares as hyperbolic excesses, so they add: the card's own worth out
-	// there plus what the Moon's motion is still worth once Earth is behind.
-	var residual = O.vSub(total.vec, w);
-	var coast = hyperbolicCoastTime(total.mag, total.e, O.vMag(rMoon), SOI_EARTH);
-
-	// WHERE THE DEPARTURE ENDS: the outward crossing of Earth's SOI, in
-	// Earth's frame. The state at the Moon fixes the escape hyperbola exactly
-	// and `coast` is that same hyperbola's time from the Moon out to the
-	// boundary, so propagating by it lands ON SOI_EARTH rather than near it.
-	//
-	// `v` here is the EDGE speed, not the asymptote: Earth still holds ~98 m/s
-	// of a 4.3 km/s departure at this radius. That is what a hand-off velocity
-	// means everywhere in core/, and it is the quantity the compliance
-	// boundary measures the delivered hand-off in.
-	//
-	// Null when the coast time is undefined (a departure too near radial for
-	// the anomaly), which is a departure with no hand-off to state.
-	var exitState = coast == null ? null : O.propagateState(GM_EARTH, rMoon, vTotal, coast);
-	return {
-		ok: true, route: "outward", perigee: null, jd: jd, cardVec: cardVec, cardAsym: w,
-		u: solved.u, uMag: O.vMag(solved.u),
-		releaseSpeed: releaseSpeedFor(O.vMag(solved.u), spec.releaseRadius),
-		vInf: total,
-		residual: { vec: residual, mag: O.vMag(residual) },
-		rMoon: rMoon, vMoon: vMoon,
-		turnDeg: solved.turnDeg,
-		coastDays: coast == null ? null : coast / DAY,
-		soiExit: exitState ? { r: exitState.r, v: exitState.v, dt: coast } : null
-	};
+	// The card states the ship's speed AT Earth's SOI edge, where Earth still
+	// holds 928.5 m/s (Notes/decisions.md); a share that does not escape on its
+	// own has no excess to carry out through Earth's well.
+	if (!(asymptoticVInf(cardMag, "Moon") > 1e-6)) { return { ok: false, reason: "card-below-escape" }; }
+	return flyEarthPassDeparture(spec) || { ok: false, reason: "no-card" };
 }

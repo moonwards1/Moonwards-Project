@@ -248,19 +248,13 @@ function isoDay(jd) {
 // than the solver's (core/lunar-departure.js's own reason codes).
 var LUNAR_FAILURES = {
 	"no-card": "No departure yet — give the ship a speed to leave Earth's SOI with.",
-	"no-escape": "The Moon is carrying the ship against this departure: with its "
-	           + "motion added, the ship no longer escapes Earth. A larger card or "
-	           + "another date will clear it.",
 	"card-toward-Earth": "This departure points back at Earth from the Moon.",
-	"card-needs-earth-pass": "Not from this side of the Moon's orbit: reaching "
-	           + "this departure would mean swinging past Earth on the way out.",
-	"no-pass-route": "No coasting path from the Moon leaves Earth on this heading "
-	           + "with this release, even swinging past Earth. Try another date "
-	           + "in the month or a different speed.",
+	"no-pass-route": "The ship can't escape Earth with this heading: no coasting "
+	           + "path from the Moon leaves on it with this release, even "
+	           + "swinging past Earth. Try another date in the month or a "
+	           + "different speed.",
 	"pass-hits-Earth": "The only coasting path to this heading dips into Earth's "
 	           + "atmosphere on the way past.",
-	"heads-into-Earth": "With the Moon's motion added the ship falls back toward "
-	           + "Earth rather than heading out.",
 	"no-coast": "This departure escapes, but its coast out to Earth's SOI cannot "
 	           + "be timed.",
 	"card-below-escape": "Below 929 m/s the ship's own share does not escape Earth "
@@ -2795,15 +2789,13 @@ export function createEphemerisView(opts) {
 			var lun = hand.lunar;
 			if (lun.ok) {
 				var shipEdge = O.vMag(lun.cardVec), gain = hand.vInf - shipEdge;
-				// On the Earth-pass route the card's direction IS the heading
-				// flown (core/lunar-departure.js, "two pipelines, one seam"), so
-				// the readout says so — and where the ship falls toward Earth
-				// first, how close it swings.
-				var route = lun.route !== "earth-pass" ? ""
-					: lun.perigee !== null
-						? "Swings past Earth at " + Math.round(lun.perigee / 1e3).toLocaleString()
-						  + " km and leaves along the card's heading. "
-						: "Leaves along the card's heading. ";
+				// The card's direction IS the heading flown (core/lunar-departure.js,
+				// "how the card is read"), so the readout says so — and where the
+				// ship falls toward Earth first, how close it swings.
+				var route = lun.perigee !== null
+					? "Swings past Earth at " + Math.round(lun.perigee / 1e3).toLocaleString()
+					  + " km and leaves along the card's heading. "
+					: "Leaves along the card's heading. ";
 				depReadout.textContent = route
 					+ "The release supplies " + fmtKmS(shipEdge) + " km/s at Earth's SOI; the Moon's motion "
 					+ (gain >= 0 ? "adds " : "costs ") + fmtKmS(Math.abs(gain))

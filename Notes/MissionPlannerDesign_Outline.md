@@ -1,4 +1,4 @@
-# Mission Planner Outline
+# Mission Planner Outline (in process)
 
 As stated in MissionPlanner\README.md, the Mission Planner teaches users how advanced permanent launch infrastructure, and catch infrastructure, enable interplanetary development, by showing them how such transport would really work, and what its advantages are.
 
@@ -82,4 +82,4 @@ The user first finds viable interplanetary trajectories using the Ephemeris tab.
 
   * The chevron and the x mark show the spatial relation between ship and destination all along the trajectory. This informs tuning in the vector editor to get a closer pass 
 
-  * Switching to the Destination view by clicking its POV button in the top timeline section slows the trajectory near closest approach in the destination's reference frame. 
+  * Switching to the Destination view by clicking its POV button in the top timeline section slows the trajectory near closest approach in the destination's reference frame.

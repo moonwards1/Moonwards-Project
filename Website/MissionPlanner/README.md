@@ -171,11 +171,11 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   mission's card is re-solved to match its crossing velocity, not its
   point) — and the date bar states the RELEASE, so the hand-off
   epoch is ~2 days later than the clock. The release travels with the mission
-  separately, as `releaseJd` and `lunarRelease`. Its card is flown by one of
-  two pipelines in `core/lunar-departure.js`: the outward one while the Moon
-  is on the departure's side of Earth, and the Earth-pass one — which reads
-  the card's direction as the heading flown and traces a coasting route back
-  to the Moon — while the ship would have to swing past Earth. How
+  separately, as `releaseJd` and `lunarRelease`. Its card is read by
+  `core/lunar-departure.js` as a LENGTH (the technology's share, which fixes
+  the release speed) along the HEADING actually flown, found by tracing a
+  coasting route back to the Moon, so the Moon's phase changes the arc's speed
+  and never its heading. How
   much impulse that hand-off costs, and when the launch must happen, are read
   BACKWARDS from it by `core/departure-estimate.js` — information for the
   Moon-phase widget and the release anchor, never a change to the drawn arc.
