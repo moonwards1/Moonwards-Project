@@ -61,7 +61,7 @@ import {
 } from "./scene-frames.js";
 import { renderReadoutBoxes, positionReadoutBoxes } from "../Shared/sim/readout-panes.js";
 import { solveDepartureTarget, rebaseWaypoints } from "./core/retarget.js";
-import { deliveredFlight, signatureOf } from "./core/delivered-flight.js";
+import { deliveredFlight, signatureOf, waypointDv } from "./core/delivered-flight.js";
 import { checkPassAltitude, passAltitudeReason, checkCatch, arrivalDvBudget, MAX_CATCH_SPEED } from "./core/proximity.js";
 import { VINF_TOL, AIM_TOL_DEG } from "./modules/adopted-plan/adopted-plan.js";
 
@@ -1954,6 +1954,28 @@ export function createMissionView(opts) {
 		};
 	}
 
+	// The figures the plan itself starts with, for a mission no technology is
+	// flying yet: the required v∞ out (the same edge speed the bar grades the
+	// delivery against), the committed arrival v∞ in, and what the coast's
+	// waypoint burns cost. Every Δv split is a technology's, so those stay
+	// blank. null when there is no working plan to read.
+	function planSnapshotForReport() {
+		var planStage = adoptedPlanStage();
+		var desc = registry.get("adopted-plan");
+		var comp = (planStage && desc && typeof desc.complianceFor === "function")
+			? desc.complianceFor(world, planStage.id) : null;
+		if (!comp || !comp.ok) { return null; }
+		var arr = planStage.params.arrival || {};
+		var legStage = world.stages().filter(function (x) { return x.moduleId === "transfer-leg"; })[0];
+		return {
+			vInfOut: comp.required.vInf,
+			depFuel: NaN, depTech: NaN,
+			coastDv: legStage ? waypointDv(legStage.params.waypoints) : NaN,
+			vInfIn: isFinite(arr.vInf) ? arr.vInf : NaN,
+			arrFuel: NaN, arrTech: NaN
+		};
+	}
+
 	// One more decimal than cbarKms's — the report is read as a comparison
 	// across rows, where cbarKms's 2 places round too many variants to the
 	// same digits — and no " km/s" suffix: the table states the unit once,
@@ -1984,11 +2006,17 @@ export function createMissionView(opts) {
 			// (nowSnapshot: refreshed by Check or a fresh Update, populated once
 			// on the mission's first working flight so it is never the empty
 			// row). No row for "original": with nothing yet committed, "now" IS
-			// the mission as first set up.
+			// the mission as first set up. Until a technology delivers a flight
+			// there is no "now" to measure, so the row states the plan's own
+			// figures instead, labelled as such.
 			var rows = history.map(function (snap, i) {
 				return { label: "Update " + (i + 1), metrics: snap, live: false };
 			});
-			rows.push({ label: "now", metrics: nowSnapshot, live: true });
+			if (nowSnapshot || history.length) {
+				rows.push({ label: "now", metrics: nowSnapshot, live: true });
+			} else {
+				rows.push({ label: "plan", metrics: planSnapshotForReport(), live: true });
+			}
 
 			var t = document.createElement("table");
 			t.className = "mp-report-table";
@@ -2032,24 +2060,14 @@ export function createMissionView(opts) {
 		});
 	}
 
-	// "Mission data" opens the report POPUP directly — no dropdown menu. A
-	// second click (or any click outside the popup and the button itself)
-	// closes it; excluding the button from the outside-click check is what
-	// stops the very click that opens it (bubbling to document after
-	// showReport has already added "open") from closing it again in the same
-	// turn.
+	// "Mission data" opens the report POPUP directly — no dropdown menu — and
+	// only a second click on the same button closes it. Clicks elsewhere leave
+	// it standing, so it can be read while working the mission beneath it.
 	function closeReportPopup() { reportPopupEl.classList.remove("open"); }
 	q(".mp-copy-mission").addEventListener("click", function () { shareMission(); });
-	q(".mp-report").addEventListener("click", function (ev) {
-		ev.stopPropagation();
+	q(".mp-report").addEventListener("click", function () {
 		if (reportPopupEl.classList.contains("open")) { closeReportPopup(); }
 		else { renderReport(); }
-	});
-	document.addEventListener("click", function (ev) {
-		if (reportPopupEl.classList.contains("open") &&
-			!reportPopupEl.contains(ev.target) && !q(".mp-report").contains(ev.target)) {
-			closeReportPopup();
-		}
 	});
 	function showReport(buildBody) {
 		reportPopupEl.innerHTML = "";
