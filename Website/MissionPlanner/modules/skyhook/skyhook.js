@@ -84,12 +84,10 @@
  * burn off. Hence the escape gate belongs to the release half alone. NOT
  * modelled: the post-catch unload down the tether.
  *
- * DEFAULT GEOMETRY (defaultGeometryFor): the CoM orbit radius defaults to a
- * candidate satellite's orbit.semiMajor when the body has one (Mars → Phobos),
- * else a fallback low orbit; the release point defaults above the escape radius
- * so a freshly-added skyhook drafts an escaping trajectory straight away. The
- * mission view seeds `body` when it adds the stage (mission-view.js's
- * addCarrier); the mission then persists the geometry explicitly.
+ * DEFAULT GEOMETRY (defaultParams): CoM altitude 2000 km, release altitude
+ * 5000 km, at every body. The mission view seeds `body` when it adds the stage
+ * (mission-view.js's addCarrier); the mission then persists the geometry
+ * explicitly.
  *
  * Everything here is pure (no DOM) except `draw`, which the browser shell alone
  * calls. Imports from ../../../Shared/ and ../../core/ — this folder breaks if
@@ -106,12 +104,13 @@ import { resolvePlatformParams } from "../platform/platform-spec.js";
 var O = OrbitalMath;
 var DAY = 86400;
 
-// Minimal static defaults — the body-specific geometry is computed at runtime
-// by defaultGeometryFor(body), since it depends on the origin's GM/radius/
-// satellites (a static object can't hold Mars-vs-Ceres values). A stage always
-// carries `body` + explicit altitudes once created; these fill any gap.
+// Static defaults, the same at every body: CoM 2000 km above the surface, tip
+// (release point) 5000 km above it. A stage always carries `body` + explicit
+// altitudes once created; these fill any gap.
 export var defaultParams = {
 	body: null,
+	comAlt: 2000e3,
+	relAlt: 5000e3,
 	releasePhaseDeg: 0
 };
 
@@ -123,41 +122,8 @@ export function bodyPhysics(body) {
 	return { GM: sys.GM, R: +sys.radius, sys: sys };
 }
 
-// The first orbiting satellite's mean orbit radius (m), or null — the default
-// CoM orbit radius when the body has a moon (Mars → Phobos, 9376 km).
-export function satelliteOrbitRadius(body) {
-	var sys = systems.get(body);
-	var sats = (sys && sys.satellites) || [];
-	for (var i = 0; i < sats.length; i++) {
-		// `satellites` entries may be names (strings) or already-resolved System
-		// objects, depending on how the record was built — accept either.
-		var sat = typeof sats[i] === "string" ? systems.get(sats[i]) : sats[i];
-		if (sat && sat.orbit && isFinite(sat.orbit.semiMajor)) { return sat.orbit.semiMajor; }
-	}
-	return null;
-}
-
-// Sensible default geometry for a body: CoM at a candidate satellite's orbit
-// radius (else a low fallback orbit at 3× the body radius), release at 1.5×
-// the CoM radius — comfortably above the tether's own escape radius
-// (cbrt(2)·rCom ≈ 1.26·rCom), so the default trajectory escapes with margin.
-// Altitudes are metres above the surface. Exported for the shell's add-carrier
-// flow and Node tests.
-export function defaultGeometryFor(body) {
-	var phys = bodyPhysics(body);
-	if (!phys) { return null; }
-	var R = phys.R;
-	var rCom = satelliteOrbitRadius(body) || (3 * R);
-	var rRel = 1.5 * rCom;
-	return {
-		comAlt: rCom - R,
-		relAlt: rRel - R,
-		releasePhaseDeg: 0
-	};
-}
-
-// Full param set for a stage: static defaults, then this body's geometry
-// defaults, then the stage's explicit params on top.
+// Full param set for a stage: static defaults, then the stage's explicit
+// params on top.
 export function resolveParams(params) { return resolvePlatformParams(SKYHOOK, params); }
 
 // The tether's geometry + rotation figures for one param set — validation,
@@ -376,7 +342,6 @@ export var SKYHOOK = {
 	ridesOn: "*",            // rides a base platform (the Moon's), or self-originates
 
 	defaultParams: defaultParams,
-	defaultsFor: defaultGeometryFor,
 
 	params: [
 		{ name: "comAlt", label: "CoM altitude", unit: "km", scale: 1e3, step: 25 },

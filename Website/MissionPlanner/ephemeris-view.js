@@ -1323,8 +1323,8 @@ export function createEphemerisView(opts) {
 		// vector is a v-infinity, decomposed in the frame the card holds.
 		//
 		// A derived exit point sits on the heading, so re-solving the heading
-		// moves it: solve, re-place the exit point on the answer, solve once
-		// more. Two bounded passes, never an iteration.
+		// moves it: solve, re-place the exit point on the answer, solve again —
+		// a few bounded passes (below), stopping once the answer holds still.
 		function frameAt() {
 			var hand = departureState();
 			if (term.isDeparture) {
@@ -1400,23 +1400,32 @@ export function createEphemerisView(opts) {
 		if (!got) { hardFail("no lunar card"); return; }
 		var dvMag = got.mag, c = got.c;
 
-		// Second pass: with the vector above in force the derived exit point
-		// has moved onto the new heading, so re-solve from where the ship
-		// actually leaves. Nothing is committed until after the budget check.
-		// A Moon origin takes it too: its exit point is the SOI crossing the
-		// release flies to, so a new card moves it just as a new heading moves
-		// a derived one.
+		// Refinement passes: with the vector above in force the exit point has
+		// moved onto the new heading, so re-solve from where the ship actually
+		// leaves. Nothing is committed until after the budget check. A Moon
+		// origin takes them too: its exit point is the SOI crossing the release
+		// flies to, so a new card moves it just as a new heading moves a derived
+		// one. A new card also moves the crossing's EPOCH (hours, for a Moon
+		// origin), so the time of flight is re-measured from it every pass —
+		// holding the first pass's value aims Lambert at the right date from the
+		// wrong clock, a miss of ~35 km/s × the epoch shift. Bounded, and it
+		// stops as soon as the card stops moving.
 		if (term.isDeparture) {
 			var keep = { pro: term.burn.pro, rad: term.burn.rad, nrm: term.burn.nrm };
-			term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
-			var f2 = frameAt();
-			term.burn.pro = keep.pro; term.burn.rad = keep.rad; term.burn.nrm = keep.nrm;
-			if (f2) {
-				var sol2 = O.lambert(GM_SUN, f2.r1, target, tof, true);
-				if (sol2) {
-					var got2 = cardFor(O.vSub(sol2.v1, f2.v1), f2.ref);
-					if (got2) { dvMag = got2.mag; c = got2.c; }
-				}
+			for (var pass = 0; pass < 4; pass++) {
+				term.burn.pro = c.pro; term.burn.nrm = c.nrm; term.burn.rad = c.rad;
+				var f2 = frameAt();
+				term.burn.pro = keep.pro; term.burn.rad = keep.rad; term.burn.nrm = keep.nrm;
+				if (!f2) { break; }
+				var tof2 = (m.targetArrJd - legStartJd()) * DAY - f2.t1g;
+				if (!(tof2 > DAY)) { break; }
+				var sol2 = O.lambert(GM_SUN, f2.r1, target, tof2, true);
+				if (!sol2) { break; }
+				var got2 = cardFor(O.vSub(sol2.v1, f2.v1), f2.ref);
+				if (!got2) { break; }
+				var moved = Math.abs(got2.c.pro - c.pro) + Math.abs(got2.c.rad - c.rad) + Math.abs(got2.c.nrm - c.nrm);
+				dvMag = got2.mag; c = got2.c; tof = tof2;
+				if (moved < 0.1) { break; }
 			}
 		}
 

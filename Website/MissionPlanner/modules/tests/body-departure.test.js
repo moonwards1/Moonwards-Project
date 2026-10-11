@@ -12,7 +12,7 @@ import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import orbitalSkyhook from "../skyhook/skyhook-departure.js";
 import {
-	tetherKinematics, rotorFor, retrogradeDirection, defaultGeometryFor, satelliteOrbitRadius, resolveParams
+	tetherKinematics, rotorFor, retrogradeDirection, resolveParams
 } from "../skyhook/skyhook.js";
 import bodyDepartureLeg, { computeBodyDepartureLeg, stateAtElapsed }
 	from "../body-departure-leg/body-departure-leg.js";
@@ -36,27 +36,18 @@ function marsChain(params, anchor) {
 
 // ---- defaults & geometry ---------------------------------------------------
 
-test("satelliteOrbitRadius: Mars → Phobos' semi-major axis; airless bodies → null", function () {
-	assert.equal(satelliteOrbitRadius("Mars"), systems.get("Phobos").orbit.semiMajor);
-	assert.equal(satelliteOrbitRadius("Ceres"), null);
+test("defaults: CoM 2000 km and release 5000 km at every body, regardless of satellites", function () {
+	["Earth", "Mars", "Ceres", "Saturn"].forEach(function (body) {
+		var p = resolveParams({ body: body });
+		assert.equal(p.comAlt, 2000e3, body + " CoM altitude");
+		assert.equal(p.relAlt, 5000e3, body + " release altitude");
+	});
 });
 
-test("defaultGeometryFor: CoM at the satellite orbit, release above the escape radius", function () {
-	var geo = defaultGeometryFor("Mars");
-	var R = +systems.get("Mars").radius;
-	var rCom = R + geo.comAlt;
-	assert.ok(Math.abs(rCom - systems.get("Phobos").orbit.semiMajor) < 1, "CoM at Phobos radius");
-	assert.ok(geo.relAlt > geo.comAlt, "release above CoM");
-	// The default must actually escape.
+test("defaults: the Mars default release escapes", function () {
 	var kin = tetherKinematics({ body: "Mars" });
-	assert.equal(kin.ok, true);
-	assert.ok(kin.vInfBody > 0, "default release escapes Mars, v∞ = " + kin.vInfBody);
-});
-
-test("defaultGeometryFor: a satellite-less body falls back to a low orbit that still escapes", function () {
-	var kin = tetherKinematics({ body: "Ceres" });
 	assert.equal(kin.ok, true, kin.diagnostic && kin.diagnostic.message);
-	assert.ok(kin.vInfBody > 0, "Ceres default escapes, v∞ = " + kin.vInfBody);
+	assert.ok(kin.vInfBody > 0, "default release escapes Mars, v∞ = " + kin.vInfBody);
 });
 
 test("resolveParams: explicit params override the body defaults", function () {

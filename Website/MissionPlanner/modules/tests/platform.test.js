@@ -13,7 +13,7 @@ import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
 import { makeCarrier, makeTerminal, computeCapture,
          carrierReadout, captureReadout } from "../platform/platform-roles.js";
 import { fmtPrograde } from "../../../Shared/sim/readout-panes.js";
-import { SKYHOOK, tetherGeometry, defaultGeometryFor, catchFigures, equatorPlane, retrogradeDirection,
+import { SKYHOOK, tetherGeometry, catchFigures, equatorPlane, retrogradeDirection,
          tetherContact, TETHER_BASE_ALT } from "../skyhook/skyhook.js";
 import { arrivalMark } from "../arrival-approach.js";
 import { systems } from "../../../Shared/orbit.js";
@@ -66,14 +66,14 @@ test("validatePlatformSpec: a platform with neither half, or a bad capture kind,
 test("resolvePlatformParams: static defaults, then per-body, then the stage's own", function () {
 	// A Mars skyhook carrying only { body } still resolves to live geometry.
 	var seeded = resolvePlatformParams(SKYHOOK, { body: "Mars" });
-	var perBody = defaultGeometryFor("Mars");
-	assert.equal(seeded.comAlt, perBody.comAlt);
+	assert.equal(seeded.comAlt, 2000e3);
+	assert.equal(seeded.relAlt, 5000e3);
 	assert.equal(seeded.releasePhaseDeg, 0);
 
-	// An explicit param beats the body default.
+	// An explicit param beats the default.
 	var explicit = resolvePlatformParams(SKYHOOK, { body: "Mars", comAlt: 1234e3 });
 	assert.equal(explicit.comAlt, 1234e3);
-	assert.equal(explicit.relAlt, perBody.relAlt, "the rest still come from the body");
+	assert.equal(explicit.relAlt, 5000e3, "the rest still come from the defaults");
 
 	// Resolving twice is idempotent — the adapters resolve, and a platform's own
 	// geometry() may defensively resolve again.

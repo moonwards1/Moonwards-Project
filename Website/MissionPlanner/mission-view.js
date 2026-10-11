@@ -1275,7 +1275,7 @@ export function createMissionView(opts) {
 
 	// Inserts a carrier stage just before the departure leg, seeded with the
 	// chain's body explicitly (the body convention; the module fills geometry
-	// defaults from defaultGeometryFor(body)). world.set recomputes
+	// defaults from its defaultParams). world.set recomputes
 	// synchronously while no card/view exists for the new stage, so that pass's
 	// updateCard/drawStage no-op; the card and views are built afterwards and
 	// the engine's already-computed result replayed onto them by hand. Nothing

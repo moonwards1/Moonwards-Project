@@ -41,8 +41,7 @@
  *                             launcher on a skyhook or space elevator)
  *
  *   defaultParams        static param defaults.
- *   defaultsFor(body)    optional per-body defaults (a skyhook's orbit radius
- *                        depends on the body's own satellites), applied over
+ *   defaultsFor(body)    optional per-body defaults, applied over
  *                        defaultParams and under the stage's explicit params.
  *   params               the card's controls, declared (see PARAM SPEC below).
  *   note(params, role)   optional one-line description above the controls.
