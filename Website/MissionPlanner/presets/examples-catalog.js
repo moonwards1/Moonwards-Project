@@ -21,6 +21,14 @@
  */
 
 import { moonMars2035UnbuiltMission, moonMars2035UnbuiltWorkspace } from "./moon-mars-2035-unbuilt.js";
+import { earthMars2035UnbuiltMission, earthMars2035UnbuiltWorkspace } from "./earth-mars-2035-unbuilt.js";
+import { moonVenus2039UnbuiltMission, moonVenus2039UnbuiltWorkspace } from "./moon-venus-2039-unbuilt.js";
+import { earthVenus2039UnbuiltMission, earthVenus2039UnbuiltWorkspace } from "./earth-venus-2039-unbuilt.js";
+import { moonCeres2031UnbuiltMission, moonCeres2031UnbuiltWorkspace } from "./moon-ceres-2031-unbuilt.js";
+import { ceresMars2041UnbuiltMission, ceresMars2041UnbuiltWorkspace } from "./ceres-mars-2041-unbuilt.js";
+import { ceresEarth2040UnbuiltMission, ceresEarth2040UnbuiltWorkspace } from "./ceres-earth-2040-unbuilt.js";
+import { marsJupiter2037UnbuiltMission, marsJupiter2037UnbuiltWorkspace } from "./mars-jupiter-2037-unbuilt.js";
+import { venusMercury2037UnbuiltMission, venusMercury2037UnbuiltWorkspace } from "./venus-mercury-2037-unbuilt.js";
 
 export var EXAMPLE_SECTIONS = [
 	{
@@ -32,6 +40,62 @@ export var EXAMPLE_SECTIONS = [
 				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
 				mission: moonMars2035UnbuiltMission,
 				workspace: moonMars2035UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-earth-mars-2035",
+				label: "Earth → Mars 2035",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: earthMars2035UnbuiltMission,
+				workspace: earthMars2035UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-moon-venus-2039",
+				label: "Moon → Venus 2039",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: moonVenus2039UnbuiltMission,
+				workspace: moonVenus2039UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-earth-venus-2039",
+				label: "Earth → Venus 2039",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: earthVenus2039UnbuiltMission,
+				workspace: earthVenus2039UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-moon-ceres-2031",
+				label: "Moon → Ceres 2031",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: moonCeres2031UnbuiltMission,
+				workspace: moonCeres2031UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-ceres-mars-2041",
+				label: "Ceres → Mars 2041",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: ceresMars2041UnbuiltMission,
+				workspace: ceresMars2041UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-ceres-earth-2040",
+				label: "Ceres → Earth 2040",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: ceresEarth2040UnbuiltMission,
+				workspace: ceresEarth2040UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-mars-jupiter-2037",
+				label: "Mars → Jupiter 2037",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: marsJupiter2037UnbuiltMission,
+				workspace: marsJupiter2037UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-venus-mercury-2037",
+				label: "Venus → Mercury 2037",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: venusMercury2037UnbuiltMission,
+				workspace: venusMercury2037UnbuiltWorkspace
 			}
 		]
 	},
