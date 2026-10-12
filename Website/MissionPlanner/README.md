@@ -199,6 +199,14 @@ View at `http://localhost:8000/MissionPlanner/planner.html` via `serve.bat`
   against the body (distance, speed, latitude over its equator, time to
   closest approach), and the scene is placed at the MARKER's epoch. A click
   there focuses the chevron or a body and never moves the marker.
+  **In the solar-system view the marker card has two timelines.** The main one
+  spans the whole flight and gives an SOI stretch only the Sun-centred angle
+  the ship covers across it (or, in "time of flight", its share of the time);
+  each pass through an SOI is a dot on it. When the flight passes through an
+  SOI a second slider appears under it, spanning that one pass in degrees
+  turned around the body; dragging it moves the chevron through the pass and
+  the main thumb follows. A dot selects its pass. The POV views keep their
+  windowed slider and show no second timeline.
 - **`ephemeris-pov.js`** — the POV scenes' own objects over a
   `scene-frames.js` body frame: the window's path, the hand-off dot, the
   chevron, and at a

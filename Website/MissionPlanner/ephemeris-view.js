@@ -408,16 +408,14 @@ export function createEphemerisView(opts) {
 	// answers with degrees/times from the wrong orbit, which is what dragged
 	// the marker along the timeline instead of holding it.
 	//
-	// INSIDE AN SOI THE ANGLE IS MEASURED AROUND THE BODY, not the Sun. A
-	// capture loop there is a loop around the planet: its heliocentric angle
-	// stops advancing and doubles back, so a Sun-measured domain has several
-	// times answering to one degree and the marker jumps between them. Around
-	// the body the same loop is an ordinary 360°, still increasing — one time
-	// per degree — and it gives the loop a share of the slider proportional to
-	// the turning it does, instead of the sliver its heliocentric sweep is. The
-	// domain is therefore "degrees turned around whichever body is in charge",
-	// accumulated across segments; outside an SOI that is exactly the
-	// Sun-centred sweep this has always used.
+	// INSIDE AN SOI THE ANGLE IS MEASURED AROUND THE BODY, not the Sun, in the
+	// waypoint controls (degAtTime/timeAtDeg with no weight) and in the marker
+	// card's SOI timeline. A capture loop there is a loop around the planet: its
+	// heliocentric angle stops advancing and doubles back, so a Sun-measured
+	// domain has several times answering to one degree. Around the body the
+	// same loop is an ordinary 360°, still increasing — one time per degree.
+	// The marker's main timeline does not use this: it gives an SOI stretch
+	// only its natural heliocentric share (SOI_NATURAL below).
 	function segElements(seg) { return O.elementsFromState(GM_SUN, seg.r0, seg.v0); }
 
 	// Cumulative body-centred degrees along an encounter's own RK4 trail, built
@@ -441,30 +439,51 @@ export function createEphemerisView(opts) {
 		return seg._degTable;
 	}
 
-	// How the marker slider spaces an SOI stretch. "radial from origin": a third
-	// of its body-centred degrees. "time of flight": the slider is linear in
-	// time across the whole flight, so the chevron moves at a constant rate of
-	// time (weight LINEAR_TIME, spanning 0-360). The waypoint controls pass no
-	// weight and use the full body-centred degrees.
-	var SOI_SLIDER_WEIGHT = 1 / 3, LINEAR_TIME = -1;
-	function markerSoiWeight() {
-		return (state.marker && state.marker.holdMode === "tof") ? LINEAR_TIME : SOI_SLIDER_WEIGHT;
+	// Seconds into an encounter at which its body-centred sweep reaches deg.
+	function encTimeAtDeg(seg, deg) {
+		var tb = encTable(seg);
+		if (deg <= 0) { return 0; }
+		for (var k = 1; k < tb.deg.length; k++) {
+			if (tb.deg[k] >= deg) {
+				var d = tb.deg[k] - tb.deg[k - 1];
+				var f = d > 1e-9 ? (deg - tb.deg[k - 1]) / d : 0;
+				return tb.t[k - 1] + f * (tb.t[k] - tb.t[k - 1]);
+			}
+		}
+		return seg.dur;
 	}
 
-	// Whether the marker slider spaces this encounter by duration alone: the
-	// origin's own SOI.
-	function timeShared(seg, w) {
-		return w != null && seg.body === Frames.escapeReferenceFor(state.origin);
+	// How the marker's main timeline spaces the flight. "radial from origin"
+	// (SOI_NATURAL): degrees swept around the Sun, an SOI stretch counting only
+	// the heliocentric angle the ship covers across it — the same rate as
+	// anywhere else, no extra room — spread evenly over its duration. "time of
+	// flight" (LINEAR_TIME): linear in time across the whole flight, spanning
+	// 0-360. The waypoint controls pass no weight and use the full body-centred
+	// degrees.
+	var SOI_NATURAL = -2, LINEAR_TIME = -1;
+	function markerSoiWeight() {
+		return (state.marker && state.marker.holdMode === "tof") ? LINEAR_TIME : SOI_NATURAL;
+	}
+
+	// Degrees (0-180) the ship sweeps around the Sun between an encounter's
+	// entry and exit — the stretch's whole width on the main timeline. A net
+	// backward sweep counts as nothing, keeping the track non-decreasing.
+	function encSunSweep(seg) {
+		if (seg._sunSweep != null) { return seg._sunSweep; }
+		var a = stateAtGlobalTime(seg.tStart), b = stateAtGlobalTime(seg.tStart + seg.dur);
+		var deg = a && b ? sweepAngleFrom(a.r, a.v, b.r) : 0;
+		seg._sunSweep = deg > 180 ? 0 : deg;
+		return seg._sunSweep;
 	}
 
 	// Degrees swept over part of one segment, dt seconds into it; an encounter's
-	// degrees are scaled by w.
+	// degrees are scaled by w (or, under SOI_NATURAL, are its Sun-centred share).
 	function segDegAt(seg, dt, w) {
 		if (seg.type === "enc") {
-			w = w == null ? 1 : w;
-			if (timeShared(seg, w)) {
-				return trajTotalT > 0 ? Math.max(0, Math.min(seg.dur, dt)) / trajTotalT * 360 : 0;
+			if (w === SOI_NATURAL) {
+				return seg.dur > 0 ? encSunSweep(seg) * Math.max(0, Math.min(seg.dur, dt)) / seg.dur : 0;
 			}
+			w = w == null ? 1 : w;
 			var tb = encTable(seg);
 			var t = Math.max(0, Math.min(tb.t[tb.t.length - 1], dt));
 			for (var k = 1; k < tb.t.length; k++) {
@@ -512,19 +531,13 @@ export function createEphemerisView(opts) {
 				if (seg.type === "enc") {
 					// The table is non-decreasing, so the crossing is a straight
 					// walk with a linear read inside the step it falls in.
-					if (timeShared(seg, w)) {
-						return seg.tStart + Math.max(0, Math.min(seg.dur, (deg - offset) / 360 * trajTotalT));
+					if (w === SOI_NATURAL) {
+						var width = encSunSweep(seg);
+						return width > 0
+							? seg.tStart + Math.max(0, Math.min(1, (deg - offset) / width)) * seg.dur
+							: seg.tStart;
 					}
-					var target = (deg - offset) / w, tb = encTable(seg);
-					if (target <= 0) { return seg.tStart; }
-					for (var k = 1; k < tb.deg.length; k++) {
-						if (tb.deg[k] >= target) {
-							var d = tb.deg[k] - tb.deg[k - 1];
-							var f = d > 1e-9 ? (target - tb.deg[k - 1]) / d : 0;
-							return seg.tStart + tb.t[k - 1] + f * (tb.t[k] - tb.t[k - 1]);
-						}
-					}
-					return seg.tStart + seg.dur;
+					return seg.tStart + encTimeAtDeg(seg, (deg - offset) / w);
 				}
 				var el = segElements(seg);
 				return seg.tStart + O.timeAtSweptTrueAnomaly(GM_SUN, el.a, el.e, el.nu, (deg - offset) * Math.PI / 180);
@@ -1791,16 +1804,7 @@ export function createEphemerisView(opts) {
 			onSliderChange: function (deg) {
 				if (!state.marker) { return; }
 				// In a POV the slider reads days through its window, not degrees.
-				var t = (state.pov && povWin) ? povWin.t0 + deg * DAY : timeAtDeg(deg, markerSoiWeight());
-				state.marker.f0 = trajTotalT > 0 ? Math.max(markerFloorT() / trajTotalT, Math.min(1, t / trajTotalT)) : 0;
-				state.marker.angle = 0;
-				datePin = null;
-				// Target mode otherwise glues position to the solved encounter every
-				// refresh (see updateMarker) — a drag takes over the DISPLAY only;
-				// the held arrival date and the Lambert solve never read f0/angle,
-				// so the lock is untouched.
-				if (state.marker.mode === "target") { state.marker._scrubbed = true; }
-				updateMarker();
+				scrubMarkerTo((state.pov && povWin) ? povWin.t0 + deg * DAY : timeAtDeg(deg, markerSoiWeight()));
 			},
 			onRemove: function () { resetSetup(); },
 			onModeClick: function (mode, e) { setMarkerMode(mode, !!(e && e.shiftKey)); },
@@ -1810,6 +1814,7 @@ export function createEphemerisView(opts) {
 		// title and the Reset button.
 		mk.el.querySelector(".mp-marker-title").after(createInfoButton("Ship marker"));
 		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
+		buildSoiTimeline();
 
 		// The no-marker hint, shown only in the .mp-empty state — the card is
 		// always present, so it also serves as the "place a marker" prompt.
@@ -2224,6 +2229,123 @@ export function createEphemerisView(opts) {
 	})();
 	function openDialog(o) { dlg.open(o); }
 
+	// Put the marker at global time t (clamped to the drawn flight) as a
+	// deliberate scrub: it takes over the display from any automatic placement.
+	function scrubMarkerTo(t) {
+		if (!state.marker) { return; }
+		state.marker.f0 = trajTotalT > 0 ? Math.max(markerFloorT() / trajTotalT, Math.min(1, t / trajTotalT)) : 0;
+		state.marker.angle = 0;
+		datePin = null;
+		// Target mode otherwise glues position to the solved encounter every
+		// refresh (see updateMarker) — a scrub takes over the DISPLAY only; the
+		// held arrival date and the Lambert solve never read f0/angle, so the
+		// lock is untouched.
+		if (state.marker.mode === "target") { state.marker._scrubbed = true; }
+		updateMarker();
+	}
+
+	// ---- the SOI timeline ----------------------------------------------------
+	// A second slider under the main one, present only in the solar-system view
+	// and only while the flight passes through an SOI. It spans one encounter,
+	// entry to exit, in degrees turned around that body (encTable); the main
+	// timeline marks the same pass with a dot and gives it no room of its own.
+	// Dragging it moves the chevron through the pass; the main thumb follows.
+	var soiRow = null, soiSlider = null, soiLabel = null, soiDotLayer = null;
+	var soiDots = [];
+	var soiSel = -1;   // trajSegs index of the encounter the SOI timeline is on
+
+	function buildSoiTimeline() {
+		var track = document.createElement("div");
+		track.className = "mp-marker-track";
+		mk.slider.parentNode.insertBefore(track, mk.slider);
+		track.appendChild(mk.slider);
+		soiDotLayer = document.createElement("div");
+		soiDotLayer.className = "mp-marker-dots";
+		track.appendChild(soiDotLayer);
+
+		soiRow = document.createElement("div");
+		soiRow.className = "mp-marker-soi";
+		soiRow.hidden = true;
+		soiLabel = document.createElement("div");
+		soiLabel.className = "mp-marker-label";
+		soiSlider = document.createElement("input");
+		soiSlider.type = "range"; soiSlider.className = "mp-marker-slider mp-marker-soi-slider";
+		soiSlider.min = 0; soiSlider.max = 360; soiSlider.step = 0.1; soiSlider.value = 0;
+		soiSlider.title = "drag to move the ship through this body's sphere of influence — "
+			+ "left is where it enters, right is where it leaves, mapped by degrees turned around the body.";
+		soiRow.appendChild(soiLabel);
+		soiRow.appendChild(soiSlider);
+		track.after(soiRow);
+
+		function onSoi(deg) {
+			var seg = trajSegs[soiSel];
+			if (!state.marker || !seg || seg.type !== "enc") { return; }
+			scrubMarkerTo(seg.tStart + encTimeAtDeg(seg, deg));
+		}
+		soiSlider.addEventListener("input", function () { onSoi(parseFloat(soiSlider.value)); });
+		bindAbsoluteDragSlider(soiSlider, onSoi);
+	}
+
+	// The encounters of the drawn flight, as trajSegs indices.
+	function soiEncounters() {
+		var out = [];
+		for (var i = 0; i < trajSegs.length; i++) {
+			if (trajSegs[i].type === "enc" && trajSegs[i].dur > 0) { out.push(i); }
+		}
+		return out;
+	}
+
+	// The encounter the SOI timeline reads at time tof: the one the ship is in,
+	// else the one last chosen, else the nearest.
+	function chooseSoi(list, tof) {
+		var best = list[0], bestD = Infinity;
+		for (var n = 0; n < list.length; n++) {
+			var seg = trajSegs[list[n]];
+			if (tof >= seg.tStart && tof <= seg.tStart + seg.dur) { return list[n]; }
+			var d = tof < seg.tStart ? seg.tStart - tof : tof - (seg.tStart + seg.dur);
+			if (d < bestD) { bestD = d; best = list[n]; }
+		}
+		return list.indexOf(soiSel) >= 0 ? soiSel : best;
+	}
+
+	// Redraw the dots and the SOI slider for the marker at tof, the main
+	// timeline spaced by sw.
+	function syncSoiTimeline(tof, sw) {
+		var list = state.pov ? [] : soiEncounters();
+		soiRow.hidden = !list.length;
+		while (soiDots.length > list.length) { soiDots.pop().remove(); }
+		while (soiDots.length < list.length) {
+			var b = document.createElement("button");
+			b.type = "button"; b.className = "mp-marker-dot";
+			b.addEventListener("click", function (e) {
+				var seg = trajSegs[parseInt(e.currentTarget.dataset.seg, 10)];
+				if (!seg) { return; }
+				soiSel = parseInt(e.currentTarget.dataset.seg, 10);
+				scrubMarkerTo(seg.tStart);
+			});
+			soiDotLayer.appendChild(b);
+			soiDots.push(b);
+		}
+		if (!list.length) { return; }
+		soiSel = chooseSoi(list, tof);
+		var span = degAtTime(trajTotalT, sw);
+		list.forEach(function (idx, n) {
+			var seg = trajSegs[idx], dot = soiDots[n];
+			var frac = span > 0 ? degAtTime(seg.tStart + seg.dur / 2, sw) / span : 0;
+			dot.style.left = "calc(8px + (100% - 16px) * " + frac + ")";
+			dot.dataset.seg = idx;
+			dot.title = seg.body + "'s sphere of influence — click to go there";
+			dot.classList.toggle("on", idx === soiSel);
+		});
+		var seg = trajSegs[soiSel];
+		soiLabel.textContent = seg.body + "'s sphere of influence";
+		soiSlider.max = segDegAt(seg, seg.dur, 1);
+		if (document.activeElement !== soiSlider) {
+			soiSlider.value = segDegAt(seg, Math.max(0, Math.min(seg.dur, tof - seg.tStart)), 1);
+		}
+		soiSlider.classList.toggle("mp-outside", tof < seg.tStart || tof > seg.tStart + seg.dur);
+	}
+
 	// Recompute the marker's world position and card readouts from its slider
 	// angle and the current trajectory. When unset, the card stays — it is the
 	// permanent home of Start/Paste — but collapses to its empty state
@@ -2299,6 +2421,7 @@ export function createEphemerisView(opts) {
 		var sw = markerSoiWeight();
 		mk.slider.max = trajTotalT > 0 ? degAtTime(trajTotalT, sw) : 360;
 		if (document.activeElement !== mk.slider) { mk.slider.value = degAtTime(tof, sw); }
+		syncSoiTimeline(tof, sw);
 
 		// Target-mode controls/readouts (budget input + solved Δv); hidden otherwise
 		var isTarget = state.marker.mode === "target";

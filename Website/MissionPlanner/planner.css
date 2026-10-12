@@ -833,6 +833,23 @@ h3 > .mp-info { margin-right: auto; }
 	cursor: ew-resize; touch-action: none; accent-color: var(--acc);
 }
 .mp-marker-slider:disabled { opacity: 0.35; cursor: default; }
+/* SOI marks on the main timeline, and the second timeline they open
+   (ephemeris-view.js's buildSoiTimeline). The dots sit on the track itself,
+   above the thumb so a scrub passes beneath them; left offsets allow for the
+   thumb's width. */
+.mp-marker-track { position: relative; }
+.mp-marker-dots { position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 2; pointer-events: none; }
+.mp-marker-dot {
+	position: absolute; top: 50%; width: 7px; height: 7px; padding: 0;
+	transform: translate(-50%, -50%);
+	border-radius: 50%; border: 1px solid rgba(10, 14, 24, 0.7); background: #fff;
+	pointer-events: auto; cursor: pointer;
+}
+.mp-marker-dot.on, .mp-marker-dot:hover { box-shadow: 0 0 0 2px var(--acc); }
+.mp-marker-soi { margin: 0 0 9px; }
+.mp-marker-soi[hidden] { display: none; }
+.mp-marker-soi .mp-marker-slider { margin-bottom: 0; }
+.mp-marker-soi .mp-outside { opacity: 0.55; }
 .mp-marker-mode { display: flex; gap: 4px; margin: 0 0 9px; }
 .mp-mode-btn {
 	flex: 1; padding: 3px 0; font-size: 11px; border-radius: 4px;
@@ -860,6 +877,8 @@ h3 > .mp-info { margin-right: auto; }
    instead; placing a marker flips it back (ephemeris-view.js's setCardEmpty). */
 #mp-marker-card.mp-empty .mp-marker-x,
 #mp-marker-card.mp-empty .mp-marker-slider,
+#mp-marker-card.mp-empty .mp-marker-dots,
+#mp-marker-card.mp-empty .mp-marker-soi,
 #mp-marker-card.mp-empty .mp-marker-mode,
 #mp-marker-card.mp-empty .mp-marker-row,
 #mp-marker-card.mp-empty .mp-marker-km,
