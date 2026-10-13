@@ -59,9 +59,9 @@ first, read off the minimum counterweight, then choose a counterweight at or abo
 		<option value="mcnt">Mature CNT</option>
 	</select></div>
 	<div class="row"><label>Tensile strength</label>
-		<input type="number" id="strength" value="42" step="any" min="0.01" oninput="updateBreakingLength()"> <span class="unit">GPa</span></div>
+		<input type="number" id="strength" value="42" step="any" min="0.01"> <span class="unit">GPa</span></div>
 	<div class="row"><label>Density</label>
-		<input type="number" id="density" value="1400" step="any" min="1" oninput="updateBreakingLength()"> <span class="unit">kg/m³</span></div>
+		<input type="number" id="density" value="1400" step="any" min="1"> <span class="unit">kg/m³</span></div>
 	<div class="row"><label>Breaking length (1 g₀)</label>
 		<span id="o-breaking" style="font-size:0.9em; min-width:80px; display:inline-block;">—</span> <span class="unit">km</span></div>
 	<div class="row"><label>Safety factor</label>
@@ -98,8 +98,8 @@ first, read off the minimum counterweight, then choose a counterweight at or abo
 </div>
 
 <div>
-	<button onclick="computeFloor()">Compute minimum counterweight →</button>
-	<button onclick="resetDefaults()">Reset to example</button>
+	<button id="btnFloor">Compute minimum counterweight →</button>
+	<button id="btnReset">Reset to example</button>
 	<span id="stepErr" class="warn"></span>
 </div>
 </div><!-- /step1 -->
@@ -128,7 +128,7 @@ first, read off the minimum counterweight, then choose a counterweight at or abo
 </div>
 
 <div>
-	<button onclick="calculate()" id="btnCalc" disabled>Calculate</button>
+	<button id="btnCalc" disabled>Calculate</button>
 </div>
 </div><!-- /step2 -->
 

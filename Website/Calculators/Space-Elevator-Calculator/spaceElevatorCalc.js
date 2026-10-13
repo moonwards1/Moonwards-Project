@@ -76,6 +76,13 @@ function updateBreakingLength() {
 // Initialise on load
 updateBreakingLength();
 
+// Handlers are attached here rather than inline: module functions are not
+// global, so onclick="calculate()" in the HTML cannot see them.
+document.getElementById("strength").addEventListener("input", updateBreakingLength);
+document.getElementById("density").addEventListener("input", updateBreakingLength);
+document.getElementById("calcBtn").addEventListener("click", calculate);
+document.getElementById("resetBtn").addEventListener("click", resetDefaults);
+
 // ── helpers ────────────────────────────────────────────────────
 function fmt(n, digits=4) {
 	if (!isFinite(n)) return "—";

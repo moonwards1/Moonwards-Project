@@ -535,3 +535,11 @@ wireStep1Lock();
 resetDefaults();
 computeFloor();
 calculate();
+
+// Handlers attached here, not inline: module functions are not global,
+// so onclick="calculate()" in the HTML cannot see them.
+document.getElementById("strength").addEventListener("input", updateBreakingLength);
+document.getElementById("density").addEventListener("input", updateBreakingLength);
+document.getElementById("btnFloor").addEventListener("click", computeFloor);
+document.getElementById("btnReset").addEventListener("click", resetDefaults);
+document.getElementById("btnCalc").addEventListener("click", calculate);

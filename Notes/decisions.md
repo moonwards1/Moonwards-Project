@@ -239,23 +239,12 @@ the Moon, the Origin view draws the escape hyperbola from the body's low orbit
 ### The marker slider stays put while the date is scrubbed
 
 Scrubbing the Ephemeris date reshapes the flight (the window and the slider's
-span change, sharply at a Moon origin). The first date change after the marker
-was last touched records the thumb's place as a fraction of its track, and
-every refresh the date drives puts it back there, in the heliocentric view and
-in a POV alike; the marker's flight time follows. Moving the marker, switching
-view, or any edit that is not a date change drops the pin, so the next scrub
-pins wherever the thumb is then.
-
-### An SOI gets a second timeline, not room on the main one (2026-10-12)
-
-In the solar-system view the marker's main timeline gives an SOI stretch only
-its natural share: the Sun-centred angle the ship covers across it, or its
-share of the time in "time of flight" mode. How much angle a pass sweeps about
-the body depends sharply on the pass geometry, so weighting by it let the same
-thumb position map to different places as the date scrubbed. The pass is
-marked with a dot and inspected on its own slider, in degrees turned around the
-body (monotone through a capture loop). The waypoint controls still use
-body-centred degrees; the POV views are unchanged.
+span change, sharply at a Moon origin), and the thumb used to move with it.
+Now the first date change after the marker was last touched records the thumb's
+place as a fraction of its track, and every refresh the date drives puts it back
+there, in the heliocentric view and in a POV alike; the marker's flight time
+follows. Moving the marker, switching view, or any edit that is not a date
+change drops the pin, so the next scrub pins wherever the thumb is then.
 
 ### Recalculate the departure requirement once the real exit point is known
 

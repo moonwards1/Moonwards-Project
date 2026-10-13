@@ -415,3 +415,8 @@ function drawDiagram(data) {
 
 // initialise default UI state
 syncMode();
+
+// Handlers attached here, not inline: module functions are not global,
+// so onclick="calculate()" in the HTML cannot see them.
+document.getElementById("btnReset").addEventListener("click", resetDefaults);
+document.getElementById("btnCalc").addEventListener("click", calculate);
