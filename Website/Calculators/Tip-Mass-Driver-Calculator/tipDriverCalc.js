@@ -14,15 +14,6 @@ const SLED_PRESETS = {
 	long:     { massFrac: 0.20, lengthPerTonne: 0.08 },
 };
 
-// Power-delivery presets: bank spacing along the track (0 = one bank at the
-// hub) and whether each bank has frequency converters.
-const POWER_PRESETS = {
-	hub:         { spacing: 0,    converters: true },
-	clustered:   { spacing: 5000, converters: true },
-	distributed: { spacing: 1000, converters: true },
-	direct:      { spacing: 500,  converters: false },
-};
-
 const DEFAULTS = {
 	shipMass: 2000, accel: 10, vFinal: 2000, capPct: 50, brakeAccel: 50,
 	cntStrength: 42, cntDensity: 1400, cntSF: 2,
@@ -82,7 +73,6 @@ function readInputs() {
 		},
 		flywheel: { speedRatio: num("speedRatio") },
 		power: {
-			...POWER_PRESETS[$("pdPreset").value],
 			voltage: num("voltage") * 1e3,
 			conductors: 2,
 			genField: num("genField"),
@@ -148,10 +138,8 @@ function calculate() {
 	$("o-skin").textContent = f.mass(r.structure.skin);
 	$("o-struct").textContent = f.mass(r.structure.total);
 
-	$("o-banks").textContent = String(r.power.banks);
 	$("o-gen").textContent = f.mass(r.power.generators);
-	$("o-conv").textContent = r.power.converters > 0
-		? `${f.mass(r.power.converters)} (rated ${f.power(r.power.rating)})` : "none";
+	$("o-conv").textContent = `${f.mass(r.power.converters)} (rated ${f.power(r.power.rating)})`;
 	$("o-feed").textContent = f.mass(r.power.feeders);
 	$("o-pdheat").textContent = f.energy(r.power.heat);
 	$("o-pd").textContent = f.mass(r.power.total);
@@ -165,7 +153,6 @@ function resetDefaults() {
 	$("capPct").disabled = true;
 	$("bPreset").value = "2";
 	$("sledPreset").value = "standard";
-	$("pdPreset").value = "hub";
 	calculate();
 }
 

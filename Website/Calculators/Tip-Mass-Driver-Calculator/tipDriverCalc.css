@@ -87,6 +87,7 @@ button {
 	font-size: 0.9em;
 	margin: 3px 0;
 }
+.tmd-title { display: flex; align-items: center; gap: 8px; }
 .tmd-sum { border-top: 1px solid #ccc; padding-top: 4px; margin-top: 6px; }
 .tmd-total-note { max-width: 300px; margin-top: 6px; }
 .tmd-info, .tmd-info-sample {

@@ -70,20 +70,27 @@ $$
 **Storage.** Thin-rim CNT flywheels, $e_{rim} = \sigma/(2\rho\,SF)$, discharged
 from full speed to a fraction $r$ of it, holding $(E + Q)/\eta$.
 
-**Power delivery.** Flywheel banks at the hub, clustered, distributed, or
-distributed with direct drive (no converters; graded pole pitch). Each bank
-supplies the stretch of track it serves. Generators follow the windings' heating
-rule over the bank's whole duty, so the gap area cancels:
+**Power delivery.** One flywheel bank at the hub serves both sections: the
+launch ends there and the sled's braking starts there. Generators follow the
+windings' heating rule over the whole launch-and-brake duty, so the gap area
+cancels:
 
 $$
-M_{gen} = k_s \sum_{\text{banks}} \frac{2\,\rho_m\,k_e\,\sqrt{\int P^2\,dt}}{B_g\,v_s\,\sqrt{G}}
+M_{gen} = k_s\,\frac{2\,\rho_m\,k_e\,\sqrt{\int P^2\,dt}}{B_g\,v_s\,\sqrt{G}}
 $$
 
-Converters are rated power over specific power, the rating being the summed
-peak of each bank's stretch. Feeders carry $I = P/V$; the feeder at a point
-carries current while the sled is beyond it, giving an adiabatic cross-section
+Converters, which match each block's frequency to the sled, are rated for the
+larger of the launch and braking peak powers; their mass is that rating over a
+specific power. Feeders carry $I = P/V$; the feeder at a point carries current
+while the sled is beyond it, giving an adiabatic cross-section
 $A = \sqrt{\int P^2 dt / G}\,/V$. The heat in generators and feeders is added to
 the storage needed.
+
+Banks spread along the track are not offered. With converters, their ratings add
+up to many times the hub's. Without converters it can't work: a discharging
+flywheel's frequency falls while the accelerating sled needs it to rise, and the
+track's pole pitch can't be graded to compensate because it must match the
+sled's fixed magnet spacing.
 
 **Not included:** supports against the local field and Coriolis loads (they
 depend on the mounting location), the sled, the hub and swivel, switchgear,

@@ -15,7 +15,7 @@ const BASE = {
 	cnt: { strength: 42e9, density: 1400, sf: 2 },
 	cer: { strength: 400e6, density: 2600, sf: 2, postFactor: 2, skin: 0.005 },
 	flywheel: { speedRatio: 0.5 },
-	power: { spacing: 0, voltage: 1e5, conductors: 2, genField: 2, genSpeed: 1500, genStructure: 2, converters: true, convSpecific: 1e5 },
+	power: { voltage: 1e5, conductors: 2, genField: 2, genSpeed: 1500, genStructure: 2, convSpecific: 1e5 },
 };
 
 function close(a, b, rel, msg) {
@@ -92,7 +92,7 @@ test("winding mass matches the closed form and ignores acceleration and power ca
 	close(sizeTipDriver({ ...BASE, powerCapFrac: 0.5 }).windings.launch, r.windings.launch, 0.03, "power cap");
 });
 
-const POWER = { spacing: 0, voltage: 1e5, conductors: 2, genField: 2, genSpeed: 1500, genStructure: 2, converters: true, convSpecific: 1e5 };
+const POWER = BASE.power;
 
 test("hub power delivery matches the closed forms", () => {
 	const r = sizeTipDriver({ ...BASE, power: POWER });
@@ -108,14 +108,4 @@ test("hub power delivery matches the closed forms", () => {
 	close(r.power.generators, 2 * 2 * 2700 * 1.5 * Math.sqrt(E2) / (2 * 1500 * Math.sqrt(G)), 0.01, "generators");
 	// converters rated for the larger of launch and braking peaks
 	close(r.power.converters, Math.max(F * v, Fb * v) / 1e5, 0.01, "converters");
-	assert.equal(r.power.banks, 1);
-});
-
-test("distributed banks: more converter rating, lighter feeders; direct drive has no converters", () => {
-	const hub = sizeTipDriver({ ...BASE, power: POWER }).power;
-	const dist = sizeTipDriver({ ...BASE, power: { ...POWER, spacing: 1000 } }).power;
-	const direct = sizeTipDriver({ ...BASE, power: { ...POWER, spacing: 500, converters: false } }).power;
-	assert.ok(dist.rating > hub.rating && dist.feeders < hub.feeders && dist.generators > hub.generators);
-	assert.equal(direct.converters, 0);
-	assert.ok(direct.banks > dist.banks);
 });

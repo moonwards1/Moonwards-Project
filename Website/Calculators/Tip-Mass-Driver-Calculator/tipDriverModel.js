@@ -128,10 +128,10 @@ function sizeSection(prof, d, G, N) {
 }
 
 // ── Power delivery ──────────────────────────────────────────────────────
-// Flywheel banks drive generators; converters turn their output into the
-// track's sled-synchronous frequency; feeders carry it to the active block.
-// A bank owns one or more segments of track and supplies (or, braking,
-// absorbs) the power drawn while the sled is in them.
+// One flywheel bank at the hub drives generators; converters turn their
+// output into the track's sled-synchronous frequency; feeders carry it out
+// to the active block. The launch section ends at the hub and the braking
+// section starts there, so the same machines serve both in turn.
 //
 // On an N-cell grid, S is the running integral of P² dt, written in
 // position as ∫ F²·v dx (since P = F·v and dt = dx/v).
@@ -148,64 +148,36 @@ function sectionGrid(prof, N) {
 	return { N, dx, P, S };
 }
 
-// Loads on one segment [i0, i1) of grid cells, its bank at edge ic.
-// The feeder at a cell carries current whenever the sled is farther from
-// the bank than that cell, so its adiabatic area is √(∫I² dt / G).
-function segmentLoads(grid, i0, i1, ic, V, G) {
-	const { dx, P, S } = grid;
-	let feederVolume = 0, Pmax = 0;
-	for (let i = i0; i < i1; i++) {
+// Feeder volume along a section, the hub at grid edge ic (0 or N). The
+// feeder at a cell carries current whenever the sled is farther from the
+// hub than that cell, so its adiabatic area is √(∫I² dt / G).
+function feederVolume(grid, ic, V, G) {
+	const { N, dx, S } = grid;
+	let vol = 0;
+	for (let i = 0; i < N; i++) {
 		const Sc = 0.5 * (S[i] + S[i + 1]);
-		const s2 = i < ic ? Sc - S[i0] : S[i1] - Sc;
-		feederVolume += Math.sqrt(Math.max(s2, 0) / G) / V * dx;
-		Pmax = Math.max(Pmax, P[i]);
+		const s2 = i < ic ? Sc : S[N] - Sc;
+		vol += Math.sqrt(Math.max(s2, 0) / G) / V * dx;
 	}
-	return { E2: S[i1] - S[i0], Pmax, feederVolume };
+	return vol;
 }
 
-// Equal segments, banks at their centres.
-function distributedBanks(grid, nSeg, V, G) {
-	const banks = [];
-	for (let k = 0; k < nSeg; k++) {
-		const i0 = Math.round(k * grid.N / nSeg), i1 = Math.round((k + 1) * grid.N / nSeg);
-		banks.push(segmentLoads(grid, i0, i1, Math.round((i0 + i1) / 2), V, G));
-	}
-	return banks;
-}
-
-// pd: { spacing (m; 0 = one bank at the hub), voltage, conductors,
-//       genField, genSpeed, genStructure,
-//       converters (false = direct drive: generators wired straight to
-//       their blocks, so no frequency conversion), convSpecific (W/kg) }
+// pd: { voltage, conductors, genField, genSpeed, genStructure, convSpecific (W/kg) }
 function sizePowerDelivery(launch, brake, pd, endFactor, G, N) {
 	const lg = sectionGrid(launch, N);
 	const bg = sectionGrid(brake, N);
 	const V = pd.voltage;
-	let banks;
-	if (pd.spacing > 0) {
-		banks = distributedBanks(lg, Math.max(1, Math.round(launch.L / pd.spacing)), V, G)
-			.concat(distributedBanks(bg, Math.max(1, Math.round(brake.L / pd.spacing)), V, G));
-	} else {
-		// One bank at the hub: the launch section ends there, the braking
-		// section starts there, and the same machines serve both in turn.
-		const a = segmentLoads(lg, 0, N, N, V, G);
-		const b = segmentLoads(bg, 0, N, 0, V, G);
-		banks = [{ E2: a.E2 + b.E2, Pmax: Math.max(a.Pmax, b.Pmax), feederVolume: a.feederVolume + b.feederVolume }];
-	}
 	const rho = ALUMINIUM.density;
 	// Generator stator conductor, sized like the track windings but loaded
-	// for the bank's whole duty: M = 2·ρ·k_e·√(∫P² dt) / (B·v_s·√G).
-	let genConductor = 0, rating = 0, feederVolume = 0;
-	for (const b of banks) {
-		genConductor += 2 * rho * endFactor * Math.sqrt(b.E2) / (pd.genField * pd.genSpeed * Math.sqrt(G));
-		rating += b.Pmax;
-		feederVolume += b.feederVolume;
-	}
+	// for the whole launch-and-brake duty: M = 2·ρ·k_e·√(∫P² dt) / (B·v_s·√G).
+	const E2 = lg.S[N] + bg.S[N];
+	const genConductor = 2 * rho * endFactor * Math.sqrt(E2) / (pd.genField * pd.genSpeed * Math.sqrt(G));
+	const rating = Math.max(...lg.P, ...bg.P);
 	const generators = genConductor * pd.genStructure;
-	const converters = pd.converters ? rating / pd.convSpecific : 0;
-	const feeders = pd.conductors * rho * feederVolume;
+	const converters = rating / pd.convSpecific;
+	const feeders = pd.conductors * rho * (feederVolume(lg, N, V, G) + feederVolume(bg, 0, V, G));
 	return {
-		banks: banks.length, rating, genConductor, generators, converters, feeders,
+		rating, genConductor, generators, converters, feeders,
 		total: generators + converters + feeders,
 		peakCurrent: Math.max(launch.Ppeak, brake.Fmax * brake.speedAt(0)) / V,
 	};
@@ -218,7 +190,7 @@ function sizePowerDelivery(launch, brake, pd, endFactor, G, N) {
 //   magnetHeight, faces, endFactor, T0, T1, etaConv,
 //   cnt {strength, density, sf}, cer {strength, density, sf, postFactor, skin},
 //   flywheel {speedRatio},
-//   power {spacing, voltage, conductors, genField, genSpeed, genStructure, converters, convSpecific}
+//   power {voltage, conductors, genField, genSpeed, genStructure, convSpecific}
 export function sizeTipDriver(p, N = 4000) {
 	const mShip = p.shipMass;
 	const mSled = p.sledMassFrac * mShip;
@@ -281,7 +253,7 @@ export function sizeTipDriver(p, N = 4000) {
 	};
 
 	return {
-		mShip, mSled, sledLength: ell, mMoving: m, B: p.B,
+		mShip, mSled, sledLength: ell, mMoving: m, B: p.B, vFinal: p.vFinal, magnetHeight: p.magnetHeight,
 		launch: {
 			L: launch.L, T: launch.T, Fmax: launch.Fmax, Frelease: launch.Frelease,
 			Ppeak: launch.Ppeak, capped: launch.capped, vc: launch.vc, x1: launch.x1, t1: launch.t1,
