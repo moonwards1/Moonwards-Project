@@ -39,7 +39,7 @@ function torque(n) {
 
 function mass(kg) {
 	if (!isFinite(kg)) return "—";
-	if (kg >= 1e9) return (kg / 1e9).toLocaleString(undefined, { maximumFractionDigits: 3 }) + " kt";
+	if (kg >= 1e9) return (kg / 1e9).toLocaleString(undefined, { maximumFractionDigits: 3 }) + " Mt";
 	if (kg >= 1e3) return (kg / 1e3).toLocaleString(undefined, { maximumFractionDigits: 3 }) + " t";
 	return kg.toLocaleString(undefined, { maximumFractionDigits: 2 }) + " kg";
 }

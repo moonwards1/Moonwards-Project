@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Tip Mass Driver Calculator</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+	<link rel="stylesheet" href="tipDriverCalc.css">
+</head>
+<body>
+<div class="wrapper">
+<div class="calcMain">
+<h1>Tip Mass Driver Calculator</h1>
+<p class="note">
+A straight linear mass driver of the kind that could swivel at a skyhook tip. A reusable sled carries a drone cargo ship from rest to
+release speed, then brakes in a short section beyond the hub and is reused. The track is laid out so that the drive reaction is
+always carried in <em>tension</em>, by a carbon-nanotube spine anchored at the hub. Cordierite glass-ceramic backs the aluminium
+windings. Results update as you type; the <span class="tmd-info-sample">i</span> buttons explain each one.
+</p>
+
+<!-- INPUTS -->
+<div class="container">
+	<h4>Ship and launch</h4>
+	<div class="row"><label for="shipMass">Ship mass</label>
+		<input type="number" id="shipMass" value="2000" min="1" step="any"> <span class="unit">t</span></div>
+	<div class="row"><label for="accel">Maximum acceleration</label>
+		<input type="number" id="accel" value="10" min="0.01" step="any"> <span class="unit">g</span></div>
+	<div class="row"><label for="vFinal">Release speed</label>
+		<input type="number" id="vFinal" value="2000" min="1" step="any"> <span class="unit">m/s</span></div>
+	<div class="checkrow">
+		<input type="checkbox" id="capPower">
+		<label for="capPower">Cap peak power: accelerate harder at low speed, ease off near release</label>
+	</div>
+	<div class="row" id="capRow"><label for="capPct">Power cap</label>
+		<input type="number" id="capPct" value="50" min="1" max="100" step="any" disabled> <span class="unit">% of constant-acceleration peak</span></div>
+</div>
+
+<div class="container">
+	<h4>Sled and magnets</h4>
+	<div class="row"><label for="bPreset">Sled magnet field, B</label>
+		<select id="bPreset">
+			<option value="1">1 T — conservative</option>
+			<option value="2" selected>2 T — moderate</option>
+			<option value="3">3 T — ambitious</option>
+		</select></div>
+	<div class="row"><label for="sledPreset">Sled</label>
+		<select id="sledPreset">
+			<option value="compact">Compact — 10% of ship mass, 0.03 m per tonne</option>
+			<option value="standard" selected>Standard — 15% of ship mass, 0.05 m per tonne</option>
+			<option value="long">Long — 20% of ship mass, 0.08 m per tonne</option>
+		</select></div>
+	<div class="row"><label for="brakeAccel">Sled braking deceleration</label>
+		<input type="number" id="brakeAccel" value="50" min="0.01" step="any"> <span class="unit">g</span></div>
+	<div class="tmd-res"><span>Sled: <span class="val" id="o-sled"></span></span>
+		<button class="tmd-info" data-info="sled" aria-label="About sled mass and length">i</button></div>
+</div>
+
+<div class="container">
+	<h4>Power delivery</h4>
+	<div class="row"><label for="pdPreset">Flywheel banks</label>
+		<select id="pdPreset">
+			<option value="hub" selected>At the hub — one bank, feeders run the track</option>
+			<option value="clustered">Clustered — a bank every 5 km</option>
+			<option value="distributed">Distributed — a bank every 1 km</option>
+			<option value="direct">Direct drive — a bank every 500 m, no converters</option>
+		</select></div>
+	<div class="row"><label for="voltage">Feeder voltage</label>
+		<input type="number" id="voltage" value="100" min="1" step="any"> <span class="unit">kV</span></div>
+</div>
+
+<details class="container tmd-assume">
+	<summary><h4>Design assumptions</h4></summary>
+	<div class="tmd-group">CNT (spine, web diagonals, flywheel rims)</div>
+	<div class="row"><label for="cntStrength">Tensile strength</label>
+		<input type="number" id="cntStrength" value="42" min="0.1" step="any"> <span class="unit">GPa</span></div>
+	<div class="row"><label for="cntDensity">Density</label>
+		<input type="number" id="cntDensity" value="1400" min="1" step="any"> <span class="unit">kg/m³</span></div>
+	<div class="row"><label for="cntSF">Safety factor</label>
+		<input type="number" id="cntSF" value="2" min="1" step="any"></div>
+	<div class="tmd-group">Cordierite glass-ceramic (posts, skin)</div>
+	<div class="row"><label for="cerStrength">Compressive strength</label>
+		<input type="number" id="cerStrength" value="400" min="1" step="any"> <span class="unit">MPa</span></div>
+	<div class="row"><label for="cerDensity">Density</label>
+		<input type="number" id="cerDensity" value="2600" min="1" step="any"> <span class="unit">kg/m³</span></div>
+	<div class="row"><label for="cerSF">Safety factor</label>
+		<input type="number" id="cerSF" value="2" min="1" step="any"></div>
+	<div class="row"><label for="postFactor">Post buckling &amp; fittings allowance</label>
+		<input type="number" id="postFactor" value="2" min="1" step="any"> <span class="unit">×</span></div>
+	<div class="row"><label for="skin">Skin thickness</label>
+		<input type="number" id="skin" value="5" min="0" step="any"> <span class="unit">mm</span></div>
+	<div class="tmd-group">Windings (high-purity aluminium)</div>
+	<div class="row"><label for="height">Magnet / winding height</label>
+		<input type="number" id="height" value="4" min="0.1" step="any"> <span class="unit">m</span></div>
+	<div class="row"><label for="endFactor">End-turn &amp; fill allowance</label>
+		<input type="number" id="endFactor" value="1.5" min="1" step="any"> <span class="unit">×</span></div>
+	<div class="row"><label for="T0">Starting temperature</label>
+		<input type="number" id="T0" value="77" min="40" max="299" step="any"> <span class="unit">K</span></div>
+	<div class="row"><label for="T1">Maximum temperature</label>
+		<input type="number" id="T1" value="150" min="41" max="300" step="any"> <span class="unit">K</span></div>
+	<div class="tmd-group">Storage and conversion</div>
+	<div class="row"><label for="speedRatio">Flywheel min ÷ max speed</label>
+		<input type="number" id="speedRatio" value="0.5" min="0" max="0.95" step="any"></div>
+	<div class="row"><label for="eta">Conversion efficiency</label>
+		<input type="number" id="eta" value="95" min="1" max="100" step="any"> <span class="unit">%</span></div>
+	<div class="tmd-group">Generators and converters</div>
+	<div class="row"><label for="genField">Generator gap field</label>
+		<input type="number" id="genField" value="2" min="0.01" step="any"> <span class="unit">T</span></div>
+	<div class="row"><label for="genSpeed">Generator rotor surface speed</label>
+		<input type="number" id="genSpeed" value="1500" min="1" step="any"> <span class="unit">m/s</span></div>
+	<div class="row"><label for="genStructure">Generator structure &amp; cooling allowance</label>
+		<input type="number" id="genStructure" value="2" min="1" step="any"> <span class="unit">×</span></div>
+	<div class="row"><label for="convSpecific">Converter specific power</label>
+		<input type="number" id="convSpecific" value="100" min="0.01" step="any"> <span class="unit">kW/kg</span></div>
+</details>
+
+<div>
+	<button id="btnReset">Reset defaults</button>
+	<span id="msg" class="warn"></span>
+</div>
+
+<!-- OUTPUTS -->
+<div class="output-section" id="output">
+
+	<div class="result-block">
+		<h4>Launch</h4>
+		<div class="tmd-res"><span>Track length: <span class="val" id="o-L"></span></span>
+			<button class="tmd-info" data-info="trackLength" aria-label="About track length">i</button></div>
+		<div class="tmd-res"><span>Launch duration: <span class="val" id="o-T"></span></span>
+			<button class="tmd-info" data-info="duration" aria-label="About launch duration">i</button></div>
+		<div class="tmd-res"><span>Driving force: <span class="val" id="o-F"></span></span>
+			<button class="tmd-info" data-info="force" aria-label="About driving force">i</button></div>
+		<div class="tmd-res"><span>Peak power: <span class="val" id="o-P"></span></span>
+			<button class="tmd-info" data-info="peakPower" aria-label="About peak power">i</button></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Sled braking</h4>
+		<div class="tmd-res"><span>Braking length: <span class="val" id="o-Lb"></span></span>
+			<button class="tmd-info" data-info="braking" aria-label="About the braking section">i</button></div>
+		<div class="tmd-res"><span>Braking time: <span class="val" id="o-Tb"></span></span>
+			<button class="tmd-info" data-info="braking" aria-label="About the braking section">i</button></div>
+		<div class="tmd-res"><span>Braking force: <span class="val" id="o-Fb"></span></span>
+			<button class="tmd-info" data-info="braking" aria-label="About the braking section">i</button></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Energy and storage</h4>
+		<div class="tmd-res"><span>Launch energy (ship + sled): <span class="val" id="o-E"></span></span>
+			<button class="tmd-info" data-info="energy" aria-label="About launch energy">i</button></div>
+		<div class="tmd-res"><span>Storage needed per launch: <span class="val" id="o-Es"></span></span>
+			<button class="tmd-info" data-info="storage" aria-label="About energy storage">i</button></div>
+		<div class="tmd-res"><span>CNT flywheel rim mass: <span class="val" id="o-Mfw"></span></span>
+			<button class="tmd-info" data-info="storage" aria-label="About energy storage">i</button></div>
+		<div class="tmd-res"><span>Recovered from sled braking: <span class="val" id="o-Erec"></span></span>
+			<button class="tmd-info" data-info="braking" aria-label="About the braking section">i</button></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Windings</h4>
+		<div class="tmd-res"><span>Winding mass, launch: <span class="val" id="o-Mwl"></span></span>
+			<button class="tmd-info" data-info="windings" aria-label="About winding mass">i</button></div>
+		<div class="tmd-res"><span>Winding mass, braking: <span class="val" id="o-Mwb"></span></span>
+			<button class="tmd-info" data-info="windings" aria-label="About winding mass">i</button></div>
+		<div class="tmd-res"><span>Heat left in windings per launch: <span class="val" id="o-Q"></span></span>
+			<button class="tmd-info" data-info="windings" aria-label="About winding mass">i</button></div>
+		<div class="tmd-res"><span>Peak magnetic shear: <span class="val" id="o-tau"></span></span>
+			<button class="tmd-info" data-info="shear" aria-label="About magnetic shear">i</button></div>
+		<div class="tmd-res"><span>Peak sheet current: <span class="val" id="o-K"></span></span>
+			<button class="tmd-info" data-info="shear" aria-label="About sheet current">i</button></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Structure</h4>
+		<div class="tmd-res"><span>CNT spine, launch: <span class="val" id="o-sl"></span></span>
+			<button class="tmd-info" data-info="spine" aria-label="About the CNT spine">i</button></div>
+		<div class="tmd-res"><span>CNT spine, braking: <span class="val" id="o-sb"></span></span>
+			<button class="tmd-info" data-info="spine" aria-label="About the CNT spine">i</button></div>
+		<div class="tmd-res"><span>CNT web diagonals: <span class="val" id="o-diag"></span></span>
+			<button class="tmd-info" data-info="web" aria-label="About the guideway blade">i</button></div>
+		<div class="tmd-res"><span>Cordierite posts: <span class="val" id="o-post"></span></span>
+			<button class="tmd-info" data-info="web" aria-label="About the guideway blade">i</button></div>
+		<div class="tmd-res"><span>Cordierite skin: <span class="val" id="o-skin"></span></span>
+			<button class="tmd-info" data-info="skin" aria-label="About the cordierite skin">i</button></div>
+		<div class="tmd-res tmd-sum"><span>Structure total: <span class="val" id="o-struct"></span></span>
+			<button class="tmd-info" data-info="total" aria-label="About the totals">i</button></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Power delivery</h4>
+		<div class="tmd-res"><span>Flywheel banks: <span class="val" id="o-banks"></span></span>
+			<button class="tmd-info" data-info="powerConfig" aria-label="About the bank layouts">i</button></div>
+		<div class="tmd-res"><span>Generators: <span class="val" id="o-gen"></span></span>
+			<button class="tmd-info" data-info="generators" aria-label="About the generators">i</button></div>
+		<div class="tmd-res"><span>Converters: <span class="val" id="o-conv"></span></span>
+			<button class="tmd-info" data-info="converters" aria-label="About the converters">i</button></div>
+		<div class="tmd-res"><span>Feeders: <span class="val" id="o-feed"></span></span>
+			<button class="tmd-info" data-info="feeders" aria-label="About the feeders">i</button></div>
+		<div class="tmd-res"><span>Heat in generators &amp; feeders per launch: <span class="val" id="o-pdheat"></span></span>
+			<button class="tmd-info" data-info="feeders" aria-label="About the feeders">i</button></div>
+		<div class="tmd-res tmd-sum"><span>Power delivery total: <span class="val" id="o-pd"></span></span>
+			<button class="tmd-info" data-info="powerConfig" aria-label="About the bank layouts">i</button></div>
+	</div>
+
+	<div class="result-block">
+		<h4>Total</h4>
+		<div class="tmd-res tmd-sum"><span>Estimated driver mass: <span class="val" id="o-total"></span></span>
+			<button class="tmd-info" data-info="total" aria-label="About the totals">i</button></div>
+		<div class="note tmd-total-note">Structure + windings + flywheel rims + power delivery. Excludes supports against
+			the local field, the sled, the hub, and the tether that holds it all up — see the i.</div>
+	</div>
+
+</div><!-- /output -->
+</div><!-- /calcMain -->
+</div><!-- /wrapper -->
+
+<dialog id="tmd-dialog" class="tmd-dialog">
+	<div class="tmd-dialog-head">
+		<h3 id="tmd-dialog-title"></h3>
+		<button id="tmd-dialog-close" aria-label="Close">×</button>
+	</div>
+	<div id="tmd-dialog-body" class="tmd-dialog-body"></div>
+</dialog>
+
+	<!-- ES module; KaTeX for the pop-up formulas is imported from jsdelivr. -->
+	<script type="module" src="tipDriverCalc.js"></script>
+</body>
+</html>

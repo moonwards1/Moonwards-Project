@@ -37,6 +37,7 @@ Website/
 │   ├── Solar-System-Trajectory-Plotter/
 │   ├── Space-Elevator-Calculator/
 │   ├── Tether-geometry/
+│   ├── Tip-Mass-Driver-Calculator/
 │   └── Tip-Spin-Launcher-Calculator/
 │
 ├── Animations/             # Standalone animation files (SVG/JS), referenced by sections
