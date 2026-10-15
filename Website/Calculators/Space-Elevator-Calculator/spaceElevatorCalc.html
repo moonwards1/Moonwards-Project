@@ -3,122 +3,115 @@
 <head>
 	<title>Space Elevator Calculator</title>
 	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="../../Shared/calc-frame.css">
 	<link rel="stylesheet" href="spaceElevatorCalc.css">
 </head>
-<body>
-<div class="wrapper">
-<div class="calcMain">
-<h1>Asteroid Space Elevator Calculator</h1>
-<p class="note">See results for a listed celestial body and cable material, or make up your own scenario by setting the fields below.</p>
+<body class="cf-page">
+<div class="cf-calc">
+<h1 class="cf-title">Asteroid Space Elevator Calculator
+	<span class="cf-title-info"><button class="cf-info" data-cf-about="about" aria-label="About this calculator">i</button><span class="cf-hint">&larr; click for info</span></span></h1>
+<template id="about" data-title="About this calculator"><p>See results for a listed celestial body and cable material, or make up your own scenario by setting the fields below.</p></template>
 
-<!-- ── BODY PARAMETERS ────────────────────────────────────── -->
-<div class="container">
+<!-- ── INPUTS ─────────────────────────────────────────────── -->
+<div class="cf-grid">
+
+<div class="cf-section">
 	<h4>Asteroid parameters</h4>
-	<div class="row"><label>Presets</label>             
+	<div class="cf-row"><label for="bodyPreset">Presets</label>
 		<select id="bodyPreset">
 			<option value="">— choose —</option><option value="ceres">Ceres</option><option value="vesta">4 Vesta</option><option value="psyche">16 Psyche</option></select></div>
-	<div class="row"><label>Body radius</label>          
-		<input type="number" id="radius"  value="476.2"  min="1" step="any"> <span class="unit">km</span></div>
-	<div class="row"><label>Surface gravity</label>      
-		<input type="number" id="gsurf"   value="0.2763" min="0.001" step="any"> <span class="unit">m/s²</span></div>
-	<div class="row"><label>Rotation period (day)</label> 
-		<input type="number" id="period" value="9.074"  step="any"> <span class="unit">hours</span></div>
-	<div style="margin:18px 0 0 0">
-		<div class="row" style="margin-bottom:3px"><label>Distance from Sun:</label></div>
-		<div class="option">
-			<div>
-				<span>min AU</span>
-				<div>
-					<input type="radio" name="sunRef" value="peri" style="margin:0">
-					<input type="number" id="sunPeri"  value="2.55" step="0.01" min="0.01">
-				</div>
-			</div>
-			<div>
-				<span>average AU</span>
-				<div>
-					<input type="radio" name="sunRef" value="avg" checked style="margin:0">
-					<input type="number" id="sunOrbit" value="2.77" step="0.01" min="0.01">
-				</div>
-			</div>
-			<div>
-				<span>max AU</span>
-				<div>
-					<input type="radio" name="sunRef" value="apo" style="margin:0">
-					<input type="number" id="sunApo"   value="2.99" step="0.01" min="0.01">
-				</div>
-			</div>
-		</div>
-	</div>
+	<div class="cf-row"><label for="radius">Body radius</label>
+		<input type="number" id="radius" value="476.2" min="1" step="any"> <span class="cf-unit">km</span></div>
+	<div class="cf-row"><label for="gsurf">Surface gravity</label>
+		<input type="number" id="gsurf" value="0.2763" min="0.001" step="any"> <span class="cf-unit">m/s²</span></div>
+	<div class="cf-row"><label for="period">Rotation period (day)</label>
+		<input type="number" id="period" value="9.074" step="any"> <span class="cf-unit">hours</span></div>
+	<div class="cf-line cf-note">Distance from Sun &mdash; the selected one is used</div>
+	<div class="cf-row"><input type="radio" name="sunRef" value="peri" id="sunRefPeri"><label for="sunPeri">Minimum</label>
+		<input type="number" id="sunPeri" value="2.55" step="0.01" min="0.01"> <span class="cf-unit">AU</span></div>
+	<div class="cf-row"><input type="radio" name="sunRef" value="avg" id="sunRefAvg" checked><label for="sunOrbit">Average</label>
+		<input type="number" id="sunOrbit" value="2.77" step="0.01" min="0.01"> <span class="cf-unit">AU</span></div>
+	<div class="cf-row"><input type="radio" name="sunRef" value="apo" id="sunRefApo"><label for="sunApo">Maximum</label>
+		<input type="number" id="sunApo" value="2.99" step="0.01" min="0.01"> <span class="cf-unit">AU</span></div>
 </div>
 
-<!-- ── MATERIAL ──────────────────────────────────────────── -->
-<div class="container">
+<div class="cf-section">
 	<h4>Cable material</h4>
-	<div class="row"><label>Presets</label>   <select id="materialPreset">
-		<option value="">— choose material —</option>
-		<option value="steel">Steel</option>
-		<option value="zylon">Zylon</option>
-		<option value="esilica">Early Lunar silica</option>
-		<option value="msilica">Mature Lunar silica</option>
-		<option value="ecnt">Early CNT</option>
-		<option value="mcnt">Mature CNT</option>
-	</select></div>
-	<div class="row"><label>Tensile strength</label>
-		<input type="number" id="strength" value="42"    step="any" min="0.01"> <span class="unit">GPa</span></div>
-	<div class="row"><label>Density</label>            <input type="number" id="density"  value="1400"  step="any" min="1"   > <span class="unit">kg/m³</span></div>
-	<div class="row"><label>Breaking length</label>    <span id="o-breaking" style="font-size: 0.9em; min-width:80px; display:inline-block;">—</span> <span class="unit">km</span></div>
-	<div class="row"><label>Safety factor</label>      <input type="number" id="safety"   value="2"     step="0.1" min="1">    <span class="unit">×</span></div>
+	<div class="cf-row"><label for="materialPreset">Presets</label>
+		<select id="materialPreset">
+			<option value="">— choose material —</option>
+			<option value="steel">Steel</option>
+			<option value="zylon">Zylon</option>
+			<option value="esilica">Early Lunar silica</option>
+			<option value="msilica">Mature Lunar silica</option>
+			<option value="ecnt">Early CNT</option>
+			<option value="mcnt">Mature CNT</option>
+		</select></div>
+	<div class="cf-row"><label for="strength">Tensile strength</label>
+		<input type="number" id="strength" value="42" step="any" min="0.01"> <span class="cf-unit">GPa</span></div>
+	<div class="cf-row"><label for="density">Density</label>
+		<input type="number" id="density" value="1400" step="any" min="1"> <span class="cf-unit">kg/m³</span></div>
+	<div class="cf-row"><label>Breaking length</label>
+		<span class="cf-readout" id="o-breaking">—</span> <span class="cf-unit">km</span></div>
+	<div class="cf-row"><label for="safety">Safety factor</label>
+		<input type="number" id="safety" value="2" step="0.1" min="1"> <span class="cf-unit">×</span></div>
 </div>
 
-<!-- ── TETHER GEOMETRY ───────────────────────────────────── -->
-<div style="margin: 5px; padding: 10px 10px 10px 0;">
-	<div class="row"><label><strong>Counterweight altitude (tip of tether)</strong></label> <input type="number" id="tipAlt" value="0" min="0"> <span class="unit">km <span class="note">(0 = auto: 20% above sync)</span></span></div>
+<div class="cf-section">
+	<h4>Tether geometry</h4>
+	<div class="cf-row"><label for="tipAlt">Counterweight altitude (tip of tether)</label>
+		<input type="number" id="tipAlt" value="0" min="0"> <span class="cf-unit">km</span></div>
+	<p class="cf-para cf-note">0 = auto: 20% above synchronous orbit. Once calculated, the tip marker on the diagram can be dragged to set it.</p>
 </div>
 
-<div>
-	<button id="calcBtn">Calculate</button>
-	<button id="resetBtn">Reset to Ceres defaults</button>
+</div><!-- /inputs -->
+
+<div class="cf-actions">
+	<button id="calcBtn" class="cf-btn">Calculate</button>
+	<button id="resetBtn" class="cf-btn">Reset to Ceres defaults</button>
 </div>
 
 <!-- ── OUTPUTS ───────────────────────────────────────────── -->
-<div class="output-section" id="output" style="display:none">
+<div id="output" style="display:none">
 
-	<svg id="combined-svg" width="860" height="220"
-		style="border:1px solid black; border-radius:4px; background:#f0f8ff; display:block; margin:10px 0; cursor:default;">
-	</svg>
+	<div class="cf-graphic">
+		<svg id="combined-svg" class="sec-diagram" width="860" height="220"></svg>
+	</div>
 
-	<div class="result-block">
+	<div class="cf-grid">
+
+	<div class="cf-result">
 		<h4>Orbital mechanics</h4>
-		<div class="result-row">Synchronous orbit altitude: <span id="o-hsync"></span> km (above surface)</div>
-		<div class="result-row">Sync. orbital velocity: <span id="o-vsync"></span> m/s</div>
+		<div class="cf-line">Synchronous orbit altitude: <span class="cf-val" id="o-hsync"></span> km (above surface)</div>
+		<div class="cf-line">Sync. orbital velocity: <span class="cf-val" id="o-vsync"></span> m/s</div>
 	</div>
 
-	<div class="result-block">
+	<div class="cf-result">
 		<h4>Cable properties</h4>
-<div class="result-row">Taper ratio (sync orbit / tip cross-section): <span id="o-taper"></span></div>
-		<div class="result-row">Cable mass per kg of tip payload: <span id="o-massratio"></span> kg</div>
+<div class="cf-line">Taper ratio (sync orbit / tip cross-section): <span class="cf-val" id="o-taper"></span></div>
+		<div class="cf-line">Cable mass per kg of tip payload: <span class="cf-val" id="o-massratio"></span> kg</div>
 	</div>
 
-	<div class="result-block">
+	<div class="cf-result">
 		<h4>Tip release (payload launch)</h4>
-		<div class="result-row">Tip velocity (inertial): <span id="o-vtip"></span> m/s</div>
-		<div class="result-row">Artificial gravity at tip: <span id="o-tipgrav"></span> m/s²</div>
-		<div class="result-row">Tip escape velocity: <span id="o-vesc"></span> m/s</div>
+		<div class="cf-line">Tip velocity (inertial): <span class="cf-val" id="o-vtip"></span></div>
+		<div class="cf-line">Artificial gravity at tip: <span class="cf-val" id="o-tipgrav"></span> m/s²</div>
+		<div class="cf-line">Tip escape velocity: <span class="cf-val" id="o-vesc"></span></div>
 	</div>
 
-	<div class="result-block">
+	<div class="cf-result">
 		<h4>Orbit after release</h4>
-		<div class="result-row" id="o-escrow"></div>
-		<div class="result-row"><span id="o-lastrow-label">Heliocentric periapsis (retrograde release):</span> <span id="o-helioperi"></span></div>
-		<div class="result-row" id="o-prograde-row" style="display:none">Heliocentric apoapsis (prograde release): <span id="o-heliopro"></span></div>
+		<div class="cf-line" id="o-escrow"></div>
+		<div class="cf-line"><span id="o-lastrow-label">Heliocentric periapsis (retrograde release):</span> <span class="cf-val" id="o-helioperi"></span></div>
+		<div class="cf-line" id="o-prograde-row" style="display:none">Heliocentric apoapsis (prograde release): <span class="cf-val" id="o-heliopro"></span></div>
 	</div>
 
-
+	</div><!-- /results grid -->
 </div><!-- /output -->
-</div><!-- /calcMain -->
-</div><!-- /wrapper -->
+</div><!-- /cf-calc -->
 
-	<!-- ES module; imports its Shared/ dependencies itself. -->
+	<script type="module" src="../../Shared/calc-about.js"></script>
 	<script type="module" src="spaceElevatorCalc.js"></script>
 </body>
 </html>

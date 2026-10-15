@@ -6,6 +6,15 @@
 
 export const INFO = {
 
+about: {
+	title: "About this calculator",
+	body: [
+		{ p: "A straight linear mass driver of the kind that could swivel at a skyhook tip. A reusable sled carries a drone cargo ship from rest to release speed, then brakes in a short section beyond the hub and is reused." },
+		{ p: "The track is laid out so that the drive reaction is always carried in tension, by a carbon-nanotube spine anchored at the hub. Cordierite glass-ceramic backs the aluminium windings." },
+		{ p: "Results update as you type. The i buttons explain each one." },
+	],
+},
+
 sled: {
 	title: "Sled mass and length",
 	body: [

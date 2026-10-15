@@ -246,7 +246,9 @@ function calculate() {
 // Body bar, tapered cable (width proportional to diameter, tip fixed at
 // 10 px), sync orbit marker, and a draggable tip handle.
 // Dragging updates tipAlt live; releasing triggers a full recalculate.
+var lastDiagramArgs = null;   // redrawn when the column width changes
 function drawCombined(R, rFoot, rSync, rTip, GM, omega, rho, sig, safety) {
+	lastDiagramArgs = Array.prototype.slice.call(arguments);
 	const sigmaEff = sig / safety;
 	const steps = 300;
 	const dr = (rTip - rFoot) / steps;
@@ -265,7 +267,12 @@ function drawCombined(R, rFoot, rSync, rTip, GM, omega, rho, sig, safety) {
 	const svg = document.getElementById("combined-svg");
 	while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-	const W = +svg.getAttribute("width"), H = +svg.getAttribute("height");
+	// Drawn at the width the column actually gives it, so text keeps its size.
+	const W = Math.max(320, Math.round(svg.parentElement.clientWidth || 860));
+	const H = 220;
+	svg.setAttribute("width", W);
+	svg.setAttribute("height", H);
+	svg.setAttribute("viewBox", "0 0 " + W + " " + H);
 	const padR = 30;
 	const totalW = W - padR;   // usable width, origin = body centre
 
@@ -377,7 +384,7 @@ function drawCombined(R, rFoot, rSync, rTip, GM, omega, rho, sig, safety) {
 
 		const onMove = e => {
 			const rect = svg.getBoundingClientRect();
-			const newR = Math.max(rSync * 1.01, toR(e.clientX - rect.left));
+			const newR = Math.max(rSync * 1.01, toR((e.clientX - rect.left) * (W / rect.width)));
 			const newX = toX(newR).toFixed(1);
 			marker.setAttribute("cx", newX);
 			const lbl = document.getElementById("tip-drag-label");
@@ -396,3 +403,17 @@ function drawCombined(R, rFoot, rSync, rTip, GM, omega, rho, sig, safety) {
 		document.addEventListener("mouseup", onUp);
 	});
 }
+
+// Redraw the diagram when its column changes width.
+(function () {
+	const wrap = document.getElementById("combined-svg").parentElement;
+	let lastW = 0;
+	new ResizeObserver(function () {
+		const w = Math.round(wrap.clientWidth);
+		if (w === lastW) return;
+		lastW = w;
+		if (lastDiagramArgs && document.getElementById("output").style.display !== "none") {
+			drawCombined.apply(null, lastDiagramArgs);
+		}
+	}).observe(wrap);
+})();

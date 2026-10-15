@@ -1,12 +1,4 @@
-body{
-	background-color:#202030;
-	font-family: sans-serif;
-}
-.wrapper{
-	margin-left: 5%;
-	margin-right: 5%;
-	padding: 20px;
-	background: white;
-}
-.label{ margin-left: 5px; }
-#out{ font-weight: bold; }
+/* Layout, sections, rows and buttons come from ../../Shared/calc-frame.css
+   (see its header for the class list); this file holds only what is specific
+   to this calculator. Set the identity colour here. */
+.cf-calc { --cf-hue: #607080; }

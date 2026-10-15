@@ -463,12 +463,21 @@ function renderSweep(rows) {
 }
 
 // ── schematic + loaded taper profile ──────────────────────────────
+var lastDiagramArgs = null;   // redrawn when the column width changes
 function drawDiagram(Rmoon, rL1, rCW, prof, Tmin) {
+	lastDiagramArgs = Array.prototype.slice.call(arguments);
 	const svgNS="http://www.w3.org/2000/svg";
 	const svg=document.getElementById("diagram");
 	while(svg.firstChild) svg.removeChild(svg.firstChild);
-	const W=+svg.getAttribute("width"), H=+svg.getAttribute("height");
-	const padL=70, padR=90, lineY=70;
+	// Drawn at the width the column actually gives it, so text keeps its size;
+	// a narrow column stacks the three captions as a list below the schematic.
+	const W=Math.max(320, Math.round(svg.parentElement.clientWidth || 860));
+	const narrow = W < 640;
+	const H = narrow ? 290 : 250;
+	svg.setAttribute("width", W);
+	svg.setAttribute("height", H);
+	svg.setAttribute("viewBox", "0 0 "+W+" "+H);
+	const padL=70, padR=90, lineY=90;
 	const x = r => padL + (r-Rmoon)/(rCW-Rmoon)*(W-padL-padR);
 
 	function mk(t){return document.createElementNS(svgNS,t);}
@@ -500,27 +509,46 @@ function drawDiagram(Rmoon, rL1, rCW, prof, Tmin) {
 	const moon=mk("circle");
 	moon.setAttribute("cx",x(Rmoon));moon.setAttribute("cy",lineY);moon.setAttribute("r",16);
 	moon.setAttribute("fill","#999");moon.setAttribute("stroke","#555");svg.appendChild(moon);
-	txt(x(Rmoon),lineY+34,"Moon surface","middle","#444",11);
-	txt(x(Rmoon),lineY+47,(Rmoon/1e3).toFixed(0)+" km","middle","#777",10);
+	txt(x(Rmoon),lineY+54,"Moon surface","middle","#444",11);
+	txt(x(Rmoon),lineY+67,(Rmoon/1e3).toFixed(0)+" km","middle","#777",10);
 
 	// L1
-	line(x(rL1),lineY-60,x(rL1),lineY+55,"#558","5,4",1);
+	line(x(rL1),lineY-60,x(rL1),lineY+60,"#558","5,4",1);
 	txt(x(rL1),lineY-66,"L1","middle","#446",12);
-	txt(x(rL1),lineY+70,(rL1/1e3).toLocaleString()+" km","middle","#446",10);
+	txt(x(rL1),lineY+78,(rL1/1e3).toLocaleString()+" km","middle","#446",10);
 
 	// counterweight
 	const cw=mk("rect");
 	cw.setAttribute("x",x(rCW)-7);cw.setAttribute("y",lineY-7);cw.setAttribute("width",14);cw.setAttribute("height",14);
 	cw.setAttribute("fill","#c33");cw.setAttribute("stroke","#811");svg.appendChild(cw);
-	txt(x(rCW),lineY-16,"counterweight","middle","#811",11);
-	txt(x(rCW),lineY+34,(rCW/1e3).toLocaleString()+" km","middle","#811",10);
+	txt(x(rCW),lineY-50,"counterweight","middle","#811",11);
+	txt(x(rCW),lineY+54,(rCW/1e3).toLocaleString()+" km","middle","#811",10);
 
 	// Earth direction arrow + region labels
 	txt(W-12,lineY,"→ Earth","end","#357",11);
-	txt((x(Rmoon)+x(rL1))/2,H-10,"net force → toward Moon (tether hangs up)","middle","#777",10);
-	txt((x(rL1)+x(rCW))/2,H-10,"net force → outward (counterweight holds up)","middle","#777",10);
-	txt((x(Rmoon)+x(rCW))/2,H-26,"profile = loaded cross-section (∝ √A)","middle","#999",10);
+	if(narrow){
+		txt(8,H-44,"profile = loaded cross-section (∝ √A)","start","#999",10);
+		txt(8,H-28,"Moon to L1: net force toward Moon (tether hangs up)","start","#777",10);
+		txt(8,H-12,"L1 to counterweight: net force outward (holds it up)","start","#777",10);
+	} else {
+		txt((x(Rmoon)+x(rL1))/2,H-10,"net force → toward Moon (tether hangs up)","middle","#777",10);
+		txt((x(rL1)+x(rCW))/2,H-10,"net force → outward (counterweight holds up)","middle","#777",10);
+		txt((x(Rmoon)+x(rCW))/2,H-26,"profile = loaded cross-section (∝ √A)","middle","#999",10);
+	}
 }
+
+// Redraw the diagram when its column changes width.
+(function(){
+	const wrap = document.getElementById("diagram").parentElement;
+	let lastW = 0;
+	new ResizeObserver(function(){
+		const w = Math.round(wrap.clientWidth);
+		if(w === lastW) return;
+		lastW = w;
+		const out = document.getElementById("output");
+		if(lastDiagramArgs && out && out.style.display !== "none") drawDiagram.apply(null, lastDiagramArgs);
+	}).observe(wrap);
+})();
 
 // re-lock Step 2 whenever a Step-1 input changes
 function wireStep1Lock() {

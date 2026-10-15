@@ -11,6 +11,19 @@ tether-tool embeds are the exception: they keep a small inline module that
 imports and starts the tool.) A new calculator starts by copying
 `Website/Calculators/_template/`.
 
+## The shared frame
+
+Every calculator page sits on `Shared/calc-frame.css`: one `cf-calc` card,
+sections that reflow to the width of the column they are in (usable from 400
+px), input sections with a solid tint, result cards with striped lines, the
+info button and "About this calculator" pop-up (`Shared/calc-about.js`). A tool
+sets only its identity colour (`.cf-calc { --cf-hue: … }`) and its own
+specifics in its own stylesheet. The class list is the header of
+`calc-frame.css`; `_template/` shows the shape. Section content is a heading
+element followed by its lines (the striping counts children). Diagrams are SVG
+with a `viewBox` inside a `cf-graphic` so they scale with the column; a drag
+handler must convert pointer pixels to SVG units.
+
 ## The Shared/ dependency
 
 A calculator that imports from `Shared/` references it as `../../Shared/…` and

@@ -1,0 +1,258 @@
+/* Calculator frame — the common layout for calculator pages.
+ *
+ *   <link rel="stylesheet" href="../../Shared/calc-frame.css">
+ *
+ * A calculator page is one <div class="cf-calc"> holding a title, an intro and
+ * one or more grids of sections. The frame sizes itself to the width of the
+ * element it sits in (a standalone window, or one column of the workbench), not
+ * to the window: sections flow into as many columns as that width fits, from one
+ * at 400 px up. Graphics take the full width of the calculator.
+ *
+ * A tool sets its identity colour on .cf-calc in its own stylesheet:
+ *
+ *   .cf-calc { --cf-hue: #b45309; }
+ *
+ * and keeps only tool-specific rules (class prefix per tool) beside it.
+ *
+ * Classes
+ *   cf-page      <body>: page background and base font
+ *   cf-calc      the calculator card; strong border in the identity colour
+ *   cf-title     the h1
+ *   cf-intro     a paragraph of introduction / orientation
+ *   cf-grid      sections flowing down 1–3 columns by available width (inputs or results)
+ *   cf-section   a section holding inputs; cf-section.cf-wide spans all columns
+ *   cf-result    a section holding results
+ *   cf-graphic   a full-width graphic (svg / canvas / img scale to the width)
+ *   cf-row       label + input + unit (+ info button); the label's text wraps,
+ *                the rest stays on the line
+ *   cf-flush     on a row with no unit: input against the right edge
+ *   cf-line      any other full-width line (result rows); joins the striping
+ *   cf-unit      the unit beside an input
+ *   cf-readout   a computed value in the place of an input (same width)
+ *   cf-info      the round info button; with calc-about.js opens an About pop-up
+ *   cf-title-info  keeps the info button and its hint together beside the title
+ *   cf-para      a note paragraph inside a section
+ *   cf-check     checkbox + label
+ *   cf-cols      flows its cf-group children into columns by available width
+ *   cf-group     one titled cluster of rows inside cf-cols; cf-group-title heads it
+ *   cf-actions   a row of buttons (cf-btn)
+ *   cf-val / cf-warn / cf-note   emphasised value, warning text, small note
+ *   cf-hint      small grey hint beside a title
+ *
+ * Heading first, then lines: a result card's striping counts its children, so
+ * it holds one heading element followed by its lines.
+ */
+
+.cf-page {
+	margin: 0;
+	padding: 8px;
+	background: #e9e9e2;
+	color: #1a1a1a;
+	font-family: sans-serif;
+}
+
+.cf-calc,
+.cf-calc *,
+.cf-calc *::before,
+.cf-calc *::after {
+	box-sizing: border-box;
+}
+
+.cf-calc {
+	--hue: var(--cf-hue, #3a5a8a);
+	container-type: inline-size;
+	max-width: 1400px;
+	margin: 0 auto;
+	padding: 14px;
+	background: color-mix(in srgb, var(--hue) 4%, white);
+	border: 3px solid var(--hue);
+	border-radius: 14px;
+}
+
+.cf-title {
+	margin: 0 0 6px 0;
+	font-size: clamp(1.25rem, 3cqi + 0.6rem, 1.9rem);
+	line-height: 1.2;
+}
+.cf-intro { margin: 0 0 10px 0; line-height: 1.4; }
+
+/* ---- grids and sections ------------------------------------------------- */
+/* Sections flow down columns (as many as the width fits at 19rem each), each
+   section sliding up under the one above it, so no column leaves dead space
+   below a short section. Reading order is down the first column, then the
+   next. cf-wide and cf-graphic span every column and split the flow there. */
+.cf-grid {
+	columns: 19rem;
+	column-gap: 12px;
+	margin: 12px 0 0 0;
+}
+.cf-grid > * {
+	break-inside: avoid;
+	margin-bottom: 12px;
+}
+
+/* A section is a card of full-width lines: heading first, then lines. Input
+   sections have a solid tint; result cards stripe their lines alternately
+   white and tinted. Each is a container, so text size follows the width of
+   its own card. */
+.cf-section,
+.cf-result {
+	container-type: inline-size;
+	min-width: 0;
+	padding: 10px 0;
+	border-radius: 10px;
+	overflow: clip;
+}
+.cf-section {
+	background: color-mix(in srgb, var(--hue) 9%, white);
+	border: 1px solid color-mix(in srgb, var(--hue) 30%, white);
+}
+.cf-result {
+	background: white;
+	border: 1px solid #c4c4bc;
+}
+
+.cf-section > h4,
+.cf-result > h4,
+.cf-section > summary { margin: 0 0 6px 0; padding: 0 12px; }
+.cf-section > summary > h4 { margin: 0; }
+.cf-result > h4 {
+	padding-bottom: 4px;
+	border-bottom: 1px solid color-mix(in srgb, var(--hue) 25%, #ddd);
+}
+.cf-wide,
+.cf-graphic { column-span: all; }
+
+.cf-graphic svg,
+.cf-graphic canvas,
+.cf-graphic img { display: block; width: 100%; height: auto; }
+
+/* Text size: 13.1 px in a narrow card rising to 14.4 px, so a label gives up
+   size before it gives up a line. Tokens substitute where used, so the cqi is
+   measured against the card the text sits in. */
+.cf-calc { --cf-fs: clamp(13.1px, 1.44cqi + 8.35px, 14.4px); }
+
+.cf-row,
+.cf-check,
+.cf-line {
+	margin: 0;
+	padding: 4px 12px;
+	font-size: var(--cf-fs);
+}
+.cf-result :is(.cf-row, .cf-check, .cf-line):nth-child(even) {
+	background: color-mix(in srgb, var(--hue) 9%, white);
+}
+
+/* ---- input rows ---------------------------------------------------------- */
+.cf-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 8px;
+}
+.cf-row > label { flex: 1 1 7rem; min-width: 0; }
+.cf-row > input:not([type=checkbox]):not([type=radio]) { flex: 0 0 82px; width: 82px; padding: 3px 4px; }
+/* a select takes its own line under the label, where its option text fits */
+.cf-row > select { flex: 1 1 100%; min-width: 0; max-width: 100%; padding: 3px 5px; font-size: inherit; }
+/* radio / checkbox at the head of a row; a computed value sitting where an input would */
+.cf-row > input[type=radio],
+.cf-row > input[type=checkbox] { flex: none; margin: 0; }
+.cf-row > .cf-readout { flex: 0 0 82px; width: 82px; padding: 3px 4px; font-weight: bold; }
+.cf-unit { flex: 0 0 3rem; font-size: 0.88em; color: #555; }
+/* A row of label + number never wraps its input, unit or info button onto a
+   new line; the label's text wraps instead. */
+.cf-row:has(> input:not([type=checkbox]):not([type=radio])) { flex-wrap: nowrap; }
+.cf-row > :is(button, .cf-unit) { flex-shrink: 0; }
+/* a row with no unit keeps its input in line with the rows that have one;
+   cf-flush on the row puts it against the right edge instead */
+.cf-row > :where(input:not([type=checkbox]):not([type=radio])):last-child { margin-right: calc(3rem + 8px); }
+.cf-row.cf-flush > input:last-child { margin-right: 0; }
+
+.cf-check {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+.cf-check label { cursor: pointer; }
+
+.cf-cols { columns: 18rem; column-gap: 0; }
+.cf-group { break-inside: avoid; margin-bottom: 12px; }
+.cf-group-title {
+	margin: 0 12px 2px 12px;
+	font-size: var(--cf-fs);
+	font-weight: bold;
+	color: #444;
+	border-bottom: 1px solid #ddd;
+}
+
+.cf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.cf-btn { padding: 6px 14px; cursor: pointer; }
+
+/* result figures keep their full size; only the text around them shrinks */
+.cf-val { font-weight: bold; font-size: 0.9rem; }
+.cf-warn { color: #c00; font-weight: bold; }
+.cf-note { color: #555; font-size: 0.82em; }
+.cf-hint { margin-left: 8px; font-size: 0.8rem; font-weight: normal; color: #555; }
+/* an info button and its hint wrap together, never apart */
+.cf-title-info { white-space: nowrap; }
+
+/* ---- notes, graphics ------------------------------------------------------ */
+.cf-line.cf-note,
+.cf-row.cf-note { font-size: calc(var(--cf-fs) * 0.9); }
+.cf-para { margin: 0; padding: 4px 12px; font-size: calc(var(--cf-fs) * 0.9); }
+.cf-graphic svg,
+.cf-graphic canvas,
+.cf-graphic img { max-width: 760px; margin: 0 auto; }
+
+/* ---- info button and its pop-up (wired by calc-about.js) ------------------- */
+.cf-info {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	margin: 0 0 0 6px;
+	border-radius: 50%;
+	border: 1px solid #3a5a8a;
+	background: #eef3fb;
+	color: #3a5a8a;
+	font: italic bold 12px Georgia, serif;
+	cursor: pointer;
+	vertical-align: middle;
+}
+.cf-info:hover { background: #3a5a8a; color: white; }
+
+.cf-dialog {
+	width: min(640px, 92vw);
+	max-height: 80vh;
+	padding: 0;
+	border: 1px solid #888;
+	border-radius: 10px;
+	box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+	overflow: hidden;
+	font-family: sans-serif;
+	color: #1a1a1a;
+}
+.cf-dialog[open] { display: flex; flex-direction: column; }
+.cf-dialog::backdrop { background: rgba(10, 10, 25, 0.55); }
+.cf-dialog-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex: none;
+	padding: 10px 16px;
+	border-bottom: 1px solid #ccc;
+	background: color-mix(in srgb, var(--hue) 9%, white);
+}
+.cf-dialog-head h3 { margin: 0; font-size: 1.05em; }
+.cf-dialog-close { margin: 0; padding: 2px 10px; font-size: 1.1em; cursor: pointer; }
+.cf-dialog-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 6px 18px 16px 18px;
+	font-size: 0.93em;
+	line-height: 1.45;
+}

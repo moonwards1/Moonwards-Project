@@ -5,7 +5,7 @@ A tether from the Moon's surface, through Earth–Moon L1, to a counterweight be
 ## Files
 
 - `MoonL1ElevatorCalc.html` — page markup (two-step wizard)
-- `MoonL1ElevatorCalc.css` — page styling
+- `MoonL1ElevatorCalc.css` — this calculator's own styling; the layout comes from the shared frame
 - `MoonL1ElevatorCalc.js` — the calculator logic
 
 ## Dependencies
@@ -14,6 +14,8 @@ A tether from the Moon's surface, through Earth–Moon L1, to a counterweight be
 
 - `../../Shared/math-utils.js` (`OrbitalMath`)
 - `../../Shared/constants.js` (`Const`)
+- `../../Shared/calc-frame.css` (the shared calculator layout)
+- `../../Shared/calc-about.js` (the "About this calculator" pop-up)
 
 Moving this folder without `Website/Shared/` coming along will break it.
 

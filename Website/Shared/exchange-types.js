@@ -18,7 +18,7 @@
 // unit testing, same as math-utils.js / format-utils.js.
 //
 // The "body" convention (Kim, 2026-07-17): several calculators already work
-// across more than one body from a single page (the Gravity-gradient-skyhooks
+// across more than one body from a single page (the Hanging-skyhooks
 // tool has a body selector; Skyhook-Spin-Launcher follows it) rather than
 // being one hardcoded tool per body the way the Moon-Skyhook-Trajectory-
 // Plotter and Mars-Phobos-Skyhook-Trajectory-Plotter are today. As the

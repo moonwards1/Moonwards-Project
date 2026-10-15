@@ -27,7 +27,7 @@ Website/
 ├── Calculators/            # Standalone calculator tools (ES-module pages), embeddable or linked from sections
 │   ├── _template/                              # Canonical wiring — copy this to start a new calculator
 │   ├── Earth-Aerobrake-Calculator/
-│   ├── Gravity-gradient-skyhooks/
+│   ├── Hanging-skyhooks/
 │   ├── Mars-Phobos-Skyhook-Trajectory-Plotter/
 │   ├── Mass-Driver-Launch-Calculator/
 │   ├── Modified-tether-tool/                   # Tether/skyhook simulator (adapted from Sigvart Brendberg's tether-tool)

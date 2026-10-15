@@ -14,18 +14,25 @@ import { create } from "../../Shared/ui-components.js";
 var root = document.getElementById("insertItHere");
 var moon = systems.get("Moon");   // a body from orbit.js: { GM, radius, ... }
 
-// --- build the UI with the shared create() helper ---
-var form = create("form", false, false, root);
+// --- build the UI with the shared create() helper, using the frame's classes
+// (Shared/calc-frame.css): a grid of sections, each a heading then rows ---
+var grid = create("div", "cf-grid", false, root);
+var inputs = create("div", "cf-section", false, grid);
+create("h4", false, "Orbit", inputs);
 
-var altInput = create("input", false, false, form);
+var row = create("div", ["cf-row", "cf-flush"], false, inputs);
+create("label", false, "Circular orbit altitude above the Moon (km)", row);
+var altInput = create("input", false, false, row);
 altInput.type = "number";
 altInput.step = "any";
 altInput.value = 100;
-create("span", "label", "Circular orbit altitude above the Moon (km)", form);
-create("br", false, false, form);
 
-var button = create("button", false, "Calculate", form, "display:block; margin-top:8px");
-var out = create("p", "#out", false, root);
+var results = create("div", "cf-result", false, grid);
+create("h4", false, "Result", results);
+var out = create("p", ["cf-line", "cf-val"], false, results);
+
+var actions = create("div", "cf-actions", false, root);
+var button = create("button", "cf-btn", "Calculate", actions);
 
 // --- compute with OrbitalMath, present with Fmt ---
 function calc() {

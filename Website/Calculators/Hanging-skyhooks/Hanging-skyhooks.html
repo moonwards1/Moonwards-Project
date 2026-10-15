@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Hanging Skyhooks</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="../../Shared/calc-frame.css">
+	<link rel="stylesheet" href="Hanging-skyhooks.css">
+	<!-- ES modules; Hanging-skyhooks.js imports its Shared/ dependencies itself. -->
+	<script type="module" src="Hanging-skyhooks.js"></script>
+	<script type="module" src="../../Shared/calc-about.js"></script>
+</head>
+<body class="cf-page">
+<div class="cf-calc">
+<h1 class="cf-title">Hanging Skyhook Calculator
+	<span class="cf-title-info"><button class="cf-info" data-cf-about="about" aria-label="About this calculator">i</button><span class="cf-hint">&larr; click for info</span></span></h1>
+<template id="about" data-title="About this calculator">
+<p>A gravity-gradient skyhook is a long <b>vertical</b> tether whose <b>centre of mass</b> orbits a body at
+			orbital speed. The tether does <b>not</b> rotate &mdash; it stays aligned with the local vertical, held
+			taut by the gravity gradient (the tidal force). Because the whole structure shares the centre of mass's
+			angular velocity, the <b>top</b> travels faster than the local circular-orbit speed, so there centrifugal
+			effect exceeds gravity and it is flung outward, while the <b>foot</b> travels slower than local orbital
+			speed, so there gravity exceeds centrifugal effect and it is pulled inward. These opposing pulls put the
+			tether in tension, greatest at the centre of mass. The slow, low-sweeping foot is ideal for pick-up; the
+			fast-moving top gives a payload a boost on release.</p>
+<p>The centre of mass is where gravity and centrifugal effect balance &mdash; the tension maximum, and the
+			top of the effective-potential hill, analogous to the L1 point of a Moon&ndash;L1 elevator. Climbing
+			foot&nbsp;&rarr;&nbsp;centre is uphill; centre&nbsp;&rarr;&nbsp;top is downhill (regenerative).</p>
+<p>This calculator reproduces the geometry, velocities, taper ratios, masses, climber energies and release
+			targets of the original tether tool, and adds a dedicated <b>tip-payload mass</b> (which sizes the
+			absolute <b>Tension at Centre of Mass</b>) plus a <b>Cargo throughput</b> section reporting
+			<b>Throughput to the top</b>. Drag the red markers, or edit the fields and press <em>Update</em>.</p>
+</template>
+
+<div id="insertItHere"></div>
+</div><!-- /cf-calc -->
+</body>
+</html>

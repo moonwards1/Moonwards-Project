@@ -168,7 +168,7 @@ with a banner) versions they can't read.
 `launch-spec` all carry `body` explicitly, and `carrier-chain`'s `base` is the
 same idea under a different name — no type here lets a receiver infer which
 body it's about from which tool sent it. As calculators generalize to cover
-more than one body from a single page (`Gravity-gradient-skyhooks` already
+more than one body from a single page (`Hanging-skyhooks` already
 does, via a body selector) and the Mission Planner's departure/arrival tech
 dropdowns grow past the Moon, this stays a hard rule for any new
 body-specific type, and consuming modules must check the field against their

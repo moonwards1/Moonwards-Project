@@ -51,5 +51,6 @@ Loads from `Website/Shared/`: `orbit.js` (Earth/Sun data), `constants.js`
 `grazingPathScale`, `grazingPeakDecel`, `grazingPeriapsisDensity`,
 `ballisticCoefficient`, `dynamicPressure`, `suttonGravesHeatFlux`,
 `altitudeForDensity`). Breaks if its folder is moved without `Website/Shared/`
-coming along. ES module — view over http(s) (`serve.bat` locally, or the
+coming along. It also links `calc-frame.css` (layout) and `calc-about.js`
+(the "About this calculator" pop-up) from there. ES module — view over http(s) (`serve.bat` locally, or the
 deployed site); ES modules do not load from `file://` links.

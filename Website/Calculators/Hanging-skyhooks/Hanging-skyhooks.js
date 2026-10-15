@@ -10,7 +10,7 @@ function skyhookTool(DOMnode){
 // Declarations for variables shared across the tool's inner functions.
 // (As a classic script these were implicit globals; modules run in strict
 // mode, where assigning to an undeclared name throws.)
-var minimum_x_coordinate, minimum_y_coordinate, minimum_x_distance, minimum_y_distance,
+var minimum_x_coordinate, minimum_y_coordinate, minimum_x_distance, minimum_y_distance, pendingFrame = null,
 	svg_tether, marker_container, text_marker_container;
 
 //part 1: utility functions
@@ -55,21 +55,6 @@ skyhookStyle.id = "skyhookToolCSS";
 skyhookStyle.type = "text/css";
 document.head.appendChild(skyhookStyle);
 skyhookStyle.textContent = `
-.tetherToolMain .container{
-	display: inline-block;
-	border-radius: 10px;
-	border-style: solid;
-	border-width: 1px;
-	border-color: black;
-	padding: 10px;
-	margin: 5px;
-	vertical-align: top;
-}
-.tetherToolMain{
-	background-color: #F6F6F0;
-	border-radius: 10px;
-	padding: 20px;
-}
 .tetherToolMain .canvas{
 	border-style: solid;
 	border-width: 1px;
@@ -78,7 +63,6 @@ skyhookStyle.textContent = `
 }
 .tetherToolMain .draggable{ cursor: move; }
 .tetherToolMain .tooltip{ cursor: help; }
-.tetherToolMain .label{ margin-left: 5px; }
 .tetherToolMain .svgText {
 	pointer-events: none;
 	-webkit-user-select: none;
@@ -87,88 +71,94 @@ skyhookStyle.textContent = `
 	user-select: none;
 }
 .tetherToolMain #materialOverride{ display: none; }
-.tetherToolMain #overrideMaterial:checked ~ #materialOverride{ display: block; }
-.tetherToolMain h4{ margin-top: 0; }
-.tetherToolMain .resultHead{ border-bottom:1px solid #ccc; padding-bottom:4px; }
-.tetherToolMain .mathbox{
-	background: #eef; border: 1px solid #ccd; border-radius: 8px;
-	padding: 8px 14px; margin: 10px 5px; font-size: 0.85em; color: #224;
-	max-width: 860px;
+.tetherToolMain #svg_ilu{
+	width: 100%;
+	height: auto;
+	max-width: 900px;
+	aspect-ratio: 900 / 250;
+	border: 1px solid black;
+	border-radius: 4px;
+	background: white;
 }
 `
 
 //part 3: HTML
 
 const svgNS = "http://www.w3.org/2000/svg";
-let mainContainer = create("div","tetherToolMain",false,DOMnode);
-create("h2",false,"Skyhook",mainContainer);
-create("span",false,"System",mainContainer);
-let selector = create("select",false,false,mainContainer);
-	selector.name = "system";
-create("h3",false,"Tether",mainContainer);
-let formElement = create("form","#input",false,mainContainer);
-	let formContainer = create("div","container",false,formElement);
 
-		let footInput = create("input",false,false,formContainer);
-			footInput.name = "foot";
-			footInput.value = 10;
-		create("span","label","Foot altitude (km)",formContainer);
-		create("br",false,false,formContainer);
-		let receivingDeckCheck = create("input",false,false,formContainer);
-			receivingDeckCheck.name = "useReceivingDeck";
-			receivingDeckCheck.type = "checkbox";
-			receivingDeckCheck.checked = true;
-		let receivingDeckInput = create("input",false,false,formContainer);
-			receivingDeckInput.name = "receivingDeck";
-			receivingDeckInput.value = 233;
-			receivingDeckInput.type = "number";
-			receivingDeckInput.step = "any";
-		let receivingDeckLabel = create("span","label","Receiving deck altitude (km) For shuttles from the surface",formContainer);
+// Frame helpers (see Shared/calc-frame.css): a row is a label, then its input,
+// with an optional checkbox ahead of the label; a line is one line of a result
+// card; a note is a small paragraph.
+function inputField(name, value, attributes){
+	let element = create("input");
+	element.name = name;
+	element.value = value;
+	if(attributes){ Object.assign(element, attributes); }
+	return element
+}
+function inputRow(parent, labelText, input, checkbox){
+	let row = create("div",["cf-row","cf-flush"],false,parent);
+	if(checkbox){ row.appendChild(checkbox); }
+	let label = create("label",false,labelText,row);
+	row.appendChild(input);
+	return label
+}
+function note(parent, text){
+	return create("p",["cf-para","cf-note"],text,parent)
+}
+function line(parent, id){
+	let element = create("p","#" + id,false,parent);
+	element.classList.add("cf-line");
+	return element
+}
+
+let mainContainer = create("div","tetherToolMain",false,DOMnode);
+let formElement = create("form",false,false,mainContainer);
+	formElement.id = "input";
+	formElement.classList.add("cf-grid");
+
+	let systemContainer = create("div","cf-section",false,formElement);
+		create("h4",false,"System",systemContainer);
+		let systemRow = create("div","cf-row",false,systemContainer);
+		create("label",false,"Body the skyhook orbits",systemRow);
+		let selector = create("select",false,false,systemRow);
+			selector.name = "system";
+
+	let formContainer = create("div","cf-section",false,formElement);
+		create("h4",false,"Tether",formContainer);
+
+		let footInput = inputField("foot", 10);
+		inputRow(formContainer, "Foot altitude (km)", footInput);
+
+		let receivingDeckCheck = inputField("useReceivingDeck", "", {type: "checkbox", checked: true});
+		let receivingDeckInput = inputField("receivingDeck", 233, {type: "number", step: "any"});
+		let receivingDeckLabel = inputRow(formContainer, "Receiving deck altitude (km) For shuttles from the surface", receivingDeckInput, receivingDeckCheck);
 		receivingDeckCheck.oninput = function(){
 			receivingDeckInput.style.display = this.checked ? "" : "none";
-			receivingDeckLabel.innerText = (this.checked ? "" : "Optional: ") + "Receiving deck altitude (km) For shutttles from the surface";
+			receivingDeckLabel.innerText = (this.checked ? "" : "Optional: ") + "Receiving deck altitude (km) For shuttles from the surface";
 		};
-		create("br",false,false,formContainer);
-		let centreInput = create("input",false,false,formContainer);
-			centreInput.name = "centre";
-			centreInput.value = 275;
-		create("span","label","Tether centre of mass altitude (km). The point that determines orbit",formContainer);
-		create("br",false,false,formContainer);
-		let outerDocksCheck = create("input",false,false,formContainer);
-			outerDocksCheck.name = "useOuterDocks";
-			outerDocksCheck.type = "checkbox";
-			outerDocksCheck.checked = true;
-		let outerDocksInput = create("input",false,false,formContainer);
-			outerDocksInput.name = "outerDocks";
-			outerDocksInput.value = 606.5;
-			outerDocksInput.type = "number";
-			outerDocksInput.step = "any";
-		let outerDocksLabel = create("span","label","Outer docks altitude (km). For incoming ships from high orbit",formContainer);
+
+		let centreInput = inputField("centre", 275);
+		inputRow(formContainer, "Tether centre of mass altitude (km). The point that determines orbit", centreInput);
+
+		let outerDocksCheck = inputField("useOuterDocks", "", {type: "checkbox", checked: true});
+		let outerDocksInput = inputField("outerDocks", 606.5, {type: "number", step: "any"});
+		let outerDocksLabel = inputRow(formContainer, "Outer docks altitude (km). For incoming ships from high orbit", outerDocksInput, outerDocksCheck);
 		outerDocksCheck.oninput = function(){
 			outerDocksInput.style.display = this.checked ? "" : "none";
 			outerDocksLabel.innerText = (this.checked ? "" : "Optional: ") + "Outer docks altitude (km). For incoming ships from high orbit";
 		};
-			create("br",false,false,formContainer);
-			let launchDeckCheck = create("input",false,false,formContainer);
-				launchDeckCheck.name = "useLaunchDeck";
-				launchDeckCheck.type = "checkbox";
-				launchDeckCheck.checked = true;
-			let launchDeckInput = create("input",false,false,formContainer);
-				launchDeckInput.name = "launchDeck";
-				launchDeckInput.value = 950;
-				launchDeckInput.type = "number";
-				launchDeckInput.step = "any";
-			let launchDeckLabel = create("span","label","Main launch deck altitude (km). Most ships leave from here",formContainer);
-			launchDeckCheck.oninput = function(){
-				launchDeckInput.style.display = this.checked ? "" : "none";
-				launchDeckLabel.innerText = (this.checked ? "" : "Optional: ") + "Main launch deck altitude (km). Most ships leave from here";
-			};
-		create("br",false,false,formContainer);
-		let topInput = create("input",false,false,formContainer);
-			topInput.name = "top";
-			topInput.value = 2000;
-		create("span","label","Tether top altitude (km) Site of orbital station-keeping engines",formContainer);
-		create("br",false,false,formContainer);
+
+		let launchDeckCheck = inputField("useLaunchDeck", "", {type: "checkbox", checked: true});
+		let launchDeckInput = inputField("launchDeck", 950, {type: "number", step: "any"});
+		let launchDeckLabel = inputRow(formContainer, "Main launch deck altitude (km). Most ships leave from here", launchDeckInput, launchDeckCheck);
+		launchDeckCheck.oninput = function(){
+			launchDeckInput.style.display = this.checked ? "" : "none";
+			launchDeckLabel.innerText = (this.checked ? "" : "Optional: ") + "Main launch deck altitude (km). Most ships leave from here";
+		};
+
+		let topInput = inputField("top", 2000);
+		inputRow(formContainer, "Tether top altitude (km) Site of orbital station-keeping engines", topInput);
 
 let tether = {
 	materials: {
@@ -181,135 +171,89 @@ let tether = {
 		"steel": { displayName: "Steel (2.62 GPa, 8 g/cm³)", strength: 2617000000, density: 8000 }
 	}
 };
-		create("span",false,"Tether material",formContainer);
-		let materialSelector = create("select",false,false,formContainer,"display: block");
+
+		let materialSelector = create("select",false,false,false);
 			materialSelector.name = "material";
 		Object.keys(tether.materials).forEach(material => {
 			create("option",false,tether.materials[material].displayName,materialSelector).value = material
 		})
-		let globalSafetyInput = create("input",false,false,formContainer);
-			globalSafetyInput.name = "globalSafety";
-			globalSafetyInput.value = 3;
-			globalSafetyInput.type = "number";
-			globalSafetyInput.step = "0.1";
-			globalSafetyInput.min = "1";
-		create("span","label","Safety factor",formContainer);
-		create("br",false,false,formContainer);
-		let overrideInput = create("input",false,false,formContainer);
-			overrideInput.name = "overrideMaterial";
-			overrideInput.type = "checkbox";
-		create("span","label","Use custom material instead",formContainer);
+		inputRow(formContainer, "Tether material", materialSelector);
+		let globalSafetyInput = inputField("globalSafety", 3, {type: "number", step: "0.1", min: "1"});
+		inputRow(formContainer, "Safety factor", globalSafetyInput);
+
+		let overrideInput = inputField("overrideMaterial", "", {type: "checkbox"});
+		let overrideRow = create("div","cf-row",false,formContainer);
+			overrideRow.appendChild(overrideInput);
+			create("label",false,"Use custom material instead",overrideRow);
 		let materialOverride = create("div","#materialOverride",false,formContainer);
-			let strengthInput = create("input",false,false,materialOverride);
-				strengthInput.name = "tensileStrength";
-			create("span","label","Tensile strength (Pa)",materialOverride);
-			let densityInput = create("input",false,false,materialOverride);
-				densityInput.name = "density";
-			create("span","label","Density kg/m³",materialOverride);
-			let safetyInput = create("input",false,false,materialOverride);
-				safetyInput.name = "safety";
-				safetyInput.value = 1;
-			create("span","label","Safety factor",materialOverride);
+			let strengthInput = inputField("tensileStrength", "");
+			inputRow(materialOverride, "Tensile strength (Pa)", strengthInput);
+			let densityInput = inputField("density", "");
+			inputRow(materialOverride, "Density kg/m\u00b3", densityInput);
+			let safetyInput = inputField("safety", 1);
+			inputRow(materialOverride, "Safety factor", safetyInput);
 			overrideInput.oninput = function(){
 				materialOverride.style.display = this.checked ? "block" : "none";
 			}
-		create("br",false,false,formContainer);
-		create("br",false,false,formContainer);
-		create("span",false,"Payload held at a tether tip (sizes the peak tension)",formContainer);
-		create("br",false,false,formContainer);
-		let tipMassInput = create("input",false,false,formContainer);
-			tipMassInput.name = "tipMass";
-			tipMassInput.value = 100;
-			tipMassInput.type = "number";
-			tipMassInput.step = "any";
-			tipMassInput.min = "0";
-		create("span","label","Tip payload mass (tonnes)",formContainer);
 
-	let throughputContainer = create("div","container",false,formElement);
+		note(formContainer, "Payload held at a tether tip (sizes the peak tension)");
+		let tipMassInput = inputField("tipMass", 100, {type: "number", step: "any", min: "0"});
+		inputRow(formContainer, "Tip payload mass (tonnes)", tipMassInput);
+
+	let throughputContainer = create("div","cf-section",false,formElement);
 		create("h4",false,"Cargo throughput",throughputContainer);
-		let rateInput = create("input",false,false,throughputContainer);
-			rateInput.name = "rate"; rateInput.value = 1000; rateInput.type="number"; rateInput.step="any"; rateInput.min="0";
-		create("span","label","Delivery rate to launch deck (t/day)",throughputContainer);
-		create("br",false,false,throughputContainer);
-		let perClimberInput = create("input",false,false,throughputContainer);
-			perClimberInput.name = "perClimber"; perClimberInput.value = 100; perClimberInput.type="number"; perClimberInput.step="any"; perClimberInput.min="0.001";
-		create("span","label","Cargo per climber (t)",throughputContainer);
-		create("br",false,false,throughputContainer);
-		let vClimbInput = create("input",false,false,throughputContainer);
-			vClimbInput.name = "vClimb"; vClimbInput.value = 200; vClimbInput.type="number"; vClimbInput.step="any"; vClimbInput.min="0.1";
-		create("span","label","Climb speed (m/s)",throughputContainer);
-		create("br",false,false,throughputContainer);
-		let effInput = create("input",false,false,throughputContainer);
-			effInput.name = "effDrive"; effInput.value = 70; effInput.type="number"; effInput.step="any"; effInput.min="1"; effInput.max="100";
-		create("span","label","Drive efficiency (%)",throughputContainer);
-		create("br",false,false,throughputContainer);
-		create("span","label","Descending traffic to the foot is assumed to be 1% of the ascending rate.",throughputContainer);
+		let rateInput = inputField("rate", 1000, {type: "number", step: "any", min: "0"});
+		inputRow(throughputContainer, "Delivery rate to launch deck (t/day)", rateInput);
+		let perClimberInput = inputField("perClimber", 100, {type: "number", step: "any", min: "0.001"});
+		inputRow(throughputContainer, "Cargo per climber (t)", perClimberInput);
+		let vClimbInput = inputField("vClimb", 200, {type: "number", step: "any", min: "0.1"});
+		inputRow(throughputContainer, "Climb speed (m/s)", vClimbInput);
+		let effInput = inputField("effDrive", 70, {type: "number", step: "any", min: "1", max: "100"});
+		inputRow(throughputContainer, "Drive efficiency (%)", effInput);
+		note(throughputContainer, "Descending traffic to the foot is assumed to be 1% of the ascending rate.");
 
-	let reentryContainer = create("div","container",false,formElement);
+	let reentryContainer = create("div","cf-section",false,formElement);
 		create("h4",false,"Earth reentry (cargo released from top)",reentryContainer);
-		let targetPerigeeInput = create("input",false,false,reentryContainer);
-			targetPerigeeInput.name = "targetPerigee"; targetPerigeeInput.value = 50; targetPerigeeInput.type="number"; targetPerigeeInput.step="any"; targetPerigeeInput.min="-300";
-		create("span","label","Target perigee altitude (km)",reentryContainer);
-		create("br",false,false,reentryContainer);
-		let ifaceAltInput = create("input",false,false,reentryContainer);
-			ifaceAltInput.name = "ifaceAlt"; ifaceAltInput.value = 122; ifaceAltInput.type="number"; ifaceAltInput.step="any"; ifaceAltInput.min="1";
-		create("span","label","Entry interface altitude (km)",reentryContainer);
-		create("br",false,false,reentryContainer);
-		create("span","label","Cargo flung from the top is braked retrograde so it falls to the parent body; a burn at the lunar-distance apogee trims perigee to the target.",reentryContainer);
+		let targetPerigeeInput = inputField("targetPerigee", 50, {type: "number", step: "any", min: "-300"});
+		inputRow(reentryContainer, "Target perigee altitude (km)", targetPerigeeInput);
+		let ifaceAltInput = inputField("ifaceAlt", 122, {type: "number", step: "any", min: "1"});
+		inputRow(reentryContainer, "Entry interface altitude (km)", ifaceAltInput);
+		note(reentryContainer, "Cargo flung from the top is braked retrograde so it falls to the parent body; a burn at the lunar-distance apogee trims perigee to the target.");
 
 	const propellantMax = { oxygen: 20, hydrogen: 80 };//km/s, viable mature-engine ceilings
-	let stationContainer = create("div","container",false,formElement);
+	let stationContainer = create("div","cf-section",false,formElement);
 		create("h4",false,"Orbit station-keeping (VASIMR reboost)",stationContainer);
-		create("span",false,"Propellant",stationContainer);
-		let propellantSelector = create("select",false,false,stationContainer,"display:block");
+		let propellantSelector = create("select",false,false,false);
 			propellantSelector.name = "propellant";
 			create("option",false,"Oxygen (cheap, plentiful byproduct)",propellantSelector).value = "oxygen";
 			create("option",false,"Hydrogen (higher exhaust speed)",propellantSelector).value = "hydrogen";
-		let vExhaustInput = create("input",false,false,stationContainer);
-			vExhaustInput.name = "vExhaust"; vExhaustInput.value = 8; vExhaustInput.type="number"; vExhaustInput.step="any"; vExhaustInput.min="1"; vExhaustInput.max = propellantMax.oxygen;
-		create("span","label","Exhaust velocity (km/s)",stationContainer);
-		create("br",false,false,stationContainer);
-		let effThrusterInput = create("input",false,false,stationContainer);
-			effThrusterInput.name = "effThruster"; effThrusterInput.value = 60; effThrusterInput.type="number"; effThrusterInput.step="any"; effThrusterInput.min="1"; effThrusterInput.max="100";
-		create("span","label","Thruster efficiency, electrical → jet (%)",stationContainer);
-		create("br",false,false,stationContainer);
-		let effSupplyInput = create("input",false,false,stationContainer);
-			effSupplyInput.name = "effSupply"; effSupplyInput.value = 90; effSupplyInput.type="number"; effSupplyInput.step="any"; effSupplyInput.min="1"; effSupplyInput.max="100";
-		create("span","label","Power generation & delivery efficiency (%)",stationContainer);
-		create("br",false,false,stationContainer);
-		create("span","label","The reboost thruster is mounted at the tether top, the longest available lever arm.",stationContainer);
-		/*mount field removed*/
-			/* */
-			/* */
-			/* */
-			/* */
-			/* */
-		/* */
-			/* */
-		/* */
-		create("br",false,false,stationContainer);
-		if(false){
-			/* */
-			/* */
-			/* */
-		};
-		create("span","label","Oxygen is capped at 20 km/s, hydrogen at 80 km/s. Engines are assumed to run continuously; spares cover engine-out and maintenance.",stationContainer);
+		inputRow(stationContainer, "Propellant", propellantSelector);
+		let vExhaustInput = inputField("vExhaust", 8, {type: "number", step: "any", min: "1", max: propellantMax.oxygen});
+		inputRow(stationContainer, "Exhaust velocity (km/s)", vExhaustInput);
+		let effThrusterInput = inputField("effThruster", 60, {type: "number", step: "any", min: "1", max: "100"});
+		inputRow(stationContainer, "Thruster efficiency, electrical \u2192 jet (%)", effThrusterInput);
+		let effSupplyInput = inputField("effSupply", 90, {type: "number", step: "any", min: "1", max: "100"});
+		inputRow(stationContainer, "Power generation & delivery efficiency (%)", effSupplyInput);
+		note(stationContainer, "The reboost thruster is mounted at the tether top, the longest available lever arm.");
+		note(stationContainer, "Oxygen is capped at 20 km/s, hydrogen at 80 km/s. Engines are assumed to run continuously; spares cover engine-out and maintenance.");
 		propellantSelector.oninput = function(){
 			var mx = propellantMax[this.value];
 			vExhaustInput.max = mx;
 			if(Number(vExhaustInput.value) > mx){ vExhaustInput.value = mx; };
 		};
 
-	let warnings = create("p","#warnings",false,formElement,"color: red");
+	let warnings = create("p",["cf-wide","cf-warn"],false,formElement);
+		warnings.id = "warnings";
 
-let updateButton = create("button",false,"Update",mainContainer,"display: block");
+let actions = create("div","cf-actions",false,mainContainer);
+let updateButton = create("button","cf-btn","Update",actions);
 	updateButton.onclick = function(){ calc(); hardReload() };
 
 // Send this design to the Skyhook + Tip Spin-Launcher Calculator (a variant
 // of this same tool) as a tether-spec packet — see Shared/exchange.js and
 // Website/ARCHITECTURE.md, "Exchange — trading data with the calculators".
-let sendTetherButton = create("button",false,"Send tether → Skyhook Spin-Launcher",mainContainer,"display: block; margin-top: 6px;");
-let sendTetherStatus = create("span","label",false,mainContainer);
+let sendTetherButton = create("button","cf-btn","Send tether \u2192 Skyhook Spin-Launcher",actions);
+let sendTetherStatus = create("span","cf-note",false,actions);
 sendTetherButton.onclick = function(){
 	calc();
 	var gnum = function(field){ return Number(form[field].value); };
@@ -324,81 +268,48 @@ sendTetherButton.onclick = function(){
 		period: tether.time, tipSpeed: tether.topVel,
 		taperRatio: { upper: tether.highRatio, lower: tether.lowRatio }
 	}, {
-		tool: "gravity-gradient-skyhooks",
+		tool: "hanging-skyhooks",
 		label: selector.options[selector.selectedIndex].value + " tether",
 		iso: new Date().toISOString().slice(0, 10)
 	});
 	Exchange.send(packet, { target: "skyhook-spin-launcher" });
 	sendTetherStatus.innerText = "Sent — open the Skyhook Spin-Launcher calculator to apply it.";
 };
-create("p",false,"You can also adjust the tether by dragging the red markers below:",mainContainer);
+note(mainContainer, "You can also adjust the tether by dragging the red markers below:");
 let output = create("div","#output",false,mainContainer);
-	let tetherSketchContainer = create("div","container",false,output);
+	output.classList.add("cf-grid");
+	let tetherSketchContainer = create("div","cf-graphic",false,output);
 		var illustration = document.createElementNS(svgNS,"svg");
 		tetherSketchContainer.appendChild(illustration);
 		illustration.id = "svg_ilu";
-		illustration.style.width = "900px";
-		illustration.style.height = "250px";
 
-	create("br",false,false,output);
-	let generalContainer = create("div","container",false,output);
+	let generalContainer = create("div","cf-result",false,output);
 		create("h4",false,"General information",generalContainer);
-		create("p","#period",false,generalContainer);
-		create("p","#footVel",false,generalContainer);
-		create("p","#hitTheGround",false,generalContainer);
-		create("p","#centreVel",false,generalContainer);
-		create("p","#topVel",false,generalContainer);
-	create("br",false,false,output);
-	let climberContainer = create("div","container",false,output);
+		["period","footVel","hitTheGround","centreVel","topVel"].forEach(id => line(generalContainer, id));
+	let climberContainer = create("div","cf-result",false,output);
 		create("h4",false,"Climber",climberContainer);
-		create("p","#lowClimber",false,climberContainer);
-		create("p","#highClimber",false,climberContainer);
-	create("br",false,false,output);
-	let propertyContainer = create("div","container",false,output);
+		["lowClimber","highClimber"].forEach(id => line(climberContainer, id));
+	let propertyContainer = create("div","cf-result",false,output);
 		create("h4",false,"Tether properties",propertyContainer);
-		create("p","#lowAcceleration",false,propertyContainer);
-		create("p","#lowRatio",false,propertyContainer);
-		create("p","#lowMass",false,propertyContainer);
-		create("p","#highAcceleration",false,propertyContainer);
-		create("p","#highRatio",false,propertyContainer);
-		create("p","#highMass",false,propertyContainer);
-	let forceContainer = create("div","container",false,output);
-		create("h4","resultHead","Forces",forceContainer);
-		create("p","#tensionCoM",false,forceContainer);
-		create("p","#tensionCoMfoot",false,forceContainer);
-		create("p","#tetherMassAbs",false,forceContainer);
-	let throughputOut = create("div","container",false,output,"min-width:330px");
-		create("h4","resultHead","Throughput to launch deck",throughputOut);
-		create("p","#trip",false,throughputOut);
-		create("p","#cadence",false,throughputOut);
-		create("p","#nclimb",false,throughputOut);
-		create("p","#spacing",false,throughputOut);
-		create("p","#oncable",false,throughputOut);
-		create("p","#dT",false,throughputOut);
-		create("p","#power",false,throughputOut);
-		create("p","#epert",false,throughputOut);
-	let stationOut = create("div","container",false,output,"min-width:330px");
-		create("h4","resultHead","Orbit station-keeping",stationOut);
-		create("p","#skThrust",false,stationOut);
-		create("p","#skProp",false,stationOut);
-		create("p","#skJet",false,stationOut);
-		create("p","#skElec",false,stationOut);
-		create("p","#skGen",false,stationOut);
-		create("p","#skEnergyDay",false,stationOut);
-		create("p","#skEpert",false,stationOut);
-	let releaseContainer = create("div","container",false,output);
+		["lowAcceleration","lowRatio","lowMass","highAcceleration","highRatio","highMass"].forEach(id => line(propertyContainer, id));
+	let forceContainer = create("div","cf-result",false,output);
+		create("h4",false,"Forces",forceContainer);
+		["tensionCoM","tensionCoMfoot","tetherMassAbs"].forEach(id => line(forceContainer, id));
+	let throughputOut = create("div","cf-result",false,output);
+		create("h4",false,"Throughput to launch deck",throughputOut);
+		["trip","cadence","nclimb","spacing","oncable","dT","power","epert"].forEach(id => line(throughputOut, id));
+	let stationOut = create("div","cf-result",false,output);
+		create("h4",false,"Orbit station-keeping",stationOut);
+		["skThrust","skProp","skJet","skElec","skGen","skEnergyDay","skEpert"].forEach(id => line(stationOut, id));
+	let releaseContainer = create("div","cf-result",false,output);
 		create("h4",false,"If released from launch deck:",releaseContainer);
-		create("p","#escape",false,releaseContainer);
-		create("p","#newApoapsis",false,releaseContainer);
+		line(releaseContainer, "escape");
+		line(releaseContainer, "newApoapsis");
 		create("h4","#earthReentryHead","Earth reentry (released from launch deck):",releaseContainer);
-		create("p","#earthArrival",false,releaseContainer);
-		create("p","#earthPerigee",false,releaseContainer);
-		create("p","#earthBurn",false,releaseContainer);
-		create("p","#earthFPA",false,releaseContainer);
-		create("p","#earthPeakG",false,releaseContainer);
+		["earthArrival","earthPerigee","earthBurn","earthFPA","earthPeakG"].forEach(id => line(releaseContainer, id));
 		create("h4",false,"Minimum release altitude:",releaseContainer);
 		let releases = create("p",false,false,releaseContainer);
-	create("br",false,false,output);
+		releases.classList.add("cf-line");
 
 
 //part 4: planetary data
@@ -805,7 +716,17 @@ let calc = function(){
 	minimum_y_coordinate = Math.max(-moon.radius/900,-tether.Length/4000);
 	minimum_x_distance = Math.min((moon.radius + tether.top)/850,tether.top/300) + Math.min(tether.Length/4000,moon.radius/1000);
 	minimum_y_distance = Math.min(moon.radius/450,tether.Length/2000);
+	// A second pass draws into the frame fitted to the first pass's drawing.
+	var frame = pendingFrame;
+	pendingFrame = null;
+	if(frame){
+		minimum_x_coordinate = frame.x;
+		minimum_y_coordinate = frame.y;
+		minimum_x_distance = frame.w;
+		minimum_y_distance = frame.h;
+	};
 	illustration.setAttributeNS(null,"viewBox",minimum_x_coordinate + " " + minimum_y_coordinate + " " + minimum_x_distance + " " + minimum_y_distance);
+	illustration.style.aspectRatio = Math.min(6,Math.max(1.8,minimum_x_distance/minimum_y_distance));
 
 //lots of svg drawing:
 	var addText = function(container,content,x,y,size,color){
@@ -817,6 +738,7 @@ let calc = function(){
 		newMarker.setAttributeNS(null,"fill",color);
 		newMarker.appendChild(document.createTextNode(content));
 		container.appendChild(newMarker);
+		return newMarker;
 	};
 	var addToolTip = function(container,content){
 		var newToolTip = document.createElementNS(svgNS,"title");
@@ -839,7 +761,10 @@ let calc = function(){
 	svg_planet.appendChild(svg_planet_atmosphere);
 	svg_planet.appendChild(svg_planet_main);
 
-	var svg_scale = tether.Length/100000;
+	// Markers, line weights and text are sized in screen pixels (about 4 px per
+	// unit), so a narrow column keeps them legible instead of shrinking them.
+	var displayWidth = Math.max(300, illustration.getBoundingClientRect().width || 900);
+	var svg_scale = minimum_x_distance/displayWidth*4;
 
 	svg_tether = document.createElementNS(svgNS,"g");
 	var svg_tether_main = document.createElementNS(svgNS,"line");
@@ -855,9 +780,20 @@ let calc = function(){
 	marker_container = document.createElementNS(svgNS,"g");
 	text_marker_container = document.createElementNS(svgNS,"g");
 
-	addText(text_marker_container,"Foot",(tether.foot + moon.radius)/1000,svg_scale*3,svg_scale*2.5,"black");
-	addText(text_marker_container,"Top",(tether.top + moon.radius)/1000,svg_scale*3,svg_scale*2.5,"black");
-	addText(text_marker_container,"Centre of mass",(tether.centre + moon.radius)/1000,svg_scale*3,svg_scale*2.5,"black");
+	// Labels sit just under the tether; in a narrow column, where neighbours
+	// would overprint, they stagger over three rows above it instead.
+	var staggerLabels = displayWidth < 640;
+	var labelXs = [(tether.foot + moon.radius)/1000, (tether.top + moon.radius)/1000, (tether.centre + moon.radius)/1000]
+		.concat(targets.map(function(t){ return t.location/1000; }))
+		.filter(isFinite).sort(function(a,b){ return a - b; });
+	var labelY = function(x){
+		if(!staggerLabels){ return svg_scale*3; }
+		return -svg_scale*(2.4 + 3*(Math.max(0,labelXs.indexOf(x)) % 3));
+	};
+
+	addText(text_marker_container,"Foot",(tether.foot + moon.radius)/1000,labelY((tether.foot + moon.radius)/1000),svg_scale*2.5,"black");
+	addText(text_marker_container,"Top",(tether.top + moon.radius)/1000,labelY((tether.top + moon.radius)/1000),svg_scale*2.5,"black");
+	addText(text_marker_container,"Centre of mass",(tether.centre + moon.radius)/1000,labelY((tether.centre + moon.radius)/1000),svg_scale*2.5,"black");
 
 	var selectedElement = 0;
 	let moveElement = function(evt){
@@ -988,6 +924,7 @@ let calc = function(){
 		velocity_line.setAttributeNS(null,"y2",-Math.sin(angle)*moon.radius/1000 - moon.radius*Math.sin(secondAngle)/1000);
 		velocity_line.setAttributeNS(null,"fill","none");
 		velocity_line.setAttributeNS(null,"stroke","red");
+		velocity_line.setAttributeNS(null,"data-release","1");   // long line through the planet: not framed
 		velocity_line.setAttributeNS(null,"stroke-linecap","round");
 		velocity_line.setAttributeNS(null,"stroke-width",svg_scale/2);
 		addText(
@@ -1031,11 +968,15 @@ let calc = function(){
 	marker_container.appendChild(top_marker);
 
 	for(var i=0;i<targets.length;i++){
+		// Only release points inside the frame are drawn.
+		if(!isFinite(targets[i].location)){ continue; };
+		if(frame && targets[i].location/1000 > frame.x + frame.w){ continue; };
 		var marker = document.createElementNS(svgNS,"circle");
 		marker.setAttributeNS(null,"cx",targets[i].location/1000);
 		marker.setAttributeNS(null,"cy",0);
 		marker.setAttributeNS(null,"fill","blue");
 		marker.setAttributeNS(null,"r",svg_scale);
+		marker.setAttributeNS(null,"data-release","1");
 		addToolTip(marker,"Release point for " + targets[i].name + " transfer\nAltitude " + myRound((targets[i].location - moon.radius)/1000,2) + "km\nVinf " + myRound(targets[i].vinf,2) + "m/s");
 
 		marker_container.appendChild(marker);
@@ -1044,10 +985,10 @@ let calc = function(){
 			text_marker_container,
 			targets[i].name + "↑",
 			targets[i].location/1000,
-			svg_scale*3,
+			labelY(targets[i].location/1000),
 			svg_scale*2.5,
 			"blue"
-		);
+		).setAttributeNS(null,"data-release","1");
 	};
 	//construct path for tether width diagram
 	var tether_width_scale = Math.min(
@@ -1085,6 +1026,30 @@ let calc = function(){
 	illustration.appendChild(marker_container);
 	illustration.appendChild(text_marker_container);
 
+	if(!frame){
+		// First pass: measure what was drawn (the tether, its markers, labels and
+		// angle annotations; not the planet's bulk, the orbit lines or the far
+		// release points) and draw again into a frame that holds all of it.
+		var box = null;
+		var measure = function(el){
+			if(!el.getBBox || el.getAttributeNS(null,"data-release") || el === descent_trajectory || el === anchor_trajectory){ return; };
+			var b = el.getBBox();
+			if(!b.width && !b.height){ return; };
+			if(!box){ box = {x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height}; return; };
+			box.x0 = Math.min(box.x0,b.x);
+			box.y0 = Math.min(box.y0,b.y);
+			box.x1 = Math.max(box.x1,b.x + b.width);
+			box.y1 = Math.max(box.y1,b.y + b.height);
+		};
+		[svg_tether,marker_container,text_marker_container].forEach(function(group){
+			Array.from(group.children).forEach(measure);
+		});
+		if(box){
+			var padX = svg_scale*4, padY = svg_scale*3;
+			pendingFrame = {x: box.x0 - padX, y: box.y0 - padY, w: box.x1 - box.x0 + 2*padX, h: box.y1 - box.y0 + 2*padY};
+			calc();
+		};
+	}
 };
 var hardReload = function(){
 	var animation = document.createElementNS(svgNS,"animate");
@@ -1126,5 +1091,12 @@ var hardReload = function(){
 };
 calc();hardReload();
 selector.oninput = function(){calc();hardReload();}
+
+// Redraw when the column changes width, so markers and text keep their pixel size.
+let lastDiagramWidth = illustration.getBoundingClientRect().width;
+new ResizeObserver(function(){
+	var w = illustration.getBoundingClientRect().width;
+	if(Math.abs(w - lastDiagramWidth) > 1){ lastDiagramWidth = w; calc(); }
+}).observe(tetherSketchContainer);
 }
 skyhookTool(document.getElementById("insertItHere"));

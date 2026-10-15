@@ -1,82 +1,11 @@
-body {
-	background-color: #202030;
-	font-family: sans-serif;
-}
-.wrapper {
-	margin-left: 5%;
-	margin-right: 5%;
-	padding: 20px;
-	background: white;
-}
-.calcMain {
-	background-color: #F6F6F0;
-	border-radius: 10px;
-	padding: 20px;
-}
-.calcMain h1 { margin-top: 0; }
-.container {
-	display: inline-block;
-	border-radius: 10px;
-	border: 1px solid black;
-	padding: 10px;
-	margin: 5px;
-	vertical-align: top;
-}
-.container h4 { margin-top: 0; }
-.row {
-	display: flex;
-	align-items: center;
-	margin: 4px 0;
-	gap: 6px;
-}
-.row label { min-width: 215px; font-size: 0.9em; }
-.row input[type=number] {
-	width: 90px;
-	padding: 2px 4px;
-}
-.row .unit { font-size: 0.8em; color: #555; }
-select { padding: 2px 4px; max-width: 360px; }
-button {
-	margin: 8px 4px 8px 0;
-	padding: 6px 14px;
-	cursor: pointer;
-}
-.checkrow {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin: 10px 0 4px 0;
-	font-size: 0.9em;
-	max-width: 420px;
-}
-.checkrow label { cursor: pointer; }
-.output-section { margin-top: 12px; }
-.result-block {
-	display: inline-block;
-	border-radius: 10px;
-	border: 1px solid #888;
-	padding: 10px 14px;
-	margin: 5px;
-	vertical-align: top;
-	background: white;
-	min-width: 290px;
-}
-.result-block h4 { margin: 0 0 6px 0; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
-.val { font-weight: bold; }
-.warn { color: #c00; font-weight: bold; }
-.note { color: #555; font-size: 0.82em; }
+/* Layout, sections, rows and buttons come from ../../Shared/calc-frame.css;
+   this file holds only what is specific to this calculator. */
+.cf-calc { --cf-hue: #b45309; }
 
 /* Design-assumptions panel */
 .tmd-assume summary { cursor: pointer; list-style-position: inside; }
 .tmd-assume summary h4 { display: inline; }
 .tmd-assume[open] summary { margin-bottom: 6px; }
-.tmd-group {
-	font-size: 0.8em;
-	font-weight: bold;
-	color: #444;
-	margin: 10px 0 2px 0;
-	border-bottom: 1px solid #ddd;
-}
 
 /* Result rows with an info button */
 .tmd-res {
@@ -84,13 +13,12 @@ button {
 	align-items: center;
 	justify-content: space-between;
 	gap: 10px;
-	font-size: 0.9em;
-	margin: 3px 0;
 }
 .tmd-title { display: flex; align-items: center; gap: 8px; }
-.tmd-sum { border-top: 1px solid #ccc; padding-top: 4px; margin-top: 6px; }
-.tmd-total-note { max-width: 300px; margin-top: 6px; }
-.tmd-info, .tmd-info-sample {
+.cf-title .tmd-info { vertical-align: middle; margin-left: 6px; }
+.tmd-sum { border-top: 1px solid #ccc; }
+.tmd-total-note { margin: 6px 12px 0 12px; }
+.tmd-info {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;

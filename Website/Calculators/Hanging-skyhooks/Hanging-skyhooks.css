@@ -1,0 +1,4 @@
+/* Layout, sections, rows and buttons come from ../../Shared/calc-frame.css;
+   the form and result cards are built by Hanging-skyhooks.js, which carries
+   the rules for its own SVG. This file holds the identity colour. */
+.cf-calc { --cf-hue: #2c5fb3; }

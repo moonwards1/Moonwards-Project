@@ -8,7 +8,7 @@ brakes in a short section beyond the hub.
 ## Files
 
 - `tipDriverCalc.html` — page markup
-- `tipDriverCalc.css` — page styling
+- `tipDriverCalc.css` — this calculator's own styling (identity colour, result rows, info pop-up); layout comes from the shared frame
 - `tipDriverCalc.js` — page wiring: inputs, presets, results, info pop-ups
 - `tipDriverModel.js` — the sizing model (pure, Node-importable)
 - `tipDriverInfo.js` — the text and formulas shown in each result's info pop-up
@@ -17,7 +17,9 @@ brakes in a short section beyond the hub.
 
 ## Dependencies
 
-No `Website/Shared/` imports; the folder can be moved on its own. The info
+Links `../../Shared/calc-frame.css` (the shared calculator layout: sections
+reflow to the width of the column they sit in, from 400 px up). That
+stylesheet is the only `Shared/` dependency; no scripts are imported. The info
 pop-ups render their formulas with **KaTeX 0.16.11 from cdn.jsdelivr.net**
 (stylesheet linked in the HTML, module imported on first use). Without network
 access the calculator still works and the pop-ups show the TeX source instead.

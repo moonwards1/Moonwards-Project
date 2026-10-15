@@ -32,8 +32,8 @@ import { Const } from "../../Shared/constants.js";
 	function val(id) { return Number(document.getElementById(id).value); }
 
 	function row(label, value, cls) {
-		return "<div class='result-row'>" + label + ": <span" +
-			(cls ? " class='" + cls + "'" : "") + ">" + value + "</span></div>";
+		return "<div class='cf-line'>" + label + ": <span class='cf-val" +
+			(cls ? " " + cls : "") + "'>" + value + "</span></div>";
 	}
 
 	function calc() {
@@ -96,9 +96,9 @@ import { Const } from "../../Shared/constants.js";
 		var tpsCls = tpsNeed > tpsBudg ? "warn" : (tpsNeed > 0.8 * tpsBudg ? "caution" : "ok");
 
 		// ---- render ----
-		var html = "";
+		var html = "<div class='cf-grid'>";
 
-		html += "<div class='result-block orbit'><h4>Orbit &amp; speed shed</h4>";
+		html += "<div class='cf-result'><h4>Orbit &amp; speed shed</h4>";
 		html += row("Earth SOI radius", (rSOI / 1e3).toFixed(0) + " km");
 		html += row("Target apoapsis", (rApo / 1e3).toFixed(0) + " km (" + apoFrac.toFixed(2) + "×SOI)");
 		html += row("Escape speed at periapsis", (vEsc / 1000).toFixed(3) + " km/s");
@@ -106,11 +106,11 @@ import { Const } from "../../Shared/constants.js";
 		html += row("Margin below escape", (margin).toFixed(0) + " m/s",
 			margin < 60 ? "caution" : "ok");
 		html += row("<strong>Speed to shed</strong>", "<strong>" + (shed / 1000).toFixed(3) + " km/s</strong>");
-		html += "<div class='note'>" + (shed / vEntry * 100).toFixed(0) +
+		html += "<div class='cf-para cf-note'>" + (shed / vEntry * 100).toFixed(0) +
 			"% of the entry speed. The thin margin below escape is why real capture trims at apoapsis.</div>";
 		html += "</div>";
 
-		html += "<div class='result-block loads'><h4>Deceleration &amp; loads</h4>";
+		html += "<div class='cf-result'><h4>Deceleration &amp; loads</h4>";
 		html += row("<strong>Peak deceleration</strong>", "<strong>" + gPeak.toFixed(2) + " g</strong> (" + aPeak.toFixed(0) + " m/s²)");
 		html += row("High-g soak time (≈)", tau.toFixed(0) + " s");
 		html += row("Entry mass", (entryMass / 1e6).toFixed(2) + " kt");
@@ -118,22 +118,23 @@ import { Const } from "../../Shared/constants.js";
 		html += row("Peak force on ship", (peakForce / 1e6).toFixed(0) + " MN");
 		html += "</div>";
 
-		html += "<div class='result-block loads'><h4>Atmospheric pass</h4>";
+		html += "<div class='cf-result'><h4>Atmospheric pass</h4>";
 		html += row("Required periapsis density", rhoP.toExponential(2) + " kg/m³");
 		html += row("Actual braking altitude", (hAct / 1000).toFixed(0) + " km", hCls);
 		html += row("Peak dynamic pressure", qDynAtm.toFixed(2) + " atm", qCls);
-		html += "<div class='note'>Set by β. Lower the ballistic coefficient (bigger shield) to brake higher and gentler.</div>";
+		html += "<div class='cf-para cf-note'>Set by β. Lower the ballistic coefficient (bigger shield) to brake higher and gentler.</div>";
 		html += "</div>";
 
-		html += "<div class='result-block shield'><h4>Heating &amp; heat shield</h4>";
+		html += "<div class='cf-result'><h4>Heating &amp; heat shield</h4>";
 		html += row("Peak convective flux (Sutton–Graves)", qConvCm.toFixed(0) + " W/cm²", fCls);
 		html += row("Integrated convective load", QintCm.toFixed(0) + " kJ/cm²");
 		html += row("PICA areal density (est.)", areal.toFixed(0) + " kg/m²");
 		html += row("Heat-shield mass needed (conv. only)", (tpsNeed / 1000).toFixed(0) + " t", tpsCls);
 		html += row("Heat-shield mass budget", (tpsBudg / 1000).toFixed(0) + " t");
-		html += "<div class='note'>Convective only — radiative heating (significant &gt;11 km/s, grows with nose radius) is NOT included. Lower bound.</div>";
+		html += "<div class='cf-para cf-note'>Convective only — radiative heating (significant &gt;11 km/s, grows with nose radius) is NOT included. Lower bound.</div>";
 		html += "</div>";
 
+		html += "</div>";
 		document.getElementById("out").innerHTML = html;
 	}
 
