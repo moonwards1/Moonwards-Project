@@ -18,7 +18,7 @@ relative path:
 - `../../Shared/orbit.js` — planetary-system data
 - `../../Shared/math-utils.js`, `constants.js`, `exchange.js`, `exchange-types.js`
 - `../../Shared/calc-frame.css` — the shared calculator layout
-- `../../Shared/calc-about.js` — the "About this calculator" pop-up
+- `../../Shared/calc-about.js` — the "About this calculator" pop-up and the small input tips
 
 **It will break if this folder is moved without `Website/Shared/` coming with
 it.**

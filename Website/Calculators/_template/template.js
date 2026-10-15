@@ -20,12 +20,20 @@ var grid = create("div", "cf-grid", false, root);
 var inputs = create("div", "cf-section", false, grid);
 create("h4", false, "Orbit", inputs);
 
-var row = create("div", ["cf-row", "cf-flush"], false, inputs);
-create("label", false, "Circular orbit altitude above the Moon (km)", row);
+// A row is label, input, then the unit after the input. The round "i" button
+// at the end of the label opens a small tip beside it (text in data-cf-tip;
+// wired by Shared/calc-about.js). type="button" keeps it from submitting a form.
+var row = create("div", "cf-row", false, inputs);
+var label = create("label", false, "Circular orbit altitude", row);
+var tip = create("button", "cf-info", "i", label);
+tip.type = "button";
+tip.dataset.cfTip = "Height above the surface, not the centre of the Moon.";
+tip.setAttribute("aria-label", "More information");
 var altInput = create("input", false, false, row);
 altInput.type = "number";
 altInput.step = "any";
 altInput.value = 100;
+create("span", "cf-unit", "km", row);
 
 var results = create("div", "cf-result", false, grid);
 create("h4", false, "Result", results);

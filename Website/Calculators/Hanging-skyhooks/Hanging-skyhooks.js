@@ -86,9 +86,10 @@ skyhookStyle.textContent = `
 
 const svgNS = "http://www.w3.org/2000/svg";
 
-// Frame helpers (see Shared/calc-frame.css): a row is a label, then its input,
-// with an optional checkbox ahead of the label; a line is one line of a result
-// card; a note is a small paragraph.
+// Frame helpers (see Shared/calc-frame.css): a row is an optional checkbox, a
+// label, then its input and unit; a tip is an info button at the end of the
+// label that opens a small floating box (Shared/calc-about.js); a line is one
+// line of a result card.
 function inputField(name, value, attributes){
 	let element = create("input");
 	element.name = name;
@@ -96,12 +97,36 @@ function inputField(name, value, attributes){
 	if(attributes){ Object.assign(element, attributes); }
 	return element
 }
-function inputRow(parent, labelText, input, checkbox){
-	let row = create("div",["cf-row","cf-flush"],false,parent);
-	if(checkbox){ row.appendChild(checkbox); }
+// options: {checkbox, unit, tip}. A row without a unit keeps its input against
+// the right edge. Returns the label, whose first child is its text node.
+function inputRow(parent, labelText, input, options){
+	let opts = options || {};
+	let row = create("div",opts.unit ? "cf-row" : ["cf-row","cf-flush"],false,parent);
+	if(opts.checkbox){ row.appendChild(opts.checkbox); }
 	let label = create("label",false,labelText,row);
+	if(opts.tip){
+		let button = create("button","cf-info",false,label);
+		button.type = "button";
+		button.textContent = "i";
+		button.dataset.cfTip = opts.tip;
+		button.setAttribute("aria-label","More information");
+	}
 	row.appendChild(input);
+	if(opts.unit){ create("span","cf-unit",opts.unit,row); }
 	return label
+}
+// A row whose checkbox switches the input on or off; unchecked, the label
+// reads "Optional: …" and the input and its unit are hidden.
+function optionalRow(parent, useName, name, value, labelText, unit, tip){
+	let check = inputField(useName, "", {type: "checkbox", checked: true});
+	let input = inputField(name, value, {type: "number", step: "any"});
+	let label = inputRow(parent, labelText, input, {checkbox: check, unit: unit, tip: tip});
+	let unitElement = input.nextElementSibling;
+	check.oninput = function(){
+		input.style.display = this.checked ? "" : "none";
+		unitElement.style.display = this.checked ? "" : "none";
+		label.firstChild.nodeValue = (this.checked ? "" : "Optional: ") + labelText;
+	};
 }
 function note(parent, text){
 	return create("p",["cf-para","cf-note"],text,parent)
@@ -118,47 +143,34 @@ let formElement = create("form",false,false,mainContainer);
 	formElement.classList.add("cf-grid");
 
 	let systemContainer = create("div","cf-section",false,formElement);
-		create("h4",false,"System",systemContainer);
+		create("h4",false,"Body the skyhook orbits",systemContainer);
 		let systemRow = create("div","cf-row",false,systemContainer);
-		create("label",false,"Body the skyhook orbits",systemRow);
 		let selector = create("select",false,false,systemRow);
 			selector.name = "system";
+			selector.setAttribute("aria-label","Body the skyhook orbits");
 
 	let formContainer = create("div","cf-section",false,formElement);
 		create("h4",false,"Tether",formContainer);
 
 		let footInput = inputField("foot", 10);
-		inputRow(formContainer, "Foot altitude (km)", footInput);
+		inputRow(formContainer, "Foot altitude", footInput, {unit: "km"});
 
-		let receivingDeckCheck = inputField("useReceivingDeck", "", {type: "checkbox", checked: true});
-		let receivingDeckInput = inputField("receivingDeck", 233, {type: "number", step: "any"});
-		let receivingDeckLabel = inputRow(formContainer, "Receiving deck altitude (km) For shuttles from the surface", receivingDeckInput, receivingDeckCheck);
-		receivingDeckCheck.oninput = function(){
-			receivingDeckInput.style.display = this.checked ? "" : "none";
-			receivingDeckLabel.innerText = (this.checked ? "" : "Optional: ") + "Receiving deck altitude (km) For shuttles from the surface";
-		};
+		optionalRow(formContainer, "useReceivingDeck", "receivingDeck", 233, "Receiving deck altitude", "km",
+			"Where shuttles from the surface join the tether.");
 
 		let centreInput = inputField("centre", 275);
-		inputRow(formContainer, "Tether centre of mass altitude (km). The point that determines orbit", centreInput);
+		inputRow(formContainer, "Tether centre of mass altitude", centreInput, {unit: "km",
+			tip: "The point that determines the orbit."});
 
-		let outerDocksCheck = inputField("useOuterDocks", "", {type: "checkbox", checked: true});
-		let outerDocksInput = inputField("outerDocks", 606.5, {type: "number", step: "any"});
-		let outerDocksLabel = inputRow(formContainer, "Outer docks altitude (km). For incoming ships from high orbit", outerDocksInput, outerDocksCheck);
-		outerDocksCheck.oninput = function(){
-			outerDocksInput.style.display = this.checked ? "" : "none";
-			outerDocksLabel.innerText = (this.checked ? "" : "Optional: ") + "Outer docks altitude (km). For incoming ships from high orbit";
-		};
+		optionalRow(formContainer, "useOuterDocks", "outerDocks", 606.5, "Outer docks altitude", "km",
+			"Where incoming ships from high orbit dock.");
 
-		let launchDeckCheck = inputField("useLaunchDeck", "", {type: "checkbox", checked: true});
-		let launchDeckInput = inputField("launchDeck", 950, {type: "number", step: "any"});
-		let launchDeckLabel = inputRow(formContainer, "Main launch deck altitude (km). Most ships leave from here", launchDeckInput, launchDeckCheck);
-		launchDeckCheck.oninput = function(){
-			launchDeckInput.style.display = this.checked ? "" : "none";
-			launchDeckLabel.innerText = (this.checked ? "" : "Optional: ") + "Main launch deck altitude (km). Most ships leave from here";
-		};
+		optionalRow(formContainer, "useLaunchDeck", "launchDeck", 950, "Main launch deck altitude", "km",
+			"Most ships leave from here.");
 
 		let topInput = inputField("top", 2000);
-		inputRow(formContainer, "Tether top altitude (km) Site of orbital station-keeping engines", topInput);
+		inputRow(formContainer, "Tether top altitude", topInput, {unit: "km",
+			tip: "Site of the orbital station-keeping engines."});
 
 let tether = {
 	materials: {
@@ -187,38 +199,38 @@ let tether = {
 			create("label",false,"Use custom material instead",overrideRow);
 		let materialOverride = create("div","#materialOverride",false,formContainer);
 			let strengthInput = inputField("tensileStrength", "");
-			inputRow(materialOverride, "Tensile strength (Pa)", strengthInput);
+			inputRow(materialOverride, "Tensile strength", strengthInput, {unit: "Pa"});
 			let densityInput = inputField("density", "");
-			inputRow(materialOverride, "Density kg/m\u00b3", densityInput);
+			inputRow(materialOverride, "Density", densityInput, {unit: "kg/m\u00b3"});
 			let safetyInput = inputField("safety", 1);
 			inputRow(materialOverride, "Safety factor", safetyInput);
 			overrideInput.oninput = function(){
 				materialOverride.style.display = this.checked ? "block" : "none";
 			}
 
-		note(formContainer, "Payload held at a tether tip (sizes the peak tension)");
 		let tipMassInput = inputField("tipMass", 100, {type: "number", step: "any", min: "0"});
-		inputRow(formContainer, "Tip payload mass (tonnes)", tipMassInput);
+		inputRow(formContainer, "Tip payload mass", tipMassInput, {unit: "t",
+			tip: "Payload held at a tether tip; it sizes the peak tension."});
 
 	let throughputContainer = create("div","cf-section",false,formElement);
 		create("h4",false,"Cargo throughput",throughputContainer);
 		let rateInput = inputField("rate", 1000, {type: "number", step: "any", min: "0"});
-		inputRow(throughputContainer, "Delivery rate to launch deck (t/day)", rateInput);
+		inputRow(throughputContainer, "Delivery rate to launch deck", rateInput, {unit: "t/day",
+			tip: "Descending traffic to the foot is assumed to be 1% of the ascending rate."});
 		let perClimberInput = inputField("perClimber", 100, {type: "number", step: "any", min: "0.001"});
-		inputRow(throughputContainer, "Cargo per climber (t)", perClimberInput);
+		inputRow(throughputContainer, "Cargo per climber", perClimberInput, {unit: "t"});
 		let vClimbInput = inputField("vClimb", 200, {type: "number", step: "any", min: "0.1"});
-		inputRow(throughputContainer, "Climb speed (m/s)", vClimbInput);
+		inputRow(throughputContainer, "Climb speed", vClimbInput, {unit: "m/s"});
 		let effInput = inputField("effDrive", 70, {type: "number", step: "any", min: "1", max: "100"});
-		inputRow(throughputContainer, "Drive efficiency (%)", effInput);
-		note(throughputContainer, "Descending traffic to the foot is assumed to be 1% of the ascending rate.");
+		inputRow(throughputContainer, "Drive efficiency", effInput, {unit: "%"});
 
 	let reentryContainer = create("div","cf-section",false,formElement);
 		create("h4",false,"Earth reentry (cargo released from top)",reentryContainer);
 		let targetPerigeeInput = inputField("targetPerigee", 50, {type: "number", step: "any", min: "-300"});
-		inputRow(reentryContainer, "Target perigee altitude (km)", targetPerigeeInput);
+		inputRow(reentryContainer, "Target perigee altitude", targetPerigeeInput, {unit: "km",
+			tip: "Cargo flung from the top is braked retrograde so it falls to the parent body; a burn at the lunar-distance apogee trims perigee to the target."});
 		let ifaceAltInput = inputField("ifaceAlt", 122, {type: "number", step: "any", min: "1"});
-		inputRow(reentryContainer, "Entry interface altitude (km)", ifaceAltInput);
-		note(reentryContainer, "Cargo flung from the top is braked retrograde so it falls to the parent body; a burn at the lunar-distance apogee trims perigee to the target.");
+		inputRow(reentryContainer, "Entry interface altitude", ifaceAltInput, {unit: "km"});
 
 	const propellantMax = { oxygen: 20, hydrogen: 80 };//km/s, viable mature-engine ceilings
 	let stationContainer = create("div","cf-section",false,formElement);
@@ -229,13 +241,13 @@ let tether = {
 			create("option",false,"Hydrogen (higher exhaust speed)",propellantSelector).value = "hydrogen";
 		inputRow(stationContainer, "Propellant", propellantSelector);
 		let vExhaustInput = inputField("vExhaust", 8, {type: "number", step: "any", min: "1", max: propellantMax.oxygen});
-		inputRow(stationContainer, "Exhaust velocity (km/s)", vExhaustInput);
+		inputRow(stationContainer, "Exhaust velocity", vExhaustInput, {unit: "km/s",
+			tip: "Oxygen is capped at 20 km/s, hydrogen at 80 km/s. Engines are assumed to run continuously; spares cover engine-out and maintenance."});
 		let effThrusterInput = inputField("effThruster", 60, {type: "number", step: "any", min: "1", max: "100"});
-		inputRow(stationContainer, "Thruster efficiency, electrical \u2192 jet (%)", effThrusterInput);
+		inputRow(stationContainer, "Thruster efficiency, electrical \u2192 jet", effThrusterInput, {unit: "%",
+			tip: "The reboost thruster is mounted at the tether top, the longest available lever arm."});
 		let effSupplyInput = inputField("effSupply", 90, {type: "number", step: "any", min: "1", max: "100"});
-		inputRow(stationContainer, "Power generation & delivery efficiency (%)", effSupplyInput);
-		note(stationContainer, "The reboost thruster is mounted at the tether top, the longest available lever arm.");
-		note(stationContainer, "Oxygen is capped at 20 km/s, hydrogen at 80 km/s. Engines are assumed to run continuously; spares cover engine-out and maintenance.");
+		inputRow(stationContainer, "Power generation & delivery efficiency", effSupplyInput, {unit: "%"});
 		propellantSelector.oninput = function(){
 			var mx = propellantMax[this.value];
 			vExhaustInput.max = mx;
@@ -302,14 +314,8 @@ let output = create("div","#output",false,mainContainer);
 		create("h4",false,"Orbit station-keeping",stationOut);
 		["skThrust","skProp","skJet","skElec","skGen","skEnergyDay","skEpert"].forEach(id => line(stationOut, id));
 	let releaseContainer = create("div","cf-result",false,output);
-		create("h4",false,"If released from launch deck:",releaseContainer);
-		line(releaseContainer, "escape");
-		line(releaseContainer, "newApoapsis");
-		create("h4","#earthReentryHead","Earth reentry (released from launch deck):",releaseContainer);
+		create("h4",false,"Earth reentry (released from launch deck)",releaseContainer);
 		["earthArrival","earthPerigee","earthBurn","earthFPA","earthPeakG"].forEach(id => line(releaseContainer, id));
-		create("h4",false,"Minimum release altitude:",releaseContainer);
-		let releases = create("p",false,false,releaseContainer);
-		releases.classList.add("cf-line");
 
 
 //part 4: planetary data
@@ -334,37 +340,44 @@ let calc = function(){
 	moon = systems.get(selector.options[selector.selectedIndex].value);
 	var warnings = "";
 	var gnum = function(field){ return Number(form[field].value); };
-	var out = function(id,message){ document.getElementById(id).innerText = message; };
-	var myRound = function(num,digits){ return Math.floor(num*Math.pow(10,digits))/Math.pow(10,digits); };
+	// Messages are built here from numbers and fixed text, so they go in as
+	// HTML; b() marks a figure (with its unit) to show in bold.
+	var out = function(id,message){ document.getElementById(id).innerHTML = message; };
+	var b = function(figure){ return "<b>" + figure + "</b>"; };
+	// Rounds to the nearest value, never showing more than 2 decimal places.
+	var myRound = function(num,digits){
+		var p = Math.pow(10,Math.min(digits,2));
+		return Math.round(num*p)/p;
+	};
 	var fmtForce = function(n){
 		if(!isFinite(n)) return "—";
-		if(Math.abs(n)>=1e9) return (n/1e9).toFixed(3)+" GN";
-		if(Math.abs(n)>=1e6) return (n/1e6).toFixed(3)+" MN";
-		if(Math.abs(n)>=1e3) return (n/1e3).toFixed(3)+" kN";
-		return n.toFixed(2)+" N";
+		if(Math.abs(n)>=1e9) return b((n/1e9).toFixed(2)+" GN");
+		if(Math.abs(n)>=1e6) return b((n/1e6).toFixed(2)+" MN");
+		if(Math.abs(n)>=1e3) return b((n/1e3).toFixed(2)+" kN");
+		return b(n.toFixed(2)+" N");
 	};
 	var fmtTorque = function(n){
 		if(!isFinite(n)) return "—";
-		if(Math.abs(n)>=1e12) return (n/1e12).toFixed(3)+" TN·m";
-		if(Math.abs(n)>=1e9) return (n/1e9).toFixed(3)+" GN·m";
-		if(Math.abs(n)>=1e6) return (n/1e6).toFixed(3)+" MN·m";
-		if(Math.abs(n)>=1e3) return (n/1e3).toFixed(3)+" kN·m";
-		return n.toFixed(2)+" N·m";
+		if(Math.abs(n)>=1e12) return b((n/1e12).toFixed(2)+" TN·m");
+		if(Math.abs(n)>=1e9) return b((n/1e9).toFixed(2)+" GN·m");
+		if(Math.abs(n)>=1e6) return b((n/1e6).toFixed(2)+" MN·m");
+		if(Math.abs(n)>=1e3) return b((n/1e3).toFixed(2)+" kN·m");
+		return b(n.toFixed(2)+" N·m");
 	};
 	var fmtMass = function(kg){
 		if(!isFinite(kg)) return "—";
-		if(kg>=1e9) return (kg/1e9).toLocaleString(undefined,{maximumFractionDigits:3})+" kt";
-		if(kg>=1e3) return (kg/1e3).toLocaleString(undefined,{maximumFractionDigits:3})+" t";
-		return kg.toLocaleString(undefined,{maximumFractionDigits:2})+" kg";
+		if(kg>=1e9) return b((kg/1e9).toLocaleString(undefined,{maximumFractionDigits:2})+" kt");
+		if(kg>=1e3) return b((kg/1e3).toLocaleString(undefined,{maximumFractionDigits:2})+" t");
+		return b(kg.toLocaleString(undefined,{maximumFractionDigits:2})+" kg");
 	};
 	var fmtPower = function(w){
 		if(!isFinite(w)) return "—";
-		if(Math.abs(w)>=1e9) return (w/1e9).toFixed(3)+" GW";
-		if(Math.abs(w)>=1e6) return (w/1e6).toFixed(2)+" MW";
-		if(Math.abs(w)>=1e3) return (w/1e3).toFixed(2)+" kW";
-		return w.toFixed(1)+" W";
+		if(Math.abs(w)>=1e9) return b((w/1e9).toFixed(2)+" GW");
+		if(Math.abs(w)>=1e6) return b((w/1e6).toFixed(2)+" MW");
+		if(Math.abs(w)>=1e3) return b((w/1e3).toFixed(2)+" kW");
+		return b(w.toFixed(1)+" W");
 	};
-	var fmtTime = function(d){ return d>=1 ? d.toFixed(2)+" days" : (d*24).toFixed(2)+" hours"; };
+	var fmtTime = function(d){ return b(d>=1 ? d.toFixed(2)+" days" : (d*24).toFixed(2)+" hours"); };
 
 	var surfaceGravity = moon.GM/(moon.radius*moon.radius);//local fix: orbit.js exposes no surfaceGravity
 
@@ -508,47 +521,34 @@ let calc = function(){
 		};
 		return val;
 	};
-	releases.innerText = "";
 	for(var i=0;i<targets.length;i++){
 		if(Number.isNaN(targets[i].vinf)){ continue; };
 		targets[i].location = findRadiusFromVinf(targets[i].vinf,tether.angularVelocity);
-		var item = document.createElement("p");
-		item.innerText = targets[i].name;
-		item.innerText += " " + myRound((targets[i].location - moon.radius)/1000,2) + "km";
-		releases.appendChild(item);
 	};
 
-	out("lowAcceleration","Acceleration at tether foot: " + myRound(tether.lowAcceleration,5) + " m/s² (" + myRound(100*tether.lowAcceleration/surfaceGravity,2) + "% of surface gravity)");
-	out("highAcceleration","Acceleration at tether top: " + myRound(tether.highAcceleration,5) + " m/s² (" + myRound(100*tether.highAcceleration/surfaceGravity,2) + "% of surface gravity)");
-	out("period","Period: " + myRound(tether.time/3600,3) + " hours");
-	out("footVel","Tether velocity at foot " + myRound(tether.footVel,3) + " m/s");
-	out("centreVel","Tether velocity at centre " + myRound(tether.centreVel,3) + " m/s");
-	out("topVel","Tether velocity at top " + myRound(tether.topVel,3) + " m/s");
-	if(tether.newApoapsis > 0){
-		out("escape","Does not reach escape velocity");
-		out("newApoapsis","Apoapsis after release from tether: " + myRound(tether.newApoapsis/1000,3) + " km");
-	}
-	else{
-		out("escape","Vinf after release from launch deck" + myRound(tether.escapeFromTop,3) + " m/s (840 m/s is required to reach Earth from the Moon)");
-		out("newApoapsis","Apoapsis after release from tether: " + myRound(tether.newApoapsis/1000,3) + " km (negative means escape)");
-	};
+	out("lowAcceleration","Acceleration at tether foot: " + b(myRound(tether.lowAcceleration,5) + " m/s²") + " (" + b(myRound(100*tether.lowAcceleration/surfaceGravity,2) + "%") + " of surface gravity)");
+	out("highAcceleration","Acceleration at tether top: " + b(myRound(tether.highAcceleration,5) + " m/s²") + " (" + b(myRound(100*tether.highAcceleration/surfaceGravity,2) + "%") + " of surface gravity)");
+	out("period","Period: " + b(myRound(tether.time/3600,3) + " hours"));
+	out("footVel","Tether velocity at foot " + b(myRound(tether.footVel,3) + " m/s"));
+	out("centreVel","Tether velocity at centre " + b(myRound(tether.centreVel,3) + " m/s"));
+	out("topVel","Tether velocity at top " + b(myRound(tether.topVel,3) + " m/s"));
 	if(tether.newPeriapsis < moon.radius){
-		out("hitTheGround","Velocity at surface after release from tether foot " + myRound(tether.hitTheGround,3) + " m/s (collision angle " + myRound(180*(Math.PI/2 -tether.collisionAngle)/Math.PI,2) + "º from vertical)");
+		out("hitTheGround","Velocity at surface after release from tether foot " + b(myRound(tether.hitTheGround,3) + " m/s") + " (collision angle " + b(myRound(180*(Math.PI/2 -tether.collisionAngle)/Math.PI,2) + "º") + " from vertical)");
 	}
 	else{ out("hitTheGround",""); };
-	out("lowRatio","foot-centre taper ratio: " + myRound(tether.lowRatio,3));
-	out("highRatio","centre-top taper ratio: " + myRound(tether.highRatio,3));
-	out("lowMass","Mass of lower tether: " + myRound(tether.lowMass,4) + " x payload mass (anything that's not the tether itself is payload)");
-	out("highMass","Mass of higher tether: " + myRound(tether.highMass,4) + " x payload mass (anything that's not the tether itself is payload)");
-	out("lowClimber","Lower tether climber energy usage: " + myRound(tether.lowIntegral,0) + " J/kg");
-	out("highClimber","Upper tether climber energy usage: " + myRound(tether.highIntegral,0) + " J/kg (centre→top is downhill / regenerative)");
+	out("lowRatio","foot-centre taper ratio: " + b(myRound(tether.lowRatio,3)));
+	out("highRatio","centre-top taper ratio: " + b(myRound(tether.highRatio,3)));
+	out("lowMass","Mass of lower tether: " + b(myRound(tether.lowMass,4) + " x payload mass") + " (anything that's not the tether itself is payload)");
+	out("highMass","Mass of higher tether: " + b(myRound(tether.highMass,4) + " x payload mass") + " (anything that's not the tether itself is payload)");
+	out("lowClimber","Lower tether climber energy usage: " + b(myRound(tether.lowIntegral,0) + " J/kg"));
+	out("highClimber","Upper tether climber energy usage: " + b(myRound(tether.highIntegral,0) + " J/kg") + " (centre→top is downhill / regenerative)");
 
 //── Forces ──
 	out("tensionCoM","Tension at centre of mass (tip payload at top): " + fmtForce(tether.tensionCoM_top)
 		+ "   [peak = " + fmtForce(tether.tensionCoM_peak) + "]");
 	out("tensionCoMfoot","Tension at centre of mass (tip payload at foot): " + fmtForce(tether.tensionCoM_foot));
-	out("tetherMassAbs","Tether mass for a " + gnum("tipMass").toLocaleString() + " t tip payload: " + fmtMass(tether.massAbs)
-		+ " (" + myRound(tether.lowMass + tether.highMass,3) + " × payload)");
+	out("tetherMassAbs","Tether mass for a " + b(gnum("tipMass").toLocaleString() + " t") + " tip payload: " + fmtMass(tether.massAbs)
+		+ " (" + b(myRound(tether.lowMass + tether.highMass,3) + " × payload") + ")");
 
 //── Throughput to top ──
 //   Ascending cargo joins at the receiving deck and climbs to the top; the centre of
@@ -587,14 +587,14 @@ let calc = function(){
 	var P_lift     = netLiftIntegral * massFlow / eff;   // W (net work to climb receiving deck → launch deck)
 	var ePerT      = netLiftIntegral / eff / 1e6;        // GJ per tonne, receiving deck → launch deck
 
-	out("trip","Trip time (receiving deck → launch deck):" + fmtTime(tTrip_up) + "   (descent outer docks → foot: " + fmtTime(tTrip_down) + ")");
-	out("cadence","Departure cadence: one every " + interval_h.toFixed(2) + " h  (" + depPerDay.toFixed(1) + "/day)");
-	out("nclimb","Climbers on the cable at once: " + nOnCable.toFixed(1));
-	out("spacing","Mean spacing between climbers: " + spacing_km.toLocaleString(undefined,{maximumFractionDigits:1}) + " km");
+	out("trip","Trip time (receiving deck → launch deck): " + fmtTime(tTrip_up) + "   (descent outer docks → foot: " + fmtTime(tTrip_down) + ")");
+	out("cadence","Departure cadence: one every " + b(interval_h.toFixed(2) + " h") + "  (" + b(depPerDay.toFixed(1) + "/day") + ")");
+	out("nclimb","Climbers on the cable at once: " + b(nOnCable.toFixed(1)));
+	out("spacing","Mean spacing between climbers: " + b(spacing_km.toLocaleString(undefined,{maximumFractionDigits:1}) + " km"));
 	out("oncable","Cargo on the cable at once: " + fmtMass(oncable_t*1e3) + " up + " + fmtMass(descOnCable_t*1e3) + " down");
-	out("dT","Added tension at centre of mass: " + fmtForce(dT_CoM) + "  (" + pctTip.toFixed(2) + "% of tip-payload tension)");
+	out("dT","Added tension at centre of mass: " + fmtForce(dT_CoM) + "  (" + b(pctTip.toFixed(2) + "%") + " of tip-payload tension)");
 	out("power","Lift power (receiving deck → launch deck, net of regeneration above CoM, at efficiency): " + fmtPower(P_lift));
-	out("epert","Energy per tonne delivered: " + ePerT.toFixed(3) + " GJ/t");
+	out("epert","Energy per tonne delivered: " + b(ePerT.toFixed(2) + " GJ/t"));
 
 //── Orbit station-keeping (VASIMR reboost) ──
 //   Climbers carry cargo outward, so the tether feeds it angular momentum through the
@@ -642,16 +642,16 @@ let calc = function(){
 
 	out("skThrust","Reboost thrust at " + mountName + " (cancels climber drag): " + fmtForce(F_sk)
 		+ "   —   torque " + fmtTorque(tau_sk));
-	out("skProp",propLabel + " propellant: " + propFlow.toFixed(3) + " kg/s  ("
-		+ fmtMass(propFlow*86400) + "/day; " + propPerCargo.toFixed(3) + " t per t of cargo)");
-	out("skJet","Jet power at " + (vEx/1000) + " km/s exhaust: " + fmtPower(P_jet)
+	out("skProp",propLabel + " propellant: " + b(propFlow.toFixed(2) + " kg/s") + "  ("
+		+ fmtMass(propFlow*86400) + "/day; " + b(propPerCargo.toFixed(2) + " t") + " per t of cargo)");
+	out("skJet","Jet power at " + b((vEx/1000) + " km/s") + " exhaust: " + fmtPower(P_jet)
 		+ "   (useful orbit power " + fmtPower(P_orbit) + ")");
 	out("skElec","Electrical power at thrusters: " + fmtPower(P_elec));
 	out("skGen","Generated power required: " + fmtPower(P_gen));
-	out("skEnergyDay","Energy to hold the orbit: " + (P_gen*86400/3.6e12).toFixed(2) + " GWh/day  ("
-		+ (P_gen*86400/1e9).toLocaleString(undefined,{maximumFractionDigits:0}) + " GJ/day)");
+	out("skEnergyDay","Energy to hold the orbit: " + b((P_gen*86400/3.6e12).toFixed(2) + " GWh/day") + "  ("
+		+ b((P_gen*86400/1e9).toLocaleString(undefined,{maximumFractionDigits:0}) + " GJ/day") + ")");
 	out("skEpert","Station-keeping energy per tonne delivered: "
-		+ (P_gen/Math.max(massFlow,1e-12)/1e6).toFixed(2) + " GJ/t");
+		+ b((P_gen/Math.max(massFlow,1e-12)/1e6).toFixed(2) + " GJ/t"));
 
 //── Earth reentry of cargo released from the top (patched-conic Moon → parent) ──
 //   The payload escapes the Moon with v∞ = escapeFromTop, braked retrograde so its
@@ -661,7 +661,7 @@ let calc = function(){
 	var isMoon = !!(moon.properties && moon.properties.name === "Moon");
 	//Earth-reentry inputs and results only make sense for the Moon → Earth case
 	[reentryContainer,
-	 document.getElementById("earthReentryHead"),
+	 releaseContainer,
 	 document.getElementById("earthArrival"),
 	 document.getElementById("earthPerigee"),
 	 document.getElementById("earthBurn"),
@@ -684,18 +684,18 @@ let calc = function(){
 		var aT    = (D + rpt)/2;
 		var vT    = Math.sqrt(GMe*(2/D - 1/aT));        // apogee speed needed for target perigee
 		var dvE   = vT - Varr;                          // +prograde raises perigee, −retrograde lowers
-		out("earthArrival","v∞ from Moon: " + myRound(vinf,0) + " m/s → speed at lunar distance (braked): " + myRound(Math.abs(Varr),0) + " m/s");
-		out("earthPerigee","Natural transfer perigee: " + myRound((rpNat-Re)/1000,0) + " km altitude" + (rpNat < Re ? " (below surface — steep/direct entry)" : ""));
-		out("earthBurn","Δv at lunar-distance apogee for target perigee: " + myRound(Math.abs(dvE),1) + " m/s " + (dvE >= 0 ? "prograde (raise perigee)" : "retrograde (lower perigee)"));
+		out("earthArrival","v∞ from Moon: " + b(myRound(vinf,0) + " m/s") + " → speed at lunar distance (braked): " + b(myRound(Math.abs(Varr),0) + " m/s"));
+		out("earthPerigee","Natural transfer perigee: " + b(myRound((rpNat-Re)/1000,0) + " km") + " altitude" + (rpNat < Re ? " (below surface — steep/direct entry)" : ""));
+		out("earthBurn","Δv at lunar-distance apogee for target perigee: " + b(myRound(Math.abs(dvE),1) + " m/s") + " " + (dvE >= 0 ? "prograde (raise perigee)" : "retrograde (lower perigee)"));
 		if(rpt < rI && rI < D){
 			var eT     = (D - rpt)/(D + rpt);
 			var hT     = Math.sqrt(GMe*aT*(1 - eT*eT));
 			var vI     = Math.sqrt(GMe*(2/rI - 1/aT));
 			var gammaE = Math.acos(Math.min(1, hT/(rI*vI)));
-			out("earthFPA","Entry flight-path angle at interface: −" + myRound(gammaE*180/Math.PI,1) + "° (entry speed " + myRound(vI/1000,2) + " km/s)");
+			out("earthFPA","Entry flight-path angle at interface: " + b("−" + myRound(gammaE*180/Math.PI,1) + "°") + " (entry speed " + b(myRound(vI/1000,2) + " km/s") + ")");
 			if(parentBody.atmosphere){
 				var peakG = OrbitalMath.allenEggersPeakDecel(vI, gammaE, Const.scaleHeight.earth) / Const.g0;   // A–E peak-g (k=0.55, Stardust-calibrated), in Earth g
-				out("earthPeakG","Estimated peak deceleration: ~" + myRound(peakG,0) + " g (ballistic est., calibrated to Stardust; lift/guidance reduces it)");
+				out("earthPeakG","Estimated peak deceleration: " + b("~" + myRound(peakG,0) + " g") + " (ballistic est., calibrated to Stardust; lift/guidance reduces it)");
 			}
 			else{ out("earthPeakG","Parent body has no atmosphere — no aerodynamic entry"); }
 		}

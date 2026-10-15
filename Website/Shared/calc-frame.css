@@ -30,6 +30,8 @@
  *   cf-unit      the unit beside an input
  *   cf-readout   a computed value in the place of an input (same width)
  *   cf-info      the round info button; with calc-about.js opens an About pop-up
+ *                (data-cf-about="template-id"), or, carrying data-cf-tip="text"
+ *                at the end of a row's label, a small floating tip (cf-tip)
  *   cf-title-info  keeps the info button and its hint together beside the title
  *   cf-para      a note paragraph inside a section
  *   cf-check     checkbox + label
@@ -223,6 +225,24 @@
 	vertical-align: middle;
 }
 .cf-info:hover { background: #3a5a8a; color: white; }
+
+/* Small tip: the box a cf-info button with data-cf-tip opens beside itself
+   (wired by calc-about.js). Positioned against the cf-calc card. */
+.cf-calc { position: relative; }
+.cf-tip {
+	position: absolute;
+	z-index: 10;
+	width: max-content;
+	max-width: min(20rem, calc(100% - 16px));
+	padding: 8px 10px;
+	border: 1px solid var(--hue);
+	border-radius: 8px;
+	background: white;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+	color: #1a1a1a;
+	font: normal normal 13px/1.4 sans-serif;
+}
+.cf-tip[hidden] { display: none; }
 
 .cf-dialog {
 	width: min(640px, 92vw);

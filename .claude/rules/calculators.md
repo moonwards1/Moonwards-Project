@@ -16,7 +16,10 @@ imports and starts the tool.) A new calculator starts by copying
 Every calculator page sits on `Shared/calc-frame.css`: one `cf-calc` card,
 sections that reflow to the width of the column they are in (usable from 400
 px), input sections with a solid tint, result cards with striped lines, the
-info button and "About this calculator" pop-up (`Shared/calc-about.js`). A tool
+info button and "About this calculator" pop-up (`Shared/calc-about.js`). Notes
+that explain one input go in a **small tip** instead of a note paragraph: a
+`cf-info` button with `data-cf-tip="…"` at the end of the row's label opens a
+small floating box beside itself (`_template/` shows it). A tool
 sets only its identity colour (`.cf-calc { --cf-hue: … }`) and its own
 specifics in its own stylesheet. The class list is the header of
 `calc-frame.css`; `_template/` shows the shape. Section content is a heading
