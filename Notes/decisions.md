@@ -486,3 +486,21 @@ every planet).
 Consequence: missions authored against other positions (the example missions)
 arrive only as well as their authoring ephemeris
 matched this one — re-target them with Update after the elements change.
+
+---
+
+## Calculators
+
+### New calculators use the three-column calculator shell (2026-10-16)
+
+A calculator page is the shell in `Shared/calc-shell.*` + `Shared/zoom-view.js`:
+inputs | zoomable drawing | results, with optional parts as input and result
+modules switched from header chips, and every card collapsible to a short
+title and summary. `Calculators/_template/` is the reference. The shell is
+deliberately light and earthy (sand, paper, basalt drawing panel) so a
+calculator is told apart at a glance from the dark Mission Planner and plotters.
+Calculators on the older `calc-frame.css` keep working and move over one at a
+time.
+
+Why: calculators keep growing optional sections; modules keep the page short
+until a section is asked for, and the drawing stays in view while editing.

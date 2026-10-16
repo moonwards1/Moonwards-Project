@@ -1,4 +1,4 @@
-/* Layout, sections, rows and buttons come from ../../Shared/calc-frame.css
-   (see its header for the class list); this file holds only what is specific
-   to this calculator. Set the identity colour here. */
-.cf-calc { --cf-hue: #607080; }
+/* Layout, cards, chips and the drawing panel come from ../../Shared/calc-shell.css
+   (class list in its header). This file holds only what is specific to this
+   calculator: its core accent, and any rules for its own drawing (prefix tpl-). */
+.cs-app { --cs-core: #D9471F; }
