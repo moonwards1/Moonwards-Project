@@ -27,6 +27,8 @@
  *   cs-full       a row whose field spans the card (selects)
  *   cs-kvs / cs-kv   a block of result lines / one line: cs-k, cs-v (cs-vn, cs-vu), cs-s
  *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
+ *   cs-tipped     a row whose label carries a hover tip (dotted underline)
+ *   cs-btn, cs-btn-pri   a button in a card / its primary form
  *   cs-note / cs-warn   a small note / a warning block
  *   cs-stage      the drawing panel (ZoomView fills it); cs-pill, cs-zb, cs-mini,
  *                 cs-legend, cs-lg, cs-sb are its overlays
@@ -242,6 +244,7 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 /* ---------- input rows ---------- */
 .cs-row { display: grid; grid-template-columns: minmax(0, 1fr) clamp(96px, 40%, 136px); align-items: center; gap: 10px; min-height: 38px; }
 .cs-row.cs-full { grid-template-columns: 1fr; }
+.cs-row > .cs-fld { min-width: 0; }
 .cs-lbl { font-size: 13px; line-height: 1.25; }
 .cs-hint { display: block; font-size: 11.5px; color: var(--cs-ink2); }
 .cs-fld {
@@ -270,6 +273,22 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 }
 .cs-fld select { text-align: left; font-family: inherit; cursor: pointer; }
 .cs-u { margin-left: 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--cs-ink2); white-space: nowrap; }
+.cs-tipped .cs-lbl { text-decoration: underline dotted rgba(94, 80, 69, .55); text-underline-offset: 3px; cursor: help; }
+.cs-btn {
+	align-self: flex-start;
+	height: 36px;
+	padding: 0 14px;
+	border-radius: 10px;
+	border: 1px solid var(--cs-rule);
+	background: var(--cs-field);
+	color: var(--cs-ink);
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.cs-btn:hover { border-color: var(--cs-ink2); }
+.cs-btn-pri { background: var(--cs-ink); border-color: var(--cs-ink); color: var(--cs-paper); }
+.cs-btn-pri:hover { background: #3A2E25; }
 .cs-note { margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--cs-ink2); }
 .cs-warn { flex: none; border-radius: 12px; padding: 10px 12px; background: #FBE3D4; color: #7A2410; font-size: 12.5px; line-height: 1.4; }
 .cs-warn[hidden] { display: none; }
@@ -277,6 +296,7 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 /* ---------- result lines ---------- */
 .cs-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 12px; padding: 7px 0; border-top: 1px solid rgba(150, 125, 95, .18); }
 .cs-kv:first-child { border-top: 0; }
+.cs-kv[hidden], .cs-row[hidden] { display: none; }
 .cs-k { font-size: 13px; line-height: 1.3; }
 .cs-v { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px; font-weight: 600; text-align: right; white-space: nowrap; }
 .cs-vu { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--cs-ink2); }
