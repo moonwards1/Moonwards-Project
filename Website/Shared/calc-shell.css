@@ -1,0 +1,396 @@
+/* Calculator shell — the three-column workbench layout for calculator pages.
+ *
+ *   <link rel="stylesheet" href="../../Shared/calc-shell.css">
+ *
+ * Built by Shared/calc-shell.js (CalcShell) and Shared/zoom-view.js (ZoomView);
+ * a page only supplies <div id="app" class="cs-app"> and its own stylesheet.
+ *
+ * Layout: a header (title, input-module chips, result-module chips) over three
+ * columns — inputs, the drawing, results. Each side column scrolls on its own.
+ * The side columns shrink from 340/370 px to ~240 px, and cards tighten their
+ * padding as their column narrows (container queries), before anything
+ * stacks: below 940 px the results move under the drawing; below 640 px
+ * everything stacks with the drawing pinned on top.
+ *
+ * Classes (prefix cs-)
+ *   cs-app        the page root (fills the window)
+ *   cs-top        header: cs-brand (cs-over + cs-title), two cs-mods chip groups
+ *   cs-chip       a module chip; cs-on when the module is shown
+ *   cs-cols       the three-column grid: cs-col-in, cs-stage, cs-col-out
+ *   cs-col-h      a column's header (name, card count, collapse/expand all)
+ *   cs-scroller   a column's independently scrolling card list
+ *   cs-card       a card; --mc is its accent. cs-collapsed, cs-focus states
+ *   cs-card-h / cs-card-t / cs-card-b   header row / title button / body
+ *   cs-nm / cs-nm-s   full title / short title (shown when collapsed)
+ *   cs-sum        the one-line summary shown when collapsed
+ *   cs-row        an input row: cs-lbl (+ cs-hint) and cs-fld (input + cs-u)
+ *   cs-full       a row whose field spans the card (selects)
+ *   cs-kvs / cs-kv   a block of result lines / one line: cs-k, cs-v (cs-vn, cs-vu), cs-s
+ *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
+ *   cs-note / cs-warn   a small note / a warning block
+ *   cs-stage      the drawing panel (ZoomView fills it); cs-pill, cs-zb, cs-mini,
+ *                 cs-legend, cs-lg, cs-sb are its overlays
+ *
+ * Style text that a script fills in by class, never by bare element selector
+ * (`.x span`): filled-in text may arrive wrapped in its own element.
+ *
+ * A calculator sets its core accent in its own stylesheet:
+ *   .cs-app { --cs-core: #D9471F; }
+ */
+
+.cs-app {
+	--cs-ground: #E7DECF;
+	--cs-paper: #F7F2E9;
+	--cs-field: #FFFCF6;
+	--cs-ink: #241C16;
+	--cs-ink2: #5E5045;
+	--cs-rule: #D5C7B2;
+	--cs-basalt: #1D1814;
+	--cs-dust: #EADFCF;
+	--cs-dust2: #A99A8B;
+	--cs-core: #D9471F;
+	--cs-pad: clamp(6px, .85vw, 12px);
+	height: 100vh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--cs-ground);
+	color: var(--cs-ink);
+	font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+	font-size: 14px;
+}
+body:has(> .cs-app) { margin: 0; background: #E7DECF; }
+.cs-app *, .cs-app *::before, .cs-app *::after { box-sizing: border-box; }
+.cs-app button { font: inherit; }
+
+/* ---------- header ---------- */
+.cs-top {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 10px clamp(12px, 1.7vw, 24px);
+	padding: 12px clamp(10px, 1.4vw, 20px) 10px;
+}
+.cs-brand { flex: none; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cs-over { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--cs-ink2); font-weight: 600; }
+.cs-title {
+	margin: 0;
+	font-family: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif;
+	font-size: clamp(22px, 2vw, 28px);
+	line-height: 1;
+	font-weight: 800;
+	letter-spacing: -.01em;
+}
+.cs-mods {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-content: flex-start;
+	gap: 6px;
+	max-height: 66px; /* two lines of chips, then the group scrolls */
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding-right: 4px;
+	scrollbar-width: thin;
+	scrollbar-color: transparent transparent;
+}
+.cs-mods[hidden] { display: none; }
+.cs-mods:hover { scrollbar-color: #BCAA90 transparent; }
+.cs-mods::-webkit-scrollbar { width: 5px; }
+.cs-mods::-webkit-scrollbar-thumb { background: transparent; border-radius: 5px; }
+.cs-mods:hover::-webkit-scrollbar-thumb { background: #BCAA90; }
+.cs-mods-out { border-left: 1px solid var(--cs-rule); padding-left: 20px; }
+.cs-mods-l {
+	display: inline-flex;
+	align-items: center;
+	height: 30px;
+	padding-right: 6px;
+	font-size: 11px;
+	letter-spacing: .12em;
+	text-transform: uppercase;
+	color: var(--cs-ink2);
+	font-weight: 700;
+}
+.cs-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	height: 30px;
+	padding: 0 10px 0 9px;
+	border-radius: 999px;
+	border: 1px dashed #B9A88F;
+	background: transparent;
+	color: var(--cs-ink2);
+	font-size: 12.5px;
+	font-weight: 500;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background .15s, border-color .15s, color .15s;
+}
+.cs-chip:hover { border-color: var(--cs-ink2); color: var(--cs-ink); }
+.cs-chip.cs-on { border: 1px solid transparent; background: var(--cs-paper); color: var(--cs-ink); box-shadow: 0 1px 0 rgba(60, 40, 20, .12); }
+.cs-chip-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mc); }
+.cs-chip:not(.cs-on) .cs-chip-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.cs-chip svg { opacity: .7; }
+
+/* ---------- columns ---------- */
+.cs-cols {
+	flex: 1;
+	min-height: 0;
+	display: grid;
+	grid-template-columns: minmax(236px, 340px) minmax(300px, 1fr) minmax(244px, 370px);
+	grid-template-areas: "in st out";
+	gap: var(--cs-pad);
+	padding: 0 var(--cs-pad) var(--cs-pad);
+}
+.cs-col { min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
+.cs-col-in { grid-area: in; }
+.cs-col-out { grid-area: out; }
+.cs-col-h { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 6px 8px 8px; }
+.cs-col-h h2 { margin: 0; flex: 1; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--cs-ink2); }
+.cs-cnt { font-weight: 500; letter-spacing: .02em; text-transform: none; opacity: .8; margin-left: 6px; }
+.cs-scroller {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 2px 4px 28px 2px;
+	scrollbar-width: thin;
+	scrollbar-color: transparent transparent;
+	-webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
+	mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
+}
+.cs-scroller:hover { scrollbar-color: #BCAA90 transparent; }
+.cs-scroller::-webkit-scrollbar { width: 6px; }
+.cs-scroller::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; }
+.cs-scroller:hover::-webkit-scrollbar-thumb { background: #BCAA90; }
+.cs-ib {
+	width: 30px;
+	height: 30px;
+	flex: none;
+	border: 0;
+	border-radius: 8px;
+	padding: 0;
+	background: transparent;
+	color: var(--cs-ink2);
+	display: inline-grid;
+	place-items: center;
+	cursor: pointer;
+}
+.cs-ib:hover { background: rgba(80, 55, 30, .09); color: var(--cs-ink); }
+
+/* ---------- cards ---------- */
+.cs-card {
+	flex: none;
+	background: var(--cs-paper);
+	border-radius: 14px;
+	box-shadow: 0 0 0 1px rgba(110, 85, 55, .14), 0 1px 2px rgba(60, 40, 20, .06);
+	transition: box-shadow .2s;
+}
+.cs-card[hidden] { display: none; }
+.cs-card.cs-focus { box-shadow: 0 0 0 2px var(--mc), 0 6px 18px -8px rgba(60, 40, 20, .35); }
+.cs-card-h { display: flex; align-items: center; gap: 2px; padding: 6px 6px 6px 4px; min-height: 48px; }
+.cs-card-t {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	border: 0;
+	border-radius: 9px;
+	padding: 6px 8px;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.cs-card-t:hover { background: rgba(80, 55, 30, .06); }
+.cs-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; background: var(--mc); }
+.cs-nm, .cs-nm-s { font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 700; font-size: 15px; white-space: nowrap; }
+.cs-nm-s { display: none; font-size: 14px; flex: none; }
+.cs-tag { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--cs-ink2); border: 1px solid var(--cs-rule); border-radius: 5px; padding: 1px 5px; font-weight: 600; }
+.cs-sum {
+	display: none;
+	flex: 1;
+	min-width: 0;
+	font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+	font-size: 12px;
+	color: var(--cs-ink2);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.cs-loc { margin-left: auto; flex: none; opacity: 0; color: var(--mc); transition: opacity .15s; }
+.cs-card-t:hover .cs-loc, .cs-card.cs-focus .cs-loc { opacity: 1; }
+.cs-chev { transition: transform .2s; }
+.cs-card.cs-collapsed .cs-chev { transform: rotate(-90deg); }
+.cs-card.cs-collapsed .cs-nm,
+.cs-card.cs-collapsed .cs-tag,
+.cs-card.cs-collapsed .cs-loc,
+.cs-card.cs-collapsed .cs-rm { display: none; }
+.cs-card.cs-collapsed .cs-nm-s,
+.cs-card.cs-collapsed .cs-sum { display: block; }
+.cs-card.cs-collapsed .cs-card-h { padding-right: 0; gap: 0; min-height: 44px; }
+.cs-card.cs-collapsed .cs-card-t { gap: 8px; padding-right: 2px; }
+.cs-card-b { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+.cs-card-b[hidden] { display: none; }
+
+/* ---------- input rows ---------- */
+.cs-row { display: grid; grid-template-columns: minmax(0, 1fr) clamp(96px, 40%, 136px); align-items: center; gap: 10px; min-height: 38px; }
+.cs-row.cs-full { grid-template-columns: 1fr; }
+.cs-lbl { font-size: 13px; line-height: 1.25; }
+.cs-hint { display: block; font-size: 11.5px; color: var(--cs-ink2); }
+.cs-fld {
+	--mc-f: var(--mc, var(--cs-core));
+	display: flex;
+	align-items: center;
+	height: 36px;
+	padding: 0 10px 0 8px;
+	border: 1px solid var(--cs-rule);
+	border-radius: 9px;
+	background: var(--cs-field);
+	transition: border-color .15s, box-shadow .15s;
+}
+.cs-fld:focus-within { border-color: var(--mc-f); box-shadow: 0 0 0 3px color-mix(in oklch, var(--mc-f) 22%, transparent); }
+.cs-fld input, .cs-fld select {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	padding: 0;
+	outline: none;
+	background: transparent;
+	color: var(--cs-ink);
+	font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+	font-size: 13.5px;
+	text-align: right;
+}
+.cs-fld select { text-align: left; font-family: inherit; cursor: pointer; }
+.cs-u { margin-left: 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--cs-ink2); white-space: nowrap; }
+.cs-note { margin: 2px 0 0; font-size: 12px; line-height: 1.45; color: var(--cs-ink2); }
+.cs-warn { flex: none; border-radius: 12px; padding: 10px 12px; background: #FBE3D4; color: #7A2410; font-size: 12.5px; line-height: 1.4; }
+.cs-warn[hidden] { display: none; }
+
+/* ---------- result lines ---------- */
+.cs-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 4px 12px; padding: 7px 0; border-top: 1px solid rgba(150, 125, 95, .18); }
+.cs-kv:first-child { border-top: 0; }
+.cs-k { font-size: 13px; line-height: 1.3; }
+.cs-v { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px; font-weight: 600; text-align: right; white-space: nowrap; }
+.cs-vu { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--cs-ink2); }
+.cs-s { grid-column: 1 / -1; font-size: 12px; line-height: 1.4; color: var(--cs-ink2); }
+.cs-s:empty { display: none; }
+.cs-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 1px; margin-bottom: 4px; border-radius: 10px; overflow: hidden; background: rgba(150, 125, 95, .2); }
+.cs-hero > div { display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; background: var(--cs-field); }
+.cs-hl { font-size: 13px; line-height: 1.2; color: var(--cs-ink); }
+.cs-hv {
+	font-family: "JetBrains Mono", ui-monospace, monospace;
+	font-size: clamp(16px, 5.4cqi, 20px);
+	font-weight: 800;
+	line-height: 1.2;
+	letter-spacing: -.02em;
+	white-space: nowrap;
+	color: var(--mc);
+}
+.cs-hu { margin-left: 3px; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--cs-ink2); }
+
+/* ---------- cards tighten as their column narrows ---------- */
+@container (max-width: 320px) {
+	.cs-card-h { padding: 4px 2px; min-height: 44px; }
+	.cs-card-t { padding: 5px 6px; gap: 7px; }
+	.cs-card-b { padding: 0 10px 10px; gap: 5px; }
+	.cs-row { gap: 6px; min-height: 34px; }
+	.cs-lbl { font-size: 12.5px; }
+	.cs-hint { font-size: 11px; }
+	.cs-fld { height: 32px; padding: 0 6px 0 5px; border-radius: 8px; }
+	.cs-u { margin-left: 4px; font-size: 11px; }
+	.cs-kv { gap: 2px 8px; padding: 6px 0; }
+	.cs-k { font-size: 12.5px; }
+	.cs-v { font-size: 13px; }
+	.cs-hero > div { padding: 7px; }
+	.cs-hl { font-size: 12px; }
+	.cs-scroller { gap: 8px; }
+}
+@container (max-width: 270px) {
+	.cs-hint { display: none; }
+	.cs-card-b { padding: 0 8px 8px; }
+	.cs-nm { font-size: 14px; }
+	.cs-hu { display: block; margin-left: 0; }
+}
+
+/* ---------- drawing panel (ZoomView) ---------- */
+.cs-stage {
+	grid-area: st;
+	position: relative;
+	min-height: 0;
+	overflow: hidden;
+	border-radius: 18px;
+	background-color: var(--cs-basalt);
+	background-image: radial-gradient(rgba(234, 223, 207, .07) 1px, transparent 1.2px);
+	background-size: 22px 22px;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3);
+	color: var(--cs-dust);
+}
+.cs-zv {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	touch-action: none;
+	user-select: none;
+	cursor: grab;
+}
+.cs-zv.cs-panning { cursor: grabbing; }
+.cs-zv .cs-drag { cursor: ns-resize; }
+.cs-zv text { pointer-events: none; }
+.cs-ov { position: absolute; display: flex; align-items: center; gap: 8px; font-size: 12px; pointer-events: none; }
+.cs-ov > * { pointer-events: auto; }
+.cs-ov-tl { top: 14px; left: 14px; flex-direction: column; align-items: flex-start; gap: 10px; }
+.cs-ov-tr { top: 14px; right: 14px; }
+.cs-ov-bl { bottom: 14px; left: 14px; }
+.cs-ov-br { bottom: 14px; right: 14px; flex-direction: column; align-items: flex-end; }
+.cs-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 12px;
+	border-radius: 999px;
+	border: 1px solid rgba(234, 223, 207, .12);
+	background: rgba(29, 24, 20, .78);
+	backdrop-filter: blur(6px);
+}
+.cs-pill-sw { width: 8px; height: 8px; border-radius: 2px; }
+.cs-pill-k { color: var(--cs-dust2); }
+.cs-pill b { font-weight: 600; }
+.cs-hintpill { font-size: 11px; color: var(--cs-dust2); }
+.cs-zb { display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; border: 1px solid rgba(234, 223, 207, .14); background: rgba(29, 24, 20, .78); backdrop-filter: blur(6px); }
+.cs-zb button { width: 38px; height: 38px; padding: 0; border: 0; background: transparent; color: var(--cs-dust); display: grid; place-items: center; cursor: pointer; }
+.cs-zb button + button { border-top: 1px solid rgba(234, 223, 207, .1); }
+.cs-zb button:hover { background: rgba(234, 223, 207, .08); }
+.cs-mini { display: block; padding: 6px; border-radius: 12px; border: 1px solid rgba(234, 223, 207, .14); background: rgba(29, 24, 20, .82); cursor: crosshair; }
+.cs-legend { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding-left: 4px; }
+.cs-lg { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--cs-dust2); }
+.cs-sb { display: flex; flex-direction: column; gap: 4px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; }
+.cs-sb i { display: block; height: 6px; border: 1.5px solid var(--cs-dust); border-top: 0; }
+
+/* ---------- narrower windows ---------- */
+@media (max-width: 940px) {
+	.cs-cols {
+		grid-template-columns: minmax(236px, 320px) minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1.3fr) minmax(0, 1fr);
+		grid-template-areas: "in st" "in out";
+	}
+}
+@media (max-width: 640px) {
+	.cs-app { height: auto; min-height: 100vh; overflow: visible; }
+	.cs-top { flex-direction: column; align-items: stretch; }
+	.cs-mods { flex: none; }
+	.cs-mods-out { border-left: 0; padding-left: 0; }
+	.cs-cols { display: flex; flex-direction: column; }
+	.cs-stage { position: sticky; top: 0; z-index: 3; order: -1; height: 46vh; }
+	.cs-scroller { overflow: visible; -webkit-mask-image: none; mask-image: none; }
+	.cs-mini { display: none; }
+}
