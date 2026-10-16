@@ -41,6 +41,7 @@ export const ShellColors = {
 	teal:   { card: "#0E8F80", draw: "#34CDBB" },
 	cobalt: { card: "#3E5BD8", draw: "#7C95FF" },
 	violet: { card: "#8A4FD6", draw: "#BE8CFF" },
+	sky:    { card: "#2F7FA8", draw: "#6CC4F0" },
 	umber:  { card: "#6B5A4B", draw: "#EADFCF" }
 };
 
@@ -284,12 +285,13 @@ export class CalcShell {
 	}
 
 	// ---- fields (inputs) ----
-	_row(card, label, hint, full) {
-		var row = create("label", full ? ["cs-row", "cs-full"] : "cs-row", false, card.body);
+	_row(card, label, hint, full, tip, parent) {
+		var row = create("label", full ? ["cs-row", "cs-full"] : "cs-row", false, parent || card.body);
 		if (label) {
 			var l = create("span", "cs-lbl", label, row);
 			if (hint) create("span", "cs-hint", hint, l);
 		}
+		if (tip) { row.title = tip; row.classList.add("cs-tipped"); }
 		return create("span", "cs-fld", false, row);
 	}
 	_wire(card, el, focus) {
@@ -299,9 +301,11 @@ export class CalcShell {
 		if (focus) el.addEventListener("focus", function () { self.focusCard(card.id, focus); });
 	}
 
-	// opts: { label, hint, unit, value, step, min, max, focus }. Returns the <input>.
+	// opts: { label, hint, tip, unit, value, step, min, max, focus, parent }. Returns the <input>.
+	// `tip` is a longer explanation shown on hover over the label; `parent` places
+	// the row inside an element of the card (e.g. a group shown only sometimes).
 	numberField(card, opts) {
-		var fld = this._row(card, opts.label, opts.hint, false);
+		var fld = this._row(card, opts.label, opts.hint, false, opts.tip, opts.parent);
 		var input = create("input", false, false, fld);
 		input.type = "number";
 		input.step = opts.step || "any";
@@ -313,9 +317,9 @@ export class CalcShell {
 		return input;
 	}
 
-	// opts: { label, hint, options: [{ value, label }], value, focus }. Full width without a label.
+	// opts: { label, hint, tip, options: [{ value, label }], value, focus }. Full width without a label.
 	selectField(card, opts) {
-		var fld = this._row(card, opts.label, opts.hint, !opts.label);
+		var fld = this._row(card, opts.label, opts.hint, !opts.label, opts.tip, opts.parent);
 		var sel = create("select", false, false, fld);
 		if (!opts.label && opts.aria) sel.setAttribute("aria-label", opts.aria);
 		opts.options.forEach(function (o) { create("option", false, o.label, sel).value = o.value; });
@@ -324,10 +328,17 @@ export class CalcShell {
 		return sel;
 	}
 
-	note(card, text) { return create("p", "cs-note", text, card.body); }
+	note(card, text, parent) { return create("p", "cs-note", text, parent || card.body); }
+
+	// A button in a card: { label, primary }. Returns the <button>.
+	button(card, opts) {
+		var b = create("button", opts.primary ? ["cs-btn", "cs-btn-pri"] : "cs-btn", opts.label, card.body);
+		b.type = "button";
+		return b;
+	}
 
 	// ---- results ----
-	// A line: label, value + unit, optional sub-note. Returns { set(value, sub) }.
+	// A line: label, value + unit, optional sub-note. Returns { el, set(value, sub, unit), show(bool) }.
 	line(card, opts) {
 		var box = card._kvs || (card._kvs = create("div", "cs-kvs", false, card.body));
 		var row = create("div", "cs-kv", false, box);
@@ -342,7 +353,8 @@ export class CalcShell {
 				vn.textContent = value;
 				if (sub != null) s.textContent = sub;
 				if (unit != null && vu) vu.textContent = unit;
-			}
+			},
+			show: function (on) { row.hidden = !on; }
 		};
 	}
 

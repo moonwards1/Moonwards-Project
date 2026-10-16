@@ -1,1102 +1,582 @@
-// ES module (loaded with <script type="module">).
+// Hanging Skyhook Calculator — a vertical (non-rotating) gravity-gradient
+// tether: geometry, speeds, taper, masses, climber energy, cargo throughput,
+// station-keeping, release points and Earth reentry.
+//
+// Built on the calculator shell (Shared/calc-shell.js, Shared/zoom-view.js);
+// the physics is skyhookModel.js, pure and Node-tested. calc() reads the
+// fields, runs the model, writes results and summaries, and redraws.
+//
+// ES module (loaded with <script type="module">); deferred, so the DOM is ready.
+
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
-import { Const } from "../../Shared/constants.js";
 import { Exchange } from "../../Shared/exchange.js";
 import { PacketTypes } from "../../Shared/exchange-types.js";
+import { CalcShell, ShellColors as C } from "../../Shared/calc-shell.js";
+import { ZoomView, svgEl } from "../../Shared/zoom-view.js";
+import { computeSkyhook, MATERIALS, PROPELLANT_MAX } from "./skyhookModel.js";
 
-function skyhookTool(DOMnode){
+var shell = new CalcShell(document.getElementById("app"), { title: "Hanging Skyhook", stageLabel: "Skyhook drawing" });
 
-// Declarations for variables shared across the tool's inner functions.
-// (As a classic script these were implicit globals; modules run in strict
-// mode, where assigning to an undeclared name throws.)
-var minimum_x_coordinate, minimum_y_coordinate, minimum_x_distance, minimum_y_distance, pendingFrame = null,
-	svg_tether, marker_container, text_marker_container;
+// ---------- modules ----------
+shell.addModule({ id: "st", side: "in", label: "Stations", color: C.ochre, on: true, tip: "Receiving deck, outer docks and main launch deck" });
+shell.addModule({ id: "pay", side: "in", label: "Tip payload", color: C.rust, on: true, brings: ["frc"], tip: "Tip payload mass; brings Forces" });
+shell.addModule({ id: "thr", side: "in", label: "Cargo throughput", color: C.teal, on: true, needs: ["st"], brings: ["thrO"], tip: "Needs Stations; brings Throughput" });
+shell.addModule({ id: "kp", side: "in", label: "Station-keeping", color: C.cobalt, needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
+shell.addModule({ id: "re", side: "in", label: "Earth reentry", color: C.violet, brings: ["reO"], tip: "Cargo released toward Earth (Moon only)" });
 
-//part 1: utility functions
+shell.addModule({ id: "rel", side: "out", label: "Dropped from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
+shell.addModule({ id: "clm", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
+shell.addModule({ id: "rp", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
+shell.addModule({ id: "frc", side: "out", label: "Forces", color: C.rust, on: true, needs: ["pay"], tip: "Needs Tip payload" });
+shell.addModule({ id: "thrO", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
+shell.addModule({ id: "kpO", side: "out", label: "Station-keeping", color: C.cobalt, needs: ["kp"], tip: "Needs Station-keeping inputs" });
+shell.addModule({ id: "reO", side: "out", label: "Earth reentry", color: C.violet, needs: ["re"], tip: "Needs Earth reentry inputs" });
+shell.addModule({ id: "send", side: "out", label: "Send to calculators", color: C.umber, tip: "Send this tether to the Skyhook Spin-Launcher" });
 
-function create(
-	HTMLtag, classes, text, appendLocation, cssText
-){
-	let element = document.createElement(HTMLtag);
-	if(Array.isArray(classes)){
-		element.classList.add(...classes);
-		if(classes.includes("newTab")){
-			element.setAttribute("target","_blank")
-		}
+// ---------- input cards ----------
+var BODY_NAMES = Array.from(systems.values()).filter(function (s) {
+	return s.properties.type !== "mathematical object" && s.radius && s.GM;
+}).map(String).sort();
+
+var bodyCard = shell.addCard({ id: "body", side: "in", title: "Body", short: "Body", color: C.umber, focus: "body" });
+var bodyIn = shell.selectField(bodyCard, { aria: "Body the skyhook orbits", value: "Moon",
+	options: BODY_NAMES.map(function (n) { return { value: n, label: n }; }) });
+var bodyNote = shell.note(bodyCard, "");
+
+var geoCard = shell.addCard({ id: "geo", side: "in", title: "Tether geometry", short: "Geometry", color: C.core, focus: "tether" });
+var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "station-keeping engines", unit: "km", value: 2000, focus: "top",
+	tip: "Site of the orbital station-keeping engines." });
+var centreIn = shell.numberField(geoCard, { label: "Centre of mass altitude", hint: "sets the orbit", unit: "km", value: 275, focus: "centre",
+	tip: "The point that determines the orbit." });
+var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: 10, focus: "foot" });
+shell.note(geoCard, "Or drag the markers on the drawing.");
+
+var matCard = shell.addCard({ id: "mat", side: "in", title: "Material", short: "Material", color: C.core, focus: "tether" });
+var matIn = shell.selectField(matCard, { aria: "Tether material", value: "silica",
+	options: Object.keys(MATERIALS).map(function (k) {
+		var m = MATERIALS[k];
+		return { value: k, label: m.name + " · " + (m.strength / 1e9) + " GPa, " + (m.density / 1000) + " g/cm³" };
+	}).concat([{ value: "custom", label: "Custom material…" }]) });
+var customBox = document.createElement("div");
+matCard.body.appendChild(customBox);
+var sigmaIn = shell.numberField(matCard, { label: "Tensile strength", unit: "GPa", value: 13, parent: customBox });
+var rhoIn = shell.numberField(matCard, { label: "Density", unit: "kg/m³", value: 2300, parent: customBox });
+var safetyIn = shell.numberField(matCard, { label: "Safety factor", unit: "×", value: 3, step: "0.1", min: 1 });
+
+var stCard = shell.addCard({ id: "st", side: "in", title: "Stations", short: "Stations", color: C.ochre, module: "st", focus: "stations" });
+var launchIn = shell.numberField(stCard, { label: "Main launch deck", hint: "most ships leave here", unit: "km", value: 950, focus: "stations",
+	tip: "Most ships leave from here; released cargo leaves at this deck's speed." });
+var outerIn = shell.numberField(stCard, { label: "Outer docks", hint: "ships from high orbit", unit: "km", value: 606.5, focus: "stations",
+	tip: "Where incoming ships from high orbit dock." });
+var recvIn = shell.numberField(stCard, { label: "Receiving deck", hint: "shuttles from the surface", unit: "km", value: 233, focus: "stations",
+	tip: "Where shuttles from the surface join the tether." });
+
+var payCard = shell.addCard({ id: "pay", side: "in", title: "Tip payload", short: "Payload", color: C.rust, module: "pay", focus: "top" });
+var tipIn = shell.numberField(payCard, { label: "Tip payload mass", hint: "sizes the absolute tension", unit: "t", value: 100, min: 0, focus: "top",
+	tip: "Payload held at a tether tip; it sizes the peak tension." });
+
+var thrCard = shell.addCard({ id: "thr", side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, module: "thr", focus: "stations" });
+var rateIn = shell.numberField(thrCard, { label: "Delivery rate to launch deck", unit: "t/day", value: 1000, min: 0,
+	tip: "Descending traffic to the foot is assumed to be 1% of the ascending rate." });
+var perClimberIn = shell.numberField(thrCard, { label: "Cargo per climber", unit: "t", value: 100, min: 0.001 });
+var vClimbIn = shell.numberField(thrCard, { label: "Climb speed", unit: "m/s", value: 200, min: 0.1 });
+var effDriveIn = shell.numberField(thrCard, { label: "Drive efficiency", unit: "%", value: 70, min: 1, max: 100 });
+
+var kpCard = shell.addCard({ id: "kp", side: "in", title: "Station-keeping", short: "Keeping", color: C.cobalt, module: "kp", focus: "top" });
+var propIn = shell.selectField(kpCard, { label: "Propellant", value: "oxygen",
+	options: [{ value: "oxygen", label: "Oxygen" }, { value: "hydrogen", label: "Hydrogen" }],
+	tip: "Oxygen: cheap, a plentiful byproduct. Hydrogen: higher exhaust speed." });
+var vExIn = shell.numberField(kpCard, { label: "Exhaust velocity", hint: "VASIMR", unit: "km/s", value: 8, min: 1, max: PROPELLANT_MAX.oxygen,
+	tip: "Oxygen is capped at 20 km/s, hydrogen at 80 km/s. Engines are assumed to run continuously; spares cover engine-out and maintenance." });
+var effThrIn = shell.numberField(kpCard, { label: "Thruster efficiency", hint: "electrical → jet", unit: "%", value: 60, min: 1, max: 100,
+	tip: "The reboost thruster is mounted at the tether top, the longest available lever arm." });
+var effSupIn = shell.numberField(kpCard, { label: "Power supply efficiency", hint: "generation and delivery", unit: "%", value: 90, min: 1, max: 100 });
+propIn.addEventListener("input", function () {
+	var mx = PROPELLANT_MAX[propIn.value];
+	vExIn.max = mx;
+	if (Number(vExIn.value) > mx) vExIn.value = mx;
+});
+
+var reCard = shell.addCard({ id: "re", side: "in", title: "Earth reentry", short: "Reentry", color: C.violet, module: "re", focus: "reentry" });
+var perigeeIn = shell.numberField(reCard, { label: "Target perigee altitude", unit: "km", value: 50, min: -300,
+	tip: "Cargo flung from the launch deck is braked retrograde so it falls to the parent body; a burn at the lunar-distance apogee trims perigee to the target." });
+var ifaceIn = shell.numberField(reCard, { label: "Entry interface altitude", unit: "km", value: 122, min: 1 });
+var reNote = shell.note(reCard, "Cargo released from the launch deck.");
+
+var aboutCard = shell.addCard({ id: "about", side: "in", title: "About this calculator", short: "About", color: C.umber, focus: "tether", collapsed: true });
+aboutCard.setSummary("gravity-gradient skyhook");
+var about = document.createElement("div");
+about.className = "hs-about";
+about.innerHTML =
+	"<p>A gravity-gradient skyhook is a long <b>vertical</b> tether whose <b>centre of mass</b> orbits a body at orbital speed. " +
+	"It does not rotate: it stays aligned with the local vertical, held taut by the gravity gradient. The whole structure shares the " +
+	"centre of mass's angular velocity, so the <b>top</b> moves faster than a free orbit there and is flung outward, while the " +
+	"<b>foot</b> moves slower and is pulled inward. These opposing pulls put the tether in tension, greatest at the centre of mass.</p>" +
+	"<p>The centre of mass is the top of the effective-potential hill, like the L1 point of a Moon–L1 elevator: climbing foot → " +
+	"centre is uphill, centre → top is downhill (regenerative). The slow, low-sweeping foot suits pick-up; the fast top gives a " +
+	"payload a boost on release.</p>";
+aboutCard.body.appendChild(about);
+
+// ---------- result cards ----------
+var orbCard = shell.addCard({ id: "orb", side: "out", title: "Orbit & speeds", short: "Speeds", color: C.core, focus: "tether" });
+var hero = shell.hero(orbCard, [{ label: "Period", unit: "h" }, { label: "Top speed", unit: "km/s" }, { label: "Foot speed", unit: "km/s" }]);
+var rVc = shell.line(orbCard, { label: "Speed at centre of mass", unit: "m/s" });
+var rVcTop = shell.line(orbCard, { label: "Circular-orbit speed at top", unit: "m/s" });
+var rVcFoot = shell.line(orbCard, { label: "Circular-orbit speed at foot", unit: "m/s" });
+
+var relCard = shell.addCard({ id: "rel", side: "out", title: "Dropped from the foot", short: "Drop", color: C.umber, module: "rel", focus: "foot" });
+var rSurf = shell.line(relCard, { label: "Speed at the surface", unit: "m/s" });
+var rAng = shell.line(relCard, { label: "Impact angle from vertical", unit: "°" });
+var rAround = shell.line(relCard, { label: "Lands downrange", unit: "km" });
+var rPeri = shell.line(relCard, { label: "Lowest point of the fall", unit: "km", sub: "above the surface: it does not land" });
+
+var propCard = shell.addCard({ id: "prop", side: "out", title: "Tether properties", short: "Tether", color: C.core, focus: "tether" });
+var rAccF = shell.line(propCard, { label: "Net pull at foot", unit: "m/s²" });
+var rAccT = shell.line(propCard, { label: "Net pull at top", unit: "m/s²" });
+var rTrL = shell.line(propCard, { label: "Taper ratio, foot → centre" });
+var rTrH = shell.line(propCard, { label: "Taper ratio, centre → top" });
+var rMassL = shell.line(propCard, { label: "Lower tether mass", unit: "× payload" });
+var rMassH = shell.line(propCard, { label: "Upper tether mass", unit: "× payload", sub: "Anything that isn't the tether itself is payload." });
+
+var clmCard = shell.addCard({ id: "clm", side: "out", title: "Climber energy", short: "Climber", color: C.core, module: "clm", focus: "tether" });
+var rClL = shell.line(clmCard, { label: "Foot → centre (uphill)", unit: "kJ/kg" });
+var rClH = shell.line(clmCard, { label: "Centre → top (downhill)", unit: "MJ/kg", sub: "Regenerative: the climber is pulled outward and can recover energy." });
+
+var frcCard = shell.addCard({ id: "frc", side: "out", title: "Forces", short: "Forces", color: C.rust, module: "frc", focus: "top" });
+var rTTop = shell.line(frcCard, { label: "Tension at centre, payload at top", unit: "kN" });
+var rTFoot = shell.line(frcCard, { label: "Tension at centre, payload at foot", unit: "kN" });
+var rMAbs = shell.line(frcCard, { label: "Tether mass", unit: "t" });
+
+var thrOCard = shell.addCard({ id: "thrO", side: "out", title: "Throughput", short: "Throughput", color: C.teal, module: "thrO", focus: "stations" });
+var rTrip = shell.line(thrOCard, { label: "Trip, receiving → launch deck", unit: "h" });
+var rDep = shell.line(thrOCard, { label: "Departures", unit: "/day" });
+var rOn = shell.line(thrOCard, { label: "Climbers on the cable" });
+var rSpace = shell.line(thrOCard, { label: "Mean spacing", unit: "km" });
+var rCargo = shell.line(thrOCard, { label: "Cargo on the cable, up", unit: "t" });
+var rDT = shell.line(thrOCard, { label: "Added tension at centre", unit: "kN" });
+var rPow = shell.line(thrOCard, { label: "Net lift power", unit: "MW" });
+var rEpt = shell.line(thrOCard, { label: "Energy per tonne delivered", unit: "GJ/t" });
+
+var kpOCard = shell.addCard({ id: "kpO", side: "out", title: "Station-keeping", short: "Keeping", color: C.cobalt, module: "kpO", focus: "top" });
+var rThrust = shell.line(kpOCard, { label: "Reboost thrust at top", unit: "kN" });
+var rProp = shell.line(kpOCard, { label: "Propellant", unit: "t/day" });
+var rJet = shell.line(kpOCard, { label: "Jet power", unit: "MW" });
+var rElec = shell.line(kpOCard, { label: "Electrical power at thrusters", unit: "MW" });
+var rGen = shell.line(kpOCard, { label: "Generated power required", unit: "MW" });
+var rEday = shell.line(kpOCard, { label: "Energy to hold the orbit", unit: "GWh/day" });
+var rEptK = shell.line(kpOCard, { label: "Energy per tonne delivered", unit: "GJ/t" });
+
+var reOCard = shell.addCard({ id: "reO", side: "out", title: "Earth reentry", short: "Reentry", color: C.violet, module: "reO", focus: "reentry" });
+var rVinf = shell.line(reOCard, { label: "v∞ leaving the Moon", unit: "m/s" });
+var rNatP = shell.line(reOCard, { label: "Natural perigee", unit: "km" });
+var rBurn = shell.line(reOCard, { label: "Δv at apogee for target perigee", unit: "m/s" });
+var rEntry = shell.line(reOCard, { label: "Entry angle", unit: "°" });
+var rPeakG = shell.line(reOCard, { label: "Peak deceleration", unit: "g", sub: "Ballistic estimate, calibrated to Stardust; lift and guidance reduce it." });
+var reOutNote = shell.note(reOCard, "");
+
+var rpCard = shell.addCard({ id: "rp", side: "out", title: "Release points", short: "Release", color: C.sky, module: "rp", focus: "release" });
+var rpNote = shell.note(rpCard, "Altitude on the tether where a release leaves with the v∞ for a transfer to each body.");
+var rpLines = [];
+
+var sendCard = shell.addCard({ id: "send", side: "out", title: "Send to calculators", short: "Send", color: C.umber, module: "send", focus: "tether" });
+shell.note(sendCard, "Hand this tether to the Skyhook Spin-Launcher Calculator, a variant of this tool.");
+var sendBtn = shell.button(sendCard, { label: "Send tether → Spin-Launcher", primary: true });
+var sendStatus = shell.note(sendCard, "");
+
+// ---------- formatting ----------
+function num(x, d) { return isFinite(x) ? x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—"; }
+function scaled(x, units) {   // units: [[threshold, divisor, label], …] largest first
+	for (var i = 0; i < units.length; i++) if (Math.abs(x) >= units[i][0]) return [num(x / units[i][1], 2), units[i][2]];
+	var last = units[units.length - 1];
+	return [num(x / last[1], 2), last[2]];
+}
+var FORCE = [[1e9, 1e9, "GN"], [1e6, 1e6, "MN"], [1e3, 1e3, "kN"], [0, 1, "N"]];
+var TORQUE = [[1e12, 1e12, "TN·m"], [1e9, 1e9, "GN·m"], [1e6, 1e6, "MN·m"], [1e3, 1e3, "kN·m"], [0, 1, "N·m"]];
+var POWER = [[1e9, 1e9, "GW"], [1e6, 1e6, "MW"], [1e3, 1e3, "kW"], [0, 1, "W"]];
+var MASS = [[1e6, 1e6, "kt"], [1e3, 1e3, "t"], [0, 1, "kg"]];
+function kmText(a) { return num(a, a < 100 ? 1 : 0) + " km"; }
+function field(input, fallback) { var v = parseFloat(input.value); return isFinite(v) ? v : fallback; }
+function hours(days) { return days >= 1 ? [num(days, 2), "days"] : [num(days * 24, 2), "h"]; }
+
+// ---------- calc ----------
+var S = null;   // the last model run, plus what the drawing needs
+
+function calc() {
+	var body = systems.get(bodyIn.value);
+	var custom = matIn.value === "custom";
+	customBox.hidden = !custom;
+	var mat = custom ? { strength: field(sigmaIn, 13) * 1e9, density: field(rhoIn, 2300) } : MATERIALS[matIn.value];
+	var stOn = shell.isOn("st");
+	var t = computeSkyhook(body, {
+		foot: field(footIn, 10) * 1e3, centre: field(centreIn, 275) * 1e3, top: field(topIn, 2000) * 1e3,
+		receivingDeck: stOn ? field(recvIn, 233) * 1e3 : null,
+		outerDocks: stOn ? field(outerIn, 606.5) * 1e3 : null,
+		launchDeck: stOn ? field(launchIn, 950) * 1e3 : null,
+		strength: (mat.strength / Math.max(1, field(safetyIn, 3))) / mat.density,
+		tipMass: field(tipIn, 100) * 1e3,
+		rate: field(rateIn, 1000), perClimber: Math.max(1e-3, field(perClimberIn, 100)),
+		vClimb: Math.max(0.1, field(vClimbIn, 200)), effDrive: field(effDriveIn, 70) / 100,
+		propellant: propIn.value, vExhaust: field(vExIn, 8),
+		effThruster: field(effThrIn, 60) / 100, effSupply: field(effSupIn, 90) / 100,
+		targetPerigee: field(perigeeIn, 50), ifaceAlt: field(ifaceIn, 122)
+	});
+	var R = Number(body.radius);
+	S = { t: t, body: body, R: R / 1e3, GM: body.GM, foot: t.foot / 1e3, centre: t.centre / 1e3, top: t.top / 1e3,
+		recv: t.receivingDeck / 1e3, outer: t.outerDocks / 1e3, launch: t.launchDeck / 1e3 };
+
+	bodyNote.textContent = "Radius " + num(R / 1e3, 1) + " km · surface gravity " + num(t.surfaceGravity, 2) + " m/s²";
+	shell.warn(t.warnings.join(" "));
+
+	// orbit & speeds
+	hero[0].set(num(t.time / 3600, 2)); hero[1].set(num(t.topVel / 1e3, 2)); hero[2].set(num(t.footVel / 1e3, 2));
+	rVc.set(num(t.centreVel, 1));
+	rVcTop.set(num(t.topOrbit, 0), "The top moves " + num(t.topVel / t.topOrbit, 2) + "× faster than a free orbit there, so released payloads are flung outward.");
+	rVcFoot.set(num(t.footOrbit, 0));
+
+	// dropped from the foot
+	rSurf.show(t.hitsSurface); rAng.show(t.hitsSurface); rAround.show(t.hitsSurface); rPeri.show(!t.hitsSurface);
+	rSurf.set(num(t.hitTheGround, 1));
+	rAng.set(num(t.impactFromVertical * 180 / Math.PI, 2));
+	rAround.set(num(t.impactAround * R / 1e3, 0), num(t.impactAround * 180 / Math.PI, 1) + "° around the body from the foot");
+	rPeri.set(num((t.newPeriapsis - R) / 1e3, 0));
+
+	// tether properties
+	rAccF.set(num(t.lowAcceleration, 2), num(100 * t.lowAcceleration / t.surfaceGravity, 1) + "% of surface gravity, downward");
+	rAccT.set(num(t.highAcceleration, 2), num(100 * t.highAcceleration / t.surfaceGravity, 1) + "% of surface gravity, outward");
+	rTrL.set(num(t.lowRatio, 2)); rTrH.set(num(t.highRatio, 2));
+	rMassL.set(num(t.lowMass, 2)); rMassH.set(num(t.highMass, 2));
+
+	// climber
+	rClL.set(num(t.lowIntegral / 1e3, 1)); rClH.set(num(t.highIntegral / 1e6, 2));
+
+	// forces
+	var f;
+	f = scaled(t.tensionCoM_top, FORCE); rTTop.set(f[0], null, f[1]);
+	f = scaled(t.tensionCoM_foot, FORCE); rTFoot.set(f[0], null, f[1]);
+	f = scaled(t.massAbs, MASS); rMAbs.set(f[0], num(t.lowMass + t.highMass, 2) + " × the " + num(t.tipMass / 1e3, 0) + " t tip payload", f[1]);
+
+	// throughput
+	var th = t.throughput;
+	f = hours(th.tripUpDays); var fd = hours(th.tripDownDays);
+	rTrip.set(f[0], "descent, outer docks → foot: " + fd[0] + " " + fd[1], f[1]);
+	rDep.set(num(th.perDay, 1), "one every " + num(th.intervalH, 2) + " h");
+	rOn.set(num(th.onCable, 1));
+	rSpace.set(num(th.spacingKm, 0));
+	var down = scaled(th.cargoDownT * 1e3, MASS);
+	f = scaled(th.cargoUpT * 1e3, MASS); rCargo.set(f[0], "plus " + down[0] + " " + down[1] + " descending", f[1]);
+	f = scaled(th.addedTension, FORCE);
+	rDT.set(f[0], shell.isOn("pay") ? num(th.addedTensionPct, 2) + "% of the tip-payload tension" : "", f[1]);
+	f = scaled(th.liftPower, POWER);
+	rPow.set(f[0], th.liftPower < 0 ? "Negative: regeneration above the centre of mass exceeds the climb below it." : "Receiving → launch deck, net of regeneration, at drive efficiency.", f[1]);
+	rEpt.set(num(th.energyPerT, 2));
+
+	// station-keeping
+	var sk = t.keeping, tq = scaled(sk.torque, TORQUE);
+	f = scaled(sk.thrust, FORCE); rThrust.set(f[0], "cancels climber drag · torque " + tq[0] + " " + tq[1], f[1]);
+	rProp.set(num(sk.propFlow * 86400 / 1e3, 2), (propIn.value === "oxygen" ? "Oxygen" : "Hydrogen") + " · " + num(sk.propFlow, 2) + " kg/s · " + num(sk.propPerCargo, 2) + " t per t of cargo");
+	var orbitP = scaled(sk.orbitPower, POWER);
+	f = scaled(sk.jetPower, POWER); rJet.set(f[0], "at " + num(sk.vExhaust / 1e3, 0) + " km/s exhaust · useful orbit power " + orbitP[0] + " " + orbitP[1], f[1]);
+	f = scaled(sk.elecPower, POWER); rElec.set(f[0], null, f[1]);
+	f = scaled(sk.genPower, POWER); rGen.set(f[0], null, f[1]);
+	rEday.set(num(sk.genPower * 86400 / 3.6e12, 2), num(sk.genPower * 86400 / 1e9, 0) + " GJ/day");
+	rEptK.set(num(sk.energyPerT, 2));
+
+	// reentry
+	var re = t.reentry;
+	reNote.textContent = re.applies ? "Cargo released from the launch deck." : "Earth reentry applies to a skyhook at the Moon only.";
+	var reShow = re.applies && re.escapes;
+	[rVinf, rNatP, rBurn].forEach(function (l) { l.show(reShow); });
+	rEntry.show(reShow && re.entry); rPeakG.show(reShow && re.entry && re.atmosphere);
+	reOutNote.textContent = !re.applies ? "Earth reentry applies to a skyhook at the Moon only."
+		: !re.escapes ? "A release from the launch deck does not escape the Moon: no Earth transfer."
+		: !re.entry ? "Target perigee above the entry interface: no atmospheric entry." : "";
+	reOutNote.hidden = !reOutNote.textContent;
+	if (reShow) {
+		rVinf.set(num(re.vinf, 0), num(re.arrivalSpeed, 0) + " m/s at lunar distance after braking");
+		rNatP.set(num(re.naturalPerigeeAlt / 1e3, 0), re.naturalPerigeeAlt < 0 ? "below the surface: steep, direct entry" : "");
+		rBurn.set(num(Math.abs(re.burn), 1), re.burn >= 0 ? "prograde, raising perigee" : "retrograde, lowering perigee");
+		if (re.entry) rEntry.set("−" + num(re.entryAngle * 180 / Math.PI, 1), "entry speed " + num(re.entrySpeed / 1e3, 2) + " km/s");
+		if (re.entry && re.atmosphere) rPeakG.set("~" + num(re.peakG, 0));
 	}
-	else if(classes){
-		if(classes[0] === "#"){
-			element.id = classes.substring(1)
-		}
-		else{
-			element.classList.add(classes);
-			if(classes === "newTab"){
-				element.setAttribute("target","_blank")
-			}
-		}
-	};
-	if(text || text === 0){
-		element.innerText = text
-	};
-	if(appendLocation && appendLocation.appendChild){
-		appendLocation.appendChild(element)
-	};
-	if(cssText){
-		element.style.cssText = cssText
-	};
-	return element
-};
 
-//part 2: css
+	// release points
+	var tg = t.targets.filter(function (x) { return isFinite(x.location); }).sort(function (a, b) { return a.location - b.location; });
+	while (rpLines.length < tg.length) rpLines.push(shell.line(rpCard, { label: "", unit: "km" }));
+	rpLines.forEach(function (l, i) {
+		var x = tg[i];
+		l.show(!!x);
+		if (!x) return;
+		l.el.querySelector(".cs-k").textContent = x.name;
+		l.set(num(x.altitude / 1e3, 0), "v∞ " + num(x.vinf, 0) + " m/s" + (x.location > R + t.top ? " · beyond the top" : ""));
+	});
+	rpNote.hidden = tg.length === 0;
+	if (!tg.length) rpNote.textContent = "This body has no neighbours to transfer to.";
 
-let skyhookStyle = create("style");
-skyhookStyle.id = "skyhookToolCSS";
-skyhookStyle.type = "text/css";
-document.head.appendChild(skyhookStyle);
-skyhookStyle.textContent = `
-.tetherToolMain .canvas{
-	border-style: solid;
-	border-width: 1px;
-	border-color: black;
-	border-radius: 4px;
-}
-.tetherToolMain .draggable{ cursor: move; }
-.tetherToolMain .tooltip{ cursor: help; }
-.tetherToolMain .svgText {
-	pointer-events: none;
-	-webkit-user-select: none;
-	-moz-user-select: none;
-	-ms-user-select: none;
-	user-select: none;
-}
-.tetherToolMain #materialOverride{ display: none; }
-.tetherToolMain #svg_ilu{
-	width: 100%;
-	height: auto;
-	max-width: 900px;
-	aspect-ratio: 900 / 250;
-	border: 1px solid black;
-	border-radius: 4px;
-	background: white;
-}
-`
+	// summaries
+	bodyCard.setSummary(bodyIn.value);
+	geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km");
+	matCard.setSummary((custom ? "Custom" : MATERIALS[matIn.value].name) + " · ×" + field(safetyIn, 3));
+	stCard.setSummary(num(S.recv, 0) + " · " + num(S.outer, 1) + " · " + num(S.launch, 0) + " km");
+	payCard.setSummary(num(t.tipMass / 1e3, 0) + " t");
+	thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + num(field(perClimberIn, 0), 0) + " t");
+	kpCard.setSummary((propIn.value === "oxygen" ? "O₂" : "H₂") + " · " + vExIn.value + " km/s");
+	reCard.setSummary("perigee " + perigeeIn.value + " km");
+	orbCard.setSummary(num(t.time / 3600, 2) + " h · top " + num(t.topVel / 1e3, 2) + " km/s");
+	relCard.setSummary(t.hitsSurface ? num(t.hitTheGround, 0) + " m/s at " + num(t.impactFromVertical * 180 / Math.PI, 1) + "°" : "does not land");
+	propCard.setSummary("taper " + num(t.lowRatio, 2) + " / " + num(t.highRatio, 2));
+	clmCard.setSummary(num(t.lowIntegral / 1e3, 0) + " kJ/kg uphill");
+	f = scaled(t.tensionCoM_top, FORCE); frcCard.setSummary(f[0] + " " + f[1] + " at centre");
+	thrOCard.setSummary(num(th.perDay, 1) + "/day · " + hours(th.tripUpDays).join(" ") + " trip");
+	f = scaled(sk.genPower, POWER); kpOCard.setSummary(f[0] + " " + f[1]);
+	reOCard.setSummary(reShow && re.entry && re.atmosphere ? "~" + num(re.peakG, 0) + " g peak" : "—");
+	rpCard.setSummary(tg.slice(0, 3).map(function (x) { return x.name + " " + num(x.altitude / 1e3, 0); }).join(" · "));
+	sendCard.setSummary("Spin-Launcher");
 
-//part 3: HTML
-
-const svgNS = "http://www.w3.org/2000/svg";
-
-// Frame helpers (see Shared/calc-frame.css): a row is an optional checkbox, a
-// label, then its input and unit; a tip is an info button at the end of the
-// label that opens a small floating box (Shared/calc-about.js); a line is one
-// line of a result card.
-function inputField(name, value, attributes){
-	let element = create("input");
-	element.name = name;
-	element.value = value;
-	if(attributes){ Object.assign(element, attributes); }
-	return element
-}
-// options: {checkbox, unit, tip}. A row without a unit keeps its input against
-// the right edge. Returns the label, whose first child is its text node.
-function inputRow(parent, labelText, input, options){
-	let opts = options || {};
-	let row = create("div",opts.unit ? "cf-row" : ["cf-row","cf-flush"],false,parent);
-	if(opts.checkbox){ row.appendChild(opts.checkbox); }
-	let label = create("label",false,labelText,row);
-	if(opts.tip){
-		let button = create("button","cf-info",false,label);
-		button.type = "button";
-		button.textContent = "i";
-		button.dataset.cfTip = opts.tip;
-		button.setAttribute("aria-label","More information");
-	}
-	row.appendChild(input);
-	if(opts.unit){ create("span","cf-unit",opts.unit,row); }
-	return label
-}
-// A row whose checkbox switches the input on or off; unchecked, the label
-// reads "Optional: …" and the input and its unit are hidden.
-function optionalRow(parent, useName, name, value, labelText, unit, tip){
-	let check = inputField(useName, "", {type: "checkbox", checked: true});
-	let input = inputField(name, value, {type: "number", step: "any"});
-	let label = inputRow(parent, labelText, input, {checkbox: check, unit: unit, tip: tip});
-	let unitElement = input.nextElementSibling;
-	check.oninput = function(){
-		input.style.display = this.checked ? "" : "none";
-		unitElement.style.display = this.checked ? "" : "none";
-		label.firstChild.nodeValue = (this.checked ? "" : "Optional: ") + labelText;
-	};
-}
-function note(parent, text){
-	return create("p",["cf-para","cf-note"],text,parent)
-}
-function line(parent, id){
-	let element = create("p","#" + id,false,parent);
-	element.classList.add("cf-line");
-	return element
+	var span = (S.R + S.top) * 1.12;
+	view.setMinimap([-span, -span, span, span]);
+	view.redraw();
 }
 
-let mainContainer = create("div","tetherToolMain",false,DOMnode);
-let formElement = create("form",false,false,mainContainer);
-	formElement.id = "input";
-	formElement.classList.add("cf-grid");
-
-	let systemContainer = create("div","cf-section",false,formElement);
-		create("h4",false,"Body the skyhook orbits",systemContainer);
-		let systemRow = create("div","cf-row",false,systemContainer);
-		let selector = create("select",false,false,systemRow);
-			selector.name = "system";
-			selector.setAttribute("aria-label","Body the skyhook orbits");
-
-	let formContainer = create("div","cf-section",false,formElement);
-		create("h4",false,"Tether",formContainer);
-
-		let footInput = inputField("foot", 10);
-		inputRow(formContainer, "Foot altitude", footInput, {unit: "km"});
-
-		optionalRow(formContainer, "useReceivingDeck", "receivingDeck", 233, "Receiving deck altitude", "km",
-			"Where shuttles from the surface join the tether.");
-
-		let centreInput = inputField("centre", 275);
-		inputRow(formContainer, "Tether centre of mass altitude", centreInput, {unit: "km",
-			tip: "The point that determines the orbit."});
-
-		optionalRow(formContainer, "useOuterDocks", "outerDocks", 606.5, "Outer docks altitude", "km",
-			"Where incoming ships from high orbit dock.");
-
-		optionalRow(formContainer, "useLaunchDeck", "launchDeck", 950, "Main launch deck altitude", "km",
-			"Most ships leave from here.");
-
-		let topInput = inputField("top", 2000);
-		inputRow(formContainer, "Tether top altitude", topInput, {unit: "km",
-			tip: "Site of the orbital station-keeping engines."});
-
-let tether = {
-	materials: {
-		"silica": { displayName: "Lunar Silica (13 GPa, 2.3 g/cm³)", strength: 13000000000, density: 2300 },
-		"bestsilica": { displayName: "Best lunar silica (17 GPa, 2.3 g/cm³)", strength: 17000000000, density: 2300 },
-		"earlylunarglass": { displayName: "Early lunar glass (3 GPa, 2.7 g/cm³)", strength: 3000000000, density: 2700 },
-		"ecnt": { displayName: "Early Carbon Nanotube (18 GPa, 1.45 g/cm³)", strength: 18000000000, density: 1450 },
-		"mwcnt": { displayName: "Mature Carbon Nanotube (42 GPa, 1.4 g/cm³)", strength: 42000000000, density: 1400 },
-		"zylon": { displayName: "Zylon (5.8 GPa, 1.54 g/cm³)", strength: 5800000000, density: 1540 },
-		"steel": { displayName: "Steel (2.62 GPa, 8 g/cm³)", strength: 2617000000, density: 8000 }
-	}
-};
-
-		let materialSelector = create("select",false,false,false);
-			materialSelector.name = "material";
-		Object.keys(tether.materials).forEach(material => {
-			create("option",false,tether.materials[material].displayName,materialSelector).value = material
-		})
-		inputRow(formContainer, "Tether material", materialSelector);
-		let globalSafetyInput = inputField("globalSafety", 3, {type: "number", step: "0.1", min: "1"});
-		inputRow(formContainer, "Safety factor", globalSafetyInput);
-
-		let overrideInput = inputField("overrideMaterial", "", {type: "checkbox"});
-		let overrideRow = create("div","cf-row",false,formContainer);
-			overrideRow.appendChild(overrideInput);
-			create("label",false,"Use custom material instead",overrideRow);
-		let materialOverride = create("div","#materialOverride",false,formContainer);
-			let strengthInput = inputField("tensileStrength", "");
-			inputRow(materialOverride, "Tensile strength", strengthInput, {unit: "Pa"});
-			let densityInput = inputField("density", "");
-			inputRow(materialOverride, "Density", densityInput, {unit: "kg/m\u00b3"});
-			let safetyInput = inputField("safety", 1);
-			inputRow(materialOverride, "Safety factor", safetyInput);
-			overrideInput.oninput = function(){
-				materialOverride.style.display = this.checked ? "block" : "none";
-			}
-
-		let tipMassInput = inputField("tipMass", 100, {type: "number", step: "any", min: "0"});
-		inputRow(formContainer, "Tip payload mass", tipMassInput, {unit: "t",
-			tip: "Payload held at a tether tip; it sizes the peak tension."});
-
-	let throughputContainer = create("div","cf-section",false,formElement);
-		create("h4",false,"Cargo throughput",throughputContainer);
-		let rateInput = inputField("rate", 1000, {type: "number", step: "any", min: "0"});
-		inputRow(throughputContainer, "Delivery rate to launch deck", rateInput, {unit: "t/day",
-			tip: "Descending traffic to the foot is assumed to be 1% of the ascending rate."});
-		let perClimberInput = inputField("perClimber", 100, {type: "number", step: "any", min: "0.001"});
-		inputRow(throughputContainer, "Cargo per climber", perClimberInput, {unit: "t"});
-		let vClimbInput = inputField("vClimb", 200, {type: "number", step: "any", min: "0.1"});
-		inputRow(throughputContainer, "Climb speed", vClimbInput, {unit: "m/s"});
-		let effInput = inputField("effDrive", 70, {type: "number", step: "any", min: "1", max: "100"});
-		inputRow(throughputContainer, "Drive efficiency", effInput, {unit: "%"});
-
-	let reentryContainer = create("div","cf-section",false,formElement);
-		create("h4",false,"Earth reentry (cargo released from top)",reentryContainer);
-		let targetPerigeeInput = inputField("targetPerigee", 50, {type: "number", step: "any", min: "-300"});
-		inputRow(reentryContainer, "Target perigee altitude", targetPerigeeInput, {unit: "km",
-			tip: "Cargo flung from the top is braked retrograde so it falls to the parent body; a burn at the lunar-distance apogee trims perigee to the target."});
-		let ifaceAltInput = inputField("ifaceAlt", 122, {type: "number", step: "any", min: "1"});
-		inputRow(reentryContainer, "Entry interface altitude", ifaceAltInput, {unit: "km"});
-
-	const propellantMax = { oxygen: 20, hydrogen: 80 };//km/s, viable mature-engine ceilings
-	let stationContainer = create("div","cf-section",false,formElement);
-		create("h4",false,"Orbit station-keeping (VASIMR reboost)",stationContainer);
-		let propellantSelector = create("select",false,false,false);
-			propellantSelector.name = "propellant";
-			create("option",false,"Oxygen (cheap, plentiful byproduct)",propellantSelector).value = "oxygen";
-			create("option",false,"Hydrogen (higher exhaust speed)",propellantSelector).value = "hydrogen";
-		inputRow(stationContainer, "Propellant", propellantSelector);
-		let vExhaustInput = inputField("vExhaust", 8, {type: "number", step: "any", min: "1", max: propellantMax.oxygen});
-		inputRow(stationContainer, "Exhaust velocity", vExhaustInput, {unit: "km/s",
-			tip: "Oxygen is capped at 20 km/s, hydrogen at 80 km/s. Engines are assumed to run continuously; spares cover engine-out and maintenance."});
-		let effThrusterInput = inputField("effThruster", 60, {type: "number", step: "any", min: "1", max: "100"});
-		inputRow(stationContainer, "Thruster efficiency, electrical \u2192 jet", effThrusterInput, {unit: "%",
-			tip: "The reboost thruster is mounted at the tether top, the longest available lever arm."});
-		let effSupplyInput = inputField("effSupply", 90, {type: "number", step: "any", min: "1", max: "100"});
-		inputRow(stationContainer, "Power generation & delivery efficiency", effSupplyInput, {unit: "%"});
-		propellantSelector.oninput = function(){
-			var mx = propellantMax[this.value];
-			vExhaustInput.max = mx;
-			if(Number(vExhaustInput.value) > mx){ vExhaustInput.value = mx; };
-		};
-
-	let warnings = create("p",["cf-wide","cf-warn"],false,formElement);
-		warnings.id = "warnings";
-
-let actions = create("div","cf-actions",false,mainContainer);
-let updateButton = create("button","cf-btn","Update",actions);
-	updateButton.onclick = function(){ calc(); hardReload() };
-
-// Send this design to the Skyhook + Tip Spin-Launcher Calculator (a variant
-// of this same tool) as a tether-spec packet — see Shared/exchange.js and
-// Website/ARCHITECTURE.md, "Exchange — trading data with the calculators".
-let sendTetherButton = create("button","cf-btn","Send tether \u2192 Skyhook Spin-Launcher",actions);
-let sendTetherStatus = create("span","cf-note",false,actions);
-sendTetherButton.onclick = function(){
+// ---------- exchange ----------
+// Send this design to the Skyhook + Tip Spin-Launcher Calculator as a
+// tether-spec packet (Shared/exchange.js; Website/ARCHITECTURE.md, "Exchange").
+sendBtn.onclick = function () {
 	calc();
-	var gnum = function(field){ return Number(form[field].value); };
-	var material = form.overrideMaterial.checked
-		? { sigma: gnum("tensileStrength"), rho: gnum("density") }
-		: { sigma: tether.materials[form["material"].value].strength,
-			rho: tether.materials[form["material"].value].density };
+	var t = S.t;
+	var mat = matIn.value === "custom"
+		? { sigma: field(sigmaIn, 13) * 1e9, rho: field(rhoIn, 2300) }
+		: { sigma: MATERIALS[matIn.value].strength, rho: MATERIALS[matIn.value].density };
 	var packet = PacketTypes.make("tether-spec", {
-		body: selector.options[selector.selectedIndex].value,
-		footAlt: tether.foot, centreAlt: tether.centre, topAlt: tether.top,
-		material: material,
-		period: tether.time, tipSpeed: tether.topVel,
-		taperRatio: { upper: tether.highRatio, lower: tether.lowRatio }
+		body: bodyIn.value,
+		footAlt: t.foot, centreAlt: t.centre, topAlt: t.top,
+		material: mat,
+		period: t.time, tipSpeed: t.topVel,
+		taperRatio: { upper: t.highRatio, lower: t.lowRatio }
 	}, {
 		tool: "hanging-skyhooks",
-		label: selector.options[selector.selectedIndex].value + " tether",
+		label: bodyIn.value + " tether",
 		iso: new Date().toISOString().slice(0, 10)
 	});
 	Exchange.send(packet, { target: "skyhook-spin-launcher" });
-	sendTetherStatus.innerText = "Sent — open the Skyhook Spin-Launcher calculator to apply it.";
+	sendStatus.textContent = "Sent: open the Skyhook Spin-Launcher calculator to apply it.";
 };
-note(mainContainer, "You can also adjust the tether by dragging the red markers below:");
-let output = create("div","#output",false,mainContainer);
-	output.classList.add("cf-grid");
-	let tetherSketchContainer = create("div","cf-graphic",false,output);
-		var illustration = document.createElementNS(svgNS,"svg");
-		tetherSketchContainer.appendChild(illustration);
-		illustration.id = "svg_ilu";
 
-	let generalContainer = create("div","cf-result",false,output);
-		create("h4",false,"General information",generalContainer);
-		["period","footVel","hitTheGround","centreVel","topVel"].forEach(id => line(generalContainer, id));
-	let climberContainer = create("div","cf-result",false,output);
-		create("h4",false,"Climber",climberContainer);
-		["lowClimber","highClimber"].forEach(id => line(climberContainer, id));
-	let propertyContainer = create("div","cf-result",false,output);
-		create("h4",false,"Tether properties",propertyContainer);
-		["lowAcceleration","lowRatio","lowMass","highAcceleration","highRatio","highMass"].forEach(id => line(propertyContainer, id));
-	let forceContainer = create("div","cf-result",false,output);
-		create("h4",false,"Forces",forceContainer);
-		["tensionCoM","tensionCoMfoot","tetherMassAbs"].forEach(id => line(forceContainer, id));
-	let throughputOut = create("div","cf-result",false,output);
-		create("h4",false,"Throughput to launch deck",throughputOut);
-		["trip","cadence","nclimb","spacing","oncable","dT","power","epert"].forEach(id => line(throughputOut, id));
-	let stationOut = create("div","cf-result",false,output);
-		create("h4",false,"Orbit station-keeping",stationOut);
-		["skThrust","skProp","skJet","skElec","skGen","skEnergyDay","skEpert"].forEach(id => line(stationOut, id));
-	let releaseContainer = create("div","cf-result",false,output);
-		create("h4",false,"Earth reentry (released from launch deck)",releaseContainer);
-		["earthArrival","earthPerigee","earthBurn","earthFPA","earthPeakG"].forEach(id => line(releaseContainer, id));
+// ---------- drawing ----------
+// World units are km; the body's centre is the origin and the tether points
+// straight up (−y), with orbital motion to the right (+x).
+var view = new ZoomView(shell.stage, { unit: "km", initial: "tether", hint: "Drag markers · scroll to zoom · drag to pan" });
+view.legend([
+	{ swatch: '<path d="M1 5h20" stroke="#FFB199" stroke-width="1.6"/><path d="M25 5l-5-3v6z" fill="#FFB199"/>', label: "tether speed" },
+	{ swatch: '<path d="M1 5h24" stroke="#FFB199" stroke-opacity=".35" stroke-width="1.6"/><path d="M13 0v10" stroke="#EADFCF" stroke-width="2"/>', label: "local circular-orbit speed" }
+]);
 
+var FILL = { Moon: "#4A4038", Mars: "#5E3424", Venus: "#5A4A33", Earth: "#2F3E4A", Mercury: "#4F463E", Europa: "#58524B", Phobos: "#4B4540", Deimos: "#4B4540" };
+var NS = { "vector-effect": "non-scaling-stroke" };
+var HALO = { stroke: "#1D1814", "paint-order": "stroke", "stroke-linejoin": "round" };
+var L = view.layer;
+function g(tag, attrs) { return svgEl(tag, Object.assign({}, attrs, tag === "text" ? HALO : {}), L); }
+function A(base, extra) { return Object.assign({}, base, NS, extra || {}); }
 
-//part 4: planetary data
+var gAxis = g("path", A({ stroke: C.sky.draw, "stroke-opacity": 0.35, "stroke-width": 1, "stroke-dasharray": "2 5" }));
+var gCom = g("circle", A({ cx: 0, cy: 0, fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.32, "stroke-width": 1, "stroke-dasharray": "2 5" }));
+var gAtm = g("circle", A({ cx: 0, cy: 0, fill: "#EADFCF", "fill-opacity": 0.05, stroke: "#EADFCF", "stroke-opacity": 0.2, "stroke-width": 1 }));
+var gBody = g("circle", A({ cx: 0, cy: 0, stroke: "#9C8A77", "stroke-width": 1.5 }));
+var gDescent = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.7, "stroke-width": 1.3, "stroke-dasharray": "5 4" }));
+var gHit = g("circle", A({ fill: "#1D1814", stroke: "#EADFCF", "stroke-width": 1.5 }));
+var tHit = g("text", { fill: "#EADFCF", "font-family": "Instrument Sans, sans-serif" });
+var gRe = g("path", A({ fill: "none", stroke: C.violet.draw, "stroke-width": 1.6, "stroke-dasharray": "7 5" }));
+var tRe = g("text", { fill: C.violet.draw, "font-family": "Instrument Sans, sans-serif", "font-weight": 600 });
+var gTaper = g("path", { fill: "#EADFCF", "fill-opacity": 0.92 });
+var gStTicks = g("path", A({ stroke: C.ochre.draw, "stroke-width": 2.5 }));
+var tSt = [0, 1, 2].map(function () { return g("text", { fill: C.ochre.draw, "font-family": "Instrument Sans, sans-serif" }); });
+var gClimber = g("rect", { fill: C.teal.draw });
+var gClArrow = g("path", A({ fill: "none", stroke: "#1D1814", "stroke-width": 1.6 }));
+var tClimber = g("text", { fill: C.teal.draw, "font-family": "Instrument Sans, sans-serif" });
+var gPay = g("rect", A({ fill: C.rust.draw, stroke: "#1D1814", "stroke-width": 1 }));
+var tPay = g("text", { fill: C.rust.draw, "font-family": "Instrument Sans, sans-serif" });
+var gNozzle = g("path", { fill: C.cobalt.draw });
+var gPlume = g("path", A({ fill: "none", stroke: C.cobalt.draw, "stroke-width": 1.4, "stroke-dasharray": "3 3" }));
+var tKp = g("text", { fill: C.cobalt.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "end" });
+var gArrows = g("path", A({ fill: "none", stroke: "#FFB199", "stroke-width": 1.6 }));
+var gHeads = g("path", { fill: "#FFB199" });
+var gNotches = g("path", A({ stroke: "#EADFCF", "stroke-width": 2 }));
+var tSpeed = [0, 1, 2].map(function () { return g("text", { fill: "#FFB199", "font-family": "JetBrains Mono, monospace" }); });
+var gRpTicks = g("path", A({ stroke: C.sky.draw, "stroke-width": 2 }));
+var tRp = [];
+var tMk = ["TOP", "CENTRE OF MASS", "FOOT"].map(function (name) {
+	var t = g("text", { fill: "#EADFCF", "font-family": "Instrument Sans, sans-serif", "text-anchor": "end" });
+	svgEl("tspan", { "font-weight": 700, "letter-spacing": "0.06em" }, t).textContent = name;
+	t.val = svgEl("tspan", { fill: "#A99A8B", "font-family": "JetBrains Mono, monospace" }, t);
+	return t;
+});
+var mTop = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
+var mCom = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
+var mFoot = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
+var miniBody = svgEl("circle", { cx: 0, cy: 0, stroke: "#9C8A77", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
+var miniTether = svgEl("path", { stroke: "#EADFCF", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
 
-Array.from(systems.entries()).map(a => a[1]).filter(system =>
-	system.properties.type !== "mathematical object"
-	&& system.radius
-	&& system.GM
-).sort().forEach((system,index) => {
-	var opt = create("option",false,system,selector);
-	if(system.properties.name === "Moon"){
-		selector.selectedIndex = index
+function show(el, on) { el.style.display = on ? "" : "none"; }
+
+function draw(vw) {
+	if (!S) return;
+	var u = vw.u, t = S.t, R = S.R, fs = 12 * u, fsS = 11 * u;
+	var on = function (m) { return shell.isOn(m); };
+	var rT = R + S.top, rC = R + S.centre, rF = R + S.foot;
+
+	gBody.setAttribute("r", R); gBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
+	var atm = S.body.atmosphere ? Number(S.body.atmosphere.height) / 1e3 : 0;
+	gAtm.setAttribute("r", R + atm); show(gAtm, atm > 0);
+	gCom.setAttribute("r", rC);
+	miniBody.setAttribute("r", R); miniBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
+	miniTether.setAttribute("d", "M0 " + (-rF) + "L0 " + (-rT));
+
+	// taper: half-width in px follows the exact constant-stress cross-section
+	var right = [], left = [], n = 70, w = t.angularVelocity;
+	for (var i = 0; i <= n; i++) {
+		var a = S.foot + (S.top - S.foot) * i / n, r = (R + a) * 1e3;
+		var I = r < t.centre + Number(S.body.radius)
+			? OrbitalMath.taperIntegral(S.GM, w, r, (R + S.centre) * 1e3)
+			: OrbitalMath.taperIntegral(S.GM, w, (R + S.centre) * 1e3, r);
+		var hw = (1.2 + 4.2 * Math.exp(-I / t.strength)) * u, y = -(R + a);
+		right.push(hw + " " + y); left.unshift((-hw) + " " + y);
 	}
-})
+	gTaper.setAttribute("d", "M" + right.join("L") + "L" + left.join("L") + "Z");
 
-//part 5: tether tool
+	// markers and their labels (left)
+	[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); });
+	[[rT, S.top], [rC, S.centre], [rF, S.foot]].forEach(function (p, i) {
+		var tx = tMk[i];
+		tx.setAttribute("x", -14 * u); tx.setAttribute("y", -p[0] + 4 * u); tx.setAttribute("font-size", fs); tx.setAttribute("stroke-width", 4 * u);
+		tx.val.setAttribute("dx", 6 * u); tx.val.textContent = kmText(p[1]);
+	});
 
-var form = formElement.elements;
-var moon = systems.get(selector.options[selector.selectedIndex].value);
+	// speed arrows (screen length ∝ speed) with a notch at the local circular-orbit speed
+	var k = 0.042, ar = "", hd = "", nt = "";
+	[[rT, t.topVel, t.topOrbit], [rC, t.centreVel, t.centreVel], [rF, t.footVel, t.footOrbit]].forEach(function (s, i) {
+		var y = -s[0], xa = 12 * u, xb = xa + s[1] * k * u, xn = xa + s[2] * k * u;
+		ar += "M" + xa + " " + y + "L" + (xb - 6 * u) + " " + y;
+		hd += "M" + xb + " " + y + "L" + (xb - 8 * u) + " " + (y - 4 * u) + "L" + (xb - 8 * u) + " " + (y + 4 * u) + "Z";
+		nt += "M" + xn + " " + (y - 6 * u) + "L" + xn + " " + (y + 6 * u);
+		var tx = tSpeed[i];
+		tx.setAttribute("x", xb + 6 * u); tx.setAttribute("y", y + 4 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
+		tx.textContent = num(s[1] / 1e3, 2) + " km/s";
+	});
+	gArrows.setAttribute("d", ar); gHeads.setAttribute("d", hd); gNotches.setAttribute("d", nt);
 
-let calc = function(){
-	moon = systems.get(selector.options[selector.selectedIndex].value);
-	var warnings = "";
-	var gnum = function(field){ return Number(form[field].value); };
-	// Messages are built here from numbers and fixed text, so they go in as
-	// HTML; b() marks a figure (with its unit) to show in bold.
-	var out = function(id,message){ document.getElementById(id).innerHTML = message; };
-	var b = function(figure){ return "<b>" + figure + "</b>"; };
-	// Rounds to the nearest value, never showing more than 2 decimal places.
-	var myRound = function(num,digits){
-		var p = Math.pow(10,Math.min(digits,2));
-		return Math.round(num*p)/p;
-	};
-	var fmtForce = function(n){
-		if(!isFinite(n)) return "—";
-		if(Math.abs(n)>=1e9) return b((n/1e9).toFixed(2)+" GN");
-		if(Math.abs(n)>=1e6) return b((n/1e6).toFixed(2)+" MN");
-		if(Math.abs(n)>=1e3) return b((n/1e3).toFixed(2)+" kN");
-		return b(n.toFixed(2)+" N");
-	};
-	var fmtTorque = function(n){
-		if(!isFinite(n)) return "—";
-		if(Math.abs(n)>=1e12) return b((n/1e12).toFixed(2)+" TN·m");
-		if(Math.abs(n)>=1e9) return b((n/1e9).toFixed(2)+" GN·m");
-		if(Math.abs(n)>=1e6) return b((n/1e6).toFixed(2)+" MN·m");
-		if(Math.abs(n)>=1e3) return b((n/1e3).toFixed(2)+" kN·m");
-		return b(n.toFixed(2)+" N·m");
-	};
-	var fmtMass = function(kg){
-		if(!isFinite(kg)) return "—";
-		if(kg>=1e9) return b((kg/1e9).toLocaleString(undefined,{maximumFractionDigits:2})+" kt");
-		if(kg>=1e3) return b((kg/1e3).toLocaleString(undefined,{maximumFractionDigits:2})+" t");
-		return b(kg.toLocaleString(undefined,{maximumFractionDigits:2})+" kg");
-	};
-	var fmtPower = function(w){
-		if(!isFinite(w)) return "—";
-		if(Math.abs(w)>=1e9) return b((w/1e9).toFixed(2)+" GW");
-		if(Math.abs(w)>=1e6) return b((w/1e6).toFixed(2)+" MW");
-		if(Math.abs(w)>=1e3) return b((w/1e3).toFixed(2)+" kW");
-		return b(w.toFixed(1)+" W");
-	};
-	var fmtTime = function(d){ return b(d>=1 ? d.toFixed(2)+" days" : (d*24).toFixed(2)+" hours"); };
-
-	var surfaceGravity = moon.GM/(moon.radius*moon.radius);//local fix: orbit.js exposes no surfaceGravity
-
-//construction of tether object
-	tether.foot = gnum("foot")*1000;
-	tether.top = gnum("top")*1000;
-	tether.centre = gnum("centre")*1000;
-	tether.receivingDeck = (form["useReceivingDeck"].checked ? gnum("receivingDeck")*1000 : tether.foot);//where ascending cargo joins the cable
-	tether.outerDocks    = (form["useOuterDocks"].checked ? gnum("outerDocks")*1000 : tether.top);   //where descending cargo joins the cable
-	tether.launchDeck = (form["useLaunchDeck"].checked ? gnum("launchDeck")*1000 : tether.top);//altitude cargo is flung from on release
-	tether.Length = tether.top - tether.foot;
-	if(tether.foot < 0){ warnings += "The tether foot is inside the Body!<br>"; };
-	if(tether.foot > tether.top){ warnings += "The tether foot can not be higher than the top!<br>"; }
-	else if(tether.centre < tether.foot || tether.centre > tether.top){
-		warnings += "The centre of the tether must be between the endpoints!<br>";
-	};
-	if(tether.receivingDeck < tether.foot || tether.receivingDeck > tether.top){
-		warnings += "The receiving deck must be between the foot and the top!<br>";
-	};
-	if(tether.outerDocks < tether.foot || tether.outerDocks > tether.top){
-		warnings += "The outer docks must be between the foot and the top!<br>";
-		};
-		if(tether.launchDeck < tether.foot || tether.launchDeck > tether.top){
-			warnings += "The main launch deck must be between the foot and the top!<br>";
-	};
-	tether.time = 2*Math.PI*Math.sqrt(Math.pow(tether.centre + moon.radius,3)/moon.GM);
-	tether.centreVel = OrbitalMath.circularVelocity(moon.GM, moon.radius + tether.centre);
-	tether.footVel = (tether.foot + moon.radius) * tether.centreVel/(tether.centre + moon.radius);
-	tether.topVel = (tether.top + moon.radius) * tether.centreVel/(tether.centre + moon.radius);
-	tether.launchDeckVel = (tether.launchDeck + moon.radius) * tether.centreVel/(tether.centre + moon.radius);
-	tether.angularVelocity = tether.centreVel/(tether.centre + moon.radius);
-
-	tether.topOrbit = OrbitalMath.circularVelocity(moon.GM, tether.top + moon.radius);
-	tether.launchDeckOrbit = OrbitalMath.circularVelocity(moon.GM, tether.launchDeck + moon.radius);
-	tether.footOrbit = OrbitalMath.circularVelocity(moon.GM, tether.foot + moon.radius);
-	tether.escapeFromTop = Math.sqrt(
-		tether.launchDeckVel * tether.launchDeckVel - tether.launchDeckOrbit * tether.launchDeckOrbit * 2
-	);
-	tether.hitTheGround = Math.sqrt(
-		tether.footVel * tether.footVel + 2*moon.GM / moon.radius - tether.footOrbit * tether.footOrbit*2
-	);
-	tether.newApoapsis = Math.pow((tether.launchDeck + moon.radius) * tether.launchDeckVel,2)/(
-		2*moon.GM - (tether.launchDeck + moon.radius) * tether.launchDeckVel * tether.launchDeckVel
-	);
-	tether.newPeriapsis = Math.pow((tether.foot + moon.radius) * tether.footVel,2)/(
-		2*moon.GM - (tether.foot + moon.radius) * tether.footVel * tether.footVel
-	);
-	tether.collisionAngle = Math.acos(
-		tether.angularVelocity*(tether.foot + moon.radius)*(tether.foot/moon.radius + 1)/tether.hitTheGround
-	);
-
-	if(form.overrideMaterial.checked){
-		tether.strength = (gnum("tensileStrength")/gnum("safety"))/gnum("density");
+	// dropped from the foot: an ellipse with apoapsis at the foot
+	var relOn = on("rel");
+	var rp = t.newPeriapsis / 1e3, e = (rF - rp) / (rF + rp), pp = rF * (1 - e);
+	var end = t.hitsSurface ? t.impactAround : 2 * Math.PI, dp = "";
+	for (var j = 0; j <= 60; j++) {
+		var ph = end * j / 60, rr = pp / (1 - e * Math.cos(ph));
+		dp += (j ? "L" : "M") + (rr * Math.sin(ph)) + " " + (-rr * Math.cos(ph));
 	}
-	else{
-		tether.strength = (tether.materials[form["material"].value].strength/gnum("globalSafety")) / tether.materials[form["material"].value].density;
-	};
-
-	tether.lowAcceleration = moon.GM/Math.pow(moon.radius + tether.foot,2) - tether.footVel*tether.footVel/(moon.radius + tether.foot);
-	tether.highAcceleration = - moon.GM/Math.pow(moon.radius + tether.top,2) + tether.topVel*tether.topVel/(moon.radius + tether.top);
-
-//calculation of taper ratio
-	var integral = function(gm,angularVelocity,foot,top){
-		return OrbitalMath.taperIntegral(gm, angularVelocity, foot, top);
-	};
-	tether.lowIntegral = integral(moon.GM,tether.angularVelocity,tether.foot + moon.radius,tether.centre + moon.radius);
-	tether.highIntegral = integral(moon.GM,tether.angularVelocity,tether.centre + moon.radius,tether.top + moon.radius);
-	tether.lowRatio = Math.pow(Math.E,tether.lowIntegral/tether.strength);
-	tether.highRatio = Math.pow(Math.E,tether.highIntegral/tether.strength);
-
-	var lowIteratorSum = 0;
-	var highIteratorSum = 0;
-	var iteratorLimit = 1000;
-	var lowCrosses = [];
-	var highCrosses = [];
-	for(var i=0;i<iteratorLimit;i++){
-		var lowCross = Math.pow(Math.E,
-			integral(moon.GM,tether.angularVelocity,tether.foot + moon.radius,
-				tether.foot + i*(tether.centre - tether.foot)/iteratorLimit + moon.radius)/tether.strength);
-		lowIteratorSum += lowCross;
-		var highCross = Math.pow(Math.E,
-			integral(moon.GM,tether.angularVelocity,tether.centre + moon.radius,
-				tether.centre + i*(tether.top - tether.centre)/iteratorLimit + moon.radius)/tether.strength);
-		highIteratorSum += highCross;
-		if(i % 10 == 0){ lowCrosses.push(lowCross); highCrosses.push(highCross); };
-	};
-	tether.lowMass = tether.lowAcceleration*(tether.centre-tether.foot)*(lowIteratorSum/iteratorLimit)/tether.strength;
-	tether.highMass = tether.highAcceleration*(tether.top-tether.centre)*(highIteratorSum/iteratorLimit)/tether.strength;
-
-//── absolute tension at the centre of mass (peak), driven by the tip payload ──
-//   constant-stress cable: T(r)=σ·A(r); at a tip A=T_tip/σ with T_tip = m_tip·a_tip,
-//   so T(centre)=T_tip·taper.  Top tip (release end) is the direct analogue of the
-//   L1 elevator's counterweight; the foot tip (catch end) is shown for comparison.
-	tether.tipMass = gnum("tipMass")*1000;//tonnes → kg
-	tether.tensionCoM_top  = tether.tipMass * tether.highAcceleration * tether.highRatio;
-	tether.tensionCoM_foot = tether.tipMass * tether.lowAcceleration  * tether.lowRatio;
-	tether.tensionCoM_peak = Math.max(tether.tensionCoM_top, tether.tensionCoM_foot);
-//absolute tether mass implied by that tip payload (per-payload ratios × tip mass)
-	tether.massAbs = (tether.lowMass + tether.highMass) * tether.tipMass;
-
-//find bodies reachable after release from the tether
-	var potentialTargets = {siblings: [], aunts: []};
-	if(moon.orbit){
-		potentialTargets.parent = moon.orbit.system;
-		potentialTargets.siblings = moon.orbit.system.satellites.filter(sat => sat.properties.name !== moon.properties.name) || [];
-		if(moon.orbit.system.orbit){
-			potentialTargets.aunts = moon.orbit.system.orbit.system.satellites.filter(sat => sat.properties.name !== potentialTargets.parent.properties.name)
-		}
-	};
-	var targets = [];
-	if(potentialTargets.parent){
-		targets.push({
-			name : potentialTargets.parent.properties.name,
-			vinf : moon.orbit.vela - Math.sqrt(moon.orbit.system.GM * (2/(moon.orbit.a) - 2/(moon.orbit.a + moon.orbit.system.radius)))
-		});
-	};
-	for(var i=0;i<potentialTargets.siblings.length;i++){
-		targets.push({
-			name : potentialTargets.siblings[i].properties.name,
-			vinf : Math.abs(moon.orbit.vela - Math.sqrt(moon.orbit.system.GM * (2/(moon.orbit.a) - 2/(moon.orbit.a + potentialTargets.siblings[i].orbit.a))))
-		});
-	};
-	for(var i=0;i<potentialTargets.aunts.length;i++){
-		targets.push({
-			name : potentialTargets.aunts[i].properties.name,
-			vinf : Math.sqrt(
-				Math.pow(moon.orbit.system.orbit.vela - Math.sqrt(moon.orbit.system.orbit.system.GM * (2/(moon.orbit.system.orbit.a) - 2/(moon.orbit.system.orbit.a + potentialTargets.aunts[i].orbit.a))),2)
-				+ moon.orbit.vela*moon.orbit.vela*2) - moon.orbit.vela
-		});
-	};
-
-	var findRadiusFromVinf = function(vinf,angular){
-		var vinf_squared = vinf*vinf;
-		var angular_squared = angular*angular;
-		var val = moon.radius + tether.centre;
-		var step = (moon.radius + tether.centre)/2;
-		while(angular_squared*val*val - 2*moon.GM/val < vinf_squared){ val += step; step *= 2; };
-		for(var i=0;i<50;i++){
-			step = step/2;
-			if(angular_squared*val*val - 2*moon.GM/val < vinf_squared){ val += step; } else{ val -= step; };
-		};
-		return val;
-	};
-	for(var i=0;i<targets.length;i++){
-		if(Number.isNaN(targets[i].vinf)){ continue; };
-		targets[i].location = findRadiusFromVinf(targets[i].vinf,tether.angularVelocity);
-	};
-
-	out("lowAcceleration","Acceleration at tether foot: " + b(myRound(tether.lowAcceleration,5) + " m/s²") + " (" + b(myRound(100*tether.lowAcceleration/surfaceGravity,2) + "%") + " of surface gravity)");
-	out("highAcceleration","Acceleration at tether top: " + b(myRound(tether.highAcceleration,5) + " m/s²") + " (" + b(myRound(100*tether.highAcceleration/surfaceGravity,2) + "%") + " of surface gravity)");
-	out("period","Period: " + b(myRound(tether.time/3600,3) + " hours"));
-	out("footVel","Tether velocity at foot " + b(myRound(tether.footVel,3) + " m/s"));
-	out("centreVel","Tether velocity at centre " + b(myRound(tether.centreVel,3) + " m/s"));
-	out("topVel","Tether velocity at top " + b(myRound(tether.topVel,3) + " m/s"));
-	if(tether.newPeriapsis < moon.radius){
-		out("hitTheGround","Velocity at surface after release from tether foot " + b(myRound(tether.hitTheGround,3) + " m/s") + " (collision angle " + b(myRound(180*(Math.PI/2 -tether.collisionAngle)/Math.PI,2) + "º") + " from vertical)");
-	}
-	else{ out("hitTheGround",""); };
-	out("lowRatio","foot-centre taper ratio: " + b(myRound(tether.lowRatio,3)));
-	out("highRatio","centre-top taper ratio: " + b(myRound(tether.highRatio,3)));
-	out("lowMass","Mass of lower tether: " + b(myRound(tether.lowMass,4) + " x payload mass") + " (anything that's not the tether itself is payload)");
-	out("highMass","Mass of higher tether: " + b(myRound(tether.highMass,4) + " x payload mass") + " (anything that's not the tether itself is payload)");
-	out("lowClimber","Lower tether climber energy usage: " + b(myRound(tether.lowIntegral,0) + " J/kg"));
-	out("highClimber","Upper tether climber energy usage: " + b(myRound(tether.highIntegral,0) + " J/kg") + " (centre→top is downhill / regenerative)");
-
-//── Forces ──
-	out("tensionCoM","Tension at centre of mass (tip payload at top): " + fmtForce(tether.tensionCoM_top)
-		+ "   [peak = " + fmtForce(tether.tensionCoM_peak) + "]");
-	out("tensionCoMfoot","Tension at centre of mass (tip payload at foot): " + fmtForce(tether.tensionCoM_foot));
-	out("tetherMassAbs","Tether mass for a " + b(gnum("tipMass").toLocaleString() + " t") + " tip payload: " + fmtMass(tether.massAbs)
-		+ " (" + b(myRound(tether.lowMass + tether.highMass,3) + " × payload") + ")");
-
-//── Throughput to top ──
-//   Ascending cargo joins at the receiving deck and climbs to the top; the centre of
-//   mass is the potential maximum, so lift energy is the work receiving deck → centre
-//   (centre → top is downhill / regenerative).  The 1% descending stream joins at the
-//   outer docks and runs down to the foot.  Added tension at the centre of mass uses the
-//   L1-elevator convention applied to each stream over its own span.
-	var rateTpd = gnum("rate");
-	var mC      = gnum("perClimber");
-	var vC      = gnum("vClimb");
-	var eff     = gnum("effDrive")/100;
-	var Rm      = moon.radius;
-	var L_up    = tether.launchDeck - tether.receivingDeck; // m, receiving deck → launch deck (actual ascent)
-	var L_down  = tether.outerDocks - tether.foot;        // m, outer docks → foot (actual descent)
-	var tTrip_up   = (L_up   / vC) / 86400;               // days, ascent
-	var tTrip_down = (L_down / vC) / 86400;               // days, descent
-	var depPerDay  = rateTpd / mC;                        // climbers/day
-	var interval_h = 24 / depPerDay;                      // h between climbers
-	var nOnCable   = depPerDay * tTrip_up;                // ascending climbers in transit
-	var oncable_t  = rateTpd * tTrip_up;                  // ascending tonnes on cable
-	var descRate   = rateTpd * 0.01;                      // 1% descends to the foot
-	var descOnCable_t = descRate * tTrip_down;            // descending tonnes on cable
-	var spacing_km = (L_up/1e3) / Math.max(nOnCable, 1e-9);
-	var liftIntegral = (tether.receivingDeck < tether.centre)
-		? integral(moon.GM, tether.angularVelocity, tether.receivingDeck + Rm, tether.centre + Rm)
-		: 0;                                              // J/kg, climb receiving deck → CoM (centre → top is downhill)
-	var upAboveCoM   = integral(moon.GM, tether.angularVelocity, tether.centre + Rm, tether.launchDeck + Rm);
-	var downAboveCoM = integral(moon.GM, tether.angularVelocity, tether.centre + Rm, tether.outerDocks + Rm);
-	var lambda_up    = L_up   > 0 ? (oncable_t*1e3)     / L_up   : 0; // kg/m, ascending stream
-	var lambda_down  = L_down > 0 ? (descOnCable_t*1e3) / L_down : 0; // kg/m, descending stream
-	var dT_CoM   = lambda_up   * (liftIntegral + upAboveCoM)
-	             + lambda_down * (tether.lowIntegral + downAboveCoM); // N, added peak tension at CoM
-	var pctTip     = 100 * dT_CoM / tether.tensionCoM_peak;
-	var massFlow   = rateTpd*1e3/86400;                   // kg/s delivered to the launch deck
-	var netLiftIntegral = liftIntegral - upAboveCoM;     // J/kg net, receiving deck → launch deck (below CoM costs, above CoM regenerates)
-	var P_lift     = netLiftIntegral * massFlow / eff;   // W (net work to climb receiving deck → launch deck)
-	var ePerT      = netLiftIntegral / eff / 1e6;        // GJ per tonne, receiving deck → launch deck
-
-	out("trip","Trip time (receiving deck → launch deck): " + fmtTime(tTrip_up) + "   (descent outer docks → foot: " + fmtTime(tTrip_down) + ")");
-	out("cadence","Departure cadence: one every " + b(interval_h.toFixed(2) + " h") + "  (" + b(depPerDay.toFixed(1) + "/day") + ")");
-	out("nclimb","Climbers on the cable at once: " + b(nOnCable.toFixed(1)));
-	out("spacing","Mean spacing between climbers: " + b(spacing_km.toLocaleString(undefined,{maximumFractionDigits:1}) + " km"));
-	out("oncable","Cargo on the cable at once: " + fmtMass(oncable_t*1e3) + " up + " + fmtMass(descOnCable_t*1e3) + " down");
-	out("dT","Added tension at centre of mass: " + fmtForce(dT_CoM) + "  (" + b(pctTip.toFixed(2) + "%") + " of tip-payload tension)");
-	out("power","Lift power (receiving deck → launch deck, net of regeneration above CoM, at efficiency): " + fmtPower(P_lift));
-	out("epert","Energy per tonne delivered: " + b(ePerT.toFixed(2) + " GJ/t"));
-
-//── Orbit station-keeping (VASIMR reboost) ──
-//   Climbers carry cargo outward, so the tether feeds it angular momentum through the
-//   Coriolis coupling; that momentum comes from the skyhook's orbit, which therefore
-//   decays.  Ascending cargo joins at the receiving deck and is flung from the launch deck, so
-//   the drain is mdot*omega*(r_launch^2 - r_deck^2).  The 1% descending stream joins at the outer
-//   docks and runs to the foot, returning momentum and crediting the budget by
-//   mdot_down*omega*(r_docks^2 - r_foot^2).  The net torque is supplied by an equal, opposite
-//   thrust F = tau/r_mount at the engine mount radius; mounting farther out (longer lever arm)
-//   needs less force, so less propellant.  Propellant = F/v_e, jet = 0.5*F*v_e, electrical = jet/(eff_thr*eff_sup).
-	var r_f     = tether.foot          + moon.radius;
-	var r_t     = tether.top           + moon.radius;
-	var r_c     = tether.centre        + moon.radius;
-	var r_deck  = tether.receivingDeck + moon.radius;
-	var r_docks = tether.outerDocks    + moon.radius;
-	var r_launch = tether.launchDeck   + moon.radius; // cargo is released here, setting the drain
-	var wOrb = tether.angularVelocity;
-//engine mount radius sets the reboost lever arm
-	var r_mount = r_t;//reboost thruster mounted at the tether top (longest lever arm)
-	var mountName = "tether top";
-	            /* */
-	            /* */
-	            /* */
-	/* */
-	              /* */
-	              /* */
-	              /* */
-	var vMount  = wOrb * r_mount;                        // m/s, tether speed at the mount point
-	var massFlowDown = massFlow * 0.01;                  // kg/s, 1% descending stream (docks → foot)
-	var tau_up   = massFlow     * wOrb * (r_launch*r_launch - r_deck*r_deck); // N·m, drain from ascending cargo (deck → launch deck)
-	var tau_down = massFlowDown * wOrb * (r_docks*r_docks - r_f*r_f);     // N·m, credit from descending cargo (docks → foot)
-	var tau_sk  = tau_up - tau_down;                     // N·m, net torque the engines must supply
-	var F_sk    = tau_sk / r_mount;                      // N, reboost thrust at the mount point
-	var P_orbit = F_sk * vMount;                         // W, useful power returned to the orbit (= tau*omega)
-	var propName = form["propellant"].value;
-	var vEx     = Math.min(gnum("vExhaust"), propellantMax[propName]) * 1000; // m/s, capped
-	var effThr  = gnum("effThruster")/100;
-	var effSup  = gnum("effSupply")/100;
-	var propFlow= F_sk / vEx;             // kg/s of propellant
-	var P_jet   = 0.5 * F_sk * vEx;       // W, exhaust kinetic power
-	var P_elec  = P_jet / effThr;         // W at the thrusters
-	var P_gen   = P_elec / effSup;        // W to be generated
-	var propPerCargo = propFlow / Math.max(massFlow,1e-12); // kg propellant per kg cargo
-	var propLabel = propName.charAt(0).toUpperCase()+propName.slice(1);
-
-	out("skThrust","Reboost thrust at " + mountName + " (cancels climber drag): " + fmtForce(F_sk)
-		+ "   —   torque " + fmtTorque(tau_sk));
-	out("skProp",propLabel + " propellant: " + b(propFlow.toFixed(2) + " kg/s") + "  ("
-		+ fmtMass(propFlow*86400) + "/day; " + b(propPerCargo.toFixed(2) + " t") + " per t of cargo)");
-	out("skJet","Jet power at " + b((vEx/1000) + " km/s") + " exhaust: " + fmtPower(P_jet)
-		+ "   (useful orbit power " + fmtPower(P_orbit) + ")");
-	out("skElec","Electrical power at thrusters: " + fmtPower(P_elec));
-	out("skGen","Generated power required: " + fmtPower(P_gen));
-	out("skEnergyDay","Energy to hold the orbit: " + b((P_gen*86400/3.6e12).toFixed(2) + " GWh/day") + "  ("
-		+ b((P_gen*86400/1e9).toLocaleString(undefined,{maximumFractionDigits:0}) + " GJ/day") + ")");
-	out("skEpert","Station-keeping energy per tonne delivered: "
-		+ b((P_gen/Math.max(massFlow,1e-12)/1e6).toFixed(2) + " GJ/t"));
-
-//── Earth reentry of cargo released from the top (patched-conic Moon → parent) ──
-//   The payload escapes the Moon with v∞ = escapeFromTop, braked retrograde so its
-//   parent-relative speed at lunar distance is V_moon − v∞; that point is the apogee of
-//   an Earth-transfer ellipse.  A burn there trims perigee to the target; the entry
-//   flight-path angle and a calibrated Allen–Eggers peak-g follow at the interface.
-	var isMoon = !!(moon.properties && moon.properties.name === "Moon");
-	//Earth-reentry inputs and results only make sense for the Moon → Earth case
-	[reentryContainer,
-	 releaseContainer,
-	 document.getElementById("earthArrival"),
-	 document.getElementById("earthPerigee"),
-	 document.getElementById("earthBurn"),
-	 document.getElementById("earthFPA"),
-	 document.getElementById("earthPeakG")
-	].forEach(function(el){ if(el){ el.style.display = isMoon ? "" : "none"; } });
-	var parentBody = moon.orbit ? moon.orbit.system : null;
-	if(parentBody && isFinite(tether.escapeFromTop)){
-		var GMe   = parentBody.GM;
-		var Re    = Number(parentBody.radius);
-		var D     = moon.orbit.a;
-		var vinf  = tether.escapeFromTop;
-		var Vmoon = Math.sqrt(GMe/D);
-		var Varr  = Vmoon - vinf;                       // parent-relative speed at lunar distance
-		var epsE  = Varr*Varr/2 - GMe/D;
-		var aNat  = -GMe/(2*epsE);
-		var rpNat = 2*aNat - D;                         // natural transfer perigee (radius)
-		var rpt   = Re + gnum("targetPerigee")*1000;    // target perigee radius
-		var rI    = Re + gnum("ifaceAlt")*1000;         // entry-interface radius
-		var aT    = (D + rpt)/2;
-		var vT    = Math.sqrt(GMe*(2/D - 1/aT));        // apogee speed needed for target perigee
-		var dvE   = vT - Varr;                          // +prograde raises perigee, −retrograde lowers
-		out("earthArrival","v∞ from Moon: " + b(myRound(vinf,0) + " m/s") + " → speed at lunar distance (braked): " + b(myRound(Math.abs(Varr),0) + " m/s"));
-		out("earthPerigee","Natural transfer perigee: " + b(myRound((rpNat-Re)/1000,0) + " km") + " altitude" + (rpNat < Re ? " (below surface — steep/direct entry)" : ""));
-		out("earthBurn","Δv at lunar-distance apogee for target perigee: " + b(myRound(Math.abs(dvE),1) + " m/s") + " " + (dvE >= 0 ? "prograde (raise perigee)" : "retrograde (lower perigee)"));
-		if(rpt < rI && rI < D){
-			var eT     = (D - rpt)/(D + rpt);
-			var hT     = Math.sqrt(GMe*aT*(1 - eT*eT));
-			var vI     = Math.sqrt(GMe*(2/rI - 1/aT));
-			var gammaE = Math.acos(Math.min(1, hT/(rI*vI)));
-			out("earthFPA","Entry flight-path angle at interface: " + b("−" + myRound(gammaE*180/Math.PI,1) + "°") + " (entry speed " + b(myRound(vI/1000,2) + " km/s") + ")");
-			if(parentBody.atmosphere){
-				var peakG = OrbitalMath.allenEggersPeakDecel(vI, gammaE, Const.scaleHeight.earth) / Const.g0;   // A–E peak-g (k=0.55, Stardust-calibrated), in Earth g
-				out("earthPeakG","Estimated peak deceleration: " + b("~" + myRound(peakG,0) + " g") + " (ballistic est., calibrated to Stardust; lift/guidance reduces it)");
-			}
-			else{ out("earthPeakG","Parent body has no atmosphere — no aerodynamic entry"); }
-		}
-		else{
-			out("earthFPA","Target perigee above interface — no atmospheric entry");
-			out("earthPeakG","");
-		}
-	}
-	else{
-		out("earthArrival","Top release does not escape the Moon — no Earth transfer");
-		out("earthPerigee",""); out("earthBurn",""); out("earthFPA",""); out("earthPeakG","");
+	gDescent.setAttribute("d", dp); show(gDescent, relOn);
+	show(gHit, relOn && t.hitsSurface);
+	show(tHit, false);
+	if (t.hitsSurface) {
+		var hx = R * Math.sin(t.impactAround), hy = -R * Math.cos(t.impactAround);
+		gHit.setAttribute("cx", hx); gHit.setAttribute("cy", hy); gHit.setAttribute("r", 4 * u);
+		// The label sits under the surface, ending at the impact point, and only
+		// once the impact is far enough from the foot on screen not to crowd it.
+		show(tHit, relOn && Math.hypot(hx, hy + rF) / u > 220);
+		tHit.setAttribute("text-anchor", "end");
+		tHit.setAttribute("x", hx); tHit.setAttribute("y", hy + 20 * u); tHit.setAttribute("font-size", fsS); tHit.setAttribute("stroke-width", 4 * u);
+		tHit.textContent = "impact · " + num(t.hitTheGround, 0) + " m/s · " + num(t.impactFromVertical * 180 / Math.PI, 1) + "° from vertical";
 	}
 
-	out("warnings",warnings);
+	// stations (right)
+	var stOn = on("st"), decks = [[S.launch, "launch deck"], [S.outer, "outer docks"], [S.recv, "receiving deck"]];
+	gStTicks.setAttribute("d", decks.map(function (d) { return "M" + (-9 * u) + " " + (-(R + d[0])) + "L" + (9 * u) + " " + (-(R + d[0])); }).join(""));
+	show(gStTicks, stOn);
+	decks.forEach(function (d, i) {
+		var tx = tSt[i];
+		tx.setAttribute("x", 14 * u); tx.setAttribute("y", -(R + d[0]) + 4 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
+		tx.textContent = d[1] + " · " + kmText(d[0]); show(tx, stOn);
+	});
 
-	while(illustration.lastChild){ illustration.removeChild(illustration.lastChild); };
-	minimum_x_coordinate = Math.max(-moon.radius/900,(moon.radius - (tether.top + tether.foot)/2)/1000);
-	minimum_y_coordinate = Math.max(-moon.radius/900,-tether.Length/4000);
-	minimum_x_distance = Math.min((moon.radius + tether.top)/850,tether.top/300) + Math.min(tether.Length/4000,moon.radius/1000);
-	minimum_y_distance = Math.min(moon.radius/450,tether.Length/2000);
-	// A second pass draws into the frame fitted to the first pass's drawing.
-	var frame = pendingFrame;
-	pendingFrame = null;
-	if(frame){
-		minimum_x_coordinate = frame.x;
-		minimum_y_coordinate = frame.y;
-		minimum_x_distance = frame.w;
-		minimum_y_distance = frame.h;
-	};
-	illustration.setAttributeNS(null,"viewBox",minimum_x_coordinate + " " + minimum_y_coordinate + " " + minimum_x_distance + " " + minimum_y_distance);
-	illustration.style.aspectRatio = Math.min(6,Math.max(1.8,minimum_x_distance/minimum_y_distance));
+	// climber (throughput)
+	var thrOn = on("thr"), ca = R + S.recv + 0.36 * (S.launch - S.recv);
+	gClimber.setAttribute("x", -5 * u); gClimber.setAttribute("y", -ca - 7.5 * u);
+	gClimber.setAttribute("width", 10 * u); gClimber.setAttribute("height", 15 * u); gClimber.setAttribute("rx", 2.5 * u);
+	gClArrow.setAttribute("d", "M" + (-2.5 * u) + " " + (-ca + 2 * u) + "L0 " + (-ca - 2 * u) + "L" + (2.5 * u) + " " + (-ca + 2 * u));
+	tClimber.setAttribute("x", 14 * u); tClimber.setAttribute("y", -ca + 4 * u); tClimber.setAttribute("font-size", fsS); tClimber.setAttribute("stroke-width", 4 * u);
+	tClimber.textContent = "climber ↑ " + num(field(vClimbIn, 200), 0) + " m/s · every " + num(t.throughput.spacingKm, 0) + " km";
+	[gClimber, gClArrow, tClimber].forEach(function (el) { show(el, thrOn); });
 
-//lots of svg drawing:
-	var addText = function(container,content,x,y,size,color){
-		var newMarker = document.createElementNS(svgNS,"text");
-		newMarker.setAttributeNS(null,"x",x);
-		newMarker.setAttributeNS(null,"y",y);
-		newMarker.setAttributeNS(null,"font-size",size);
-		newMarker.setAttributeNS(null,"class","svgText");
-		newMarker.setAttributeNS(null,"fill",color);
-		newMarker.appendChild(document.createTextNode(content));
-		container.appendChild(newMarker);
-		return newMarker;
-	};
-	var addToolTip = function(container,content){
-		var newToolTip = document.createElementNS(svgNS,"title");
-		container.setAttributeNS(null,"class",container.getAttributeNS(null,"class") + " tooltip");
-		newToolTip.appendChild(document.createTextNode(content));
-		container.appendChild(newToolTip);
-	};
-	var svg_planet = document.createElementNS(svgNS,"g");
-	var svg_planet_main = document.createElementNS(svgNS,"circle");
-	var svg_planet_atmosphere = document.createElementNS(svgNS,"circle");
-	svg_planet_main.setAttributeNS(null,"cx",0);
-	svg_planet_main.setAttributeNS(null,"cy",0);
-	svg_planet_atmosphere.setAttributeNS(null,"cx",0);
-	svg_planet_atmosphere.setAttributeNS(null,"cy",0);
-	svg_planet_main.setAttributeNS(null,"fill",moon.color);
-	svg_planet_atmosphere.setAttributeNS(null,"fill","#E0E0E0");
-	svg_planet_main.setAttributeNS(null,"r",moon.radius/1000);
-	svg_planet_atmosphere.setAttributeNS(null,"r",(moon.radius + (moon.atmosphere ? moon.atmosphere.height : 0))/1000);
-	addToolTip(svg_planet_main,selector.options[selector.selectedIndex].value);
-	svg_planet.appendChild(svg_planet_atmosphere);
-	svg_planet.appendChild(svg_planet_main);
+	// tip payload and reboost thruster at the top
+	var py = -rT - 14 * u;
+	gPay.setAttribute("x", -5.5 * u); gPay.setAttribute("y", py - 5.5 * u); gPay.setAttribute("width", 11 * u); gPay.setAttribute("height", 11 * u); gPay.setAttribute("rx", 2 * u);
+	tPay.setAttribute("x", 12 * u); tPay.setAttribute("y", py + 4 * u); tPay.setAttribute("font-size", fsS); tPay.setAttribute("stroke-width", 4 * u);
+	tPay.textContent = "tip payload " + num(t.tipMass / 1e3, 0) + " t";
+	[gPay, tPay].forEach(function (el) { show(el, on("pay")); });
+	gNozzle.setAttribute("d", "M" + (-6 * u) + " " + (py - 3 * u) + "L" + (-15 * u) + " " + (py - 6 * u) + "L" + (-15 * u) + " " + (py + 6 * u) + "L" + (-6 * u) + " " + (py + 3 * u) + "Z");
+	gPlume.setAttribute("d", "M" + (-18 * u) + " " + py + "L" + (-46 * u) + " " + py);
+	tKp.setAttribute("x", -50 * u); tKp.setAttribute("y", py + 4 * u); tKp.setAttribute("font-size", fsS); tKp.setAttribute("stroke-width", 4 * u);
+	var thr = scaled(t.keeping.thrust, FORCE); tKp.textContent = "reboost " + thr[0] + " " + thr[1];
+	[gNozzle, gPlume, tKp].forEach(function (el) { show(el, on("kp")); });
 
-	// Markers, line weights and text are sized in screen pixels (about 4 px per
-	// unit), so a narrow column keeps them legible instead of shrinking them.
-	var displayWidth = Math.max(300, illustration.getBoundingClientRect().width || 900);
-	var svg_scale = minimum_x_distance/displayWidth*4;
+	// release points on the tether axis (left)
+	var rpOn = on("rp"), tg = t.targets.filter(function (x) { return isFinite(x.location); });
+	var maxR = tg.reduce(function (m, x) { return Math.max(m, x.location / 1e3); }, rT);
+	gAxis.setAttribute("d", "M0 " + (-rT) + "L0 " + (-maxR)); show(gAxis, rpOn && maxR > rT);
+	gRpTicks.setAttribute("d", tg.map(function (x) { var y = -x.location / 1e3; return "M" + (-7 * u) + " " + y + "L" + (7 * u) + " " + y; }).join(""));
+	show(gRpTicks, rpOn);
+	while (tRp.length < tg.length) tRp.push(g("text", { fill: C.sky.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "end" }));
+	tRp.forEach(function (tx, i) {
+		var x = tg[i];
+		show(tx, rpOn && !!x);
+		if (!x) return;
+		tx.setAttribute("x", -14 * u); tx.setAttribute("y", -x.location / 1e3 - 6 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
+		tx.textContent = x.name + " ↑ " + kmText(x.altitude / 1e3);
+	});
 
-	svg_tether = document.createElementNS(svgNS,"g");
-	var svg_tether_main = document.createElementNS(svgNS,"line");
-	svg_tether_main.setAttributeNS(null,"x1",(moon.radius + tether.foot)/1000);
-	svg_tether_main.setAttributeNS(null,"y1",0);
-	svg_tether_main.setAttributeNS(null,"x2",(moon.radius + tether.top)/1000);
-	svg_tether_main.setAttributeNS(null,"y2",0);
-	svg_tether_main.setAttributeNS(null,"stroke","black");
-	svg_tether_main.setAttributeNS(null,"stroke-linecap","butt");
-	svg_tether_main.setAttributeNS(null,"stroke-width",svg_scale);
-	svg_tether.appendChild(svg_tether_main);
-
-	marker_container = document.createElementNS(svgNS,"g");
-	text_marker_container = document.createElementNS(svgNS,"g");
-
-	// Labels sit just under the tether; in a narrow column, where neighbours
-	// would overprint, they stagger over three rows above it instead.
-	var staggerLabels = displayWidth < 640;
-	var labelXs = [(tether.foot + moon.radius)/1000, (tether.top + moon.radius)/1000, (tether.centre + moon.radius)/1000]
-		.concat(targets.map(function(t){ return t.location/1000; }))
-		.filter(isFinite).sort(function(a,b){ return a - b; });
-	var labelY = function(x){
-		if(!staggerLabels){ return svg_scale*3; }
-		return -svg_scale*(2.4 + 3*(Math.max(0,labelXs.indexOf(x)) % 3));
-	};
-
-	addText(text_marker_container,"Foot",(tether.foot + moon.radius)/1000,labelY((tether.foot + moon.radius)/1000),svg_scale*2.5,"black");
-	addText(text_marker_container,"Top",(tether.top + moon.radius)/1000,labelY((tether.top + moon.radius)/1000),svg_scale*2.5,"black");
-	addText(text_marker_container,"Centre of mass",(tether.centre + moon.radius)/1000,labelY((tether.centre + moon.radius)/1000),svg_scale*2.5,"black");
-
-	var selectedElement = 0;
-	let moveElement = function(evt){
-		var pt = illustration.createSVGPoint(), svgP;
-		pt.x = evt.clientX; pt.y = evt.clientY;
-		svgP = pt.matrixTransform(illustration.getScreenCTM().inverse());
-		if(selectedElement.id == "anchor"){
-			if(svgP.x > (tether.foot + moon.radius)/1000 && svgP.x < (tether.top + moon.radius)/1000){
-				selectedElement.setAttributeNS(null,"cx",svgP.x);
-				form["centre"].value = svgP.x - moon.radius/1000;
-			};
-		}
-		else if(selectedElement.id == "foot"){
-			if(svgP.x < (tether.centre + moon.radius)/1000 && svgP.x > moon.radius/1000){
-				selectedElement.setAttributeNS(null,"cx",svgP.x);
-				form["foot"].value = svgP.x - moon.radius/1000;
-			};
-		}
-		else if(selectedElement.id == "top"){
-			if(svgP.x > (tether.centre + moon.radius)/1000){
-				selectedElement.setAttributeNS(null,"cx",svgP.x);
-				form["top"].value = svgP.x - moon.radius/1000;
-			};
-		}
-	};
-	let selectElement = function(evt){
-		selectedElement = evt.target;
-		illustration.onmousemove = moveElement;
-		illustration.onmouseup = deselectElement
-	}
-	let deselectElement = function(evt){
-		if(selectedElement != 0){
-			illustration.removeAttributeNS(null, "onmousemove");
-			illustration.removeAttributeNS(null, "onmouseup");
-			selectedElement = 0;
-		};
-		calc();
-	};
-
-	var foot_marker = document.createElementNS(svgNS,"circle");
-	foot_marker.setAttributeNS(null,"cx",(tether.foot + moon.radius)/1000);
-	foot_marker.setAttributeNS(null,"cy",0);
-	foot_marker.setAttributeNS(null,"fill","red");
-	foot_marker.setAttributeNS(null,"class","draggable");
-	foot_marker.setAttributeNS(null,"id","foot");
-	foot_marker.onmousedown = selectElement;
-	foot_marker.setAttributeNS(null,"r",svg_scale*1.4);
-
-	var anchor_marker = document.createElementNS(svgNS,"circle");
-	anchor_marker.setAttributeNS(null,"cx",(tether.centre + moon.radius)/1000);
-	anchor_marker.setAttributeNS(null,"cy",0);
-	anchor_marker.setAttributeNS(null,"fill","#900000");
-	anchor_marker.setAttributeNS(null,"class","draggable");
-	anchor_marker.setAttributeNS(null,"id","anchor");
-	anchor_marker.onmousedown = selectElement;
-	anchor_marker.setAttributeNS(null,"r",svg_scale*1.4);
-
-	var top_marker = document.createElementNS(svgNS,"circle");
-	top_marker.setAttributeNS(null,"cx",(tether.top + moon.radius)/1000);
-	top_marker.setAttributeNS(null,"cy",0);
-	top_marker.setAttributeNS(null,"fill","red");
-	top_marker.setAttributeNS(null,"class","draggable");
-	top_marker.setAttributeNS(null,"id","top");
-	top_marker.onmousedown = selectElement;
-	top_marker.setAttributeNS(null,"r",svg_scale*1.4);
-
-	var descent_trajectory = document.createElementNS(svgNS,"path");
-	var semiMajor = (tether.newPeriapsis + moon.radius + tether.foot)/2000;
-	var semiMinor = Math.sqrt(semiMajor*semiMajor - Math.pow((tether.foot + moon.radius - tether.newPeriapsis)/2000,2));
-	var descent_path = "M" + (moon.radius + tether.foot)/1000 + " 0a" + semiMajor + " " + semiMinor + " 0 0 0 " + 2*-semiMajor + " 0a" + semiMajor + " " + semiMinor + " 0 0 0 " + semiMajor*2 + " 0";
-	descent_trajectory.setAttributeNS(null,"d",descent_path);
-	descent_trajectory.setAttributeNS(null,"stroke","green");
-	descent_trajectory.setAttributeNS(null,"fill","none");
-	descent_trajectory.setAttributeNS(null,"stroke-width",svg_scale/3);
-	descent_trajectory.setAttributeNS(null,"stroke-dasharray",svg_scale/2);
-	if(tether.newPeriapsis < moon.radius){
-		var collision_point = document.createElementNS(svgNS,"circle");
-		var angle = Math.asin(
-			(2*(tether.foot + moon.radius)*tether.newPeriapsis - moon.radius*(tether.foot + moon.radius + tether.newPeriapsis))
-			/(moon.radius*(tether.foot + moon.radius - tether.newPeriapsis))
-		) + Math.PI/2;
-		var secondAngle = angle + tether.collisionAngle - Math.PI/2;
-		collision_point.setAttributeNS(null,"cx",Math.cos(angle)*moon.radius/1000);
-		collision_point.setAttributeNS(null,"cy",-Math.sin(angle)*moon.radius/1000);
-		collision_point.setAttributeNS(null,"fill","blue");
-		collision_point.setAttributeNS(null,"r",svg_scale);
-		var collision_line = document.createElementNS(svgNS,"line");
-		collision_line.setAttributeNS(null,"x1",0);
-		collision_line.setAttributeNS(null,"y1",0);
-		collision_line.setAttributeNS(null,"x2",Math.cos(angle)*moon.radius/1000);
-		collision_line.setAttributeNS(null,"y2",-Math.sin(angle)*moon.radius/1000);
-		collision_line.setAttributeNS(null,"fill","none");
-		collision_line.setAttributeNS(null,"stroke","pink");
-		collision_line.setAttributeNS(null,"stroke-linecap","round");
-		collision_line.setAttributeNS(null,"stroke-width",svg_scale/2);
-		var reference_line = document.createElementNS(svgNS,"line");
-		reference_line.setAttributeNS(null,"x1",0);
-		reference_line.setAttributeNS(null,"y1",0);
-		reference_line.setAttributeNS(null,"x2",moon.radius/1000);
-		reference_line.setAttributeNS(null,"y2",0);
-		reference_line.setAttributeNS(null,"fill","none");
-		reference_line.setAttributeNS(null,"stroke","pink");
-		reference_line.setAttributeNS(null,"stroke-linecap","round");
-		reference_line.setAttributeNS(null,"stroke-width",svg_scale/2);
-		var reference_angle = document.createElementNS(svgNS,"path");
-		reference_angle.setAttributeNS(null,"d","M "+moon.radius/3000+" 0A"+moon.radius/3000+" "+moon.radius/3000+" 0 0 0 "+Math.cos(angle)*moon.radius/3000+" "+Math.sin(angle)*moon.radius/-3000);
-		reference_angle.setAttributeNS(null,"fill","none");
-		reference_angle.setAttributeNS(null,"stroke","pink");
-		reference_angle.setAttributeNS(null,"stroke-linecap","round");
-		reference_angle.setAttributeNS(null,"stroke-width",svg_scale/2);
-		var collision_angle = document.createElementNS(svgNS,"path");
-		collision_angle.setAttributeNS(
-			null,"d",
-			"M "+2*Math.cos(angle)*moon.radius/3000+" "
-			+2*-Math.sin(angle)*moon.radius/3000+"A"
-			+moon.radius/3000+" "+moon.radius/3000+" 0 0 1 "
-			+(Math.cos(angle)*moon.radius/1000 - moon.radius*Math.cos(secondAngle)/3000)+" "
-			+(Math.sin(angle)*-moon.radius/1000 + moon.radius*Math.sin(secondAngle)/3000)
-		);
-		collision_angle.setAttributeNS(null,"fill","none");
-		collision_angle.setAttributeNS(null,"stroke","red");
-		collision_angle.setAttributeNS(null,"stroke-linecap","round");
-		collision_angle.setAttributeNS(null,"stroke-width",svg_scale/2);
-		var velocity_line = document.createElementNS(svgNS,"line");
-		velocity_line.setAttributeNS(null,"x1",Math.cos(angle)*moon.radius/1000 - moon.radius*Math.cos(secondAngle)/1000);
-		velocity_line.setAttributeNS(null,"y1",-Math.sin(angle)*moon.radius/1000 + moon.radius*Math.sin(secondAngle)/1000);
-		velocity_line.setAttributeNS(null,"x2",Math.cos(angle)*moon.radius/1000 + moon.radius*Math.cos(secondAngle)/1000);
-		velocity_line.setAttributeNS(null,"y2",-Math.sin(angle)*moon.radius/1000 - moon.radius*Math.sin(secondAngle)/1000);
-		velocity_line.setAttributeNS(null,"fill","none");
-		velocity_line.setAttributeNS(null,"stroke","red");
-		velocity_line.setAttributeNS(null,"data-release","1");   // long line through the planet: not framed
-		velocity_line.setAttributeNS(null,"stroke-linecap","round");
-		velocity_line.setAttributeNS(null,"stroke-width",svg_scale/2);
-		addText(
-			text_marker_container,
-			myRound(180*angle/Math.PI,1) + "º",
-			Math.cos(angle/2)*moon.radius/2500,
-			-Math.sin(angle/2)*moon.radius/2500,
-			svg_scale*2.5,
-			"pink"
-		);
-		addText(
-			text_marker_container,
-			myRound(180*(Math.PI/2 -tether.collisionAngle)/Math.PI,1) + "º",
-			Math.cos(angle)*moon.radius/1000 - moon.radius*Math.cos((secondAngle + angle)/2)/1800,
-			-Math.sin(angle)*moon.radius/1000 + moon.radius*Math.sin((secondAngle + angle)/2)/1800,
-			svg_scale*2.5,
-			"red"
-		);
-
-		marker_container.appendChild(collision_angle);
-		marker_container.appendChild(collision_line);
-		marker_container.appendChild(reference_line);
-		marker_container.appendChild(velocity_line);
-		marker_container.appendChild(reference_angle);
-		marker_container.appendChild(collision_point);
-	};
-
-	var anchor_trajectory = document.createElementNS(svgNS,"circle");
-	anchor_trajectory.setAttributeNS(null,"stroke","green");
-	anchor_trajectory.setAttributeNS(null,"fill","none");
-	anchor_trajectory.setAttributeNS(null,"cx",0);
-	anchor_trajectory.setAttributeNS(null,"cy",0);
-	anchor_trajectory.setAttributeNS(null,"r",(tether.centre + moon.radius)/1000);
-	anchor_trajectory.setAttributeNS(null,"stroke-width",svg_scale/3);
-	anchor_trajectory.setAttributeNS(null,"stroke-dasharray",svg_scale/2);
-
-	svg_tether.appendChild(descent_trajectory);
-	svg_tether.appendChild(anchor_trajectory);
-	marker_container.appendChild(foot_marker);
-	marker_container.appendChild(anchor_marker);
-	marker_container.appendChild(top_marker);
-
-	for(var i=0;i<targets.length;i++){
-		// Only release points inside the frame are drawn.
-		if(!isFinite(targets[i].location)){ continue; };
-		if(frame && targets[i].location/1000 > frame.x + frame.w){ continue; };
-		var marker = document.createElementNS(svgNS,"circle");
-		marker.setAttributeNS(null,"cx",targets[i].location/1000);
-		marker.setAttributeNS(null,"cy",0);
-		marker.setAttributeNS(null,"fill","blue");
-		marker.setAttributeNS(null,"r",svg_scale);
-		marker.setAttributeNS(null,"data-release","1");
-		addToolTip(marker,"Release point for " + targets[i].name + " transfer\nAltitude " + myRound((targets[i].location - moon.radius)/1000,2) + "km\nVinf " + myRound(targets[i].vinf,2) + "m/s");
-
-		marker_container.appendChild(marker);
-
-		addText(
-			text_marker_container,
-			targets[i].name + "↑",
-			targets[i].location/1000,
-			labelY(targets[i].location/1000),
-			svg_scale*2.5,
-			"blue"
-		).setAttributeNS(null,"data-release","1");
-	};
-	//construct path for tether width diagram
-	var tether_width_scale = Math.min(
-		Math.sqrt(tether.lowRatio)*svg_scale*4,
-		Math.sqrt(tether.highRatio)*svg_scale*4,
-		svg_scale*13
-	);
-	var lowerPath = "M" + (tether.foot + moon.radius)/1000 + " " + svg_scale*4.5 + "l" + (tether.centre - tether.foot)/1000 + " 0l0 " + tether_width_scale;
-	var upperPath = "M" + (tether.top  + moon.radius)/1000 + " " + svg_scale*4.5 + "l" + (tether.centre - tether.top )/1000 + " 0l0 " + tether_width_scale;
-	for(var i=1;i<lowCrosses.length;i++){
-		lowerPath += "l-" + (tether.centre - tether.foot)/(1000*lowCrosses.length) + " " + (Math.sqrt(1/lowCrosses[i]) -  Math.sqrt(1/lowCrosses[i-1]))*tether_width_scale;
-		upperPath += "l" + (tether.top - tether.centre)/(1000*highCrosses.length) + " " + (Math.sqrt(1/highCrosses[i]) -  Math.sqrt(1/highCrosses[i-1]))*tether_width_scale;
-	};
-	lowerPath += "l-" + (tether.centre - tether.foot)/(1000*lowCrosses.length) + " 0z";
-	upperPath += "l" + (tether.top - tether.centre)/(1000*highCrosses.length) + " 0z";
-	var tether_cross_low = document.createElementNS(svgNS,"path");
-	tether_cross_low.setAttributeNS(null,"fill","black");
-	tether_cross_low.setAttributeNS(null,"d",lowerPath);
-	tether_cross_low.setAttributeNS(null,"id","lowerPath");
-	tether_cross_low.setAttributeNS(null,"stroke","none");
-	addToolTip(tether_cross_low,"Lower tether diameter\nDiameter ratio " + myRound(Math.sqrt(tether.lowRatio),3) + "\nCross section ratio " + myRound(tether.lowRatio,3));
-
-	text_marker_container.appendChild(tether_cross_low);
-
-	var tether_cross_high = document.createElementNS(svgNS,"path");
-	tether_cross_high.setAttributeNS(null,"fill","black");
-	tether_cross_high.setAttributeNS(null,"d",upperPath);
-	tether_cross_high.setAttributeNS(null,"id","upperPath");
-	tether_cross_high.setAttributeNS(null,"stroke","none");
-	addToolTip(tether_cross_high,"Upper tether diameter\nDiameter ratio " + myRound(Math.sqrt(tether.highRatio),3) + "\nCross section ratio " + myRound(tether.highRatio,3));
-
-	text_marker_container.appendChild(tether_cross_high);
-	illustration.appendChild(svg_tether);
-	illustration.appendChild(svg_planet);
-	illustration.appendChild(marker_container);
-	illustration.appendChild(text_marker_container);
-
-	if(!frame){
-		// First pass: measure what was drawn (the tether, its markers, labels and
-		// angle annotations; not the planet's bulk, the orbit lines or the far
-		// release points) and draw again into a frame that holds all of it.
-		var box = null;
-		var measure = function(el){
-			if(!el.getBBox || el.getAttributeNS(null,"data-release") || el === descent_trajectory || el === anchor_trajectory){ return; };
-			var b = el.getBBox();
-			if(!b.width && !b.height){ return; };
-			if(!box){ box = {x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height}; return; };
-			box.x0 = Math.min(box.x0,b.x);
-			box.y0 = Math.min(box.y0,b.y);
-			box.x1 = Math.max(box.x1,b.x + b.width);
-			box.y1 = Math.max(box.y1,b.y + b.height);
-		};
-		[svg_tether,marker_container,text_marker_container].forEach(function(group){
-			Array.from(group.children).forEach(measure);
-		});
-		if(box){
-			var padX = svg_scale*4, padY = svg_scale*3;
-			pendingFrame = {x: box.x0 - padX, y: box.y0 - padY, w: box.x1 - box.x0 + 2*padX, h: box.y1 - box.y0 + 2*padY};
-			calc();
-		};
-	}
-};
-var hardReload = function(){
-	var animation = document.createElementNS(svgNS,"animate");
-	animation.setAttributeNS(null,"attributeName","opacity");
-	animation.setAttributeNS(null,"begin","indefinite");
-	animation.setAttributeNS(null,"values","0;0;1");
-	animation.setAttributeNS(null,"dur", 1.5);
-	animation.setAttributeNS(null,"fill","freeze");
-
-	var marker_animation = document.createElementNS(svgNS,"animate");
-	marker_animation.setAttributeNS(null,"attributeName","opacity");
-	marker_animation.setAttributeNS(null,"begin","indefinite");
-	marker_animation.setAttributeNS(null,"values","0;0;0;0;1");
-	marker_animation.setAttributeNS(null,"dur", 2);
-	marker_animation.setAttributeNS(null,"fill","freeze");
-
-	var text_marker_animation = document.createElementNS(svgNS,"animate");
-	text_marker_animation.setAttributeNS(null,"attributeName","opacity");
-	text_marker_animation.setAttributeNS(null,"begin","indefinite");
-	text_marker_animation.setAttributeNS(null,"values","0;0;0;0;0;1");
-	text_marker_animation.setAttributeNS(null,"dur", 2.5);
-	text_marker_animation.setAttributeNS(null,"fill","freeze");
-
-	var svg_rotate = document.createElementNS(svgNS,"animate");
-	svg_rotate.setAttributeNS(null,"attributeName","viewBox");
-	svg_rotate.setAttributeNS(null,"begin","indefinite");
-	svg_rotate.setAttributeNS(null,"from",-moon.radius/900 + " " + (-moon.radius/900) + " " + (moon.radius*2 + tether.top)/225 + " " + moon.radius/112);
-	svg_rotate.setAttributeNS(null,"to",minimum_x_coordinate + " " + minimum_y_coordinate + " " + minimum_x_distance + " " + minimum_y_distance);
-	svg_rotate.setAttributeNS(null,"dur",0.5);
-
-	svg_tether.appendChild(animation);
-	text_marker_container.appendChild(text_marker_animation);
-	marker_container.appendChild(marker_animation);
-	illustration.appendChild(svg_rotate);
-
-	svg_rotate.beginElement();
-	marker_animation.beginElement();
-	text_marker_animation.beginElement();
-};
-calc();hardReload();
-selector.oninput = function(){calc();hardReload();}
-
-// Redraw when the column changes width, so markers and text keep their pixel size.
-let lastDiagramWidth = illustration.getBoundingClientRect().width;
-new ResizeObserver(function(){
-	var w = illustration.getBoundingClientRect().width;
-	if(Math.abs(w - lastDiagramWidth) > 1){ lastDiagramWidth = w; calc(); }
-}).observe(tetherSketchContainer);
+	// reentry: schematic departure toward the parent body
+	var reOn = on("re") && t.reentry.applies, ly = -(R + S.launch);
+	gRe.setAttribute("d", "M0 " + ly + "C" + (R * 0.7) + " " + ly + " " + (R * 1.5) + " " + (ly - R * 0.25) + " " + (R * 2.6) + " " + (ly - R * 1.0));
+	tRe.setAttribute("x", R * 0.55); tRe.setAttribute("y", ly - 10 * u); tRe.setAttribute("font-size", fs); tRe.setAttribute("stroke-width", 4 * u);
+	tRe.textContent = "to Earth · v∞ " + num(t.reentry.vinf || NaN, 0) + " m/s";
+	show(gRe, reOn && t.reentry.escapes); show(tRe, reOn && t.reentry.escapes);
 }
-skyhookTool(document.getElementById("insertItHere"));
+
+// ---------- focus targets: world rects [x0, y0, x1, y1] ----------
+function rectAround(alt, d, x0, x1) { var y = -(S.R + alt); return [x0 * d, y - 0.5 * d, x1 * d, y + 0.5 * d]; }
+var span = function () { return S.top - S.foot; };
+view.addTarget("tether", { label: "Tether", color: C.core.draw, pad: 1.08, rect: function () {
+	var s = span(); return [-0.42 * s, -(S.R + S.top) - 0.05 * s, 0.5 * s, -(S.R + S.foot) + 0.05 * s]; } });
+view.addTarget("body", { label: "Whole body", color: "#EADFCF", pad: 1.1, rect: function () {
+	var s = S.R + S.top; return [-s, -s, s, S.R]; } });
+view.addTarget("foot", { label: "Foot & impact", color: "#EADFCF", pad: 1.15, rect: function () {
+	var dr = S.t.hitsSurface ? S.t.impactAround * S.R : 100, drop = S.R - Math.cos(dr / S.R) * S.R;
+	return [-0.35 * Math.max(dr, 60), -(S.R + S.foot) - Math.max(30, S.foot * 2.5), dr * 1.1, -S.R + drop + 8]; } });
+view.addTarget("centre", { label: "Centre of mass", color: C.core.draw, rect: function () { return rectAround(S.centre, Math.max(120, 0.22 * span()), -0.7, 0.9); } });
+view.addTarget("top", { label: "Top", color: C.rust.draw, rect: function () { var d = Math.max(140, 0.22 * span()); var r = rectAround(S.top, d, -0.85, 0.85); r[1] -= 0.1 * d; return r; } });
+view.addTarget("stations", { label: "Stations", color: C.ochre.draw, rect: function () {
+	var d = Math.max(80, S.launch - S.recv); return [-0.5 * d, -(S.R + S.launch) - 0.08 * d, 0.65 * d, -(S.R + S.recv) + 0.08 * d]; } });
+view.addTarget("reentry", { label: "Departure to Earth", color: C.violet.draw, pad: 1.04, rect: function () {
+	return [-S.R * 1.05, -(S.R + S.top) - S.R * 1.3, S.R * 2.6, S.R]; } });
+view.addTarget("release", { label: "Release points", color: C.sky.draw, pad: 1.08, rect: function () {
+	var maxR = S.t.targets.reduce(function (m, x) { return isFinite(x.location) ? Math.max(m, x.location / 1e3) : m; }, S.R + S.top);
+	var s = maxR - (S.R + S.foot); return [-0.45 * s, -maxR - 0.03 * s, 0.35 * s, -(S.R + S.foot)]; } });
+
+// ---------- wiring ----------
+function dragAlt(input, check) {
+	return function (p) {
+		var a = check(Math.max(0.1, Math.hypot(p.x, p.y) - S.R));
+		input.value = a < 100 ? a.toFixed(1) : Math.round(a);
+		calc();
+		if (shell.focusId !== "geo") shell.focusCard("geo", false);
+	};
+}
+view.draggable(mFoot, dragAlt(footIn, function (a) { return Math.min(a, S.centre - 1); }));
+view.draggable(mCom, dragAlt(centreIn, function (a) { return Math.max(S.foot + 1, Math.min(a, S.top - 1)); }));
+view.draggable(mTop, dragAlt(topIn, function (a) { return Math.max(S.centre + 1, a); }));
+
+shell.onInput(calc);
+shell.onModules(calc);
+shell.onFocus(function (target) { view.focus(target); });
+view.onRender(draw);
+bodyIn.addEventListener("change", function () { calc(); view.focus("tether"); });
+
+calc();   // show results on load

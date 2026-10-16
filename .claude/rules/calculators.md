@@ -14,7 +14,7 @@ imports and starts the tool.) A new calculator starts by copying
 ## The calculator shell (new calculators)
 
 New calculators sit on the **calculator shell**, which `_template/` shows
-whole: `Shared/calc-shell.css` + `calc-shell.js` (`CalcShell`) +
+whole (`Hanging-skyhooks/` is the first full calculator on it): `Shared/calc-shell.css` + `calc-shell.js` (`CalcShell`) +
 `zoom-view.js` (`ZoomView`). The page is a header (title, then two chip
 groups: input modules on the left, result modules on the right, each two
 lines high and scrolling beyond that) over three columns — inputs, the
@@ -54,7 +54,7 @@ that explain one input go in a **small tip** instead of a note paragraph: a
 small floating box beside itself. A tool
 sets only its identity colour (`.cf-calc { --cf-hue: … }`) and its own
 specifics in its own stylesheet. The class list is the header of
-`calc-frame.css`; `Hanging-skyhooks/` shows the shape. Section content is a heading
+`calc-frame.css`; `Space-Elevator-Calculator/` shows the shape. Section content is a heading
 element followed by its lines (the striping counts children). Diagrams are SVG
 with a `viewBox` inside a `cf-graphic` so they scale with the column; a drag
 handler must convert pointer pixels to SVG units.
