@@ -30,6 +30,23 @@
 // card title is clicked or a field with `focus` gains focus; onModules(fn) after
 // the set of shown modules changes. focusCard(id, false) highlights a card
 // without asking the drawing to move (use it while a marker is dragged).
+//
+// Tabs: a module or card may carry `tab` (e.g. "arch", "log", "eng", "eco").
+// After setTab(tab), only that tab's chips and cards show; a card or module
+// without `tab` belongs to the first tab set (opts.firstTab, default "arch").
+// Until setTab is called every card shows, as on a standalone page. Input
+// and result cards stay wired across tabs: they are one calculator.
+//
+// Wiring made visible: an input card's `feeds` lists result card ids; focusing
+// the input card marks those (cs-fed), so a viewer sees where its numbers go.
+//
+// Embedding: `embedded: true` fills the root element instead of the window,
+// for a calculator mounted inside another page (the home page's workbench).
+// getState() returns the viewer's settings — field values, modules shown,
+// collapsed cards — as a plain object; setState(state) puts them back and
+// fires onInput once. Fields are keyed "<card id>/<label or aria>", so a
+// calculator keeps a field's label and card stable for saved settings to
+// keep finding it (or passes an explicit `key`).
 
 import { create } from "./ui-components.js";
 
@@ -109,17 +126,21 @@ export class CalcShell {
 		var o = opts || {};
 		this.root = root;
 		root.classList.add("cs-app");
+		if (o.embedded) root.classList.add("cs-embedded");
+		this.fields = {};       // key → input/select (getState / setState)
 		this.modules = {};      // id → def
 		this.moduleOrder = [];
 		this.on = {};           // id → bool
 		this.cards = {};        // id → card
 		this.cardOrder = [];
 		this.focusId = null;
+		this.tab = null;        // null: show every tab's cards (standalone page)
+		this.firstTab = o.firstTab || "arch";
 		this.listeners = { input: [], focus: [], modules: [] };
 
 		var top = create("header", "cs-top", false, root);
 		var brand = create("div", "cs-brand", false, top);
-		create("span", "cs-over", o.overline || "Moonwards · Calculators", brand);
+		this.overEl = create("span", "cs-over", o.overline || "Moonwards · Calculators", brand);
 		create("h1", "cs-title", o.title || "", brand);
 		this.chipBox = {
 			in: this._chipGroup(top, "Inputs", "Optional input modules", false),
@@ -137,6 +158,20 @@ export class CalcShell {
 		this.warning = create("div", "cs-warn", false, false);
 		this.warning.hidden = true;
 		this.columns.out.list.appendChild(this.warning);
+		this.columns.in.empty = create("p", "cs-empty", false, this.columns.in.list);
+		this.columns.out.empty = create("p", "cs-empty", false, this.columns.out.list);
+	}
+
+	// ---- tabs ----
+	setTab(tab) { this.tab = tab || null; this._refresh(); }
+	setOverline(text) { this.overEl.textContent = text; }
+	_tabOf(def) { return def.tab || this.firstTab; }
+	_onTab(def) { return !this.tab || this._tabOf(def) === this.tab; }
+	// Tabs that hold at least one card.
+	cardTabs() {
+		var self = this, seen = {};
+		this.cardOrder.forEach(function (id) { seen[self._tabOf(self.cards[id])] = true; });
+		return Object.keys(seen);
 	}
 
 	_chipGroup(parent, name, aria, out) {
@@ -171,6 +206,7 @@ export class CalcShell {
 		this.on[d.id] = !!d.on;
 		var color = d.color && d.color.card ? d.color.card : (d.color || "#6B5A4B");
 		var chip = button("cs-chip", false, this.chipBox[d.side]);
+		d.tab = d.tab || null;
 		chip.style.setProperty("--mc", color);
 		chip.title = d.tip || "";
 		create("span", "cs-chip-dot", false, chip);
@@ -228,6 +264,7 @@ export class CalcShell {
 		var body = create("div", "cs-card-b", false, el);
 		var card = {
 			id: d.id, side: d.side, module: d.module || null, focus: d.focus || null,
+			tab: d.tab || null, feeds: d.feeds || [],
 			el: el, body: body, collapsed: false, chev: chev,
 			setSummary: function (text) { sum.textContent = text; }
 		};
@@ -259,29 +296,42 @@ export class CalcShell {
 		if (this.focusId && this.cards[this.focusId]) this.cards[this.focusId].el.classList.remove("cs-focus");
 		this.focusId = id;
 		c.el.classList.add("cs-focus");
+		this.cardOrder.forEach(function (k) { self.cards[k].el.classList.toggle("cs-fed", c.feeds.indexOf(k) >= 0); });
 		var tgt = target === false ? null : (target || c.focus);   // false: highlight only
 		if (tgt) this.listeners.focus.forEach(function (fn) { fn(tgt, id); });
 	}
 
 	_refresh() {
 		var self = this;
+		var chipsShown = { in: 0, out: 0 };
 		this.moduleOrder.forEach(function (m) {
 			var d = self.modules[m], on = !!self.on[m];
+			d.chip.hidden = !self._onTab(d);
+			if (!d.chip.hidden) chipsShown[d.side]++;
 			d.chip.classList.toggle("cs-on", on);
 			d.chip.setAttribute("aria-pressed", String(on));
 			var old = d.chip.querySelector("svg");
 			if (old) old.remove();
 			d.chip.appendChild(icon(on ? ICON.x : ICON.plus, 12, 1.6));
 		});
-		var shown = { in: 0, out: 0 };
+		this.chipBox.in.hidden = !chipsShown.in;
+		this.chipBox.out.hidden = !chipsShown.out;
+		var shown = { in: 0, out: 0 }, offered = { in: 0, out: 0 };
 		this.cardOrder.forEach(function (id) {
 			var c = self.cards[id];
-			var vis = !c.module || !!self.on[c.module];
+			var here = self._onTab(c);
+			var vis = here && (!c.module || !!self.on[c.module]);
 			c.el.hidden = !vis;
 			if (vis) shown[c.side]++;
+			if (here) offered[c.side]++;
 		});
-		this.columns.in.count.textContent = shown.in + " cards";
-		this.columns.out.count.textContent = shown.out + " cards";
+		["in", "out"].forEach(function (side) {
+			var col = self.columns[side];
+			col.count.textContent = shown[side] + " cards";
+			col.empty.hidden = shown[side] > 0;
+			col.empty.textContent = offered[side] ? "Switch on a module above to add cards here."
+				: (side === "in" ? "No inputs on this tab yet." : "No results on this tab yet.");
+		});
 	}
 
 	// ---- fields (inputs) ----
@@ -307,6 +357,7 @@ export class CalcShell {
 	numberField(card, opts) {
 		var fld = this._row(card, opts.label, opts.hint, false, opts.tip, opts.parent);
 		var input = create("input", false, false, fld);
+		this._register(card, opts, input);
 		input.type = "number";
 		input.step = opts.step || "any";
 		if (opts.min != null) input.min = opts.min;
@@ -323,6 +374,7 @@ export class CalcShell {
 		var sel = create("select", false, false, fld);
 		if (!opts.label && opts.aria) sel.setAttribute("aria-label", opts.aria);
 		opts.options.forEach(function (o) { create("option", false, o.label, sel).value = o.value; });
+		this._register(card, opts, sel);
 		if (opts.value != null) sel.value = opts.value;
 		this._wire(card, sel, opts.focus);
 		return sel;
@@ -375,6 +427,42 @@ export class CalcShell {
 	warn(text) {
 		this.warning.textContent = text || "";
 		this.warning.hidden = !text;
+	}
+
+	// ---- saved settings ----
+	_register(card, opts, el) {
+		var name = opts.key || opts.label || opts.aria;
+		if (name) this.fields[card.id + "/" + name] = el;
+	}
+
+	getState() {
+		var self = this, fields = {}, collapsed = [];
+		Object.keys(this.fields).forEach(function (k) { fields[k] = self.fields[k].value; });
+		this.cardOrder.forEach(function (id) { if (self.cards[id].collapsed) collapsed.push(id); });
+		return { modules: Object.assign({}, this.on), fields: fields, collapsed: collapsed };
+	}
+
+	// Unknown keys are ignored and disabled fields keep their value, so state
+	// saved by an older version of a calculator still loads.
+	setState(state) {
+		if (!state || typeof state !== "object") return;
+		var self = this;
+		var f = state.fields || {};
+		Object.keys(f).forEach(function (k) {
+			var el = self.fields[k];
+			if (el && !el.disabled && typeof f[k] === "string") el.value = f[k];
+		});
+		if (state.modules && typeof state.modules === "object") {
+			var on = {};
+			this.moduleOrder.forEach(function (m) { on[m] = m in state.modules ? !!state.modules[m] : !!self.on[m]; });
+			this.on = on;
+			this._refresh();
+			this.listeners.modules.forEach(function (fn) { fn(self.on); });
+		}
+		if (Array.isArray(state.collapsed)) {
+			this.cardOrder.forEach(function (id) { self.setCollapsed(id, state.collapsed.indexOf(id) >= 0); });
+		}
+		this.listeners.input.forEach(function (fn) { fn(null); });
 	}
 
 	// ---- events ----

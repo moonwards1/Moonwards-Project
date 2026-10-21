@@ -24,7 +24,7 @@ unit testing.
 | `body-leg.js`        | `integrateTrajectory`, `buildIntegratedLeg`, `integrateEncounter`, `bodyConstants`, `bodySOI`, `sunRelPos`, `bodyAccel`, `localFrameAt` (+ re-exports `stateAtLegTime`, `burnEffect`, `distanceAlongLegToTime`, `timeToDistanceAlongLeg` from `geo-leg.js`) | Restricted body+Sun escape-leg integrator for a departure from ANY heliocentric body (Mission Planner task J2 / WP-J) — the generic sibling of `geo-leg.js`, ported from the Mars-Phobos plotter (proven bit-exact). Body-centric (the origin body is the frame origin); everything is parametrized by the body name (GM/radius/SOI/cutoff from `orbit.js`). Branches entry/body/sun; escape lifts to heliocentric via `frames.js`. `integrateEncounter` is the arrival-side mirror (2026-07-18): a heliocentric coast state handed in at a body's SOI is flown THROUGH the SOI (exit / surface entry / time-limit branches) and lifted back out — the Mission Planner coast's flyby/rendezvous physics. THREE-free. |
 | `kinematic-chain.js` | `evaluateChain`, `baseState`, `planeBasis`                                                                                                | A base body plus an ordered list of rigid rotors — pivot on whatever the chain has composed so far, a fixed plane, radius, rotation rate, phase at an epoch — composed by plain vector sum into a position/velocity at any Julian date (Mission Planner task I2). `baseState` returns the Moon's geocentric ephemeris state, and `[0,0,0]` for any other known body (the origin of its own frame — Earth for the geocentric system, a generic departure origin for its body-centric one, task J2). Feeds the departure carrier chain that the `geo-leg.js`/`body-leg.js` integrators start from.                                                            |
 | `calc-shell.css`     | — (stylesheet) | The three-column calculator page used by new calculators: header with input/result module chips, inputs column, drawing panel, results column; cards that collapse to a short title and summary; key-figure bar. Side columns narrow and cards tighten before anything stacks. Class list in its header. |
-| `calc-shell.js`      | `CalcShell`, `ShellColors`, `switchModule` | Builds that page: modules (chips, `needs`/`brings` dependencies), cards, input fields, result lines, the key-figure bar, focus and collapse. `switchModule` is the pure dependency resolver. |
+| `calc-shell.js`      | `CalcShell`, `ShellColors`, `switchModule` | Builds that page: modules (chips, `needs`/`brings` dependencies), cards, input fields, result lines, the key-figure bar, focus and collapse. Cards and chips can carry a `tab`, shown only after `setTab(tab)` selects it (the home page's four workbench tabs); an input card's `feeds` marks the result cards it drives when focused. `embedded: true` fills a container instead of the window, for a calculator mounted inside the home page's workbench; `getState()` / `setState()` read and restore the viewer's settings. `switchModule` is the pure dependency resolver. |
 | `zoom-view.js`       | `ZoomView`, `svgEl`, `niceNumber`, `fitRect`, `viewBoxOf`, `zoomAbout` | The pan-and-zoom drawing panel in the middle column: wheel zoom, drag pan, named focus targets the cards glide to, draggable markers, legend, scale bar, overview map. The geometry helpers are pure. |
 | `calc-frame.css`     | — (stylesheet)                                                                                                                            | The calculator page layout: a `cf-calc` card whose sections flow into 1–3 columns by the width of the element they sit in (container queries, from 400 px up), input sections with a solid tint, result cards with striped lines, and the shared row, info-button and pop-up styles. Each calculator sets its identity colour with `--cf-hue` and keeps only tool-specific rules. The class list is in the file header. |
 | `calc-about.js`      | — (self-wiring script)                                                                                                                    | The "About this calculator" pop-up: a page includes it with a module tag and carries an info button (`data-cf-about`) plus a `<template>` of the text; the dialog is built on first click inside the calculator's own card. |
@@ -91,6 +91,35 @@ the canonical example of the standard wiring: the calculator shell
 (`calc-shell.css`, `calc-shell.js`, `zoom-view.js`) with permanent cards,
 input and result modules, and the zoomable drawing. Calculators built before
 the shell sit on `calc-frame.css` and keep working unchanged.
+
+### Mounting in the home workbench
+
+The home page's workbench (`Website/Home/`) shows calculators directly in the
+page, under its Architecture / Logistics / Engineering / Economy tabs, so
+every shell calculator moves toward this shape. `Calculators/Hanging-skyhooks/`
+is the first:
+
+- The calculator is a **mount function** in its own file
+  (`skyhookCalc.js`: `mountHangingSkyhook(root, opts)`) that builds
+  everything inside `root` and keeps all its state in the function's closure —
+  no module-level state, no `document.getElementById`, no window listeners —
+  so a page can hold several at once (one per installation in the design).
+- Each card and module names its workbench tab — `tab: "arch"`, `"log"`,
+  `"eng"` or `"eco"` (none means Architecture) — so one calculator serves
+  all four tabs; on the standalone page every tab's cards show together.
+  Input cards list the result cards they drive in `feeds`.
+- Options: `body` + `lockBody` (the design band picks the body), `embedded`
+  (passed to `CalcShell`), `overline`, `state` (from an earlier
+  `getState()`, restored with `shell.setState`). It returns `{ shell, getState }`.
+- It links the stylesheets it needs itself (`ensureStylesheet`), so the home
+  page doesn't have to know them.
+- The standalone page's `name.js` shrinks to mounting it into `#app`.
+- The workbench learns about it through `calcFor()` in
+  `Home/design-model.js` and the `CALCULATORS` table in `Home/home.js`, and
+  fills any tab the calculator has no cards on with skeleton cards
+  (`Home/skeleton.js`).
+- Saved settings are keyed by card id and field label, so keep those stable
+  or give the field an explicit `key`.
 
 ## Heliocentric orbit data
 

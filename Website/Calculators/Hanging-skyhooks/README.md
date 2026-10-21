@@ -16,7 +16,16 @@ part; the foot, centre-of-mass and top markers can be dragged.
 
 - `Hanging-skyhooks.html` — page markup: fonts, stylesheets, one `#app` element
 - `Hanging-skyhooks.css` — this page's own styling (core accent, About text)
-- `Hanging-skyhooks.js` — the page: cards, modules, drawing, exchange
+- `Hanging-skyhooks.js` — the standalone page's script: mounts one calculator into `#app`
+- `skyhookCalc.js` — the calculator: cards, modules, drawing, exchange, as
+  `mountHangingSkyhook(root, opts)`. The home page's workbench mounts it
+  directly, one per hanging skyhook in the design, with the body chosen there
+  (`lockBody`), filling its container (`embedded`), and restoring saved
+  settings (`state`); the header comment lists the options. Each card and
+  chip names its workbench tab: geometry, material, tip payload, speeds,
+  the fall from the foot, tether properties and forces on Architecture;
+  Earth reentry and release points on Logistics; stations, cargo
+  throughput, climber energy and station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
 - `skyhookModel.test.js` — Node test pinning the default design's figures:
   `node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js`

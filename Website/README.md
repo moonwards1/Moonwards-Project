@@ -2,7 +2,9 @@
 
 ## Architecture
 
-The site is a **single-page app with lazy-loaded sections**. One shell page (`index.html`) provides the shared layout — nav, header, footer, global CSS and JS. Each section is an **HTML fragment** (no `<html>/<head>/<body>` tags) fetched and injected by `main.js` as the user scrolls to it. Sections may be split across multiple pages later if the page becomes too heavy.
+The front page (`index.html`) is the **home page**: a banner, the design band where a visitor picks the bodies in their space economy and the giant infrastructure at each, the workbench that mounts the matching calculator, and the apps list. Its code lives in `Home/`; [`Home/README.md`](Home/README.md) describes it.
+
+The page is planned to grow **lazy-loaded sections** below that: each section an **HTML fragment** (no `<html>/<head>/<body>` tags) fetched and injected by `main.js` as the user scrolls to it. Sections may be split across multiple pages later if the page becomes too heavy.
 
 All visual content — diagrams, animations, calculators — is implemented in **JS and SVG**. Plain prose is minimized; the site teaches through interactives.
 
@@ -14,7 +16,8 @@ The longer-term plan for growing the standalone calculators into one integrated 
 
 ```
 Website/
-├── index.html              # Shell page — layout, nav, section mount points (stub)
+├── index.html              # Home page — banner, design band, workbench, apps (code in Home/)
+├── Home/                   # The home page's code: design model, body facts, page script and styles
 ├── main.js                 # Bootstrap: registers sections, scroll observers, fragment fetching (stub)
 ├── main.css                # Layout, typography, CSS custom properties (no component styles here)
 ├── ARCHITECTURE.md         # Plan: calculators → modules of one integrated simulator

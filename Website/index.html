@@ -1,14 +1,76 @@
-<!--wrapper with nav, footer-->
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Moonwards</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="Design your own space economy: the bodies it spans, the skyhooks, space elevators and mass drivers it needs, and the physics behind them.">
+	<link rel="icon" type="image/png" href="General_Assets/MoonwardsLogo_26_150px.png">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&amp;family=Instrument+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;800&amp;display=swap">
+	<link rel="stylesheet" href="Shared/calc-shell.css">
+	<link rel="stylesheet" href="Home/home.css">
+	<!-- ES module; home.js imports its own dependencies. -->
+	<script type="module" src="Home/home.js"></script>
+</head>
+<body>
+<div class="hm-page">
 
-<!-- Temporary: link to the Mission Planner scaffold, until the redesign replaces it -->
-<p style="margin: 1em 1.5em;">
-  <a href="MissionPlanner/planner.html" target="_blank">Mission Planner (scaffold)</a>
-</p>
+	<header class="hm-banner">
+		<img class="hm-logo" src="General_Assets/MoonwardsLogo_26_150px.png" alt="" width="64" height="64">
+		<div class="hm-banner-t">
+			<h1>Moonwards</h1>
+			<p>Scientifically grounded designs for a lunar industrial society, and the space economy around it. Pick the worlds, choose the giant infrastructure, and work out what it takes.</p>
+		</div>
+	</header>
 
-<!-- Temporary: old-school calculators file list, embedded until the redesign replaces it -->
-<iframe
-  src="Calculators/all-calculators.html"
-  title="Moonwards Calculators list"
-  style="width: 100%; height: 600px; border: 1px solid #ccc;"
-  loading="lazy">
-</iframe>
+	<section class="hm-vision" id="vision" aria-label="Your space economy">
+		<div class="hm-vision-l">
+			<div class="hm-vtabs" role="tablist" aria-label="Design">
+				<button class="hm-vtab" role="tab" aria-selected="false" disabled title="Coming once the calculators are complete">Moonwards <small>coming later</small></button>
+				<button class="hm-vtab" role="tab" aria-selected="true">Make your own</button>
+			</div>
+			<div class="hm-mx-wrap"><div class="hm-mx" id="matrix"></div></div>
+		</div>
+		<aside class="hm-facts" id="facts" aria-live="polite"></aside>
+	</section>
+
+	<section class="hm-bench" id="bench" aria-label="Workbench">
+		<div class="hm-bar">
+			<div class="hm-tabs" role="tablist" aria-label="Workbench" id="tabs"></div>
+			<div class="hm-act">
+				<button class="hm-btn hm-pri" id="btnSave" type="button">Save design</button>
+				<button class="hm-btn" id="btnExport" type="button">Export</button>
+				<button class="hm-btn" id="btnImport" type="button">Import</button>
+			</div>
+		</div>
+		<div class="hm-work" id="work">
+			<div class="hm-empty" id="empty" hidden></div>
+		</div>
+	</section>
+
+	<section class="hm-apps" aria-labelledby="appsH">
+		<h2 id="appsH">Apps</h2>
+		<div class="hm-app-grid">
+			<a class="hm-app" href="MissionPlanner/planner.html">
+				<b>Mission Planner</b>
+				<span>Plan a trip between bodies through the infrastructure at each end, and watch the whole mission recompute as you change it.</span>
+			</a>
+			<a class="hm-app" href="Calculators/Moon-Skyhook-Trajectory-Plotter/moonSkyhookTrajectory.html">
+				<b>Moon Skyhook Trajectory Plotter</b>
+				<span>To-scale 3D Earth–Moon view with a lunar skyhook and the release physics for a ship let go from it.</span>
+			</a>
+			<a class="hm-app" href="Calculators/Mars-Phobos-Skyhook-Trajectory-Plotter/marsPhobosSkyhookTrajectory.html">
+				<b>Mars–Phobos Skyhook Trajectory Plotter</b>
+				<span>To-scale 3D Mars–Phobos system with a skyhook built onto Phobos, waypoint burns and atmospheric-entry readouts.</span>
+			</a>
+			<a class="hm-app" href="Calculators/all-calculators.html">
+				<b>All calculators</b>
+				<span>Every standalone calculator: skyhooks, space elevators, mass drivers, aerobraking and more.</span>
+			</a>
+		</div>
+	</section>
+
+</div>
+</body>
+</html>
