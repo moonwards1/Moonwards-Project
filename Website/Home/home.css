@@ -91,7 +91,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hm-chip .hm-x { color: inherit; margin-right: 3px; }
 .hm-chip.hm-sel-i { box-shadow: 0 0 0 2px var(--hm-band), 0 0 0 4px var(--hm-ink); }
 .hm-mark { width: 19px; height: 19px; padding: 0; border: 0; border-radius: 50%; background: var(--hm-paper); box-shadow: 0 0 0 1px var(--hm-band-line); color: var(--hm-core); font-family: var(--hm-mono); font-weight: 800; font-size: 12.5px; display: grid; place-items: center; cursor: pointer; }
-.hm-mark.hm-no { color: var(--hm-no); }
+.hm-mark.hm-no { color: var(--hm-no); font-size: 22px; line-height: 1; }
 .hm-add { height: 22px; padding: 0 8px; border: 1px dashed var(--hm-band-line); border-radius: 7px; background: transparent; color: var(--hm-ink2); font-size: 12px; cursor: pointer; opacity: 0; }
 .hm-row:hover .hm-add, .hm-add:focus-visible { opacity: 1; }
 .hm-add:hover { border-color: var(--hm-core); color: var(--hm-ink); }

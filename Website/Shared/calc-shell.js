@@ -205,7 +205,7 @@ export class CalcShell {
 		var col = create("section", ["cs-col", cls], false, parent);
 		col.setAttribute("aria-label", name);
 		var h = create("div", "cs-col-h", false, col);
-		var h2 = create("h2", false, name, h);
+		var h2 = create("h2", false, false, h);
 		var cnt = create("span", "cs-cnt", false, h2);
 		var self = this, side = cls === "cs-col-in" ? "in" : "out";
 		button("cs-ib", "Collapse all", h).appendChild(icon(ICON.collapse, 16));

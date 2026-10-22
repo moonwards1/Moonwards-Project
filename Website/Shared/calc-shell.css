@@ -22,7 +22,8 @@
  *                 the right one.
  *   cs-chip       a module chip; cs-on when the module is shown
  *   cs-cols       the three-column grid: cs-col-in, cs-stage, cs-col-out
- *   cs-col-h      a column's header (name, card count, collapse/expand all)
+ *   cs-col-h      a column's header (card count, collapse/expand all; the
+ *                 Inputs / Results names are on the cs-mods groups)
  *   cs-scroller   a column's independently scrolling card list
  *   cs-card       a card; --mc is its accent. cs-collapsed, cs-focus states;
  *                 cs-fed: a result card the focused input card feeds
@@ -168,7 +169,7 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-col-out { grid-area: out; }
 .cs-col-h { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 6px 8px 8px; }
 .cs-col-h h2 { margin: 0; flex: 1; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--cs-ink2); }
-.cs-cnt { font-weight: 500; letter-spacing: .02em; text-transform: none; opacity: .8; margin-left: 6px; }
+.cs-cnt { font-weight: 500; letter-spacing: .02em; text-transform: none; opacity: .8; }
 .cs-scroller {
 	flex: 1;
 	min-height: 0;

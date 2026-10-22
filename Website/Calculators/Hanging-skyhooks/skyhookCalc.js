@@ -69,14 +69,21 @@ export function mountHangingSkyhook(root, opts) {
 		return s.properties.type !== "mathematical object" && s.radius && s.GM;
 	}).map(String).sort();
 
-	var bodyCard = shell.addCard({ id: "body", tab: "arch", feeds: ["orb", "prop", "rel"], side: "in", title: "Body", short: "Body", color: C.umber, focus: "body" });
-	var bodyIn = shell.selectField(bodyCard, { aria: "Body the skyhook orbits", value: BODY_NAMES.indexOf(o.body) >= 0 ? o.body : "Moon",
-		options: BODY_NAMES.map(function (n) { return { value: n, label: n }; }) });
+	var bodyValue = BODY_NAMES.indexOf(o.body) >= 0 ? o.body : "Moon";
+	var bodyCard = null, bodyIn, bodyNote;
 	if (o.lockBody) {
-		bodyIn.disabled = true;
-		bodyIn.title = "The body is chosen in the design table";
+		// The hosting page chooses the body and shows its facts itself, so there
+		// is no card: bodyIn is an off-screen select that just holds the value.
+		bodyIn = document.createElement("select");
+		BODY_NAMES.forEach(function (n) { var op = document.createElement("option"); op.value = op.textContent = n; bodyIn.appendChild(op); });
+		bodyIn.value = bodyValue;
+		bodyNote = document.createElement("p");
+	} else {
+		bodyCard = shell.addCard({ id: "body", tab: "arch", feeds: ["orb", "prop", "rel"], side: "in", title: "Body", short: "Body", color: C.umber, focus: "body" });
+		bodyIn = shell.selectField(bodyCard, { aria: "Body the skyhook orbits", value: bodyValue,
+			options: BODY_NAMES.map(function (n) { return { value: n, label: n }; }) });
+		bodyNote = shell.note(bodyCard, "");
 	}
-	var bodyNote = shell.note(bodyCard, "");
 
 	var geoCard = shell.addCard({ id: "geo", tab: "arch", feeds: ["orb", "prop", "rel", "clm", "frc", "rp"], side: "in", title: "Tether geometry", short: "Geometry", color: C.core, focus: "tether" });
 	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "station-keeping engines", unit: "km", value: 2000, focus: "top",
@@ -348,7 +355,7 @@ export function mountHangingSkyhook(root, opts) {
 		if (!tg.length) rpNote.textContent = "This body has no neighbours to transfer to.";
 
 		// summaries
-		bodyCard.setSummary(bodyIn.value);
+		if (bodyCard) bodyCard.setSummary(bodyIn.value);
 		geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km");
 		matCard.setSummary((custom ? "Custom" : MATERIALS[matIn.value].name) + " · ×" + field(safetyIn, 3));
 		stCard.setSummary(num(S.recv, 0) + " · " + num(S.outer, 1) + " · " + num(S.launch, 0) + " km");
