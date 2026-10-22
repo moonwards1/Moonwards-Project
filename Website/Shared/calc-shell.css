@@ -16,7 +16,10 @@
  *   cs-app        the page root (fills the window)
  *   cs-embedded   with cs-app: fills its container instead (a calculator
  *                 mounted inside another page; the container sets the height)
- *   cs-top        header: cs-brand (cs-over + cs-title), two cs-mods chip groups
+ *   cs-top        header: cs-brand (cs-over + cs-title), two cs-mods chip groups.
+ *                 Not built when embedded: cs-brand (cs-over only) and the
+ *                 input cs-mods then head the left column, the result cs-mods
+ *                 the right one.
  *   cs-chip       a module chip; cs-on when the module is shown
  *   cs-cols       the three-column grid: cs-col-in, cs-stage, cs-col-out
  *   cs-col-h      a column's header (name, card count, collapse/expand all)
@@ -140,6 +143,15 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-chip-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--mc); }
 .cs-chip:not(.cs-on) .cs-chip-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
 .cs-chip svg { opacity: .7; }
+
+/* Embedded: no header. The brand line and the input chips head the left
+   column, the result chips head the right one, and the columns run the
+   full height of the container. */
+.cs-embedded .cs-cols { padding-top: 0; }
+.cs-embedded .cs-col { padding-top: var(--cs-pad); }   /* the drawing column has none */
+.cs-embedded .cs-col > .cs-mods { flex: none; padding: 0 4px 6px 8px; }
+.cs-embedded .cs-brand { padding: 2px 8px 6px; }
+.cs-embedded .cs-over { font-size: 13px; line-height: 1.3; color: var(--cs-core); }
 
 /* ---------- columns ---------- */
 .cs-cols {

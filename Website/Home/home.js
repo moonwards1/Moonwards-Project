@@ -18,7 +18,7 @@
 
 import {
 	BODY_ORDER, FAMILIES, FAMILY_ORDER, MARKS, TABS,
-	calcFor, instLabel, findBody, variantBlock, sampleDesign,
+	calcFor, markHint, isSpecial, instLabel, findBody, variantBlock, sampleDesign,
 	addBody, removeBody, addInstallation, removeInstallation,
 	parseDesign, serializeDesign
 } from "./design-model.js";
@@ -40,11 +40,14 @@ var CALCULATORS = {
 var mounted = {};   // installation id → { el, handle, instId, body }
 
 var design = sampleDesign();
-var ui = { body: "Moon", inst: design.bodies[0].inst[0].id, tab: "arch" };
+var ui = { body: "Moon", inst: design.bodies[0].inst[0].id, tab: "arch", compact: false };
 
 var el = {
 	vision: document.getElementById("vision"),
 	matrix: document.getElementById("matrix"),
+	hint: document.getElementById("hint"),
+	strip: document.getElementById("strip"),
+	vtog: document.getElementById("vtog"),
 	facts: document.getElementById("facts"),
 	bench: document.getElementById("bench"),
 	tabs: document.getElementById("tabs"),
@@ -73,7 +76,9 @@ function selectBody(name) {
 function renderMatrix() {
 	var h = '<div class="hm-row hm-head"><button class="hm-hbtn" type="button" data-menu="body">Body ' + ICON_DOWN + '</button>';
 	FAMILY_ORDER.forEach(function (f) {
-		h += '<button class="hm-hbtn" type="button" data-menu="fam" data-fam="' + f + '">' + FAMILIES[f].label + ' ' + ICON_DOWN + '</button>';
+		h += FAMILIES[f].menu === false
+			? '<span class="hm-hbtn hm-hplain">' + FAMILIES[f].label + '</span>'
+			: '<button class="hm-hbtn" type="button" data-menu="fam" data-fam="' + f + '">' + FAMILIES[f].label + ' ' + ICON_DOWN + '</button>';
 	});
 	h += '</div><div class="hm-rows" id="rows">';
 	design.bodies.forEach(function (b) {
@@ -83,21 +88,47 @@ function renderMatrix() {
 		FAMILY_ORDER.forEach(function (f) {
 			h += '<div class="hm-cell">';
 			var m = MARKS[b.body + "|" + f];
-			if (m) h += '<button class="hm-mark' + (m.k === "x" ? " hm-no" : "") + '" type="button" data-mark="' + b.body + "|" + f + '" aria-label="' + esc(m.title) + '" title="' + esc(m.title) + '">' + (m.k === "x" ? "×" : "*") + '</button>';
+			if (m) h += '<button class="hm-mark' + (m.k === "x" ? " hm-no" : "") + '" type="button" data-mark="' + b.body + "|" + f + '" aria-label="' + esc(markHint(b.body + "|" + f)) + '" title="' + esc(markHint(b.body + "|" + f)) + '">' + (m.k === "x" ? "×" : "*") + '</button>';
 			b.inst.filter(function (i) { return i.fam === f; }).forEach(function (i) {
 				h += '<span class="hm-chip' + (i.id === ui.inst ? " hm-sel-i" : "") + '"><button type="button" data-inst="' + i.id + '" data-ib="' + b.body + '">' + FAMILIES[f].vars[i.v].label + '</button>' +
 					'<button class="hm-x" type="button" data-rminst="' + i.id + '" data-ib="' + b.body + '" aria-label="Remove ' + esc(instLabel(i)) + '">' + ICON_X + '</button></span>';
 			});
-			var canAdd = Object.keys(FAMILIES[f].vars).some(function (v) { return !variantBlock(design, b.body, f, v); });
-			if (canAdd) h += '<button class="hm-add" type="button" data-menu="fam" data-fam="' + f + '" data-forbody="' + b.body + '">+ add</button>';
+			// "+ add" covers the plain variants; special ones are added from the * card.
+			var plain = Object.keys(FAMILIES[f].vars).filter(function (v) { return !isSpecial(f, v) && !variantBlock(design, b.body, f, v); });
+			if (plain.length && FAMILIES[f].menu === false) {
+				h += '<button class="hm-add" type="button" data-addinst="' + f + "|" + plain[0] + "|" + b.body + '" title="Add a ' + FAMILIES[f].vars[plain[0]].label.toLowerCase() + ' ' + FAMILIES[f].label.toLowerCase() + '">+ add</button>';
+			} else if (plain.length) {
+				h += '<button class="hm-add" type="button" data-menu="fam" data-fam="' + f + '" data-forbody="' + b.body + '">+ add</button>';
+			}
 			h += '</div>';
 		});
 		h += '</div>';
 	});
-	h += '</div><div class="hm-more">' + (design.bodies.length > 3 ? design.bodies.length + " bodies · scroll for more" : (design.bodies.length ? "" : "Add a body from the Body menu to start.")) + '</div>';
+	h += '</div>';
+	el.hint.textContent = design.bodies.length > 3 ? design.bodies.length + " bodies · scroll for more" : (design.bodies.length ? "" : "Add a body from the Body menu to start.");
 	el.matrix.innerHTML = h;
 	var rows = document.getElementById("rows"), sel = rows.querySelector(".hm-sel");
 	if (sel && (sel.offsetTop < rows.scrollTop || sel.offsetTop + sel.offsetHeight > rows.scrollTop + rows.clientHeight)) rows.scrollTop = sel.offsetTop;
+}
+
+// Compact view: one line to switch the shown installation. Reuses the
+// data-body / data-inst hooks, so the click handler below serves both views.
+function renderStrip() {
+	var b = findBody(design, ui.body);
+	var h = design.bodies.length ? "" : '<span class="hm-snote">No bodies yet. Expand to add one.</span>';
+	design.bodies.forEach(function (x) {
+		h += '<button class="hm-bbtn' + (x.body === ui.body ? " hm-on" : "") + '" type="button" data-body="' + x.body + '">' + x.body + '</button>';
+	});
+	if (b && b.inst.length) {
+		h += '<span class="hm-sdiv"></span>';
+		b.inst.forEach(function (i) {
+			h += '<span class="hm-chip' + (i.id === ui.inst ? " hm-sel-i" : "") + '"><button type="button" data-inst="' + i.id + '" data-ib="' + b.body + '">' + esc(instLabel(i)) + '</button></span>';
+		});
+	}
+	el.strip.innerHTML = h;
+	el.vision.classList.toggle("hm-compact", ui.compact);
+	el.vtog.textContent = ui.compact ? "Expand" : "Compact";
+	el.vtog.setAttribute("aria-pressed", String(ui.compact));
 }
 
 function renderFacts() {
@@ -137,17 +168,22 @@ function famMenu(anchor, fam, body) {
 	body = body || ui.body;
 	if (!findBody(design, body)) { openPop(anchor, '<p>Add a body first, then choose its ' + FAMILIES[fam].label.toLowerCase() + '.</p>'); return; }
 	var h = '<h4>' + FAMILIES[fam].label + ' at ' + body + '</h4>';
-	var m = MARKS[body + "|" + fam];
-	if (m) h += '<p><b>' + (m.k === "x" ? "× " : "* ") + esc(m.title) + '.</b></p>';
-	Object.keys(FAMILIES[fam].vars).forEach(function (v) {
+	Object.keys(FAMILIES[fam].vars).filter(function (v) { return !isSpecial(fam, v); }).forEach(function (v) {
 		var def = FAMILIES[fam].vars[v], why = variantBlock(design, body, fam, v);
 		h += '<button class="hm-mi" type="button" data-addinst="' + fam + "|" + v + "|" + body + '"' + (why ? " disabled" : "") + '><b>' + def.label + '</b><span>' + esc(why || def.desc) + '</span></button>';
 	});
 	openPop(anchor, h);
 }
+// The card behind a * or ×: why the cell is special. An asterisk's card also
+// offers the variants that do work there, each adding that installation.
 function markNote(anchor, key) {
-	var m = MARKS[key];
-	openPop(anchor, '<h4>' + (m.k === "x" ? "× Can't be built here" : "* Possible, in a special form") + '</h4><p><b>' + esc(m.title) + '.</b></p><p>' + esc(m.text) + '</p>');
+	var m = MARKS[key], p = key.split("|");
+	var h = '<h4>' + (m.k === "x" ? "× Can't be built here" : "* " + (m.head || "Possible, in a special form")) + '</h4><p><b>' + esc(m.title) + '.</b></p><p>' + esc(m.text) + '</p>';
+	(m.allow || []).forEach(function (v) {
+		var def = FAMILIES[p[1]].vars[v], why = variantBlock(design, p[0], p[1], v);
+		h += '<button class="hm-mi" type="button" data-addinst="' + p[1] + "|" + v + "|" + p[0] + '"' + (why ? " disabled" : "") + '><b>Add ' + def.label + '</b><span>' + esc(why || def.desc) + '</span></button>';
+	});
+	openPop(anchor, h);
 }
 
 // ---------- workbench ----------
@@ -173,12 +209,9 @@ function renderBench() {
 	el.empty.innerHTML = '<div><b>' + esc(what) + '</b>' + esc(why) + '</div>';
 }
 
-function tabLabel(id) { return TABS.find(function (t) { return t.id === id; }).label; }
-
 function showTab(entry) {
 	if (!entry.handle) return;   // still loading; applied once mounted
 	entry.handle.shell.setTab(ui.tab);
-	entry.handle.shell.setOverline(entry.body + " · " + tabLabel(ui.tab));
 }
 
 function mountCalculator(inst, body) {
@@ -189,7 +222,7 @@ function mountCalculator(inst, body) {
 	mounted[inst.id] = entry;
 	var ctx = {
 		body: body, inst: inst, lockBody: true, embedded: true,
-		overline: body + " · " + tabLabel(ui.tab),
+		overline: body + " · " + instLabel(inst),   // e.g. "Moon · Hanging skyhook"
 		partners: design.bodies.map(function (b) { return b.body; })
 	};
 	var key = calcFor(inst);
@@ -231,13 +264,14 @@ function collectStates() {
 	});
 }
 
-function render() { pruneMounted(false); renderMatrix(); renderFacts(); renderBench(); }
+function render() { pruneMounted(false); renderMatrix(); renderStrip(); renderFacts(); renderBench(); }
 
 // ---------- events ----------
 document.addEventListener("click", function (e) {
 	var t = e.target.closest("button");
 	if (pop && !e.target.closest(".hm-pop") && !(t && (t.dataset.menu || t.dataset.mark))) closePop();
 	if (!t) return;
+	if (t === el.vtog) { ui.compact = !ui.compact; closePop(); renderStrip(); return; }
 	var d = t.dataset;
 	if (d.menu === "body") { bodyMenu(t); return; }
 	if (d.menu === "fam") { famMenu(t, d.fam, d.forbody); return; }

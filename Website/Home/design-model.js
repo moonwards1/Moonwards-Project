@@ -28,15 +28,20 @@ export const BODY_ORDER = ["Mercury", "Venus", "Earth", "Moon", "Mars", "Vesta",
 // The three families of giant infrastructure, each with its variants.
 // `only`: the variant exists only at these bodies.
 // `needs`: the variant sits on another family's installation at the same body.
+// `once`: a body can have at most one of this variant.
+// `menu: false` (family): no column menu. Its variants depend on the body, so
+// each body's * (or the "+ add" button, for a plain body) is where they're added.
 export const FAMILIES = {
 	skyhook: { label: "Skyhook", vars: {
 		hanging: { label: "Hanging", desc: "Non-rotating tether hanging from orbit, its foot just above the surface." },
 		rotating: { label: "Rotating", desc: "Spinning tether that catches and releases at its tips." },
-		phobos: { label: "Phobos", desc: "Tethers anchored on Phobos, reaching down toward Mars and up beyond.", only: ["Mars"] }
+		phobos: { label: "Phobos", desc: "Tethers anchored on Phobos, reaching down toward Mars and up beyond.", only: ["Mars"], once: true },
+		deimos: { label: "Deimos", desc: "Tethers anchored on Deimos, reaching down toward Mars and up beyond.", only: ["Mars"], once: true }
 	} },
-	elevator: { label: "Space Elevator", vars: {
-		standard: { label: "Standard", desc: "Surface to beyond stationary orbit, with a counterweight." },
-		l1: { label: "Through L1", desc: "From the near side through Earth–Moon L1; Earth's pull holds the far end as its counterweight.", only: ["Moon"] }
+	elevator: { label: "Space Elevator", menu: false, vars: {
+		standard: { label: "Standard", desc: "Surface to beyond stationary orbit, with a counterweight.", once: true },
+		l1: { label: "Through L1", desc: "From the near side through Earth–Moon L1; Earth's pull holds the far end as its counterweight.", only: ["Moon"], once: true },
+		l2: { label: "Through L2", desc: "From the far side through Earth–Moon L2; the Earth–Moon system's rotation holds the far end out as its counterweight.", only: ["Moon"], once: true }
 	} },
 	driver: { label: "Mass Driver", vars: {
 		surface: { label: "Surface", desc: "Linear track on the ground." },
@@ -48,11 +53,16 @@ export const FAMILIES = {
 export const FAMILY_ORDER = ["skyhook", "elevator", "driver"];
 
 // Feasibility marks, keyed "Body|family".
-//   "*": buildable only in a special form — `allow` lists the variants that work.
+//   "*": special forms exist there — `allow` lists them, and the mark's card
+//       offers them. Ordinary variants are blocked unless `open` is true.
 //   "x": cannot be built there with this world's technology.
+// `head`: the card's heading for an asterisk (default "Possible, in a special form").
 export const MARKS = {
-	"Moon|elevator": { k: "*", allow: ["l1"], title: "No standard elevator at the Moon",
-		text: "The Moon turns once every 27.3 days, so its stationary orbit would lie about 88,000 km from its centre, beyond the Earth–Moon L1 point about 58,000 km out. A standard elevator has nothing to hang from. The working equivalent runs through L1 and uses Earth's pull on the far end as its counterweight. Choose “Through L1” from the Space Elevator menu." },
+	"Moon|elevator": { k: "*", allow: ["l1", "l2"], title: "No standard elevator at the Moon",
+		text: "The Moon turns once every 27.3 days, so its stationary orbit would lie about 88,000 km from its centre, farther out than both Earth–Moon Lagrange points: L1 about 58,000 km from the Moon on the Earth side, and L2 about 64,500 km on the far side. A standard elevator has nothing to hang from. The working equivalents pass through one of those points. Through L1 from the near side, Earth's pull on the far end acts as its counterweight; through L2 from the far side, the rotation of the Earth–Moon system does." },
+	"Mars|skyhook": { k: "*", open: true, allow: ["phobos", "deimos"], title: "Mars's moons can anchor skyhooks",
+		head: "Also possible, anchored on a moon",
+		text: "Phobos orbits about 9,400 km from Mars's centre and Deimos about 23,500 km, so either can anchor a skyhook, alongside the ordinary Hanging and Rotating forms. The two tethers share the space around the moons, so each has limits. Phobos's tether can't reach higher than Deimos's orbit, and Deimos's can't reach lower than Phobos's. The ends of the two tethers can't overlap either, or they would eventually hit each other." },
 	"Mars|elevator": { k: "x", title: "No space elevator at Mars",
 		text: "Phobos orbits below stationary altitude and Deimos just above it, so both cross the cable's line. Phobos would pass the cable about every 11 hours." },
 	"Venus|elevator": { k: "x", title: "No space elevator at Venus",
@@ -60,6 +70,25 @@ export const MARKS = {
 	"Mercury|elevator": { k: "x", title: "No space elevator at Mercury",
 		text: "Mercury turns once every 58.6 days. Its stationary orbit would be about 243,000 km out, beyond its Hill sphere (about 220,000 km), so there is no orbit for a cable to reach." }
 };
+
+// The hover hint for a mark's button: its title, then what clicking does.
+// An asterisk's card offers the variants in `allow`; a × card only explains.
+export function markHint(key) {
+	var m = MARKS[key];
+	if (!m) return "";
+	if (m.k === "x") return m.title + ". Click for why.";
+	var fam = FAMILIES[key.split("|")[1]];
+	var names = m.allow.map(function (v) { return fam.vars[v].label; });
+	return m.title + ". Click to choose " + names.join(" or ") + ".";
+}
+
+// True when `v` of `fam` is offered only through some asterisk's card, so the
+// family's menu and plain "+ add" leave it out.
+export function isSpecial(fam, v) {
+	return Object.keys(MARKS).some(function (k) {
+		return k.split("|")[1] === fam && (MARKS[k].allow || []).indexOf(v) >= 0;
+	});
+}
 
 // Workbench tabs, in the order a user works through them.
 export const TABS = [
@@ -80,7 +109,7 @@ export function calcFor(inst) {
 
 // Short display name for an installation, e.g. "Hanging skyhook".
 export function instLabel(inst) {
-	if (inst.fam === "elevator" && inst.v === "l1") return "L1 elevator";
+	if (inst.fam === "elevator" && inst.v !== "standard") return inst.v.toUpperCase() + " elevator";
 	var fam = FAMILIES[inst.fam];
 	return fam.vars[inst.v].label + " " + fam.label.toLowerCase();
 }
@@ -94,9 +123,10 @@ export function variantBlock(design, body, fam, v) {
 	var def = FAMILIES[fam].vars[v];
 	if (def.only && def.only.indexOf(body) < 0) return "Only at " + def.only.join(", ") + ".";
 	var m = MARKS[body + "|" + fam];
-	if (m && (m.allow || []).indexOf(v) < 0) return m.k === "x" ? m.title + "." : "Not here; see the * note.";
+	if (m && !m.open && (m.allow || []).indexOf(v) < 0) return m.k === "x" ? m.title + "." : "Only in a special form here; click the * in the table.";
+	var rec = findBody(design, body);
+	if (def.once && rec && rec.inst.some(function (i) { return i.fam === fam && i.v === v; })) return "Already added.";
 	if (def.needs) {
-		var rec = findBody(design, body);
 		var has = rec && rec.inst.some(function (i) { return i.fam === def.needs; });
 		if (!has) return "Needs a " + FAMILIES[def.needs].label.toLowerCase() + " at " + body + " first.";
 	}

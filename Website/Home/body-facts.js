@@ -25,7 +25,7 @@ export const BODY_FACTS = {
 // Rows of the panel, in display order: [label, key].
 export const FACT_ROWS = [
 	["Orbital distance", "dist"], ["Orbital speed", "speed"], ["Diameter", "diam"],
-	["Mass", "mass"], ["Density", "dens"], ["Surface gravity", "g"],
-	["Escape velocity", "esc"], ["Rotation", "rotation"], ["Avg temperature", "temp"],
+	["Mass", "mass"], ["Surface gravity", "g"],
+	["Escape velocity", "esc"], ["Rotation", "rotation"],
 	["Atmosphere", "atm"]
 ];

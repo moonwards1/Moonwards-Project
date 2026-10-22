@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
 	sampleDesign, variantBlock, addBody, removeBody, addInstallation, removeInstallation,
-	parseDesign, serializeDesign, calcFor, instLabel, findBody, BODY_ORDER, FAMILIES, MARKS
+	parseDesign, serializeDesign, calcFor, markHint, isSpecial, instLabel, findBody, BODY_ORDER, FAMILIES, MARKS
 } from "../design-model.js";
 import { BODY_FACTS } from "../body-facts.js";
 
@@ -20,23 +20,62 @@ test("marks refer to real bodies, families and variants", function () {
 	});
 });
 
-test("the Moon takes only the L1 elevator; Mars, Venus, Mercury take none", function () {
+test("the Moon takes only the L1 and L2 elevators; Mars, Venus, Mercury take none", function () {
 	var d = sampleDesign();
 	assert.match(variantBlock(d, "Moon", "elevator", "standard"), /\*/);
-	assert.equal(variantBlock(d, "Moon", "elevator", "l1"), null);
+	assert.equal(variantBlock(d, "Moon", "elevator", "l2"), null);
+	assert.equal(instLabel({ fam: "elevator", v: "l2" }), "L2 elevator");
 	["Mars", "Venus", "Mercury"].forEach(function (n) {
 		d = addBody(d, n);
 		assert.ok(variantBlock(d, n, "elevator", "standard"), n);
 		assert.ok(variantBlock(d, n, "elevator", "l1"), n);
 	});
 	assert.ok(variantBlock(d, "Earth", "elevator", "l1"));
-	assert.equal(variantBlock(d, "Ceres", "elevator", "standard"), null);
+	assert.equal(variantBlock(addBody(d, "Vesta"), "Vesta", "elevator", "standard"), null);
 });
 
-test("Phobos skyhook only at Mars", function () {
+test("an asterisk's hint says what clicking offers; a × only explains", function () {
+	assert.match(markHint("Moon|elevator"), /^No standard elevator at the Moon\. Click to choose/);
+	assert.match(markHint("Mars|elevator"), /Click for why\.$/);
+	assert.equal(markHint("Earth|elevator"), "");
+});
+
+test("special forms can be added only once each", function () {
+	var d = sampleDesign();   // the Moon has its L1 elevator, Mars its Phobos skyhook
+	assert.equal(variantBlock(d, "Moon", "elevator", "l1"), "Already added.");
+	var r = addInstallation(d, "Moon", "elevator", "l2");
+	assert.ok(r.inst);
+	assert.equal(variantBlock(r.design, "Moon", "elevator", "l2"), "Already added.");
+	assert.equal(variantBlock(d, "Mars", "skyhook", "phobos"), "Already added.");
+	var m = addInstallation(d, "Mars", "skyhook", "deimos");
+	assert.ok(m.inst);
+	assert.equal(variantBlock(m.design, "Mars", "skyhook", "deimos"), "Already added.");
+	assert.equal(variantBlock(addInstallation(d, "Ceres", "elevator", "standard").design, "Ceres", "elevator", "standard"), "Already added.");
+});
+
+test("Mars's skyhook asterisk adds its moons without closing the ordinary forms", function () {
 	var d = sampleDesign();
-	assert.equal(variantBlock(d, "Mars", "skyhook", "phobos"), null);
-	assert.ok(variantBlock(d, "Moon", "skyhook", "phobos"));
+	assert.equal(MARKS["Mars|skyhook"].k, "*");
+	assert.equal(variantBlock(d, "Mars", "skyhook", "hanging"), null);
+	assert.equal(variantBlock(d, "Mars", "skyhook", "deimos"), null);
+	assert.ok(variantBlock(d, "Moon", "skyhook", "deimos"));
+	assert.match(markHint("Mars|skyhook"), /Click to choose Phobos or Deimos\.$/);
+	assert.match(markHint("Moon|elevator"), /Click to choose Through L1 or Through L2\.$/);
+});
+
+test("special variants stay out of the menus; the elevator has no menu", function () {
+	assert.equal(isSpecial("skyhook", "phobos"), true);
+	assert.equal(isSpecial("skyhook", "hanging"), false);
+	assert.equal(isSpecial("elevator", "l2"), true);
+	assert.equal(isSpecial("elevator", "standard"), false);
+	assert.equal(FAMILIES.elevator.menu, false);
+});
+
+test("Phobos and Deimos skyhooks only at Mars", function () {
+	var d = sampleDesign();
+	assert.notEqual(variantBlock(d, "Mars", "skyhook", "phobos"), "Only at Mars.");
+	assert.equal(variantBlock(d, "Moon", "skyhook", "phobos"), "Only at Mars.");
+	assert.equal(variantBlock(d, "Moon", "skyhook", "deimos"), "Only at Mars.");
 });
 
 test("a mass driver on an elevator needs the elevator, and goes with it", function () {

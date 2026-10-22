@@ -68,9 +68,10 @@ export function addSkeletonCards(shell, ctx, tabs) {
 		var fam = inst.fam, v = inst.v;
 		if (fam === "skyhook") {
 			var geo = shell.addCard({ id: "sk-geo", tab: "arch", side: "in", title: "Tether geometry", short: "Geometry", color: C.core, feeds: ["sk-orb", "sk-teth"] });
-			if (v === "phobos") {
-				F.low = shell.numberField(geo, { label: "Lower tip altitude", hint: "above Mars", unit: "km", value: 50, min: 0 });
-				F.up = shell.numberField(geo, { label: "Upper tip beyond Phobos", unit: "km", value: 6000, min: 0 });
+			var moon = v === "phobos" ? "Phobos" : v === "deimos" ? "Deimos" : null;   // moon-anchored skyhook
+			if (moon) {
+				F.low = shell.numberField(geo, { label: "Lower tip altitude", hint: "above Mars", unit: "km", value: v === "phobos" ? 50 : 14000, min: 0 });
+				F.up = shell.numberField(geo, { label: "Upper tip beyond " + moon, unit: "km", value: 6000, min: 0 });
 			} else {
 				F.cm = shell.numberField(geo, { label: "Centre of mass altitude", hint: "sets the orbit", unit: "km", value: 500, min: 1 });
 				F.arm = shell.numberField(geo, { label: "Arm length", hint: "centre to tip", unit: "km", value: 200, min: 1 });
@@ -82,20 +83,20 @@ export function addSkeletonCards(shell, ctx, tabs) {
 			F.catches = shell.numberField(cap, { label: "Catches per day", value: 6, min: 0 });
 
 			var orb = shell.addCard({ id: "sk-orb", tab: "arch", side: "out", title: "Orbits & speeds", short: "Speeds", color: C.core });
-			if (v === "phobos") {
-				var hp = shell.hero(orb, [{ label: "Phobos orbit speed", unit: "km/s" }, { label: "Lower tip speed", unit: "km/s" }]);
+			if (moon) {
+				var hp = shell.hero(orb, [{ label: moon + " orbit speed", unit: "km/s" }, { label: "Lower tip speed", unit: "km/s" }]);
 				var lLowOrb = shell.line(orb, { label: "Free-orbit speed at the lower tip", unit: "km/s" });
 				var lUp = shell.line(orb, { label: "Upper tip speed", unit: "km/s" });
 				var lUpEsc = shell.line(orb, { label: "Escape speed at the upper tip", unit: "km/s" });
 				calcs.push(function () {
-					var a = systems.get("Phobos").orbit.a;
+					var a = systems.get(moon).orbit.a;
 					var w = 2 * Math.PI / WM.orbitalPeriod(body.GM, a);
 					var rLow = body.R + val(F.low, 50) * 1e3, rUp = a + val(F.up, 6000) * 1e3;
 					hp[0].set(num(w * a / 1e3, 2)); hp[1].set(num(w * rLow / 1e3, 2));
 					lLowOrb.set(num(WM.circularSpeed(body.GM, rLow) / 1e3, 2), "The tip moves slower than a free orbit there, so a ship meets it with less speed to match.");
 					lUp.set(num(w * rUp / 1e3, 2));
 					lUpEsc.set(num(WM.escapeSpeed(body.GM, rUp) / 1e3, 2));
-					orb.setSummary("Phobos " + num(w * a / 1e3, 2) + " km/s");
+					orb.setSummary(moon + " " + num(w * a / 1e3, 2) + " km/s");
 				});
 			} else {
 				var hr = shell.hero(orb, [{ label: "Orbital period", unit: "h" }, { label: "Tip speed", unit: "km/s" }]);
@@ -113,8 +114,11 @@ export function addSkeletonCards(shell, ctx, tabs) {
 			tetherCard();
 		} else if (fam === "elevator") {
 			var eg = shell.addCard({ id: "sk-geo", tab: "arch", side: "in", title: "Tether geometry", short: "Geometry", color: C.core, feeds: ["sk-orb", "sk-teth"] });
-			if (v === "l1") {
-				F.len = shell.numberField(eg, { label: "Length toward Earth", hint: "from the near-side surface", unit: "km", value: 100000, min: 1 });
+			var lagrange = v === "l1" ? "L1" : v === "l2" ? "L2" : null;   // elevator through an Earth–Moon point
+			if (lagrange) {
+				F.len = shell.numberField(eg, v === "l1"
+					? { label: "Length toward Earth", hint: "from the near-side surface", unit: "km", value: 100000, min: 1 }
+					: { label: "Length away from Earth", hint: "from the far-side surface", unit: "km", value: 100000, min: 1 });
 			} else {
 				var stat = (WM.stationaryRadius(body.GM, body.rot) - body.R) / 1e3;
 				F.top = shell.numberField(eg, { label: "Top altitude", hint: "beyond stationary orbit", unit: "km", value: Math.round(stat * 1.5 / 10) * 10, min: 1 });
@@ -124,16 +128,18 @@ export function addSkeletonCards(shell, ctx, tabs) {
 			F.climbT = shell.numberField(ec, { label: "Climber payload", unit: "t", value: 20, min: 0 });
 			F.climbers = shell.numberField(ec, { label: "Climbers on the cable", value: 8, min: 0 });
 
-			var eo = shell.addCard({ id: "sk-orb", tab: "arch", side: "out", title: v === "l1" ? "Balance & speeds" : "Orbits & speeds", short: "Speeds", color: C.core });
-			if (v === "l1") {
-				var hl = shell.hero(eo, [{ label: "L1 from the Moon's centre", unit: "km" }, { label: "Far end past L1", unit: "km" }]);
+			var eo = shell.addCard({ id: "sk-orb", tab: "arch", side: "out", title: lagrange ? "Balance & speeds" : "Orbits & speeds", short: "Speeds", color: C.core });
+			if (lagrange) {
+				var hl = shell.hero(eo, [{ label: lagrange + " from the Moon's centre", unit: "km" }, { label: "Far end past " + lagrange, unit: "km" }]);
 				var lRel = shell.line(eo, { label: "Far-end speed, Moon-relative", unit: "km/s" });
 				calcs.push(function () {
-					var L1 = body.sys.L1, end = body.R + val(F.len, 100000) * 1e3;
+					var point = body.sys[lagrange], end = body.R + val(F.len, 100000) * 1e3;
 					var w = 2 * Math.PI / Math.abs(body.rot);
-					hl[0].set(num(L1 / 1e3, 0)); hl[1].set(num((end - L1) / 1e3, 0));
-					lRel.set(num(w * end / 1e3, 3), end > L1 ? "Past L1, Earth's pull holds the far end out." : "The far end hasn't reached L1: the tether can't stay up.");
-					eo.setSummary("L1 " + num(L1 / 1e3, 0) + " km");
+					hl[0].set(num(point / 1e3, 0)); hl[1].set(num((end - point) / 1e3, 0));
+					lRel.set(num(w * end / 1e3, 3), end > point
+						? "Past " + lagrange + (v === "l1" ? ", Earth's pull holds the far end out." : ", the system's rotation holds the far end out.")
+						: "The far end hasn't reached " + lagrange + ": the tether can't stay up.");
+					eo.setSummary(lagrange + " " + num(point / 1e3, 0) + " km");
 				});
 			} else {
 				var he = shell.hero(eo, [{ label: "Stationary altitude", unit: "km" }, { label: "Release speed at top", unit: "km/s" }]);

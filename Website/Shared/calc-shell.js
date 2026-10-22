@@ -138,14 +138,19 @@ export class CalcShell {
 		this.firstTab = o.firstTab || "arch";
 		this.listeners = { input: [], focus: [], modules: [] };
 
-		var top = create("header", "cs-top", false, root);
-		var brand = create("div", "cs-brand", false, top);
-		this.overEl = create("span", "cs-over", o.overline || "Moonwards · Calculators", brand);
-		create("h1", "cs-title", o.title || "", brand);
-		this.chipBox = {
-			in: this._chipGroup(top, "Inputs", "Optional input modules", false),
-			out: this._chipGroup(top, "Results", "Optional result modules", true)
-		};
+		// A page gets a header (title over the chip groups). An embedded
+		// calculator has none: the columns take the full height, and the
+		// chips and the one-line brand move into the column heads below.
+		var top = o.embedded ? null : create("header", "cs-top", false, root);
+		if (top) {
+			var brand = create("div", "cs-brand", false, top);
+			this.overEl = create("span", "cs-over", o.overline || "Moonwards · Calculators", brand);
+			create("h1", "cs-title", o.title || "", brand);
+			this.chipBox = {
+				in: this._chipGroup(top, "Inputs", "Optional input modules", false),
+				out: this._chipGroup(top, "Results", "Optional result modules", true)
+			};
+		}
 
 		var cols = create("div", "cs-cols", false, root);
 		this.columns = {
@@ -155,6 +160,19 @@ export class CalcShell {
 		this.stage = create("section", "cs-stage", false, cols);
 		this.stage.setAttribute("aria-label", o.stageLabel || "Drawing");
 		this.columns.out = this._column(cols, "Results", "cs-col-out");
+		if (!top) {
+			// Left column: brand, then the input chips, above the column head.
+			var inEl = this.columns.in.el, outEl = this.columns.out.el;
+			var brandEl = create("div", "cs-brand", false, inEl);
+			this.overEl = create("span", "cs-over", o.overline || "Moonwards · Calculators", brandEl);
+			this.chipBox = {
+				in: this._chipGroup(inEl, "Inputs", "Optional input modules", false),
+				out: this._chipGroup(outEl, "Results", "Optional result modules", false)
+			};
+			inEl.insertBefore(this.chipBox.in, inEl.firstChild);
+			inEl.insertBefore(brandEl, inEl.firstChild);
+			outEl.insertBefore(this.chipBox.out, outEl.firstChild);
+		}
 		this.warning = create("div", "cs-warn", false, false);
 		this.warning.hidden = true;
 		this.columns.out.list.appendChild(this.warning);

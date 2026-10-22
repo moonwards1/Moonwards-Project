@@ -7,10 +7,14 @@ the **workbench**, and the apps list.
   economy against the three families of giant infrastructure (Skyhook, Space
   Elevator, Mass Driver), each with its variants. Clicking a body or one of its
   installation chips selects it; the panel on the right shows that body's main
-  facts. A `*` in a cell means the family exists there only in a special form
-  (the Moon's elevator runs through L1); an `×` means it can't be built there
-  with this world's technology. Both open a note explaining why. Three bodies
-  show at a time; more scroll. The "Moonwards" tab, the world used for
+  facts. A `*` in a cell means the family has special forms there (the Moon's
+  elevator runs through L1 or L2; Mars's skyhooks can anchor on Phobos or
+  Deimos); an `×` means it can't be built there with this world's technology.
+  Both open a card explaining why, and the `*` card is where its special forms
+  are added, each at most once. Column menus carry no notes and leave the
+  special forms out; the Space Elevator column has no menu at all, since its
+  variants depend on the body (a plain body gets a "+ add" for the standard
+  one). Three bodies show at a time; more scroll. The "Moonwards" tab, the world used for
   Moonwards media, comes later.
 - **Workbench** — four tabs in working order: Architecture, Logistics,
   Engineering, Economy, all on the same three-column layout (header with
