@@ -143,3 +143,10 @@ test("calculator settings ride along with their installation", function () {
 	assert.deepEqual(back.bodies[0].inst[0].state, d.bodies[0].inst[0].state);
 	assert.equal("state" in back.bodies[1].inst[0], false);
 });
+
+test("kinetic launcher installations get readable display names", function () {
+	assert.equal(instLabel({ fam: "driver", v: "surface" }), "Mass driver");
+	assert.equal(instLabel({ fam: "driver", v: "spin" }), "Spin launcher");
+	assert.equal(instLabel({ fam: "driver", v: "elevator" }), "Mass driver on space elevator");
+	assert.equal(instLabel({ fam: "driver", v: "tip" }), "Mass driver on skyhook");
+});

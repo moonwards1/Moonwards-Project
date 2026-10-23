@@ -109,6 +109,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hm-pop h4 { margin: 4px 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--hm-ink2); }
 .hm-pop p { margin: 4px 8px 6px; font-size: 12.5px; line-height: 1.45; }
 .hm-mi { display: flex; flex-direction: column; gap: 2px; border: 0; border-radius: 8px; background: transparent; padding: 7px 9px; text-align: left; cursor: pointer; }
+.hm-gh { margin: 4px 8px 0; padding: 4px 0 2px; font-size: 13px; font-weight: 600; }
+.hm-mi.hm-sub { margin-left: 14px; border-left: 2px solid var(--hm-rule); border-radius: 0 8px 8px 0; }
 .hm-mi:hover:not(:disabled) { background: var(--hm-field); }
 .hm-mi:disabled { cursor: not-allowed; opacity: .55; }
 .hm-mi b { font-weight: 600; font-size: 13px; }

@@ -29,6 +29,10 @@ export const BODY_ORDER = ["Mercury", "Venus", "Earth", "Moon", "Mars", "Vesta",
 // `only`: the variant exists only at these bodies.
 // `needs`: the variant sits on another family's installation at the same body.
 // `once`: a body can have at most one of this variant.
+// `group`: the menu lists consecutive variants sharing a group under one
+//     non-clickable heading, as indented sub-entries.
+// `full`: the variant's complete display name where `label` alone is too short
+//     (see instLabel).
 // `menu: false` (family): no column menu. Its variants depend on the body, so
 // each body's * (or the "+ add" button, for a plain body) is where they're added.
 export const FAMILIES = {
@@ -43,11 +47,11 @@ export const FAMILIES = {
 		l1: { label: "Through L1", desc: "From the near side through Earth–Moon L1; Earth's pull holds the far end as its counterweight.", only: ["Moon"], once: true },
 		l2: { label: "Through L2", desc: "From the far side through Earth–Moon L2; the Earth–Moon system's rotation holds the far end out as its counterweight.", only: ["Moon"], once: true }
 	} },
-	driver: { label: "Mass Driver", vars: {
-		surface: { label: "Surface", desc: "Linear track on the ground." },
-		elevator: { label: "On space elevator", desc: "Track mounted high on the elevator cable.", needs: "elevator" },
-		tip: { label: "Skyhook tip", desc: "Short track at a skyhook's tip.", needs: "skyhook" },
-		spin: { label: "Spin launcher", desc: "Rotating arm on the surface." }
+	driver: { label: "Kinetic Launcher", vars: {
+		surface: { label: "Mass driver", group: "On the surface", desc: "Linear track on the ground." },
+		spin: { label: "Spin launcher", group: "On the surface", desc: "Rotating arm anchored in the ground." },
+		elevator: { label: "On space elevator", full: "Mass driver on space elevator", desc: "Track mounted high on the elevator.", needs: "elevator" },
+		tip: { label: "On skyhook", full: "Mass driver on skyhook", desc: "Track high on a skyhook.", needs: "skyhook" }
 	} }
 };
 export const FAMILY_ORDER = ["skyhook", "elevator", "driver"];
@@ -112,8 +116,9 @@ export function calcFor(inst) {
 // Short display name for an installation, e.g. "Hanging skyhook".
 export function instLabel(inst) {
 	if (inst.fam === "elevator" && inst.v !== "standard") return inst.v.toUpperCase() + " elevator";
-	var fam = FAMILIES[inst.fam];
-	return fam.vars[inst.v].label + " " + fam.label.toLowerCase();
+	var fam = FAMILIES[inst.fam], def = fam.vars[inst.v];
+	if (inst.fam === "driver") return def.full || def.label;
+	return def.label + " " + fam.label.toLowerCase();
 }
 
 export function findBody(design, name) {

@@ -177,10 +177,15 @@ function bodyMenu(anchor) {
 function famMenu(anchor, fam, body) {
 	body = body || ui.body;
 	if (!findBody(design, body)) { openPop(anchor, '<p>Add a body first, then choose its ' + FAMILIES[fam].label.toLowerCase() + '.</p>'); return; }
-	var h = '<h4>' + FAMILIES[fam].label + ' at ' + body + '</h4>';
+	var h = '';
+	var group = null;
 	Object.keys(FAMILIES[fam].vars).filter(function (v) { return !isSpecial(fam, v); }).forEach(function (v) {
 		var def = FAMILIES[fam].vars[v], why = variantBlock(design, body, fam, v);
-		h += '<button class="hm-mi" type="button" data-addinst="' + fam + "|" + v + "|" + body + '"' + (why ? " disabled" : "") + '><b>' + def.label + '</b><span>' + esc(why || def.desc) + '</span></button>';
+		if (def.group !== group) {
+			group = def.group || null;
+			if (group) h += '<div class="hm-gh">' + esc(group) + '</div>';
+		}
+		h += '<button class="hm-mi' + (def.group ? " hm-sub" : "") + '" type="button" data-addinst="' + fam + "|" + v + "|" + body + '"' + (why ? " disabled" : "") + '><b>' + def.label + '</b><span>' + esc(why || def.desc) + '</span></button>';
 	});
 	openPop(anchor, h);
 }

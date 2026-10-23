@@ -5,7 +5,9 @@ the **workbench**, and the apps list.
 
 - **Design band** — "Make your own" lists the bodies in the user's space
   economy against the three families of giant infrastructure (Skyhook, Space
-  Elevator, Mass Driver), each with its variants. Clicking a body or one of its
+  Elevator, Kinetic Launcher), each with its variants. The Kinetic Launcher menu
+  groups mass driver and spin launcher under "On the surface", then offers a
+  launcher on a space elevator or on a skyhook. Clicking a body or one of its
   installation chips selects it; the panel on the right shows that body's main
   facts. A `*` in a cell means the family has special forms there (the Moon's
   elevator runs through L1 or L2; Mars's skyhooks can anchor on Phobos or
