@@ -83,6 +83,42 @@ test("loads, balance and the centre-of-mass station", function () {
 	assert.ok(t.comMassAt1km > t.loads.com, "holding the station to 1 km takes more ballast");
 });
 
+test("the tension profile for the drawing", function () {
+	var P = t.profile;
+	assert.equal(P.up.r.length, P.up.T.length);
+	assert.ok(P.up.r.length > 100 && P.low.r.length > 100);
+	assert.ok(Math.abs(P.up.T[0] - 40e6 * t.highAcceleration) < 1e-6 * P.up.T[0], "top tip tension is the tip load's weight");
+	assert.equal(P.up.T[P.up.T.length - 1], t.tensionUpper, "the sweep ends at the station with the upper tension");
+	assert.equal(P.low.T[P.low.T.length - 1], t.tensionLower, "...and the lower tension");
+	var rCentre = Number(moon.radius) + 275e3;
+	for (var i = 1; i < P.up.T.length && P.up.r[i] >= rCentre; i++) assert.ok(P.up.T[i] >= P.up.T[i - 1], "tension never falls toward the centre until past it");
+});
+
+test("the station may sit anywhere the tether can carry it", function () {
+	var weak = MATERIALS.earlylunarglass;
+	var base = {
+		foot: 10e3, centre: 275e3, top: 2000e3,
+		receivingDeck: 233e3, outerDocks: 606.5e3, launchDeck: 950e3,
+		strength: (weak.strength / 3) / weak.density,
+		loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
+		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
+		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9, targetPerigee: 50, ifaceAlt: 122
+	};
+	// too little ballast: no position balances, and that is reported
+	var u = computeSkyhook(moon, base);
+	assert.equal(u.balanced, false);
+	assert.equal(u.comOffset, 0);
+	assert.ok(u.unbalance < 0, "the upper tether outweighs the lower");
+	assert.ok(u.warnings.some(function (w) { return /Out of balance/.test(w); }));
+	assert.ok(isNaN(u.comMassAt1km));
+	// enough ballast: it balances far below the centre, near the foot, with no limit on the offset
+	var v = computeSkyhook(moon, Object.assign({}, base, { comMass: 20000e6 }));
+	assert.ok(v.balanced);
+	assert.ok(v.comOffset < -200e3, "station sits well below the centre: " + v.comOffset);
+	assert.ok(Math.abs(v.unbalance) / v.tensionPeak < 1e-6);
+	assert.ok(t.warnings.every(function (w) { return !/balance/.test(w); }), "the default design balances");
+});
+
 test("no load at all gives no tension", function () {
 	var R = Number(moon.radius), s = (m.strength / 3) / m.density;
 	var none = sweepTether(moon.GM, t.angularVelocity, s, 2000e3 + R, 275e3 + R, 0, 0, 500);

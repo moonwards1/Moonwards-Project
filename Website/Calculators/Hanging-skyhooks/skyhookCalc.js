@@ -21,7 +21,6 @@
 // document if the page hasn't already.
 
 import { systems } from "../../Shared/orbit.js";
-import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Exchange } from "../../Shared/exchange.js";
 import { PacketTypes } from "../../Shared/exchange-types.js";
 import { CalcShell, ShellColors as C } from "../../Shared/calc-shell.js";
@@ -304,7 +303,9 @@ export function mountHangingSkyhook(root, opts) {
 		f = scaled(t.tensionLower, FORCE); rTL.set(f[0], "the upper tension plus the station's net pull", f[1]);
 		f = scaled(t.tetherMassUpper, MASS); rMU.set(f[0], null, f[1]);
 		f = scaled(t.tetherMassLower, MASS); rML.set(f[0], null, f[1]);
-		rOff.set(t.balanced ? num(Math.abs(t.comOffset) / 1e3, 1) : "—", t.balanced ? (Math.abs(t.comOffset) < 50 ? "essentially at the centre" : (t.comOffset < 0 ? "below" : "above") + " the nominal centre of mass") : "no balance point", "km");
+		var gapF = scaled(Math.abs(t.unbalance), FORCE);
+		rOff.set(num(Math.abs(t.comOffset) / 1e3, 1), t.balanced ? (Math.abs(t.comOffset) < 50 ? "essentially at the centre" : (t.comOffset < 0 ? "below" : "above") + " the nominal centre of mass")
+			: "no position balances these loads · out of balance by " + gapF[0] + " " + gapF[1] + " at the centre", "km");
 		f = scaled(t.comMassAt1km, MASS); rCom1.show(isFinite(t.comMassAt1km)); rCom1.set(f[0], "holds the station within 1 km of the centre", f[1]);
 
 		// throughput
@@ -459,9 +460,12 @@ export function mountHangingSkyhook(root, opts) {
 		t.val = svgEl("tspan", { fill: "#A99A8B", "font-family": "JetBrains Mono, monospace" }, t);
 		return t;
 	});
+	var tTaper = g("text", { fill: "#EADFCF", "font-family": "JetBrains Mono, monospace", "text-anchor": "end" });
 	var mTop = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
 	var mCom = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
 	var mFoot = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
+	var mBal = g("rect", A({ fill: "#EADFCF", stroke: "#1D1814", "stroke-width": 2 }));
+	var tBal = g("text", { fill: "#EADFCF", "font-family": "JetBrains Mono, monospace", "text-anchor": "start" });
 	var miniBody = svgEl("circle", { cx: 0, cy: 0, stroke: "#9C8A77", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
 	var miniTether = svgEl("path", { stroke: "#EADFCF", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
 
@@ -480,17 +484,36 @@ export function mountHangingSkyhook(root, opts) {
 		miniBody.setAttribute("r", R); miniBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
 		miniTether.setAttribute("d", "M0 " + (-rF) + "L0 " + (-rT));
 
-		// taper: half-width in px follows the exact constant-stress cross-section
-		var right = [], left = [], n = 70, w = t.angularVelocity;
-		for (var i = 0; i <= n; i++) {
-			var a = S.foot + (S.top - S.foot) * i / n, r = (R + a) * 1e3;
-			var I = r < t.centre + Number(S.body.radius)
-				? OrbitalMath.taperIntegral(S.GM, w, r, (R + S.centre) * 1e3)
-				: OrbitalMath.taperIntegral(S.GM, w, (R + S.centre) * 1e3, r);
-			var hw = (1.2 + 4.2 * Math.exp(-I / t.strength)) * u, y = -(R + a);
-			right.push(hw + " " + y); left.unshift((-hw) + " " + y);
+		// taper: the drawn width follows the tether's diameter, sqrt(T/T_ref), where T is
+		// the tension from the load sweep (cross-section = T/σ) and T_ref the thinnest
+		// point that carries a real tension. The thin end is tipPx wide until the thickest
+		// point would pass maxPx; then the thin end shrinks toward minPx to make room. Once
+		// it is down to minPx, it stays there and the thickest point keeps growing, without limit.
+		var P = t.profile, peak = t.tensionPeak, tipPx = 3, maxPx = 16, minPx = 1, pts = [];
+		P.low.r.forEach(function (r, i) { pts.push([r / 1e3, P.low.T[i]]); });
+		for (var q = P.up.r.length - 1; q >= 0; q--) pts.push([P.up.r[q] / 1e3, P.up.T[q]]);
+		var ref = Infinity, dMax = 1, kPx = 2;
+		pts.forEach(function (p) { if (p[1] > 1e-6 * peak && p[1] < ref) ref = p[1]; });
+		var hasTaper = peak > 0 && isFinite(peak) && isFinite(ref);
+		if (hasTaper) {
+			pts.forEach(function (p) { dMax = Math.max(dMax, Math.sqrt(p[1] / ref)); });
+			kPx = Math.max(minPx, Math.min(tipPx, maxPx / dMax));
 		}
+		var right = [], left = [];
+		pts.forEach(function (p) {
+			var hw = Math.max(0.5 * kPx * (hasTaper ? Math.sqrt(p[1] / ref) : 1), 0.2) * u;
+			right.push(hw + " " + (-p[0])); left.unshift((-hw) + " " + (-p[0]));
+		});
 		gTaper.setAttribute("d", "M" + right.join("L") + "L" + left.join("L") + "Z");
+		// the ballast station, wherever the balance puts it
+		var rB = rC + t.comOffset / 1e3, bs = 6 * u;
+		mBal.setAttribute("x", -bs); mBal.setAttribute("y", -rB - bs); mBal.setAttribute("width", 2 * bs); mBal.setAttribute("height", 2 * bs);
+		tBal.setAttribute("x", 14 * u); tBal.setAttribute("y", -rB + 4 * u); tBal.setAttribute("font-size", fsS); tBal.setAttribute("stroke-width", 4 * u);
+		tBal.textContent = Math.abs(t.comOffset) > 0 ? "ballast station · " + num(S.centre + t.comOffset / 1e3, 0) + " km" : "";
+		var farOff = Math.abs(t.comOffset) / 1e3 > 40 * u;   // clear of the centre's own labels
+		show(mBal, farOff); show(tBal, farOff);
+		tTaper.setAttribute("x", -14 * u); tTaper.setAttribute("y", -rC + 21 * u); tTaper.setAttribute("font-size", fsS); tTaper.setAttribute("stroke-width", 4 * u);
+		tTaper.textContent = !isFinite(peak) ? "taper beyond calculation" : hasTaper ? "diameter ×" + num(dMax, dMax < 10 ? 1 : 0) + (kPx < tipPx ? (kPx <= minPx ? " · ends at minimum" : " · ends thinned") : "") : "";
 
 		// markers and their labels (left)
 		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); });

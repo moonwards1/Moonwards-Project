@@ -33,30 +33,41 @@ export const PROPELLANT_MAX = { oxygen: 20, hydrogen: 80 };
 // Share of the ascending rate that descends from the outer docks to the foot.
 export const DESCENT_SHARE = 0.01;
 
-// Tension and tether mass of one half of a constant-stress tether, built up from
-// its tip inward to rEnd. All radii are from the body's centre, m.
+// Tension and tether mass of a constant-stress tether, built up from one tip inward
+// to rEnd. All radii are from the body's centre, m.
 //   GM, omega   the body's gravitational parameter and the tether's angular rate
 //   s           specific strength with safety factor applied, J/kg
 //   tipLoad     kg held at the tip
 //   distLoad    kg spread evenly over the stretch from the tip to rEnd
-// Moving inward, tension grows by the taper factor exp(ΔI/s) across each step
-// (ΔI = ∫a dr, the potential difference) and gains the weight of the load added
-// within it: lumps at the tip, a steady λ·a·dr along the way. The tether's own
-// mass is dm = T/s · dr, which is how the taper already accounts for it.
-// Returns { tension (N at rEnd, from everything outboard), mass (tether, kg) }.
-export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps) {
+// Net outward pull is a(r) = ω²r − GM/r², zero at the nominal centre, outward above
+// it and inward below. Sweeping down from the top, tension grows by exp(∫a dr / s)
+// across a step and gains the weight of the load added within it (lumps at the tip, a
+// steady λ·a·dr along the way); sweeping up from the foot it is the same with the
+// signs reversed. Past the nominal centre the pull reverses, so tension then falls
+// again. The tether's own mass is dm = T/s · dr, which the taper already accounts for.
+// rec, if given ({ r: [], T: [] }), is filled with the tension at every step from the
+// tip to rEnd, for drawing the taper.
+// Returns { tension (N at rEnd, from everything outboard), mass (tether, kg),
+//           slack (true if the tension would have gone negative: the stretch cannot hold) }.
+export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps, rec) {
 	var n = steps || 1000, dr = (rEnd - rTip) / n, len = Math.abs(rEnd - rTip);
+	var sg = rTip >= rEnd ? 1 : -1;   // +1 sweeping down from the top, −1 sweeping up from the foot
 	var lambda = len > 0 ? distLoad / len : 0;
-	var pull = function (r) { return Math.abs(omega * omega * r - GM / (r * r)); };
-	var T = tipLoad * pull(rTip), mass = 0;
+	var pull = function (r) { return omega * omega * r - GM / (r * r); };
+	var phi = function (r) { return 0.5 * omega * omega * r * r + GM / r; };   // dφ/dr = a
+	var T = tipLoad * sg * pull(rTip), mass = 0, slack = false;
+	if (T < 0) { T = 0; slack = true; }
+	if (rec) { rec.r.push(rTip); rec.T.push(T); }
 	for (var i = 0; i < n; i++) {
 		var r1 = rTip + i * dr, r2 = r1 + dr;
-		var grow = Math.exp(OrbitalMath.taperIntegral(GM, omega, r1, r2) / s);
-		var Tn = T * grow + lambda * Math.abs(dr) * pull((r1 + r2) / 2) * Math.sqrt(grow);
+		var grow = Math.exp(-(phi(r2) - phi(r1)) / s);
+		var Tn = T * grow + sg * lambda * Math.abs(dr) * pull((r1 + r2) / 2) * Math.sqrt(grow);
 		mass += (T + Tn) / 2 / s * Math.abs(dr);
+		if (Tn < 0) { Tn = 0; slack = true; }
 		T = Tn;
+		if (rec) { rec.r.push(r2); rec.T.push(T); }
 	}
-	return { tension: T, mass: mass };
+	return { tension: T, mass: mass, slack: slack };
 }
 
 export function computeSkyhook(moon, inp) {
@@ -131,32 +142,51 @@ export function computeSkyhook(moon, inp) {
 	t.loads = { top: inp.loadTop, foot: inp.loadFoot, distUpper: inp.distUpper, distLower: inp.distLower, com: inp.comMass };
 	t.loads.upperTotal = t.loads.top + t.loads.distUpper;
 	t.loads.lowerTotal = t.loads.foot + t.loads.distLower;
-	var halves = function (rs, steps) {
+	var halves = function (rs, steps, rec) {
 		return {
-			up: sweepTether(GM, w, t.strength, rTop, rs, t.loads.top, t.loads.distUpper, steps),
-			low: sweepTether(GM, w, t.strength, rFoot, rs, t.loads.foot, t.loads.distLower, steps)
+			up: sweepTether(GM, w, t.strength, rTop, rs, t.loads.top, t.loads.distUpper, steps, rec && rec.up),
+			low: sweepTether(GM, w, t.strength, rFoot, rs, t.loads.foot, t.loads.distLower, steps, rec && rec.low)
 		};
 	};
 	var STEPS = 600;
-	var surplus = function (rs) { var h = halves(rs, STEPS); return h.low.tension - h.up.tension - t.loads.com * netPull(rs); };
+	var surplus = function (rs) {
+		var h = halves(rs, STEPS);
+		return h.up.slack || h.low.slack ? NaN : h.low.tension - h.up.tension - t.loads.com * netPull(rs);
+	};
+	// The station may sit anywhere on the tether. The balance can have more than one
+	// solution, so the tether is scanned from end to end and the sign change nearest the
+	// nominal centre is refined. If the loads cannot be balanced anywhere, the station is
+	// left at the nominal centre and the leftover force is reported (t.unbalance): the
+	// installation's true centre of mass is then not where the nominal centre says.
 	var rs = rCentre;
 	t.balanced = false;
 	if (t.foot < t.top) {
-		var lo = rFoot + 1, hi = rTop - 1, sLo = surplus(lo);
-		if (sLo * surplus(hi) <= 0) {
+		var SCAN = 100, best = null, prevR = rFoot + 1, prevS = surplus(prevR);
+		for (var q = 1; q <= SCAN; q++) {
+			var rq = rFoot + 1 + (rTop - rFoot - 2) * q / SCAN, sq = surplus(rq);
+			if (prevS * sq <= 0) {
+				var dist = Math.abs((prevR + rq) / 2 - rCentre);
+				if (!best || dist < best.dist) best = { lo: prevR, hi: rq, sLo: prevS, dist: dist };
+			}
+			prevR = rq; prevS = sq;
+		}
+		if (best) {
+			var lo = best.lo, hi = best.hi;
 			for (var k = 0; k < 50; k++) {
 				var mid = (lo + hi) / 2;
-				if (sLo * surplus(mid) <= 0) hi = mid; else lo = mid;
+				if (best.sLo * surplus(mid) <= 0) hi = mid; else lo = mid;
 			}
 			rs = (lo + hi) / 2;
 			t.balanced = true;
 		}
 	}
-	var fin = halves(rs, STEPS);
+	t.profile = { up: { r: [], T: [] }, low: { r: [], T: [] } };
+	var fin = halves(rs, STEPS, t.profile);
 	t.comOffset = rs - rCentre;
 	t.tensionUpper = fin.up.tension;
 	t.tensionLower = fin.low.tension;
 	t.tensionPeak = Math.max(t.tensionUpper, t.tensionLower);
+	t.unbalance = fin.low.tension - fin.up.tension - t.loads.com * netPull(rs);   // N; 0 when balanced
 	t.tetherMassUpper = fin.up.mass;
 	t.tetherMassLower = fin.low.mass;
 	t.tetherMass = t.tetherMassUpper + t.tetherMassLower;
@@ -165,8 +195,12 @@ export function computeSkyhook(moon, inp) {
 	var r1 = rCentre + (t.comOffset < 0 ? -1000 : 1000), h1 = halves(r1, STEPS);
 	t.comMassAt1km = t.balanced ? (h1.low.tension - h1.up.tension) / netPull(r1) : NaN;
 	if (!(t.comMassAt1km >= 0)) t.comMassAt1km = NaN;
-	if (!t.balanced) warnings.push("No position of the centre-of-mass station balances these loads. Add mass at the centre or move load between the tethers.");
-	else if (Math.abs(t.comOffset) > 0.05 * t.Length) warnings.push("The centre-of-mass station must sit " + Math.round(Math.abs(t.comOffset) / 1e3) + " km " + (t.comOffset > 0 ? "above" : "below") + " the nominal centre to balance these loads. More mass there, or load moved between the tethers, would bring it closer.");
+	if (t.foot < t.top && !t.balanced) {
+		var gap = Math.abs(t.unbalance), gapText = gap >= 1e12 ? (gap / 1e12).toFixed(gap >= 1e13 ? 0 : 1) + " TN" : gap >= 1e9 ? (gap / 1e9).toFixed(1) + " GN" : (gap / 1e6).toFixed(0) + " MN";
+		warnings.push("Out of balance: no position for the centre-of-mass station balances these loads. At the nominal centre the " +
+			(t.unbalance < 0 ? "upper tether outweighs the lower" : "lower tether outweighs the upper") + " by " + gapText +
+			", so the true centre of mass is not where you set it. Add ballast, or load to the lighter side.");
+	}
 
 	// ---- release points: altitude where a release reaches each neighbour ----
 	t.targets = releaseTargets(moon, t);
