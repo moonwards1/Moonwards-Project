@@ -88,10 +88,10 @@ export function computeSkyhook(moon, inp) {
 		lowSum += Math.exp(integral(t.foot + R, t.foot + i * (t.centre - t.foot) / N + R) / t.strength);
 		highSum += Math.exp(integral(t.centre + R, t.centre + i * (t.top - t.centre) / N + R) / t.strength);
 	}
-	t.lowMass = t.lowAcceleration * (t.centre - t.foot) * (lowSum / N) / t.strength;     // × payload
-	t.highMass = t.highAcceleration * (t.top - t.centre) * (highSum / N) / t.strength;   // × payload
+	t.lowMass = t.lowAcceleration * (t.centre - t.foot) * (lowSum / N) / t.strength;     // × load
+	t.highMass = t.highAcceleration * (t.top - t.centre) * (highSum / N) / t.strength;   // × load
 
-	// ---- forces: absolute tension at the centre of mass from the tip payload ----
+	// ---- forces: absolute tension at the centre of mass from the tip load ----
 	// Constant-stress cable: T(r) = σ·A(r); at a tip A = T_tip/σ with T_tip = m_tip·a_tip,
 	// so T(centre) = T_tip·taper. The top tip is the release end; the foot tip is shown for comparison.
 	t.tipMass = inp.tipMass;

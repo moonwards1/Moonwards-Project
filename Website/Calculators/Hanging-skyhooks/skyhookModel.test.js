@@ -2,7 +2,7 @@
 //   node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js
 //
 // Pins the page's default design (Moon; foot 10, centre 275, top 2000 km;
-// decks 233 / 606.5 / 950 km; lunar silica ×3; 100 t tip payload; 1000 t/day
+// decks 233 / 606.5 / 950 km; lunar silica ×3; 100 t tip load; 1000 t/day
 // in 100 t climbers at 200 m/s, 70 %; oxygen at 8 km/s, 60 % / 90 %; perigee
 // 50 km, interface 122 km) to the figures the calculator showed before it
 // moved to the calculator shell.
@@ -56,8 +56,8 @@ test("tether properties and climbers", function () {
 });
 
 test("forces", function () {
-	near(t.tensionCoM_top / 1e3, 509.77, 2, "tension, payload at top");
-	near(t.tensionCoM_foot / 1e3, 57.59, 2, "tension, payload at foot");
+	near(t.tensionCoM_top / 1e3, 509.77, 2, "tension, load at top");
+	near(t.tensionCoM_foot / 1e3, 57.59, 2, "tension, load at foot");
 	near(t.massAbs / 1e3, 267.23, 2, "tether mass t");
 });
 

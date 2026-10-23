@@ -51,7 +51,7 @@ export function mountHangingSkyhook(root, opts) {
 
 	// ---------- modules ----------
 	shell.addModule({ id: "st", tab: "eng", side: "in", label: "Stations", color: C.ochre, on: true, tip: "Receiving deck, outer docks and main launch deck" });
-	shell.addModule({ id: "pay", tab: "arch", side: "in", label: "Tip payload", color: C.rust, on: true, brings: ["frc"], tip: "Tip payload mass; brings Forces" });
+	shell.addModule({ id: "pay", tab: "arch", side: "in", label: "Tip load", color: C.rust, on: true, brings: ["frc"], tip: "Tip load mass; brings Forces" });
 	shell.addModule({ id: "thr", tab: "eng", side: "in", label: "Cargo throughput", color: C.teal, on: true, needs: ["st"], brings: ["thrO"], tip: "Needs Stations; brings Throughput" });
 	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
 	shell.addModule({ id: "re", tab: "log", side: "in", label: "Earth reentry", color: C.violet, brings: ["reO"], tip: "Cargo released toward Earth (Moon only)" });
@@ -59,7 +59,7 @@ export function mountHangingSkyhook(root, opts) {
 	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Dropped from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
 	shell.addModule({ id: "clm", tab: "eng", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
 	shell.addModule({ id: "rp", tab: "log", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
-	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, needs: ["pay"], tip: "Needs Tip payload" });
+	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, needs: ["pay"], tip: "Needs Tip load" });
 	shell.addModule({ id: "thrO", tab: "eng", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
 	shell.addModule({ id: "kpO", tab: "eng", side: "out", label: "Station-keeping", color: C.cobalt, needs: ["kp"], tip: "Needs Station-keeping inputs" });
 	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Earth reentry", color: C.violet, needs: ["re"], tip: "Needs Earth reentry inputs" });
@@ -104,9 +104,9 @@ export function mountHangingSkyhook(root, opts) {
 	var recvIn = shell.numberField(stCard, { label: "Receiving deck", hint: "shuttles from the surface", unit: "km", value: 233, focus: "stations",
 		tip: "Where shuttles from the surface join the tether." });
 
-	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["frc"], side: "in", title: "Tip payload", short: "Payload", color: C.rust, module: "pay", focus: "top" });
-	var tipIn = shell.numberField(payCard, { label: "Tip payload mass", hint: "sizes the absolute tension", unit: "t", value: 100, min: 0, focus: "top",
-		tip: "Payload held at a tether tip; it sizes the peak tension." });
+	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["frc"], side: "in", title: "Tip load", short: "Load", color: C.rust, module: "pay", focus: "top" });
+	var tipIn = shell.numberField(payCard, { label: "Tip load mass", hint: "sizes the absolute tension", unit: "t", value: 100, min: 0, focus: "top",
+		tip: "Load held at a tether tip; it sizes the peak tension." });
 
 	var thrCard = shell.addCard({ id: "thr", tab: "eng", feeds: ["thrO", "kpO"], side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, module: "thr", focus: "stations" });
 	var rateIn = shell.numberField(thrCard, { label: "Delivery rate to launch deck", unit: "t/day", value: 1000, min: 0,
@@ -168,16 +168,16 @@ export function mountHangingSkyhook(root, opts) {
 	var rAccT = shell.line(propCard, { label: "Net pull at top", unit: "m/s²" });
 	var rTrL = shell.line(propCard, { label: "Taper ratio, foot → centre" });
 	var rTrH = shell.line(propCard, { label: "Taper ratio, centre → top" });
-	var rMassL = shell.line(propCard, { label: "Lower tether mass", unit: "× payload" });
-	var rMassH = shell.line(propCard, { label: "Upper tether mass", unit: "× payload", sub: "Anything that isn't the tether itself is payload." });
+	var rMassL = shell.line(propCard, { label: "Lower tether mass", unit: "× load" });
+	var rMassH = shell.line(propCard, { label: "Upper tether mass", unit: "× load", sub: "The load is everything the tether holds up that isn't the tether itself." });
 
 	var clmCard = shell.addCard({ id: "clm", tab: "eng", side: "out", title: "Climber energy", short: "Climber", color: C.core, module: "clm", focus: "tether" });
 	var rClL = shell.line(clmCard, { label: "Foot → centre (uphill)", unit: "kJ/kg" });
 	var rClH = shell.line(clmCard, { label: "Centre → top (downhill)", unit: "MJ/kg", sub: "Regenerative: the climber is pulled outward and can recover energy." });
 
 	var frcCard = shell.addCard({ id: "frc", tab: "arch", side: "out", title: "Forces", short: "Forces", color: C.rust, module: "frc", focus: "top" });
-	var rTTop = shell.line(frcCard, { label: "Tension at centre, payload at top", unit: "kN" });
-	var rTFoot = shell.line(frcCard, { label: "Tension at centre, payload at foot", unit: "kN" });
+	var rTTop = shell.line(frcCard, { label: "Tension at centre, load at top", unit: "kN" });
+	var rTFoot = shell.line(frcCard, { label: "Tension at centre, load at foot", unit: "kN" });
 	var rMAbs = shell.line(frcCard, { label: "Tether mass", unit: "t" });
 
 	var thrOCard = shell.addCard({ id: "thrO", tab: "eng", side: "out", title: "Throughput", short: "Throughput", color: C.teal, module: "thrO", focus: "stations" });
@@ -284,7 +284,7 @@ export function mountHangingSkyhook(root, opts) {
 		var f;
 		f = scaled(t.tensionCoM_top, FORCE); rTTop.set(f[0], null, f[1]);
 		f = scaled(t.tensionCoM_foot, FORCE); rTFoot.set(f[0], null, f[1]);
-		f = scaled(t.massAbs, MASS); rMAbs.set(f[0], num(t.lowMass + t.highMass, 2) + " × the " + num(t.tipMass / 1e3, 0) + " t tip payload", f[1]);
+		f = scaled(t.massAbs, MASS); rMAbs.set(f[0], num(t.lowMass + t.highMass, 2) + " × the " + num(t.tipMass / 1e3, 0) + " t tip load", f[1]);
 
 		// throughput
 		var th = t.throughput;
@@ -296,7 +296,7 @@ export function mountHangingSkyhook(root, opts) {
 		var down = scaled(th.cargoDownT * 1e3, MASS);
 		f = scaled(th.cargoUpT * 1e3, MASS); rCargo.set(f[0], "plus " + down[0] + " " + down[1] + " descending", f[1]);
 		f = scaled(th.addedTension, FORCE);
-		rDT.set(f[0], shell.isOn("pay") ? num(th.addedTensionPct, 2) + "% of the tip-payload tension" : "", f[1]);
+		rDT.set(f[0], shell.isOn("pay") ? num(th.addedTensionPct, 2) + "% of the tip-load tension" : "", f[1]);
 		f = scaled(th.liftPower, POWER);
 		rPow.set(f[0], th.liftPower < 0 ? "Negative: regeneration above the centre of mass exceeds the climb below it." : "Receiving → launch deck, net of regeneration, at drive efficiency.", f[1]);
 		rEpt.set(num(th.energyPerT, 2));
@@ -533,11 +533,11 @@ export function mountHangingSkyhook(root, opts) {
 		tClimber.textContent = "climber ↑ " + num(field(vClimbIn, 200), 0) + " m/s · every " + num(t.throughput.spacingKm, 0) + " km";
 		[gClimber, gClArrow, tClimber].forEach(function (el) { show(el, thrOn); });
 
-		// tip payload and reboost thruster at the top
+		// tip load and reboost thruster at the top
 		var py = -rT - 14 * u;
 		gPay.setAttribute("x", -5.5 * u); gPay.setAttribute("y", py - 5.5 * u); gPay.setAttribute("width", 11 * u); gPay.setAttribute("height", 11 * u); gPay.setAttribute("rx", 2 * u);
 		tPay.setAttribute("x", 12 * u); tPay.setAttribute("y", py + 4 * u); tPay.setAttribute("font-size", fsS); tPay.setAttribute("stroke-width", 4 * u);
-		tPay.textContent = "tip payload " + num(t.tipMass / 1e3, 0) + " t";
+		tPay.textContent = "tip load " + num(t.tipMass / 1e3, 0) + " t";
 		[gPay, tPay].forEach(function (el) { show(el, on("pay")); });
 		gNozzle.setAttribute("d", "M" + (-6 * u) + " " + (py - 3 * u) + "L" + (-15 * u) + " " + (py - 6 * u) + "L" + (-15 * u) + " " + (py + 6 * u) + "L" + (-6 * u) + " " + (py + 3 * u) + "Z");
 		gPlume.setAttribute("d", "M" + (-18 * u) + " " + py + "L" + (-46 * u) + " " + py);

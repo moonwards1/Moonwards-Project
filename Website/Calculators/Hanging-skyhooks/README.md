@@ -6,7 +6,7 @@ station-keeping, release points for transfers to neighbouring bodies, and
 Earth reentry of cargo released toward Earth.
 
 Built on the calculator shell: inputs, a zoomable drawing and results in three
-columns. Stations, tip payload, cargo throughput, station-keeping and Earth
+columns. Stations, tip load, cargo throughput, station-keeping and Earth
 reentry are input modules; the fall from the foot, climber energy, release
 points, forces, throughput, station-keeping, reentry and sending the tether to
 another calculator are result modules. Card titles glide the drawing to their
@@ -22,7 +22,7 @@ part; the foot, centre-of-mass and top markers can be dragged.
   directly, one per hanging skyhook in the design, with the body chosen there
   (`lockBody`), filling its container (`embedded`), and restoring saved
   settings (`state`); the header comment lists the options. Each card and
-  chip names its workbench tab: geometry, material, tip payload, speeds,
+  chip names its workbench tab: geometry, material, tip load, speeds,
   the fall from the foot, tether properties and forces on Architecture;
   Earth reentry and release points on Logistics; stations, cargo
   throughput, climber energy and station-keeping on Engineering
