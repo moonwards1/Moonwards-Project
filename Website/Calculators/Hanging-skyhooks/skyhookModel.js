@@ -1,6 +1,8 @@
 // Hanging skyhook model — the pure physics of a vertical (non-rotating)
 // gravity-gradient tether. ES module, no DOM, so it runs in Node:
-//   import { computeSkyhook, MATERIALS, PROPELLANT_MAX } from "./skyhookModel.js";
+//   import { computeSkyhook, PROPELLANT_MAX } from "./skyhookModel.js";
+//
+// Tether materials are Shared/materials.js.
 //
 // computeSkyhook(body, inp) takes a body from Shared/orbit.js (`systems`) and
 // plain inputs, and returns every figure the page shows. Units are SI unless a
@@ -22,16 +24,6 @@
 
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
-
-export const MATERIALS = {
-	silica:          { name: "Lunar silica",          strength: 13e9,    density: 2300 },
-	bestsilica:      { name: "Best lunar silica",     strength: 17e9,    density: 2300 },
-	earlylunarglass: { name: "Early lunar glass",     strength: 3e9,     density: 2700 },
-	ecnt:            { name: "Early carbon nanotube", strength: 18e9,    density: 1450 },
-	mwcnt:           { name: "Mature carbon nanotube", strength: 42e9,   density: 1400 },
-	zylon:           { name: "Zylon",                 strength: 5.8e9,   density: 1540 },
-	steel:           { name: "Steel",                 strength: 2.617e9, density: 8000 }
-};
 
 // Viable mature-engine exhaust-speed ceilings, km/s.
 export const PROPELLANT_MAX = { oxygen: 20, hydrogen: 80 };

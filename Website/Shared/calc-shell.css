@@ -33,6 +33,8 @@
  *   cs-sum        the one-line summary shown when collapsed
  *   cs-row        an input row: cs-lbl (+ cs-hint) and cs-fld (input + cs-u)
  *   cs-full       a row whose field spans the card (selects)
+ *   cs-choice     a row led by a cs-radio button, one of a choice between
+ *                 fields; cs-unchosen dims the rows not chosen
  *   cs-kvs / cs-kv   a block of result lines / one line: cs-k, cs-v (cs-vn, cs-vu), cs-s
  *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
  *   cs-tipped     a row whose label carries a hover tip (dotted underline)
@@ -265,6 +267,9 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 /* ---------- input rows ---------- */
 .cs-row { display: grid; grid-template-columns: minmax(0, 1fr) clamp(96px, 40%, 136px); align-items: center; gap: 10px; min-height: 38px; }
 .cs-row.cs-full { grid-template-columns: 1fr; }
+.cs-row.cs-choice { grid-template-columns: auto minmax(0, 1fr) clamp(96px, 40%, 136px); }
+.cs-radio { margin: 0; width: 15px; height: 15px; accent-color: var(--mc); cursor: pointer; }
+.cs-row.cs-unchosen .cs-lbl, .cs-row.cs-unchosen .cs-fld { opacity: .55; }
 .cs-row > .cs-fld { min-width: 0; }
 .cs-lbl { font-size: 13px; line-height: 1.25; }
 .cs-hint { display: block; font-size: 11.5px; color: var(--cs-ink2); }

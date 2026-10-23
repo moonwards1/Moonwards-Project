@@ -11,7 +11,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { systems } from "../../Shared/orbit.js";
-import { computeSkyhook, MATERIALS } from "./skyhookModel.js";
+import { computeSkyhook } from "./skyhookModel.js";
+import { MATERIALS } from "../../Shared/materials.js";
 
 var moon = systems.get("Moon");
 var m = MATERIALS.silica;

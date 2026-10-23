@@ -1608,7 +1608,7 @@ vp^2 = mu * (2/P - 1/a)
 	lowOrbitAltitude: 50e3,
 	GM: 1.529e9,
 	mass: 2.29e19,
-	period: 1827.87996016922*86400,
+	period: 4.196*3600,
 	color: "#8f9a55",
 	orbit: {
 		system: "Sun",
@@ -1630,7 +1630,7 @@ vp^2 = mu * (2/P - 1/a)
 	lowOrbitAltitude: 100e3,
 	mass: 2.59076e20,
 	GM: 1.729e10,
-	period: 1325.389042911101*86400,
+	period: 5.342*3600,
 	axialTilt: 27*(Math.PI/180),
 	pole: { ra: 309.03*(Math.PI/180), dec: 42.23*(Math.PI/180) },
 	color: "#e87fae",

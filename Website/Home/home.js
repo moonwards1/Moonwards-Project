@@ -35,6 +35,16 @@ var CALCULATORS = {
 		load: function () {
 			return import("../Calculators/Hanging-skyhooks/skyhookCalc.js").then(function (m) { return m.mountHangingSkyhook; });
 		}
+	},
+	"space-elevator": {
+		load: function () {
+			return import("../Calculators/Space-Elevator-Calculator/spaceElevatorBench.js").then(function (m) { return m.mountSpaceElevator; });
+		}
+	},
+	"moon-l1-elevator": {
+		load: function () {
+			return import("../Calculators/Moon-L1-Elevator/l1ElevatorBench.js").then(function (m) { return m.mountMoonL1Elevator; });
+		}
 	}
 };
 var mounted = {};   // installation id → { el, handle, instId, body }

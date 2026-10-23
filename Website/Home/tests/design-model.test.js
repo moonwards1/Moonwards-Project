@@ -124,9 +124,12 @@ test("parse refuses foreign data and drops unknown entries", function () {
 	assert.equal(p.bodies[0].inst.length, 1);
 });
 
-test("only the hanging skyhook has its own calculator so far", function () {
+test("installations with their own calculator", function () {
 	var hang = { id: "h", fam: "skyhook", v: "hanging" };
 	assert.equal(calcFor(hang), "hanging-skyhook");
+	assert.equal(calcFor({ id: "e", fam: "elevator", v: "standard" }), "space-elevator");
+	assert.equal(calcFor({ id: "l", fam: "elevator", v: "l1" }), "moon-l1-elevator");
+	assert.equal(calcFor({ id: "m", fam: "elevator", v: "l2" }), null);
 	assert.equal(calcFor({ id: "p", fam: "skyhook", v: "phobos" }), null);
 	assert.equal(calcFor(null), null);
 	assert.equal(instLabel(hang), "Hanging skyhook");

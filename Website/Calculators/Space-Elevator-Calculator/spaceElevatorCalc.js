@@ -1,10 +1,8 @@
 // ES module (loaded with <script type="module">).
-import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
+import { computeSpaceElevator } from "./spaceElevatorModel.js";
 
 // ── constants ──────────────────────────────────────────────────
-const G      = Const.G;
-const GM_sun = Const.GM_sun; // m³/s²
 const AU     = Const.AU;    // m
 
 const BODIES = {
@@ -94,48 +92,8 @@ function fmt(n, digits=4) {
 
 function set(id, val) { document.getElementById(id).textContent = val; }
 
-// ── taper integral (numerical, 2000 steps) ─────────────────────
-// Returns A(r_tip)/A(r_foot) — the cross-section ratio needed so
-// the cable is nowhere overstressed.
-// Taper ratio = A(sync) / A(tip) = exp(∫[rSync→rTip] (ρ/σ_eff)(ω²r - GM/r²) dr)
-// Above sync the integrand is always positive, so no abs() needed.
-function taperRatio(GM, omega, rSync, rTip, density, strengthPa, safety) {
-	const sigmaEff = strengthPa / safety;
-	// The integrand (ω²r − GM/r²) is analytically integrable, so use the shared
-	// exact taper. (The old 2000-step trapezoidal loop approximated this very
-	// integral; the closed form is exact and faster.)
-	return OrbitalMath.taperRatio(GM, omega, rSync, rTip, sigmaEff / density);
-}
-
-// Cable mass per kg of payload attached at the tether tip.
-// A_tip is set by the net outward force on 1 kg at the tip; cross-section
-// grows inward following the exponential-taper profile toward sync orbit.
-function cableMassRatio(GM, omega, rFoot, rTip, density, strengthPa, safety) {
-	const sigmaEff = strengthPa / safety;
-	const steps = 2000;
-	const dr = (rTip - rFoot) / steps;
-
-	// cross-section at tip to hold 1 kg of payload
-	const netTip = omega * omega * rTip - GM / (rTip * rTip);
-	const ATip = Math.abs(netTip) / sigmaEff; // m² per kg
-
-	// log(A(r)/A_tip) = (ρ/σ_eff) · ∫[rTip→r] (ω²r' − GM/r'²) dr'
-	// built by stepping inward from rTip (index steps) to rFoot (index 0)
-	const logA = new Float64Array(steps + 1);
-	for (let i = steps - 1; i >= 0; i--) {
-		const r = rFoot + (i + 0.5) * dr;
-		logA[i] = logA[i + 1] + (density / sigmaEff) * (omega * omega * r - GM / (r * r)) * dr;
-	}
-
-	let mass = 0;
-	for (let i = 0; i <= steps; i++) {
-		const w = (i === 0 || i === steps) ? 0.5 : 1;
-		mass += w * density * ATip * Math.exp(logA[i]) * dr;
-	}
-	return mass; // kg of cable per kg of tip payload
-}
-
 // ── main calculation ───────────────────────────────────────────
+// The physics is spaceElevatorModel.js (shared with the home workbench).
 function calculate() {
 	const R_km   = parseFloat(document.getElementById("radius").value);
 	const gSurf  = parseFloat(document.getElementById("gsurf").value);
@@ -143,102 +101,51 @@ function calculate() {
 	const sig_GPa= parseFloat(document.getElementById("strength").value);
 	const rho    = parseFloat(document.getElementById("density").value);
 	const safety = parseFloat(document.getElementById("safety").value);
-	let   tipKm  = parseFloat(document.getElementById("tipAlt").value);
+	const tipKm  = parseFloat(document.getElementById("tipAlt").value);
 
 	const R      = R_km * 1e3;             // m
 	const GM_val = gSurf * R * R;          // m³/s²
 	const sig    = sig_GPa * 1e9;          // Pa
-	const T_s    = T_hr * 3600;            // s
-	const omega  = 2 * Math.PI / T_s;     // rad/s
-	const rFoot  = R;
-	const rSync  = OrbitalMath.synchronousRadius(GM_val, omega); // m
-	const hSync  = (rSync - R) / 1e3;     // km
+	const omega  = 2 * Math.PI / (T_hr * 3600);   // rad/s
+	const sunRef = document.querySelector('input[name="sunRef"]:checked').value;
+	const sunId  = sunRef === 'peri' ? 'sunPeri' : sunRef === 'apo' ? 'sunApo' : 'sunOrbit';
 
-	// auto-tip: 20% above sync orbit radius
-	if (tipKm === 0) {
-		tipKm = (rSync * 1.2 - R) / 1e3;
-		document.getElementById("tipAlt").value = tipKm.toFixed(1);
-	}
-	const rTip = R + tipKm * 1e3; // m
-
-	const vSync  = omega * rSync;
-	const vTip   = omega * rTip;
-	const vEsc   = OrbitalMath.escapeVelocity(GM_val, rTip);
-
-	const taper     = taperRatio(GM_val, omega, rSync, rTip, rho, sig, safety);
-	const massRatio = cableMassRatio(GM_val, omega, rFoot, rTip, rho, sig, safety);
-
-	// heliocentric periapsis after retrograde release from tip
-	// Release is exactly retrograde to the primary's orbit → heliocentric speed = v_primary − v_tip.
-	// Radial velocity is zero at release, so the release point is the apoapsis of the new orbit.
-	const vTipInertial = vTip;
-	const sunRef  = document.querySelector('input[name="sunRef"]:checked').value;
-	const sunId   = sunRef === 'peri' ? 'sunPeri' : sunRef === 'apo' ? 'sunApo' : 'sunOrbit';
-	const a_sun_m = parseFloat(document.getElementById(sunId).value) * AU;
-	const v_primary    = OrbitalMath.circularVelocity(GM_sun, a_sun_m);
-	const v_h          = v_primary - vTipInertial;      // heliocentric velocity (can be negative)
-	const speed_h      = Math.abs(v_h);
-	const E_helio      = 0.5 * speed_h * speed_h - GM_sun / a_sun_m;
-	let helioText;
-	if (E_helio >= 0) {
-		helioText = "Escape from solar system";
-	} else {
-		const a_helio = -GM_sun / (2 * E_helio);
-		const L_helio = a_sun_m * speed_h;
-		const e_helio = Math.sqrt(Math.max(0, 1 - L_helio * L_helio / (GM_sun * a_helio)));
-		const r_peri  = a_helio * (1 - e_helio);
-		helioText     = (r_peri / AU).toFixed(4) + " AU";
-	}
+	const se = computeSpaceElevator({
+		GM: GM_val, R: R, omega: omega,
+		rTip: tipKm > 0 ? R + tipKm * 1e3 : NaN,
+		sigmaEff: sig / safety, density: rho,
+		aSun: parseFloat(document.getElementById(sunId).value) * AU
+	});
+	if (se.autoTip) document.getElementById("tipAlt").value = ((se.rTip - R) / 1e3).toFixed(1);
 
 	// ── fill outputs ──
-	set("o-hsync",     fmt(hSync, 2));
-	set("o-vsync",     vSync.toFixed(2));
-	set("o-taper",      taper.toFixed(4));
-	set("o-massratio",  massRatio < 10000 ? massRatio.toFixed(2) : massRatio.toExponential(3));
-	set("o-vtip",      vTipInertial.toFixed(2) + " m/s");
-	const aTip = omega * omega * rTip - GM_val / (rTip * rTip); // net centrifugal in rotating frame
-	set("o-tipgrav",   aTip.toFixed(2));
-	set("o-vesc",      vEsc.toFixed(2) + " m/s");
-	const escRow = document.getElementById("o-escrow");
-	escRow.innerHTML = vTipInertial >= vEsc
+	set("o-hsync",     fmt(se.hSync / 1e3, 2));
+	set("o-vsync",     se.vSync.toFixed(2));
+	set("o-taper",     se.taper.toFixed(4));
+	set("o-massratio", se.massRatio < 10000 ? se.massRatio.toFixed(2) : se.massRatio.toExponential(3));
+	set("o-vtip",      se.vTip.toFixed(2) + " m/s");
+	set("o-tipgrav",   se.aTip.toFixed(2));
+	set("o-vesc",      se.vEsc.toFixed(2) + " m/s");
+	document.getElementById("o-escrow").innerHTML = se.escapes
 		? '<span class="ok">Escapes orbit of body</span>'
 		: '<span class="warn">Doesn\'t escape orbit of body</span>';
 	const proRow = document.getElementById("o-prograde-row");
-	if (vTipInertial >= vEsc) {
-		// Ship escapes the body — show where it ends up in the solar system
+	if (se.escapes) {
+		// The ship escapes the body: where it ends up in the solar system.
 		set("o-lastrow-label", "Heliocentric periapsis (retrograde release):");
-		set("o-helioperi", helioText);
-		// Prograde release: heliocentric apoapsis
-		const v_h_pro     = v_primary + vTipInertial;
-		const E_helio_pro = 0.5 * v_h_pro * v_h_pro - GM_sun / a_sun_m;
-		let proText;
-		if (E_helio_pro >= 0) {
-			proText = "Escapes solar system";
-		} else {
-			const a_helio_pro = -GM_sun / (2 * E_helio_pro);
-			const L_helio_pro = a_sun_m * v_h_pro;
-			const e_helio_pro = Math.sqrt(Math.max(0, 1 - L_helio_pro * L_helio_pro / (GM_sun * a_helio_pro)));
-			proText = (a_helio_pro * (1 + e_helio_pro) / AU).toFixed(4) + " AU";
-		}
-		set("o-heliopro", proText);
+		set("o-helioperi", isFinite(se.helio.retroPeri) ? (se.helio.retroPeri / AU).toFixed(4) + " AU" : "Escape from solar system");
+		set("o-heliopro",  isFinite(se.helio.proApo) ? (se.helio.proApo / AU).toFixed(4) + " AU" : "Escapes solar system");
 		proRow.style.display = "";
 	} else {
-		// Ship stays bound — show the apoapsis of its orbit around the body.
-		// At the tip (rTip > rSync) velocity is tangential and exceeds circular
-		// speed, so the release point is the periapsis; the apoapsis is farther out.
-		const E_orb  = 0.5 * vTipInertial * vTipInertial - GM_val / rTip;
-		const h_orb  = rTip * vTipInertial;                          // tangential release → h = r·v
-		const a_orb  = -GM_val / (2 * E_orb);                       // semi-major axis (> 0)
-		const e_orb  = Math.sqrt(Math.max(0, 1 + 2 * E_orb * h_orb * h_orb / (GM_val * GM_val)));
-		const r_apo  = a_orb * (1 + e_orb);
-		const apoAlt = (r_apo - R) / 1e3;                           // km above surface
+		// The ship stays bound: released above synchronous orbit faster than
+		// circular, so the release is the periapsis and the apoapsis lies farther out.
 		set("o-lastrow-label", "Apoapsis altitude (asteroid orbit):");
-		set("o-helioperi", fmt(apoAlt, 1) + " km");
+		set("o-helioperi", fmt((se.helio.bodyApo - R) / 1e3, 1) + " km");
 		proRow.style.display = "none";
 	}
 
 	document.getElementById("output").style.display = "block";
-	drawCombined(R, rFoot, rSync, rTip, GM_val, omega, rho, sig, safety);
+	drawCombined(R, R, se.rSync, se.rTip, GM_val, omega, rho, sig, safety);
 }
 
 

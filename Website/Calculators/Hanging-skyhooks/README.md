@@ -38,6 +38,7 @@ relative path:
 - `../../Shared/calc-shell.css`, `calc-shell.js`, `zoom-view.js` — the page layout and drawing panel
 - `../../Shared/orbit.js` — planetary-system data
 - `../../Shared/math-utils.js`, `constants.js` — the maths
+- `../../Shared/materials.js`, `material-card.js` — the Material card and its presets
 - `../../Shared/exchange.js`, `exchange-types.js` — sending the tether to the Skyhook Spin-Launcher
 
 **It will break if this folder is moved without `Website/Shared/` coming with

@@ -369,9 +369,12 @@ export class CalcShell {
 		if (focus) el.addEventListener("focus", function () { self.focusCard(card.id, focus); });
 	}
 
-	// opts: { label, hint, tip, unit, value, step, min, max, focus, parent }. Returns the <input>.
-	// `tip` is a longer explanation shown on hover over the label; `parent` places
-	// the row inside an element of the card (e.g. a group shown only sometimes).
+	// opts: { label, hint, tip, unit, value, step, min, max, focus, parent, choice, choiceValue }.
+	// Returns the <input>. `tip` is a longer explanation shown on hover over the
+	// label; `parent` places the row inside an element of the card (e.g. a group
+	// shown only sometimes). `choice` (a group from choice()) puts a radio button
+	// at the start of the row, standing for `choiceValue`; editing the field
+	// chooses it.
 	numberField(card, opts) {
 		var fld = this._row(card, opts.label, opts.hint, false, opts.tip, opts.parent);
 		var input = create("input", false, false, fld);
@@ -383,7 +386,40 @@ export class CalcShell {
 		input.value = opts.value;
 		if (opts.unit) create("span", "cs-u", opts.unit, fld);
 		this._wire(card, input, opts.focus);
+		if (opts.choice) opts.choice._add(fld.parentNode, opts.choiceValue, input);
 		return input;
+	}
+
+	// A choice between alternatives, one per field row: pass the group as
+	// `choice` (with `choiceValue`) to numberField. opts: { key, value } — `key`
+	// names it in saved settings, `value` is the alternative chosen at first.
+	// group.value reads or sets the chosen alternative; rows not chosen dim.
+	choice(card, opts) {
+		var self = this, rows = [], name = "cs-ch-" + card.id + "-" + opts.key;
+		var chosen = opts.value;
+		function mark() { rows.forEach(function (r) { r.radio.checked = r.value === chosen; r.row.classList.toggle("cs-unchosen", r.value !== chosen); }); }
+		function pick(v, el) {
+			if (v === chosen) return;
+			chosen = v; mark();
+			self.listeners.input.forEach(function (fn) { fn(el); });
+		}
+		var group = {
+			disabled: false,
+			get value() { return chosen; },
+			set value(v) { if (rows.some(function (r) { return r.value === v; }) || !rows.length) { chosen = v; mark(); } },
+			_add: function (row, value, input) {
+				var radio = create("input", "cs-radio", false, false);
+				radio.type = "radio"; radio.name = name; radio.value = value;
+				row.insertBefore(radio, row.firstChild);
+				row.classList.add("cs-choice");
+				rows.push({ row: row, value: value, radio: radio });
+				radio.addEventListener("change", function () { if (radio.checked) pick(value, radio); });
+				input.addEventListener("focus", function () { pick(value, input); });
+				mark();
+			}
+		};
+		this._register(card, { key: opts.key }, group);
+		return group;
 	}
 
 	// opts: { label, hint, tip, options: [{ value, label }], value, focus }. Full width without a label.

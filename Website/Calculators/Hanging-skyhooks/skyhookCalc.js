@@ -26,7 +26,8 @@ import { Exchange } from "../../Shared/exchange.js";
 import { PacketTypes } from "../../Shared/exchange-types.js";
 import { CalcShell, ShellColors as C } from "../../Shared/calc-shell.js";
 import { ZoomView, svgEl } from "../../Shared/zoom-view.js";
-import { computeSkyhook, MATERIALS, PROPELLANT_MAX } from "./skyhookModel.js";
+import { addMaterialCard } from "../../Shared/material-card.js";
+import { computeSkyhook, PROPELLANT_MAX } from "./skyhookModel.js";
 
 // Link a stylesheet (path relative to this file) unless the document has it.
 function ensureStylesheet(path) {
@@ -93,17 +94,7 @@ export function mountHangingSkyhook(root, opts) {
 	var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: 10, focus: "foot" });
 	shell.note(geoCard, "Or drag the markers on the drawing.");
 
-	var matCard = shell.addCard({ id: "mat", tab: "arch", feeds: ["prop", "frc"], side: "in", title: "Material", short: "Material", color: C.core, focus: "tether" });
-	var matIn = shell.selectField(matCard, { aria: "Tether material", value: "silica",
-		options: Object.keys(MATERIALS).map(function (k) {
-			var m = MATERIALS[k];
-			return { value: k, label: m.name + " · " + (m.strength / 1e9) + " GPa, " + (m.density / 1000) + " g/cm³" };
-		}).concat([{ value: "custom", label: "Custom material…" }]) });
-	var customBox = document.createElement("div");
-	matCard.body.appendChild(customBox);
-	var sigmaIn = shell.numberField(matCard, { label: "Tensile strength", unit: "GPa", value: 13, parent: customBox });
-	var rhoIn = shell.numberField(matCard, { label: "Density", unit: "kg/m³", value: 2300, parent: customBox });
-	var safetyIn = shell.numberField(matCard, { label: "Safety factor", unit: "×", value: 3, step: "0.1", min: 1 });
+	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop", "frc"], focus: "tether", value: "silica", safety: 3 });
 
 	var stCard = shell.addCard({ id: "st", tab: "eng", feeds: ["thrO", "rp"], side: "in", title: "Stations", short: "Stations", color: C.ochre, module: "st", focus: "stations" });
 	var launchIn = shell.numberField(stCard, { label: "Main launch deck", hint: "most ships leave here", unit: "km", value: 950, focus: "stations",
@@ -245,16 +236,14 @@ export function mountHangingSkyhook(root, opts) {
 
 	function calc() {
 		var body = systems.get(bodyIn.value);
-		var custom = matIn.value === "custom";
-		customBox.hidden = !custom;
-		var mat = custom ? { strength: field(sigmaIn, 13) * 1e9, density: field(rhoIn, 2300) } : MATERIALS[matIn.value];
+		var mat = matCard.read();
 		var stOn = shell.isOn("st");
 		var t = computeSkyhook(body, {
 			foot: field(footIn, 10) * 1e3, centre: field(centreIn, 275) * 1e3, top: field(topIn, 2000) * 1e3,
 			receivingDeck: stOn ? field(recvIn, 233) * 1e3 : null,
 			outerDocks: stOn ? field(outerIn, 606.5) * 1e3 : null,
 			launchDeck: stOn ? field(launchIn, 950) * 1e3 : null,
-			strength: (mat.strength / Math.max(1, field(safetyIn, 3))) / mat.density,
+			strength: mat.specific,
 			tipMass: field(tipIn, 100) * 1e3,
 			rate: field(rateIn, 1000), perClimber: Math.max(1e-3, field(perClimberIn, 100)),
 			vClimb: Math.max(0.1, field(vClimbIn, 200)), effDrive: field(effDriveIn, 70) / 100,
@@ -357,7 +346,6 @@ export function mountHangingSkyhook(root, opts) {
 		// summaries
 		if (bodyCard) bodyCard.setSummary(bodyIn.value);
 		geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km");
-		matCard.setSummary((custom ? "Custom" : MATERIALS[matIn.value].name) + " · ×" + field(safetyIn, 3));
 		stCard.setSummary(num(S.recv, 0) + " · " + num(S.outer, 1) + " · " + num(S.launch, 0) + " km");
 		payCard.setSummary(num(t.tipMass / 1e3, 0) + " t");
 		thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + num(field(perClimberIn, 0), 0) + " t");
@@ -385,9 +373,8 @@ export function mountHangingSkyhook(root, opts) {
 	sendBtn.onclick = function () {
 		calc();
 		var t = S.t;
-		var mat = matIn.value === "custom"
-			? { sigma: field(sigmaIn, 13) * 1e9, rho: field(rhoIn, 2300) }
-			: { sigma: MATERIALS[matIn.value].strength, rho: MATERIALS[matIn.value].density };
+		var m = matCard.read();
+		var mat = { sigma: m.strength, rho: m.density };
 		var packet = PacketTypes.make("tether-spec", {
 			body: bodyIn.value,
 			footAlt: t.foot, centreAlt: t.centre, topAlt: t.top,

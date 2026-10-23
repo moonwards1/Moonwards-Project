@@ -1,42 +1,11 @@
-// ───────────────────────────────────────────────────────────────────
-//  PHYSICS  —  Moon–L1 elevator, cable sized for the LOADED condition
+// Moon–L1 Space Elevator Calculator — the standalone two-step page. The
+// physics is l1ElevatorModel.js (shared with the home workbench's cards);
+// README.md derives it. This file reads the fields, runs the model, and
+// writes the results, the cruise-speed table and the diagram.
 //
-//  r = distance from the Moon's centre, measured toward Earth. Earth at
-//  r = D. The Earth–Moon system rotates about the barycentre (r = x_b)
-//  with angular velocity ω; the tidally-locked Moon holds the tether
-//  fixed in this rotating frame.
-//
-//  Effective specific force (positive = outward, toward Earth):
-//      g(r) =  GMe/(D−r)²  −  GMm/r²  +  ω²(r − x_b)
-//  Effective potential (g = −dΦ/dr):
-//      Φ(r) = −GMm/r − GMe/(D−r) − ½ ω²(r − x_b)²
-//
-//  The operating stress σ_eff = σ_ult / safety is applied to the
-//  FULLY-LOADED cable. Cargo rides on the cable with uniform linear
-//  density λ (kg/m), spread surface → counterweight. Force balance on a
-//  cable element of area A = T/σ_eff (constant stress under load):
-//
-//      dT/dr = −[ρA + λ]·g(r) = −(ρ/σ_eff)·g(r)·T − λ·g(r)
-//
-//  Linear ODE ⇒ superpose a counterweight (homogeneous) part and a
-//  cargo (particular) part:
-//      T(r) = M_cw·g(r_cw)·E(r) + C(r)
-//      E(r) = exp[(ρ/σ_eff)(Φ(r) − Φ(r_cw))]   (closed form, C(r_cw)=0)
-//      C(r): cargo particular solution, integrated numerically (RK4).
-//
-//  Tension peaks at L1 and falls off both ways, so its minimum is at the
-//  surface. A taut cable needs T_surf > 0, giving a hard minimum
-//  counterweight (below it the cable goes slack near the surface):
-//      M_cw,min = −C(R_moon) / [ g(r_cw)·E(R_moon) ]
-//
-//  Area  A(r) = T(r)/σ_eff ;  Tether mass = ρ ∫ A dr (surface → cw).
-//  Because the cable is sized loaded, the empty cable carries a higher
-//  safety factor (reported as "spare safety factor when empty").
-// ───────────────────────────────────────────────────────────────────
-
 // ES module (loaded with <script type="module">).
-import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
+import { L1Elevator } from "./l1ElevatorModel.js";
 
 const KM = 1e3;
 
@@ -136,103 +105,6 @@ function readInputs() {
 	};
 }
 
-// ── build the load-aware solution context (independent of M_cw) ─────
-function buildContext(p) {
-	const xb     = p.D - p.baryE;
-	const sigEff = p.sig / p.safety;
-	const omega  = (p.omegaSrc==="vorb") ? (p.Vorb/xb)
-	                                     : OrbitalMath.angularVelocity(p.GMe+p.GMm, p.D);
-	const g   = r => p.GMe/((p.D-r)*(p.D-r)) - p.GMm/(r*r) + omega*omega*(r-xb);
-	const Phi = r => -p.GMm/r - p.GMe/(p.D-r) - 0.5*omega*omega*(r-xb)*(r-xb);
-
-	// distributed loads, along surface → counterweight
-	const L        = p.rCW - p.Rmoon;
-	const tTrip_s  = L / p.vClimb;
-	const oncable_kg = (isFinite(p.rate)?p.rate:0)*1e3*(tTrip_s/86400);   // payload on the cable
-	const infraF   = 1 + (isFinite(p.infraPct)?p.infraPct:0)/100;        // + climber tare
-	const live_kg  = oncable_kg * infraF;            // moving mass (cargo + climbers), only when loaded
-	const lamCargo = live_kg / L;                    // kg/m, live load (present only with cargo)
-	const lamMin   = isFinite(p.trackMin)  ? p.trackMin  : 0;  // kg/m, track minimum gauge (always on)
-	const lamGrav  = isFinite(p.trackGrav) ? p.trackGrav : 0;  // kg/m at surface, traction part ∝ |g|
-
-	const PhiCW = Phi(p.rCW), gCW = g(p.rCW), k = p.rho/sigEff;
-	const gSurf = Math.abs(g(p.Rmoon));
-	const Efn   = r => Math.exp(k*(Phi(r)-PhiCW));
-	const hfn   = r => Math.abs(g(r))/gSurf;         // gravity shape: 1 at surface → ~0 by L1
-
-	// Two unit particular solutions integrated down from the counterweight:
-	//   C₁(r):  constant unit load     dC₁/dr = −k·g·C₁ − g
-	//   C_g(r): gravity-shaped load     dC_g/dr = −k·g·C_g − h(r)·g
-	// A constant load λ adds λ·C₁(r); the traction reinforcement λ_grav·h(r) adds
-	// λ_grav·C_g(r). Cable self-weight + counterweight are in the shape E(r).
-	const N = 20000, dr = (p.Rmoon - p.rCW)/N;
-	const f1 = (r,C) => -k*g(r)*C - g(r);
-	const fg = (r,C) => -k*g(r)*C - hfn(r)*g(r);
-	let r = p.rCW, C1 = 0, Cg = 0, hInt = 0;
-	const rs = new Array(N+1), Cs = new Array(N+1), Cgs = new Array(N+1), Es = new Array(N+1);
-	rs[0]=r; Cs[0]=0; Cgs[0]=0; Es[0]=1;
-	let C_L1 = null, Cg_L1 = null;
-	for (let i=0;i<N;i++){
-		const a1=f1(r,C1), b1=f1(r+dr/2,C1+dr/2*a1), c1=f1(r+dr/2,C1+dr/2*b1), d1=f1(r+dr,C1+dr*c1);
-		const ag=fg(r,Cg), bg=fg(r+dr/2,Cg+dr/2*ag), cg=fg(r+dr/2,Cg+dr/2*bg), dg=fg(r+dr,Cg+dr*cg);
-		const C1n=C1+dr/6*(a1+2*b1+2*c1+d1), Cgn=Cg+dr/6*(ag+2*bg+2*cg+dg), rn=r+dr;
-		hInt += 0.5*(hfn(r)+hfn(rn))*Math.abs(rn-r);
-		if (C_L1===null && r>=p.rL1 && rn<=p.rL1){ const t=(p.rL1-r)/(rn-r); C_L1=C1+t*(C1n-C1); Cg_L1=Cg+t*(Cgn-Cg); }
-		r=rn; C1=C1n; Cg=Cgn; rs[i+1]=r; Cs[i+1]=C1; Cgs[i+1]=Cg; Es[i+1]=Efn(r);
-	}
-	const Esurf = Es[N], Csurf = Cs[N], Cgsurf = Cgs[N];
-	// Floor: full-load surface tension = 0 (min+cargo as constant loads + the grav term).
-	const McwMin = -((lamMin+lamCargo)*Csurf + lamGrav*Cgsurf)/(gCW*Esurf);
-
-	return { xb, sigEff, omega, g, Phi, L, tTrip_s, oncable_kg, infraF, live_kg,
-	         lamCargo, lamMin, lamGrav, hInt, gCW, Efn, EL1: Efn(p.rL1),
-	         C_L1, Cg_L1, Esurf, Csurf, Cgsurf, rs, Cs, Cgs, Es, N, McwMin };
-}
-
-// ── load-aware metrics for a given counterweight mass ──────────────
-//  Cargo is a LIVE load: the cable must hold σ/safety in every load state
-//  from empty to full. Tension is linear in cargo, so the worst case at
-//  each point is one of the two endpoints — size the area to the envelope
-//  A(r) = max(T_empty(r), T_full(r))/σ_eff. Near the surface, REMOVING
-//  cargo raises the hold-down tension, so the empty case governs there;
-//  near and above L1 the full case governs. The taut floor uses the full
-//  case (the one that can slacken the surface). The track is a constant
-//  dead load present in BOTH states; cargo is added only in the full state.
-function loadedMetrics(p, ctx, Mcw) {
-	const { sigEff, gCW, Es, Cs, Cgs, rs, N, EL1, C_L1, Cg_L1, Esurf, Csurf, Cgsurf,
-	        lamCargo, lamMin, lamGrav, hInt, L } = ctx;
-	const track  = i => lamMin*Cs[i] + lamGrav*Cgs[i];               // always-on track (min + traction)
-	const Tempty = i => Mcw*gCW*Es[i] + track(i);                    // cable + track only
-	const Tfull  = i => Mcw*gCW*Es[i] + track(i) + lamCargo*Cs[i];   // + full cargo
-	const Aenv   = i => Math.max(Tempty(i), Tfull(i)) / sigEff;
-
-	let mass = 0, TminFull = Infinity, crossR = null;
-	const prof = [];                                 // downsampled (r,A) for the diagram
-	const stride = Math.max(1, Math.floor(N/400));
-	for (let i=0;i<=N;i++){
-		const tf = Tfull(i);
-		if (tf < TminFull) TminFull = tf;            // taut check uses the full-load case
-		if (crossR===null && i>0 && Cs[i-1]>=0 && Cs[i]<0) crossR = rs[i]; // empty governs below
-		if (i % stride === 0 || i===N) prof.push({ r: rs[i], A: Aenv(i) });
-		if (i<N) mass += p.rho * 0.5*(Aenv(i)+Aenv(i+1)) * Math.abs(rs[i+1]-rs[i]);
-	}
-	const Tcw = Mcw*gCW;
-	const trackSurf  = lamMin*Csurf + lamGrav*Cgsurf;
-	const trackL1    = lamMin*C_L1  + lamGrav*Cg_L1;
-	const Tsurf_full  = Mcw*gCW*Esurf + trackSurf + lamCargo*Csurf;   // smallest — drives the floor
-	const Tsurf_empty = Mcw*gCW*Esurf + trackSurf;                    // larger — what the anchor holds
-	const TL1_full    = Mcw*gCW*EL1 + trackL1 + lamCargo*C_L1;        // peak tension (full at L1)
-	const trackMass   = lamMin*L + lamGrav*hInt;                      // ∫(λ_min + λ_grav·h) dr
-	return {
-		mass, TminFull, crossR, trackMass,
-		TsurfHold: Tsurf_empty, Tsurf_full, TL1: TL1_full, Tcw,
-		Acw: Tcw/sigEff,
-		Asurf: Math.max(Tsurf_empty, Tsurf_full)/sigEff,
-		AL1:   Math.max(TL1_full, Mcw*gCW*EL1 + trackL1)/sigEff,
-		prof,
-	};
-}
-
 // ── Step-2 gating ───────────────────────────────────────────────────
 function lockStep2() {
 	document.getElementById("mCW").disabled = true;
@@ -259,7 +131,7 @@ function computeFloor() {
 	if (!(p.rCW > p.rL1)) { err.textContent = "Counterweight distance must be beyond L1."; return; }
 	if (p.safety < 1)     { err.textContent = "Safety factor must be ≥ 1."; return; }
 
-	const ctx = buildContext(p);
+	const ctx = L1Elevator.buildContext(p);
 	if (!(ctx.gCW > 0)) {
 		err.textContent = "At the counterweight the net force is not outward — move it farther beyond L1.";
 		return;
@@ -286,7 +158,7 @@ function calculate() {
 	const p   = readInputs();
 
 	if (!isFinite(p.mCW)) { err.textContent = "Enter a counterweight mass."; return; }
-	const ctx = buildContext(p);
+	const ctx = L1Elevator.buildContext(p);
 	if (!(ctx.gCW > 0)) { err.textContent = "Counterweight is not beyond L1 (net force not outward)."; return; }
 	if (p.mCW < ctx.McwMin) {
 		err.textContent = "Counterweight " + fmtMass(p.mCW) + " is below the minimum "
@@ -297,7 +169,7 @@ function calculate() {
 	}
 	err.textContent = "";
 
-	const m = loadedMetrics(p, ctx, p.mCW);
+	const m = L1Elevator.loadedMetrics(p, ctx, p.mCW);
 	const km = KM, omega = ctx.omega, g = ctx.g, Phi = ctx.Phi;
 	const vImplied = omega*ctx.xb;
 	const a_net = ctx.gCW, a_net_dir = a_net>=0 ? "outward (toward Earth)" : "inward (toward Moon)";
@@ -355,33 +227,20 @@ function calculate() {
 	set("o-power",   fmtP(P_lift));
 	set("o-epert",   ePerT.toFixed(2)+" GJ/t");
 
-	// ── orbit after release ──  (unchanged physics; uses ctx.omega/g)
-	const Rearth = p.Rearth, reAlt = p.reAlt, ifaceAlt = p.ifaceAlt;
-	const rRel = p.D - p.rCW, vRel = omega*rRel;
-	const epsOrb = OrbitalMath.specificEnergy(vRel, p.GMe, rRel);
+	// ── orbit after release ──
+	const ro = L1Elevator.releaseOrbit({ GMe: p.GMe, D: p.D, rCW: p.rCW, omega: omega,
+		Rearth: p.Rearth, ifaceAlt: p.ifaceAlt, targetAlt: p.reAlt });
+	const rRel = ro.rRel, vRel = ro.vRel;
 	let perigeeTxt="—", dvTxt="—", fpaTxt="—", peakgTxt="—";
-	if (epsOrb < 0) {
-		const aOrb = -p.GMe/(2*epsOrb);
-		const rOther = 2*aOrb - rRel;
-		const rPer = Math.min(rRel, rOther);
-		perigeeTxt = (rPer/km).toLocaleString(undefined,{maximumFractionDigits:0})+" km from Earth centre"
-		           + "  (alt "+((rPer-Rearth)/km).toLocaleString(undefined,{maximumFractionDigits:0})+" km)";
-		const rEntry = Rearth + reAlt;
-		if (rEntry < rRel) {
-			const a2 = OrbitalMath.semiMajorAxisFromApsis(rEntry, rRel);
-			const vBurn = OrbitalMath.visVivaVelocity(p.GMe, rRel, a2);
-			dvTxt = (vRel - vBurn).toFixed(0)+" m/s retrograde"
-			      + "  (apogee "+(vRel).toFixed(0)+" → "+(vBurn).toFixed(0)+" m/s)";
-			const e2 = OrbitalMath.eccentricityFromApsis(rEntry, rRel);
-			const rI = Rearth + ifaceAlt;
-			if (rEntry < rI && rI < rRel) {
-				const hOrb2 = Math.sqrt(p.GMe*a2*(1-e2*e2));
-				const vI = OrbitalMath.visVivaVelocity(p.GMe, rI, a2);
-				const gamma = Math.acos(Math.min(1, hOrb2/(rI*vI)));
-				const gDeg = gamma*180/Math.PI;
-				const peakG = OrbitalMath.allenEggersPeakDecel(vI, gamma, Const.scaleHeight.earth)/Const.g0;
-				fpaTxt = "−"+gDeg.toFixed(1)+"°  (entry speed "+(vI/1000).toFixed(2)+" km/s)";
-				peakgTxt = "~"+peakG.toFixed(0)+" g (ballistic est.)";
+	if (ro.bound) {
+		perigeeTxt = (ro.rPer/km).toLocaleString(undefined,{maximumFractionDigits:0})+" km from Earth centre"
+		           + "  (alt "+((ro.rPer-p.Rearth)/km).toLocaleString(undefined,{maximumFractionDigits:0})+" km)";
+		if (ro.burn && !ro.burn.noBurn) {
+			dvTxt = ro.burn.dv.toFixed(0)+" m/s retrograde"
+			      + "  (apogee "+(vRel).toFixed(0)+" → "+(ro.burn.vAfter).toFixed(0)+" m/s)";
+			if (ro.entry) {
+				fpaTxt = "−"+(ro.entry.gamma*180/Math.PI).toFixed(1)+"°  (entry speed "+(ro.entry.vI/1000).toFixed(2)+" km/s)";
+				peakgTxt = "~"+ro.entry.peakG.toFixed(0)+" g (ballistic est.)";
 			} else {
 				fpaTxt = "—"; peakgTxt = "target perigee above interface — no entry";
 			}
@@ -413,30 +272,7 @@ function calculate() {
 
 	document.getElementById("output").style.display="block";
 	drawDiagram(p.Rmoon, p.rL1, p.rCW, m.prof, m.TminFull);
-	renderSweep(sweepSpeeds(p, ctx, p.mCW));
-}
-
-// ── cruise-speed sweep: structure mass vs climb speed ──────────────
-//  Holds throughput, material and counterweight HEADROOM (chosen ÷ minimum)
-//  fixed, and re-sizes the whole structure at a ladder of climb speeds around
-//  the chosen one. The live load on the cable ∝ 1/v, so the cable and the
-//  counterweight needed both shrink as v rises — with diminishing returns,
-//  while track wear (not modelled here) rises ∝ v². Shows where the knee is.
-function sweepSpeeds(pBase, ctxCur, curMcw) {
-	const headroom = curMcw / ctxCur.McwMin;          // chosen ÷ minimum, held fixed
-	const mults = [0.5, 0.75, 1, 1.5, 2, 3, 4];
-	const v0 = pBase.vClimb;
-	return mults.map(function(mu){
-		const v   = v0 * mu;
-		const p   = Object.assign({}, pBase, { vClimb: v });
-		const ctx = buildContext(p);
-		const Mcw = headroom * ctx.McwMin;
-		const m   = loadedMetrics(p, ctx, Mcw);
-		const trackMass = ctx.lamMin*ctx.L + ctx.lamGrav*ctx.hInt;
-		return { v: v, isCur: Math.abs(mu-1) < 1e-9, trip: ctx.tTrip_s/86400,
-		         live: ctx.live_kg, Mcw: Mcw, tether: m.mass,
-		         total: m.mass + trackMass + Mcw };
-	});
+	renderSweep(L1Elevator.sweepSpeeds(p, ctx, p.mCW));
 }
 
 function renderSweep(rows) {

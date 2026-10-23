@@ -20,16 +20,11 @@
 
 import { systems } from "../Shared/orbit.js";
 import { CalcShell, ShellColors as C } from "../Shared/calc-shell.js";
+import { addMaterialCard } from "../Shared/material-card.js";
 import { WM, G0 } from "./workbench-math.js";
 import { BODY_FACTS } from "./body-facts.js";
 import { BODY_ORDER, instLabel } from "./design-model.js";
 
-var MATERIALS = [
-	{ value: "silica", label: "Lunar silica fibre · 13 GPa, 2.3 g/cm³" },
-	{ value: "zylon", label: "Zylon PBO · 5.8 GPa, 1.56 g/cm³" },
-	{ value: "cnt", label: "Carbon nanotube yarn · 30 GPa, 1.3 g/cm³" },
-	{ value: "graphene", label: "Graphene ribbon · 50 GPa, 1.8 g/cm³" }
-];
 var FUELS = [
 	{ value: "360", label: "LOX / methane · 360 s" },
 	{ value: "450", label: "LOX / hydrogen · 450 s" },
@@ -113,45 +108,26 @@ export function addSkeletonCards(shell, ctx, tabs) {
 			}
 			tetherCard();
 		} else if (fam === "elevator") {
+			// Through L2 (the standard and L1 elevators have their own calculators).
 			var eg = shell.addCard({ id: "sk-geo", tab: "arch", side: "in", title: "Tether geometry", short: "Geometry", color: C.core, feeds: ["sk-orb", "sk-teth"] });
-			var lagrange = v === "l1" ? "L1" : v === "l2" ? "L2" : null;   // elevator through an Earth–Moon point
-			if (lagrange) {
-				F.len = shell.numberField(eg, v === "l1"
-					? { label: "Length toward Earth", hint: "from the near-side surface", unit: "km", value: 100000, min: 1 }
-					: { label: "Length away from Earth", hint: "from the far-side surface", unit: "km", value: 100000, min: 1 });
-			} else {
-				var stat = (WM.stationaryRadius(body.GM, body.rot) - body.R) / 1e3;
-				F.top = shell.numberField(eg, { label: "Top altitude", hint: "beyond stationary orbit", unit: "km", value: Math.round(stat * 1.5 / 10) * 10, min: 1 });
-			}
+			F.len = shell.numberField(eg, { label: "Length away from Earth", hint: "from the far-side surface", unit: "km", value: 100000, min: 1 });
 			materialCard();
 			var ec = shell.addCard({ id: "sk-cap", tab: "arch", side: "in", title: "Maximum capacity", short: "Capacity", color: C.ochre, feeds: ["sk-teth"] });
 			F.climbT = shell.numberField(ec, { label: "Climber payload", unit: "t", value: 20, min: 0 });
 			F.climbers = shell.numberField(ec, { label: "Climbers on the cable", value: 8, min: 0 });
 
-			var eo = shell.addCard({ id: "sk-orb", tab: "arch", side: "out", title: lagrange ? "Balance & speeds" : "Orbits & speeds", short: "Speeds", color: C.core });
-			if (lagrange) {
-				var hl = shell.hero(eo, [{ label: lagrange + " from the Moon's centre", unit: "km" }, { label: "Far end past " + lagrange, unit: "km" }]);
-				var lRel = shell.line(eo, { label: "Far-end speed, Moon-relative", unit: "km/s" });
-				calcs.push(function () {
-					var point = body.sys[lagrange], end = body.R + val(F.len, 100000) * 1e3;
-					var w = 2 * Math.PI / Math.abs(body.rot);
-					hl[0].set(num(point / 1e3, 0)); hl[1].set(num((end - point) / 1e3, 0));
-					lRel.set(num(w * end / 1e3, 3), end > point
-						? "Past " + lagrange + (v === "l1" ? ", Earth's pull holds the far end out." : ", the system's rotation holds the far end out.")
-						: "The far end hasn't reached " + lagrange + ": the tether can't stay up.");
-					eo.setSummary(lagrange + " " + num(point / 1e3, 0) + " km");
-				});
-			} else {
-				var he = shell.hero(eo, [{ label: "Stationary altitude", unit: "km" }, { label: "Release speed at top", unit: "km/s" }]);
-				var lEsc = shell.line(eo, { label: "Escape speed at the top", unit: "km/s" });
-				calcs.push(function () {
-					var rs = WM.stationaryRadius(body.GM, body.rot), rt = body.R + val(F.top, 1000) * 1e3;
-					var vr = 2 * Math.PI * rt / body.rot, ve = WM.escapeSpeed(body.GM, rt);
-					he[0].set(num((rs - body.R) / 1e3, 0)); he[1].set(num(vr / 1e3, 3));
-					lEsc.set(num(ve / 1e3, 3), vr >= ve ? "A release from the top escapes " + body.name + "." : "A release from the top stays in orbit around " + body.name + ".");
-					eo.setSummary("stationary " + num((rs - body.R) / 1e3, 0) + " km");
-				});
-			}
+			var eo = shell.addCard({ id: "sk-orb", tab: "arch", side: "out", title: "Balance & speeds", short: "Speeds", color: C.core });
+			var hl = shell.hero(eo, [{ label: "L2 from the Moon's centre", unit: "km" }, { label: "Far end past L2", unit: "km" }]);
+			var lRel = shell.line(eo, { label: "Far-end speed, Moon-relative", unit: "km/s" });
+			calcs.push(function () {
+				var point = body.sys.L2, end = body.R + val(F.len, 100000) * 1e3;
+				var w = 2 * Math.PI / Math.abs(body.rot);
+				hl[0].set(num(point / 1e3, 0)); hl[1].set(num((end - point) / 1e3, 0));
+				lRel.set(num(w * end / 1e3, 3), end > point
+					? "Past L2, the system's rotation holds the far end out."
+					: "The far end hasn't reached L2: the tether can't stay up.");
+				eo.setSummary("L2 " + num(point / 1e3, 0) + " km");
+			});
 			tetherCard();
 		} else {
 			var spin = inst.v === "spin";
@@ -199,10 +175,8 @@ export function addSkeletonCards(shell, ctx, tabs) {
 	}
 
 	function materialCard() {
-		var mc = shell.addCard({ id: "sk-mat", tab: "arch", side: "in", title: "Material", short: "Material", color: C.core, feeds: ["sk-teth"] });
-		F.mat = shell.selectField(mc, { aria: "Tether material", options: MATERIALS, value: "silica" });
-		F.sf = shell.numberField(mc, { label: "Safety factor", unit: "×", value: 3, step: "0.1", min: 1 });
-		calcs.push(function () { mc.setSummary(F.mat.options[F.mat.selectedIndex].text.split(" · ")[0] + " · SF " + num(val(F.sf, 3), 1)); });
+		var mc = addMaterialCard(shell, { id: "sk-mat", tab: "arch", feeds: ["sk-teth"], value: "silica", safety: 3 });
+		calcs.push(mc.read);
 	}
 	function tetherCard() {
 		var t = shell.addCard({ id: "sk-teth", tab: "arch", side: "out", title: "Tether properties", short: "Tether", color: C.core });

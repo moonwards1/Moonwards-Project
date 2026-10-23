@@ -104,6 +104,8 @@ export const TABS = [
 export function calcFor(inst) {
 	if (!inst) return null;
 	if (inst.fam === "skyhook" && inst.v === "hanging") return "hanging-skyhook";
+	if (inst.fam === "elevator" && inst.v === "standard") return "space-elevator";
+	if (inst.fam === "elevator" && inst.v === "l1") return "moon-l1-elevator";
 	return null;
 }
 

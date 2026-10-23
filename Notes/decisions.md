@@ -504,3 +504,22 @@ time.
 
 Why: calculators keep growing optional sections; modules keep the page short
 until a section is asked for, and the drawing stays in view while editing.
+
+### Tether calculators share one Material card and one preset list (2026-10-22)
+
+Every tether calculator on the shell, and the workbench's skeleton cards, take
+their material from `Shared/material-card.js` over the presets in
+`Shared/materials.js`. A calculator picks only its default preset and safety
+factor. Why: one list of materials, so a material reads the same wherever a
+design uses it.
+
+### The workbench's L1 elevator is sized for its structure, without cargo (2026-10-22)
+
+The minimum counterweight on the workbench counts the cable and its track,
+not cargo; a counterweight is entered as a mass or as a multiple of that
+minimum. At least 3× is advised (a warning below it) and 1.5× is the floor:
+the Architecture tab is an estimate, and the margin stands in for cargo and
+everything the structure doesn't count yet. Cargo joins the sizing when traffic is modelled on the Logistics and
+Engineering tabs. Why: a cable tapered to its counterweight has no minimum
+from its own weight, so the always-on track is the honest floor until the
+traffic is known.
