@@ -51,7 +51,7 @@ export function mountHangingSkyhook(root, opts) {
 
 	// ---------- modules ----------
 	shell.addModule({ id: "st", tab: "eng", side: "in", label: "Stations", color: C.ochre, on: true, tip: "Receiving deck, outer docks and main launch deck" });
-	shell.addModule({ id: "pay", tab: "arch", side: "in", label: "Tip load", color: C.rust, on: true, brings: ["frc"], tip: "Tip load mass; brings Forces" });
+	shell.addModule({ id: "pay", tab: "arch", side: "in", label: "Loads", color: C.rust, on: true, brings: ["frc"], tip: "Masses at the tips, along the tethers and at the centre; brings Forces" });
 	shell.addModule({ id: "thr", tab: "eng", side: "in", label: "Cargo throughput", color: C.teal, on: true, needs: ["st"], brings: ["thrO"], tip: "Needs Stations; brings Throughput" });
 	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
 	shell.addModule({ id: "re", tab: "log", side: "in", label: "Earth reentry", color: C.violet, brings: ["reO"], tip: "Cargo released toward Earth (Moon only)" });
@@ -59,7 +59,7 @@ export function mountHangingSkyhook(root, opts) {
 	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Dropped from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
 	shell.addModule({ id: "clm", tab: "eng", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
 	shell.addModule({ id: "rp", tab: "log", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
-	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, needs: ["pay"], tip: "Needs Tip load" });
+	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, needs: ["pay"], tip: "Needs Loads" });
 	shell.addModule({ id: "thrO", tab: "eng", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
 	shell.addModule({ id: "kpO", tab: "eng", side: "out", label: "Station-keeping", color: C.cobalt, needs: ["kp"], tip: "Needs Station-keeping inputs" });
 	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Earth reentry", color: C.violet, needs: ["re"], tip: "Needs Earth reentry inputs" });
@@ -104,9 +104,17 @@ export function mountHangingSkyhook(root, opts) {
 	var recvIn = shell.numberField(stCard, { label: "Receiving deck", hint: "shuttles from the surface", unit: "km", value: 233, focus: "stations",
 		tip: "Where shuttles from the surface join the tether." });
 
-	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["frc"], side: "in", title: "Tip load", short: "Load", color: C.rust, module: "pay", focus: "top" });
-	var tipIn = shell.numberField(payCard, { label: "Tip load mass", hint: "sizes the absolute tension", unit: "t", value: 100, min: 0, focus: "top",
-		tip: "Load held at a tether tip; it sizes the peak tension." });
+	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["frc"], side: "in", title: "Loads", short: "Loads", color: C.rust, module: "pay", focus: "top" });
+	var topLoadIn = shell.numberField(payCard, { label: "Top tip load", hint: "engines, platform, mass driver", unit: "kt", value: 40, min: 0, focus: "top",
+		tip: "Mass held at the top tip. It sets the peak tension." });
+	var upperDistIn = shell.numberField(payCard, { label: "Upper tether load", hint: "spread evenly along it", unit: "kt", value: 60, min: 0, focus: "tether",
+		tip: "Everything carried along the upper tether (stations, climbers, power, fuel, tracks), treated as spread evenly over its length." });
+	var comIn = shell.numberField(payCard, { label: "Centre-of-mass station", hint: "ballast", unit: "kt", value: 5000, min: 0, focus: "centre",
+		tip: "Heavy ballast at the centre. It sits a little off the nominal centre, wherever the loads on the two tethers balance, so the installation's true centre of mass is on the nominal centre." });
+	var lowerDistIn = shell.numberField(payCard, { label: "Lower tether load", hint: "spread evenly along it", unit: "kt", value: 300, min: 0, focus: "tether",
+		tip: "Everything carried along the lower tether, treated as spread evenly over its length." });
+	var footLoadIn = shell.numberField(payCard, { label: "Foot tip load", hint: "docking station", unit: "kt", value: 200, min: 0, focus: "foot",
+		tip: "Mass held at the foot tip." });
 
 	var thrCard = shell.addCard({ id: "thr", tab: "eng", feeds: ["thrO", "kpO"], side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, module: "thr", focus: "stations" });
 	var rateIn = shell.numberField(thrCard, { label: "Delivery rate to launch deck", unit: "t/day", value: 1000, min: 0,
@@ -169,16 +177,21 @@ export function mountHangingSkyhook(root, opts) {
 	var rTrL = shell.line(propCard, { label: "Taper ratio, foot → centre" });
 	var rTrH = shell.line(propCard, { label: "Taper ratio, centre → top" });
 	var rMassL = shell.line(propCard, { label: "Lower tether mass", unit: "× load" });
-	var rMassH = shell.line(propCard, { label: "Upper tether mass", unit: "× load", sub: "The load is everything the tether holds up that isn't the tether itself." });
+	var rMassH = shell.line(propCard, { label: "Upper tether mass", unit: "× load", sub: "The load is everything the tether holds up that isn't the tether itself. These multiples are per unit of load held at the tip; the Forces card gives the totals." });
 
 	var clmCard = shell.addCard({ id: "clm", tab: "eng", side: "out", title: "Climber energy", short: "Climber", color: C.core, module: "clm", focus: "tether" });
 	var rClL = shell.line(clmCard, { label: "Foot → centre (uphill)", unit: "kJ/kg" });
 	var rClH = shell.line(clmCard, { label: "Centre → top (downhill)", unit: "MJ/kg", sub: "Regenerative: the climber is pulled outward and can recover energy." });
 
 	var frcCard = shell.addCard({ id: "frc", tab: "arch", side: "out", title: "Forces", short: "Forces", color: C.rust, module: "frc", focus: "top" });
-	var rTTop = shell.line(frcCard, { label: "Tension at centre, load at top", unit: "kN" });
-	var rTFoot = shell.line(frcCard, { label: "Tension at centre, load at foot", unit: "kN" });
-	var rMAbs = shell.line(frcCard, { label: "Tether mass", unit: "t" });
+	var rLoadU = shell.line(frcCard, { label: "Total load, upper tether", unit: "kt" });
+	var rLoadL = shell.line(frcCard, { label: "Total load, lower tether", unit: "kt" });
+	var rTU = shell.line(frcCard, { label: "Tension at centre, upper tether", unit: "kN" });
+	var rTL = shell.line(frcCard, { label: "Tension at centre, lower tether", unit: "kN" });
+	var rMU = shell.line(frcCard, { label: "Upper tether mass", unit: "t" });
+	var rML = shell.line(frcCard, { label: "Lower tether mass", unit: "t" });
+	var rOff = shell.line(frcCard, { label: "Centre-of-mass station position", unit: "km" });
+	var rCom1 = shell.line(frcCard, { label: "Station mass for a 1 km offset", unit: "kt" });
 
 	var thrOCard = shell.addCard({ id: "thrO", tab: "eng", side: "out", title: "Throughput", short: "Throughput", color: C.teal, module: "thrO", focus: "stations" });
 	var rTrip = shell.line(thrOCard, { label: "Trip, receiving → launch deck", unit: "h" });
@@ -244,7 +257,9 @@ export function mountHangingSkyhook(root, opts) {
 			outerDocks: stOn ? field(outerIn, 606.5) * 1e3 : null,
 			launchDeck: stOn ? field(launchIn, 950) * 1e3 : null,
 			strength: mat.specific,
-			tipMass: field(tipIn, 100) * 1e3,
+			loadTop: field(topLoadIn, 40) * 1e6, loadFoot: field(footLoadIn, 200) * 1e6,
+			distUpper: field(upperDistIn, 60) * 1e6, distLower: field(lowerDistIn, 300) * 1e6,
+			comMass: field(comIn, 5000) * 1e6,
 			rate: field(rateIn, 1000), perClimber: Math.max(1e-3, field(perClimberIn, 100)),
 			vClimb: Math.max(0.1, field(vClimbIn, 200)), effDrive: field(effDriveIn, 70) / 100,
 			propellant: propIn.value, vExhaust: field(vExIn, 8),
@@ -282,9 +297,15 @@ export function mountHangingSkyhook(root, opts) {
 
 		// forces
 		var f;
-		f = scaled(t.tensionCoM_top, FORCE); rTTop.set(f[0], null, f[1]);
-		f = scaled(t.tensionCoM_foot, FORCE); rTFoot.set(f[0], null, f[1]);
-		f = scaled(t.massAbs, MASS); rMAbs.set(f[0], num(t.lowMass + t.highMass, 2) + " × the " + num(t.tipMass / 1e3, 0) + " t tip load", f[1]);
+		var ld = t.loads;
+		f = scaled(ld.upperTotal, MASS); rLoadU.set(f[0], "tip " + num(ld.top / 1e6, 0) + " kt + spread " + num(ld.distUpper / 1e6, 0) + " kt", f[1]);
+		f = scaled(ld.lowerTotal, MASS); rLoadL.set(f[0], "tip " + num(ld.foot / 1e6, 0) + " kt + spread " + num(ld.distLower / 1e6, 0) + " kt", f[1]);
+		f = scaled(t.tensionUpper, FORCE); rTU.set(f[0], null, f[1]);
+		f = scaled(t.tensionLower, FORCE); rTL.set(f[0], "the upper tension plus the station's net pull", f[1]);
+		f = scaled(t.tetherMassUpper, MASS); rMU.set(f[0], null, f[1]);
+		f = scaled(t.tetherMassLower, MASS); rML.set(f[0], null, f[1]);
+		rOff.set(t.balanced ? num(Math.abs(t.comOffset) / 1e3, 1) : "—", t.balanced ? (Math.abs(t.comOffset) < 50 ? "essentially at the centre" : (t.comOffset < 0 ? "below" : "above") + " the nominal centre of mass") : "no balance point", "km");
+		f = scaled(t.comMassAt1km, MASS); rCom1.show(isFinite(t.comMassAt1km)); rCom1.set(f[0], "holds the station within 1 km of the centre", f[1]);
 
 		// throughput
 		var th = t.throughput;
@@ -296,7 +317,7 @@ export function mountHangingSkyhook(root, opts) {
 		var down = scaled(th.cargoDownT * 1e3, MASS);
 		f = scaled(th.cargoUpT * 1e3, MASS); rCargo.set(f[0], "plus " + down[0] + " " + down[1] + " descending", f[1]);
 		f = scaled(th.addedTension, FORCE);
-		rDT.set(f[0], shell.isOn("pay") ? num(th.addedTensionPct, 2) + "% of the tip-load tension" : "", f[1]);
+		rDT.set(f[0], shell.isOn("pay") ? num(th.addedTensionPct, 2) + "% of the tension at the centre" : "", f[1]);
 		f = scaled(th.liftPower, POWER);
 		rPow.set(f[0], th.liftPower < 0 ? "Negative: regeneration above the centre of mass exceeds the climb below it." : "Receiving → launch deck, net of regeneration, at drive efficiency.", f[1]);
 		rEpt.set(num(th.energyPerT, 2));
@@ -347,7 +368,7 @@ export function mountHangingSkyhook(root, opts) {
 		if (bodyCard) bodyCard.setSummary(bodyIn.value);
 		geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km");
 		stCard.setSummary(num(S.recv, 0) + " · " + num(S.outer, 1) + " · " + num(S.launch, 0) + " km");
-		payCard.setSummary(num(t.tipMass / 1e3, 0) + " t");
+		payCard.setSummary(num((t.loads.upperTotal + t.loads.lowerTotal + t.loads.com) / 1e6, 0) + " kt");
 		thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + num(field(perClimberIn, 0), 0) + " t");
 		kpCard.setSummary((propIn.value === "oxygen" ? "O₂" : "H₂") + " · " + vExIn.value + " km/s");
 		reCard.setSummary("perigee " + perigeeIn.value + " km");
@@ -355,7 +376,7 @@ export function mountHangingSkyhook(root, opts) {
 		relCard.setSummary(t.hitsSurface ? num(t.hitTheGround, 0) + " m/s at " + num(t.impactFromVertical * 180 / Math.PI, 1) + "°" : "does not land");
 		propCard.setSummary("taper " + num(t.lowRatio, 2) + " / " + num(t.highRatio, 2));
 		clmCard.setSummary(num(t.lowIntegral / 1e3, 0) + " kJ/kg uphill");
-		f = scaled(t.tensionCoM_top, FORCE); frcCard.setSummary(f[0] + " " + f[1] + " at centre");
+		f = scaled(t.tensionPeak, FORCE); frcCard.setSummary(f[0] + " " + f[1] + " at centre");
 		thrOCard.setSummary(num(th.perDay, 1) + "/day · " + hours(th.tripUpDays).join(" ") + " trip");
 		f = scaled(sk.genPower, POWER); kpOCard.setSummary(f[0] + " " + f[1]);
 		reOCard.setSummary(reShow && re.entry && re.atmosphere ? "~" + num(re.peakG, 0) + " g peak" : "—");
@@ -533,11 +554,11 @@ export function mountHangingSkyhook(root, opts) {
 		tClimber.textContent = "climber ↑ " + num(field(vClimbIn, 200), 0) + " m/s · every " + num(t.throughput.spacingKm, 0) + " km";
 		[gClimber, gClArrow, tClimber].forEach(function (el) { show(el, thrOn); });
 
-		// tip load and reboost thruster at the top
+		// top load and reboost thruster at the top
 		var py = -rT - 14 * u;
 		gPay.setAttribute("x", -5.5 * u); gPay.setAttribute("y", py - 5.5 * u); gPay.setAttribute("width", 11 * u); gPay.setAttribute("height", 11 * u); gPay.setAttribute("rx", 2 * u);
 		tPay.setAttribute("x", 12 * u); tPay.setAttribute("y", py + 4 * u); tPay.setAttribute("font-size", fsS); tPay.setAttribute("stroke-width", 4 * u);
-		tPay.textContent = "tip load " + num(t.tipMass / 1e3, 0) + " t";
+		tPay.textContent = "top load " + num(t.loads.top / 1e6, 0) + " kt";
 		[gPay, tPay].forEach(function (el) { show(el, on("pay")); });
 		gNozzle.setAttribute("d", "M" + (-6 * u) + " " + (py - 3 * u) + "L" + (-15 * u) + " " + (py - 6 * u) + "L" + (-15 * u) + " " + (py + 6 * u) + "L" + (-6 * u) + " " + (py + 3 * u) + "Z");
 		gPlume.setAttribute("d", "M" + (-18 * u) + " " + py + "L" + (-46 * u) + " " + py);
