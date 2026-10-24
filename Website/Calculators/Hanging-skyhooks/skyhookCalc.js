@@ -49,17 +49,17 @@ export function mountHangingSkyhook(root, opts) {
 	var shell = new CalcShell(root, { title: "Hanging Skyhook", stageLabel: "Skyhook drawing", overline: o.overline, embedded: !!o.embedded });
 
 	// ---------- modules ----------
-	shell.addModule({ id: "st", tab: "eng", side: "in", label: "Stations", color: C.ochre, on: true, tip: "Receiving deck, outer docks and main launch deck" });
+	shell.addModule({ id: "st", tab: "log", side: "in", label: "Stations", color: C.ochre, on: true, tip: "Receiving deck, outer docks and main launch deck" });
 	shell.addModule({ id: "pay", tab: "arch", side: "in", label: "Loads", color: C.rust, on: true, brings: ["frc"], tip: "Masses at the tips, along the tethers and at the centre; brings Forces" });
-	shell.addModule({ id: "thr", tab: "eng", side: "in", label: "Cargo throughput", color: C.teal, on: true, needs: ["st"], brings: ["thrO"], tip: "Needs Stations; brings Throughput" });
+	shell.addModule({ id: "thr", tab: "log", side: "in", label: "Cargo throughput", color: C.teal, on: true, needs: ["st"], brings: ["thrO"], tip: "Needs Stations; brings Throughput" });
 	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
 	shell.addModule({ id: "re", tab: "log", side: "in", label: "Earth reentry", color: C.violet, brings: ["reO"], tip: "Cargo released toward Earth (Moon only)" });
 
 	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Dropped from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
-	shell.addModule({ id: "clm", tab: "eng", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
+	shell.addModule({ id: "clm", tab: "log", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
 	shell.addModule({ id: "rp", tab: "log", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
 	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, needs: ["pay"], tip: "Needs Loads" });
-	shell.addModule({ id: "thrO", tab: "eng", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
+	shell.addModule({ id: "thrO", tab: "log", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
 	shell.addModule({ id: "kpO", tab: "eng", side: "out", label: "Station-keeping", color: C.cobalt, needs: ["kp"], tip: "Needs Station-keeping inputs" });
 	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Earth reentry", color: C.violet, needs: ["re"], tip: "Needs Earth reentry inputs" });
 	shell.addModule({ id: "send", tab: "arch", side: "out", label: "Send to calculators", color: C.umber, tip: "Send this tether to the Skyhook Spin-Launcher" });
@@ -95,7 +95,7 @@ export function mountHangingSkyhook(root, opts) {
 
 	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop", "frc"], focus: "tether", value: "silica", safety: 3 });
 
-	var stCard = shell.addCard({ id: "st", tab: "eng", feeds: ["thrO", "rp"], side: "in", title: "Stations", short: "Stations", color: C.ochre, module: "st", focus: "stations" });
+	var stCard = shell.addCard({ id: "st", tab: "log", feeds: ["thrO", "rp"], side: "in", title: "Stations", short: "Stations", color: C.ochre, module: "st", focus: "stations" });
 	var launchIn = shell.numberField(stCard, { label: "Main launch deck", hint: "most ships leave here", unit: "km", value: 950, focus: "stations",
 		tip: "Most ships leave from here; released cargo leaves at this deck's speed." });
 	var outerIn = shell.numberField(stCard, { label: "Outer docks", hint: "ships from high orbit", unit: "km", value: 606.5, focus: "stations",
@@ -115,7 +115,7 @@ export function mountHangingSkyhook(root, opts) {
 	var footLoadIn = shell.numberField(payCard, { label: "Foot tip load", hint: "docking station", unit: "kt", value: 200, min: 0, focus: "foot",
 		tip: "Mass held at the foot tip." });
 
-	var thrCard = shell.addCard({ id: "thr", tab: "eng", feeds: ["thrO", "kpO"], side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, module: "thr", focus: "stations" });
+	var thrCard = shell.addCard({ id: "thr", tab: "log", feeds: ["thrO", "kpO"], side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, module: "thr", focus: "stations" });
 	var rateIn = shell.numberField(thrCard, { label: "Delivery rate to launch deck", unit: "t/day", value: 1000, min: 0,
 		tip: "Descending traffic to the foot is assumed to be 1% of the ascending rate." });
 	var perClimberIn = shell.numberField(thrCard, { label: "Cargo per climber", unit: "t", value: 100, min: 0.001 });
@@ -178,7 +178,7 @@ export function mountHangingSkyhook(root, opts) {
 	var rMassL = shell.line(propCard, { label: "Lower tether mass", unit: "× load" });
 	var rMassH = shell.line(propCard, { label: "Upper tether mass", unit: "× load", sub: "The load is everything the tether holds up that isn't the tether itself. These multiples are per unit of load held at the tip; the Forces card gives the totals." });
 
-	var clmCard = shell.addCard({ id: "clm", tab: "eng", side: "out", title: "Climber energy", short: "Climber", color: C.core, module: "clm", focus: "tether" });
+	var clmCard = shell.addCard({ id: "clm", tab: "log", side: "out", title: "Climber energy", short: "Climber", color: C.core, module: "clm", focus: "tether" });
 	var rClL = shell.line(clmCard, { label: "Foot → centre (uphill)", unit: "kJ/kg" });
 	var rClH = shell.line(clmCard, { label: "Centre → top (downhill)", unit: "MJ/kg", sub: "Regenerative: the climber is pulled outward and can recover energy." });
 
@@ -192,7 +192,7 @@ export function mountHangingSkyhook(root, opts) {
 	var rOff = shell.line(frcCard, { label: "Centre-of-mass station position", unit: "km" });
 	var rCom1 = shell.line(frcCard, { label: "Station mass for a 1 km offset", unit: "kt" });
 
-	var thrOCard = shell.addCard({ id: "thrO", tab: "eng", side: "out", title: "Throughput", short: "Throughput", color: C.teal, module: "thrO", focus: "stations" });
+	var thrOCard = shell.addCard({ id: "thrO", tab: "log", side: "out", title: "Throughput", short: "Throughput", color: C.teal, module: "thrO", focus: "stations" });
 	var rTrip = shell.line(thrOCard, { label: "Trip, receiving → launch deck", unit: "h" });
 	var rDep = shell.line(thrOCard, { label: "Departures", unit: "/day" });
 	var rOn = shell.line(thrOCard, { label: "Climbers on the cable" });

@@ -24,8 +24,8 @@ part; the foot, centre-of-mass and top markers can be dragged.
   settings (`state`); the header comment lists the options. Each card and
   chip names its workbench tab: geometry, material, loads, speeds,
   the fall from the foot, tether properties and forces on Architecture;
-  Earth reentry and release points on Logistics; stations, cargo
-  throughput, climber energy and station-keeping on Engineering
+  stations, cargo throughput, throughput, climber energy, Earth reentry and
+  release points on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
 - `skyhookModel.test.js` — Node test pinning the default design's figures:
   `node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js`
