@@ -1,12 +1,12 @@
 // Node tests for skyhookModel.js. Run from the repo root:
 //   node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js
 //
-// Pins the page's default design (Moon; foot 10, centre 275, top 2000 km;
+// Pins a reference design (Moon; foot 10, centre 275, top 2000 km;
 // decks 233 / 606.5 / 950 km; lunar silica ×3; loads 40 / 60 / 5000 / 300 / 200 kt (top tip, upper
-// tether, centre-of-mass station, lower tether, foot tip); 1000 t/day
+// tether, anchor station, lower tether, foot tip); 1000 t/day
 // in 100 t climbers at 200 m/s, 70 %; oxygen at 8 km/s, 60 % / 90 %; perigee
-// 50 km, interface 122 km) to the figures the calculator showed before it
-// moved to the calculator shell.
+// 50 km, interface 122 km; the stations carry no mass), then checks what station
+// masses do to it.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -17,14 +17,21 @@ import { MATERIALS } from "../../Shared/materials.js";
 
 var moon = systems.get("Moon");
 var m = MATERIALS.silica;
-var t = computeSkyhook(moon, {
-	foot: 10e3, centre: 275e3, top: 2000e3,
-	receivingDeck: 233e3, outerDocks: 606.5e3, launchDeck: 950e3,
-	strength: (m.strength / 3) / m.density, loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
-	rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
-	propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9,
-	targetPerigee: 50, ifaceAlt: 122
-});
+function base() {
+	return {
+		foot: 10e3, centre: 275e3, top: 2000e3,
+		receivingDeck: 233e3, outerDocks: 606.5e3, launchDeck: 950e3,
+		strength: (m.strength / 3) / m.density, loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
+		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
+		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9,
+		targetPerigee: 50, ifaceAlt: 122
+	};
+}
+var t = computeSkyhook(moon, base());
+
+function close(actual, expected, label) {
+	assert.ok(Math.abs(actual - expected) <= 1e-9 * Math.abs(expected), label + ": " + actual + " vs " + expected);
+}
 
 function near(actual, expected, dp, label) {
 	assert.equal(Number(actual.toFixed(dp)), expected, label + ": " + actual);
@@ -50,8 +57,6 @@ test("tether properties and climbers", function () {
 	near(100 * t.highAcceleration / t.surfaceGravity, 116.83, 2, "top % g");
 	near(t.lowRatio, 1.04, 2, "lower taper");
 	near(t.highRatio, 2.68, 2, "upper taper");
-	near(t.lowMass, 0.08, 2, "lower mass ratio");
-	near(t.highMass, 3.42, 2, "upper mass ratio");
 	near(t.lowIntegral, 69839, 0, "lower climb J/kg");
 	near(t.highIntegral, 1860487, 0, "upper climb J/kg");
 });
@@ -62,12 +67,11 @@ test("a tip load alone: tension and tether mass", function () {
 	var low = sweepTether(moon.GM, w, s, 10e3 + R, 275e3 + R, 100e3, 0, 1000);
 	near(up.tension / 1e3, 509.77, 2, "tension at centre, 100 t at the top, kN");
 	near(low.tension / 1e3, 57.59, 2, "tension at centre, 100 t at the foot, kN");
-	var viaRatios = (t.lowMass + t.highMass) * 100e3;
-	assert.ok(Math.abs((up.mass + low.mass) - viaRatios) / viaRatios < 1e-3, "tether mass agrees with the mass multiples");
-	near(t.highMass * 100, 341.85, 2, "upper tether mass for 100 t, t");
+	near(up.mass / 1e3, 341.7, 1, "upper tether mass for 100 t at the top, t");
+	near(low.mass / 1e3, 8.0, 1, "lower tether mass for 100 t at the foot, t");
 });
 
-test("loads, balance and the centre-of-mass station", function () {
+test("loads, balance and the anchor station", function () {
 	var R = Number(moon.radius), w = t.angularVelocity;
 	assert.ok(t.balanced);
 	near(t.loads.upperTotal / 1e6, 100, 2, "upper total kt");
@@ -80,7 +84,10 @@ test("loads, balance and the centre-of-mass station", function () {
 	near(t.comOffset / 1e3, -12.5, 1, "station offset km (below the centre)");
 	assert.ok(t.tensionPeak > 1e8, "peak tension is now set by the real loads");
 	assert.ok(Math.abs(t.tetherMass - (t.tetherMassUpper + t.tetherMassLower)) < 1, "tether mass is the two halves");
-	assert.ok(t.comMassAt1km > t.loads.com, "holding the station to 1 km takes more ballast");
+	close(t.massMultipleUpper, t.tetherMassUpper / 100e6, "upper multiple is tether mass over all its loads");
+	close(t.massMultipleLower, t.tetherMassLower / 500e6, "lower multiple");
+	close(t.massMultiple, t.tetherMass / 600e6, "whole-tether multiple leaves out the anchor station");
+	assert.ok(t.comMassAt1km > t.loads.com, "holding the station to 1 km takes a heavier anchor");
 });
 
 test("the tension profile for the drawing", function () {
@@ -104,14 +111,14 @@ test("the station may sit anywhere the tether can carry it", function () {
 		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
 		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9, targetPerigee: 50, ifaceAlt: 122
 	};
-	// too little ballast: no position balances, and that is reported
+	// too light an anchor: no position balances, and that is reported
 	var u = computeSkyhook(moon, base);
 	assert.equal(u.balanced, false);
 	assert.equal(u.comOffset, 0);
 	assert.ok(u.unbalance < 0, "the upper tether outweighs the lower");
 	assert.ok(u.warnings.some(function (w) { return /Out of balance/.test(w); }));
 	assert.ok(isNaN(u.comMassAt1km));
-	// enough ballast: it balances far below the centre, near the foot, with no limit on the offset
+	// a heavy enough anchor: it balances far below the centre, near the foot, with no limit on the offset
 	var v = computeSkyhook(moon, Object.assign({}, base, { comMass: 20000e6 }));
 	assert.ok(v.balanced);
 	assert.ok(v.comOffset < -200e3, "station sits well below the centre: " + v.comOffset);
@@ -179,4 +186,52 @@ test("Earth reentry", function () {
 test("release points include Earth", function () {
 	var earth = t.targets.find(function (x) { return x.name === "Earth"; });
 	assert.ok(earth && isFinite(earth.altitude));
+});
+
+test("stations: masses held at a point step the tension up", function () {
+	var R = Number(moon.radius), w = t.angularVelocity;
+	var masses = { receivingDeck: 50e6, outerDocks: 500e6, launchDeck: 200e6 };
+	var u = computeSkyhook(moon, Object.assign({}, base(), { stationMass: masses }));
+	assert.ok(u.balanced);
+	var pull = function (r) { return w * w * r - moon.GM / (r * r); };
+	// every station appears once, on one half, adding m·|a| on the side it hangs from
+	var all = u.stations.up.concat(u.stations.low);
+	assert.equal(all.length, 3);
+	all.forEach(function (x) { assert.ok(Math.abs(Math.abs(x.pull) - x.m * Math.abs(pull(x.r))) < 1e-6 * Math.abs(x.pull), x.name); });
+	near(u.loads.stationsUpper + u.loads.stationsLower, 750e6, 0, "station mass is all counted");
+	// heavy upper stations pull the anchor station below the receiving deck, so that deck hangs
+	// from the upper half, and its weight lightens the tension below it
+	assert.ok(u.comOffset < -(275e3 - 233e3), "anchor station below the receiving deck: " + u.comOffset);
+	var recv = u.stations.up.find(function (x) { return x.name === "Receiving deck"; });
+	assert.ok(recv && recv.pull < 0);
+	["up", "low"].forEach(function (h) {
+		var secs = u.sections[h], st = u.stations[h];
+		assert.equal(secs.length, st.length + 1, h + ": one more section than stations");
+		var sum = secs.reduce(function (a, x) { return a + x.mass; }, 0);
+		assert.ok(Math.abs(sum - (h === "up" ? u.tetherMassUpper : u.tetherMassLower)) < 1, h + ": sections sum to the half");
+		for (var i = 0; i < st.length; i++) {
+			assert.equal(secs[i].to, st[i].name);
+			assert.equal(secs[i + 1].from, st[i].name);
+			assert.ok(Math.abs(secs[i].tTo + st[i].pull - secs[i + 1].tFrom) < 1e-6 * secs[i + 1].tFrom, h + ": the step is the station's pull");
+		}
+		assert.equal(secs[secs.length - 1].to, null);
+	});
+	// more held up means more tether, and the multiples count every load
+	assert.ok(u.tetherMassUpper > t.tetherMassUpper);
+	close(u.massMultipleUpper, u.tetherMassUpper / u.loads.upperTotal, "upper multiple");
+	assert.ok(u.loads.upperTotal > 100e6 + 700e6);
+	// the drawn profile carries the step: two entries at the launch deck's radius
+	var rL = 950e3 + R, P = u.profile.up, at = [];
+	P.r.forEach(function (r, i) { if (r === rL) at.push(P.T[i]); });
+	assert.equal(at.length, 2);
+	assert.ok(at[1] > at[0]);
+});
+
+test("stations: no mass, or stations not modelled, changes nothing", function () {
+	var a = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 0, outerDocks: 0, launchDeck: 0 } }));
+	assert.equal(a.tensionPeak, t.tensionPeak);
+	var b = computeSkyhook(moon, Object.assign({}, base(), { receivingDeck: null, outerDocks: null, launchDeck: null,
+		stationMass: { receivingDeck: 50e6, outerDocks: 500e6, launchDeck: 200e6 } }));
+	assert.equal(b.tensionPeak, t.tensionPeak);
+	assert.equal(b.sections.up.length, 1);
 });

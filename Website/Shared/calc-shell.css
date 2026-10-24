@@ -36,6 +36,8 @@
  *   cs-choice     a row led by a cs-radio button, one of a choice between
  *                 fields; cs-unchosen dims the rows not chosen
  *   cs-kvs / cs-kv   a block of result lines / one line: cs-k, cs-v (cs-vn, cs-vu), cs-s
+ *   cs-fold       a block inside a card that opens on its own arrow: cs-fold-t
+ *                 (the toggle: chevron + label) over cs-fold-b; cs-open when open
  *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
  *   cs-tipped     a row whose label carries a hover tip (dotted underline)
  *   cs-btn, cs-btn-pri   a button in a card / its primary form
@@ -328,6 +330,28 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-vu { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--cs-ink2); }
 .cs-s { grid-column: 1 / -1; font-size: 12px; line-height: 1.4; color: var(--cs-ink2); }
 .cs-s:empty { display: none; }
+.cs-fold { border-top: 1px solid rgba(150, 125, 95, .18); }
+.cs-fold-t {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	margin: 0;
+	border: 0;
+	border-radius: 7px;
+	padding: 7px 4px 7px 0;
+	background: transparent;
+	color: var(--cs-ink2);
+	font: inherit;
+	font-size: 12.5px;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+}
+.cs-fold-t:hover { color: var(--cs-ink); background: rgba(80, 55, 30, .05); }
+.cs-fold:not(.cs-open) .cs-chev { transform: rotate(-90deg); }
+.cs-fold-b { display: flex; flex-direction: column; gap: 2px; padding: 0 0 4px 20px; }
+.cs-fold-b[hidden] { display: none; }
 .cs-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 1px; margin-bottom: 4px; border-radius: 10px; overflow: hidden; background: rgba(150, 125, 95, .2); }
 .cs-hero > div { display: flex; flex-direction: column; gap: 2px; padding: 9px 10px; background: var(--cs-field); }
 .cs-hl { font-size: 13px; line-height: 1.2; color: var(--cs-ink); }

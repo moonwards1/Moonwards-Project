@@ -21,6 +21,13 @@
 // asks for (see onFocus); `short` is the title shown when collapsed, beside the
 // card's summary (card.setSummary).
 //
+// A fold is a block inside a card that opens and closes on its own arrow, for
+// detail a viewer looks at only sometimes (a breakdown under a card's totals).
+// Result lines and notes go in it the same way they go in a card:
+//
+//   var fold = shell.fold(card, { label: "By section" });
+//   var l = shell.line(fold, { label: "Top → deck", unit: "MN" });
+//
 //   var card = shell.addCard({ id: "orbit", side: "in", title: "Orbit", short: "Orbit",
 //                              color: ShellColors.core, focus: "orbit" });
 //   var alt = shell.numberField(card, { label: "Altitude", unit: "km", value: 100, focus: "orbit" });
@@ -43,7 +50,7 @@
 // Embedding: `embedded: true` fills the root element instead of the window,
 // for a calculator mounted inside another page (the home page's workbench).
 // getState() returns the viewer's settings — field values, modules shown,
-// collapsed cards — as a plain object; setState(state) puts them back and
+// collapsed cards, open folds — as a plain object; setState(state) puts them back and
 // fires onInput once. Fields are keyed "<card id>/<label or aria>", so a
 // calculator keeps a field's label and card stable for saved settings to
 // keep finding it (or passes an explicit `key`).
@@ -132,6 +139,7 @@ export class CalcShell {
 		this.moduleOrder = [];
 		this.on = {};           // id → bool
 		this.cards = {};        // id → card
+		this.folds = {};        // "<card id>/<key or label>" → fold (getState / setState)
 		this.cardOrder = [];
 		this.focusId = null;
 		this.tab = null;        // null: show every tab's cards (standalone page)
@@ -436,6 +444,31 @@ export class CalcShell {
 
 	note(card, text, parent) { return create("p", "cs-note", text, parent || card.body); }
 
+	// A fold inside a card: { label, open, key }. Its arrow opens and closes it; it
+	// starts closed unless `open`. Returns { el, body, open, setOpen(bool) }, which
+	// shell.line and shell.note take in place of a card. Saved settings key it as
+	// "<card id>/<key or label>".
+	fold(card, opts) {
+		var box = create("div", "cs-fold", false, card.body);
+		var tg = button("cs-fold-t", false, box);
+		tg.appendChild(icon(ICON.chev, 14, 1.6, "cs-chev"));
+		create("span", false, opts.label, tg);
+		var body = create("div", "cs-fold-b", false, box);
+		var fold = {
+			el: box, body: body, open: false,
+			setOpen: function (value) {
+				fold.open = !!value;
+				box.classList.toggle("cs-open", fold.open);
+				body.hidden = !fold.open;
+				tg.setAttribute("aria-expanded", String(fold.open));
+			}
+		};
+		tg.onclick = function () { fold.setOpen(!fold.open); };
+		fold.setOpen(!!opts.open);
+		this.folds[card.id + "/" + (opts.key || opts.label)] = fold;
+		return fold;
+	}
+
 	// A button in a card: { label, primary }. Returns the <button>.
 	button(card, opts) {
 		var b = create("button", opts.primary ? ["cs-btn", "cs-btn-pri"] : "cs-btn", opts.label, card.body);
@@ -493,7 +526,8 @@ export class CalcShell {
 		var self = this, fields = {}, collapsed = [];
 		Object.keys(this.fields).forEach(function (k) { fields[k] = self.fields[k].value; });
 		this.cardOrder.forEach(function (id) { if (self.cards[id].collapsed) collapsed.push(id); });
-		return { modules: Object.assign({}, this.on), fields: fields, collapsed: collapsed };
+		var open = Object.keys(this.folds).filter(function (k) { return self.folds[k].open; });
+		return { modules: Object.assign({}, this.on), fields: fields, collapsed: collapsed, open: open };
 	}
 
 	// Unknown keys are ignored and disabled fields keep their value, so state
@@ -515,6 +549,9 @@ export class CalcShell {
 		}
 		if (Array.isArray(state.collapsed)) {
 			this.cardOrder.forEach(function (id) { self.setCollapsed(id, state.collapsed.indexOf(id) >= 0); });
+		}
+		if (Array.isArray(state.open)) {
+			Object.keys(this.folds).forEach(function (k) { self.folds[k].setOpen(state.open.indexOf(k) >= 0); });
 		}
 		this.listeners.input.forEach(function (fn) { fn(null); });
 	}
