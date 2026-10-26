@@ -128,7 +128,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hm-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--hm-rule); border-radius: 9px; background: var(--hm-field); font-weight: 600; font-size: 13px; cursor: pointer; }
 .hm-btn:hover { border-color: var(--hm-ink2); }
 .hm-btn.hm-pri { background: var(--hm-core); color: var(--hm-core-ink); border-color: transparent; }
-.hm-work { position: relative; height: clamp(620px, 80vh, 900px); background: var(--hm-paper); border-radius: 0 16px 16px 16px; overflow: hidden; }
+.hm-work { position: relative; height: clamp(620px, 88vh, 900px); background: var(--hm-paper); border-radius: 0 16px 16px 16px; overflow: hidden; }
 .hm-calc { height: 100%; }
 .hm-empty { height: 100%; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--hm-ink2); font-size: 14px; line-height: 1.5; }
 .hm-empty b { display: block; color: var(--hm-ink); font-family: var(--hm-disp); font-size: 18px; margin-bottom: 4px; }

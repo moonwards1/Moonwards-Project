@@ -275,7 +275,6 @@ export class CalcShell {
 		create("span", "cs-dot", false, t);
 		create("span", "cs-nm", d.title, t);
 		create("span", "cs-nm-s", d.short || d.title, t);
-		if (d.module) create("span", "cs-tag", "module", t);
 		var sum = create("span", "cs-sum", false, t);
 		t.appendChild(icon(ICON.loc, 16, 1.5, "cs-loc"));
 		t.onclick = function () { self.focusCard(d.id); };

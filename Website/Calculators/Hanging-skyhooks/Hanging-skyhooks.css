@@ -1,8 +1,5 @@
 /* Layout, cards, chips and the drawing panel come from ../../Shared/calc-shell.css;
    this file holds the calculator's core accent and its own rules (prefix hs-). */
 .cs-app { --cs-core: #D9471F; }
-.hs-about p { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--cs-ink2); }
-.hs-about p:last-child { margin-bottom: 0; }
-.hs-about b { color: var(--cs-ink); font-weight: 600; }
 .hs-group + .hs-group { margin-top: 6px; }
 .cs-note.hs-group-h { margin: 4px 0 0; font-weight: 600; color: var(--cs-ink); }

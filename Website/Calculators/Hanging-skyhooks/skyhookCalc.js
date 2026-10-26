@@ -21,8 +21,6 @@
 // document if the page hasn't already.
 
 import { systems } from "../../Shared/orbit.js";
-import { Exchange } from "../../Shared/exchange.js";
-import { PacketTypes } from "../../Shared/exchange-types.js";
 import { CalcShell, ShellColors as C } from "../../Shared/calc-shell.js";
 import { ZoomView, svgEl } from "../../Shared/zoom-view.js";
 import { addMaterialCard } from "../../Shared/material-card.js";
@@ -55,14 +53,13 @@ export function mountHangingSkyhook(root, opts) {
 	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
 	shell.addModule({ id: "re", tab: "log", side: "in", label: "Earth reentry", color: C.violet, brings: ["reO"], tip: "Cargo released toward Earth (Moon only)" });
 
-	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Dropped from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
+	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Drop from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
 	shell.addModule({ id: "clm", tab: "log", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
-	shell.addModule({ id: "rp", tab: "log", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
+	shell.addModule({ id: "rp", tab: "arch", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
 	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, needs: ["pay"], tip: "Needs Loads" });
 	shell.addModule({ id: "thrO", tab: "log", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
 	shell.addModule({ id: "kpO", tab: "eng", side: "out", label: "Station-keeping", color: C.cobalt, needs: ["kp"], tip: "Needs Station-keeping inputs" });
 	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Earth reentry", color: C.violet, needs: ["re"], tip: "Needs Earth reentry inputs" });
-	shell.addModule({ id: "send", tab: "arch", side: "out", label: "Send to calculators", color: C.umber, tip: "Send this tether to the Skyhook Spin-Launcher" });
 
 	// ---------- input cards ----------
 	var BODY_NAMES = Array.from(systems.values()).filter(function (s) {
@@ -146,20 +143,6 @@ export function mountHangingSkyhook(root, opts) {
 		tip: "Cargo flung from the launch deck is braked retrograde so it falls to the parent body; a burn at the lunar-distance apogee trims perigee to the target." });
 	var ifaceIn = shell.numberField(reCard, { label: "Entry interface altitude", unit: "km", value: 122, min: 1 });
 	var reNote = shell.note(reCard, "Cargo released from the launch deck.");
-
-	var aboutCard = shell.addCard({ id: "about", tab: "arch", side: "in", title: "About this calculator", short: "About", color: C.umber, focus: "tether", collapsed: true });
-	aboutCard.setSummary("gravity-gradient skyhook");
-	var about = document.createElement("div");
-	about.className = "hs-about";
-	about.innerHTML =
-		"<p>A gravity-gradient skyhook is a long <b>vertical</b> tether whose <b>centre of mass</b> orbits a body at orbital speed. " +
-		"It does not rotate: it stays aligned with the local vertical, held taut by the gravity gradient. The whole structure shares the " +
-		"centre of mass's angular velocity, so the <b>top</b> moves faster than a free orbit there and is flung outward, while the " +
-		"<b>foot</b> moves slower and is pulled inward. These opposing pulls put the tether in tension, greatest at the centre of mass.</p>" +
-		"<p>The centre of mass is the top of the effective-potential hill, like the L1 point of a Moon–L1 elevator: climbing foot → " +
-		"centre is uphill, centre → top is downhill (regenerative). The slow, low-sweeping foot suits pick-up; the fast top gives a " +
-		"payload a boost on release.</p>";
-	aboutCard.body.appendChild(about);
 
 	// ---------- result cards ----------
 	// A labelled group of result lines inside a fold, whose lines are reused as the
@@ -245,14 +228,9 @@ export function mountHangingSkyhook(root, opts) {
 	var rPeakG = shell.line(reOCard, { label: "Peak deceleration", unit: "g", sub: "Ballistic estimate, calibrated to Stardust; lift and guidance reduce it." });
 	var reOutNote = shell.note(reOCard, "");
 
-	var rpCard = shell.addCard({ id: "rp", tab: "log", side: "out", title: "Release points", short: "Release", color: C.sky, module: "rp", focus: "release" });
+	var rpCard = shell.addCard({ id: "rp", tab: "arch", side: "out", title: "Release points", short: "Release", color: C.sky, module: "rp", focus: "release" });
 	var rpNote = shell.note(rpCard, "Altitude on the tether where a release leaves with the v∞ for a transfer to each body.");
 	var rpLines = [];
-
-	var sendCard = shell.addCard({ id: "send", tab: "arch", side: "out", title: "Send to calculators", short: "Send", color: C.umber, module: "send", focus: "tether" });
-	shell.note(sendCard, "Hand this tether to the Skyhook Spin-Launcher Calculator, a variant of this tool.");
-	var sendBtn = shell.button(sendCard, { label: "Send tether → Spin-Launcher", primary: true });
-	var sendStatus = shell.note(sendCard, "");
 
 	// ---------- formatting ----------
 	function num(x, d) { return isFinite(x) ? x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—"; }
@@ -448,35 +426,11 @@ export function mountHangingSkyhook(root, opts) {
 		f = scaled(sk.genPower, POWER); kpOCard.setSummary(f[0] + " " + f[1]);
 		reOCard.setSummary(reShow && re.entry && re.atmosphere ? "~" + num(re.peakG, 0) + " g peak" : "—");
 		rpCard.setSummary(tg.slice(0, 3).map(function (x) { return x.name + " " + num(x.altitude / 1e3, 0); }).join(" · "));
-		sendCard.setSummary("Spin-Launcher");
 
 		var span = (S.R + S.top) * 1.12;
 		view.setMinimap([-span, -span, span, span]);
 		view.redraw();
 	}
-
-	// ---------- exchange ----------
-	// Send this design to the Skyhook + Tip Spin-Launcher Calculator as a
-	// tether-spec packet (Shared/exchange.js; Website/ARCHITECTURE.md, "Exchange").
-	sendBtn.onclick = function () {
-		calc();
-		var t = S.t;
-		var m = matCard.read();
-		var mat = { sigma: m.strength, rho: m.density };
-		var packet = PacketTypes.make("tether-spec", {
-			body: bodyIn.value,
-			footAlt: t.foot, centreAlt: t.centre, topAlt: t.top,
-			material: mat,
-			period: t.time, tipSpeed: t.topVel,
-			taperRatio: { upper: t.highRatio, lower: t.lowRatio }
-		}, {
-			tool: "hanging-skyhooks",
-			label: bodyIn.value + " tether",
-			iso: new Date().toISOString().slice(0, 10)
-		});
-		Exchange.send(packet, { target: "skyhook-spin-launcher" });
-		sendStatus.textContent = "Sent: open the Skyhook Spin-Launcher calculator to apply it.";
-	};
 
 	// ---------- drawing ----------
 	// World units are km; the body's centre is the origin and the tether points
