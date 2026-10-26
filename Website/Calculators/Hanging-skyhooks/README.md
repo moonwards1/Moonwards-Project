@@ -44,43 +44,45 @@ it.**
 
 ## Loads, stations and the anchor station
 
-The Loads card takes five masses: a tip load at the top and at the foot, a load
-spread evenly along each tether (climbers, power, fuel, tracks), and the
-anchor station. The Stations card gives each of the three stations a
-mass as well: the facility plus its maximum load of ships, cargo and supplies,
-held at that one point. Each half is swept from its tip inward
-(`sweepTether`): tension grows with the taper and gains the weight of every load
-it passes, and the tether's own mass follows from the tension. A station adds
-its mass times the net pull where it sits (m·|ω²r − GM/r²|) as a step in
-tension, and the taper carries on from there, so the tether thickens in steps
-as it passes each station; a station's weight counts on whichever half it hangs
-from, the one between it and the anchor station. A station beyond the
-nominal centre from its half's tip (a receiving deck just below the centre,
-with the anchor station pushed lower still) eases that half's tension
-rather than adding to it.
+The centre of mass divides the upper tether (top → centre of mass) from the lower
+(foot → centre of mass). The Loads card takes five masses: a tip load at the top
+and at the foot, a load spread evenly along each tether (climbers, power, fuel,
+tracks), and the anchor station. The Stations card gives each of the three
+stations a mass as well: the facility plus its maximum load of ships, cargo and
+supplies, held at that one point. Each tether is swept from its tip to the centre
+of mass (`sweepTether`): tension grows with the taper and gains the weight of
+every load it passes, and the tether's own mass follows from the tension. A
+station adds its mass times the net pull where it sits (m·|ω²r − GM/r²|) as a step
+in tension, and the taper carries on from there, so the tether thickens in steps
+as it passes each station. A station counts on whichever tether it lies on: above
+the centre of mass it hangs from the upper one, below it from the lower one.
 
-The Tether properties card gives each half's tether mass as a multiple of
-everything that half holds up (tip, spread load and stations), and a fold-out
-breaks the mass down by section: tip to first station, station to station, and
-last station to the anchor station. The Forces card's fold-out does the
-same for tension: each section's tension where it arrives at its inner end, and
-what each station adds.
+The Tether properties card gives each tether's mass as a multiple of everything
+that tether holds up (tip, spread load and stations; the anchor station is
+left out). The tether the anchor station lies on is shown in two parts, each
+with its own ratio: from its tip to the anchor station, holding up what lies
+beyond it, and from the anchor station to the centre of mass, holding up
+everything on that tether including the station. A fold-out breaks the mass
+down by section: tip to first station, station to station, and last station to
+the centre of mass. The Forces card's fold-out does the same for tension: each
+section's tension where it arrives at its inner end, and what each station adds.
 
-The anchor station is the principal station and the heaviest mass on the tether.
-It sits at the radius where the lower tension, the upper tension and its own net
-pull cancel, so the installation's true centre of mass stays at the centre-of-mass
-altitude set in Tether geometry, which is what fixes the orbit; the more the two
-halves' loads differ, the farther from that altitude it sits. It may sit anywhere
-along the tether the loads demand, down to the foot's altitude or up toward the
-top, as long as the tether material can carry the tension; where several
-positions balance, the one nearest the nominal centre is used. Past the nominal
-centre the pull on the tether reverses and its tension falls again, and a
-position where it would go slack does not count. If no position balances (too
-light an anchor for the loads), the anchor station is drawn at the centre and the
-Forces card says how far out of balance it is. The Forces card reports the
-totals, the tensions on both sides of the anchor station, its position, and the
-anchor mass that would hold it within 1 km of the centre-of-mass altitude. The
-drawing marks the anchor station with a square and its altitude.
+The cable is continuous through the centre of mass and nothing hangs there, so the
+tension arriving from above equals the tension arriving from below. The anchor
+station sits at the altitude where that holds, so the installation's true centre
+of mass stays at the centre-of-mass altitude set in Tether geometry, which is
+what fixes the orbit; the more the two tethers' loads differ, the farther from
+that altitude it sits. It is treated like the other stations: it adds its mass
+times the net pull it feels at that altitude, on the tether it lies on. It may sit
+anywhere along the tether the loads demand, down to the foot's altitude or up
+toward the top, as long as the tether material can carry the tension; where
+several positions balance, the one nearest the centre of mass is used, and a
+position where the tether would go slack does not count. If no position balances
+(too light an anchor for the loads), the anchor station is drawn at the centre of
+mass and the Forces card shows both tensions and says how far out of balance
+they are. The Forces card reports the tension at the centre of mass (the peak),
+and the anchor station's offset from the centre of mass. The drawing marks the
+anchor station with a square and its altitude.
 
 ## The drawn taper
 

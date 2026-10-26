@@ -51,10 +51,10 @@ and a history of how it got that way:
 - **Current-state docs** — READMEs, design docs, and code comments. Always
   describe things as they are today; rewritten in place when something
   changes, never appended to with superseded alternatives or chronology.
-- **Decisions log** — `Notes/decisions.md`. Terse, dated entries for settled
+- **Decisions log** — `Notes/decisions.md`. Terse entries for settled
   architecture decisions that are load-bearing for more than one file (a
   formula, a clamp, a structural rule). States the decision and the one-line
-  why; not a narrative of how it was debated. **When a decision is replaced,
+  why; not a narrative or a timeline of how it was debated. **When a decision is replaced,
   rewrite or remove its entry — never leave it standing beside its
   replacement.** A log holding several versions of one rule is worse than no
   log, and it will be read as current. Tracked in git: the READMEs link to it.

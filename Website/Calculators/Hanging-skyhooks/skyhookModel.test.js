@@ -75,19 +75,45 @@ test("loads, balance and the anchor station", function () {
 	var R = Number(moon.radius), w = t.angularVelocity;
 	assert.ok(t.balanced);
 	near(t.loads.upperTotal / 1e6, 100, 2, "upper total kt");
-	near(t.loads.lowerTotal / 1e6, 500, 2, "lower total kt");
-	// the station's net pull makes up the difference between the two tethers' tensions
+	near(t.loads.lowerTotal / 1e6, 500, 2, "lower total kt, anchor station left out");
+	// the cable is continuous through the centre of mass: the tension arriving from above
+	// equals the tension arriving from below
+	var gap = t.tensionLower - t.tensionUpper;
+	assert.ok(Math.abs(gap) / t.tensionPeak < 1e-6, "tensions match at the centre of mass: " + gap);
+	near(t.comOffset / 1e3, -13, 1, "station offset km (below the centre of mass)");
+	// the station sits on the lower half and adds its net pull there, as a station does
 	var rs = R + t.centre + t.comOffset;
 	var pull = w * w * rs - moon.GM / (rs * rs);
-	var gap = t.tensionLower - t.tensionUpper - t.loads.com * pull;
-	assert.ok(Math.abs(gap) / t.tensionPeak < 1e-6, "forces balance at the station: " + gap);
-	near(t.comOffset / 1e3, -12.5, 1, "station offset km (below the centre)");
+	var anchor = t.stations.low.find(function (x) { return x.anchor; });
+	assert.ok(anchor && !t.stations.up.some(function (x) { return x.anchor; }), "the anchor station is on the lower half only");
+	assert.ok(Math.abs(anchor.pull - t.loads.com * Math.abs(pull)) < 1e-6 * anchor.pull, "it adds its mass times its net pull");
+	assert.equal(t.tensionPeak, t.tensionUpper, "the peak tension is the tension at the centre of mass");
+	// below the centre of mass the upper tether never sees the anchor station
+	var lighter = computeSkyhook(moon, Object.assign({}, base(), { comMass: 500e6 }));
+	assert.ok(Math.abs(lighter.tensionUpper - t.tensionUpper) < 1e-9 * t.tensionUpper, "upper tension does not depend on a lower anchor station's mass");
+	assert.equal(lighter.tetherMassUpper, t.tetherMassUpper);
 	assert.ok(t.tensionPeak > 1e8, "peak tension is now set by the real loads");
 	assert.ok(Math.abs(t.tetherMass - (t.tetherMassUpper + t.tetherMassLower)) < 1, "tether mass is the two halves");
 	close(t.massMultipleUpper, t.tetherMassUpper / 100e6, "upper multiple is tether mass over all its loads");
 	close(t.massMultipleLower, t.tetherMassLower / 500e6, "lower multiple");
 	close(t.massMultiple, t.tetherMass / 600e6, "whole-tether multiple leaves out the anchor station");
-	assert.ok(t.comMassAt1km > t.loads.com, "holding the station to 1 km takes a heavier anchor");
+});
+
+test("the anchor station splits its tether into two parts, each with its own ratio", function () {
+	var p = t.tetherParts, seg = p.anchorSegment;
+	assert.equal(p.anchorHalf, "low", "the default anchor station hangs below the centre of mass");
+	assert.ok(seg && seg.mass > 0);
+	// the parts add up to the whole tether
+	assert.ok(Math.abs(p.up.mass + p.low.mass + seg.mass - t.tetherMass) < 1e-6 * t.tetherMass);
+	// the stretch between the station and the centre of mass holds up the whole lower tether and the station
+	close(seg.held, t.loads.lowerTotal + t.loads.com, "stretch holds up everything on its tether");
+	close(seg.multiple, seg.mass / seg.held, "stretch ratio");
+	// the outer part holds up what lies beyond the station: tip, the spread load's share, no station here
+	assert.ok(p.low.held < t.loads.lowerTotal && p.low.held > t.loads.foot, "outer part holds less than the tether's loads");
+	assert.equal(p.up.mass, t.tetherMassUpper, "the other tether is a single part");
+	// no station mass, nothing to split
+	var none = computeSkyhook(moon, Object.assign({}, base(), { comMass: 0 }));
+	assert.equal(none.tetherParts.anchorSegment, null);
 });
 
 test("the tension profile for the drawing", function () {
@@ -95,8 +121,8 @@ test("the tension profile for the drawing", function () {
 	assert.equal(P.up.r.length, P.up.T.length);
 	assert.ok(P.up.r.length > 100 && P.low.r.length > 100);
 	assert.ok(Math.abs(P.up.T[0] - 40e6 * t.highAcceleration) < 1e-6 * P.up.T[0], "top tip tension is the tip load's weight");
-	assert.equal(P.up.T[P.up.T.length - 1], t.tensionUpper, "the sweep ends at the station with the upper tension");
-	assert.equal(P.low.T[P.low.T.length - 1], t.tensionLower, "...and the lower tension");
+	assert.equal(P.up.T[P.up.T.length - 1], t.tensionUpper, "the upper sweep ends at the centre of mass with the upper tension");
+	assert.equal(P.low.T[P.low.T.length - 1], t.tensionLower, "...and the lower sweep with the lower tension");
 	var rCentre = Number(moon.radius) + 275e3;
 	for (var i = 1; i < P.up.T.length && P.up.r[i] >= rCentre; i++) assert.ok(P.up.T[i] >= P.up.T[i - 1], "tension never falls toward the centre until past it");
 });
@@ -117,7 +143,6 @@ test("the station may sit anywhere the tether can carry it", function () {
 	assert.equal(u.comOffset, 0);
 	assert.ok(u.unbalance < 0, "the upper tether outweighs the lower");
 	assert.ok(u.warnings.some(function (w) { return /Out of balance/.test(w); }));
-	assert.ok(isNaN(u.comMassAt1km));
 	// a heavy enough anchor: it balances far below the centre, near the foot, with no limit on the offset
 	var v = computeSkyhook(moon, Object.assign({}, base, { comMass: 20000e6 }));
 	assert.ok(v.balanced);
@@ -195,15 +220,14 @@ test("stations: masses held at a point step the tension up", function () {
 	assert.ok(u.balanced);
 	var pull = function (r) { return w * w * r - moon.GM / (r * r); };
 	// every station appears once, on one half, adding m·|a| on the side it hangs from
-	var all = u.stations.up.concat(u.stations.low);
+	var all = u.stations.up.concat(u.stations.low).filter(function (x) { return !x.anchor; });
 	assert.equal(all.length, 3);
 	all.forEach(function (x) { assert.ok(Math.abs(Math.abs(x.pull) - x.m * Math.abs(pull(x.r))) < 1e-6 * Math.abs(x.pull), x.name); });
 	near(u.loads.stationsUpper + u.loads.stationsLower, 750e6, 0, "station mass is all counted");
-	// heavy upper stations pull the anchor station below the receiving deck, so that deck hangs
-	// from the upper half, and its weight lightens the tension below it
-	assert.ok(u.comOffset < -(275e3 - 233e3), "anchor station below the receiving deck: " + u.comOffset);
-	var recv = u.stations.up.find(function (x) { return x.name === "Receiving deck"; });
-	assert.ok(recv && recv.pull < 0);
+	// the receiving deck is below the centre of mass, so it hangs on the lower half and adds to it
+	var recv = u.stations.low.find(function (x) { return x.name === "Receiving deck"; });
+	assert.ok(recv && recv.pull > 0);
+	assert.ok(u.stations.low.concat(u.stations.up).every(function (x) { return x.pull > 0; }), "every station adds to its half");
 	["up", "low"].forEach(function (h) {
 		var secs = u.sections[h], st = u.stations[h];
 		assert.equal(secs.length, st.length + 1, h + ": one more section than stations");
@@ -219,7 +243,7 @@ test("stations: masses held at a point step the tension up", function () {
 	// more held up means more tether, and the multiples count every load
 	assert.ok(u.tetherMassUpper > t.tetherMassUpper);
 	close(u.massMultipleUpper, u.tetherMassUpper / u.loads.upperTotal, "upper multiple");
-	assert.ok(u.loads.upperTotal > 100e6 + 700e6);
+	near(u.loads.upperTotal / 1e6, 100 + 700, 2, "upper total: its loads plus the two stations above the centre of mass, kt");
 	// the drawn profile carries the step: two entries at the launch deck's radius
 	var rL = 950e3 + R, P = u.profile.up, at = [];
 	P.r.forEach(function (r, i) { if (r === rL) at.push(P.T[i]); });

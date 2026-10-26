@@ -21,8 +21,9 @@
 //   loadTop, loadFoot          masses held at the top and foot tips, kg
 //   distUpper, distLower       masses spread evenly along the upper / lower tether, kg
 //                              (climbers, power, fuel, tracks; stations are stationMass)
-//   comMass                    the anchor station, kg: the principal station, placed where it
-//                              balances the two tethers
+//   comMass                    the anchor station, kg: the principal station, placed where the
+//                              tension arriving at the centre of mass from above equals the
+//                              tension arriving from below
 //   rate                       delivery rate to the launch deck, t/day
 //   perClimber                 t;  vClimb m/s;  effDrive 0–1
 //   propellant                 "oxygen" | "hydrogen";  vExhaust km/s
@@ -78,7 +79,7 @@ export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps, 
 	while (lumps.length && dist(lumps[0].r) === 0) {   // at the tip: part of the tip load
 		var p0 = lumps.shift(), add0 = p0.m * sg * pull(rTip);
 		T += add0;
-		stations.push({ name: p0.name, r: p0.r, m: p0.m, pull: add0 });
+		stations.push({ name: p0.name, r: p0.r, m: p0.m, pull: add0, anchor: !!p0.anchor });
 	}
 	if (T < 0) { T = 0; slack = true; }
 	if (rec) { rec.r.push(rTip); rec.T.push(T); }
@@ -103,7 +104,7 @@ export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps, 
 		var add = mk.m * sg * pull(mk.r);
 		T += add;
 		if (T < 0) { T = 0; slack = true; }
-		stations.push({ name: mk.name, r: mk.r, m: mk.m, pull: add });
+		stations.push({ name: mk.name, r: mk.r, m: mk.m, pull: add, anchor: !!mk.anchor });
 		if (rec) { rec.r.push(mk.r); rec.T.push(T); }
 		from = mk.name; rFrom = mk.r; tFrom = T; tMax = T; segMass = 0;
 	});
@@ -164,43 +165,46 @@ export function computeSkyhook(moon, inp) {
 	t.highRatio = Math.exp(t.highIntegral / t.strength);
 
 	// ---- loads and forces ----
-	// Constant-stress cable: T(r) = σ·A(r). Each half is swept from its tip inward
-	// (sweepTether), picking up its tip load, its evenly spread load and the stations
-	// on that side of the anchor station on the way.
-	// The anchor station sits off the nominal centre,
-	// at the radius where the upper pull, the lower pull and its own net pull cancel:
-	// T_lower − T_upper = m_com·a(r). That puts the installation's true centre of mass
-	// on the nominal centre, which is what fixes the orbit.
+	// Constant-stress cable: T(r) = σ·A(r). The centre of mass divides the upper tether
+	// (top → centre of mass) from the lower (foot → centre of mass). Each half is swept
+	// from its tip inward to the centre of mass (sweepTether), picking up its tip load, its
+	// evenly spread load and every station on its side, the anchor station among them.
+	// The cable is continuous through the centre of mass and nothing hangs there, so the
+	// tension arriving from above equals the tension arriving from below. That condition
+	// fixes where the anchor station sits; it puts the installation's true centre of mass
+	// on the nominal one, which is what fixes the orbit.
 	var rFoot = t.foot + R, rTop = t.top + R, rCentre = t.centre + R, w = t.angularVelocity;
-	var netPull = function (r) { return w * w * r - GM / (r * r); };   // outward positive
 	t.loads = { top: inp.loadTop, foot: inp.loadFoot, distUpper: inp.distUpper, distLower: inp.distLower, com: inp.comMass };
 	var sm = inp.stationMass || {}, points = [];
 	[["launchDeck", "Main launch deck"], ["outerDocks", "Outer docks"], ["receivingDeck", "Receiving deck"]].forEach(function (st) {
 		var m = Number(sm[st[0]]) || 0;
 		if (inp[st[0]] != null && m > 0) points.push({ key: st[0], name: st[1], r: inp[st[0]] + R, m: m });
 	});
-	var halves = function (rs, steps, rec) {
+	// Both halves swept to the centre of mass with the anchor station (mass mAnchor) at rs.
+	var halves = function (rs, mAnchor, steps, rec) {
+		var pts = mAnchor > 0 ? points.concat([{ name: "Anchor station", r: rs, m: mAnchor, anchor: true }]) : points;
 		return {
-			up: sweepTether(GM, w, t.strength, rTop, rs, t.loads.top, t.loads.distUpper, steps, rec && rec.up, points),
-			low: sweepTether(GM, w, t.strength, rFoot, rs, t.loads.foot, t.loads.distLower, steps, rec && rec.low, points)
+			up: sweepTether(GM, w, t.strength, rTop, rCentre, t.loads.top, t.loads.distUpper, steps, rec && rec.up, pts),
+			low: sweepTether(GM, w, t.strength, rFoot, rCentre, t.loads.foot, t.loads.distLower, steps, rec && rec.low, pts)
 		};
 	};
 	var STEPS = 600;
-	var surplus = function (rs) {
-		var h = halves(rs, STEPS);
-		return h.up.slack || h.low.slack ? NaN : h.low.tension - h.up.tension - t.loads.com * netPull(rs);
+	// Tension arriving from below minus from above: zero when the anchor station balances.
+	var surplus = function (rs, mAnchor) {
+		var h = halves(rs, mAnchor, STEPS);
+		return h.up.slack || h.low.slack ? NaN : h.low.tension - h.up.tension;
 	};
 	// The station may sit anywhere on the tether. The balance can have more than one
 	// solution, so the tether is scanned from end to end and the sign change nearest the
-	// nominal centre is refined. If the loads cannot be balanced anywhere, the station is
-	// left at the nominal centre and the leftover force is reported (t.unbalance): the
-	// installation's true centre of mass is then not where the nominal centre says.
+	// centre of mass is refined. If the loads cannot be balanced anywhere, the station is
+	// left at the centre of mass and the leftover is reported (t.unbalance): the
+	// installation's true centre of mass is then not where the nominal one says.
 	var rs = rCentre;
 	t.balanced = false;
 	if (t.foot < t.top) {
-		var SCAN = 100, best = null, prevR = rFoot + 1, prevS = surplus(prevR);
+		var SCAN = 100, best = null, prevR = rFoot + 1, prevS = surplus(prevR, t.loads.com);
 		for (var q = 1; q <= SCAN; q++) {
-			var rq = rFoot + 1 + (rTop - rFoot - 2) * q / SCAN, sq = surplus(rq);
+			var rq = rFoot + 1 + (rTop - rFoot - 2) * q / SCAN, sq = surplus(rq, t.loads.com);
 			if (prevS * sq <= 0) {
 				var dist = Math.abs((prevR + rq) / 2 - rCentre);
 				if (!best || dist < best.dist) best = { lo: prevR, hi: rq, sLo: prevS, dist: dist };
@@ -211,45 +215,59 @@ export function computeSkyhook(moon, inp) {
 			var lo = best.lo, hi = best.hi;
 			for (var k = 0; k < 50; k++) {
 				var mid = (lo + hi) / 2;
-				if (best.sLo * surplus(mid) <= 0) hi = mid; else lo = mid;
+				if (best.sLo * surplus(mid, t.loads.com) <= 0) hi = mid; else lo = mid;
 			}
 			rs = (lo + hi) / 2;
 			t.balanced = true;
 		}
 	}
 	t.profile = { up: { r: [], T: [] }, low: { r: [], T: [] } };
-	var fin = halves(rs, STEPS, t.profile);
-	t.comOffset = rs - rCentre;
-	t.tensionUpper = fin.up.tension;
-	t.tensionLower = fin.low.tension;
-	t.tensionPeak = Math.max(t.tensionUpper, t.tensionLower);
-	t.unbalance = fin.low.tension - fin.up.tension - t.loads.com * netPull(rs);   // N; 0 when balanced
+	var fin = halves(rs, t.loads.com, STEPS, t.profile);
+	t.comOffset = rs - rCentre;   // the anchor station's altitude above (+) or below (−) the centre of mass
+	t.tensionUpper = fin.up.tension;   // N, arriving at the centre of mass from above
+	t.tensionLower = fin.low.tension;  // N, arriving from below; equal to the above when balanced
+	t.unbalance = t.tensionLower - t.tensionUpper;   // N; 0 when balanced
+	var peakOf = function (h) { return h.sections.reduce(function (a, x) { return Math.max(a, x.tMax, x.tTo); }, 0); };
+	t.tensionPeak = Math.max(peakOf(fin.up), peakOf(fin.low));
 	t.tetherMassUpper = fin.up.mass;
 	t.tetherMassLower = fin.low.mass;
 	t.tetherMass = t.tetherMassUpper + t.tetherMassLower;
-	// Each half carries its tip load, its spread load and the stations on its side of
-	// the anchor station.
-	var stationSum = function (h) { return h.stations.reduce(function (a, x) { return a + x.m; }, 0); };
+	// Each half carries its tip load, its spread load and the stations on its side of the
+	// centre of mass. The anchor station's own mass is left out of these totals; it has its own
+	// line (t.tetherParts) for the stretch of cable that carries it.
+	var stationSum = function (h) { return h.stations.reduce(function (a, x) { return a + (x.anchor ? 0 : x.m); }, 0); };
 	t.sections = { up: fin.up.sections, low: fin.low.sections };
 	t.stations = { up: fin.up.stations, low: fin.low.stations };
 	t.loads.stationsUpper = stationSum(fin.up);
 	t.loads.stationsLower = stationSum(fin.low);
 	t.loads.upperTotal = t.loads.top + t.loads.distUpper + t.loads.stationsUpper;
 	t.loads.lowerTotal = t.loads.foot + t.loads.distLower + t.loads.stationsLower;
-	// Tether mass as a multiple of everything each half holds up. The anchor station is held
-	// up by neither half: it is what balances them.
+	// Tether mass as a multiple of everything each half holds up.
 	t.massMultipleUpper = t.loads.upperTotal > 0 ? t.tetherMassUpper / t.loads.upperTotal : NaN;
 	t.massMultipleLower = t.loads.lowerTotal > 0 ? t.tetherMassLower / t.loads.lowerTotal : NaN;
 	var carried = t.loads.upperTotal + t.loads.lowerTotal;
 	t.massMultiple = carried > 0 ? t.tetherMass / carried : NaN;
-	// The station mass that would hold it within 1 km of the nominal centre: the
-	// same balance solved for m_com at that position, on the side it already sits.
-	var r1 = rCentre + (t.comOffset < 0 ? -1000 : 1000), h1 = halves(r1, STEPS);
-	t.comMassAt1km = t.balanced ? (h1.low.tension - h1.up.tension) / netPull(r1) : NaN;
-	if (!(t.comMassAt1km >= 0)) t.comMassAt1km = NaN;
+	// The tether's mass in parts, each with the load it holds up. The anchor station splits its
+	// own tether into the stretch out to the tip (holding up what lies beyond the station) and
+	// the stretch between the station and the centre of mass (holding up everything on that
+	// tether, the station included). The other tether is a single part.
+	var part = function (mass, held) { return { mass: mass, held: held, multiple: held > 0 ? mass / held : NaN }; };
+	t.tetherParts = { up: part(t.tetherMassUpper, t.loads.upperTotal), low: part(t.tetherMassLower, t.loads.lowerTotal), anchorSegment: null, anchorHalf: null };
+	["up", "low"].forEach(function (key) {
+		var h = fin[key], at = h.stations.findIndex(function (x) { return x.anchor; });
+		if (at < 0) return;
+		var rTip = key === "up" ? rTop : rFoot, tip = key === "up" ? t.loads.top : t.loads.foot, spread = key === "up" ? t.loads.distUpper : t.loads.distLower;
+		var sum = function (list) { return list.reduce(function (a, x) { return a + x.mass; }, 0); };
+		var inner = sum(h.sections.slice(at + 1)), outer = sum(h.sections.slice(0, at + 1));
+		var share = Math.abs(h.stations[at].r - rTip) / Math.abs(rCentre - rTip);
+		var beyond = h.stations.slice(0, at).reduce(function (a, x) { return a + x.m; }, 0);
+		t.tetherParts[key] = part(outer, tip + spread * share + beyond);
+		t.tetherParts.anchorSegment = part(inner, key === "up" ? t.loads.upperTotal + t.loads.com : t.loads.lowerTotal + t.loads.com);
+		t.tetherParts.anchorHalf = key;
+	});
 	if (t.foot < t.top && !t.balanced) {
 		var gap = Math.abs(t.unbalance), gapText = gap >= 1e12 ? (gap / 1e12).toFixed(gap >= 1e13 ? 0 : 1) + " TN" : gap >= 1e9 ? (gap / 1e9).toFixed(1) + " GN" : (gap / 1e6).toFixed(0) + " MN";
-		warnings.push("Out of balance: no position for the anchor station balances these loads. At the nominal centre the " +
+		warnings.push("Out of balance: no position for the anchor station balances these loads. At the centre of mass the " +
 			(t.unbalance < 0 ? "upper tether outweighs the lower" : "lower tether outweighs the upper") + " by " + gapText +
 			", so the true centre of mass is not where you set it. Add mass to the anchor station, or load to the lighter side.");
 	}

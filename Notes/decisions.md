@@ -1,6 +1,6 @@
 # Design decisions log
 
-Settled rules that are load-bearing for more than one file. Each entry states
+Standing rules that are load-bearing for more than one file. Each entry states
 the rule and, briefly, why — and where it matters, what it forbids. It is not
 a narrative of how the decision was reached; `git log` holds that. 
 
@@ -8,7 +8,7 @@ a narrative of how the decision was reached; `git log` holds that.
 standing beside its replacement.** A log that holds several versions of the
 same rule is worse than no log.
 
-Entries are chronological within each section.
+Entries are chronological within each section, but not dated. 
 
 ---
 
@@ -491,7 +491,7 @@ matched this one — re-target them with Update after the elements change.
 
 ## Calculators
 
-### New calculators use the three-column calculator shell (2026-10-16)
+### New calculators use the three-column calculator shell
 
 A calculator page is the shell in `Shared/calc-shell.*` + `Shared/zoom-view.js`:
 inputs | zoomable drawing | results, with optional parts as input and result
@@ -505,7 +505,7 @@ time.
 Why: calculators keep growing optional sections; modules keep the page short
 until a section is asked for, and the drawing stays in view while editing.
 
-### Tether calculators share one Material card and one preset list (2026-10-22)
+### Tether calculators share one Material card and one preset list
 
 Every tether calculator on the shell, and the workbench's skeleton cards, take
 their material from `Shared/material-card.js` over the presets in
@@ -513,7 +513,7 @@ their material from `Shared/material-card.js` over the presets in
 factor. Why: one list of materials, so a material reads the same wherever a
 design uses it.
 
-### The workbench's L1 elevator is sized for its structure, without cargo (2026-10-22)
+### The workbench's L1 elevator is sized for its structure, without cargo
 
 The minimum counterweight on the workbench counts the cable and its track,
 not cargo; a counterweight is entered as a mass or as a multiple of that
@@ -523,3 +523,13 @@ everything the structure doesn't count yet. Cargo joins the sizing when traffic 
 Engineering tabs. Why: a cable tapered to its counterweight has no minimum
 from its own weight, so the always-on track is the honest floor until the
 traffic is known.
+
+### A hanging skyhook's tethers are split at its centre of mass
+
+The upper tether runs from the top to the centre of mass and the lower from the foot
+to it; each tether's spread load is spread over that length. The anchor station is a
+mass on whichever tether it lies on, adding its mass times its net pull like any other
+station, and its altitude is the one at which the tension arriving at the centre of mass
+from above equals that from below. Peak tension is read along that one continuous cable.
+Why: the cable is continuous through the centre of mass and nothing hangs there, so it is
+the physical dividing point and the one reference for every measurement.
