@@ -47,6 +47,13 @@
 // Wiring made visible: an input card's `feeds` lists result card ids; focusing
 // the input card marks those (cs-fed), so a viewer sees where its numbers go.
 //
+// Card ticks: an embedded calculator gives each card a checkbox, in its accent
+// colour, in place of the colour square; `cardToggles` overrides that either
+// way. The tick says whether the card's marks are drawn. The calculator asks
+// shell.isShown(cardId) (ticked, and its module on) for each mark it draws and
+// redraws on onShown(fn). Clicking the title still focuses the card. A card
+// that is not ticked is listed in getState().hidden.
+//
 // Embedding: `embedded: true` fills the root element instead of the window,
 // for a calculator mounted inside another page (the home page's workbench).
 // getState() returns the viewer's settings — field values, modules shown,
@@ -117,6 +124,7 @@ var ICON = {
 	plus: '<path d="M8 3.5v9M3.5 8h9"/>',
 	x: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
 	chev: '<path d="M4 6l4 4 4-4"/>',
+	tick: '<path d="M3 8.5l3.2 3L13 4.5"/>',
 	loc: '<circle cx="8" cy="8" r="4.5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/>',
 	collapse: '<path d="M4 3l4 3 4-3M4 13l4-3 4 3"/>',
 	expand: '<path d="M4 6l4-3 4 3M4 10l4 3 4-3"/>'
@@ -144,7 +152,8 @@ export class CalcShell {
 		this.focusId = null;
 		this.tab = null;        // null: show every tab's cards (standalone page)
 		this.firstTab = o.firstTab || "arch";
-		this.listeners = { input: [], focus: [], modules: [] };
+		this.listeners = { input: [], focus: [], modules: [], shown: [] };
+		this.toggles = o.cardToggles != null ? !!o.cardToggles : !!o.embedded;
 
 		// A page gets a header (title over the chip groups). An embedded
 		// calculator has none: the columns take the full height, and the
@@ -271,12 +280,23 @@ export class CalcShell {
 		var el = create("div", "cs-card", false, this.columns[d.side].list);
 		el.style.setProperty("--mc", color);
 		var h = create("div", "cs-card-h", false, el);
+		var chk = null;
+		if (this.toggles) {
+			var lab = create("label", "cs-chk", false, h);
+			lab.title = "Show in the drawing";
+			chk = create("input", false, false, lab);
+			chk.type = "checkbox";
+			chk.checked = true;
+			chk.setAttribute("aria-label", "Show " + d.title + " in the drawing");
+			create("span", "cs-chk-box", false, lab).appendChild(icon(ICON.tick, 10, 2.4));
+			chk.onchange = function () { self.setShown(d.id, chk.checked); };
+		}
 		var t = button("cs-card-t", false, h);
-		create("span", "cs-dot", false, t);
+		if (!chk) create("span", "cs-dot", false, t);
 		create("span", "cs-nm", d.title, t);
 		create("span", "cs-nm-s", d.short || d.title, t);
 		var sum = create("span", "cs-sum", false, t);
-		t.appendChild(icon(ICON.loc, 16, 1.5, "cs-loc"));
+		if (!chk) t.appendChild(icon(ICON.loc, 16, 1.5, "cs-loc"));
 		t.onclick = function () { self.focusCard(d.id); };
 		var chev = button("cs-ib", "Collapse card", h);
 		chev.appendChild(icon(ICON.chev, 16, 1.6, "cs-chev"));
@@ -290,7 +310,7 @@ export class CalcShell {
 		var card = {
 			id: d.id, side: d.side, module: d.module || null, focus: d.focus || null,
 			tab: d.tab || null, feeds: d.feeds || [],
-			el: el, body: body, collapsed: false, chev: chev,
+			el: el, body: body, collapsed: false, chev: chev, chk: chk, shown: true,
 			setSummary: function (text) { sum.textContent = text; }
 		};
 		this.cards[d.id] = card;
@@ -312,6 +332,21 @@ export class CalcShell {
 	collapseAll(side, value) {
 		var self = this;
 		this.cardOrder.forEach(function (id) { if (self.cards[id].side === side) self.setCollapsed(id, value); });
+	}
+
+	// Whether the card's marks are drawn: it is ticked and, if it belongs to a
+	// module, the module is on. A card with no tick is always ticked.
+	isShown(id) {
+		var c = this.cards[id];
+		return !!c && c.shown && (!c.module || !!this.on[c.module]);
+	}
+
+	setShown(id, value) {
+		var c = this.cards[id];
+		if (!c || c.shown === !!value) return;
+		c.shown = !!value;
+		if (c.chk) c.chk.checked = c.shown;
+		this.listeners.shown.forEach(function (fn) { fn(id, c.shown); });
 	}
 
 	focusCard(id, target) {
@@ -526,7 +561,8 @@ export class CalcShell {
 		Object.keys(this.fields).forEach(function (k) { fields[k] = self.fields[k].value; });
 		this.cardOrder.forEach(function (id) { if (self.cards[id].collapsed) collapsed.push(id); });
 		var open = Object.keys(this.folds).filter(function (k) { return self.folds[k].open; });
-		return { modules: Object.assign({}, this.on), fields: fields, collapsed: collapsed, open: open };
+		var hidden = this.cardOrder.filter(function (id) { return !self.cards[id].shown; });
+		return { modules: Object.assign({}, this.on), fields: fields, collapsed: collapsed, open: open, hidden: hidden };
 	}
 
 	// Unknown keys are ignored and disabled fields keep their value, so state
@@ -549,6 +585,13 @@ export class CalcShell {
 		if (Array.isArray(state.collapsed)) {
 			this.cardOrder.forEach(function (id) { self.setCollapsed(id, state.collapsed.indexOf(id) >= 0); });
 		}
+		if (Array.isArray(state.hidden)) {
+			this.cardOrder.forEach(function (id) {
+				var c = self.cards[id];
+				c.shown = state.hidden.indexOf(id) < 0;
+				if (c.chk) c.chk.checked = c.shown;
+			});
+		}
 		if (Array.isArray(state.open)) {
 			Object.keys(this.folds).forEach(function (k) { self.folds[k].setOpen(state.open.indexOf(k) >= 0); });
 		}
@@ -559,4 +602,5 @@ export class CalcShell {
 	onInput(fn) { this.listeners.input.push(fn); }
 	onFocus(fn) { this.listeners.focus.push(fn); }
 	onModules(fn) { this.listeners.modules.push(fn); }
+	onShown(fn) { this.listeners.shown.push(fn); }
 }

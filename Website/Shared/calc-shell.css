@@ -29,6 +29,9 @@
  *                 cs-fed: a result card the focused input card feeds
  *   cs-empty      the note a column shows when it has no cards on this tab
  *   cs-card-h / cs-card-t / cs-card-b   header row / title button / body
+ *   cs-chk        an embedded card's tick (label around the input and cs-chk-box):
+ *                 its border and tick take the card accent; the title button
+ *                 beside it focuses the card
  *   cs-nm / cs-nm-s   full title / short title (shown when collapsed)
  *   cs-sum        the one-line summary shown when collapsed
  *   cs-row        an input row: cs-lbl (+ cs-hint) and cs-fld (input + cs-u)
@@ -42,8 +45,8 @@
  *   cs-tipped     a row whose label carries a hover tip (dotted underline)
  *   cs-btn, cs-btn-pri   a button in a card / its primary form
  *   cs-note / cs-warn   a small note / a warning block
- *   cs-stage      the drawing panel (ZoomView fills it); cs-pill, cs-zb, cs-mini,
- *                 cs-legend, cs-lg, cs-sb are its overlays
+ *   cs-stage      the drawing panel (ZoomView fills it); cs-pill (not when
+ *                 embedded), cs-zb, cs-mini, cs-legend, cs-lg, cs-sb are its overlays
  *
  * Style text that a script fills in by class, never by bare element selector
  * (`.x span`): filled-in text may arrive wrapped in its own element.
@@ -237,6 +240,25 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 }
 .cs-card-t:hover { background: rgba(80, 55, 30, .06); }
 .cs-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; background: var(--mc); }
+.cs-chk { position: relative; flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; cursor: pointer; }
+.cs-chk:hover { background: rgba(80, 55, 30, .06); }
+.cs-chk input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.cs-chk-box {
+	display: grid;
+	place-items: center;
+	box-sizing: border-box;
+	width: 15px;
+	height: 15px;
+	border: 2px solid var(--mc);
+	border-radius: 4px;
+	color: var(--mc);
+	pointer-events: none;
+	transition: background .15s;
+}
+.cs-chk-box svg { opacity: 0; transition: opacity .15s; }
+.cs-chk input:checked + .cs-chk-box { background: color-mix(in oklch, var(--mc) 16%, transparent); }
+.cs-chk input:checked + .cs-chk-box svg { opacity: 1; }
+.cs-chk input:focus-visible + .cs-chk-box { outline: 2px solid var(--mc); outline-offset: 2px; }
 .cs-nm, .cs-nm-s { font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 700; font-size: 15px; white-space: nowrap; }
 .cs-nm-s { display: none; font-size: 14px; flex: none; }
 .cs-sum {

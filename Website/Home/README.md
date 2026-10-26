@@ -29,7 +29,10 @@ the **workbench**, and the apps list.
   made entirely of skeleton cards. Skeleton input cards are wired to their
   result cards; results that are plain arithmetic are computed, the rest show
   "—" until a model exists. The drawing panel stays empty where no
-  calculator draws yet.
+  calculator draws yet. Each card has a checkbox, in the card's colour, before
+  its title: ticked cards have their marks in the drawing, unticked ones
+  don't (clicking the title still glides the drawing to the card). The ticks
+  are saved with the design.
 - **Save design** keeps the design, every mounted calculator's settings and
   the current selection in the browser's local storage, and the page reopens
   on it. **Export** downloads the same as a `.moonwards.json` file; **Import**

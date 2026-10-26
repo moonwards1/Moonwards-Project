@@ -33,6 +33,11 @@ drawing, results — each scrolling on its own.
   `focus` names a `view.addTarget` rect the drawing glides to; fields can
   carry their own `focus`. Draggable markers use `view.draggable`, and call
   `shell.focusCard(id, false)` to highlight their card without moving the view.
+- **Card ticks.** Embedded in the home workbench, each card has a checkbox
+  that shows or hides its marks. Every mark the drawing makes belongs to one
+  or more cards and is drawn only while `shell.isShown(id)` is true for one of
+  them (a module card also needs its module on); marks no card owns, like the
+  body, stay. Call `view.redraw()` from `shell.onShown`.
 - **Colours.** Take card/drawing accent pairs from `ShellColors` so a module's
   chip, cards and marks match. A calculator sets only `--cs-core` and its
   drawing's own rules (own class prefix) in its stylesheet.

@@ -506,12 +506,15 @@ export function mountHangingSkyhook(root, opts) {
 		if (!S) return;
 		var u = vw.u, t = S.t, R = S.R, fs = 12 * u, fsS = 11 * u;
 		var on = function (m) { return shell.isOn(m); };
+		// A mark is drawn while one of the cards that own it is ticked (and its module is on).
+		var any = function () { return Array.prototype.some.call(arguments, function (id) { return shell.isShown(id); }); };
 		var rT = R + S.top, rC = R + S.centre, rF = R + S.foot;
 
 		gBody.setAttribute("r", R); gBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
 		var atm = S.body.atmosphere ? Number(S.body.atmosphere.height) / 1e3 : 0;
 		gAtm.setAttribute("r", R + atm); show(gAtm, atm > 0);
-		gCom.setAttribute("r", rC);
+		gCom.setAttribute("r", rC); show(gCom, any("geo"));
+		view.legendEl.style.display = any("orb") ? "" : "none";
 		miniBody.setAttribute("r", R); miniBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
 		miniTether.setAttribute("d", "M0 " + (-rF) + "L0 " + (-rT));
 
@@ -536,13 +539,15 @@ export function mountHangingSkyhook(root, opts) {
 			right.push(hw + " " + (-p[0])); left.unshift((-hw) + " " + (-p[0]));
 		});
 		gTaper.setAttribute("d", "M" + right.join("L") + "L" + left.join("L") + "Z");
+		show(gTaper, any("geo", "prop"));
 
 		// markers and their labels (left)
-		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); });
+		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); show(m[0], any("geo")); });
 		[[rT, S.top], [rC, S.centre], [rF, S.foot]].forEach(function (p, i) {
 			var tx = tMk[i];
 			tx.setAttribute("x", -14 * u); tx.setAttribute("y", -p[0] + 4 * u); tx.setAttribute("font-size", fs); tx.setAttribute("stroke-width", 4 * u);
 			tx.val.setAttribute("dx", 6 * u); tx.val.textContent = kmText(p[1]);
+			show(tx, any("geo"));
 		});
 
 		// speed arrows (screen length ∝ speed) with a notch at the local circular-orbit speed
@@ -555,11 +560,13 @@ export function mountHangingSkyhook(root, opts) {
 			var tx = tSpeed[i];
 			tx.setAttribute("x", xb + 6 * u); tx.setAttribute("y", y + 4 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
 			tx.textContent = num(s[1] / 1e3, 2) + " km/s";
+			show(tx, any("orb"));
 		});
 		gArrows.setAttribute("d", ar); gHeads.setAttribute("d", hd); gNotches.setAttribute("d", nt);
+		[gArrows, gHeads, gNotches].forEach(function (el) { show(el, any("orb")); });
 
 		// dropped from the foot: an ellipse with apoapsis at the foot
-		var relOn = on("rel");
+		var relOn = any("rel");
 		var rp = t.newPeriapsis / 1e3, e = (rF - rp) / (rF + rp), pp = rF * (1 - e);
 		var end = t.hitsSurface ? t.impactAround : 2 * Math.PI, dp = "";
 		for (var j = 0; j <= 60; j++) {
@@ -581,7 +588,7 @@ export function mountHangingSkyhook(root, opts) {
 		}
 
 		// stations (right)
-		var stOn = on("st"), decks = [[S.launch, "launch deck", field(launchMassIn, 10)], [S.outer, "outer docks", field(outerMassIn, 200)], [S.recv, "receiving deck", field(recvMassIn, 100)]];
+		var stOn = any("st"), decks = [[S.launch, "launch deck", field(launchMassIn, 10)], [S.outer, "outer docks", field(outerMassIn, 200)], [S.recv, "receiving deck", field(recvMassIn, 100)]];
 		gStTicks.setAttribute("d", decks.map(function (d) { return "M" + (-9 * u) + " " + (-(R + d[0])) + "L" + (9 * u) + " " + (-(R + d[0])); }).join(""));
 		show(gStTicks, stOn);
 		decks.forEach(function (d, i) {
@@ -591,7 +598,7 @@ export function mountHangingSkyhook(root, opts) {
 		});
 
 		// climber (throughput)
-		var thrOn = on("thr"), ca = R + S.recv + 0.36 * (S.launch - S.recv);
+		var thrOn = on("thr") && any("thr", "thrO", "clm"), ca = R + S.recv + 0.36 * (S.launch - S.recv);
 		gClimber.setAttribute("x", -5 * u); gClimber.setAttribute("y", -ca - 7.5 * u);
 		gClimber.setAttribute("width", 10 * u); gClimber.setAttribute("height", 15 * u); gClimber.setAttribute("rx", 2.5 * u);
 		gClArrow.setAttribute("d", "M" + (-2.5 * u) + " " + (-ca + 2 * u) + "L0 " + (-ca - 2 * u) + "L" + (2.5 * u) + " " + (-ca + 2 * u));
@@ -604,33 +611,35 @@ export function mountHangingSkyhook(root, opts) {
 		gPay.setAttribute("x", -5.5 * u); gPay.setAttribute("y", py - 5.5 * u); gPay.setAttribute("width", 11 * u); gPay.setAttribute("height", 11 * u); gPay.setAttribute("rx", 2 * u);
 		tPay.setAttribute("x", 12 * u); tPay.setAttribute("y", py + 4 * u); tPay.setAttribute("font-size", fsS); tPay.setAttribute("stroke-width", 4 * u);
 		tPay.textContent = "top load " + num(t.loads.top / 1e6, 0) + " kt";
-		[gPay, tPay].forEach(function (el) { show(el, on("pay")); });
+		var payOn = any("pay", "frc"), kpOn = any("kp", "kpO");
+		[gPay, tPay].forEach(function (el) { show(el, payOn); });
 		gNozzle.setAttribute("d", "M" + (-6 * u) + " " + (py - 3 * u) + "L" + (-15 * u) + " " + (py - 6 * u) + "L" + (-15 * u) + " " + (py + 6 * u) + "L" + (-6 * u) + " " + (py + 3 * u) + "Z");
 		gPlume.setAttribute("d", "M" + (-18 * u) + " " + py + "L" + (-46 * u) + " " + py);
 		tKp.setAttribute("x", -50 * u); tKp.setAttribute("y", py + 4 * u); tKp.setAttribute("font-size", fsS); tKp.setAttribute("stroke-width", 4 * u);
 		var thr = scaled(t.keeping.thrust, FORCE); tKp.textContent = "reboost " + thr[0] + " " + thr[1];
-		[gNozzle, gPlume, tKp].forEach(function (el) { show(el, on("kp")); });
+		[gNozzle, gPlume, tKp].forEach(function (el) { show(el, kpOn); });
 
 		// the anchor station, listed with its altitude and mass wherever the balance puts it.
 		// Its label sits level with it when that row is free on the right; otherwise it steps
 		// down the column to the first free row and a line leads back to the station.
 		var rB = rC + t.comOffset / 1e3, bs = 5 * u, rowH = 14 * u;
 		mBal.setAttribute("x", -bs); mBal.setAttribute("y", -rB - bs); mBal.setAttribute("width", 2 * bs); mBal.setAttribute("height", 2 * bs);
-		show(mBal, true); show(tBal, true);
+		var ancOn = any("frc", "geo");
+		show(mBal, ancOn); show(tBal, ancOn);
 		var taken = [-rT, -rC, -rF];   // the speed arrows and their labels
 		if (stOn) decks.forEach(function (d) { taken.push(-(R + d[0])); });
 		if (thrOn) taken.push(-ca);
-		if (on("pay") || on("kp")) taken.push(py);
+		if (payOn || kpOn) taken.push(py);
 		var yBal = -rB;
 		for (var n = 0; n < 60 && taken.some(function (y) { return Math.abs(y - yBal) < rowH; }); n++) yBal += rowH;
 		var moved = yBal - (-rB) > 4 * u;
 		tBal.setAttribute("x", 14 * u); tBal.setAttribute("y", yBal + 4 * u); tBal.setAttribute("font-size", fsS); tBal.setAttribute("stroke-width", 4 * u);
 		tBal.textContent = "anchor station · " + kmText(S.centre + t.comOffset / 1e3) + " · " + ktText(t.loads.com / 1e6);
 		gBalLead.setAttribute("d", "M" + bs + " " + (-rB) + "L" + (11 * u) + " " + yBal);
-		show(gBalLead, moved);
+		show(gBalLead, ancOn && moved);
 
 		// release points on the tether axis (left)
-		var rpOn = on("rp"), tg = t.targets.filter(function (x) { return isFinite(x.location); });
+		var rpOn = any("rp"), tg = t.targets.filter(function (x) { return isFinite(x.location); });
 		var maxR = tg.reduce(function (m, x) { return Math.max(m, x.location / 1e3); }, rT);
 		gAxis.setAttribute("d", "M0 " + (-rT) + "L0 " + (-maxR)); show(gAxis, rpOn && maxR > rT);
 		gRpTicks.setAttribute("d", tg.map(function (x) { var y = -x.location / 1e3; return "M" + (-7 * u) + " " + y + "L" + (7 * u) + " " + y; }).join(""));
@@ -645,7 +654,7 @@ export function mountHangingSkyhook(root, opts) {
 		});
 
 		// reentry: schematic departure toward the parent body
-		var reOn = on("re") && t.reentry.applies, ly = -(R + S.launch);
+		var reOn = any("re", "reO") && t.reentry.applies, ly = -(R + S.launch);
 		gRe.setAttribute("d", "M0 " + ly + "C" + (R * 0.7) + " " + ly + " " + (R * 1.5) + " " + (ly - R * 0.25) + " " + (R * 2.6) + " " + (ly - R * 1.0));
 		tRe.setAttribute("x", R * 0.55); tRe.setAttribute("y", ly - 10 * u); tRe.setAttribute("font-size", fs); tRe.setAttribute("stroke-width", 4 * u);
 		tRe.textContent = "to Earth · v∞ " + num(t.reentry.vinf || NaN, 0) + " m/s";
@@ -687,6 +696,7 @@ export function mountHangingSkyhook(root, opts) {
 
 	shell.onInput(calc);
 	shell.onModules(calc);
+	shell.onShown(function () { view.redraw(); });
 	shell.onFocus(function (target) { view.focus(target); });
 	view.onRender(draw);
 	bodyIn.addEventListener("change", function () { calc(); view.focus("tether"); });

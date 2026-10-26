@@ -70,7 +70,8 @@ function iconSvg(path) {
 function div(cls, parent) { var d = document.createElement("div"); d.className = cls; parent.appendChild(d); return d; }
 
 export class ZoomView {
-	// opts: { unit: "km", initial: target name, hint: text, minZoom, maxZoom (view heights) }
+	// opts: { unit: "km", initial: target name, hint: text, minZoom, maxZoom (view heights),
+	//         focusPill: show the focused-target chip (default: not when embedded) }
 	constructor(stage, opts) {
 		var o = opts || {};
 		var self = this;
@@ -93,10 +94,14 @@ export class ZoomView {
 
 		// overlays
 		var tl = div("cs-ov cs-ov-tl", stage);
-		this.pill = document.createElement("span");
-		this.pill.className = "cs-pill";
-		this.pill.innerHTML = '<span class="cs-pill-sw"></span><span class="cs-pill-k">Focus</span><b></b>';
-		tl.appendChild(this.pill);
+		// The chip naming the focused target; an embedded drawing has none.
+		this.pill = null;
+		if (o.focusPill != null ? o.focusPill : !stage.closest(".cs-embedded")) {
+			this.pill = document.createElement("span");
+			this.pill.className = "cs-pill";
+			this.pill.innerHTML = '<span class="cs-pill-sw"></span><span class="cs-pill-k">Focus</span><b></b>';
+			tl.appendChild(this.pill);
+		}
 		this.legendEl = div("cs-legend", tl);
 
 		var tr = div("cs-ov cs-ov-tr", stage);
@@ -178,8 +183,10 @@ export class ZoomView {
 	focus(name, instant) {
 		var t = this.targets[name];
 		if (!t) return;
-		this.pill.querySelector(".cs-pill-sw").style.background = t.color || "#EADFCF";
-		this.pill.querySelector("b").textContent = t.label || name;
+		if (this.pill) {
+			this.pill.querySelector(".cs-pill-sw").style.background = t.color || "#EADFCF";
+			this.pill.querySelector("b").textContent = t.label || name;
+		}
 		if (!this.pxW) { this._measure(); if (!this.pxW) return; }
 		var v = fitRect(t.rect(), this.pxW, this.pxH, t.pad || 1.2);
 		if (instant || !this.view) this.setView(v); else this.animateTo(v);
