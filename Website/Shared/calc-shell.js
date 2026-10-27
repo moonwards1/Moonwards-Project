@@ -33,6 +33,14 @@
 //   var alt = shell.numberField(card, { label: "Altitude", unit: "km", value: 100, focus: "orbit" });
 //   var speed = shell.line(card, { label: "Circular speed", unit: "m/s" });  speed.set("1,633.2");
 //
+// An optional item is a ticked line (title and short description) with a row of
+// compact fields under it, shown only while it is ticked:
+//
+//   var deck = shell.optionalFields(card, { key: "Deck", label: "Deck", hint: "where ships dock", focus: "deck",
+//                                           fields: [{ label: "altitude", unit: "km", value: 950, key: "Deck altitude" },
+//                                                    { label: "peak mass", unit: "kt", value: 10, min: 0 }] });
+//   deck.check.checked        is it in use?       deck.inputs[0].value   its first field
+//
 // Events: onInput(fn) after any field changes; onFocus(fn(target, cardId)) when a
 // card title is clicked or a field with `focus` gains focus; onModules(fn) after
 // the set of shown modules changes. focusCard(id, false) highlights a card
@@ -478,6 +486,52 @@ export class CalcShell {
 
 	note(card, text, parent) { return create("p", "cs-note", text, parent || card.body); }
 
+	// An optional item: a tick, a title and a short description on the first line;
+	// on the second, a row of compact number fields, hidden while it is unticked.
+	// opts: { key, label, hint, tip, checked, focus, parent, fields: [{ label, unit,
+	// value, step, min, max, key }] }. The tick is saved as "<card id>/<key>" ("1" or
+	// "0"); a field is saved under its own `key`, or "<key> <field label>".
+	// Returns { el, check, inputs }.
+	optionalFields(card, opts) {
+		var self = this, el = create("div", "cs-opt", false, opts.parent || card.body);
+		var head = create("label", "cs-opt-h", false, el);
+		var tick = create("span", "cs-chk", false, head);
+		var chk = create("input", false, false, tick);
+		chk.type = "checkbox";
+		chk.checked = opts.checked !== false;
+		chk.setAttribute("aria-label", "Use " + opts.label);
+		create("span", "cs-chk-box", false, tick).appendChild(icon(ICON.tick, 10, 2.4));
+		var ttl = create("span", "cs-opt-t", opts.label, head);
+		if (opts.tip) { head.title = opts.tip; ttl.classList.add("cs-tipped"); }
+		if (opts.hint) create("span", "cs-opt-d", opts.hint, head);
+		var row = create("div", "cs-opt-f", false, el);
+		var inputs = opts.fields.map(function (f) {
+			var lab = create("label", "cs-opt-fl", false, row);
+			create("span", "cs-opt-l", f.label, lab);
+			var fld = create("span", "cs-fld", false, lab);
+			var input = create("input", false, false, fld);
+			self._register(card, { key: f.key || (opts.key + " " + f.label) }, input);
+			input.type = "number";
+			input.step = f.step || "any";
+			if (f.min != null) input.min = f.min;
+			if (f.max != null) input.max = f.max;
+			input.value = f.value;
+			if (f.unit) create("span", "cs-u", f.unit, fld);
+			self._wire(card, input, opts.focus);
+			return input;
+		});
+		function sync() { row.hidden = !chk.checked; el.classList.toggle("cs-opt-off", !chk.checked); }
+		chk._sync = sync;
+		this._register(card, { key: opts.key }, chk);
+		chk.addEventListener("change", function () {
+			sync();
+			self.listeners.input.forEach(function (fn) { fn(chk); });
+			if (opts.focus) self.focusCard(card.id, opts.focus);
+		});
+		sync();
+		return { el: el, check: chk, inputs: inputs };
+	}
+
 	// A fold inside a card: { label, open, key }. Its arrow opens and closes it; it
 	// starts closed unless `open`. Returns { el, body, open, setOpen(bool) }, which
 	// shell.line and shell.note take in place of a card. Saved settings key it as
@@ -532,16 +586,29 @@ export class CalcShell {
 	}
 
 	// The key-figure bar: items [{ label, unit }]. Returns one { set(value) } per item.
-	hero(card, items) {
-		var bar = create("div", "cs-hero", false, card.body);
-		return items.map(function (it) {
+	// A bar of key figures: items [{ label, unit }]; opts { compact } makes smaller figures.
+	// Returns the cells, each { el, set(value, label, unit), show(on) }, with the bar as `.bar`.
+	// `card` may be anything with a `body`, such as a group inside a card.
+	hero(card, items, opts) {
+		var bar = create("div", (opts && opts.compact) ? ["cs-hero", "cs-hero-s"] : "cs-hero", false, card.body);
+		var cells = items.map(function (it) {
 			var cell = create("div", false, false, bar);
-			create("span", "cs-hl", it.label, cell);
+			var lab = create("span", "cs-hl", it.label, cell);
 			var v = create("strong", "cs-hv", false, cell);
 			var n = create("span", "cs-hn", false, v);
-			if (it.unit) create("small", "cs-hu", it.unit, v);
-			return { set: function (value) { n.textContent = value; } };
+			var un = create("small", "cs-hu", it.unit || "", v);
+			return {
+				el: cell,
+				set: function (value, label, unit) {
+					n.textContent = value;
+					if (label != null) lab.textContent = label;
+					if (unit != null) un.textContent = unit;
+				},
+				show: function (on) { cell.hidden = !on; }
+			};
 		});
+		cells.bar = bar;
+		return cells;
 	}
 
 	// Warning text at the top of the results column; empty hides it.
@@ -558,7 +625,7 @@ export class CalcShell {
 
 	getState() {
 		var self = this, fields = {}, collapsed = [];
-		Object.keys(this.fields).forEach(function (k) { fields[k] = self.fields[k].value; });
+		Object.keys(this.fields).forEach(function (k) { var el = self.fields[k]; fields[k] = el.type === "checkbox" ? (el.checked ? "1" : "0") : el.value; });
 		this.cardOrder.forEach(function (id) { if (self.cards[id].collapsed) collapsed.push(id); });
 		var open = Object.keys(this.folds).filter(function (k) { return self.folds[k].open; });
 		var hidden = this.cardOrder.filter(function (id) { return !self.cards[id].shown; });
@@ -573,7 +640,9 @@ export class CalcShell {
 		var f = state.fields || {};
 		Object.keys(f).forEach(function (k) {
 			var el = self.fields[k];
-			if (el && !el.disabled && typeof f[k] === "string") el.value = f[k];
+			if (!el || el.disabled || typeof f[k] !== "string") return;
+			if (el.type === "checkbox") { el.checked = f[k] === "1"; if (el._sync) el._sync(); }
+			else el.value = f[k];
 		});
 		if (state.modules && typeof state.modules === "object") {
 			var on = {};

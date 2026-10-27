@@ -45,6 +45,7 @@
  *   cs-tipped     a row whose label carries a hover tip (dotted underline)
  *   cs-btn, cs-btn-pri   a button in a card / its primary form
  *   cs-note / cs-warn   a small note / a warning block
+ *   cs-opt              an optional item: tick, title, description, and a row of compact fields
  *   cs-stage      the drawing panel (ZoomView fills it); cs-pill (not when
  *                 embedded), cs-zb, cs-mini, cs-legend, cs-lg, cs-sb are its overlays
  *
@@ -321,6 +322,21 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 }
 .cs-fld select { text-align: left; font-family: inherit; cursor: pointer; }
 .cs-u { margin-left: 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--cs-ink2); white-space: nowrap; }
+/* optional item: tick, title and description; compact fields under it */
+.cs-opt { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 3px; }
+.cs-opt-h { display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; min-height: 28px; cursor: pointer; }
+.cs-opt-t { font-size: 13px; font-weight: 600; line-height: 1.25; }
+.cs-opt-d { font-size: 11.5px; color: var(--cs-ink2); }
+.cs-opt-t.cs-tipped { text-decoration: underline dotted rgba(94, 80, 69, .55); text-underline-offset: 3px; cursor: help; }
+.cs-opt.cs-opt-off .cs-opt-t { font-weight: 500; opacity: .75; }
+.cs-opt-f { display: flex; align-items: center; justify-content: space-between; gap: 8px; }   /* altitude left, peak mass right, always one line */
+.cs-opt-f[hidden] { display: none; }
+.cs-opt-fl { display: flex; flex: 0 1 auto; min-width: 0; align-items: center; gap: 4px; }
+.cs-opt-l { min-width: 0; font-size: 11.5px; line-height: 1.1; color: var(--cs-ink2); }   /* a two-word label wraps to its own two lines when the card narrows */
+.cs-opt-fl .cs-fld { flex: none; height: 28px; padding: 0 5px 0 4px; }
+.cs-opt-fl .cs-u { margin-left: 3px; }
+.cs-opt-fl .cs-fld input { flex: none; width: 6.6ch; -moz-appearance: textfield; appearance: textfield; }   /* room for six digits */
+.cs-opt-fl .cs-fld input::-webkit-inner-spin-button, .cs-opt-fl .cs-fld input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .cs-tipped .cs-lbl { text-decoration: underline dotted rgba(94, 80, 69, .55); text-underline-offset: 3px; cursor: help; }
 .cs-btn {
 	align-self: flex-start;
@@ -385,6 +401,12 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 	color: var(--mc);
 }
 .cs-hu { margin-left: 3px; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--cs-ink2); }
+.cs-hu:empty { display: none; }
+.cs-hero > div[hidden] { display: none; }
+.cs-hero-s > div { padding: 4px 7px; }
+.cs-hero-s .cs-hl { font-size: 11.5px; color: var(--cs-ink2); }
+.cs-hero-s .cs-hv { font-size: 14.5px; font-weight: 700; }
+.cs-hero-s .cs-hu { margin-left: 2px; font-size: 11px; }
 
 /* ---------- cards tighten as their column narrows ---------- */
 @container (max-width: 320px) {

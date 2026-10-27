@@ -64,7 +64,8 @@ export const DESCENT_SHARE = 0.01;
 //               tip or station name ("tip" / the station's name), `to` the next station's
 //               name or null for rEnd; tFrom is the tension just inboard of `from`, tTo the
 //               tension arriving at `to` before its own load joins,
-//           stations: [{ name, r, m, pull }] — each station passed and the tension it adds, N }.
+//           stations: [{ key, name, r, m, pull, tension, anchor }] — each station passed, the tension
+//               it adds (pull, N) and the total tension just inboard of it (tension, N) }.
 export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps, rec, points) {
 	var n = steps || 1000, len = Math.abs(rEnd - rTip);
 	var sg = rTip >= rEnd ? 1 : -1;   // +1 sweeping down from the top, −1 sweeping up from the foot
@@ -79,7 +80,7 @@ export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps, 
 	while (lumps.length && dist(lumps[0].r) === 0) {   // at the tip: part of the tip load
 		var p0 = lumps.shift(), add0 = p0.m * sg * pull(rTip);
 		T += add0;
-		stations.push({ name: p0.name, r: p0.r, m: p0.m, pull: add0, anchor: !!p0.anchor });
+		stations.push({ key: p0.key, name: p0.name, r: p0.r, m: p0.m, pull: add0, tension: Math.max(T, 0), anchor: !!p0.anchor });
 	}
 	if (T < 0) { T = 0; slack = true; }
 	if (rec) { rec.r.push(rTip); rec.T.push(T); }
@@ -104,7 +105,7 @@ export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps, 
 		var add = mk.m * sg * pull(mk.r);
 		T += add;
 		if (T < 0) { T = 0; slack = true; }
-		stations.push({ name: mk.name, r: mk.r, m: mk.m, pull: add, anchor: !!mk.anchor });
+		stations.push({ key: mk.key, name: mk.name, r: mk.r, m: mk.m, pull: add, tension: T, anchor: !!mk.anchor });
 		if (rec) { rec.r.push(mk.r); rec.T.push(T); }
 		from = mk.name; rFrom = mk.r; tFrom = T; tMax = T; segMass = 0;
 	});
@@ -238,6 +239,32 @@ export function computeSkyhook(moon, inp) {
 	var stationSum = function (h) { return h.stations.reduce(function (a, x) { return a + (x.anchor ? 0 : x.m); }, 0); };
 	t.sections = { up: fin.up.sections, low: fin.low.sections };
 	t.stations = { up: fin.up.stations, low: fin.low.stations };
+	// Each station's figures, from the top down: the total tension at its level (just inboard of
+	// it, its own pull included), the net pull per unit mass there, and what a release along the
+	// local horizontal at the tether's speed comes to (null for the anchor station, which releases
+	// nothing). A station with no mass is not in the sweep; its tension is that of a sweep from
+	// the tip to its level.
+	var entries = fin.up.stations.concat(fin.low.stations);
+	var tensionAt = function (r) {
+		var up = r > rCentre, tip = up ? rTop : rFoot, span = Math.abs(rCentre - tip);
+		if (r === rCentre || span === 0) return t.tensionUpper;
+		var share = Math.abs(r - tip) / span;
+		return sweepTether(GM, w, t.strength, tip, r, up ? t.loads.top : t.loads.foot, (up ? t.loads.distUpper : t.loads.distLower) * share, STEPS, null, listedPoints).tension;
+	};
+	var listedPoints = t.loads.com > 0 ? points.concat([{ name: "Anchor station", r: rs, m: t.loads.com, anchor: true }]) : points;
+	var figure = function (p) {
+		var e = p.tension != null ? null : entries.find(function (x) { return p.anchor ? x.anchor : x.key === p.key; });
+		return { key: p.anchor ? "anchor" : p.key, name: p.name, anchor: !!p.anchor, r: p.r, m: p.m,
+			tension: p.tension != null ? p.tension : e ? e.tension : tensionAt(p.r), pull: e ? e.pull : 0,
+			acceleration: Math.abs(w * w * p.r - GM / (p.r * p.r)), outward: w * w * p.r - GM / (p.r * p.r) >= 0,
+			release: p.anchor ? null : OrbitalMath.horizontalRelease(GM, p.r, w * p.r, R) };
+	};
+	var named = [["launchDeck", "Main launch deck"], ["outerDocks", "Outer docks"], ["receivingDeck", "Receiving deck"]].filter(function (st) { return inp[st[0]] != null; })
+		.map(function (st) { return { key: st[0], name: st[1], r: inp[st[0]] + R, m: Number(sm[st[0]]) || 0 }; });
+	// The top and foot stations are the tips: the tension there is what the tip load and anything at
+	// the tip hang on, the first point of each half's profile.
+	var tips = [{ key: "top", name: "Top station", r: rTop, m: t.loads.top, tension: t.profile.up.T[0] }, { key: "foot", name: "Foot station", r: rFoot, m: t.loads.foot, tension: t.profile.low.T[0] }];
+	t.stationFigures = tips.concat(named, t.loads.com > 0 ? [{ name: "Anchor station", r: rs, m: t.loads.com, anchor: true }] : []).map(figure).sort(function (a, b) { return b.r - a.r; });
 	t.loads.stationsUpper = stationSum(fin.up);
 	t.loads.stationsLower = stationSum(fin.low);
 	t.loads.upperTotal = t.loads.top + t.loads.distUpper + t.loads.stationsUpper;

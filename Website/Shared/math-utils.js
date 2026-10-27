@@ -40,6 +40,22 @@ export const OrbitalMath = {
 			return s > 0 ? Math.sqrt(s) : 0;
 		},
 
+		// What becomes of a body released at radius r with speed v along the local
+		// horizontal (no radial speed), from a body of radius rSurface. The release point
+		// is then an apsis. Returns one of
+		//   { outcome: "escape", vInf }                           v at or above escape speed
+		//   { outcome: "impact", impactSpeed, periapsis }          bound, and the other apsis is inside the body
+		//   { outcome: "orbit", apsis: "apoapsis" | "periapsis", radius }   bound, clear of the body:
+		//       the other apsis, an apoapsis when v is at least circular speed, else a periapsis.
+		horizontalRelease: function (GM, r, v, rSurface) {
+			var vv = v * v;
+			if (vv >= 2 * GM / r) return { outcome: "escape", vInf: Math.sqrt(vv - 2 * GM / r) };
+			var other = r * r * vv / (2 * GM - r * vv);   // from angular momentum and energy
+			if (other >= r) return { outcome: "orbit", apsis: "apoapsis", radius: other };
+			if (other < rSurface) return { outcome: "impact", impactSpeed: Math.sqrt(vv - 2 * GM / r + 2 * GM / rSurface), periapsis: other };
+			return { outcome: "orbit", apsis: "periapsis", radius: other };
+		},
+
 		// ---- timing & angular rate --------------------------------------------
 
 		// Period of a circular orbit at radius r.

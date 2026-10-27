@@ -496,3 +496,37 @@ test("pathPlaneCrossing: a path lying in the plane meets it at the start, edge-o
 	assert.equal(x.t, 2);
 	assert.equal(x.angleDeg, 0);
 });
+
+// ---- horizontalRelease: what a release along the local horizontal comes to ----
+
+var GM_MOON = 4.9048695e12, R_MOON = 1737400;
+
+test("horizontalRelease: at escape speed or above it escapes, with v-infinity from the energy", () => {
+	var r = R_MOON + 950e3, vEsc = Math.sqrt(2 * GM_MOON / r);
+	assert.equal(O.horizontalRelease(GM_MOON, r, vEsc, R_MOON).outcome, "escape");
+	var x = O.horizontalRelease(GM_MOON, r, 1.5 * vEsc, R_MOON);
+	assert.equal(x.outcome, "escape");
+	assert.ok(Math.abs(x.vInf - Math.sqrt(1.25) * vEsc) < 1e-6, "v_inf = sqrt(v^2 - v_esc^2)");
+});
+
+test("horizontalRelease: faster than circular, below escape, gives an apoapsis that conserves energy", () => {
+	var r = R_MOON + 950e3, vc = Math.sqrt(GM_MOON / r), v = 1.2 * vc;
+	var x = O.horizontalRelease(GM_MOON, r, v, R_MOON);
+	assert.equal(x.outcome, "orbit"); assert.equal(x.apsis, "apoapsis");
+	assert.ok(x.radius > r);
+	var vApo = r * v / x.radius;   // angular momentum
+	assert.ok(Math.abs((v * v / 2 - GM_MOON / r) - (vApo * vApo / 2 - GM_MOON / x.radius)) < 1e-6, "same specific energy at both apsides");
+	assert.equal(O.horizontalRelease(GM_MOON, r, vc, R_MOON).radius, r, "circular speed: the other apsis is the release point");
+});
+
+test("horizontalRelease: slower than circular is a periapsis if clear of the body, an impact if not", () => {
+	var r = R_MOON + 400e3, vc = Math.sqrt(GM_MOON / r);
+	var shallow = O.horizontalRelease(GM_MOON, r, 0.97 * vc, R_MOON);
+	assert.equal(shallow.outcome, "orbit"); assert.equal(shallow.apsis, "periapsis");
+	assert.ok(shallow.radius < r && shallow.radius > R_MOON);
+	var steep = O.horizontalRelease(GM_MOON, r, 0.6 * vc, R_MOON);
+	assert.equal(steep.outcome, "impact");
+	var v = 0.6 * vc;
+	assert.ok(Math.abs((steep.impactSpeed ** 2 / 2 - GM_MOON / R_MOON) - (v * v / 2 - GM_MOON / r)) < 1e-6, "impact speed from energy");
+	assert.ok(steep.periapsis < R_MOON);
+});

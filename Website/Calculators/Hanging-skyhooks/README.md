@@ -22,8 +22,8 @@ part; the foot, centre-of-mass and top markers can be dragged.
   (`lockBody`), filling its container (`embedded`), and restoring saved
   settings (`state`); the header comment lists the options. Each card and
   chip names its workbench tab: geometry, material, loads, speeds,
-  the fall from the foot, release points, tether properties and forces on
-  Architecture; stations, cargo throughput, throughput, climber energy and
+  the fall from the foot, release points, tether properties, forces and
+  stations (inputs and results) on Architecture; cargo throughput, throughput, climber energy and
   Earth reentry on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
 - `skyhookModel.test.js` — Node test pinning the default design's figures:
@@ -42,14 +42,19 @@ relative path:
 **It will break if this folder is moved without `Website/Shared/` coming with
 it.**
 
-## Loads, stations and the anchor station
+## Core facilities, optional stations and the anchor station
 
 The centre of mass divides the upper tether (top → centre of mass) from the lower
-(foot → centre of mass). The Loads card takes five masses: a tip load at the top
-and at the foot, a load spread evenly along each tether (climbers, power, fuel,
-tracks), and the anchor station. The Stations card gives each of the three
-stations a mass as well: the facility plus its maximum load of ships, cargo and
-supplies, held at that one point. Each tether is swept from its tip to the centre
+(foot → centre of mass). The Core Facilities card takes five masses: the top and
+foot stations at the tips, a load spread evenly along each tether (tracks, power
+lines, equipment), and the anchor station. The Optional Stations card lists three
+stations (each with a tick), each with an altitude and a peak mass: the facility
+plus its maximum load of ships, cargo and supplies, held at that one point. An
+unticked station is left out: the receiving deck then sits at the foot, and the
+outer docks and launch deck at the top. The Stations results card lists the top and foot stations, each optional
+station and the anchor station, top down with its total tension, the net pull felt there, and where a ship released
+at the tether's speed ends up: escape with a v∞, an apoapsis, or the speed at
+impact (a periapsis when its lowest point clears the surface). Each tether is swept from its tip to the centre
 of mass (`sweepTether`): tension grows with the taper and gains the weight of
 every load it passes, and the tether's own mass follows from the tension. A
 station adds its mass times the net pull where it sits (m·|ω²r − GM/r²|) as a step
