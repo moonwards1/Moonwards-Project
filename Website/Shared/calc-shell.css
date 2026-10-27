@@ -268,7 +268,7 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 	font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
 	font-size: 12px;
 	color: var(--cs-ink2);
-	white-space: nowrap;
+	white-space: pre;   /* a summary may hold line breaks; each line is clipped on its own */
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
