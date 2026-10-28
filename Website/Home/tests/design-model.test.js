@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
 	sampleDesign, variantBlock, addBody, removeBody, addInstallation, removeInstallation,
-	parseDesign, serializeDesign, calcFor, markHint, isSpecial, instLabel, findBody, BODY_ORDER, FAMILIES, MARKS
+	parseDesign, serializeDesign, calcFor, markHint, isSpecial, instLabel, findBody, BODY_ORDER, FAMILIES, MARKS, shipRolesFor
 } from "../design-model.js";
 import { BODY_FACTS } from "../body-facts.js";
 import { systems } from "../../Shared/orbit.js";
@@ -168,4 +168,22 @@ test("kinetic launcher installations get readable display names", function () {
 	assert.equal(instLabel({ fam: "driver", v: "spin" }), "Spin launcher");
 	assert.equal(instLabel({ fam: "driver", v: "elevator" }), "Mass driver on space elevator");
 	assert.equal(instLabel({ fam: "driver", v: "tip" }), "Mass driver on skyhook");
+});
+
+test("ship roles by installation", () => {
+	assert.deepEqual(shipRolesFor({ fam: "driver", v: "surface" }, "Moon"), ["shuttle"]);
+	assert.deepEqual(shipRolesFor({ fam: "driver", v: "spin" }, "Moon"), ["shuttle"]);
+	assert.deepEqual(shipRolesFor({ fam: "driver", v: "elevator" }, "Ceres"), ["freighter"]);
+	assert.deepEqual(shipRolesFor({ fam: "driver", v: "tip" }, "Moon"), ["freighter"]);
+	assert.deepEqual(shipRolesFor({ fam: "elevator", v: "l1" }, "Moon"), ["freighter", "capsule"]);
+	assert.deepEqual(shipRolesFor({ fam: "elevator", v: "standard" }, "Ceres"), ["freighter"]);
+	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Moon"), ["freighter", "capsule"]);
+	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Earth"), ["freighter", "capsule"]);
+	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Ceres"), ["freighter"]);
+});
+
+test("ships survive a save and load", () => {
+	const d = Object.assign(sampleDesign(), { ships: { classes: [], use: {} } });
+	assert.deepEqual(parseDesign(JSON.parse(serializeDesign(d))).ships, { classes: [], use: {} });
+	assert.equal(parseDesign(JSON.parse(serializeDesign(sampleDesign()))).ships, null);
 });

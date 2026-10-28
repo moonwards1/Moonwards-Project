@@ -44,6 +44,7 @@
  *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
  *   cs-tipped     a row whose label carries a hover tip (dotted underline)
  *   cs-btn, cs-btn-pri   a button in a card / its primary form
+ *   cs-text              a text field (input.cs-text)
  *   cs-note / cs-warn   a small note / a warning block
  *   cs-opt              an optional item: tick, title, description, and a row of compact fields
  *   cs-stage      the drawing panel (ZoomView fills it); cs-pill (not when
@@ -321,6 +322,7 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 	text-align: right;
 }
 .cs-fld select { text-align: left; font-family: inherit; cursor: pointer; }
+.cs-fld input.cs-text { text-align: left; font-family: inherit; }
 .cs-u { margin-left: 6px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px; color: var(--cs-ink2); white-space: nowrap; }
 /* optional item: tick, title and description; compact fields under it */
 .cs-opt { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 3px; }

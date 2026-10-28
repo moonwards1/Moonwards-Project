@@ -33,8 +33,19 @@ the **workbench**, and the apps list.
   its title: ticked cards have their marks in the drawing, unticked ones
   don't (clicking the title still glides the drawing to the card). The ticks
   are saved with the design.
-- **Save design** keeps the design, every mounted calculator's settings and
-  the current selection in the browser's local storage, and the page reopens
+- **Ships** — support ships are not a family of their own: each installation
+  needs some of three roles (`shipRolesFor` in `design-model.js`: surface
+  launchers shuttles; launchers on an elevator or skyhook, and elevators and
+  skyhooks themselves, freighters; the Moon's L1
+  elevator, and skyhooks where the body or its parent planet has an
+  atmosphere, capsules too), and its Logistics tab shows a card for each role
+  plus a Ship legs result card (`Shared/ship-card.js`). A ship class belongs
+  to the design (`Shared/ships.js`): installations using the same class share
+  it, an edit on any card changes it everywhere, and "Make a separate copy"
+  gives one installation its own. The Economy skeleton cards take payload and
+  propellant per flight from the installation's first role.
+- **Save design** keeps the design, its ship classes, every mounted
+  calculator's settings and the current selection in the browser's local storage, and the page reopens
   on it. **Export** downloads the same as a `.moonwards.json` file; **Import**
   reads one back, from a file or pasted text.
 

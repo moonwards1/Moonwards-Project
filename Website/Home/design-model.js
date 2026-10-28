@@ -12,11 +12,17 @@
 //     name: "…",
 //     savedAt: ISO string or null,
 //     bodies: [ { body: "Moon", inst: [ { id, fam, v, state? }, … ] }, … ],
+//     ships: { classes, use },               // optional; Shared/ships.js createFleet
 //     selected: { body, inst, tab }          // optional; restores the view
 //   }
 // `fam` is an infrastructure family (FAMILIES key), `v` one of its variants.
 // `state`, when present, is the installation's calculator settings as that
 // calculator's getState() returned them (CalcShell.getState).
+// `ships` is the design's ship classes and which one each installation uses
+// for each role; it belongs to the design, not to any one calculator.
+
+import { systems } from "../Shared/orbit.js";
+import { applies } from "../Shared/body-profiles.js";
 
 export const DESIGN_KIND = "moonwards-design";
 export const DESIGN_VERSION = 1;
@@ -116,6 +122,26 @@ export function calcFor(inst) {
 	if (inst.fam === "elevator" && inst.v === "standard") return "space-elevator";
 	if (inst.fam === "elevator" && inst.v === "l1") return "moon-l1-elevator";
 	return null;
+}
+
+// The support-ship roles an installation needs (Shared/ships.js SHIP_ROLES),
+// each shown as a card on its Logistics tab. A first framework, to be refined
+// facility by facility:
+//   surface launchers (mass driver, spin launcher) launch shuttles;
+//   launchers on an elevator or a skyhook, and elevators and skyhooks
+//   themselves, hand freighters on;
+//   the Moon's L1 elevator, and a skyhook at a body with an atmosphere or one
+//   whose cargo can enter its parent planet's (the Moon's, at Earth), also
+//   need capsules.
+export function shipRolesFor(inst, body) {
+	if (!inst) return [];
+	if (inst.fam === "driver") return inst.v === "elevator" || inst.v === "tip" ? ["freighter"] : ["shuttle"];
+	if (inst.fam === "elevator") return inst.v === "l1" ? ["freighter", "capsule"] : ["freighter"];
+	if (inst.fam === "skyhook") {
+		var s = systems.get(body);
+		return (s && s.atmosphere) || applies("parentEntry", body) ? ["freighter", "capsule"] : ["freighter"];
+	}
+	return [];
 }
 
 // Short display name for an installation, e.g. "Hanging skyhook".
@@ -227,6 +253,7 @@ export function parseDesign(obj) {
 		name: typeof obj.name === "string" ? obj.name : "Imported design",
 		savedAt: typeof obj.savedAt === "string" ? obj.savedAt : null,
 		bodies: bodies,
+		ships: obj.ships && typeof obj.ships === "object" ? obj.ships : null,
 		selected: s ? { body: s.body, inst: s.inst, tab: s.tab } : null
 	};
 }
@@ -235,7 +262,7 @@ export function parseDesign(obj) {
 export function serializeDesign(design, selected) {
 	var out = {
 		kind: DESIGN_KIND, version: DESIGN_VERSION, name: design.name, savedAt: design.savedAt,
-		bodies: design.bodies, selected: selected || null
+		bodies: design.bodies, ships: design.ships || null, selected: selected || null
 	};
 	return JSON.stringify(out, null, 1);
 }

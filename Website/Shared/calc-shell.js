@@ -76,7 +76,10 @@
 // collapsed cards, open folds — as a plain object; setState(state) puts them back and
 // fires onInput once. Fields are keyed "<card id>/<label or aria>", so a
 // calculator keeps a field's label and card stable for saved settings to
-// keep finding it (or passes an explicit `key`).
+// keep finding it (or passes an explicit `key`). A field given `save: false`
+// is left out: its value is kept somewhere else (the design's ship classes).
+// changed() runs the onInput listeners, for when something outside the
+// calculator that it reads has changed.
 
 import { create } from "./ui-components.js";
 
@@ -514,6 +517,18 @@ export class CalcShell {
 		return sel;
 	}
 
+	// opts: { label, hint, tip, value, placeholder, parent, key, save }. Returns the <input>.
+	textField(card, opts) {
+		var fld = this._row(card, opts.label, opts.hint, false, opts.tip, opts.parent);
+		var input = create("input", "cs-text", false, fld);
+		this._register(card, opts, input);
+		input.type = "text";
+		input.value = opts.value || "";
+		if (opts.placeholder) input.placeholder = opts.placeholder;
+		this._wire(card, input, opts.focus);
+		return input;
+	}
+
 	note(card, text, parent) { return create("p", "cs-note", text, parent || card.body); }
 
 	// An optional item: a tick, a title and a short description on the first line;
@@ -650,7 +665,7 @@ export class CalcShell {
 	// ---- saved settings ----
 	_register(card, opts, el) {
 		var name = opts.key || opts.label || opts.aria;
-		if (name) this.fields[card.id + "/" + name] = el;
+		if (name && opts.save !== false) this.fields[card.id + "/" + name] = el;
 	}
 
 	getState() {
@@ -699,6 +714,7 @@ export class CalcShell {
 
 	// ---- events ----
 	onInput(fn) { this.listeners.input.push(fn); }
+	changed() { this.listeners.input.forEach(function (fn) { fn(null); }); }
 	onFocus(fn) { this.listeners.focus.push(fn); }
 	onModules(fn) { this.listeners.modules.push(fn); }
 	onShown(fn) { this.listeners.shown.push(fn); }

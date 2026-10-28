@@ -14,16 +14,24 @@
 // The design itself and its rules live in design-model.js (pure, Node-tested);
 // this file is the page: rendering, menus, selection, save / export / import.
 //
+// Ships: the design's ship classes (Shared/ships.js) live in one fleet for
+// the whole page. Every render matches it to the installations
+// (shipRolesFor), every calculator gets the ship cards for its roles on its
+// Logistics tab (Shared/ship-card.js), and Save and Export write the fleet
+// into the design's `ships`.
+//
 // ES module (loaded with <script type="module">); deferred, so the DOM is ready.
 
 import {
 	BODY_ORDER, FAMILIES, FAMILY_ORDER, MARKS, TABS,
-	calcFor, markHint, isSpecial, instLabel, findBody, variantBlock, sampleDesign,
+	calcFor, markHint, isSpecial, instLabel, findBody, variantBlock, sampleDesign, shipRolesFor,
 	addBody, removeBody, addInstallation, removeInstallation,
 	parseDesign, serializeDesign
 } from "./design-model.js";
 import { BODY_FACTS, FACT_ROWS } from "./body-facts.js";
 import { addSkeletonCards, mountSkeleton } from "./skeleton.js";
+import { createFleet } from "../Shared/ships.js";
+import { addShipCards } from "../Shared/ship-card.js";
 
 var STORE_KEY = "mw-design";
 
@@ -57,6 +65,7 @@ var CALCULATORS = {
 var mounted = {};   // installation id → { el, handle, instId, body }
 
 var design = sampleDesign();
+var fleet = createFleet(null);
 var ui = { body: "Moon", inst: design.bodies[0].inst[0].id, tab: "arch", compact: false };
 
 var el = {
@@ -81,6 +90,18 @@ function esc(s) {
 function currentInst() {
 	var b = findBody(design, ui.body);
 	return b ? b.inst.find(function (i) { return i.id === ui.inst; }) || null : null;
+}
+// An installation's display name for the ship cards, e.g. "Moon · Mass driver".
+function instName(id) {
+	var hit = null;
+	design.bodies.forEach(function (b) { b.inst.forEach(function (i) { if (i.id === id) hit = b.body + " · " + instLabel(i); }); });
+	return hit || "a removed installation";
+}
+// Match the fleet's assignments to the installations in the design.
+function syncFleet() {
+	var needs = {};
+	design.bodies.forEach(function (b) { b.inst.forEach(function (i) { needs[i.id] = shipRolesFor(i, b.body); }); });
+	fleet.sync(needs);
 }
 function selectBody(name) {
 	ui.body = name;
@@ -245,7 +266,8 @@ function mountCalculator(inst, body) {
 	var ctx = {
 		body: body, inst: inst, lockBody: true, embedded: true,
 		overline: body + " · " + instLabel(inst),   // e.g. "Moon · Hanging skyhook"
-		partners: design.bodies.map(function (b) { return b.body; })
+		partners: design.bodies.map(function (b) { return b.body; }),
+		fleet: fleet, instId: inst.id, shipRoles: shipRolesFor(inst, body)
 	};
 	var key = calcFor(inst);
 	var ready = key
@@ -258,6 +280,7 @@ function mountCalculator(inst, body) {
 		: Promise.resolve(mountSkeleton(box, ctx));
 	ready.then(function (h) {
 		if (mounted[inst.id] !== entry) return;   // removed while loading
+		entry.ships = addShipCards(h.shell, { fleet: fleet, instId: inst.id, roles: ctx.shipRoles, nameOf: instName });
 		if (inst.state) h.shell.setState(inst.state);
 		entry.handle = h;
 		if (!box.hidden) showTab(entry);
@@ -271,7 +294,11 @@ function pruneMounted(all) {
 	var live = {};
 	design.bodies.forEach(function (b) { b.inst.forEach(function (i) { live[i.id] = true; }); });
 	Object.keys(mounted).forEach(function (k) {
-		if (all || !live[mounted[k].instId]) { mounted[k].el.remove(); delete mounted[k]; }
+		if (all || !live[mounted[k].instId]) {
+			if (mounted[k].ships) mounted[k].ships.dispose();
+			mounted[k].el.remove();
+			delete mounted[k];
+		}
 	});
 }
 
@@ -286,7 +313,7 @@ function collectStates() {
 	});
 }
 
-function render() { pruneMounted(false); renderMatrix(); renderStrip(); renderFacts(); renderBench(); }
+function render() { pruneMounted(false); syncFleet(); renderMatrix(); renderStrip(); renderFacts(); renderBench(); }
 
 // ---------- events ----------
 document.addEventListener("click", function (e) {
@@ -331,11 +358,13 @@ function toast(msg) {
 }
 function snapshot() {
 	collectStates();
+	design.ships = fleet.toJSON();
 	return serializeDesign(design, { body: ui.body, inst: ui.inst, tab: ui.tab });
 }
 function loadDesign(parsed) {
 	pruneMounted(true);
 	design = { kind: parsed.kind, version: parsed.version, name: parsed.name, savedAt: parsed.savedAt, bodies: parsed.bodies };
+	fleet = createFleet(parsed.ships);
 	var s = parsed.selected || {};
 	selectBody(findBody(design, s.body) ? s.body : (design.bodies[0] ? design.bodies[0].body : null));
 	var b = findBody(design, ui.body);

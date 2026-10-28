@@ -32,15 +32,7 @@
 
 - Lays out how the envisioned industry and transport works
 
-- One pager with lazy-load sections
-
-  - May be split into a few pages if it becomes too heavy
-
-- 3d models of infrastructure and equipment is included in viewers
-
-  - Which would work here? modelviewer.dev?
-
-- 3d models also can be downloaded
+- May be split into a few pages - current plan is a main page with educational interactives for designing a space economy, and a second page with more of a 'lore' focus, about the Moonwards space economy
 
 - All content has a permissive license
 

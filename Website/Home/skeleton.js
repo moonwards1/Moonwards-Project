@@ -15,23 +15,21 @@
 //       cards, for installations with no calculator yet. Same options and
 //       return value as a calculator's mount function.
 //
-// ctx / opts: { body, inst, partners } — the body name, the installation
-// { fam, v }, and the other bodies in the design (default trading partners).
+// ctx / opts: { body, inst, partners, fleet, instId, shipRoles } — the body
+// name, the installation { fam, v }, the other bodies in the design (default
+// trading partners), and the design's ship classes with this installation's id
+// and ship roles. The ship cards themselves are Shared/ship-card.js, added by
+// the workbench to every installation; the Economy cards read the first
+// role's class for payload and propellant.
 
 import { systems } from "../Shared/orbit.js";
 import { CalcShell, ShellColors as C } from "../Shared/calc-shell.js";
 import { addMaterialCard } from "../Shared/material-card.js";
 import { WM, G0 } from "./workbench-math.js";
+import { SHIP_ROLES } from "../Shared/ships.js";
 import { BODY_FACTS } from "./body-facts.js";
 import { BODY_ORDER, instLabel } from "./design-model.js";
 
-var FUELS = [
-	{ value: "360", label: "LOX / methane · 360 s" },
-	{ value: "450", label: "LOX / hydrogen · 450 s" },
-	{ value: "190", label: "Water, solar-thermal · 190 s" },
-	{ value: "900", label: "Hydrogen, nuclear-thermal · 900 s" },
-	{ value: "3000", label: "Xenon, ion drive · 3000 s" }
-];
 var PENDING = "—";
 
 function num(x, d) { return isFinite(x) ? x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : PENDING; }
@@ -55,6 +53,8 @@ export function addSkeletonCards(shell, ctx, tabs) {
 	(tabs || []).forEach(function (t) { want[t] = true; });
 	var calcs = [];
 	var F = {};   // fields and lines, by name
+	var shipRole = ctx.fleet && ctx.instId && (ctx.shipRoles || [])[0];
+	function shipClass() { return shipRole ? ctx.fleet.classFor(ctx.instId, shipRole) : null; }
 
 	// ---------- Architecture (only for installations without a calculator) ----------
 	if (want.arch) buildArch();
@@ -187,26 +187,12 @@ export function addSkeletonCards(shell, ctx, tabs) {
 
 	// ---------- Logistics ----------
 	if (want.log) {
-		var ship = shell.addCard({ id: "sk-ship", tab: "log", side: "in", title: "Ship class", short: "Ship", color: C.sky, feeds: ["sk-perf", "sk-win", "sk-ev", "sk-sup"] });
-		F.dry = shell.numberField(ship, { label: "Dry mass", unit: "t", value: 40, min: 0.001 });
-		F.pay = shell.numberField(ship, { label: "Payload", unit: "t", value: 100, min: 0 });
-		F.prop = shell.numberField(ship, { label: "Propellant", unit: "t", value: 150, min: 0 });
-		F.fuel = shell.selectField(ship, { label: "Fuel", options: FUELS, value: "360" });
-		F.isp = shell.numberField(ship, { label: "Specific impulse", unit: "s", value: 360, min: 1 });
-		F.fuel.addEventListener("change", function () { F.isp.value = F.fuel.value; });
-
 		var route = shell.addCard({ id: "sk-route", tab: "log", side: "in", title: "Route", short: "Route", color: C.sky, feeds: ["sk-win", "sk-ev"] });
 		F.dest = shell.selectField(route, { label: "Destination", options: others.map(function (n) { return { value: n, label: n }; }), value: partnerDefault });
 
 		var link = shell.addCard({ id: "sk-link", tab: "log", side: "in", title: "Surface ↔ installation", short: "Surface link", color: C.ochre, feeds: ["sk-linkO"] });
 		F.trips = shell.numberField(link, { label: "Trips per day", value: 4, min: 0 });
 		F.tripT = shell.numberField(link, { label: "Cargo per trip", unit: "t", value: 20, min: 0 });
-
-		var perf = shell.addCard({ id: "sk-perf", tab: "log", side: "out", title: "Ship performance", short: "Ship", color: C.sky });
-		var hpf = shell.hero(perf, [{ label: "Δv, loaded", unit: "km/s" }, { label: "Δv, empty", unit: "km/s" }]);
-		var lMR = shell.line(perf, { label: "Mass ratio, loaded" });
-		var lPF = shell.line(perf, { label: "Payload fraction", unit: "%" });
-		shell.note(perf, "Δv = Isp · g₀ · ln(m₀ / m_f): m₀ full, m_f with tanks empty.");
 
 		var win = shell.addCard({ id: "sk-win", tab: "log", side: "out", title: "Launch windows", short: "Windows", color: C.sky });
 		var hw = shell.hero(win, [{ label: "Window every" }, { label: "Transfer time" }]);
@@ -217,13 +203,6 @@ export function addSkeletonCards(shell, ctx, tabs) {
 		var lDay = shell.line(linkO, { label: "Cargo to the installation", unit: "t/day" });
 
 		calcs.push(function () {
-			var dry = val(F.dry, 40), pay = val(F.pay, 100), prop = val(F.prop, 150), isp = val(F.isp, 360);
-			var dvL = WM.rocketDv(isp, dry + pay + prop, dry + pay), dvE = WM.rocketDv(isp, dry + prop, dry);
-			hpf[0].set(num(dvL / 1e3, 2)); hpf[1].set(num(dvE / 1e3, 2));
-			lMR.set(num((dry + pay + prop) / (dry + pay), 2));
-			lPF.set(num(100 * pay / (dry + pay + prop), 1));
-			ship.setSummary(num(pay, 0) + " t payload · " + num(dvL / 1e3, 2) + " km/s");
-			perf.setSummary(num(dvL / 1e3, 2) + " km/s loaded");
 			var d = bodyData(F.dest.value), w = windowFor(body, d);
 			var S = days(w.synodic), T = days(w.transfer);
 			hw[0].set(w.same ? "any time" : S[0] + " " + S[1]); hw[1].set(w.same ? PENDING : T[0] + " " + T[1]);
@@ -282,8 +261,8 @@ export function addSkeletonCards(shell, ctx, tabs) {
 		F.out = shell.numberField(vol, { label: "Outbound", unit: "t/yr", value: 50000, min: 0 });
 		F.in = shell.numberField(vol, { label: "Inbound", unit: "t/yr", value: 8000, min: 0 });
 		var fleet = shell.addCard({ id: "sk-fleet", tab: "eco", side: "in", title: "Fleet", short: "Fleet", color: C.teal, feeds: ["sk-ev"] });
-		if (!F.pay) F.payE = shell.numberField(fleet, { label: "Payload per flight", unit: "t", value: 100, min: 0.001 });
-		else shell.note(fleet, "Payload per flight comes from the ship class on the Logistics tab.");
+		if (!shipRole) F.payE = shell.numberField(fleet, { label: "Payload per flight", unit: "t", value: 100, min: 0.001 });
+		else shell.note(fleet, "Payload and propellant per flight come from the " + SHIP_ROLES[shipRole].label + " card on the Logistics tab.");
 		F.ships = shell.numberField(fleet, { label: "Ships in service", value: 12, min: 0 });
 		F.cycles = shell.numberField(fleet, { label: "Round trips per ship per year", value: 1, min: 0.01, step: "0.1" });
 		var tt = shell.addCard({ id: "sk-tt", tab: "eco", side: "in", title: "Timetable", short: "Timetable", color: C.teal, feeds: ["sk-ev"] });
@@ -301,7 +280,8 @@ export function addSkeletonCards(shell, ctx, tabs) {
 		shell.note(sup, "How fuel and power needs vary through each window comes with the Logistics models.");
 
 		calcs.push(function () {
-			var pay = F.pay ? val(F.pay, 100) : val(F.payE, 100);
+			var cls = shipClass();
+			var pay = cls ? cls.payload : val(F.payE, 100);
 			var flights = Math.max(val(F.out, 50000), val(F.in, 8000)) / Math.max(pay, 1e-3);
 			var partner = bodyData((F.dest || F.partner).value), w = windowFor(body, partner);
 			hev[0].set(num(Math.ceil(flights), 0));
@@ -310,7 +290,7 @@ export function addSkeletonCards(shell, ctx, tabs) {
 			lShips.set(num(Math.ceil(flights / Math.max(cyc, 1e-3)), 0), "Round trips per ship are capped at one per window on an interplanetary route.");
 			var S = days(w.synodic);
 			lPerWin.set(w.same ? "same system" : S[0] + " " + S[1]);
-			lProp.set(F.prop ? num(flights * val(F.prop, 150), 0) : PENDING);
+			lProp.set(cls ? num(flights * cls.tank, 0) : PENDING, cls ? "A full load of propellant per flight." : null);
 			vol.setSummary(num(val(F.out, 50000), 0) + " t/yr out");
 			ev.setSummary(num(Math.ceil(flights), 0) + " flights/yr");
 			fleet.setSummary(num(val(F.ships, 12), 0) + " ships");

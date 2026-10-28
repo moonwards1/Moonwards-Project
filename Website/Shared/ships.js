@@ -1,0 +1,173 @@
+// Ship classes: the support ships that close the gap between what a facility
+// delivers and what a route needs. ES module, pure (no DOM), Node-tested:
+//   import { SHIP_ROLES, PROPELLANTS, createFleet, shipDv } from "../Shared/ships.js";
+//
+// Ships are not a means of transport in their own right. Each installation
+// says which roles it needs (Home/design-model.js shipRolesFor), and its
+// Logistics tab shows one card per role (Shared/ship-card.js).
+//
+// A ship CLASS is hardware only: propellant, Isp, dry mass, payload,
+// propellant capacity, heat shield. It belongs to the whole design, so one
+// class serves every installation assigned to it and an edit reaches all of
+// them. What a given route asks of the ship stays with the installation.
+//
+// Masses are tonnes, Isp seconds, Δv m/s.
+
+import { Const } from "./constants.js";
+
+export const SHIP_ROLES = {
+	shuttle: { label: "Shuttle", desc: "Frequent short round trips; small burns to circularize, dock and land." },
+	freighter: { label: "Freighter", desc: "Carries cargo between bodies after a facility's release." },
+	capsule: { label: "Capsule", desc: "Enters an atmosphere; always carries a heat shield." }
+};
+export const ROLE_ORDER = ["shuttle", "freighter", "capsule"];
+
+// Chemical propellants only. `isp` is a typical vacuum figure, used as the
+// starting value when the propellant is chosen; the Isp field can be edited.
+// `rough`: the figure is a placeholder pending a sourced value.
+export const PROPELLANTS = [
+	{ key: "mg-lox", label: "Magnesium / LOX", isp: 260, rough: true },
+	{ key: "al-lox", label: "Aluminium / LOX", isp: 285, rough: true },
+	{ key: "s-lox", label: "Sulfur / LOX", isp: 230, rough: true },
+	{ key: "lh2-lox", label: "Hydrogen / LOX", isp: 450 },
+	{ key: "ch4-lox", label: "Methane / LOX", isp: 370 },
+	{ key: "rp1-lox", label: "Kerosene / LOX", isp: 350 },
+	{ key: "nto-mmh", label: "NTO / MMH (storable)", isp: 320 }
+];
+export const DEFAULT_PROPELLANT = "mg-lox";
+
+export function propellant(key) {
+	return PROPELLANTS.find(function (p) { return p.key === key; }) || null;
+}
+
+// Starting figures for a new class of each role.
+var START = {
+	shuttle: { dry: 20, payload: 30, tank: 40 },
+	freighter: { dry: 100, payload: 500, tank: 300 },
+	capsule: { dry: 8, payload: 4, tank: 3 }
+};
+
+// Δv the class can make with full tanks, loaded and empty:
+//   Δv = Isp · g₀ · ln(m₀ / m_f),  m₀ = dry + payload + tank,  m_f = dry + payload.
+export function shipDv(c) {
+	var g = c.isp * Const.g0;
+	return {
+		loaded: g * Math.log((c.dry + c.payload + c.tank) / (c.dry + c.payload)),
+		empty: g * Math.log((c.dry + c.tank) / c.dry)
+	};
+}
+
+function num(x, fallback, min) {
+	var v = typeof x === "number" ? x : parseFloat(x);
+	return isFinite(v) && v >= min ? v : fallback;
+}
+
+// A clean copy of a saved class, or null if it isn't one.
+function cleanClass(c) {
+	if (!c || typeof c.id !== "string" || !SHIP_ROLES[c.role]) return null;
+	var s = START[c.role], p = propellant(c.propellant) ? c.propellant : DEFAULT_PROPELLANT;
+	return {
+		id: c.id, role: c.role,
+		name: typeof c.name === "string" && c.name.trim() ? c.name.trim() : SHIP_ROLES[c.role].label,
+		propellant: p,
+		isp: num(c.isp, propellant(p).isp, 1),
+		dry: num(c.dry, s.dry, 0.001),
+		payload: num(c.payload, s.payload, 0),
+		tank: num(c.tank, s.tank, 0),
+		shield: c.role === "capsule" ? true : !!c.shield
+	};
+}
+
+// The design's ship classes and which one each installation uses for each
+// role. data: { classes: [...], use: { "<installation id>/<role>": class id } },
+// as toJSON() returns it; missing or damaged parts are dropped.
+//
+// Every installation's role is assigned (sync), so usedBy() is complete even
+// for installations whose calculator hasn't been opened yet. A role with no
+// class gets one the first time it's needed. subscribe(fn) runs fn after any
+// change, so every mounted card and calculator can follow it.
+export function createFleet(data) {
+	var d = data && typeof data === "object" ? data : {};
+	var classes = (Array.isArray(d.classes) ? d.classes : []).map(cleanClass).filter(Boolean);
+	var use = {};
+	var listeners = [];
+	var seq = 0;
+	if (d.use && typeof d.use === "object") {
+		Object.keys(d.use).forEach(function (k) { if (classes.some(function (c) { return c.id === d.use[k]; })) use[k] = d.use[k]; });
+	}
+
+	function newId() {
+		var id;
+		do { seq++; id = "s" + seq.toString(36); } while (classes.some(function (c) { return c.id === id; }));
+		return id;
+	}
+	function emit() { listeners.forEach(function (fn) { fn(); }); }
+	function get(id) { return classes.find(function (c) { return c.id === id; }) || null; }
+	function ofRole(role) { return classes.filter(function (c) { return c.role === role; }); }
+	function add(role, from) {
+		var c = cleanClass(Object.assign({}, from || { role: role, propellant: DEFAULT_PROPELLANT }, START[role] && !from ? START[role] : {}, { id: newId(), role: role }));
+		classes.push(c);
+		return c;
+	}
+	function assigned(instId, role) {
+		var c = get(use[instId + "/" + role]);
+		if (c) return c;
+		c = ofRole(role)[0] || add(role);
+		use[instId + "/" + role] = c.id;
+		return c;
+	}
+
+	return {
+		list: ofRole,
+		get: get,
+		// The class an installation uses for a role (assigned on first ask).
+		classFor: function (instId, role) { return assigned(instId, role); },
+		assign: function (instId, role, classId) {
+			var c = get(classId);
+			if (!c || c.role !== role) return;
+			use[instId + "/" + role] = classId;
+			emit();
+		},
+		// Change fields of a class: every installation using it follows.
+		update: function (id, patch) {
+			var c = get(id);
+			if (!c) return;
+			var next = cleanClass(Object.assign({}, c, patch, { id: c.id, role: c.role }));
+			Object.keys(next).forEach(function (k) { c[k] = next[k]; });
+			emit();
+		},
+		// A separate copy of a class, assigned to this installation only.
+		copy: function (id, instId) {
+			var c = get(id);
+			if (!c) return null;
+			var n = ofRole(c.role).length + 1;
+			var copy = add(c.role, Object.assign({}, c, { name: SHIP_ROLES[c.role].label + " " + n }));
+			use[instId + "/" + c.role] = copy.id;
+			emit();
+			return copy;
+		},
+		// Installation ids using a class.
+		usedBy: function (id) {
+			return Object.keys(use).filter(function (k) { return use[k] === id; }).map(function (k) { return k.slice(0, k.lastIndexOf("/")); });
+		},
+		// Match the assignments to the design: `needs` maps each installation id
+		// to the roles it needs. Roles no longer needed are dropped; new ones are
+		// assigned. Classes are kept even when nothing uses them.
+		sync: function (needs) {
+			var before = JSON.stringify(use);
+			Object.keys(use).forEach(function (k) {
+				var i = k.lastIndexOf("/"), roles = needs[k.slice(0, i)];
+				if (!roles || roles.indexOf(k.slice(i + 1)) < 0) delete use[k];
+			});
+			Object.keys(needs).forEach(function (instId) { needs[instId].forEach(function (r) { assigned(instId, r); }); });
+			if (JSON.stringify(use) !== before) emit();
+		},
+		subscribe: function (fn) {
+			listeners.push(fn);
+			return function () { listeners = listeners.filter(function (f) { return f !== fn; }); };
+		},
+		toJSON: function () {
+			return { classes: classes.map(function (c) { return Object.assign({}, c); }), use: Object.assign({}, use) };
+		}
+	};
+}
