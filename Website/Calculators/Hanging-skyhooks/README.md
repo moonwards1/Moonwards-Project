@@ -3,12 +3,13 @@
 Models a vertical (non-rotating) gravity-gradient skyhook: geometry, speeds,
 taper ratios, masses, climber energy, cargo throughput, VASIMR
 station-keeping, release points for transfers to neighbouring bodies, and
-Earth reentry of cargo released toward Earth.
+entry at the parent planet for cargo released toward it. The same calculator
+also serves the Phobos-anchored skyhook (below).
 
 Built on the calculator shell: inputs, a zoomable drawing and results in three
-columns. Stations, loads, cargo throughput, station-keeping and Earth
-reentry are input modules; the fall from the foot, climber energy, release
-points, forces, throughput, station-keeping, and reentry are result modules. Card titles glide the drawing to their
+columns. Stations, loads, cargo throughput, station-keeping and entry at
+the parent planet are input modules; the fall from the foot, climber energy, release
+points, forces, throughput, station-keeping, and entry are result modules. Card titles glide the drawing to their
 part; the foot, centre-of-mass and top markers can be dragged.
 
 ## Files
@@ -20,11 +21,18 @@ part; the foot, centre-of-mass and top markers can be dragged.
   `mountHangingSkyhook(root, opts)`. The home page's workbench mounts it
   directly, one per hanging skyhook in the design, with the body chosen there
   (`lockBody`), filling its container (`embedded`), and restoring saved
-  settings (`state`); the header comment lists the options. Each card and
+  settings (`state`), or in a moon-anchored configuration (`anchor`); the
+  header comment lists the options. A new workbench skyhook (not anchored)
+  opens on round figures that work at every workbench body: foot 1,000 km,
+  centre of mass 2,000 km, top 3,000 km; 10 kt for each Core Facilities load
+  except the anchor station, 1,000 kt. Optional Stations starts switched off, and
+  when switched on every station starts unticked, at 2,500 km (main launch deck),
+  1,250 km (outer docks) and 1,500 km (receiving deck), 10 kt each. The
+  standalone page opens on the Moon design. Each card and
   chip names its workbench tab: geometry, material, loads, speeds,
   the fall from the foot, release points, tether properties, forces and
   stations (inputs and results) on Architecture; cargo throughput, throughput, climber energy and
-  Earth reentry on Logistics; station-keeping on Engineering
+  entry at the parent planet on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
 - `skyhookModel.test.js` — Node test pinning the default design's figures:
   `node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js`
@@ -38,6 +46,8 @@ relative path:
 - `../../Shared/orbit.js` — planetary-system data
 - `../../Shared/math-utils.js`, `constants.js` — the maths
 - `../../Shared/materials.js`, `material-card.js` — the Material card and its presets
+- `../../Shared/body-profiles.js` — what is special about each body: the foot floor, which
+  body-specific modules apply, and the Phobos anchor configuration
 
 **It will break if this folder is moved without `Website/Shared/` coming with
 it.**
@@ -88,6 +98,71 @@ mass and the Forces card shows both tensions and says how far out of balance
 they are. The Forces card reports the tension at the centre of mass (the peak),
 and the anchor station's offset from the centre of mass. The drawing marks the
 anchor station with a square and its altitude.
+
+## Cargo throughput: the route
+
+Cargo climbs along one route, foot to top unless chosen otherwise. The From and
+To lists offer the foot, the anchor station (the anchoring moon, on an anchored
+tether), the top and each ticked optional station, top down; a station that is
+unticked falls back to the foot (From) or the top (To). The anchor station's
+stop is the altitude the balance gives it, which the model resolves from
+`"anchor"`. The route may run either way. Return traffic, back to where the route
+starts, is 1% of the delivery rate (`DESCENT_SHARE`). The energy per kilogram is
+the change in effective potential along the route,
+
+ΔE = φ(r_to) − φ(r_from),  φ(r) = −GM/r − ½ω²r²
+
+- **ΔE** — energy per kilogram delivered (J/kg), before drive efficiency; negative means the climb regenerates
+- **r_from, r_to** — the route's ends, from the body's centre (m)
+- **GM** — the body's gravitational parameter (m³/s²)
+- **ω** — the tether's angular velocity (rad/s)
+
+φ peaks at the centre of mass, so climbing toward it costs and moving away from
+it regenerates. Carrying cargo outward drains the orbit's angular momentum at
+ṁ(1 − 0.01)ω(r_to² − r_from²), which the top engines make up; carried inward,
+the torque reverses and the engines brake instead, at the same propellant and
+power cost.
+
+## Body-specific parts
+
+What changes from body to body comes from `Shared/body-profiles.js`, not from
+checks in this calculator:
+
+- **Entry at the parent planet** (input and result modules, `where: "parentEntry"`)
+  exists only where the body's parent planet has an atmosphere — today, the Moon,
+  entering at Earth. Elsewhere it has no chip and no card. Its titles name the
+  parent ("Entry at Earth"), its interface altitude opens at the parent's own
+  (`entryInterface`), and the peak-deceleration estimate uses the parent's scale
+  height (`Shared/constants.js`); a parent with none gets no peak-g figure.
+- **The foot floor.** At a body with an atmosphere the foot may not hang below
+  that body's `footFloor` (Earth 120 km, Venus 140, Mars 115, Titan 860). A lower
+  value is rejected: the field is set back to the floor and a warning says why
+  until the value next changes; while it is being typed it is only flagged. The
+  foot marker stops at the floor, which the drawing shows as a dashed circle.
+
+## Anchored on a moon: the Phobos skyhook
+
+With `anchor: "Phobos"` (the home workbench's Phobos skyhook) the body is Mars and
+Phobos is the anchor station. Its 1.07 × 10¹⁶ kg outweighs any tether by so much
+that the tension arriving from above need not equal that from below: Phobos holds
+the difference, and its orbit settles lower or higher by
+
+Δ = F / (3ω²M)
+
+- **Δ** — how far Phobos's orbit moves (m)
+- **F** — the net pull of the tether on Phobos, toward Mars (+) or away from it (N)
+- **ω** — the orbital angular velocity (rad/s); 3ω² is how fast the net outward
+  pull per unit mass, ω²r − GM/r², changes with radius on a circular orbit
+- **M** — Phobos's mass (kg)
+
+which the Forces card reports in place of the anchor station's offset (a few
+metres for the opening design). So the centre-of-mass altitude is fixed at
+Phobos's orbit (shown, not editable), there is no anchor-station mass to set, and
+the drawing marks Phobos at the centre of mass. Two limits come from Phobos's
+eccentric orbit, which carries the whole tether ±142 km each orbit: the foot
+may not go below Mars's floor plus that swing (257 km), and the top may not reach
+above Deimos's periapsis less the swing (19,924 km). Both are rejected the same way
+as the foot floor. The configuration's figures come from `anchorConfig("Phobos")`.
 
 ## The drawn taper
 

@@ -11,6 +11,7 @@ their conventions. All are ES modules with **named exports**.
 | Module | Exports | What it holds |
 | ------ | ------- | ------------- |
 | `orbit.js` | `systems` (a `Map` of bodies: `GM`, `radius`, `orbit`, …), plus `System`, `Orbit`, `Vector`, `Time`, `Transfer`, `Atmosphere`, `Geology`, `constants` | the planetary-system data |
+| `body-profiles.js` | `BODY_PROFILES`, `CONDITIONS`, `applies`, `specialsAt`, `footFloor`, `anchorConfig`, … | what is special about each body: per-body figures, the conditions body-specific cards declare as `where`, moon-anchored configurations |
 | `math-utils.js` | `OrbitalMath` | pure orbital mechanics — circular/escape/vis-viva speed, hyperbolic excess, period, Hohmann, SOI, Hill radius, synodic period, Tsiolkovsky, tether taper integral/ratio, … |
 | `format-utils.js` | `Fmt` (plus legacy aliases `fmtForce`, `myRound`, … as named exports) | number/unit formatting |
 | `ui-components.js` | `create` | the DOM builder |

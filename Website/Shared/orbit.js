@@ -1553,6 +1553,10 @@ vp^2 = mu * (2/P - 1/a)
 	name: "Phobos",
 	type: "moon",
 	radius: 11.2667e3,
+	GM: 7.087e5,
+	mass: 1.0659e16,
+	period: 0.31891023*86400,
+	tidalLock: true,
 	axis: [27e3,22e3,18e3],
 	orbit: {
 		system: "Mars",
@@ -1565,6 +1569,11 @@ vp^2 = mu * (2/P - 1/a)
 {
 	name: "Deimos",
 	type: "moon",
+	radius: 6.2e3,
+	GM: 9.62e4,
+	mass: 1.4762e15,
+	period: 1.263*86400,
+	tidalLock: true,
 	orbit: {
 		system: "Mars",
 		periapsis: 23455.5e3,
@@ -1606,8 +1615,8 @@ vp^2 = mu * (2/P - 1/a)
 	type: "asteroid",
 	radius: 111e3,
 	lowOrbitAltitude: 50e3,
-	GM: 1.529e9,
-	mass: 2.29e19,
+	GM: 1.601e9,
+	mass: 2.399e19,
 	period: 4.196*3600,
 	color: "#8f9a55",
 	orbit: {
@@ -1621,6 +1630,50 @@ vp^2 = mu * (2/P - 1/a)
 		argument: 230.435131465*(Math.PI/180),
 		epoch: 2480764.5,
 		meanAnomaly: 339.633290221*(Math.PI/180)
+	}
+},
+{
+	name: "Pallas",
+	type: "asteroid",
+	radius: 256e3,
+	lowOrbitAltitude: 50e3,
+	GM: 1.3628e10,
+	mass: 2.042e20,
+	period: 7.8132*3600,
+	color: "#7f9fc2",
+	orbit: {
+		system: "Sun",
+		apoapsis: 3.40363312278966*constants.AU,
+		periapsis: 2.13920676966991*constants.AU,
+		semiMajor: 2.77141994622979*constants.AU,
+		eccentricity: 0.228118866438819,
+		inclination: 34.9552467667*(Math.PI/180),
+		longitude: 172.397991623*(Math.PI/180),
+		argument: 310.866040193*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 115.637506462*(Math.PI/180)
+	}
+},
+{
+	name: "Hygiea",
+	type: "asteroid",
+	radius: 216.5e3,
+	lowOrbitAltitude: 50e3,
+	GM: 5.833e9,
+	mass: 8.74e19,
+	period: 13.82559*3600,
+	color: "#6f7d8c",
+	orbit: {
+		system: "Sun",
+		apoapsis: 3.49329898455354*constants.AU,
+		periapsis: 2.78866108746243*constants.AU,
+		semiMajor: 3.14098003600798*constants.AU,
+		eccentricity: 0.112168477515486,
+		inclination: 3.85818840544*(Math.PI/180),
+		longitude: 280.673321244*(Math.PI/180),
+		argument: 322.556181747*(Math.PI/180),
+		epoch: 2480764.5,
+		meanAnomaly: 101.969381948*(Math.PI/180)
 	}
 },
 {
@@ -1663,7 +1716,7 @@ vp^2 = mu * (2/P - 1/a)
 	period: 9.925 * 3600,
 	axialTilt: 3.13*(Math.PI/180),
 	pole: { ra: 268.06*(Math.PI/180), dec: 64.50*(Math.PI/180) },
-	satelittes: ["Io","Europa","Ganymede","Callisto"],
+	satellites: ["Io","Europa","Ganymede","Callisto"],
 	color: "#cf9356",
 	orbit: {
 		system: "Sun",
@@ -1851,6 +1904,9 @@ vp^2 = mu * (2/P - 1/a)
 	name: "Callisto",
 	type: "moon",
 	radius: 2410.3e3,
+	GM: 7.179289e12,
+	mass: 1.075938e23,
+	period: 16.689018*86400,
 	tidalLock: true,
 	geology: {},
 	orbit: {
@@ -1863,7 +1919,9 @@ vp^2 = mu * (2/P - 1/a)
 	name: "Titan",
 	type: "moon",
 	radius: 2574.73e3,
+	GM: 8.978138e12,
 	mass: 1.3452e23,
+	period: 15.945421*86400,
 	tidalLock: true,
 	geology: {},
 	atmosphere: {

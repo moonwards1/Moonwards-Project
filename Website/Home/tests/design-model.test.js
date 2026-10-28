@@ -6,9 +6,27 @@ import {
 	parseDesign, serializeDesign, calcFor, markHint, isSpecial, instLabel, findBody, BODY_ORDER, FAMILIES, MARKS
 } from "../design-model.js";
 import { BODY_FACTS } from "../body-facts.js";
+import { systems } from "../../Shared/orbit.js";
 
-test("every offered body has facts", function () {
-	BODY_ORDER.forEach(function (n) { assert.ok(BODY_FACTS[n], n); });
+test("every offered body has facts and the physics the calculators read", function () {
+	BODY_ORDER.forEach(function (n) {
+		assert.ok(BODY_FACTS[n], n);
+		var s = systems.get(n);
+		assert.ok(s && s.properties.GM > 0 && Number(s.radius) > 0, n + " in orbit.js with GM and radius");
+	});
+});
+
+// A standard elevator needs its stationary orbit inside the body's Hill sphere; where it
+// is not, the elevator cell must carry a mark explaining why.
+test("bodies whose stationary orbit lies beyond the Hill sphere mark the elevator", function () {
+	var AU = 149597870700, sun = systems.get("Sun");
+	BODY_ORDER.forEach(function (n) {
+		var s = systems.get(n), f = BODY_FACTS[n], T = Math.abs(f.rotH) * 3600;
+		var rs = Math.cbrt(s.GM * T * T / (4 * Math.PI * Math.PI));
+		var moon = s.orbit && String(s.orbit.system) !== "Sun";
+		var hill = moon ? s.orbit.a * Math.cbrt(s.GM / (3 * s.orbit.system.GM)) : f.aAU * AU * Math.cbrt(s.GM / (3 * sun.GM));
+		if (rs > hill) assert.ok(MARKS[n + "|elevator"], n + ": stationary " + Math.round(rs / 1e3) + " km, Hill " + Math.round(hill / 1e3) + " km");
+	});
 });
 
 test("marks refer to real bodies, families and variants", function () {
@@ -130,7 +148,8 @@ test("installations with their own calculator", function () {
 	assert.equal(calcFor({ id: "e", fam: "elevator", v: "standard" }), "space-elevator");
 	assert.equal(calcFor({ id: "l", fam: "elevator", v: "l1" }), "moon-l1-elevator");
 	assert.equal(calcFor({ id: "m", fam: "elevator", v: "l2" }), null);
-	assert.equal(calcFor({ id: "p", fam: "skyhook", v: "phobos" }), null);
+	assert.equal(calcFor({ id: "p", fam: "skyhook", v: "phobos" }), "phobos-skyhook");
+	assert.equal(calcFor({ id: "d", fam: "skyhook", v: "deimos" }), null);
 	assert.equal(calcFor(null), null);
 	assert.equal(instLabel(hang), "Hanging skyhook");
 	assert.equal(instLabel({ fam: "elevator", v: "l1" }), "L1 elevator");

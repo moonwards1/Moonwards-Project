@@ -23,11 +23,11 @@ const gm = systems.get("Sun").GM;
 // body name in orbit.js -> Horizons COMMAND
 const TARGETS = {
 	Mercury: "199", Venus: "299", Earth: "3", Mars: "499",
-	Ceres: "DES=2000001;", Vesta: "DES=2000004;", Psyche: "DES=2000016;",
+	Ceres: "DES=2000001;", Pallas: "DES=2000002;", Vesta: "DES=2000004;", Hygiea: "DES=2000010;", Psyche: "DES=2000016;",
 	Jupiter: "5", Saturn: "6", Uranus: "7", Neptune: "8", Pluto: "9",
 	Eris: "DES=2136199;"
 };
-const IN_AU = new Set(["Ceres", "Vesta", "Psyche", "Eris"]);   // how orbit.js writes them
+const IN_AU = new Set(["Ceres", "Pallas", "Vesta", "Hygiea", "Psyche", "Eris"]);   // how orbit.js writes them
 
 async function horizons(command) {
 	const q = new URLSearchParams({

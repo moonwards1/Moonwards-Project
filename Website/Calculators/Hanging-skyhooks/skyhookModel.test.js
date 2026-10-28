@@ -20,7 +20,7 @@ var m = MATERIALS.silica;
 function base() {
 	return {
 		foot: 10e3, centre: 275e3, top: 2000e3,
-		receivingDeck: 233e3, outerDocks: 606.5e3, launchDeck: 950e3,
+		receivingDeck: 233e3, outerDocks: 606.5e3, launchDeck: 950e3, cargoFrom: 233e3, cargoTo: 950e3,
 		strength: (m.strength / 3) / m.density, loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
 		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
 		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9,
@@ -170,35 +170,50 @@ test("a heavier load along the tether raises tension and mass", function () {
 
 test("throughput", function () {
 	var th = t.throughput;
-	near(th.tripUpDays * 24, 1.0, 2, "trip h");
-	near(th.tripDownDays * 24, 0.83, 2, "descent h");
+	near(th.tripDays * 24, 1.0, 2, "trip h");
 	near(th.intervalH, 2.4, 2, "cadence h");
 	near(th.onCable, 0.4, 1, "on cable");
 	near(th.spacingKm, 1728, 0, "spacing km");
-	near(th.cargoUpT, 41.49, 2, "cargo up t");
-	near(th.cargoDownT * 1e3, 345.2, 1, "cargo down kg");
-	near(th.addedTension / 1e3, 20.01, 2, "added tension kN");
+	near(th.cargoT, 41.49, 2, "cargo on the route t");
+	near(th.returnT * 1e3, 414.9, 1, "returning cargo kg");
+	near(th.addedTension / 1e3, 20.12, 2, "added tension kN");
 	near(th.addedTensionPct, 0.01, 2, "added tension %");   // of the tension at the centre, now set by the real loads
 	near(th.liftPower / 1e6, -5.64, 2, "lift power MW");
 	near(th.energyPerT, -0.49, 2, "GJ/t");
 });
 
-test("station-keeping", function () {
-	var sk = t.keeping;
-	near(sk.thrust / 1e3, 7.97, 2, "thrust kN");
-	near(sk.torque / 1e9, 29.77, 2, "torque GN·m");
-	near(sk.propFlow, 1.0, 2, "kg/s");
-	near(sk.propFlow * 86400 / 1e3, 86.03, 2, "t/day");
-	near(sk.jetPower / 1e6, 31.86, 2, "jet MW");
-	near(sk.orbitPower / 1e6, 23.1, 2, "orbit MW");
-	near(sk.elecPower / 1e6, 53.11, 2, "electrical MW");
-	near(sk.genPower / 1e6, 59.01, 2, "generated MW");
-	near(sk.energyPerT, 5.1, 2, "GJ/t");
+test("cargo route: foot → top unless given, and either direction", function () {
+	var d = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: null, cargoTo: null })).throughput;
+	assert.equal(d.from, 10e3); assert.equal(d.to, 2000e3);
+	near(d.tripDays * 24, 2.76, 2, "foot → top trip h");
+	var r = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: 950e3, cargoTo: 233e3 }));
+	near(r.throughput.liftPower / t.throughput.liftPower, -1, 9, "reversed route: energy changes sign");
+	near(r.keeping.thrust / t.keeping.thrust, -1, 9, "reversed route: the engines brake");
+	near(r.throughput.addedTension / t.throughput.addedTension, 1, 9, "same cargo on the same stretch");
+	near(r.keeping.genPower / t.keeping.genPower, 1, 9, "braking costs the same power as boosting");
+	var an = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: "anchor", cargoTo: 950e3 }));
+	assert.equal(an.throughput.from, an.centre + an.comOffset, "\"anchor\" is the anchor station's balanced altitude");
+	var z = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: 950e3, cargoTo: 950e3 }));
+	assert.ok(z.warnings.some(function (w) { return /same place/.test(w); }));
 });
 
-test("Earth reentry", function () {
+test("station-keeping", function () {
+	var sk = t.keeping;
+	near(sk.thrust / 1e3, 7.94, 2, "thrust kN");
+	near(sk.torque / 1e9, 29.69, 2, "torque GN·m");
+	near(sk.propFlow, 0.99, 2, "kg/s");
+	near(sk.propFlow * 86400 / 1e3, 85.80, 2, "t/day");
+	near(sk.jetPower / 1e6, 31.78, 2, "jet MW");
+	near(sk.orbitPower / 1e6, 23.04, 2, "orbit MW");
+	near(sk.elecPower / 1e6, 52.96, 2, "electrical MW");
+	near(sk.genPower / 1e6, 58.85, 2, "generated MW");
+	near(sk.energyPerT, 5.08, 2, "GJ/t");
+});
+
+test("entry at the parent planet: Earth, from the Moon", function () {
 	var re = t.reentry;
-	assert.ok(re.applies && re.escapes && re.entry);
+	assert.equal(re.parent, "Earth");
+	assert.ok(re.escapes && re.entry && re.atmosphere);
 	near(re.vinf, 835, 0, "v∞");
 	near(re.arrivalSpeed, 184, 0, "arrival");
 	near(re.naturalPerigeeAlt / 1e3, -26, 0, "natural perigee km");
@@ -289,4 +304,22 @@ test("station figures: tension at each level, pull, and the outcome of a release
 	var z = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 0, outerDocks: 0, launchDeck: 0 } })).stationFigures;
 	var tiny = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 1, outerDocks: 1, launchDeck: 1 } })).stationFigures;
 	z.forEach(function (x, k) { assert.ok(Math.abs(x.tension - tiny[k].tension) <= 1e-6 * tiny[k].tension, x.key + " tension without mass"); });
+});
+
+test("a tether anchored on Phobos needs no anchor station and nudges Phobos's orbit by metres", function () {
+	var mars = systems.get("Mars"), phobos = systems.get("Phobos");
+	var inp = Object.assign({}, base(), {
+		foot: 300e3, centre: phobos.orbit.a - Number(mars.radius), top: 12000e3,
+		receivingDeck: null, outerDocks: null, launchDeck: null, anchorMass: phobos.mass
+	});
+	var p = computeSkyhook(mars, inp);
+	assert.ok(p.balanced);
+	assert.equal(p.loads.com, 0, "Phobos takes the anchor station's place");
+	assert.ok(!p.warnings.some(function (w) { return /Out of balance/.test(w); }));
+	assert.equal(p.tetherParts.anchorSegment, null);
+	// Δ = −F / (3ω²M): the pull and the shift have opposite signs, and the shift is tiny
+	var w = p.angularVelocity;
+	close(p.anchor.shift, -p.unbalance / (3 * w * w * phobos.mass), "orbit shift");
+	assert.ok(Math.abs(p.anchor.shift) < 1000, "under a km: " + p.anchor.shift);
+	assert.equal(p.reentry.parent, null, "Mars orbits the Sun: no parent planet");
 });

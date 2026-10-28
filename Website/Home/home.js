@@ -29,12 +29,19 @@ var STORE_KEY = "mw-design";
 
 // Calculators the workbench can mount, by the keys calcFor() returns. `load`
 // resolves to the calculator's mount(root, opts) function (see
-// Calculators/Hanging-skyhooks/skyhookCalc.js for the options).
+// Calculators/Hanging-skyhooks/skyhookCalc.js for the options); `opts`, if
+// given, is added to the options — a configuration of a shared calculator.
 var CALCULATORS = {
 	"hanging-skyhook": {
 		load: function () {
 			return import("../Calculators/Hanging-skyhooks/skyhookCalc.js").then(function (m) { return m.mountHangingSkyhook; });
 		}
+	},
+	"phobos-skyhook": {
+		load: function () {
+			return import("../Calculators/Hanging-skyhooks/skyhookCalc.js").then(function (m) { return m.mountHangingSkyhook; });
+		},
+		opts: { anchor: "Phobos" }
 	},
 	"space-elevator": {
 		load: function () {
@@ -243,7 +250,7 @@ function mountCalculator(inst, body) {
 	var key = calcFor(inst);
 	var ready = key
 		? CALCULATORS[key].load().then(function (mount) {
-			var h = mount(box, ctx);
+			var h = mount(box, Object.assign({}, ctx, CALCULATORS[key].opts || {}));
 			var have = h.shell.cardTabs();
 			addSkeletonCards(h.shell, ctx, TABS.map(function (t) { return t.id; }).filter(function (t) { return have.indexOf(t) < 0; }));
 			return h;

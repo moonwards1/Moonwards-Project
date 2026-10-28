@@ -465,6 +465,17 @@ and draws the spin arrowheads counter-clockwise about +Z.
 Why: the equator ring alone looks the same for either pole, but the arrows
 don't. With the IAU convention a retrograde rotator's arrows would be backwards.
 
+### Body-specific parts declare a condition; bodies don't list cards
+
+What is special about a body lives in `Shared/body-profiles.js`: its figures
+(`footFloor`, `entryInterface`) and named conditions. A card or module that belongs
+only at some bodies carries `where: "<condition>"`, and `CalcShell.setConditions`
+leaves out whatever fails — no chip, no card. A condition tests the body's
+physics (orbit.js data plus its profile), never a hand-kept list of body names.
+Why: the same physics recurs at bodies nobody thought to list (an atmosphere at
+the foot is Earth's, Venus's, Mars's and Titan's problem), and a condition catches
+every body that meets it. `specialsAt(body)` gives the per-body view.
+
 ### Sun-orbiting bodies carry mean elements fitted to Horizons, 2030–2130
 
 Every body with `orbit.system` "Sun" in `Shared/orbit.js` holds mean Keplerian
@@ -480,8 +491,9 @@ checkpoints.
 
 Why: one fixed osculating ellipse drifts from the real orbit as perturbations
 act, by up to 20% of Saturn's orbit radius by 2130; a window fit turns that
-into a bounded wobble (worst 1.8% of orbit radius, for Psyche; under 0.4% for
-every planet).
+into a bounded wobble (under 0.4% of orbit radius for every planet; 1–3% for
+most asteroids; worst 13.2%, for Hygiea, whose orbit Jupiter disturbs more than
+any single ellipse can follow).
 
 Consequence: missions authored against other positions (the example missions)
 arrive only as well as their authoring ephemeris
@@ -533,3 +545,23 @@ station, and its altitude is the one at which the tension arriving at the centre
 from above equals that from below. Peak tension is read along that one continuous cable.
 Why: the cable is continuous through the centre of mass and nothing hangs there, so it is
 the physical dividing point and the one reference for every measurement.
+
+### A hanging tether's foot has a floor at each atmosphere
+
+`footFloor` in `Shared/body-profiles.js`: Earth 120 km (about 2 × 10⁻⁸ kg/m³),
+Venus 140, Mars 115, Titan 860. A foot set lower is rejected and set back to the
+floor, with a warning. Why: near 10⁻⁸ kg/m³ drag costs little reboost propellant
+and the foot station stays cool; lower, both grow by about e per scale height.
+Earth and Mars sit nearer the line than the margin would put them because an Earth
+skyhook can afford the reboost and Mars has Phobos as a momentum store.
+
+### A moon-anchored skyhook: the moon is the anchor station
+
+A skyhook anchored on a moon (`ANCHORS`, today Phobos) is the hanging-skyhook model
+with the moon as the anchor: the centre of mass is the moon's orbit, the two halves
+need not balance, and the moon's orbit shifts by Δ = F / (3ω²M) under the net pull.
+The tether rides the moon's eccentric orbit, so the foot floor is the primary's floor
+plus that swing, and the top stays below the next moon out at its periapsis, less
+the swing. Why: the moon outweighs any tether by many orders of magnitude (Phobos:
+a few metres of shift for the opening design), so an anchor-station balance would
+only add a meaningless input.

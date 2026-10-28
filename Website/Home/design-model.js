@@ -23,7 +23,7 @@ export const DESIGN_VERSION = 1;
 
 // Bodies offered in the Body menu, in order out from the Sun (a moon follows
 // its planet). A design lists its bodies in the order the user added them.
-export const BODY_ORDER = ["Mercury", "Venus", "Earth", "Moon", "Mars", "Vesta", "Ceres", "Psyche"];
+export const BODY_ORDER = ["Mercury", "Venus", "Earth", "Moon", "Mars", "Vesta", "Ceres", "Pallas", "Psyche", "Hygiea", "Callisto", "Titan"];
 
 // The three families of giant infrastructure, each with its variants.
 // `only`: the variant exists only at these bodies.
@@ -72,7 +72,11 @@ export const MARKS = {
 	"Venus|elevator": { k: "x", title: "No space elevator at Venus",
 		text: "Venus turns once every 243 days. Its stationary orbit would be about 1.5 million km out, beyond its Hill sphere (about 1 million km), so there is no orbit for a cable to reach." },
 	"Mercury|elevator": { k: "x", title: "No space elevator at Mercury",
-		text: "Mercury turns once every 58.6 days. Its stationary orbit would be about 243,000 km out, beyond its Hill sphere (about 220,000 km), so there is no orbit for a cable to reach." }
+		text: "Mercury turns once every 58.6 days. Its stationary orbit would be about 243,000 km out, beyond its Hill sphere (about 220,000 km), so there is no orbit for a cable to reach." },
+	"Callisto|elevator": { k: "x", title: "No space elevator at Callisto",
+		text: "Callisto keeps one face to Jupiter and turns once every 16.7 days. Its stationary orbit would be about 72,000 km from its centre, beyond its Hill sphere (about 50,000 km), so there is no orbit for a cable to reach." },
+	"Titan|elevator": { k: "x", title: "No space elevator at Titan",
+		text: "Titan keeps one face to Saturn and turns once every 15.9 days. Its stationary orbit would be about 76,000 km from its centre, beyond its Hill sphere (about 52,000 km), so there is no orbit for a cable to reach." }
 };
 
 // The hover hint for a mark's button: its title, then what clicking does.
@@ -108,6 +112,7 @@ export const TABS = [
 export function calcFor(inst) {
 	if (!inst) return null;
 	if (inst.fam === "skyhook" && inst.v === "hanging") return "hanging-skyhook";
+	if (inst.fam === "skyhook" && inst.v === "phobos") return "phobos-skyhook";
 	if (inst.fam === "elevator" && inst.v === "standard") return "space-elevator";
 	if (inst.fam === "elevator" && inst.v === "l1") return "moon-l1-elevator";
 	return null;

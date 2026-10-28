@@ -52,6 +52,14 @@
 // Until setTab is called every card shows, as on a standalone page. Input
 // and result cards stay wired across tabs: they are one calculator.
 //
+// Body-specific parts: a module or card may carry `where`, the name of a
+// condition (Shared/body-profiles.js, e.g. "parentEntry"). After
+// setConditions(fn), each is offered only while fn(where) is true; one that
+// fails has no chip and no card, and counts as off, while its saved on/off
+// setting is kept for when it applies again. A card inherits its module's
+// `where`. setLabel(moduleId, label) renames a chip; card.setTitle(title,
+// short) renames a card, for parts whose name depends on the body.
+//
 // Wiring made visible: an input card's `feeds` lists result card ids; focusing
 // the input card marks those (cs-fed), so a viewer sees where its numbers go.
 //
@@ -158,6 +166,7 @@ export class CalcShell {
 		this.folds = {};        // "<card id>/<key or label>" → fold (getState / setState)
 		this.cardOrder = [];
 		this.focusId = null;
+		this.conditions = null;   // fn(where) → bool, or null: everything applies
 		this.tab = null;        // null: show every tab's cards (standalone page)
 		this.firstTab = o.firstTab || "arch";
 		this.listeners = { input: [], focus: [], modules: [], shown: [] };
@@ -210,10 +219,10 @@ export class CalcShell {
 	setOverline(text) { this.overEl.textContent = text; }
 	_tabOf(def) { return def.tab || this.firstTab; }
 	_onTab(def) { return !this.tab || this._tabOf(def) === this.tab; }
-	// Tabs that hold at least one card.
+	// Tabs that hold at least one card that applies here.
 	cardTabs() {
 		var self = this, seen = {};
-		this.cardOrder.forEach(function (id) { seen[self._tabOf(self.cards[id])] = true; });
+		this.cardOrder.forEach(function (id) { if (self._cardApplies(self.cards[id])) seen[self._tabOf(self.cards[id])] = true; });
 		return Object.keys(seen);
 	}
 
@@ -241,6 +250,16 @@ export class CalcShell {
 		return { el: col, list: list, count: cnt };
 	}
 
+	// ---- body-specific parts ----
+	setConditions(fn) {
+		var self = this;
+		this.conditions = fn || null;
+		this._refresh();
+		this.listeners.modules.forEach(function (f) { f(self.on); });
+	}
+	_applies(def) { return !def || !def.where || !this.conditions || !!this.conditions(def.where); }
+	_cardApplies(c) { return this._applies(c) && (!c.module || this._applies(this.modules[c.module])); }
+
 	// ---- modules ----
 	addModule(def) {
 		var d = Object.assign({ needs: [], brings: [], side: "in" }, def);
@@ -253,7 +272,7 @@ export class CalcShell {
 		chip.style.setProperty("--mc", color);
 		chip.title = d.tip || "";
 		create("span", "cs-chip-dot", false, chip);
-		create("span", false, d.label, chip);
+		d.labelEl = create("span", false, d.label, chip);
 		var self = this;
 		chip.onclick = function () { self.setModule(d.id, !self.on[d.id]); };
 		d.chip = chip;
@@ -262,9 +281,15 @@ export class CalcShell {
 		return d;
 	}
 
-	isOn(id) { return !!this.on[id]; }
+	isOn(id) { return !!this.on[id] && this._applies(this.modules[id]); }
+
+	setLabel(id, label) {
+		var d = this.modules[id];
+		if (d) { d.label = label; d.labelEl.textContent = label; }
+	}
 
 	setModule(id, value) {
+		if (value && !this._applies(this.modules[id])) return;
 		var defs = {};
 		var self = this;
 		this.moduleOrder.forEach(function (m) { defs[m] = self.modules[m]; });
@@ -315,11 +340,16 @@ export class CalcShell {
 			rm.onclick = function () { self.setModule(d.module, false); };
 		}
 		var body = create("div", "cs-card-b", false, el);
+		var nm = t.querySelector(".cs-nm"), nmS = t.querySelector(".cs-nm-s");
 		var card = {
 			id: d.id, side: d.side, module: d.module || null, focus: d.focus || null,
-			tab: d.tab || null, feeds: d.feeds || [],
+			tab: d.tab || null, feeds: d.feeds || [], where: d.where || null,
 			el: el, body: body, collapsed: false, chev: chev, chk: chk, shown: true,
-			setSummary: function (text) { sum.textContent = text; }
+			setSummary: function (text) { sum.textContent = text; },
+			setTitle: function (title, short) {
+				nm.textContent = title; nmS.textContent = short || title;
+				if (chk) chk.setAttribute("aria-label", "Show " + title + " in the drawing");
+			}
 		};
 		this.cards[d.id] = card;
 		this.cardOrder.push(d.id);
@@ -346,7 +376,7 @@ export class CalcShell {
 	// module, the module is on. A card with no tick is always ticked.
 	isShown(id) {
 		var c = this.cards[id];
-		return !!c && c.shown && (!c.module || !!this.on[c.module]);
+		return !!c && c.shown && this._cardApplies(c) && (!c.module || this.isOn(c.module));
 	}
 
 	setShown(id, value) {
@@ -374,7 +404,7 @@ export class CalcShell {
 		var chipsShown = { in: 0, out: 0 };
 		this.moduleOrder.forEach(function (m) {
 			var d = self.modules[m], on = !!self.on[m];
-			d.chip.hidden = !self._onTab(d);
+			d.chip.hidden = !self._onTab(d) || !self._applies(d);
 			if (!d.chip.hidden) chipsShown[d.side]++;
 			d.chip.classList.toggle("cs-on", on);
 			d.chip.setAttribute("aria-pressed", String(on));
@@ -387,8 +417,8 @@ export class CalcShell {
 		var shown = { in: 0, out: 0 }, offered = { in: 0, out: 0 };
 		this.cardOrder.forEach(function (id) {
 			var c = self.cards[id];
-			var here = self._onTab(c);
-			var vis = here && (!c.module || !!self.on[c.module]);
+			var here = self._onTab(c) && self._cardApplies(c);
+			var vis = here && (!c.module || self.isOn(c.module));
 			c.el.hidden = !vis;
 			if (vis) shown[c.side]++;
 			if (here) offered[c.side]++;

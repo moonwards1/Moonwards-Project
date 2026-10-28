@@ -24,11 +24,18 @@
 //   comMass                    the anchor station, kg: the principal station, placed where the
 //                              tension arriving at the centre of mass from above equals the
 //                              tension arriving from below
-//   rate                       delivery rate to the launch deck, t/day
+//   anchorMass                 optional, kg: a moon at the centre of mass that the tether hangs
+//                              from (Shared/body-profiles.js ANCHORS). It takes the anchor
+//                              station's place: the two halves need not balance, since the moon
+//                              holds the difference, and comMass is ignored
+//   cargoFrom, cargoTo         altitudes, m, or "anchor" for the anchor station wherever the balance
+//                              places it: the cargo route, where climbers join the cable and
+//                              where they deliver; omitted for foot → top. Either direction
+//   rate                       delivery rate along the route, t/day
 //   perClimber                 t;  vClimb m/s;  effDrive 0–1
 //   propellant                 "oxygen" | "hydrogen";  vExhaust km/s
 //   effThruster, effSupply     0–1
-//   targetPerigee, ifaceAlt    km above the parent body
+//   targetPerigee, ifaceAlt    km above the parent body (entry at the parent planet)
 
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { Const } from "../../Shared/constants.js";
@@ -36,7 +43,7 @@ import { Const } from "../../Shared/constants.js";
 // Viable mature-engine exhaust-speed ceilings, km/s.
 export const PROPELLANT_MAX = { oxygen: 20, hydrogen: 80 };
 
-// Share of the ascending rate that descends from the outer docks to the foot.
+// Share of the delivery rate that comes back along the route, destination → origin.
 export const DESCENT_SHARE = 0.01;
 
 // Tension and tether mass of a constant-stress tether, built up from one tip inward
@@ -119,8 +126,8 @@ export function computeSkyhook(moon, inp) {
 	var integral = function (a, b) { return OrbitalMath.taperIntegral(GM, t.angularVelocity, a, b); };
 
 	t.foot = inp.foot; t.top = inp.top; t.centre = inp.centre;
-	t.receivingDeck = inp.receivingDeck == null ? t.foot : inp.receivingDeck;   // where ascending cargo joins the cable
-	t.outerDocks    = inp.outerDocks    == null ? t.top  : inp.outerDocks;      // where descending cargo joins the cable
+	t.receivingDeck = inp.receivingDeck == null ? t.foot : inp.receivingDeck;   // the foot when not modelled
+	t.outerDocks    = inp.outerDocks    == null ? t.top  : inp.outerDocks;      // the top when not modelled
 	t.launchDeck    = inp.launchDeck    == null ? t.top  : inp.launchDeck;      // where cargo is released
 	t.Length = t.top - t.foot;
 	t.surfaceGravity = GM / (R * R);
@@ -201,8 +208,10 @@ export function computeSkyhook(moon, inp) {
 	// left at the centre of mass and the leftover is reported (t.unbalance): the
 	// installation's true centre of mass is then not where the nominal one says.
 	var rs = rCentre;
-	t.balanced = false;
-	if (t.foot < t.top) {
+	var anchored = inp.anchorMass > 0;
+	if (anchored) t.loads.com = 0;
+	t.balanced = anchored;
+	if (!anchored && t.foot < t.top) {
 		var SCAN = 100, best = null, prevR = rFoot + 1, prevS = surplus(prevR, t.loads.com);
 		for (var q = 1; q <= SCAN; q++) {
 			var rq = rFoot + 1 + (rTop - rFoot - 2) * q / SCAN, sq = surplus(rq, t.loads.com);
@@ -228,6 +237,11 @@ export function computeSkyhook(moon, inp) {
 	t.tensionUpper = fin.up.tension;   // N, arriving at the centre of mass from above
 	t.tensionLower = fin.low.tension;  // N, arriving from below; equal to the above when balanced
 	t.unbalance = t.tensionLower - t.tensionUpper;   // N; 0 when balanced
+	// An anchoring moon takes the difference as a net pull toward the primary (unbalance > 0)
+	// or away from it. Its orbit settles where the extra gravity-gradient force balances that
+	// pull: the net outward force per unit mass changes with radius at d/dr(ω²r − GM/r²) =
+	// ω² + 2GM/r³ = 3ω² on a circular orbit, so the moon sits lower by F / (3ω²M).
+	t.anchor = anchored ? { mass: inp.anchorMass, pull: t.unbalance, shift: -t.unbalance / (3 * w * w * inp.anchorMass) } : null;
 	var peakOf = function (h) { return h.sections.reduce(function (a, x) { return Math.max(a, x.tMax, x.tTo); }, 0); };
 	t.tensionPeak = Math.max(peakOf(fin.up), peakOf(fin.low));
 	t.tetherMassUpper = fin.up.mass;
@@ -302,47 +316,50 @@ export function computeSkyhook(moon, inp) {
 	// ---- release points: altitude where a release reaches each neighbour ----
 	t.targets = releaseTargets(moon, t);
 
-	// ---- throughput: receiving deck → launch deck up, outer docks → foot down ----
+	// ---- throughput along the cargo route, origin → destination, with a return stream ----
 	var rateTpd = inp.rate, mC = inp.perClimber, vC = inp.vClimb, eff = inp.effDrive;
-	var L_up = t.launchDeck - t.receivingDeck, L_down = t.outerDocks - t.foot;
-	var th = {};
-	th.tripUpDays = (L_up / vC) / 86400;
-	th.tripDownDays = (L_down / vC) / 86400;
+	var end = function (v, dflt) { return v == null ? dflt : v === "anchor" ? t.centre + t.comOffset : v; };
+	var rFrom = end(inp.cargoFrom, t.foot) + R, rTo = end(inp.cargoTo, t.top) + R;
+	if (rFrom === rTo) warnings.push("The cargo route starts and ends at the same place.");
+	if (Math.min(rFrom, rTo) < t.foot + R || Math.max(rFrom, rTo) > t.top + R) warnings.push("The cargo route must lie between the foot and the top.");
+	var L = Math.abs(rTo - rFrom), rLo = Math.min(rFrom, rTo), rHi = Math.max(rFrom, rTo), rC = t.centre + R;
+	var th = { from: rFrom - R, to: rTo - R, up: rTo >= rFrom };
+	th.tripDays = (L / vC) / 86400;   // one way; the return stream takes as long
 	th.perDay = rateTpd / mC;
 	th.intervalH = 24 / th.perDay;
-	th.onCable = th.perDay * th.tripUpDays;
-	th.cargoUpT = rateTpd * th.tripUpDays;
-	th.descRate = rateTpd * DESCENT_SHARE;
-	th.cargoDownT = th.descRate * th.tripDownDays;
-	th.spacingKm = (L_up / 1e3) / Math.max(th.onCable, 1e-9);
-	// The centre of mass is the potential maximum: climbing deck → centre costs,
-	// centre → launch deck regenerates.
-	var liftIntegral = t.receivingDeck < t.centre ? integral(t.receivingDeck + R, t.centre + R) : 0;
-	var upAboveCoM = integral(t.centre + R, t.launchDeck + R);
-	var downAboveCoM = integral(t.centre + R, t.outerDocks + R);
-	var lambdaUp = L_up > 0 ? (th.cargoUpT * 1e3) / L_up : 0;
-	var lambdaDown = L_down > 0 ? (th.cargoDownT * 1e3) / L_down : 0;
-	th.addedTension = lambdaUp * (liftIntegral + upAboveCoM) + lambdaDown * (t.lowIntegral + downAboveCoM);
+	th.onCable = th.perDay * th.tripDays;
+	th.cargoT = rateTpd * th.tripDays;
+	th.returnRate = rateTpd * DESCENT_SHARE;
+	th.returnT = th.returnRate * th.tripDays;
+	th.spacingKm = (L / 1e3) / Math.max(th.onCable, 1e-9);
+	// Cargo on the cable adds its weight to the tension at the centre of mass: the
+	// part of the route below the centre pulls inward, the part above pulls outward.
+	var below = rLo < rC ? integral(rLo, Math.min(rHi, rC)) : 0;
+	var above = rHi > rC ? integral(Math.max(rLo, rC), rHi) : 0;
+	var lambda = L > 0 ? (th.cargoT + th.returnT) * 1e3 / L : 0;
+	th.addedTension = lambda * (below + above);
 	th.addedTensionPct = 100 * th.addedTension / t.tensionPeak;
 	th.massFlow = rateTpd * 1e3 / 86400;
-	var netLift = liftIntegral - upAboveCoM;
+	// Energy per kg is the change in effective potential, highest at the centre of mass:
+	// climbing toward it costs, moving away from it regenerates.
+	var netLift = OrbitalMath.specificPotential(GM, t.angularVelocity, rTo) - OrbitalMath.specificPotential(GM, t.angularVelocity, rFrom);
 	th.liftPower = netLift * th.massFlow / eff;
 	th.energyPerT = netLift / eff / 1e6;   // GJ/t
 	t.throughput = th;
 
 	// ---- station-keeping: reboost thrust at the top cancels the climbers' drag ----
-	// Climbers carry cargo outward, taking angular momentum from the orbit: the drain is
-	// mdot·ω·(r_launch² − r_deck²), less the descending stream's credit mdot_down·ω·(r_docks² − r_foot²).
-	var w = t.angularVelocity;
-	var r_f = t.foot + R, r_mount = t.top + R, r_deck = t.receivingDeck + R, r_docks = t.outerDocks + R, r_launch = t.launchDeck + R;
+	// Cargo carried outward takes angular momentum from the orbit: the drain is
+	// mdot·ω·(r_to² − r_from²), less the return stream's share. Cargo carried inward
+	// adds angular momentum, so the thrust is negative: the engines brake instead.
+	var w = t.angularVelocity, r_mount = t.top + R;
 	var sk = {};
 	sk.vMount = w * r_mount;
-	sk.torque = th.massFlow * w * (r_launch * r_launch - r_deck * r_deck) - th.massFlow * DESCENT_SHARE * w * (r_docks * r_docks - r_f * r_f);
+	sk.torque = th.massFlow * (1 - DESCENT_SHARE) * w * (rTo * rTo - rFrom * rFrom);
 	sk.thrust = sk.torque / r_mount;
-	sk.orbitPower = sk.thrust * sk.vMount;
+	sk.orbitPower = Math.abs(sk.thrust) * sk.vMount;   // the engines work as hard to brake as to boost
 	sk.vExhaust = Math.min(inp.vExhaust, PROPELLANT_MAX[inp.propellant]) * 1000;
-	sk.propFlow = sk.thrust / sk.vExhaust;
-	sk.jetPower = 0.5 * sk.thrust * sk.vExhaust;
+	sk.propFlow = Math.abs(sk.thrust) / sk.vExhaust;
+	sk.jetPower = 0.5 * Math.abs(sk.thrust) * sk.vExhaust;
 	sk.elecPower = sk.jetPower / inp.effThruster;
 	sk.genPower = sk.elecPower / inp.effSupply;
 	sk.propPerCargo = sk.propFlow / Math.max(th.massFlow, 1e-12);
@@ -392,9 +409,12 @@ function releaseTargets(moon, t) {
 	return targets;
 }
 
+// Cargo released from the launch deck toward the planet the body orbits, entering its
+// atmosphere. Applies where that planet has one (body-profiles.js, "parentEntry"); the
+// figures are computed for any body with a parent, and `parent` names it.
 function reentry(moon, t, inp) {
-	var out = { applies: !!(moon.properties && moon.properties.name === "Moon") };
-	var parent = moon.orbit ? moon.orbit.system : null;
+	var parent = moon.orbit && String(moon.orbit.system) !== "Sun" ? moon.orbit.system : null;
+	var out = { parent: parent ? String(parent) : null };
 	if (!parent || !isFinite(t.escapeFromTop)) { out.escapes = false; return out; }
 	out.escapes = true;
 	var GMe = parent.GM, Re = Number(parent.radius), D = moon.orbit.a;
@@ -417,8 +437,9 @@ function reentry(moon, t, inp) {
 		var vI = Math.sqrt(GMe * (2 / rI - 1 / aT));
 		out.entryAngle = Math.acos(Math.min(1, hT / (rI * vI)));
 		out.entrySpeed = vI;
-		out.atmosphere = !!parent.atmosphere;
-		if (parent.atmosphere) out.peakG = OrbitalMath.allenEggersPeakDecel(vI, out.entryAngle, Const.scaleHeight.earth) / Const.g0;
+		var H = Const.scaleHeight[out.parent.toLowerCase()];
+		out.atmosphere = !!parent.atmosphere && H > 0;
+		if (out.atmosphere) out.peakG = OrbitalMath.allenEggersPeakDecel(vI, out.entryAngle, H) / Const.g0;
 	}
 	return out;
 }
