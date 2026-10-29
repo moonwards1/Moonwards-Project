@@ -190,7 +190,9 @@ export function addSkeletonCards(shell, ctx, tabs) {
 		var route = shell.addCard({ id: "sk-route", tab: "log", side: "in", title: "Route", short: "Route", color: C.sky, feeds: ["sk-win", "sk-ev"] });
 		F.dest = shell.selectField(route, { label: "Destination", options: others.map(function (n) { return { value: n, label: n }; }), value: partnerDefault });
 
-		var link = shell.addCard({ id: "sk-link", tab: "log", side: "in", title: "Surface ↔ installation", short: "Surface link", color: C.ochre, feeds: ["sk-linkO"] });
+		// On an elevator the surface link is its climbers.
+		var climb = inst.fam === "elevator";
+		var link = shell.addCard({ id: "sk-link", tab: "log", side: "in", title: climb ? "Climbers" : "Surface ↔ installation", short: climb ? "Climbers" : "Surface link", color: C.ochre, feeds: ["sk-linkO"] });
 		F.trips = shell.numberField(link, { label: "Trips per day", value: 4, min: 0 });
 		F.tripT = shell.numberField(link, { label: "Cargo per trip", unit: "t", value: 20, min: 0 });
 
@@ -199,7 +201,7 @@ export function addSkeletonCards(shell, ctx, tabs) {
 		var lWin = shell.line(win, { label: "Route" });
 		shell.note(win, "Window spacing S = 1 / |1/T₁ − 1/T₂| from the two orbital periods; transfer time t = π √(a³ / μ☉), a minimum-energy ellipse.");
 
-		var linkO = shell.addCard({ id: "sk-linkO", tab: "log", side: "out", title: "Surface link", short: "Surface", color: C.ochre });
+		var linkO = shell.addCard({ id: "sk-linkO", tab: "log", side: "out", title: climb ? "Climbers" : "Surface link", short: climb ? "Climbers" : "Surface", color: C.ochre });
 		var lDay = shell.line(linkO, { label: "Cargo to the installation", unit: "t/day" });
 
 		calcs.push(function () {
