@@ -45,7 +45,6 @@ export function addShipCards(shell, opts) {
 		var def = SHIP_ROLES[role];
 		var card = shell.addCard({ id: "ship-" + role, tab: tab, side: "in", title: def.label, short: def.label, color: C.sky, feeds: ["ship-legs"] });
 		var f = {};
-		f.cls = shell.selectField(card, { label: "Class", options: [], save: false });
 		var shared = shell.note(card, "");
 		var copyBtn = shell.button(card, { label: "Make a separate copy" });
 		f.name = shell.textField(card, { label: "Name", save: false });
@@ -64,7 +63,6 @@ export function addShipCards(shell, opts) {
 
 		function cur() { return fleet.classFor(instId, role); }
 		function edit(patch) { fleet.update(cur().id, patch); }
-		f.cls.addEventListener("change", function () { fleet.assign(instId, role, f.cls.value); });
 		copyBtn.addEventListener("click", function () { fleet.copy(cur().id, instId); });
 		f.name.addEventListener("change", function () { edit({ name: f.name.value }); });
 		f.prop.addEventListener("change", function () { edit({ propellant: f.prop.value, isp: propellant(f.prop.value).isp }); });
@@ -78,14 +76,7 @@ export function addShipCards(shell, opts) {
 
 		function put(el, value) { if (document.activeElement !== el) el.value = value; }
 		function refresh() {
-			var c = cur(), list = fleet.list(role);
-			var opts = list.map(function (x) { return x.id + "\u0000" + x.name; }).join("|");
-			if (f.cls._opts !== opts) {
-				f.cls.innerHTML = "";
-				list.forEach(function (x) { var op = document.createElement("option"); op.value = x.id; op.textContent = x.name; f.cls.appendChild(op); });
-				f.cls._opts = opts;
-			}
-			f.cls.value = c.id;
+			var c = cur();
 			put(f.name, c.name); put(f.prop, c.propellant); put(f.isp, c.isp);
 			put(f.dry, c.dry); put(f.payload, c.payload); put(f.tank, c.tank);
 			if (f.shield) put(f.shield, c.shield ? "1" : "0");

@@ -122,12 +122,6 @@ export function createFleet(data) {
 		get: get,
 		// The class an installation uses for a role (assigned on first ask).
 		classFor: function (instId, role) { return assigned(instId, role); },
-		assign: function (instId, role, classId) {
-			var c = get(classId);
-			if (!c || c.role !== role) return;
-			use[instId + "/" + role] = classId;
-			emit();
-		},
 		// Change fields of a class: every installation using it follows.
 		update: function (id, patch) {
 			var c = get(id);
