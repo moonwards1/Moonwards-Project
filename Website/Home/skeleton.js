@@ -187,30 +187,16 @@ export function addSkeletonCards(shell, ctx, tabs) {
 
 	// ---------- Logistics ----------
 	if (want.log) {
-		var route = shell.addCard({ id: "sk-route", tab: "log", side: "in", title: "Route", short: "Route", color: C.sky, feeds: ["sk-win", "sk-ev"] });
-		F.dest = shell.selectField(route, { label: "Destination", options: others.map(function (n) { return { value: n, label: n }; }), value: partnerDefault });
-
 		// On an elevator the surface link is its climbers.
 		var climb = inst.fam === "elevator";
 		var link = shell.addCard({ id: "sk-link", tab: "log", side: "in", title: climb ? "Climbers" : "Surface ↔ installation", short: climb ? "Climbers" : "Surface link", color: C.ochre, feeds: ["sk-linkO"] });
 		F.trips = shell.numberField(link, { label: "Trips per day", value: 4, min: 0 });
 		F.tripT = shell.numberField(link, { label: "Cargo per trip", unit: "t", value: 20, min: 0 });
 
-		var win = shell.addCard({ id: "sk-win", tab: "log", side: "out", title: "Launch windows", short: "Windows", color: C.sky });
-		var hw = shell.hero(win, [{ label: "Window every" }, { label: "Transfer time" }]);
-		var lWin = shell.line(win, { label: "Route" });
-		shell.note(win, "Window spacing S = 1 / |1/T₁ − 1/T₂| from the two orbital periods; transfer time t = π √(a³ / μ☉), a minimum-energy ellipse.");
-
 		var linkO = shell.addCard({ id: "sk-linkO", tab: "log", side: "out", title: climb ? "Climbers" : "Surface link", short: climb ? "Climbers" : "Surface", color: C.ochre });
 		var lDay = shell.line(linkO, { label: "Cargo to the installation", unit: "t/day" });
 
 		calcs.push(function () {
-			var d = bodyData(F.dest.value), w = windowFor(body, d);
-			var S = days(w.synodic), T = days(w.transfer);
-			hw[0].set(w.same ? "any time" : S[0] + " " + S[1]); hw[1].set(w.same ? PENDING : T[0] + " " + T[1]);
-			lWin.set(body.name + " → " + d.name, w.same ? "Same planetary system: no planetary window applies." : "");
-			route.setSummary(body.name + " → " + d.name);
-			win.setSummary(w.same ? "any time" : "every " + S[0] + " " + S[1]);
 			var perDay = val(F.trips, 4) * val(F.tripT, 20);
 			lDay.set(num(perDay, 0));
 			link.setSummary(num(perDay, 0) + " t/day");
@@ -259,6 +245,8 @@ export function addSkeletonCards(shell, ctx, tabs) {
 
 	// ---------- Economy ----------
 	if (want.eco) {
+		var route = shell.addCard({ id: "sk-route", tab: "eco", side: "in", title: "Route", short: "Route", color: C.sky, feeds: ["sk-win", "sk-ev"] });
+		F.dest = shell.selectField(route, { label: "Destination", options: others.map(function (n) { return { value: n, label: n }; }), value: partnerDefault });
 		var vol = shell.addCard({ id: "sk-vol", tab: "eco", side: "in", title: "Annual trade volume", short: "Volume", color: C.teal, feeds: ["sk-ev", "sk-sup"] });
 		F.out = shell.numberField(vol, { label: "Outbound", unit: "t/yr", value: 50000, min: 0 });
 		F.in = shell.numberField(vol, { label: "Inbound", unit: "t/yr", value: 8000, min: 0 });
@@ -268,8 +256,12 @@ export function addSkeletonCards(shell, ctx, tabs) {
 		F.ships = shell.numberField(fleet, { label: "Ships in service", value: 12, min: 0 });
 		F.cycles = shell.numberField(fleet, { label: "Round trips per ship per year", value: 1, min: 0.01, step: "0.1" });
 		var tt = shell.addCard({ id: "sk-tt", tab: "eco", side: "in", title: "Timetable", short: "Timetable", color: C.teal, feeds: ["sk-ev"] });
-		if (!F.dest) F.partner = shell.selectField(tt, { label: "Trading partner", options: others.map(function (n) { return { value: n, label: n }; }), value: partnerDefault });
-		else shell.note(tt, "The route is set on the Logistics tab.");
+		shell.note(tt, "The destination is set on the Route card.");
+
+		var win = shell.addCard({ id: "sk-win", tab: "eco", side: "out", title: "Launch windows", short: "Windows", color: C.sky });
+		var hw = shell.hero(win, [{ label: "Window every" }, { label: "Transfer time" }]);
+		var lWin = shell.line(win, { label: "Route" });
+		shell.note(win, "Window spacing S = 1 / |1/T₁ − 1/T₂| from the two orbital periods; transfer time t = π √(a³ / μ☉), a minimum-energy ellipse.");
 
 		var ev = shell.addCard({ id: "sk-ev", tab: "eco", side: "out", title: "Launch events", short: "Launches", color: C.teal });
 		var hev = shell.hero(ev, [{ label: "Flights per year" }, { label: "Per window" }]);
@@ -285,12 +277,16 @@ export function addSkeletonCards(shell, ctx, tabs) {
 			var cls = shipClass();
 			var pay = cls ? cls.payload : val(F.payE, 100);
 			var flights = Math.max(val(F.out, 50000), val(F.in, 8000)) / Math.max(pay, 1e-3);
-			var partner = bodyData((F.dest || F.partner).value), w = windowFor(body, partner);
+			var partner = bodyData(F.dest.value), w = windowFor(body, partner);
 			hev[0].set(num(Math.ceil(flights), 0));
 			hev[1].set(w.same ? "continuous" : num(Math.ceil(flights * w.synodic / 365.256), 0));
 			var cyc = Math.min(val(F.cycles, 1), w.same ? Infinity : 365.256 / w.synodic);
 			lShips.set(num(Math.ceil(flights / Math.max(cyc, 1e-3)), 0), "Round trips per ship are capped at one per window on an interplanetary route.");
-			var S = days(w.synodic);
+			var S = days(w.synodic), T = days(w.transfer);
+			hw[0].set(w.same ? "any time" : S[0] + " " + S[1]); hw[1].set(w.same ? PENDING : T[0] + " " + T[1]);
+			lWin.set(body.name + " → " + partner.name, w.same ? "Same planetary system: no planetary window applies." : "");
+			route.setSummary(body.name + " → " + partner.name);
+			win.setSummary(w.same ? "any time" : "every " + S[0] + " " + S[1]);
 			lPerWin.set(w.same ? "same system" : S[0] + " " + S[1]);
 			lProp.set(cls ? num(flights * cls.tank, 0) : PENDING, cls ? "A full load of propellant per flight." : null);
 			vol.setSummary(num(val(F.out, 50000), 0) + " t/yr out");
