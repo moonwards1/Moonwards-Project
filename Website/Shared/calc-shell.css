@@ -33,9 +33,11 @@
  *                 its border and tick take the card accent; the title button
  *                 beside it focuses the card
  *   cs-nm / cs-nm-s   full title / short title (shown when collapsed)
+ *   cs-tag        a small tag beside the full title (card.setTag)
  *   cs-sum        the one-line summary shown when collapsed
  *   cs-row        an input row: cs-lbl (+ cs-hint) and cs-fld (input + cs-u)
  *   cs-full       a row whose field spans the card (selects)
+ *   cs-wide       a row whose field takes all the width its label leaves (long select options)
  *   cs-choice     a row led by a cs-radio button, one of a choice between
  *                 fields; cs-unchosen dims the rows not chosen
  *   cs-kvs / cs-kv   a block of result lines / one line: cs-k, cs-v (cs-vn, cs-vu), cs-s
@@ -44,6 +46,8 @@
  *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
  *   cs-tipped     a row whose label carries a hover tip (dotted underline)
  *   cs-btn, cs-btn-pri   a button in a card / its primary form
+ *   cs-btns              a row of buttons (buttonRow), led by an optional cs-btns-l label;
+ *                        cs-split joins a button to its cs-btn-x remove button
  *   cs-text              a text field (input.cs-text)
  *   cs-note / cs-warn   a small note / a warning block
  *   cs-opt              an optional item: tick, title, description, and a row of compact fields
@@ -263,6 +267,18 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-chk input:focus-visible + .cs-chk-box { outline: 2px solid var(--mc); outline-offset: 2px; }
 .cs-nm, .cs-nm-s { font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 700; font-size: 15px; white-space: nowrap; }
 .cs-nm-s { display: none; font-size: 14px; flex: none; }
+.cs-tag {
+	flex: none;
+	font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+	font-size: 10.5px;
+	letter-spacing: .04em;
+	line-height: 16px;
+	padding: 0 5px;
+	border: 1px solid color-mix(in oklch, var(--mc) 45%, transparent);
+	border-radius: 4px;
+	color: var(--mc);
+}
+.cs-tag:empty { display: none; }
 .cs-sum {
 	display: none;
 	flex: 1;
@@ -279,6 +295,7 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-chev { transition: transform .2s; }
 .cs-card.cs-collapsed .cs-chev { transform: rotate(-90deg); }
 .cs-card.cs-collapsed .cs-nm,
+.cs-card.cs-collapsed .cs-tag,
 .cs-card.cs-collapsed .cs-loc,
 .cs-card.cs-collapsed .cs-rm { display: none; }
 .cs-card.cs-collapsed .cs-nm-s,
@@ -291,6 +308,7 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 /* ---------- input rows ---------- */
 .cs-row { display: grid; grid-template-columns: minmax(0, 1fr) clamp(96px, 40%, 136px); align-items: center; gap: 8px; min-height: 30px; }
 .cs-row.cs-full { grid-template-columns: 1fr; }
+.cs-row.cs-wide { grid-template-columns: auto minmax(0, 1fr); }
 .cs-row.cs-choice { grid-template-columns: auto minmax(0, 1fr) clamp(96px, 40%, 136px); }
 .cs-radio { margin: 0; width: 15px; height: 15px; accent-color: var(--mc); cursor: pointer; }
 .cs-row.cs-unchosen .cs-lbl, .cs-row.cs-unchosen .cs-fld { opacity: .55; }
@@ -355,6 +373,14 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-btn:hover { border-color: var(--cs-ink2); }
 .cs-btn-pri { background: var(--cs-ink); border-color: var(--cs-ink); color: var(--cs-paper); }
 .cs-btn-pri:hover { background: #3A2E25; }
+.cs-btn-pri[aria-pressed="true"] { cursor: default; }
+.cs-btns { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cs-btns .cs-btn { padding: 0 8px; }
+.cs-btns-l { font-size: 13px; color: var(--cs-ink2); }
+.cs-split { display: inline-flex; }
+.cs-split > .cs-btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.cs-btns .cs-btn-x { display: grid; place-items: center; padding: 0 3px; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; color: var(--cs-ink2); }
+.cs-btns .cs-btn-x:hover { color: var(--cs-ink); }
 .cs-note { margin: 1px 0 0; font-size: 12px; line-height: 1.45; color: var(--cs-ink2); }
 .cs-warn { flex: none; border-radius: 12px; padding: 10px 12px; background: #FBE3D4; color: #7A2410; font-size: 12.5px; line-height: 1.4; }
 .cs-warn[hidden] { display: none; }

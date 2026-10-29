@@ -91,12 +91,6 @@ function currentInst() {
 	var b = findBody(design, ui.body);
 	return b ? b.inst.find(function (i) { return i.id === ui.inst; }) || null : null;
 }
-// An installation's display name for the ship cards, e.g. "Moon · Mass driver".
-function instName(id) {
-	var hit = null;
-	design.bodies.forEach(function (b) { b.inst.forEach(function (i) { if (i.id === id) hit = b.body + " · " + instLabel(i); }); });
-	return hit || "a removed installation";
-}
 // Match the fleet's assignments to the installations in the design.
 function syncFleet() {
 	var needs = {};
@@ -280,7 +274,7 @@ function mountCalculator(inst, body) {
 		: Promise.resolve(mountSkeleton(box, ctx));
 	ready.then(function (h) {
 		if (mounted[inst.id] !== entry) return;   // removed while loading
-		entry.ships = addShipCards(h.shell, { fleet: fleet, instId: inst.id, roles: ctx.shipRoles, nameOf: instName });
+		entry.ships = addShipCards(h.shell, { fleet: fleet, instId: inst.id, roles: ctx.shipRoles });
 		if (inst.state) h.shell.setState(inst.state);
 		entry.handle = h;
 		if (!box.hidden) showTab(entry);

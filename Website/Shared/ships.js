@@ -1,15 +1,23 @@
 // Ship classes: the support ships that close the gap between what a facility
 // delivers and what a route needs. ES module, pure (no DOM), Node-tested:
-//   import { SHIP_ROLES, PROPELLANTS, createFleet, shipDv } from "../Shared/ships.js";
+//   import { SHIP_ROLES, PROPELLANTS, createFleet, shipDv, shieldMass, shipTitle, versionName } from "../Shared/ships.js";
 //
 // Ships are not a means of transport in their own right. Each installation
 // says which roles it needs (Home/design-model.js shipRolesFor), and its
 // Logistics tab shows one card per role (Shared/ship-card.js).
 //
 // A ship CLASS is hardware only: propellant, Isp, dry mass, payload,
-// propellant capacity, heat shield. It belongs to the whole design, so one
+// propellant capacity, heat shield (carried or not). It belongs to the whole design, so one
 // class serves every installation assigned to it and an edit reaches all of
 // them. What a given route asks of the ship stays with the installation.
+//
+// Each role has one STANDARD class, the first of the role: every installation
+// uses it unless given its own copy. Capsules and shuttles never leave their
+// host system, so a copy of one is a local version, specialized for one
+// installation's service. A freighter copy is another version of the design,
+// and any installation can switch among the versions; a role has at most
+// MAX_VERSIONS freighter designs, the standard included. Freighter versions
+// stay in the design while unused; a local version nothing uses is dropped.
 //
 // Masses are tonnes, Isp seconds, Δv m/s.
 
@@ -21,6 +29,25 @@ export const SHIP_ROLES = {
 	capsule: { label: "Capsule", desc: "Enters an atmosphere; always carries a heat shield." }
 };
 export const ROLE_ORDER = ["shuttle", "freighter", "capsule"];
+
+export const MAX_VERSIONS = 3;
+
+// Roles whose ships stay in their host system: their copies are local versions.
+export function isLocalRole(role) { return role === "shuttle" || role === "capsule"; }
+
+// A freighter version's name, by what sets it apart: payload capacity in
+// kilotonnes, and HS if it carries a heat shield ("0.5 kt HS"). `bare`
+// leaves out the unit, for the compact version buttons ("0.5 HS").
+export function versionName(c, bare) {
+	var kt = (c.payload / 1000).toLocaleString("en-US", { maximumSignificantDigits: 3 });
+	return kt + (bare ? "" : " kt") + (c.shield ? " HS" : "");
+}
+
+// A class's card title: the role, and a freighter version's name after it.
+export function shipTitle(c, standard) {
+	var label = SHIP_ROLES[c.role].label;
+	return standard || isLocalRole(c.role) ? label : label + " " + versionName(c);
+}
 
 // Chemical propellants only. `isp` is a typical vacuum figure, used as the
 // starting value when the propellant is chosen; the Isp field can be edited.
@@ -40,20 +67,29 @@ export function propellant(key) {
 	return PROPELLANTS.find(function (p) { return p.key === key; }) || null;
 }
 
-// Starting figures for a new class of each role.
+// Starting figures for a new class of each role; the propellant, where
+// given, replaces DEFAULT_PROPELLANT.
 var START = {
 	shuttle: { dry: 20, payload: 30, tank: 40 },
-	freighter: { dry: 100, payload: 500, tank: 300 },
+	freighter: { dry: 4000, payload: 50000, tank: 20000, propellant: "ch4-lox", shield: true },
 	capsule: { dry: 8, payload: 4, tank: 3 }
 };
 
+// A carried heat shield's mass, as a fraction of the loaded ship: dry mass,
+// payload and full tanks, the shield itself not counted. The shield is
+// separate from the dry mass and adds to it.
+export const SHIELD_FRACTION = 0.04;
+export function shieldMass(c) {
+	return c.shield ? SHIELD_FRACTION * (c.dry + c.payload + c.tank) : 0;
+}
+
 // Δv the class can make with full tanks, loaded and empty:
-//   Δv = Isp · g₀ · ln(m₀ / m_f),  m₀ = dry + payload + tank,  m_f = dry + payload.
+//   Δv = Isp · g₀ · ln(m₀ / m_f),  m₀ = dry + shield + payload + tank,  m_f = m₀ − tank.
 export function shipDv(c) {
-	var g = c.isp * Const.g0;
+	var g = c.isp * Const.g0, hull = c.dry + shieldMass(c);
 	return {
-		loaded: g * Math.log((c.dry + c.payload + c.tank) / (c.dry + c.payload)),
-		empty: g * Math.log((c.dry + c.tank) / c.dry)
+		loaded: g * Math.log((hull + c.payload + c.tank) / (hull + c.payload)),
+		empty: g * Math.log((hull + c.tank) / hull)
 	};
 }
 
@@ -109,6 +145,21 @@ export function createFleet(data) {
 		classes.push(c);
 		return c;
 	}
+	// Drop local versions that no installation uses.
+	function prune() {
+		classes = classes.filter(function (c) {
+			return !isLocalRole(c.role) || ofRole(c.role)[0] === c || Object.keys(use).some(function (k) { return use[k] === c.id; });
+		});
+	}
+	function assign(instId, id) {
+		var c = get(id);
+		if (!c) return;
+		var key = instId + "/" + c.role;
+		if (use[key] === c.id) return;
+		use[key] = c.id;
+		prune();
+		emit();
+	}
 	function assigned(instId, role) {
 		var c = get(use[instId + "/" + role]);
 		if (c) return c;
@@ -122,6 +173,9 @@ export function createFleet(data) {
 		get: get,
 		// The class an installation uses for a role (assigned on first ask).
 		classFor: function (instId, role) { return assigned(instId, role); },
+		// The role's standard class, and whether a class is one.
+		standard: function (role) { return ofRole(role)[0] || add(role); },
+		isStandard: function (c) { return !!c && ofRole(c.role)[0] === c; },
 		// Change fields of a class: every installation using it follows.
 		update: function (id, patch) {
 			var c = get(id);
@@ -130,31 +184,49 @@ export function createFleet(data) {
 			Object.keys(next).forEach(function (k) { c[k] = next[k]; });
 			emit();
 		},
-		// A separate copy of a class, assigned to this installation only.
+		// A copy of a class, assigned to this installation only. A freighter
+		// copy is refused once the role has MAX_VERSIONS designs.
 		copy: function (id, instId) {
 			var c = get(id);
 			if (!c) return null;
+			if (!isLocalRole(c.role) && ofRole(c.role).length >= MAX_VERSIONS) return null;
 			var n = ofRole(c.role).length + 1;
 			var copy = add(c.role, Object.assign({}, c, { name: SHIP_ROLES[c.role].label + " " + n }));
 			use[instId + "/" + c.role] = copy.id;
 			emit();
 			return copy;
 		},
+		// Put an installation on another class of the same role. A local
+		// version it leaves is dropped once nothing uses it.
+		assign: assign,
+		// Remove a version (never the standard) from the design; installations
+		// using it go back to the standard.
+		remove: function (id) {
+			var c = get(id);
+			if (!c || ofRole(c.role)[0] === c) return;
+			var std = ofRole(c.role)[0];
+			Object.keys(use).forEach(function (k) { if (use[k] === c.id) use[k] = std.id; });
+			classes.splice(classes.indexOf(c), 1);
+			emit();
+		},
+		// Put an installation back on the role's standard class.
+		revert: function (instId, role) { assign(instId, (ofRole(role)[0] || add(role)).id); },
 		// Installation ids using a class.
 		usedBy: function (id) {
 			return Object.keys(use).filter(function (k) { return use[k] === id; }).map(function (k) { return k.slice(0, k.lastIndexOf("/")); });
 		},
 		// Match the assignments to the design: `needs` maps each installation id
 		// to the roles it needs. Roles no longer needed are dropped; new ones are
-		// assigned. Classes are kept even when nothing uses them.
+		// assigned. Local versions nothing uses are dropped.
 		sync: function (needs) {
-			var before = JSON.stringify(use);
+			var before = JSON.stringify(use), count = classes.length;
 			Object.keys(use).forEach(function (k) {
 				var i = k.lastIndexOf("/"), roles = needs[k.slice(0, i)];
 				if (!roles || roles.indexOf(k.slice(i + 1)) < 0) delete use[k];
 			});
 			Object.keys(needs).forEach(function (instId) { needs[instId].forEach(function (r) { assigned(instId, r); }); });
-			if (JSON.stringify(use) !== before) emit();
+			prune();
+			if (JSON.stringify(use) !== before || classes.length !== count) emit();
 		},
 		subscribe: function (fn) {
 			listeners.push(fn);

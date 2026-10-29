@@ -58,7 +58,8 @@
 // fails has no chip and no card, and counts as off, while its saved on/off
 // setting is kept for when it applies again. A card inherits its module's
 // `where`. setLabel(moduleId, label) renames a chip; card.setTitle(title,
-// short) renames a card, for parts whose name depends on the body.
+// short) renames a card, for parts whose name depends on the body;
+// card.setTag(text) puts a small tag beside the title ("" removes it).
 //
 // Wiring made visible: an input card's `feeds` lists result card ids; focusing
 // the input card marks those (cs-fed), so a viewer sees where its numbers go.
@@ -331,6 +332,7 @@ export class CalcShell {
 		if (!chk) create("span", "cs-dot", false, t);
 		create("span", "cs-nm", d.title, t);
 		create("span", "cs-nm-s", d.short || d.title, t);
+		var tag = create("span", "cs-tag", false, t);
 		var sum = create("span", "cs-sum", false, t);
 		if (!chk) t.appendChild(icon(ICON.loc, 16, 1.5, "cs-loc"));
 		t.onclick = function () { self.focusCard(d.id); };
@@ -352,7 +354,8 @@ export class CalcShell {
 			setTitle: function (title, short) {
 				nm.textContent = title; nmS.textContent = short || title;
 				if (chk) chk.setAttribute("aria-label", "Show " + title + " in the drawing");
-			}
+			},
+			setTag: function (text) { tag.textContent = text || ""; }
 		};
 		this.cards[d.id] = card;
 		this.cardOrder.push(d.id);
@@ -607,6 +610,34 @@ export class CalcShell {
 		var b = create("button", opts.primary ? ["cs-btn", "cs-btn-pri"] : "cs-btn", opts.label, card.body);
 		b.type = "button";
 		return b;
+	}
+
+	// A row of buttons in a card, rebuilt whole by set(label, items): an
+	// optional leading label, then one button per item { label, onClick,
+	// pressed, onRemove, removeTip }. A pressed button is the current choice:
+	// primary, not clickable. An item with onRemove carries an × beside it,
+	// with removeTip as its hover tip. Returns { el, set }.
+	buttonRow(card) {
+		var row = create("div", "cs-btns", false, card.body);
+		return {
+			el: row,
+			set: function (label, items) {
+				row.textContent = "";
+				if (label) create("span", "cs-btns-l", label, row);
+				items.forEach(function (it) {
+					var host = it.onRemove ? create("span", "cs-split", false, row) : row;
+					var b = create("button", it.pressed ? ["cs-btn", "cs-btn-pri"] : "cs-btn", it.label, host);
+					b.type = "button";
+					if (it.pressed) b.setAttribute("aria-pressed", "true");
+					else b.onclick = it.onClick;
+					if (it.onRemove) {
+						var x = button(["cs-btn", "cs-btn-x"], it.removeTip || "Remove", host);
+						x.appendChild(icon(ICON.x, 12, 1.8));
+						x.onclick = it.onRemove;
+					}
+				});
+			}
+		};
 	}
 
 	// ---- results ----

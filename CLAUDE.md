@@ -158,6 +158,15 @@ Two traps:
   for each changed module, then reload the page. When a verified-correct
   change appears to do nothing, suspect this before suspecting the code.
 
+## No people in Moonwards
+
+Moonwards has no people in it. In ships and transport, manufacturing and
+mining, never mention or assume crew, passengers, workers or anyone else —
+not in code, UI text, comments, docs or discussion. Ships carry cargo; a
+capsule is a cargo vehicle that enters an atmosphere, not a crew vehicle.
+The rare exception is a habitat holding an atmosphere, where the context
+will make it plain.
+
 ## Release is not launch
 
 In this project a **release** is a ship let go by fixed launch

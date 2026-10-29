@@ -41,8 +41,12 @@ the **workbench**, and the apps list.
   atmosphere, capsules too), and its Logistics tab shows a card for each role
   plus a Ship legs result card (`Shared/ship-card.js`). A ship class belongs
   to the design (`Shared/ships.js`): installations using the same class share
-  it, an edit on any card changes it everywhere, and "Make a separate copy"
-  gives one installation its own. The Economy skeleton cards take payload and
+  it, and an edit on any card changes it everywhere. Each role has a standard
+  class; a capsule or shuttle card can make a local version for its one
+  installation (and remove it to return to the standard). A freighter card
+  makes other versions, up to three designs including the standard, titled
+  by payload in kt and HS for a heat shield, and any freighter card can
+  switch among them. The Economy skeleton cards take payload and
   propellant per flight from the installation's first role.
 - **Save design** keeps the design, its ship classes, every mounted
   calculator's settings and the current selection in the browser's local storage, and the page reopens
