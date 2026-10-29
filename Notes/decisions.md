@@ -517,18 +517,6 @@ time.
 Why: calculators keep growing optional sections; modules keep the page short
 until a section is asked for, and the drawing stays in view while editing.
 
-### Ship classes belong to the design, not to a calculator
-
-A support ship's class (role, propellant, Isp, dry mass, payload, propellant
-capacity, heat shield) is stored once in the design's `ships` and referenced
-by each installation per role (`Shared/ships.js`); the ship cards edit it in
-place, every installation using it follows, and a separate copy is an
-explicit action. Only hardware is shared: what a route asks of a ship stays
-with the installation. Ships are chemical only, magnesium / LOX by default,
-and capsules always carry a heat shield. Why: the facilities do the bulk of
-the Δv and ships make up the difference, so one class serves many facilities;
-nuclear and electric propulsion only add weight to a ship that does so little.
-
 ### Tether calculators share one Material card and one preset list
 
 Every tether calculator on the shell, and the workbench's skeleton cards, take
