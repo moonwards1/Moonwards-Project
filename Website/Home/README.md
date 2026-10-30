@@ -1,7 +1,7 @@
 # Home page
 
 The site's front page (`Website/index.html`): a banner, the **design band**,
-the **workbench**, and the apps list.
+the **workbench**, and the **apps**.
 
 - **Design band** — "Make your own" lists the bodies in the user's space
   economy against the three families of giant infrastructure (Skyhook, Space
@@ -53,12 +53,23 @@ the **workbench**, and the apps list.
   on it. **Export** downloads the same as a `.moonwards.json` file; **Import**
   reads one back, from a file or pasted text.
 
+- **Apps** — tabs over the site's full-page apps (Mission Planner, Moon
+  Skyhook and Mars–Phobos Skyhook trajectory plotters), each shown in a frame
+  of the same site so it shares its own page's saved work. Nothing loads with
+  the home page: the Mission Planner tab is selected on arrival but shows an
+  introduction until clicked, and each app loads the first time its tab is
+  clicked, then stays loaded while another tab shows. **Pop out** moves the
+  selected app into a window of its own and **Bring back** returns it; only
+  one copy of an app is ever live, since two Mission Planners would overwrite
+  each other's saved missions. All calculators is a plain link.
+
 ## Files
 
 - `../index.html` — page markup
 - `home.css` — the page's styling (prefix `hm-`); colours and type follow
   `Shared/calc-shell.css` so mounted calculators sit in the page without a seam
 - `home.js` — the page: rendering, menus, selection, save / export / import
+- `apps.js` — the apps section: tabs, framed apps, pop out / bring back
 - `design-model.js` — the design and its rules, pure (no DOM): bodies,
   infrastructure families and variants, the `*` / `×` marks, what may be
   added where, parse / serialize, and `calcFor()` — which calculator the

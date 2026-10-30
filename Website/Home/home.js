@@ -32,6 +32,7 @@ import { BODY_FACTS, FACT_ROWS } from "./body-facts.js";
 import { addSkeletonCards, mountSkeleton } from "./skeleton.js";
 import { createFleet } from "../Shared/ships.js";
 import { addShipCards } from "../Shared/ship-card.js";
+import { mountApps } from "./apps.js";
 
 var STORE_KEY = "mw-design";
 
@@ -430,3 +431,9 @@ try {
 	// No usable saved design (or storage is blocked): open on the example.
 }
 render();
+mountApps({
+	tabs: document.getElementById("appTabs"),
+	work: document.getElementById("appWork"),
+	intro: document.getElementById("appIntro"),
+	pop: document.getElementById("btnPop")
+});

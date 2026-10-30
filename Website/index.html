@@ -52,25 +52,16 @@
 		</div>
 	</section>
 
-	<section class="hm-apps" aria-labelledby="appsH">
-		<h2 id="appsH">Apps</h2>
-		<div class="hm-app-grid">
-			<a class="hm-app" href="MissionPlanner/planner.html">
-				<b>Mission Planner</b>
-				<span>Plan a trip between bodies through the infrastructure at each end, and watch the whole mission recompute as you change it.</span>
-			</a>
-			<a class="hm-app" href="Calculators/Moon-Skyhook-Trajectory-Plotter/moonSkyhookTrajectory.html">
-				<b>Moon Skyhook Trajectory Plotter</b>
-				<span>To-scale 3D Earth–Moon view with a lunar skyhook and the release physics for a ship let go from it.</span>
-			</a>
-			<a class="hm-app" href="Calculators/Mars-Phobos-Skyhook-Trajectory-Plotter/marsPhobosSkyhookTrajectory.html">
-				<b>Mars–Phobos Skyhook Trajectory Plotter</b>
-				<span>To-scale 3D Mars–Phobos system with a skyhook built onto Phobos, waypoint burns and atmospheric-entry readouts.</span>
-			</a>
-			<a class="hm-app" href="Calculators/all-calculators.html">
-				<b>All calculators</b>
-				<span>Every standalone calculator: skyhooks, space elevators, mass drivers, aerobraking and more.</span>
-			</a>
+	<section class="hm-apps" id="apps" aria-label="Apps">
+		<div class="hm-bar">
+			<div class="hm-tabs" role="tablist" aria-label="Apps" id="appTabs"></div>
+			<div class="hm-act">
+				<button class="hm-btn" id="btnPop" type="button">Pop out</button>
+				<a class="hm-btn" href="Calculators/all-calculators.html">All calculators</a>
+			</div>
+		</div>
+		<div class="hm-work hm-app-work" id="appWork" role="tabpanel">
+			<div class="hm-empty hm-app-intro" id="appIntro"></div>
 		</div>
 	</section>
 
