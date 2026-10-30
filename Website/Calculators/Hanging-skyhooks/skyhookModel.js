@@ -412,6 +412,12 @@ function releaseTargets(moon, t) {
 // Cargo released from the launch deck toward the planet the body orbits, entering its
 // atmosphere. Applies where that planet has one (body-profiles.js, "parentEntry"); the
 // figures are computed for any body with a parent, and `parent` names it.
+// The release is the periapsis of the departure hyperbola (the cargo moves only
+// sideways there), and the body's pull turns the path by `turn` before it heads out.
+// The transfer needs the departure to point against the body's orbital motion, so with
+// the tether orbiting the same way the body orbits its parent, the release comes
+// `turn` before the tether passes over the point facing the parent (longitude 0 for a
+// tidally locked moon). Patched conics: the parent's pull near the body is left out.
 function reentry(moon, t, inp) {
 	var parent = moon.orbit && String(moon.orbit.system) !== "Sun" ? moon.orbit.system : null;
 	var out = { parent: parent ? String(parent) : null };
@@ -427,6 +433,10 @@ function reentry(moon, t, inp) {
 	var aT = (D + rpt) / 2;
 	var vT = Math.sqrt(GMe * (2 / D - 1 / aT));
 	out.vinf = vinf;
+	var rL = Number(moon.radius) + t.launchDeck, vL = t.launchDeckVel;
+	out.releaseRadius = rL;
+	out.eccentricity = rL * vL * vL / moon.GM - 1;
+	out.turn = OrbitalMath.hyperbolaAsymptoteAnomaly(out.eccentricity) - Math.PI / 2;
 	out.arrivalSpeed = Math.abs(Varr);
 	out.naturalPerigeeAlt = rpNat - Re;
 	out.burn = vT - Varr;                             // + prograde raises perigee, − retrograde lowers

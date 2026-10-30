@@ -32,6 +32,9 @@
  *   cs-chk        an embedded card's tick (label around the input and cs-chk-box):
  *                 its border and tick take the card accent; the title button
  *                 beside it focuses the card
+ *   cs-solo       an embedded card's eye button: show this card alone in the
+ *                 drawing. cs-solo-on marks the solo card; cs-soloing on the root
+ *                 while one is, which dims the other cards' ticks
  *   cs-nm / cs-nm-s   full title / short title (shown when collapsed)
  *   cs-tag        a small tag beside the full title (card.setTag)
  *   cs-sum        the one-line summary shown when collapsed
@@ -265,6 +268,10 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-chk input:checked + .cs-chk-box { background: color-mix(in oklch, var(--mc) 16%, transparent); }
 .cs-chk input:checked + .cs-chk-box svg { opacity: 1; }
 .cs-chk input:focus-visible + .cs-chk-box { outline: 2px solid var(--mc); outline-offset: 2px; }
+.cs-solo { width: 28px; height: 28px; color: var(--cs-ink2); opacity: .55; }
+.cs-card:hover .cs-solo, .cs-solo:focus-visible { opacity: 1; }
+.cs-card.cs-solo-on .cs-solo { opacity: 1; color: var(--mc); background: color-mix(in oklch, var(--mc) 16%, transparent); }
+.cs-soloing .cs-card:not(.cs-solo-on) .cs-chk-box { opacity: .35; }
 .cs-nm, .cs-nm-s { font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 700; font-size: 15px; white-space: nowrap; }
 .cs-nm-s { display: none; font-size: 14px; flex: none; }
 .cs-tag {

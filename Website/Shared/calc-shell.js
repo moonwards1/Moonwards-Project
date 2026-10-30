@@ -70,6 +70,11 @@
 // shell.isShown(cardId) (ticked, and its module on) for each mark it draws and
 // redraws on onShown(fn). Clicking the title still focuses the card. A card
 // that is not ticked is listed in getState().hidden.
+// Beside the tick, an eye button shows that card alone (setSolo): while a card
+// is solo, isShown is false for every other card, so the drawing keeps only
+// that card's marks. Marks the drawing always keeps as context (the structure
+// itself) ask isShown(id, true), which ignores solo. Solo is not saved, and it
+// lapses while the solo card does not apply or its module is off.
 //
 // Embedding: `embedded: true` fills the root element instead of the window,
 // for a calculator mounted inside another page (the home page's workbench).
@@ -145,6 +150,7 @@ var ICON = {
 	x: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
 	chev: '<path d="M4 6l4 4 4-4"/>',
 	tick: '<path d="M3 8.5l3.2 3L13 4.5"/>',
+	solo: '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2.2"/>',
 	loc: '<circle cx="8" cy="8" r="4.5"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/>',
 	collapse: '<path d="M4 3l4 3 4-3M4 13l4-3 4 3"/>',
 	expand: '<path d="M4 6l4-3 4 3M4 10l4 3 4-3"/>'
@@ -170,6 +176,7 @@ export class CalcShell {
 		this.folds = {};        // "<card id>/<key or label>" → fold (getState / setState)
 		this.cardOrder = [];
 		this.focusId = null;
+		this.soloId = null;     // the card shown alone in the drawing, or null
 		this.conditions = null;   // fn(where) → bool, or null: everything applies
 		this.tab = null;        // null: show every tab's cards (standalone page)
 		this.firstTab = o.firstTab || "arch";
@@ -336,6 +343,13 @@ export class CalcShell {
 		var sum = create("span", "cs-sum", false, t);
 		if (!chk) t.appendChild(icon(ICON.loc, 16, 1.5, "cs-loc"));
 		t.onclick = function () { self.focusCard(d.id); };
+		var solo = null;
+		if (this.toggles) {
+			solo = button(["cs-ib", "cs-solo"], "Show only this card in the drawing", h);
+			solo.setAttribute("aria-pressed", "false");
+			solo.appendChild(icon(ICON.solo, 16, 1.5));
+			solo.onclick = function () { self.setSolo(self.soloId === d.id ? null : d.id); };
+		}
 		var chev = button("cs-ib", "Collapse card", h);
 		chev.appendChild(icon(ICON.chev, 16, 1.6, "cs-chev"));
 		chev.onclick = function () { self.setCollapsed(d.id, !card.collapsed); };
@@ -349,7 +363,7 @@ export class CalcShell {
 		var card = {
 			id: d.id, side: d.side, module: d.module || null, focus: d.focus || null,
 			tab: d.tab || null, feeds: d.feeds || [], where: d.where || null,
-			el: el, body: body, collapsed: false, chev: chev, chk: chk, shown: true,
+			el: el, body: body, collapsed: false, chev: chev, chk: chk, solo: solo, shown: true,
 			setSummary: function (text) { sum.textContent = text; },
 			setTitle: function (title, short) {
 				nm.textContent = title; nmS.textContent = short || title;
@@ -379,10 +393,28 @@ export class CalcShell {
 	}
 
 	// Whether the card's marks are drawn: it is ticked and, if it belongs to a
-	// module, the module is on. A card with no tick is always ticked.
-	isShown(id) {
+	// module, the module is on. A card with no tick is always ticked. While
+	// another card is solo, false, unless `ignoreSolo` (marks kept as context).
+	isShown(id, ignoreSolo) {
 		var c = this.cards[id];
-		return !!c && c.shown && this._cardApplies(c) && (!c.module || this.isOn(c.module));
+		if (!c || !c.shown || !this._cardApplies(c) || (c.module && !this.isOn(c.module))) return false;
+		return ignoreSolo || !this.soloId || this.soloId === id || !this.isShown(this.soloId, true);
+	}
+
+	// Show one card alone in the drawing (null: all ticked cards again). A solo
+	// card is ticked if it was not.
+	setSolo(id) {
+		var self = this, next = id && this.cards[id] ? id : null;
+		if (next === this.soloId) return;
+		this.soloId = next;
+		if (next && !this.cards[next].shown) { this.cards[next].shown = true; if (this.cards[next].chk) this.cards[next].chk.checked = true; }
+		this.root.classList.toggle("cs-soloing", !!next);
+		this.cardOrder.forEach(function (cid) {
+			var c = self.cards[cid], on = cid === next;
+			c.el.classList.toggle("cs-solo-on", on);
+			if (c.solo) c.solo.setAttribute("aria-pressed", String(on));
+		});
+		this.listeners.shown.forEach(function (fn) { fn(next, true); });
 	}
 
 	setShown(id, value) {

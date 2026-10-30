@@ -725,6 +725,32 @@ export const OrbitalMath = {
 			         rMag: rMag, nu: nu };
 		},
 
+		// True anomaly of a hyperbola's outgoing asymptote, arccos(-1/e), for e > 1:
+		// how far round the primary a departure from periapsis swings before it
+		// heads straight out. Its excess over pi/2 is the angle between the
+		// direction of motion at periapsis and the direction of departure, the
+		// primary's pull having turned the path by that much. NaN for e <= 1.
+		hyperbolaAsymptoteAnomaly: function (e) {
+			return e > 1 ? Math.acos(-1 / e) : NaN;
+		},
+
+		// Points along a hyperbola from periapsis out to radius rEnd, in the
+		// PERIFOCAL frame (x toward periapsis, y along the motion there), sampled
+		// evenly in true anomaly so the bend near periapsis gets its share of
+		// points. rp is the periapsis radius, e > 1. Returns steps + 1 points
+		// [[x, y], ...], or [] when e <= 1 or rEnd < rp.
+		hyperbolaOutbound: function (rp, e, rEnd, steps) {
+			if (!(e > 1) || !(rEnd >= rp) || !(steps >= 1)) { return []; }
+			var p = rp * (1 + e);
+			var nuEnd = Math.acos(Math.max(-1, Math.min(1, (p / rEnd - 1) / e)));
+			var pts = [];
+			for (var k = 0; k <= steps; k++) {
+				var nu = nuEnd * k / steps, r = p / (1 + e * Math.cos(nu));
+				pts.push([r * Math.cos(nu), r * Math.sin(nu)]);
+			}
+			return pts;
+		},
+
 		// ---- SOI-exit duration estimates (Mission Planner task D7) -------------
 		// How long a departure takes to leave a primary's sphere of influence,
 		// knowing only the hyperbolic excess speed — no course, no release

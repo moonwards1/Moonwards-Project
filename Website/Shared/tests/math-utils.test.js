@@ -530,3 +530,34 @@ test("horizontalRelease: slower than circular is a periapsis if clear of the bod
 	assert.ok(Math.abs((steep.impactSpeed ** 2 / 2 - GM_MOON / R_MOON) - (v * v / 2 - GM_MOON / r)) < 1e-6, "impact speed from energy");
 	assert.ok(steep.periapsis < R_MOON);
 });
+
+test("hyperbolaAsymptoteAnomaly: arccos(-1/e), approaching pi/2 for a fast departure", () => {
+	assert.ok(Math.abs(O.hyperbolaAsymptoteAnomaly(2) - 2 * Math.PI / 3) < 1e-12);
+	assert.ok(Math.abs(O.hyperbolaAsymptoteAnomaly(1e9) - Math.PI / 2) < 1e-8);
+	assert.ok(Number.isNaN(O.hyperbolaAsymptoteAnomaly(1)));
+	// a point far out on the hyperbola lies (almost) along the asymptote, as does its velocity
+	var GM = 4.9028e12, rp = 2.6874e6, e = 1.3815;
+	var far = O.hyperbolaPerifocal(GM, rp, e, 1e9);
+	var nuInf = O.hyperbolaAsymptoteAnomaly(e);
+	assert.ok(Math.abs(far.nu - nuInf) < 1e-3);
+	assert.ok(Math.abs(Math.atan2(far.v[1], far.v[0]) - nuInf) < 1e-3);
+});
+
+test("hyperbolaOutbound: from periapsis to rEnd, on the same conic as hyperbolaPerifocal", () => {
+	var GM = 4.9028e12, rp = 2.6874e6, e = 1.3815, rEnd = 8 * 1.7374e6;
+	var pts = O.hyperbolaOutbound(rp, e, rEnd, 60);
+	assert.equal(pts.length, 61);
+	assert.ok(Math.abs(pts[0][0] - rp) < 1e-6 && Math.abs(pts[0][1]) < 1e-6);
+	assert.ok(Math.abs(Math.hypot(pts[60][0], pts[60][1]) - rEnd) < 1e-3);
+	// every point satisfies r = p / (1 + e cos nu), and matches the time-based form
+	var p = rp * (1 + e);
+	pts.forEach(function (q) {
+		var r = Math.hypot(q[0], q[1]), nu = Math.atan2(q[1], q[0]);
+		assert.ok(Math.abs(r - p / (1 + e * Math.cos(nu))) < 1e-3);
+	});
+	var s = O.hyperbolaPerifocal(GM, rp, e, 1800);
+	var cmp = O.hyperbolaOutbound(rp, e, s.rMag, 1)[1];
+	assert.ok(Math.abs(cmp[0] - s.r[0]) < 1 && Math.abs(cmp[1] - s.r[1]) < 1);
+	assert.deepEqual(O.hyperbolaOutbound(rp, 0.5, rEnd, 10), []);
+	assert.deepEqual(O.hyperbolaOutbound(rp, e, rp / 2, 10), []);
+});

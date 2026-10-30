@@ -29,6 +29,7 @@
 // document if the page hasn't already.
 
 import { systems } from "../../Shared/orbit.js";
+import { OrbitalMath } from "../../Shared/math-utils.js";
 import { CalcShell, ShellColors as C } from "../../Shared/calc-shell.js";
 import { ZoomView, svgEl } from "../../Shared/zoom-view.js";
 import { addMaterialCard } from "../../Shared/material-card.js";
@@ -268,6 +269,7 @@ export function mountHangingSkyhook(root, opts) {
 
 	var reOCard = shell.addCard({ id: "reO", tab: "log", side: "out", title: "Entry at the parent planet", short: "Entry", color: C.violet, module: "reO", focus: "reentry" });
 	var rVinf = shell.line(reOCard, { label: "v∞ leaving the Moon", unit: "m/s" });
+	var rRel = shell.line(reOCard, { label: "Release before longitude 0", unit: "°" });
 	var rNatP = shell.line(reOCard, { label: "Natural perigee", unit: "km" });
 	var rBurn = shell.line(reOCard, { label: "Δv at apogee for target perigee", unit: "m/s" });
 	var rEntry = shell.line(reOCard, { label: "Entry angle", unit: "°" });
@@ -409,7 +411,13 @@ export function mountHangingSkyhook(root, opts) {
 		anchorKm = (t.centre + t.comOffset) / 1e3;
 		route.from.alt = t.throughput.from / 1e3; route.to.alt = t.throughput.to / 1e3;   // the anchor station's, once balanced
 		S = { t: t, body: body, R: R / 1e3, GM: body.GM, foot: t.foot / 1e3, centre: t.centre / 1e3, top: t.top / 1e3,
-			recv: t.receivingDeck / 1e3, outer: t.outerDocks / 1e3, launch: t.launchDeck / 1e3, route: route };
+			recv: t.receivingDeck / 1e3, outer: t.outerDocks / 1e3, launch: t.launchDeck / 1e3, route: route,
+			parentDist: body.orbit ? Number(body.orbit.a) / 1e3 : NaN };
+		// the departure toward the parent planet, from the launch deck out to seven radii, in drawing km
+		// (perifocal x, toward the release point, is up the tether; perifocal y, the motion, is +x)
+		var re0 = t.reentry;
+		S.depart = re0.escapes ? OrbitalMath.hyperbolaOutbound(re0.releaseRadius, re0.eccentricity, 7 * R, 80)
+			.map(function (q) { return [q[1] / 1e3, -q[0] / 1e3]; }) : [];
 
 		bodyNote.textContent = "Radius " + num(R / 1e3, 1) + " km · surface gravity " + num(t.surfaceGravity, 2) + " m/s²";
 		shell.warn(notes.concat(t.warnings).join(" "));
@@ -514,13 +522,14 @@ export function mountHangingSkyhook(root, opts) {
 		// entry at the parent planet (shown only where it applies: shell.setConditions)
 		var re = t.reentry, here = theName(bodyIn.value);
 		var reShow = !!re.parent && re.escapes;
-		[rVinf, rNatP, rBurn].forEach(function (l) { l.show(reShow); });
+		[rVinf, rRel, rNatP, rBurn].forEach(function (l) { l.show(reShow); });
 		rEntry.show(reShow && re.entry); rPeakG.show(reShow && re.entry && re.atmosphere);
 		reOutNote.textContent = re.parent && !re.escapes ? "A release from the launch deck does not escape " + here + ": no transfer to " + re.parent + "."
 			: reShow && !re.entry ? "Target perigee above the entry interface: no atmospheric entry." : "";
 		reOutNote.hidden = !reOutNote.textContent;
 		if (reShow) {
 			rVinf.set(num(re.vinf, 0), num(re.arrivalSpeed, 0) + " m/s at " + (bodyIn.value === "Moon" ? "the Moon's" : here + "'s") + " distance after braking");
+			rRel.set(num(re.turn * 180 / Math.PI, 1), "ahead of the point facing " + re.parent + ": " + theName(bodyIn.value) + "'s pull turns the departure by this much");
 			rNatP.set(num(re.naturalPerigeeAlt / 1e3, 0), re.naturalPerigeeAlt < 0 ? "below the surface: steep, direct entry" : "");
 			rBurn.set(num(Math.abs(re.burn), 1), re.burn >= 0 ? "prograde, raising perigee" : "retrograde, lowering perigee");
 			if (re.entry) rEntry.set("−" + num(re.entryAngle * 180 / Math.PI, 1), "entry speed " + num(re.entrySpeed / 1e3, 2) + " km/s");
@@ -591,7 +600,9 @@ export function mountHangingSkyhook(root, opts) {
 	var NS = { "vector-effect": "non-scaling-stroke" };
 	var HALO = { stroke: "#1D1814", "paint-order": "stroke", "stroke-linejoin": "round" };
 	var L = view.layer;
-	function g(tag, attrs) { return svgEl(tag, Object.assign({}, attrs, tag === "text" ? HALO : {}), L); }
+	// text carries the fade set in draw() (--sk-txt), so it can leave while the glyphs stay
+	var TEXT = Object.assign({ style: "opacity: var(--sk-txt, 1)" }, HALO);
+	function g(tag, attrs) { return svgEl(tag, Object.assign({}, attrs, tag === "text" ? TEXT : {}), L); }
 	function A(base, extra) { return Object.assign({}, base, NS, extra || {}); }
 
 	var gAxis = g("path", A({ stroke: C.sky.draw, "stroke-opacity": 0.35, "stroke-width": 1, "stroke-dasharray": "2 5" }));
@@ -602,12 +613,22 @@ export function mountHangingSkyhook(root, opts) {
 	svgEl("title", {}, gFloor).textContent = "Lowest foot altitude";
 	var gCeil = g("circle", A({ cx: 0, cy: 0, fill: "none", stroke: C.rust.draw, "stroke-opacity": 0.55, "stroke-width": 1, "stroke-dasharray": "6 4" }));
 	svgEl("title", {}, gCeil).textContent = "Highest top altitude";
+	// the body's own orbit round its parent, drawn before the body so the disc covers it
+	var gOrbitP = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.4, "stroke-width": 1 }));
+	var gOrbitPHead = g("path", { fill: "#EADFCF", "fill-opacity": 0.6 });
 	var gBody = g("circle", A({ cx: 0, cy: 0, stroke: "#9C8A77", "stroke-width": 1.5 }));
 	var gDescent = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.7, "stroke-width": 1.3, "stroke-dasharray": "5 4" }));
 	var gHit = g("circle", A({ fill: "#1D1814", stroke: "#EADFCF", "stroke-width": 1.5 }));
 	var tHit = g("text", { fill: "#EADFCF", "font-family": "Instrument Sans, sans-serif" });
 	var gRe = g("path", A({ fill: "none", stroke: C.violet.draw, "stroke-width": 1.6, "stroke-dasharray": "7 5" }));
-	var tRe = g("text", { fill: C.violet.draw, "font-family": "Instrument Sans, sans-serif", "font-weight": 600 });
+	var gReHead = g("path", { fill: C.violet.draw });
+	var gReMid = g("path", { fill: C.violet.draw });
+	var tRe = g("text", { fill: C.violet.draw, "font-family": "Instrument Sans, sans-serif", "font-weight": 600, "text-anchor": "middle" });
+	var gTurn = g("path", A({ fill: "none", stroke: C.violet.draw, "stroke-opacity": 0.8, "stroke-width": 1 }));
+	var tTurn = g("text", { fill: C.violet.draw, "font-family": "JetBrains Mono, monospace", "text-anchor": "middle" });
+	var gEarth = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-width": 1.4 }));
+	var gEarthHead = g("path", { fill: "#EADFCF" });
+	var tEarth = g("text", { fill: "#EADFCF", "font-family": "Instrument Sans, sans-serif" });
 	var gTaper = g("path", { fill: "#EADFCF", "fill-opacity": 0.92 });
 	var gStTicks = g("path", A({ stroke: C.ochre.draw, "stroke-width": 2.5 }));
 	var tSt = [0, 1, 2].map(function () { return g("text", { fill: C.ochre.draw, "font-family": "Instrument Sans, sans-serif" }); });
@@ -646,6 +667,12 @@ export function mountHangingSkyhook(root, opts) {
 	var miniTether = svgEl("path", { stroke: "#EADFCF", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
 
 	function show(el, on) { el.style.display = on ? "" : "none"; }
+	// a filled arrowhead with its tip at p, pointing along angle ang (radians), 9 px long
+	// times `size` (1 if left out)
+	function arrowHead(p, ang, u, size) {
+		var k = size || 1, c = Math.cos(ang), s = Math.sin(ang), l = 9 * k * u, w = 4.5 * k * u;
+		return "M" + p[0] + " " + p[1] + "L" + (p[0] - l * c - w * s) + " " + (p[1] - l * s + w * c) + "L" + (p[0] - l * c + w * s) + " " + (p[1] - l * s - w * c) + "Z";
+	}
 	// "▲ 0.94 m/s²": the net pull felt, pointing up when it is outward and down when it is inward
 	function pullText(acc, outward) { return (outward ? "▲ " : "▼ ") + num(acc, 2) + " m/s²"; }
 	function ktText(kt) { return (kt < 10 && kt % 1 ? num(kt, 1) : num(kt, 0)) + " kt"; }
@@ -656,13 +683,22 @@ export function mountHangingSkyhook(root, opts) {
 		var on = function (m) { return shell.isOn(m); };
 		// A mark is drawn while one of the cards that own it is ticked (and its module is on).
 		var any = function () { return Array.prototype.some.call(arguments, function (id) { return shell.isShown(id); }); };
+		// The structure — tether, core facilities, centre-of-mass orbit — stays as context while
+		// another card is shown alone: these marks ignore solo, though not the cards' ticks.
+		var base = function () { return Array.prototype.some.call(arguments, function (id) { return shell.isShown(id, true); }); };
+		// Text fades once the body spans less than half the drawing's width, and is gone at
+		// 0.4 of it; the glyphs stay. Zooming back in brings the text back. A card shown alone
+		// keeps its text at any zoom: then every label drawn is that card's (context marks have none).
+		var bodyFrac = 2 * R / u / vw.pxW, solo = !!shell.soloId && shell.isShown(shell.soloId);
+		var txtOp = solo ? 1 : Math.max(0, Math.min(1, (bodyFrac - 0.4) / 0.1));
+		L.style.setProperty("--sk-txt", String(txtOp));
 		var rT = R + S.top, rC = R + S.centre, rF = R + S.foot;
 		var figOf = function (key) { return t.stationFigures.find(function (x) { return x.key === key; }); };
 
 		gBody.setAttribute("r", R); gBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
 		var atm = S.body.atmosphere ? Number(S.body.atmosphere.height) / 1e3 : 0;
 		gAtm.setAttribute("r", R + atm); show(gAtm, atm > 0);
-		gCom.setAttribute("r", rC); show(gCom, any("geo"));
+		gCom.setAttribute("r", rC); show(gCom, base("geo"));
 		var lim = limits();
 		if (lim.foot != null) gFloor.setAttribute("r", R + lim.foot);
 		show(gFloor, any("geo") && lim.foot != null);
@@ -693,10 +729,10 @@ export function mountHangingSkyhook(root, opts) {
 			right.push(hw + " " + (-p[0])); left.unshift((-hw) + " " + (-p[0]));
 		});
 		gTaper.setAttribute("d", "M" + right.join("L") + "L" + left.join("L") + "Z");
-		show(gTaper, any("geo", "prop"));
+		show(gTaper, base("geo", "prop"));
 
 		// markers and their labels (left)
-		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); show(m[0], any("geo")); });
+		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); show(m[0], base("geo", "pay")); });
 		// an anchoring moon is drawn at the centre of mass, at true size once it is larger than the marker
 		if (anc) { mCom.setAttribute("r", Math.max(Number(systems.get(anc.name).radius) / 1e3, 8.5 * u)); show(mCom, true); }
 		// Each line ends with the tip load held there, drawn while the Core Facilities card is ticked;
@@ -806,7 +842,7 @@ export function mountHangingSkyhook(root, opts) {
 		var rB = rC + t.comOffset / 1e3, bs = 5 * u, rowH = 14 * u;
 		mBal.setAttribute("x", -bs); mBal.setAttribute("y", -rB - bs); mBal.setAttribute("width", 2 * bs); mBal.setAttribute("height", 2 * bs);
 		var ancOn = !anc && any("frc", "geo", "stO");
-		show(mBal, ancOn); show(tBal, ancOn);
+		show(mBal, !anc && base("frc", "geo", "pay", "stO")); show(tBal, ancOn);
 		var taken = [-rT, -rC, -rF];   // the speed arrows and their labels
 		if (stOn) decks.forEach(function (d) { taken.push(-(R + d[0])); });
 		if (thrOn) taken.push(-ca);
@@ -834,12 +870,58 @@ export function mountHangingSkyhook(root, opts) {
 			tx.textContent = x.name + " ↑ " + kmText(x.altitude / 1e3);
 		});
 
-		// reentry: schematic departure toward the parent body
-		var reOn = any("re", "reO"), ly = -(R + S.launch);
-		gRe.setAttribute("d", "M0 " + ly + "C" + (R * 0.7) + " " + ly + " " + (R * 1.5) + " " + (ly - R * 0.25) + " " + (R * 2.6) + " " + (ly - R * 1.0));
-		tRe.setAttribute("x", R * 0.55); tRe.setAttribute("y", ly - 10 * u); tRe.setAttribute("font-size", fs); tRe.setAttribute("stroke-width", 4 * u);
-		tRe.textContent = "to " + t.reentry.parent + " · v∞ " + num(t.reentry.vinf || NaN, 0) + " m/s";
-		show(gRe, reOn && t.reentry.escapes); show(tRe, reOn && t.reentry.escapes);
+		// departure toward the parent planet, in the body-centred frame that does not rotate,
+		// at the moment of release (the tether is drawn at that moment): the hyperbola from the
+		// launch deck, its periapsis. The arrow to the parent leaves the body through the point
+		// facing it, `turn` ahead of the tether, so the departure heads out against the body's orbit.
+		var re = t.reentry, dp = S.depart, reOn = any("re", "reO") && re.escapes && dp.length > 1;
+		[gRe, gReHead, tRe, gTurn, tTurn, gEarth, gEarthHead, tEarth, gOrbitP, gOrbitPHead, gReMid].forEach(function (el) { show(el, reOn && isFinite(S.parentDist)); });
+		if (reOn) {
+			var end = dp[dp.length - 1], prev = dp[dp.length - 2];
+			gRe.setAttribute("d", "M" + dp.map(function (q) { return q[0] + " " + q[1]; }).join("L"));
+			gReHead.setAttribute("d", arrowHead(end, Math.atan2(end[1] - prev[1], end[0] - prev[0]), u));
+			// a second arrowhead near the start, just past the launch deck's label while that shows
+			// (the label runs along the path's first stretch), else 40 px along
+			var li = decks.findIndex(function (d) { return d[4] === "launchDeck"; });
+			var xMid = stOn && li >= 0 && txtOp > 0 ? 14 * u + tSt[li].getComputedTextLength() + 14 * u : 40 * u;
+			for (var j = 1; j < dp.length - 1 && dp[j][0] < xMid; j++);
+			var f0 = dp[j - 1], f1 = dp[j], fr = Math.max(0, Math.min(1, (xMid - f0[0]) / (f1[0] - f0[0])));
+			var pm = [f0[0] + fr * (f1[0] - f0[0]), f0[1] + fr * (f1[1] - f0[1])];
+			gReMid.setAttribute("d", arrowHead(pm, Math.atan2(f1[1] - f0[1], f1[0] - f0[0]), u));
+			// the label sits under that arrowhead, below the path, clear of the deck's label above it
+			tRe.setAttribute("x", pm[0]); tRe.setAttribute("y", pm[1] + 20 * u); tRe.setAttribute("font-size", fs); tRe.setAttribute("stroke-width", 4 * u);
+			tRe.textContent = "v∞ " + num(re.vinf, 0) + " m/s";
+			var de = [Math.sin(re.turn), -Math.cos(re.turn)], tipE = R + 22 * u, rho = 0.55 * R;
+			gEarth.setAttribute("d", "M0 0L" + de[0] * tipE + " " + de[1] * tipE);
+			gEarthHead.setAttribute("d", arrowHead([de[0] * tipE, de[1] * tipE], Math.atan2(de[1], de[0]), u));
+			// the label sits inside the disc, under the end of the angle arc, clear of the tether's labels
+			tEarth.setAttribute("x", de[0] * rho + 6 * u); tEarth.setAttribute("y", de[1] * rho + 16 * u);
+			tEarth.setAttribute("font-size", fsS); tEarth.setAttribute("stroke-width", 4 * u);
+			tEarth.textContent = "to " + re.parent + " · longitude 0";
+			gTurn.setAttribute("d", "M0 0L0 " + (-R) + "M0 " + (-rho) + "A" + rho + " " + rho + " 0 0 1 " + de[0] * rho + " " + de[1] * rho);
+			var half = re.turn / 2, rt = rho + 12 * u;
+			tTurn.setAttribute("x", Math.sin(half) * rt); tTurn.setAttribute("y", -Math.cos(half) * rt + 4 * u);
+			tTurn.setAttribute("font-size", fsS); tTurn.setAttribute("stroke-width", 4 * u);
+			tTurn.textContent = num(re.turn * 180 / Math.PI, 0) + "°";
+			// The body's orbit: a circle about the parent, which lies along the arrow at the parent's
+			// distance, through the body's centre; the arrowhead points the way the body travels,
+			// opposite the departure. sArc is the distance along the orbit from the body's centre.
+			var Dp = S.parentDist, ue = [-de[0], -de[1]], tv = [-Math.cos(re.turn), -Math.sin(re.turn)];
+			var onOrbit = function (sArc) {
+				var a = sArc / Dp, c = Math.cos(a), sn = Math.sin(a);
+				return [Dp * (de[0] + c * ue[0] + sn * tv[0]), Dp * (de[1] + c * ue[1] + sn * tv[1])];
+			};
+			var orb = [];
+			for (var k = -40; k <= 40; k++) orb.push(onOrbit(k * 0.35 * R));
+			gOrbitP.setAttribute("d", "M" + orb.map(function (q) { return q[0] + " " + q[1]; }).join("L"));
+			// a large arrowhead off the surface on each side, both pointing the way of travel:
+			// ahead, its base 15 px out; behind, its tip 15 px out
+			gOrbitPHead.setAttribute("d", [R + 42 * u, -(R + 15 * u)].map(function (sHead) {
+				var aH = sHead / Dp, pH = onOrbit(sHead);
+				var dirH = [-Math.sin(aH) * ue[0] + Math.cos(aH) * tv[0], -Math.sin(aH) * ue[1] + Math.cos(aH) * tv[1]];
+				return arrowHead(pH, Math.atan2(dirH[1], dirH[0]), u, 3);
+			}).join(""));
+		}
 	}
 
 	// ---------- focus targets: world rects [x0, y0, x1, y1] ----------
@@ -856,8 +938,10 @@ export function mountHangingSkyhook(root, opts) {
 	view.addTarget("top", { label: "Top", color: C.rust.draw, rect: function () { var d = Math.max(140, 0.22 * span()); var r = rectAround(S.top, d, -0.85, 0.85); r[1] -= 0.1 * d; return r; } });
 	view.addTarget("stations", { label: "Stations", color: C.ochre.draw, rect: function () {
 		var d = Math.max(80, S.launch - S.recv); return [-0.5 * d, -(S.R + S.launch) - 0.08 * d, 0.65 * d, -(S.R + S.recv) + 0.08 * d]; } });
-	view.addTarget("reentry", { label: "Departure to the parent planet", color: C.violet.draw, pad: 1.04, rect: function () {
-		return [-S.R * 1.05, -(S.R + S.top) - S.R * 1.3, S.R * 2.6, S.R]; } });
+	view.addTarget("reentry", { label: "Departure to the parent planet", color: C.violet.draw, pad: 1.06, rect: function () {
+		var r = [-S.R * 2.3, -(S.R + S.top) - 0.1 * S.R, S.R * 1.6, S.R * 1.1];   // left: the arrow on the body's orbit
+		S.depart.forEach(function (q) { r[2] = Math.max(r[2], q[0]); r[1] = Math.min(r[1], q[1]); r[3] = Math.max(r[3], q[1]); });
+		return r; } });
 	view.addTarget("release", { label: "Release points", color: C.sky.draw, pad: 1.08, rect: function () {
 		var maxR = S.t.targets.reduce(function (m, x) { return isFinite(x.location) ? Math.max(m, x.location / 1e3) : m; }, S.R + S.top);
 		var s = maxR - (S.R + S.foot); return [-0.45 * s, -maxR - 0.03 * s, 0.35 * s, -(S.R + S.foot)]; } });

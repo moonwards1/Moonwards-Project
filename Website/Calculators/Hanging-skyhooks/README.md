@@ -12,6 +12,13 @@ the parent planet are input modules; the fall from the foot, climber energy, rel
 points, forces, throughput, station-keeping, and entry are result modules. Card titles glide the drawing to their
 part; the foot, centre-of-mass and top markers can be dragged.
 
+The drawing's text fades out once the body spans less than half the drawing's
+width (gone at 0.4), leaving the glyphs; zooming in brings it back. In the home
+workbench each card's eye button shows that card alone, and its labels then
+stay at any zoom. The structure stays as context: the tether, the core-facility
+markers (top, anchor station, foot) and the centre-of-mass orbit, without their
+labels.
+
 ## Files
 
 - `Hanging-skyhooks.html` — page markup: fonts, stylesheets, one `#app` element
@@ -134,6 +141,19 @@ checks in this calculator:
   parent ("Entry at Earth"), its interface altitude opens at the parent's own
   (`entryInterface`), and the peak-deceleration estimate uses the parent's scale
   height (`Shared/constants.js`); a parent with none gets no peak-g figure.
+  The drawing shows the departure in the body-centred frame that does not
+  rotate, at the moment of release: the hyperbola from the launch deck (its
+  periapsis) out to seven body radii, an arrow to the parent through the point
+  facing it (longitude 0 for the Moon), the angle between that point and the
+  tether, and the body's own orbit round the parent: a line through its centre,
+  with an arrowhead just off the surface on each side pointing the way it
+  travels. The path carries a second arrowhead near its start, just past the
+  launch deck's label when that shows, with the v∞ label under it. The body's pull turns the departure by
+  δ = arccos(−1/e) − 90°, with e = r·v²/GM − 1 at the deck, so the release comes
+  δ before the tether passes longitude 0 (≈ 46° for the default tether), and the
+  cargo then leaves against the body's orbit. This assumes the tether orbits the
+  same way the body orbits its parent, and leaves out the parent's pull near the
+  body (patched conics).
 - **The foot floor.** At a body with an atmosphere the foot may not hang below
   that body's `footFloor` (Earth 120 km, Venus 140, Mars 115, Titan 860). A lower
   value is rejected: the field is set back to the floor and a warning says why

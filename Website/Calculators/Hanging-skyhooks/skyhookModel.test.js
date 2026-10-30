@@ -221,6 +221,8 @@ test("entry at the parent planet: Earth, from the Moon", function () {
 	near(re.entryAngle * 180 / Math.PI, 6.0, 1, "entry angle");
 	near(re.entrySpeed / 1e3, 10.99, 2, "entry speed");
 	near(re.peakG, 18, 0, "peak g");
+	near(re.eccentricity, 1.38, 2, "departure eccentricity");
+	near(re.turn * 180 / Math.PI, 46.4, 1, "turn: release this far before longitude 0");
 });
 
 test("release points include Earth", function () {
