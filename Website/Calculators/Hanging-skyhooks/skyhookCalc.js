@@ -600,8 +600,10 @@ export function mountHangingSkyhook(root, opts) {
 	var NS = { "vector-effect": "non-scaling-stroke" };
 	var HALO = { stroke: "#1D1814", "paint-order": "stroke", "stroke-linejoin": "round" };
 	var L = view.layer;
-	// text carries the fade set in draw() (--sk-txt), so it can leave while the glyphs stay
-	var TEXT = Object.assign({ style: "opacity: var(--sk-txt, 1)" }, HALO);
+	// text, and the leader lines that only point at it, carry the fade set in draw()
+	// (--sk-txt), so they can leave while the glyphs stay
+	var FADE = { style: "opacity: var(--sk-txt, 1)" };
+	var TEXT = Object.assign({}, FADE, HALO);
 	function g(tag, attrs) { return svgEl(tag, Object.assign({}, attrs, tag === "text" ? TEXT : {}), L); }
 	function A(base, extra) { return Object.assign({}, base, NS, extra || {}); }
 
@@ -635,7 +637,7 @@ export function mountHangingSkyhook(root, opts) {
 	var gClimber = g("rect", { fill: C.teal.draw });
 	var gClArrow = g("path", A({ fill: "none", stroke: "#1D1814", "stroke-width": 1.6 }));
 	var tClimber = g("text", { fill: C.teal.draw, "font-family": "Instrument Sans, sans-serif" });
-	var gLoadWedge = g("path", A({ fill: "none", stroke: C.rust.draw, "stroke-opacity": 0.8, "stroke-width": 1 }));
+	var gLoadWedge = g("path", A({ fill: "none", stroke: C.rust.draw, "stroke-opacity": 0.8, "stroke-width": 1 }, FADE));
 	var tLoadU = g("text", { fill: C.rust.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "end" });
 	var tLoadL = g("text", { fill: C.rust.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "end" });
 	var gNozzle = g("path", { fill: C.cobalt.draw });
@@ -661,7 +663,7 @@ export function mountHangingSkyhook(root, opts) {
 	var mCom = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
 	var mFoot = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
 	var mBal = g("rect", A({ fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
-	var gBalLead = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.9, "stroke-width": 1.5 }));
+	var gBalLead = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.9, "stroke-width": 1.5 }, FADE));
 	var tBal = g("text", { fill: "#EADFCF", "font-family": "JetBrains Mono, monospace", "text-anchor": "start" });
 	var miniBody = svgEl("circle", { cx: 0, cy: 0, stroke: "#9C8A77", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
 	var miniTether = svgEl("path", { stroke: "#EADFCF", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
@@ -686,8 +688,8 @@ export function mountHangingSkyhook(root, opts) {
 		// The structure — tether, core facilities, centre-of-mass orbit — stays as context while
 		// another card is shown alone: these marks ignore solo, though not the cards' ticks.
 		var base = function () { return Array.prototype.some.call(arguments, function (id) { return shell.isShown(id, true); }); };
-		// Text fades once the body spans less than half the drawing's width, and is gone at
-		// 0.4 of it; the glyphs stay. Zooming back in brings the text back. A card shown alone
+		// Text, with the leader lines pointing at it, fades once the body spans less than half
+		// the drawing's width, and is gone at 0.4 of it; the glyphs stay. Zooming back in brings the text back. A card shown alone
 		// keeps its text at any zoom: then every label drawn is that card's (context marks have none).
 		var bodyFrac = 2 * R / u / vw.pxW, solo = !!shell.soloId && shell.isShown(shell.soloId);
 		var txtOp = solo ? 1 : Math.max(0, Math.min(1, (bodyFrac - 0.4) / 0.1));
@@ -732,23 +734,24 @@ export function mountHangingSkyhook(root, opts) {
 		show(gTaper, base("geo", "prop"));
 
 		// markers and their labels (left)
-		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); show(m[0], base("geo", "pay")); });
+		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); show(m[0], base("geo", "pay", "stO")); });
 		// an anchoring moon is drawn at the centre of mass, at true size once it is larger than the marker
 		if (anc) { mCom.setAttribute("r", Math.max(Number(systems.get(anc.name).radius) / 1e3, 8.5 * u)); show(mCom, true); }
 		// Each line ends with the tip load held there, drawn while the Core Facilities card is ticked;
-		// the name and altitude before it while the Tether geometry card is.
-		var loadsOn = any("pay"), geoOn = any("geo");
-		[[rT, S.top, t.loads.top], [rC, S.centre, 0], [rF, S.foot, t.loads.foot]].forEach(function (p, i) {
-			var tx = tMk[i], ldOn = loadsOn && p[2] > 0;
+		// the name and altitude before it while the Tether geometry card is. The Stations card
+		// draws the whole line for each station: top, foot, and an anchoring moon at the centre.
+		var loadsOn = any("pay"), geoOn = any("geo"), stationsOn = any("stO");
+		[[rT, S.top, t.loads.top, true], [rC, S.centre, 0, !!anc], [rF, S.foot, t.loads.foot, true]].forEach(function (p, i) {
+			var tx = tMk[i], isSt = stationsOn && p[3], nmOn = geoOn || isSt, ldOn = (loadsOn || isSt) && p[2] > 0;
 			tx.setAttribute("x", -14 * u); tx.setAttribute("y", -p[0] + 4 * u); tx.setAttribute("font-size", fs); tx.setAttribute("stroke-width", 4 * u);
 			tx.val.setAttribute("dx", 6 * u); tx.val.textContent = kmText(p[1]);
 			tx.load.setAttribute("dx", 8 * u); tx.load.textContent = ldOn ? ktText(p[2] / 1e6) : "";
-			show(tx.name, geoOn); show(tx.val, geoOn); show(tx.load, ldOn);
-			show(tx, geoOn || ldOn);
+			show(tx.name, nmOn); show(tx.val, nmOn); show(tx.load, ldOn);
+			show(tx, nmOn || ldOn);
 		});
 
 		// the net pull felt at the top and the foot station, above and below their dots
-		var pullTopOn = any("stO");
+		var pullTopOn = stationsOn;
 		var fTop = figOf("top"), fFoot = figOf("foot");
 		tPullTop.setAttribute("x", 0); tPullTop.setAttribute("y", -rT - 22 * u);
 		tPullFoot.setAttribute("x", 0); tPullFoot.setAttribute("y", -rF + 22 * u);
@@ -805,9 +808,9 @@ export function mountHangingSkyhook(root, opts) {
 			tHit.textContent = "impact · " + num(t.hitTheGround, 0) + " m/s · " + num(t.impactFromVertical * 180 / Math.PI, 1) + "° from vertical";
 		}
 
-		// stations (right); each label ends with the net pull felt there. Drawn only while both the
-		// Optional Stations and Stations cards are ticked, so unticking either hides them.
-		var stOn = any("st") && any("stO"), decks = [[S.launch, "launch deck", field(launchMassIn, DEF.launchMass), launchSt, "launchDeck"], [S.outer, "outer docks", field(outerMassIn, DEF.outerMass), outerSt, "outerDocks"], [S.recv, "receiving deck", field(recvMassIn, DEF.recvMass), recvSt, "receivingDeck"]].filter(function (d) { return d[3].use.checked; });
+		// optional stations (right); each label ends with the net pull felt there. Both the
+		// Optional Stations and Stations cards own them, so either one draws them in full.
+		var stOn = any("st", "stO"), decks = [[S.launch, "launch deck", field(launchMassIn, DEF.launchMass), launchSt, "launchDeck"], [S.outer, "outer docks", field(outerMassIn, DEF.outerMass), outerSt, "outerDocks"], [S.recv, "receiving deck", field(recvMassIn, DEF.recvMass), recvSt, "receivingDeck"]].filter(function (d) { return d[3].use.checked; });
 		gStTicks.setAttribute("d", decks.map(function (d) { return "M" + (-9 * u) + " " + (-(R + d[0])) + "L" + (9 * u) + " " + (-(R + d[0])); }).join(""));
 		show(gStTicks, stOn);
 		decks.forEach(function (d, i) {
@@ -851,7 +854,7 @@ export function mountHangingSkyhook(root, opts) {
 		var moved = yBal - (-rB) > 4 * u;
 		tBal.setAttribute("x", 14 * u); tBal.setAttribute("y", yBal + 4 * u); tBal.setAttribute("font-size", fsS); tBal.setAttribute("stroke-width", 4 * u);
 		var fa = figOf("anchor");
-		tBal.textContent = "anchor station · " + kmText(S.centre + t.comOffset / 1e3) + " · " + ktText(t.loads.com / 1e6) + (fa && stOn ? " · " + pullText(fa.acceleration, fa.outward) : "");
+		tBal.textContent = "anchor station · " + kmText(S.centre + t.comOffset / 1e3) + " · " + ktText(t.loads.com / 1e6) + (fa && stationsOn ? " · " + pullText(fa.acceleration, fa.outward) : "");
 		gBalLead.setAttribute("d", "M" + bs + " " + (-rB) + "L" + (11 * u) + " " + yBal);
 		show(gBalLead, ancOn && moved);
 
