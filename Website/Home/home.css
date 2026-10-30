@@ -28,7 +28,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--hm-core); outline-offset: 2px; }
 
 .hm-page {
-	max-width: 1500px;
+	max-width: 1800px;
 	margin: 0 auto;
 	padding: 18px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
 	display: flex;
