@@ -59,22 +59,45 @@ export function mountHangingSkyhook(root, opts) {
 	// opens on plain round figures that work at every workbench body, with the
 	// optional stations and their results switched off.
 	var bench = !!o.lockBody && !anc;
+
+	// Opening figures: altitudes in km, loads in kt; `modules` lists the input modules
+	// switched on (each brings its results). An anchored tether opens on figures that fit
+	// around its moon (the centre of mass is the moon's orbit). A workbench tether opens on
+	// its body's own design where it has one, and otherwise on round figures that suit every
+	// workbench body, with the optional stations off.
+	var LOADS = { topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 300, footLoad: 200, ticked: true, launchMass: 10, outerMass: 200, recvMass: 100 };
+	var BENCH = {
+		round: { top: 3000, centre: 2000, foot: 1000, recv: 1500, outer: 1250, launch: 2500, material: "silica",
+			topLoad: 10, upperLoad: 10, anchorLoad: 1000, lowerLoad: 10, footLoad: 10, ticked: false, launchMass: 10, outerMass: 10, recvMass: 10,
+			modules: ["thr"] },
+		Moon: { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, launch: 950, material: "silica",
+			topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 30, footLoad: 200, ticked: true, launchMass: 10, outerMass: 20, recvMass: 100,
+			modules: ["st", "thr", "kp", "re"] },
+		Earth: { top: 6200, centre: 2900, foot: 120, recv: 1500, outer: 1250, launch: 2500, material: "bestsilica",
+			topLoad: 60, upperLoad: 20, anchorLoad: 5000, lowerLoad: 50, footLoad: 20, ticked: false, launchMass: 10, outerMass: 10, recvMass: 10,
+			modules: ["st", "thr"] }
+	};
+	var DEF = anc ? Object.assign({}, LOADS, { top: 12000, centre: anc.centre, foot: 300, recv: 400, outer: 7000, launch: 11000 })
+		: bench ? BENCH[o.body] || BENCH.round
+		: Object.assign({}, LOADS, { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, launch: 950 });
+	// on the workbench, whether an input module opens switched on (elsewhere each module's own default)
+	var opens = function (id, otherwise) { return bench ? DEF.modules.indexOf(id) >= 0 : otherwise; };
 	var shell = new CalcShell(root, { title: anc ? anc.name + " Skyhook" : "Hanging Skyhook", stageLabel: "Skyhook drawing", overline: o.overline, embedded: !!o.embedded });
 
 	// ---------- modules ----------
-	shell.addModule({ id: "st", tab: "arch", side: "in", label: "Optional Stations", color: C.ochre, on: !bench, brings: ["stO"], tip: "Receiving deck, outer docks and main launch deck; brings Stations results" });
-	shell.addModule({ id: "thr", tab: "log", side: "in", label: "Cargo throughput", color: C.teal, on: true, brings: ["thrO"], tip: "Cargo carried along the tether, foot to top or between stations; brings Throughput" });
-	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
-	shell.addModule({ id: "re", tab: "log", side: "in", label: "Entry at the parent planet", color: C.violet, brings: ["reO"], where: "parentEntry", tip: "Cargo released toward the planet this body orbits, entering its atmosphere" });
+	shell.addModule({ id: "st", tab: "arch", side: "in", label: "Optional Stations", color: C.ochre, on: opens("st", true), brings: ["stO"], tip: "Receiving deck, outer docks and main launch deck; brings Stations results" });
+	shell.addModule({ id: "thr", tab: "log", side: "in", label: "Cargo throughput", color: C.teal, on: opens("thr", true), brings: ["thrO"], tip: "Cargo carried along the tether, foot to top or between stations; brings Throughput" });
+	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, on: opens("kp", false), needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
+	shell.addModule({ id: "re", tab: "log", side: "in", label: "Entry at the parent planet", color: C.violet, on: opens("re", false), brings: ["reO"], where: "parentEntry", tip: "Cargo released toward the planet this body orbits, entering its atmosphere" });
 
 	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Drop from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
 	shell.addModule({ id: "clm", tab: "log", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
 	shell.addModule({ id: "rp", tab: "arch", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
 	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, tip: "Tether forces and tensions" });
-	shell.addModule({ id: "stO", tab: "arch", side: "out", label: "Stations", color: C.ochre, on: !bench, needs: ["st"], tip: "Needs Optional Stations" });
+	shell.addModule({ id: "stO", tab: "arch", side: "out", label: "Stations", color: C.ochre, on: opens("st", true), needs: ["st"], tip: "Needs Optional Stations" });
 	shell.addModule({ id: "thrO", tab: "log", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
-	shell.addModule({ id: "kpO", tab: "eng", side: "out", label: "Station-keeping", color: C.cobalt, needs: ["kp"], tip: "Needs Station-keeping inputs" });
-	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Entry at the parent planet", color: C.violet, needs: ["re"], where: "parentEntry", tip: "Needs the entry inputs" });
+	shell.addModule({ id: "kpO", tab: "eng", side: "out", label: "Station-keeping", color: C.cobalt, on: opens("kp", false), needs: ["kp"], tip: "Needs Station-keeping inputs" });
+	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Entry at the parent planet", color: C.violet, on: opens("re", false), needs: ["re"], where: "parentEntry", tip: "Needs the entry inputs" });
 
 	// ---------- input cards ----------
 	var BODY_NAMES = Array.from(systems.values()).filter(function (s) {
@@ -98,45 +121,37 @@ export function mountHangingSkyhook(root, opts) {
 	}
 
 	var geoCard = shell.addCard({ id: "geo", tab: "arch", feeds: ["orb", "prop", "rel", "clm", "frc", "rp"], side: "in", title: "Tether geometry", short: "Geometry", color: C.core, focus: "tether" });
-	// Opening figures: altitudes in km, loads in kt. An anchored tether opens on figures
-	// that fit around its moon (the centre of mass is the moon's orbit); a workbench
-	// tether on round figures that suit every workbench body, its optional stations unticked.
-	var LOADS = { topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 300, footLoad: 200, ticked: true, launchMass: 10, outerMass: 200, recvMass: 100 };
-	var DEF = anc ? Object.assign({}, LOADS, { top: 12000, centre: anc.centre, foot: 300, recv: 400, outer: 7000, launch: 11000 })
-		: bench ? { top: 3000, centre: 2000, foot: 1000, recv: 1500, outer: 1250, launch: 2500,
-			topLoad: 10, upperLoad: 10, anchorLoad: 1000, lowerLoad: 10, footLoad: 10, ticked: false, launchMass: 10, outerMass: 10, recvMass: 10 }
-		: Object.assign({}, LOADS, { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, launch: 950 });
-	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "station-keeping engines", unit: "km", value: DEF.top, focus: "top",
+	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "station-keeping engines", unit: "km", value: DEF.top,
 		tip: "Site of the orbital station-keeping engines." });
-	var centreIn = shell.numberField(geoCard, { label: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "the altitude that sets orbital speed", unit: "km", value: DEF.centre, focus: "centre",
+	var centreIn = shell.numberField(geoCard, { label: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "the altitude that sets orbital speed", unit: "km", value: DEF.centre,
 		tip: anc ? anc.name + " is the anchor, so its orbit is the centre of mass." : "The point that determines the orbit." });
 	if (anc) centreIn.disabled = true;
-	var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: DEF.foot, focus: "foot" });
+	var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: DEF.foot });
 	shell.note(geoCard, "Or drag the markers on the drawing.");
 
-	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop", "frc"], focus: "tether", value: "silica", safety: 3 });
+	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop", "frc"], focus: "tether", value: DEF.material || "silica", safety: 3 });
 
 	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["frc"], side: "in", title: "Core Facilities", short: "Core", color: C.rust, focus: "top" });
-	var topLoadIn = shell.numberField(payCard, { label: "Top station", key: "Top tip load", hint: "engines, launch facilities", unit: "kt", value: DEF.topLoad, min: 0, focus: "top",
+	var topLoadIn = shell.numberField(payCard, { label: "Top station", key: "Top tip load", hint: "engines, launch facilities", unit: "kt", value: DEF.topLoad, min: 0,
 		tip: "Mass held at the top tip. It sets the peak tension." });
-	var upperDistIn = shell.numberField(payCard, { label: "Upper tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.upperLoad, min: 0, focus: "tether",
+	var upperDistIn = shell.numberField(payCard, { label: "Upper tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.upperLoad, min: 0,
 		tip: "Everything carried along the upper tether apart from the stations (climbers, power, fuel, tracks), treated as spread evenly over its length. The stations' masses are on the Optional Stations card." });
-	var comIn = shell.numberField(payCard, { label: "Anchor station", key: "Centre-of-mass station", hint: "production, docks, load balance", unit: "kt", value: DEF.anchorLoad, min: 0, focus: "centre",
+	var comIn = shell.numberField(payCard, { label: "Anchor station", key: "Centre-of-mass station", hint: "production, docks, load balance", unit: "kt", value: DEF.anchorLoad, min: 0,
 		tip: "The skyhook orbits at the altitude where the outward and inward pulls balance - at the center of mass. Above there, the tether is pulled outwards, below there, it is pulled inwards. Because the loads on the upper and lower tethers are very different, and they are very different lengths, the anchor station is to one side of the center of mass. If the loads other than the anchor station are extremely different on the upper and lower tethers, the anchor station might even need to be at the foot. The heavier the anchor station, the closer it can sit to the centre of mass, and the less that point moves as loads change." });
-	var lowerDistIn = shell.numberField(payCard, { label: "Lower tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.lowerLoad, min: 0, focus: "tether",
+	var lowerDistIn = shell.numberField(payCard, { label: "Lower tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.lowerLoad, min: 0,
 		tip: "Everything carried along the lower tether apart from the stations, treated as spread evenly over its length." });
 	if (anc) {
 		// The moon is the anchor station: its mass is fixed, and there is no station to place.
 		comIn.closest(".cs-row").hidden = true;
 		shell.note(payCard, anc.name + " is the anchor station. At " + (anc.mass / 1e16).toFixed(2) + " × 10¹⁶ kg it outweighs any tether by so much that uneven loads only nudge its orbit; the Forces card shows by how much.");
 	}
-	var footLoadIn = shell.numberField(payCard, { label: "Foot station", key: "Foot tip load", hint: "for surface shuttles", unit: "kt", value: DEF.footLoad, min: 0, focus: "foot",
+	var footLoadIn = shell.numberField(payCard, { label: "Foot station", key: "Foot tip load", hint: "for surface shuttles", unit: "kt", value: DEF.footLoad, min: 0,
 		tip: "Mass held at the foot tip." });
 
 	var stCard = shell.addCard({ id: "st", tab: "arch", feeds: ["thrO", "rp", "prop", "frc", "stO"], side: "in", title: "Optional Stations", short: "Optional", color: C.ochre, module: "st", focus: "stations" });
 	// Each station is optional. Their saved keys are the labels the fields had as plain rows.
 	function station(label, hint, tip, alt, mass) {
-		var st = shell.optionalFields(stCard, { key: label + " used", label: label, hint: hint, tip: tip, focus: "stations", checked: DEF.ticked,
+		var st = shell.optionalFields(stCard, { key: label + " used", label: label, hint: hint, tip: tip, checked: DEF.ticked,
 			fields: [{ label: "altitude", unit: "km", value: alt, key: label }, { label: "peak mass", unit: "kt", value: mass, min: 0, key: label + " mass" }] });
 		return { use: st.check, alt: st.inputs[0], mass: st.inputs[1] };
 	}
@@ -152,8 +167,8 @@ export function mountHangingSkyhook(root, opts) {
 		{ v: "outer", label: "Outer docks", short: "outer docks", st: outerSt }, { v: "launch", label: "Main launch deck", short: "launch deck", st: launchSt },
 		{ v: "anchor", label: anc ? anc.name : "Anchor station", short: anc ? anc.name : "anchor station" }, { v: "top", label: "Top station", short: "top" }];
 	var routeOpts = ROUTE.map(function (r) { return { value: r.v, label: r.label }; });
-	var fromIn = shell.selectField(thrCard, { label: "From", key: "Cargo from", value: "foot", options: routeOpts, focus: "tether", tip: "Where climbers take on cargo." });
-	var toIn = shell.selectField(thrCard, { label: "To", key: "Cargo to", value: "top", options: routeOpts, focus: "tether", tip: "Where climbers deliver it." });
+	var fromIn = shell.selectField(thrCard, { label: "From", key: "Cargo from", value: "foot", options: routeOpts, tip: "Where climbers take on cargo." });
+	var toIn = shell.selectField(thrCard, { label: "To", key: "Cargo to", value: "top", options: routeOpts, tip: "Where climbers deliver it." });
 	var rateIn = shell.numberField(thrCard, { label: "Delivery rate", key: "Delivery rate to launch deck", unit: "t/day", value: 1000, min: 0,
 		tip: "Cargo delivered along the route. Return traffic, back to where the route starts, is assumed to be 1% of this." });
 	var perClimberIn = shell.numberField(thrCard, { label: "Cargo per climber", unit: "t", value: 100, min: 0.001 });

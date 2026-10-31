@@ -30,8 +30,9 @@ drawing, results — each scrolling on its own.
 - **Drawing.** World units are the calculator's choice (km in the template).
   Lines take `vector-effect="non-scaling-stroke"`; markers, text and offsets
   are sized in pixels × `view.u` inside the `onRender` callback. Each card's
-  `focus` names a `view.addTarget` rect the drawing glides to; fields can
-  carry their own `focus`. Draggable markers use `view.draggable`, and call
+  `focus` names a `view.addTarget` rect the drawing glides to when its title
+  is clicked; working in a field only highlights its card, so the view stays
+  where the viewer put it. Draggable markers use `view.draggable`, and call
   `shell.focusCard(id, false)` to highlight their card without moving the view.
 - **Card ticks.** Embedded in the home workbench, each card has a checkbox
   that shows or hides its marks. Every mark the drawing makes belongs to one

@@ -30,21 +30,22 @@
 //
 //   var card = shell.addCard({ id: "orbit", side: "in", title: "Orbit", short: "Orbit",
 //                              color: ShellColors.core, focus: "orbit" });
-//   var alt = shell.numberField(card, { label: "Altitude", unit: "km", value: 100, focus: "orbit" });
+//   var alt = shell.numberField(card, { label: "Altitude", unit: "km", value: 100 });
 //   var speed = shell.line(card, { label: "Circular speed", unit: "m/s" });  speed.set("1,633.2");
 //
 // An optional item is a ticked line (title and short description) with a row of
 // compact fields under it, shown only while it is ticked:
 //
-//   var deck = shell.optionalFields(card, { key: "Deck", label: "Deck", hint: "where ships dock", focus: "deck",
+//   var deck = shell.optionalFields(card, { key: "Deck", label: "Deck", hint: "where ships dock",
 //                                           fields: [{ label: "altitude", unit: "km", value: 950, key: "Deck altitude" },
 //                                                    { label: "peak mass", unit: "kt", value: 10, min: 0 }] });
 //   deck.check.checked        is it in use?       deck.inputs[0].value   its first field
 //
 // Events: onInput(fn) after any field changes; onFocus(fn(target, cardId)) when a
-// card title is clicked or a field with `focus` gains focus; onModules(fn) after
-// the set of shown modules changes. focusCard(id, false) highlights a card
-// without asking the drawing to move (use it while a marker is dragged).
+// card title is clicked; onModules(fn) after the set of shown modules changes.
+// Working in a field highlights its card without moving the drawing, so the
+// view a viewer has set stays put while they edit. focusCard(id, false) does
+// the same from code (use it while a marker is dragged).
 //
 // Tabs: a module or card may carry `tab` (e.g. "arch", "log", "eng", "eco").
 // After setTab(tab), only that tab's chips and cards show; a card or module
@@ -480,14 +481,14 @@ export class CalcShell {
 		if (tip) { row.title = tip; row.classList.add("cs-tipped"); }
 		return create("span", "cs-fld", false, row);
 	}
-	_wire(card, el, focus) {
+	_wire(card, el) {
 		var self = this;
 		el.addEventListener("input", function () { self.listeners.input.forEach(function (fn) { fn(el); }); });
 		el.addEventListener("change", function () { self.listeners.input.forEach(function (fn) { fn(el); }); });
-		if (focus) el.addEventListener("focus", function () { self.focusCard(card.id, focus); });
+		el.addEventListener("focus", function () { if (self.focusId !== card.id) self.focusCard(card.id, false); });
 	}
 
-	// opts: { label, hint, tip, unit, value, step, min, max, focus, parent, choice, choiceValue }.
+	// opts: { label, hint, tip, unit, value, step, min, max, parent, choice, choiceValue }.
 	// Returns the <input>. `tip` is a longer explanation shown on hover over the
 	// label; `parent` places the row inside an element of the card (e.g. a group
 	// shown only sometimes). `choice` (a group from choice()) puts a radio button
@@ -503,7 +504,7 @@ export class CalcShell {
 		if (opts.max != null) input.max = opts.max;
 		input.value = opts.value;
 		if (opts.unit) create("span", "cs-u", opts.unit, fld);
-		this._wire(card, input, opts.focus);
+		this._wire(card, input);
 		if (opts.choice) opts.choice._add(fld.parentNode, opts.choiceValue, input);
 		return input;
 	}
@@ -540,7 +541,7 @@ export class CalcShell {
 		return group;
 	}
 
-	// opts: { label, hint, tip, options: [{ value, label }], value, focus }. Full width without a label.
+	// opts: { label, hint, tip, options: [{ value, label }], value }. Full width without a label.
 	selectField(card, opts) {
 		var fld = this._row(card, opts.label, opts.hint, !opts.label, opts.tip, opts.parent);
 		var sel = create("select", false, false, fld);
@@ -548,7 +549,7 @@ export class CalcShell {
 		opts.options.forEach(function (o) { create("option", false, o.label, sel).value = o.value; });
 		this._register(card, opts, sel);
 		if (opts.value != null) sel.value = opts.value;
-		this._wire(card, sel, opts.focus);
+		this._wire(card, sel);
 		return sel;
 	}
 
@@ -560,7 +561,7 @@ export class CalcShell {
 		input.type = "text";
 		input.value = opts.value || "";
 		if (opts.placeholder) input.placeholder = opts.placeholder;
-		this._wire(card, input, opts.focus);
+		this._wire(card, input);
 		return input;
 	}
 
@@ -568,7 +569,7 @@ export class CalcShell {
 
 	// An optional item: a tick, a title and a short description on the first line;
 	// on the second, a row of compact number fields, hidden while it is unticked.
-	// opts: { key, label, hint, tip, checked, focus, parent, fields: [{ label, unit,
+	// opts: { key, label, hint, tip, checked, parent, fields: [{ label, unit,
 	// value, step, min, max, key }] }. The tick is saved as "<card id>/<key>" ("1" or
 	// "0"); a field is saved under its own `key`, or "<key> <field label>".
 	// Returns { el, check, inputs }.
@@ -597,7 +598,7 @@ export class CalcShell {
 			if (f.max != null) input.max = f.max;
 			input.value = f.value;
 			if (f.unit) create("span", "cs-u", f.unit, fld);
-			self._wire(card, input, opts.focus);
+			self._wire(card, input);
 			return input;
 		});
 		function sync() { row.hidden = !chk.checked; el.classList.toggle("cs-opt-off", !chk.checked); }
@@ -606,7 +607,7 @@ export class CalcShell {
 		chk.addEventListener("change", function () {
 			sync();
 			self.listeners.input.forEach(function (fn) { fn(chk); });
-			if (opts.focus) self.focusCard(card.id, opts.focus);
+			if (self.focusId !== card.id) self.focusCard(card.id, false);
 		});
 		sync();
 		return { el: el, check: chk, inputs: inputs };

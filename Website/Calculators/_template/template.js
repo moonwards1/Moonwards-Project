@@ -39,11 +39,11 @@ var bodyIn = shell.selectField(bodyCard, { aria: "Body orbited", value: "Moon",
 var bodyNote = shell.note(bodyCard, "");
 
 var orbitCard = shell.addCard({ id: "orbit", side: "in", title: "Orbit", short: "Orbit", color: C.core, focus: "orbit" });
-var altIn = shell.numberField(orbitCard, { label: "Altitude", hint: "above the mean surface", unit: "km", value: 100, focus: "orbit" });
+var altIn = shell.numberField(orbitCard, { label: "Altitude", hint: "above the mean surface", unit: "km", value: 100 });
 shell.note(orbitCard, "Or drag the marker on the drawing.");
 
 var tgtCard = shell.addCard({ id: "tgt", side: "in", title: "Target orbit", short: "Target", color: C.teal, module: "tgt", focus: "target" });
-var tgtIn = shell.numberField(tgtCard, { label: "Target altitude", unit: "km", value: 500, focus: "target" });
+var tgtIn = shell.numberField(tgtCard, { label: "Target altitude", unit: "km", value: 500 });
 
 // ---------- results ----------
 var resCard = shell.addCard({ id: "res", side: "out", title: "Orbit", short: "Orbit", color: C.core, focus: "orbit" });
