@@ -49,6 +49,7 @@ test("dropped from the foot", function () {
 	assert.ok(t.hitsSurface);
 	near(t.hitTheGround, 1367.55, 2, "surface speed");
 	near(t.impactFromVertical * 180 / Math.PI, 85.58, 2, "angle from vertical");
+	near(t.collisionAngle * 180 / Math.PI, 4.42, 2, "angle to the ground");
 });
 
 test("the drop's speed at the surface is the foot's speed plus what the fall adds", function () {

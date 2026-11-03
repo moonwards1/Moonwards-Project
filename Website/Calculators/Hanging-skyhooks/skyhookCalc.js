@@ -225,7 +225,7 @@ export function mountHangingSkyhook(root, opts) {
 	var relCard = shell.addCard({ id: "rel", tab: "arch", side: "out", title: "Foot ↔ Ground trips", short: "Foot trips", color: C.umber, module: "rel", focus: "foot" });
 	shell.note(relCard, "An object dropped from the foot hits the surface at the speed and angle shown. An object launched with the same speed and angle will appear at rest when it reaches the foot, from the foot's perspective. The two paths are mirror images.");
 	var rSurf = shell.line(relCard, { label: "Impact / launch speed", unit: "m/s" });
-	var rAng = shell.line(relCard, { label: "Impact / launch angle from vertical", unit: "°" });
+	var rAng = shell.line(relCard, { label: "Impact / launch angle to the ground", unit: "°" });
 	var rAround = shell.line(relCard, { label: "Downrange / uprange distance", unit: "km" });
 	var rTime = shell.line(relCard, { label: "Fall / flight time", unit: "s" });
 	var rPeri = shell.line(relCard, { label: "Lowest point of the path", unit: "km", sub: "above the surface: it does not land" });
@@ -454,7 +454,7 @@ export function mountHangingSkyhook(root, opts) {
 		[rSurf, rAng, rAround, rTime].forEach(function (l) { l.show(t.hitsSurface); });
 		rPeri.show(!t.hitsSurface);
 		rSurf.set(num(t.hitTheGround, 1), "horizontal " + num(t.impactHorizontal, 1) + " m/s · vertical " + num(t.impactVertical, 1) + " m/s");
-		rAng.set(num(t.impactFromVertical * 180 / Math.PI, 2));
+		rAng.set(num(t.collisionAngle * 180 / Math.PI, 2));
 		rAround.set(num(t.impactAround * R / 1e3, 0));
 		rTime.set(t.dropTime < 600 ? num(t.dropTime, 0) : num(t.dropTime / 60, 1), null, t.dropTime < 600 ? "s" : "min");
 		rPeri.set(num((t.newPeriapsis - R) / 1e3, 0));
@@ -580,7 +580,7 @@ export function mountHangingSkyhook(root, opts) {
 		payCard.setSummary(num((t.loads.upperTotal + t.loads.lowerTotal + t.loads.com) / 1e6, 0) + " kt" + (anc ? " + " + anc.name : ""));
 		thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + routeText);
 		kpCard.setSummary((propIn.value === "oxygen" ? "O₂" : "H₂") + " · " + vExIn.value + " km/s");
-		relCard.setSummary(t.hitsSurface ? num(t.hitTheGround, 0) + " m/s at " + num(t.impactFromVertical * 180 / Math.PI, 1) + "°" : "does not land");
+		relCard.setSummary(t.hitsSurface ? num(t.hitTheGround, 0) + " m/s at " + num(t.collisionAngle * 180 / Math.PI, 1) + "°" : "does not land");
 		f = scaled(t.tetherMass, MASS); propCard.setSummary(f[0] + " " + f[1] + " · taper " + num(t.lowRatio, 2) + " / " + num(t.highRatio, 2));
 		clmCard.setSummary(num(t.lowIntegral / 1e3, 0) + " kJ/kg uphill");
 		f = scaled(t.tensionPeak, FORCE); frcCard.setSummary(f[0] + " " + f[1] + " at centre of mass\n" + (anc ? anc.name + " shifts " + num(Math.abs(t.anchor.shift), 0) + " m" : "anchor offset " + num(Math.abs(t.comOffset) / 1e3, 1) + " km"));
@@ -844,7 +844,7 @@ export function mountHangingSkyhook(root, opts) {
 			tTriV.textContent = "vertical " + num(t.impactVertical, 0) + " m/s";
 			tHit.setAttribute("text-anchor", "end");
 			tHit.setAttribute("x", hx); tHit.setAttribute("y", hy + 20 * u);
-			tHit.textContent = "speed " + num(t.hitTheGround, 0) + " m/s · " + num(t.impactFromVertical * 180 / Math.PI, 1) + "° from vertical";
+			tHit.textContent = "speed " + num(t.hitTheGround, 0) + " m/s · " + num(t.collisionAngle * 180 / Math.PI, 1) + "° to the ground";
 			[tHit, tTriH, tTriV].forEach(function (el) { el.setAttribute("font-size", fsS); el.setAttribute("stroke-width", 4 * u); });
 			[tHit, gTri, gTriHead, tTriH, tTriV].forEach(function (el) { show(el, triOn); });
 		}
