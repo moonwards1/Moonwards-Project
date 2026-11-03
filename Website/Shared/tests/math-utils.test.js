@@ -561,3 +561,40 @@ test("hyperbolaOutbound: from periapsis to rEnd, on the same conic as hyperbolaP
 	assert.deepEqual(O.hyperbolaOutbound(rp, 0.5, rEnd, 10), []);
 	assert.deepEqual(O.hyperbolaOutbound(rp, e, rp / 2, 10), []);
 });
+
+test("conicArc: a release along the horizontal is an apsis, drawn symmetrically", function () {
+	var GM = 4.9028e12, R = 1737.4e3;
+	var vc = function (r) { return Math.sqrt(GM / r); };
+	// circular speed: a circle, closed
+	var c = O.conicArc(GM, R + 2e6, vc(R + 2e6), R, 7 * R, 40);
+	assert.equal(c.halfAngle, Math.PI);
+	c.points.forEach(function (q) { assert.ok(Math.abs(Math.hypot(q[0], q[1]) / (R + 2e6) - 1) < 1e-9); });
+	// below circular speed: the release is the apoapsis, the arc ends on the surface
+	var r = R + 1e6, v = 0.6 * vc(r), a = O.conicArc(GM, r, v, R, 7 * R, 40);
+	var first = a.points[0], last = a.points[a.points.length - 1], mid = a.points[40];
+	assert.ok(Math.abs(Math.hypot(first[0], first[1]) - R) < 1e-6 * R, "ends on the surface");
+	assert.ok(Math.abs(last[0] + first[0]) < 1e-6 * R && Math.abs(last[1] - first[1]) < 1e-6 * R, "mirror images");
+	assert.ok(Math.abs(mid[0]) < 1e-9 && Math.abs(mid[1] - r) < 1e-6, "release point at the middle");
+	assert.ok(a.halfAngle < Math.PI, "a fall that meets the surface does not close");
+	// above circular speed but bound: the release is the periapsis and the whole orbit is drawn
+	var b = O.conicArc(GM, r, 1.2 * vc(r), R, 7 * R, 40);
+	assert.equal(b.halfAngle, Math.PI);
+	// above escape speed: open, the arms stop at rMax
+	var h = O.conicArc(GM, r, 2 * vc(r), R, 7 * R, 40), e = h.points[h.points.length - 1];
+	assert.ok(h.k > 1 && Math.abs(Math.hypot(e[0], e[1]) - 7 * R) < 1e-6 * R);
+	assert.equal(O.conicArc(GM, r, 0, R, 7 * R, 40), null);
+});
+
+test("fallTimeFromApoapsis: zero at the apoapsis, half a period at the periapsis, and the mirror of the climb out", function () {
+	var GM = 4.9028e12, ra = 1.75e6, rp = 1.0e6, a = (ra + rp) / 2;
+	assert.ok(Math.abs(O.fallTimeFromApoapsis(GM, ra, rp, ra)) < 1e-9, "no time to fall nowhere");
+	var half = O.fallTimeFromApoapsis(GM, ra, rp, rp);
+	assert.ok(Math.abs(half - O.orbitalPeriod(GM, a) / 2) < 1e-6 * half);
+	// falling from apoapsis to r, then on to periapsis, makes the half period; the climb from periapsis out to r is the rest
+	var r = 1.3e6, t1 = O.fallTimeFromApoapsis(GM, ra, rp, r);
+	var vp = Math.sqrt(GM * (2 / rp - 1 / a));
+	var tOut = O.coastTimeToRadius(GM, [rp, 0, 0], [0, vp, 0], r);
+	assert.ok(Math.abs(t1 + tOut - half) < 1e-6 * half, t1 + " + " + tOut + " vs " + half);
+	assert.equal(O.fallTimeFromApoapsis(GM, ra, ra, ra), null, "circular: no fall");
+	assert.equal(O.fallTimeFromApoapsis(GM, ra, rp, 0.9e6), null, "inside the periapsis");
+});

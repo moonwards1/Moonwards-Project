@@ -707,6 +707,19 @@ export const OrbitalMath = {
 			return dt >= 0 ? dt : null;
 		},
 
+		// Time (s) for a body released at the apoapsis ra of the ellipse with periapsis rp
+		// to fall inward to radius r (rp <= r <= ra), or null when r is off the orbit or the
+		// orbit is circular. By symmetry it is also the time to climb from r to the apoapsis.
+		//   r = a(1 − e cos E),  t = √(a³/GM) · (π − E + e sin E)
+		// with a the semi-major axis, e the eccentricity and E the eccentric anomaly at r,
+		// measured from periapsis (π at the apoapsis).
+		fallTimeFromApoapsis: function (GM, ra, rp, r) {
+			var a = (ra + rp) / 2, e = (ra - rp) / (ra + rp);
+			if (!(GM > 0) || !(e > 0) || !(r >= rp) || !(r <= ra)) { return null; }
+			var E = Math.acos(Math.max(-1, Math.min(1, (1 - r / a) / e)));
+			return Math.sqrt(a * a * a / GM) * (Math.PI - E + e * Math.sin(E));
+		},
+
 		// State on a hyperbola `tau` seconds from periapsis (negative before it),
 		// in the PERIFOCAL frame: x toward periapsis, y along the motion there.
 		// rp is the periapsis radius (m), e > 1 the eccentricity. Returns
@@ -749,6 +762,33 @@ export const OrbitalMath = {
 				pts.push([r * Math.cos(nu), r * Math.sin(nu)]);
 			}
 			return pts;
+		},
+
+		// The path of a body released at radius r with speed v along the local horizontal
+		// (no radial speed), drawn on both sides of the release point: the half it flies
+		// and its mirror image, the half that would arrive there at that speed. Both are
+		// the same conic, symmetric about the line through the body's centre and the
+		// release point. The release point is an apsis: periapsis when v is above
+		// circular speed, apoapsis when below.
+		//   r(θ) = p / (1 + k cos θ),   p = r²v²/GM,   k = r v²/GM − 1
+		// with θ the angle round the body from the release point (k > 0 periapsis,
+		// k < 0 apoapsis, k = 0 circle, k ≥ 1 open). The arc stops where it reaches rMin
+		// going down (a fall that meets the surface) or rMax going out (an open path),
+		// and otherwise closes the full orbit. Returns null for unusable input, else
+		//   { points: [[x, y], ...] (2·steps + 1 of them, from the mirror end to the far end;
+		//     x along the motion, y toward the release point, from the body's centre),
+		//     halfAngle (θ at either end), p, k }.
+		conicArc: function (GM, r, v, rMin, rMax, steps) {
+			if (!(GM > 0) || !(r > 0) || !(v > 0) || !(steps >= 1)) { return null; }
+			var p = r * r * v * v / GM, k = r * v * v / GM - 1, lim = Math.PI, EPS = 1e-12;
+			var edge = k < -EPS ? rMin : k > EPS ? rMax : 0;
+			if (edge > 0) { lim = Math.acos(Math.max(-1, Math.min(1, (p / edge - 1) / k))); }
+			var pts = [];
+			for (var i = -steps; i <= steps; i++) {
+				var th = lim * i / steps, rr = p / (1 + k * Math.cos(th));
+				pts.push([rr * Math.sin(th), rr * Math.cos(th)]);
+			}
+			return { points: pts, halfAngle: lim, p: p, k: k };
 		},
 
 		// ---- SOI-exit duration estimates (Mission Planner task D7) -------------

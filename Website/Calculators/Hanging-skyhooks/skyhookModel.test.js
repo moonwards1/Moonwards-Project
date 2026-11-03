@@ -12,6 +12,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { systems } from "../../Shared/orbit.js";
+import { OrbitalMath } from "../../Shared/math-utils.js";
 import { computeSkyhook, sweepTether } from "./skyhookModel.js";
 import { MATERIALS } from "../../Shared/materials.js";
 
@@ -48,6 +49,37 @@ test("dropped from the foot", function () {
 	assert.ok(t.hitsSurface);
 	near(t.hitTheGround, 1367.55, 2, "surface speed");
 	near(t.impactFromVertical * 180 / Math.PI, 85.58, 2, "angle from vertical");
+});
+
+test("the drop's speed at the surface is the foot's speed plus what the fall adds", function () {
+	// Energy: v² / 2 − GM / R = vFoot² / 2 − GM / rFoot, so v² = vFoot² + 2·GM·(1/R − 1/rFoot).
+	var R = Number(moon.radius), rF = R + t.foot;
+	var v = Math.sqrt(t.footVel * t.footVel + 2 * moon.GM * (1 / R - 1 / rF));
+	close(t.hitTheGround, v, "energy balance");
+	assert.ok(t.hitTheGround > t.footVel, "faster than at the foot");
+	// a higher foot falls further, and gains more
+	var high = computeSkyhook(moon, Object.assign({}, base(), { foot: 150e3 }));
+	assert.ok(high.hitTheGround - high.footVel > t.hitTheGround - t.footVel);
+});
+
+test("the impact velocity splits into the foot's sideways speed carried inward and a vertical remainder", function () {
+	var R = Number(moon.radius);
+	close(t.impactHorizontal, t.footVel * (R + t.foot) / R, "angular momentum");
+	close(t.impactHorizontal * t.impactHorizontal + t.impactVertical * t.impactVertical, t.hitTheGround * t.hitTheGround, "components make the speed");
+	// the impact angle from vertical is that of the sideways part
+	close(Math.cos(t.impactFromVertical), t.impactVertical / t.hitTheGround, "angle from vertical");
+	assert.ok(t.impactVertical < Math.sqrt(2 * moon.GM / (R * R) * t.foot), "slower than a drop from rest: the ground curves away");
+});
+
+test("the drop's time is the fall from apoapsis to the surface, about the ground track over the horizontal speed", function () {
+	near(t.dropTime, 189.8, 1, "seconds from the foot to the surface");
+	var R = Number(moon.radius), track = t.impactAround * R;
+	assert.ok(Math.abs(t.dropTime - track / t.footVel) < 0.02 * t.dropTime, "close to distance over speed when the fall is shallow");
+});
+
+test("the arc drawn through the foot ends where the drop lands", function () {
+	var R = Number(moon.radius), a = OrbitalMath.conicArc(moon.GM, R + t.foot, t.footVel, R, 7 * R, 60);
+	assert.ok(Math.abs(a.halfAngle - t.impactAround) < 1e-9, a.halfAngle + " vs " + t.impactAround);
 });
 
 test("tether properties and climbers", function () {

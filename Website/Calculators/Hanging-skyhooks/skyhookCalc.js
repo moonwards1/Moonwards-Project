@@ -89,7 +89,7 @@ export function mountHangingSkyhook(root, opts) {
 	shell.addModule({ id: "thr", tab: "log", side: "in", label: "Cargo throughput", color: C.teal, on: opens("thr", true), brings: ["thrO"], tip: "Cargo carried along the tether, foot to top or between stations; brings Throughput" });
 	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, on: opens("kp", false), needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
 
-	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Drop from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
+	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Foot ↔ Ground trips", color: C.umber, on: true, tip: "A drop from the foot to the surface, and the launch that mirrors it" });
 	shell.addModule({ id: "clm", tab: "log", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
 	shell.addModule({ id: "rp", tab: "arch", side: "out", label: "Release points", color: C.sky, on: true, tip: "Where a release reaches each neighbouring body" });
 	shell.addModule({ id: "frc", tab: "arch", side: "out", label: "Forces", color: C.rust, on: true, tip: "Tether forces and tensions" });
@@ -222,11 +222,13 @@ export function mountHangingSkyhook(root, opts) {
 		return g;
 	}
 
-	var relCard = shell.addCard({ id: "rel", tab: "arch", side: "out", title: "Dropped from the foot", short: "Drop", color: C.umber, module: "rel", focus: "foot" });
-	var rSurf = shell.line(relCard, { label: "Speed at the surface", unit: "m/s" });
-	var rAng = shell.line(relCard, { label: "Impact angle from vertical", unit: "°" });
-	var rAround = shell.line(relCard, { label: "Lands downrange", unit: "km" });
-	var rPeri = shell.line(relCard, { label: "Lowest point of the fall", unit: "km", sub: "above the surface: it does not land" });
+	var relCard = shell.addCard({ id: "rel", tab: "arch", side: "out", title: "Foot ↔ Ground trips", short: "Foot trips", color: C.umber, module: "rel", focus: "foot" });
+	shell.note(relCard, "An object dropped from the foot hits the surface at the speed and angle shown. An object launched with the same speed and angle will appear at rest when it reaches the foot, from the foot's perspective. The two paths are mirror images.");
+	var rSurf = shell.line(relCard, { label: "Impact / launch speed", unit: "m/s" });
+	var rAng = shell.line(relCard, { label: "Impact / launch angle from vertical", unit: "°" });
+	var rAround = shell.line(relCard, { label: "Downrange / uprange distance", unit: "km" });
+	var rTime = shell.line(relCard, { label: "Fall / flight time", unit: "s" });
+	var rPeri = shell.line(relCard, { label: "Lowest point of the path", unit: "km", sub: "above the surface: it does not land" });
 
 	var propCard = shell.addCard({ id: "prop", tab: "arch", side: "out", title: "Tether properties", short: "Tether", color: C.core, focus: "tether" });
 	var rTrL = shell.line(propCard, { label: "Taper ratio, foot → centre" });
@@ -431,6 +433,15 @@ export function mountHangingSkyhook(root, opts) {
 		S.depart = re0.escapes ? OrbitalMath.hyperbolaOutbound(re0.releaseRadius, re0.eccentricity, 7 * R, 80)
 			.map(function (q) { return [q[1] / 1e3, -q[0] / 1e3]; }) : [];
 
+		// the paths of a release from the top and from the foot, each drawn on both sides of the release
+		// point (the tether axis): out to the surface, or to seven radii (at least twice the top's radius) if open
+		var arcMax = Math.max(7 * R, 2 * (t.top + R));
+		S.arcD = {};
+		[["top", t.top, t.topVel], ["foot", t.foot, t.footVel]].forEach(function (a) {
+			var arc = OrbitalMath.conicArc(body.GM, R + a[1], a[2], R, arcMax, 90);
+			S.arcD[a[0]] = arc ? "M" + arc.points.map(function (q) { return (q[0] / 1e3) + " " + (-q[1] / 1e3); }).join("L") : "";
+		});
+
 		bodyNote.textContent = "Radius " + num(R / 1e3, 1) + " km · surface gravity " + num(t.surfaceGravity, 2) + " m/s²";
 		shell.warn(notes.concat(t.warnings).join(" "));
 
@@ -440,10 +451,12 @@ export function mountHangingSkyhook(root, opts) {
 		footSp[0].set(num(t.footVel / 1e3, 2)); footSp[1].set(num(t.footOrbit / 1e3, 2)); footSp[2].set(num(t.footVel / t.footOrbit, 2));
 
 		// dropped from the foot
-		rSurf.show(t.hitsSurface); rAng.show(t.hitsSurface); rAround.show(t.hitsSurface); rPeri.show(!t.hitsSurface);
-		rSurf.set(num(t.hitTheGround, 1));
+		[rSurf, rAng, rAround, rTime].forEach(function (l) { l.show(t.hitsSurface); });
+		rPeri.show(!t.hitsSurface);
+		rSurf.set(num(t.hitTheGround, 1), "horizontal " + num(t.impactHorizontal, 1) + " m/s · vertical " + num(t.impactVertical, 1) + " m/s");
 		rAng.set(num(t.impactFromVertical * 180 / Math.PI, 2));
-		rAround.set(num(t.impactAround * R / 1e3, 0), num(t.impactAround * 180 / Math.PI, 1) + "° around the body from the foot");
+		rAround.set(num(t.impactAround * R / 1e3, 0));
+		rTime.set(t.dropTime < 600 ? num(t.dropTime, 0) : num(t.dropTime / 60, 1), null, t.dropTime < 600 ? "s" : "min");
 		rPeri.set(num((t.newPeriapsis - R) / 1e3, 0));
 
 		// tether properties
@@ -616,7 +629,9 @@ export function mountHangingSkyhook(root, opts) {
 	function A(base, extra) { return Object.assign({}, base, NS, extra || {}); }
 
 	var gAxis = g("path", A({ stroke: C.sky.draw, "stroke-opacity": 0.35, "stroke-width": 1, "stroke-dasharray": "2 5" }));
-	var gCom = g("circle", A({ cx: 0, cy: 0, fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.32, "stroke-width": 1, "stroke-dasharray": "2 5" }));
+	// the paths a release from the top, centre of mass and foot takes: one dashed look for all three
+	var ARC = { fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.7, "stroke-width": 1.3, "stroke-dasharray": "5 4" };
+	var gCom = g("circle", A(ARC, { cx: 0, cy: 0 }));
 	var gAtm = g("circle", A({ cx: 0, cy: 0, fill: "#EADFCF", "fill-opacity": 0.05, stroke: "#EADFCF", "stroke-opacity": 0.2, "stroke-width": 1 }));
 	// the foot floor and, for an anchored tether, the top ceiling: dashed circles with a hover title
 	var gFloor = g("circle", A({ cx: 0, cy: 0, fill: "none", stroke: C.rust.draw, "stroke-opacity": 0.55, "stroke-width": 1, "stroke-dasharray": "6 4" }));
@@ -627,9 +642,15 @@ export function mountHangingSkyhook(root, opts) {
 	var gOrbitP = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.4, "stroke-width": 1 }));
 	var gOrbitPHead = g("path", { fill: "#EADFCF", "fill-opacity": 0.6 });
 	var gBody = g("circle", A({ cx: 0, cy: 0, stroke: "#9C8A77", "stroke-width": 1.5 }));
-	var gDescent = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.7, "stroke-width": 1.3, "stroke-dasharray": "5 4" }));
+	var gFootArc = g("path", A(ARC));
+	var gTopArc = g("path", A(ARC));
 	var gHit = g("circle", A({ fill: "#1D1814", stroke: "#EADFCF", "stroke-width": 1.5 }));
 	var tHit = g("text", { fill: "#EADFCF", "font-family": "Instrument Sans, sans-serif" });
+	// the impact velocity as a triangle: the net speed, and its horizontal and vertical parts
+	var gTri = g("path", A({ fill: "none", stroke: C.umber.draw, "stroke-width": 1.4 }));
+	var gTriHead = g("path", { fill: C.umber.draw });
+	var tTriH = g("text", { fill: C.umber.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "middle" });
+	var tTriV = g("text", { fill: C.umber.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "start" });
 	var gRe = g("path", A({ fill: "none", stroke: C.violet.draw, "stroke-width": 1.6, "stroke-dasharray": "7 5" }));
 	var gReHead = g("path", { fill: C.violet.draw });
 	var gReMid = g("path", { fill: C.violet.draw });
@@ -794,26 +815,38 @@ export function mountHangingSkyhook(root, opts) {
 		gArrows.setAttribute("d", ar); gHeads.setAttribute("d", hd); gNotches.setAttribute("d", nt);
 		[gArrows, gHeads, gNotches].forEach(function (el) { show(el, any("geo")); });
 
-		// dropped from the foot: an ellipse with apoapsis at the foot
+		// where a release from the top and from the foot goes (the centre of mass's is its orbit, above).
+		// Each is drawn on both sides of the tether axis: the half an object released there flies,
+		// and its mirror, the path that would bring it to the same point at the tether's speed.
+		gTopArc.setAttribute("d", S.arcD.top); show(gTopArc, any("geo") && !!S.arcD.top);
+		gFootArc.setAttribute("d", S.arcD.foot); show(gFootArc, any("geo") && !!S.arcD.foot);
+		// the drop from the foot lands at the right-hand end of its arc
 		var relOn = any("rel");
-		var rp = t.newPeriapsis / 1e3, e = (rF - rp) / (rF + rp), pp = rF * (1 - e);
-		var end = t.hitsSurface ? t.impactAround : 2 * Math.PI, dp = "";
-		for (var j = 0; j <= 60; j++) {
-			var ph = end * j / 60, rr = pp / (1 - e * Math.cos(ph));
-			dp += (j ? "L" : "M") + (rr * Math.sin(ph)) + " " + (-rr * Math.cos(ph));
-		}
-		gDescent.setAttribute("d", dp); show(gDescent, relOn);
 		show(gHit, relOn && t.hitsSurface);
-		show(tHit, false);
+		[tHit, gTri, gTriHead, tTriH, tTriV].forEach(function (el) { show(el, false); });
 		if (t.hitsSurface) {
-			var hx = R * Math.sin(t.impactAround), hy = -R * Math.cos(t.impactAround);
+			var ph = t.impactAround, hx = R * Math.sin(ph), hy = -R * Math.cos(ph);
 			gHit.setAttribute("cx", hx); gHit.setAttribute("cy", hy); gHit.setAttribute("r", 4 * u);
-			// The label sits under the surface, ending at the impact point, and only
-			// once the impact is far enough from the foot on screen not to crowd it.
-			show(tHit, relOn && Math.hypot(hx, hy + rF) / u > 220);
+			// The velocity at impact, as a triangle drawn to one scale (the net speed is 120 px long)
+			// and ending at the impact point: sideways along the surface (tx, ty), then down into
+			// it (against rx, ry, the way out). Triangle and labels appear only once the impact is
+			// far enough from the foot on screen not to crowd it.
+			var triOn = relOn && Math.hypot(hx, hy + rF) / u > 220;
+			var tx = Math.cos(ph), ty = Math.sin(ph), rx = Math.sin(ph), ry = -Math.cos(ph);
+			var ks = 120 * u / t.hitTheGround, lh = t.impactHorizontal * ks, lv = t.impactVertical * ks;
+			var bx = hx + lv * rx, by = hy + lv * ry, ax = bx - lh * tx, ay = by - lh * ty;
+			var hyp = [hx - 8 * u * (hx - ax) / Math.hypot(hx - ax, hy - ay), hy - 8 * u * (hy - ay) / Math.hypot(hx - ax, hy - ay)];
+			gTri.setAttribute("d", "M" + ax + " " + ay + "L" + bx + " " + by + "L" + hx + " " + hy + "M" + ax + " " + ay + "L" + hyp[0] + " " + hyp[1]);
+			gTriHead.setAttribute("d", arrowHead([hx, hy], Math.atan2(hy - ay, hx - ax), u));
+			tTriH.setAttribute("x", (ax + bx) / 2 + 9 * u * rx); tTriH.setAttribute("y", (ay + by) / 2 + 9 * u * ry + 4 * u);
+			tTriH.textContent = "horizontal " + num(t.impactHorizontal, 0) + " m/s";
+			tTriV.setAttribute("x", (bx + hx) / 2 + 9 * u * tx); tTriV.setAttribute("y", (by + hy) / 2 + 9 * u * ty + 4 * u);
+			tTriV.textContent = "vertical " + num(t.impactVertical, 0) + " m/s";
 			tHit.setAttribute("text-anchor", "end");
-			tHit.setAttribute("x", hx); tHit.setAttribute("y", hy + 20 * u); tHit.setAttribute("font-size", fsS); tHit.setAttribute("stroke-width", 4 * u);
-			tHit.textContent = "impact · " + num(t.hitTheGround, 0) + " m/s · " + num(t.impactFromVertical * 180 / Math.PI, 1) + "° from vertical";
+			tHit.setAttribute("x", hx); tHit.setAttribute("y", hy + 20 * u);
+			tHit.textContent = "speed " + num(t.hitTheGround, 0) + " m/s · " + num(t.impactFromVertical * 180 / Math.PI, 1) + "° from vertical";
+			[tHit, tTriH, tTriV].forEach(function (el) { el.setAttribute("font-size", fsS); el.setAttribute("stroke-width", 4 * u); });
+			[tHit, gTri, gTriHead, tTriH, tTriV].forEach(function (el) { show(el, triOn); });
 		}
 
 		// optional stations (right); each label ends with the net pull felt there. Both the
@@ -946,7 +979,7 @@ export function mountHangingSkyhook(root, opts) {
 		var s = S.R + S.top; return [-s, -s, s, S.R]; } });
 	view.addTarget("foot", { label: "Foot & impact", color: "#EADFCF", pad: 1.15, rect: function () {
 		var dr = S.t.hitsSurface ? S.t.impactAround * S.R : 100, drop = S.R - Math.cos(dr / S.R) * S.R;
-		return [-0.35 * Math.max(dr, 60), -(S.R + S.foot) - Math.max(30, S.foot * 2.5), dr * 1.1, -S.R + drop + 8]; } });
+		return [-0.35 * Math.max(dr, 60), -(S.R + S.foot) - Math.max(30, S.foot * 2.5), dr * 1.4, -S.R + drop + 8]; } });
 	view.addTarget("centre", { label: "Centre of mass", color: C.core.draw, rect: function () { return rectAround(S.centre, Math.max(120, 0.22 * span()), -0.7, 0.9); } });
 	view.addTarget("top", { label: "Top", color: C.rust.draw, rect: function () { var d = Math.max(140, 0.22 * span()); var r = rectAround(S.top, d, -0.85, 0.85); r[1] -= 0.1 * d; return r; } });
 	view.addTarget("stations", { label: "Stations", color: C.ochre.draw, rect: function () {

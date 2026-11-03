@@ -19,6 +19,20 @@ stay at any zoom. The structure stays as context: the tether, the core-facility
 markers (top, anchor station, foot) and the centre-of-mass orbit, without their
 labels.
 
+The Basics card owns three dashed paths, one for each point in its list: what an
+object released there along the tether's direction of motion does. The centre of
+mass gives its circular orbit; the top gives an open or elongated arc through the
+top; the foot gives the ellipse with its apoapsis at the foot, ending on the
+surface. Each is drawn symmetrically about the tether: the half the object flies,
+and its mirror image, the path that would bring it to that point at the tether's
+speed (`OrbitalMath.conicArc` draws the arcs).
+
+The Foot ↔ Ground trips card (folded: Foot trips) owns the impact marker and the
+velocity triangle drawn at it: the net speed, and its horizontal and vertical
+parts, to one scale (the net speed is 120 px long), with labels. The card reads
+each figure (speed, angle, distance, time) both ways, as a drop from the foot and as the launch that mirrors it.
+The triangle and its labels appear once the impact is more than 220 px from the foot on screen.
+
 ## Files
 
 - `Hanging-skyhooks.html` — page markup: fonts, stylesheets, one `#app` element
@@ -37,7 +51,7 @@ labels.
   1,250 km (outer docks) and 1,500 km (receiving deck), 10 kt each. The
   standalone page opens on the Moon design. Each card and
   chip names its workbench tab: basics (the three altitudes with their speeds), material, loads,
-  the fall from the foot, release points, tether properties, forces and
+  the foot ↔ ground trips, release points, tether properties, forces and
   stations (inputs and results) on Architecture; cargo throughput, throughput, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`

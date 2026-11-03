@@ -156,7 +156,13 @@ export function computeSkyhook(moon, inp) {
 	t.newPeriapsis = Math.pow((t.foot + R) * t.footVel, 2) / (2 * GM - (t.foot + R) * t.footVel * t.footVel);
 	t.collisionAngle = Math.acos(t.angularVelocity * (t.foot + R) * (t.foot / R + 1) / t.hitTheGround);
 	t.hitsSurface = t.newPeriapsis < R;
+	// Time from the foot to the surface; a launch from the surface takes as long to reach the foot.
+	t.dropTime = t.hitsSurface ? OrbitalMath.fallTimeFromApoapsis(GM, t.foot + R, t.newPeriapsis, R) : NaN;
 	t.impactFromVertical = Math.PI / 2 - t.collisionAngle;
+	// The impact velocity's components at the surface. Gravity is central, so angular momentum holds:
+	// the sideways speed there is vFoot·rFoot/R. What is left of the speed is the vertical part.
+	t.impactHorizontal = t.footVel * (t.foot + R) / R;
+	t.impactVertical = t.hitsSurface ? Math.sqrt(Math.max(0, t.hitTheGround * t.hitTheGround - t.impactHorizontal * t.impactHorizontal)) : NaN;
 	// Angle around the body from the foot to the impact point.
 	t.impactAround = t.hitsSurface ? Math.asin(
 		(2 * (t.foot + R) * t.newPeriapsis - R * (t.foot + R + t.newPeriapsis)) /
