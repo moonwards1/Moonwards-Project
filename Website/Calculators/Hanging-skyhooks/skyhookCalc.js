@@ -668,7 +668,7 @@ export function mountHangingSkyhook(root, opts) {
 	var mTop = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
 	var mCom = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
 	var mFoot = g("circle", A({ cx: 0, fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
-	var mBal = g("rect", A({ fill: C.core.draw, stroke: "#1D1814", "stroke-width": 2 }));
+	var mBal = g("path", A({ stroke: C.core.draw, "stroke-width": 2.5 }));
 	var gBalLead = g("path", A({ fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.9, "stroke-width": 1.5 }, FADE));
 	var tBal = g("text", { fill: "#EADFCF", "font-family": "JetBrains Mono, monospace", "text-anchor": "start" });
 	var miniBody = svgEl("circle", { cx: 0, cy: 0, stroke: "#9C8A77", "stroke-width": 1, "vector-effect": "non-scaling-stroke" }, view.miniLayer);
@@ -848,8 +848,8 @@ export function mountHangingSkyhook(root, opts) {
 		// the anchor station, listed with its altitude and mass wherever the balance puts it.
 		// Its label sits level with it when that row is free on the right; otherwise it steps
 		// down the column to the first free row and a line leads back to the station.
-		var rB = rC + t.comOffset / 1e3, bs = 5 * u, rowH = 14 * u;
-		mBal.setAttribute("x", -bs); mBal.setAttribute("y", -rB - bs); mBal.setAttribute("width", 2 * bs); mBal.setAttribute("height", 2 * bs);
+		var rB = rC + t.comOffset / 1e3, bs = 13 * u, rowH = 14 * u;
+		mBal.setAttribute("d", "M" + (-bs) + " " + (-rB) + "L" + bs + " " + (-rB));
 		var ancOn = !anc && any("frc", "geo", "stO");
 		show(mBal, !anc && base("frc", "geo", "pay", "stO")); show(tBal, ancOn);
 		var taken = [-rT, -rC, -rF];   // the speed arrows and their labels
@@ -858,10 +858,10 @@ export function mountHangingSkyhook(root, opts) {
 		var yBal = -rB;
 		for (var n = 0; n < 60 && taken.some(function (y) { return Math.abs(y - yBal) < rowH; }); n++) yBal += rowH;
 		var moved = yBal - (-rB) > 4 * u;
-		tBal.setAttribute("x", 14 * u); tBal.setAttribute("y", yBal + 4 * u); tBal.setAttribute("font-size", fsS); tBal.setAttribute("stroke-width", 4 * u);
+		tBal.setAttribute("x", bs + 5 * u); tBal.setAttribute("y", yBal + 4 * u); tBal.setAttribute("font-size", fsS); tBal.setAttribute("stroke-width", 4 * u);
 		var fa = figOf("anchor");
 		tBal.textContent = "anchor station · " + kmText(S.centre + t.comOffset / 1e3) + " · " + ktText(t.loads.com / 1e6) + (fa && stationsOn ? " · " + pullText(fa.acceleration, fa.outward) : "");
-		gBalLead.setAttribute("d", "M" + bs + " " + (-rB) + "L" + (11 * u) + " " + yBal);
+		gBalLead.setAttribute("d", "M" + bs + " " + (-rB) + "L" + (bs + 2 * u) + " " + yBal);
 		show(gBalLead, ancOn && moved);
 
 		// release points on the tether axis (left)
