@@ -4,26 +4,21 @@ A tether from the Moon's surface, through Earth–Moon L1, to a counterweight be
 
 ## Files
 
-- `MoonL1ElevatorCalc.html` — page markup (two-step wizard)
-- `MoonL1ElevatorCalc.css` — this calculator's own styling; the layout comes from the shared frame
-- `MoonL1ElevatorCalc.js` — the standalone page: reads its fields, runs the model, writes results, table and diagram
 - `l1ElevatorModel.js` — the physics, pure (no DOM): `L1Elevator.buildContext`,
   `loadedMetrics`, `sweepSpeeds`, `releaseOrbit`, `findL1`, `omega`
-- `l1ElevatorModel.test.js` — Node test pinning the page's example design:
+- `l1ElevatorModel.test.js` — Node test pinning the original example design:
   `node --test Website/Calculators/Moon-L1-Elevator/l1ElevatorModel.test.js`
 - `l1ElevatorBench.js` — the home workbench's cards for an L1 elevator,
   `mountMoonL1Elevator(root, opts)` (see "In the workbench" below)
 
 ## Dependencies
 
-**Not self-contained.** The page loads from `Website/Shared/`:
+**Not self-contained.** The model and the workbench cards load from `Website/Shared/`:
 
 - `../../Shared/math-utils.js` (`OrbitalMath`)
 - `../../Shared/constants.js` (`Const`)
 - the workbench cards also use `../../Shared/orbit.js` (Earth and Moon data),
   `calc-shell.js` / `calc-shell.css`, `material-card.js` and `materials.js`
-- `../../Shared/calc-frame.css` (the shared calculator layout)
-- `../../Shared/calc-about.js` (the "About this calculator" pop-up)
 
 Moving this folder without `Website/Shared/` coming along will break it.
 
@@ -177,8 +172,8 @@ the calculator shell. The Earth–Moon system comes from `Shared/orbit.js`
   radio button: a mass in kilotonnes, or a multiple of the minimum (default
   2×). The field not chosen shows the matching value.
 - **Results:** Cable properties, Forces, Orbit after release.
-- **No cargo yet.** The cable carries its track (the standalone page's
-  default gauges) but no cargo, so the minimum is the structure's own
+- **No cargo yet.** The cable carries its track (the original
+  example's default gauges) but no cargo, so the minimum is the structure's own
   $M_\text{cw,min}$ with $\lambda_\text{cargo}=0$. Cargo will raise it once
   traffic is modelled on the Logistics and Engineering tabs. With no track
   either, $M_\text{cw,min}=0$: a cable tapered to its counterweight never

@@ -1,7 +1,7 @@
 // Space elevator cards for the home page's workbench: a cable from the
 // equator of the selected body, past synchronous orbit, to a counterweight.
 // Built on the calculator shell; the physics is spaceElevatorModel.js, the
-// same model the standalone calculator (spaceElevatorCalc.html) runs.
+// same model the Node test pins.
 //
 // ES module. mountSpaceElevator(root, opts) builds one calculator inside
 // `root`, with the options and return value of the other workbench

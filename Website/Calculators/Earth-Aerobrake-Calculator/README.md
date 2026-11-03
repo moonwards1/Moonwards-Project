@@ -11,6 +11,14 @@ inclination/periapsis burn that sets up the lunar encounter is cheap. The pass
 sheds only a small slice off the top of the entry speed, so this is the
 *grazing* regime, not a steep capsule entry.
 
+## Files
+
+- `aerobrakeModel.js` — the physics, pure (no DOM): `computeAerobrake(inp)` (inputs and units in its header)
+- `aerobrakeModel.test.js` — Node test pinning the default case:
+  `node --test Website/Calculators/Earth-Aerobrake-Calculator/aerobrakeModel.test.js`
+
+The calculator's page was removed; the model reproduces its figures exactly.
+
 ## What it computes
 
 - **Speed to shed** — from the entry speed down to the periapsis speed of an
@@ -26,7 +34,7 @@ sheds only a small slice off the top of the entry speed, so this is the
   stagnation flux × soak time ÷ PICA heat of ablation, with a margin factor,
   compared against the proposed heat-shield mass budget.
 
-## Inputs of note
+## Inputs of note (the original page's fields)
 
 - *Braking periapsis altitude* is only the nominal radius used for the orbital
   speeds (which are insensitive to it). The **actual** braking altitude is an
@@ -46,11 +54,9 @@ sheds only a small slice off the top of the entry speed, so this is the
 
 ## Dependencies
 
-Loads from `Website/Shared/`: `orbit.js` (Earth/Sun data), `constants.js`
+Imports from `Website/Shared/`: `orbit.js` (Earth/Sun data), `constants.js`
 (`Const`), and `math-utils.js` (`OrbitalMath` — the grazing-aerobrake helpers
 `grazingPathScale`, `grazingPeakDecel`, `grazingPeriapsisDensity`,
 `ballisticCoefficient`, `dynamicPressure`, `suttonGravesHeatFlux`,
 `altitudeForDensity`). Breaks if its folder is moved without `Website/Shared/`
-coming along. It also links `calc-frame.css` (layout) and `calc-about.js`
-(the "About this calculator" pop-up) from there. ES module — view over http(s) (`serve.bat` locally, or the
-deployed site); ES modules do not load from `file://` links.
+coming along.

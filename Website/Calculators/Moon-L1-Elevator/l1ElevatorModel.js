@@ -1,8 +1,7 @@
 // Moon–L1 elevator physics, pure (no DOM). ES module:
 //   import { L1Elevator } from "./l1ElevatorModel.js";
 //
-// Shared by the standalone calculator (MoonL1ElevatorCalc.js) and the home
-// workbench's cards (l1ElevatorBench.js). README.md derives the model.
+// Used by the home workbench's cards (l1ElevatorBench.js). README.md derives the model.
 //
 // r = distance from the Moon's centre, measured toward Earth; Earth at r = D.
 // The Earth–Moon system rotates about the barycentre (r = x_b) with angular

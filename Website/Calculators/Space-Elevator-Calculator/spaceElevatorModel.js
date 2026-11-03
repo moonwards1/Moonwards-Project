@@ -2,8 +2,7 @@
 //   import { computeSpaceElevator } from "./spaceElevatorModel.js";
 //
 // A cable from the equator of a rotating body, up past synchronous orbit to a
-// counterweight at its tip. Shared by the standalone calculator
-// (spaceElevatorCalc.js) and the home workbench's cards (spaceElevatorBench.js).
+// counterweight at its tip. Used by the home workbench's cards (spaceElevatorBench.js).
 //
 // computeSpaceElevator(q), SI units:
 //   q.GM, q.R            the body's gravitational parameter and radius

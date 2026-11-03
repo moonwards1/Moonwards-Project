@@ -7,11 +7,8 @@ brakes in a short section beyond the hub.
 
 ## Files
 
-- `tipDriverCalc.html` — page markup
-- `tipDriverCalc.css` — this calculator's own styling (identity colour, result rows, info pop-up); layout comes from the shared frame
-- `tipDriverCalc.js` — page wiring: inputs, presets, results, info pop-ups
 - `tipDriverModel.js` — the sizing model (pure, Node-importable)
-- `tipDriverInfo.js` — the text and formulas shown in each result's info pop-up
+- `tipDriverInfo.js` — the text and formulas written to explain each result (from the removed page's info pop-ups)
 - `tipDriverModel.test.js` — Node tests for the model:
   `node --test Website/Calculators/Tip-Mass-Driver-Calculator/tipDriverModel.test.js`
 

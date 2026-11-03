@@ -29,18 +29,18 @@ Website/
 │
 ├── Calculators/            # Standalone calculator tools (ES-module pages), embeddable or linked from sections
 │   ├── _template/                              # Canonical wiring — copy this to start a new calculator
-│   ├── Earth-Aerobrake-Calculator/
+│   ├── Earth-Aerobrake-Calculator/             # model only: no page of its own
 │   ├── Hanging-skyhooks/
 │   ├── Mars-Phobos-Skyhook-Trajectory-Plotter/
-│   ├── Mass-Driver-Launch-Calculator/
 │   ├── Modified-tether-tool/                   # Tether/skyhook simulator (adapted from Sigvart Brendberg's tether-tool)
-│   ├── Moon-L1-Elevator/
+│   ├── Mass-Driver-Launch-Calculator/          # model only: no page of its own
+│   ├── Moon-L1-Elevator/                       # model + home-workbench cards
 │   ├── Moon-Skyhook-Trajectory-Plotter/
 │   ├── Skyhook-Spin-Launcher/
 │   ├── Solar-System-Trajectory-Plotter/
-│   ├── Space-Elevator-Calculator/
+│   ├── Space-Elevator-Calculator/              # model + home-workbench cards
 │   ├── Tether-geometry/
-│   ├── Tip-Mass-Driver-Calculator/
+│   ├── Tip-Mass-Driver-Calculator/             # model only: no page of its own
 │   └── Tip-Spin-Launcher-Calculator/
 │
 ├── Animations/             # Standalone animation files (SVG/JS), referenced by sections
@@ -81,7 +81,7 @@ Before adding logic to a section, check `Shared/` first. If the same calculation
 
 ## Calculators
 
-Calculators in `Calculators/` are self-contained ES-module pages that run standalone (for direct linking or embedding) as well as being referenced from within a section. Each folder carries its own README stating what it computes and which `Shared/` modules it imports; new calculators start by copying `_template/`. The **Modified-tether-tool** (and the `Tether-geometry` variant of it) is adapted from [Sigvart Brendberg's tether-tool](https://hohmiyazawa.github.io/tether-tool/tetherEmbed.html) — see its own README for details.
+Calculators in `Calculators/` are self-contained ES-module pages that run standalone (for direct linking or embedding) as well as being referenced from within a section. Earth Aerobrake, Mass Driver Launch and Tip Mass Driver are now model files only, with Node tests and no page of their own; the Moon–L1 and Space Elevator folders likewise hold a model and the cards the home workbench mounts. Each folder carries its own README stating what it computes and which `Shared/` modules it imports; new calculators start by copying `_template/`. The **Modified-tether-tool** (and the `Tether-geometry` variant of it) is adapted from [Sigvart Brendberg's tether-tool](https://hohmiyazawa.github.io/tether-tool/tetherEmbed.html) — see its own README for details.
 
 ## Nutshell
 

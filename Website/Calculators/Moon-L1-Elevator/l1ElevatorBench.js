@@ -1,7 +1,7 @@
 // Moon–L1 elevator cards for the home page's workbench: a tether from the
 // Moon's near side through Earth–Moon L1 to a counterweight beyond it.
 // Built on the calculator shell; the physics is l1ElevatorModel.js, the same
-// model the standalone calculator (MoonL1ElevatorCalc.html) runs.
+// model the Node test pins.
 //
 // ES module. mountMoonL1Elevator(root, opts) builds one calculator inside
 // `root`, with the options and return value of the other workbench

@@ -561,7 +561,7 @@ export function mountHangingSkyhook(root, opts) {
 
 		// summaries
 		if (bodyCard) bodyCard.setSummary(bodyIn.value);
-		geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km");
+		geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km\n" + num(t.footVel / 1e3, 2) + " → " + num(t.centreVel / 1e3, 2) + " → " + num(t.topVel / 1e3, 2) + " km/s");
 		var stUsed = [[recvSt, num(S.recv, 0)], [outerSt, num(S.outer, 1)], [launchSt, num(S.launch, 0)]].filter(function (x) { return x[0].use.checked; });
 		stCard.setSummary(stUsed.length ? stUsed.map(function (x) { return x[1]; }).join(" · ") + " km · " + num((ld.stationsUpper + ld.stationsLower) / 1e6, 0) + " kt" : "none");
 		payCard.setSummary(num((t.loads.upperTotal + t.loads.lowerTotal + t.loads.com) / 1e6, 0) + " kt" + (anc ? " + " + anc.name : ""));
@@ -852,8 +852,10 @@ export function mountHangingSkyhook(root, opts) {
 		// down the column to the first free row and a line leads back to the station.
 		var rB = rC + t.comOffset / 1e3, bs = 13 * u, rowH = 14 * u;
 		mBal.setAttribute("d", "M" + (-bs) + " " + (-rB) + "L" + bs + " " + (-rB));
-		var ancOn = !anc && any("frc", "geo", "stO");
-		show(mBal, !anc && base("frc", "geo", "pay", "stO")); show(tBal, ancOn);
+		// Basics shown alone leaves the anchor station out: it is not one of its figures.
+		var basicsAlone = shell.soloId === "geo";
+		var ancOn = !anc && !basicsAlone && any("frc", "geo", "stO");
+		show(mBal, !anc && !basicsAlone && base("frc", "geo", "pay", "stO")); show(tBal, ancOn);
 		var taken = [-rT, -rC, -rF];   // the speed arrows and their labels
 		if (stOn) decks.forEach(function (d) { taken.push(-(R + d[0])); });
 		if (thrOn) taken.push(-ca);

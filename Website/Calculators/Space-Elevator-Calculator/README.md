@@ -5,13 +5,10 @@ counterweight at its tip.
 
 ## Files
 
-- `spaceElevatorCalc.html` — page markup
-- `spaceElevatorCalc.css` — this calculator's own styling; the layout comes from the shared frame
-- `spaceElevatorCalc.js` — the standalone page: presets, fields, outputs and the draggable diagram
 - `spaceElevatorModel.js` — the physics, pure (no DOM): `computeSpaceElevator`
   (synchronous orbit, taper, cable mass per kg of tip payload, tip release,
   orbit after release), `cableMassRatio`
-- `spaceElevatorModel.test.js` — Node test pinning the page's Ceres defaults:
+- `spaceElevatorModel.test.js` — Node test pinning the original Ceres defaults:
   `node --test Website/Calculators/Space-Elevator-Calculator/spaceElevatorModel.test.js`
 - `spaceElevatorBench.js` — the home workbench's cards for a standard space
   elevator, `mountSpaceElevator(root, opts)`: Tether geometry and the shared
@@ -22,8 +19,7 @@ counterweight at its tip.
 
 ## Dependencies
 
-**Not self-contained.** The page uses `../../Shared/calc-frame.css` (layout),
-`calc-about.js` (the "About this calculator" pop-up), `math-utils.js` and
+**Not self-contained.** The model uses `../../Shared/math-utils.js` and
 `constants.js`; the workbench cards add `orbit.js`, `calc-shell.js` /
 `calc-shell.css`, `material-card.js` and `materials.js`. The folder needs
 `Website/Shared/` beside it.
