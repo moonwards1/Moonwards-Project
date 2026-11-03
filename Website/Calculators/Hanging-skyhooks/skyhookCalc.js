@@ -113,19 +113,29 @@ export function mountHangingSkyhook(root, opts) {
 		bodyIn.value = bodyValue;
 		bodyNote = document.createElement("p");
 	} else {
-		bodyCard = shell.addCard({ id: "body", tab: "arch", feeds: ["orb", "prop", "rel"], side: "in", title: "Body", short: "Body", color: C.umber, focus: "body" });
+		bodyCard = shell.addCard({ id: "body", tab: "arch", feeds: ["prop", "rel"], side: "in", title: "Body", short: "Body", color: C.umber, focus: "body" });
 		bodyIn = shell.selectField(bodyCard, { aria: "Body the skyhook orbits", value: bodyValue,
 			options: BODY_NAMES.map(function (n) { return { value: n, label: n }; }) });
 		bodyNote = shell.note(bodyCard, "");
 	}
 
-	var geoCard = shell.addCard({ id: "geo", tab: "arch", feeds: ["orb", "prop", "rel", "clm", "frc", "rp"], side: "in", title: "Tether geometry", short: "Geometry", color: C.core, focus: "tether" });
-	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "station-keeping engines", unit: "km", value: DEF.top,
-		tip: "Site of the orbital station-keeping engines." });
-	var centreIn = shell.numberField(geoCard, { label: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "the altitude that sets orbital speed", unit: "km", value: DEF.centre,
-		tip: anc ? anc.name + " is the anchor, so its orbit is the centre of mass." : "The point that determines the orbit." });
+	var geoCard = shell.addCard({ id: "geo", tab: "arch", feeds: ["prop", "rel", "clm", "frc", "rp"], side: "in", title: "Basics", short: "Basics", color: C.core, focus: "tether" });
+	// The speed figures sit in a row of their own under the altitude field they belong to.
+	function speedsUnder(input, items) {
+		var row = input.closest(".cs-row"), box = document.createElement("div");
+		box.className = "hs-speeds";
+		row.parentNode.insertBefore(box, row.nextSibling);
+		var cells = shell.hero({ body: box }, items, { compact: true });
+		cells.forEach(function (c, i) { if (items[i].plain) c.el.querySelector(".cs-hv").style.color = "var(--cs-ink)"; });
+		return cells;
+	}
+	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "site of boost engines", unit: "km", value: DEF.top });
+	var topSp = speedsUnder(topIn, [{ label: "speed", unit: "km/s" }, { label: "free orbit speed", unit: "km/s", plain: true }, { label: "multiple", unit: "×" }]);
+	var centreIn = shell.numberField(geoCard, { label: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "determines orbital speed", unit: "km", value: DEF.centre });
+	var centreSp = speedsUnder(centreIn, [{ label: "Period", unit: "h" }, { label: "speed", unit: "km/s" }]);
 	if (anc) centreIn.disabled = true;
 	var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: DEF.foot });
+	var footSp = speedsUnder(footIn, [{ label: "speed", unit: "km/s" }, { label: "free orbit speed", unit: "km/s", plain: true }, { label: "multiple", unit: "×" }]);
 	shell.note(geoCard, "Or drag the markers on the drawing.");
 
 	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop", "frc"], focus: "tether", value: DEF.material || "silica", safety: 3 });
@@ -211,12 +221,6 @@ export function mountHangingSkyhook(root, opts) {
 		g.hideFrom = function (n) { for (var i = n; i < g.lines.length; i++) g.lines[i].show(false); };
 		return g;
 	}
-
-	var orbCard = shell.addCard({ id: "orb", tab: "arch", side: "out", title: "Orbit & speeds", short: "Speeds", color: C.core, focus: "tether" });
-	var hero = shell.hero(orbCard, [{ label: "Period", unit: "h" }, { label: "Top speed", unit: "km/s" }, { label: "Foot speed", unit: "km/s" }]);
-	var rVc = shell.line(orbCard, { label: "Speed at centre of mass", unit: "m/s" });
-	var rVcTop = shell.line(orbCard, { label: "Circular-orbit speed at top", unit: "m/s" });
-	var rVcFoot = shell.line(orbCard, { label: "Circular-orbit speed at foot", unit: "m/s" });
 
 	var relCard = shell.addCard({ id: "rel", tab: "arch", side: "out", title: "Dropped from the foot", short: "Drop", color: C.umber, module: "rel", focus: "foot" });
 	var rSurf = shell.line(relCard, { label: "Speed at the surface", unit: "m/s" });
@@ -430,11 +434,10 @@ export function mountHangingSkyhook(root, opts) {
 		bodyNote.textContent = "Radius " + num(R / 1e3, 1) + " km · surface gravity " + num(t.surfaceGravity, 2) + " m/s²";
 		shell.warn(notes.concat(t.warnings).join(" "));
 
-		// orbit & speeds
-		hero[0].set(num(t.time / 3600, 2)); hero[1].set(num(t.topVel / 1e3, 2)); hero[2].set(num(t.footVel / 1e3, 2));
-		rVc.set(num(t.centreVel, 1));
-		rVcTop.set(num(t.topOrbit, 0), "The top moves " + num(t.topVel / t.topOrbit, 2) + "× faster than a free orbit there, so released payloads are flung outward.");
-		rVcFoot.set(num(t.footOrbit, 0));
+		// orbit & speeds, under the altitude fields
+		centreSp[0].set(num(t.time / 3600, 2)); centreSp[1].set(num(t.centreVel / 1e3, 2));
+		topSp[0].set(num(t.topVel / 1e3, 2)); topSp[1].set(num(t.topOrbit / 1e3, 2)); topSp[2].set(num(t.topVel / t.topOrbit, 2));
+		footSp[0].set(num(t.footVel / 1e3, 2)); footSp[1].set(num(t.footOrbit / 1e3, 2)); footSp[2].set(num(t.footVel / t.footOrbit, 2));
 
 		// dropped from the foot
 		rSurf.show(t.hitsSurface); rAng.show(t.hitsSurface); rAround.show(t.hitsSurface); rPeri.show(!t.hitsSurface);
@@ -564,7 +567,6 @@ export function mountHangingSkyhook(root, opts) {
 		payCard.setSummary(num((t.loads.upperTotal + t.loads.lowerTotal + t.loads.com) / 1e6, 0) + " kt" + (anc ? " + " + anc.name : ""));
 		thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + routeText);
 		kpCard.setSummary((propIn.value === "oxygen" ? "O₂" : "H₂") + " · " + vExIn.value + " km/s");
-		orbCard.setSummary(num(t.time / 3600, 2) + " h · top " + num(t.topVel / 1e3, 2) + " km/s");
 		relCard.setSummary(t.hitsSurface ? num(t.hitTheGround, 0) + " m/s at " + num(t.impactFromVertical * 180 / Math.PI, 1) + "°" : "does not land");
 		f = scaled(t.tetherMass, MASS); propCard.setSummary(f[0] + " " + f[1] + " · taper " + num(t.lowRatio, 2) + " / " + num(t.highRatio, 2));
 		clmCard.setSummary(num(t.lowIntegral / 1e3, 0) + " kJ/kg uphill");
@@ -712,7 +714,7 @@ export function mountHangingSkyhook(root, opts) {
 		show(gFloor, any("geo") && lim.foot != null);
 		if (lim.top != null) gCeil.setAttribute("r", R + lim.top);
 		show(gCeil, any("geo") && lim.top != null);
-		view.legendEl.style.display = any("orb") ? "" : "none";
+		view.legendEl.style.display = any("geo") ? "" : "none";
 		miniBody.setAttribute("r", R); miniBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
 		miniTether.setAttribute("d", "M0 " + (-rF) + "L0 " + (-rT));
 
@@ -787,10 +789,10 @@ export function mountHangingSkyhook(root, opts) {
 			var tx = tSpeed[i];
 			tx.setAttribute("x", xb + 6 * u); tx.setAttribute("y", y + 4 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
 			tx.textContent = num(s[1] / 1e3, 2) + " km/s";
-			show(tx, any("orb"));
+			show(tx, any("geo"));
 		});
 		gArrows.setAttribute("d", ar); gHeads.setAttribute("d", hd); gNotches.setAttribute("d", nt);
-		[gArrows, gHeads, gNotches].forEach(function (el) { show(el, any("orb")); });
+		[gArrows, gHeads, gNotches].forEach(function (el) { show(el, any("geo")); });
 
 		// dropped from the foot: an ellipse with apoapsis at the foot
 		var relOn = any("rel");

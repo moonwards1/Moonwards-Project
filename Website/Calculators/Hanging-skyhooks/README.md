@@ -36,7 +36,7 @@ labels.
   when switched on every station starts unticked, at 2,500 km (main launch deck),
   1,250 km (outer docks) and 1,500 km (receiving deck), 10 kt each. The
   standalone page opens on the Moon design. Each card and
-  chip names its workbench tab: geometry, material, loads, speeds,
+  chip names its workbench tab: basics (the three altitudes with their speeds), material, loads,
   the fall from the foot, release points, tether properties, forces and
   stations (inputs and results) on Architecture; cargo throughput, throughput, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
@@ -92,7 +92,7 @@ section's tension where it arrives at its inner end, and what each station adds.
 The cable is continuous through the centre of mass and nothing hangs there, so the
 tension arriving from above equals the tension arriving from below. The anchor
 station sits at the altitude where that holds, so the installation's true centre
-of mass stays at the centre-of-mass altitude set in Tether geometry, which is
+of mass stays at the centre-of-mass altitude set in Basics, which is
 what fixes the orbit; the more the two tethers' loads differ, the farther from
 that altitude it sits. It is treated like the other stations: it adds its mass
 times the net pull it feels at that altitude, on the tether it lies on. It may sit
