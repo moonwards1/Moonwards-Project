@@ -72,7 +72,7 @@ export function mountHangingSkyhook(root, opts) {
 			modules: ["thr"] },
 		Moon: { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, launch: 950, material: "silica",
 			topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 30, footLoad: 200, ticked: true, launchMass: 10, outerMass: 20, recvMass: 100,
-			modules: ["st", "thr", "kp", "re"] },
+			modules: ["st", "thr", "kp", "reO"] },
 		Earth: { top: 6200, centre: 2900, foot: 120, recv: 1500, outer: 1250, launch: 2500, material: "bestsilica",
 			topLoad: 60, upperLoad: 20, anchorLoad: 5000, lowerLoad: 50, footLoad: 20, ticked: false, launchMass: 10, outerMass: 10, recvMass: 10,
 			modules: ["st", "thr"] }
@@ -88,7 +88,6 @@ export function mountHangingSkyhook(root, opts) {
 	shell.addModule({ id: "st", tab: "arch", side: "in", label: "Optional Stations", color: C.ochre, on: opens("st", true), brings: ["stO"], tip: "Receiving deck, outer docks and main launch deck; brings Stations results" });
 	shell.addModule({ id: "thr", tab: "log", side: "in", label: "Cargo throughput", color: C.teal, on: opens("thr", true), brings: ["thrO"], tip: "Cargo carried along the tether, foot to top or between stations; brings Throughput" });
 	shell.addModule({ id: "kp", tab: "eng", side: "in", label: "Station-keeping", color: C.cobalt, on: opens("kp", false), needs: ["thr"], brings: ["kpO"], tip: "Needs Cargo throughput; brings its results" });
-	shell.addModule({ id: "re", tab: "log", side: "in", label: "Entry at the parent planet", color: C.violet, on: opens("re", false), brings: ["reO"], where: "parentEntry", tip: "Cargo released toward the planet this body orbits, entering its atmosphere" });
 
 	shell.addModule({ id: "rel", tab: "arch", side: "out", label: "Drop from foot", color: C.umber, on: true, tip: "Fall from the foot to the surface" });
 	shell.addModule({ id: "clm", tab: "log", side: "out", label: "Climber energy", color: C.core, on: true, tip: "Energy to climb each half of the tether" });
@@ -97,7 +96,7 @@ export function mountHangingSkyhook(root, opts) {
 	shell.addModule({ id: "stO", tab: "arch", side: "out", label: "Stations", color: C.ochre, on: opens("st", true), needs: ["st"], tip: "Needs Optional Stations" });
 	shell.addModule({ id: "thrO", tab: "log", side: "out", label: "Throughput", color: C.teal, on: true, needs: ["thr"], tip: "Needs Cargo throughput" });
 	shell.addModule({ id: "kpO", tab: "eng", side: "out", label: "Station-keeping", color: C.cobalt, on: opens("kp", false), needs: ["kp"], tip: "Needs Station-keeping inputs" });
-	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Entry at the parent planet", color: C.violet, on: opens("re", false), needs: ["re"], where: "parentEntry", tip: "Needs the entry inputs" });
+	shell.addModule({ id: "reO", tab: "log", side: "out", label: "Entry at the parent planet", color: C.violet, on: opens("reO", false), where: "parentEntry", tip: "Cargo released toward the planet this body orbits, entering its atmosphere" });
 
 	// ---------- input cards ----------
 	var BODY_NAMES = Array.from(systems.values()).filter(function (s) {
@@ -190,13 +189,8 @@ export function mountHangingSkyhook(root, opts) {
 		if (Number(vExIn.value) > mx) vExIn.value = mx;
 	});
 
-	var reCard = shell.addCard({ id: "re", tab: "log", feeds: ["reO"], side: "in", title: "Entry at the parent planet", short: "Entry", color: C.violet, module: "re", focus: "reentry" });
-	var perigeeIn = shell.numberField(reCard, { label: "Target perigee altitude", unit: "km", value: 50, min: -300,
-		tip: "Cargo flung from the launch deck is braked retrograde so it falls to the parent planet; a burn at apogee, out at this body's distance, trims perigee to the target." });
-	// The default interface is the parent's own (body-profiles.js entryInterface).
-	function ifaceDefault(name) { var p = parentName(name); return (p && profileOf(p).entryInterface) || 122; }
-	var ifaceIn = shell.numberField(reCard, { label: "Entry interface altitude", unit: "km", value: ifaceDefault(bodyValue), min: 1 });
-	var reNote = shell.note(reCard, "Cargo released from the launch deck.");
+	// Where the parent's atmosphere starts: its own figure (body-profiles.js entryInterface).
+	function ifaceAltOf(name) { var p = parentName(name); return (p && profileOf(p).entryInterface) || 122; }
 
 	// ---------- result cards ----------
 	// A labelled group of result lines inside a fold, whose lines are reused as the
@@ -285,8 +279,7 @@ export function mountHangingSkyhook(root, opts) {
 	var reOCard = shell.addCard({ id: "reO", tab: "log", side: "out", title: "Entry at the parent planet", short: "Entry", color: C.violet, module: "reO", focus: "reentry" });
 	var rVinf = shell.line(reOCard, { label: "v∞ leaving the Moon", unit: "m/s" });
 	var rRel = shell.line(reOCard, { label: "Release before longitude 0", unit: "°" });
-	var rNatP = shell.line(reOCard, { label: "Natural perigee", unit: "km" });
-	var rBurn = shell.line(reOCard, { label: "Δv at apogee for target perigee", unit: "m/s" });
+	var rPerigee = shell.line(reOCard, { label: "Perigee altitude", unit: "km" });
 	var rEntry = shell.line(reOCard, { label: "Entry angle", unit: "°" });
 	var rPeakG = shell.line(reOCard, { label: "Peak deceleration", unit: "g", sub: "Ballistic estimate, calibrated to Stardust; lift and guidance reduce it." });
 	var reOutNote = shell.note(reOCard, "");
@@ -366,8 +359,8 @@ export function mountHangingSkyhook(root, opts) {
 		var name = bodyIn.value, parent = parentName(name);
 		shell.setConditions(function (where) { return applies(where, name); });
 		var title = parent ? "Entry at " + parent : "Entry at the parent planet";
-		shell.setLabel("re", title); shell.setLabel("reO", title);
-		reCard.setTitle(title, "Entry"); reOCard.setTitle(title, "Entry");
+		shell.setLabel("reO", title);
+		reOCard.setTitle(title, "Entry");
 		rVinf.el.querySelector(".cs-k").textContent = "v∞ leaving " + theName(name);
 		var lim = limits();
 		footIn.min = lim.foot != null ? lim.foot : 0;
@@ -420,7 +413,7 @@ export function mountHangingSkyhook(root, opts) {
 			vClimb: Math.max(0.1, field(vClimbIn, 200)), effDrive: field(effDriveIn, 70) / 100,
 			propellant: propIn.value, vExhaust: field(vExIn, 8),
 			effThruster: field(effThrIn, 60) / 100, effSupply: field(effSupIn, 90) / 100,
-			targetPerigee: field(perigeeIn, 50), ifaceAlt: field(ifaceIn, 122)
+			ifaceAlt: ifaceAltOf(bodyIn.value)
 		});
 		var R = Number(body.radius);
 		anchorKm = (t.centre + t.comOffset) / 1e3;
@@ -537,17 +530,16 @@ export function mountHangingSkyhook(root, opts) {
 		// entry at the parent planet (shown only where it applies: shell.setConditions)
 		var re = t.reentry, here = theName(bodyIn.value);
 		var reShow = !!re.parent && re.escapes;
-		[rVinf, rRel, rNatP, rBurn].forEach(function (l) { l.show(reShow); });
+		[rVinf, rRel, rPerigee].forEach(function (l) { l.show(reShow); });
 		rEntry.show(reShow && re.entry); rPeakG.show(reShow && re.entry && re.atmosphere);
 		reOutNote.textContent = re.parent && !re.escapes ? "A release from the launch deck does not escape " + here + ": no transfer to " + re.parent + "."
-			: reShow && !re.entry ? "Target perigee above the entry interface: no atmospheric entry." : "";
+			: reShow && !re.entry ? "The path's perigee is above the " + num(ifaceAltOf(bodyIn.value), 0) + " km entry interface: no atmospheric entry." : "";
 		reOutNote.hidden = !reOutNote.textContent;
 		if (reShow) {
 			rVinf.set(num(re.vinf, 0), num(re.arrivalSpeed, 0) + " m/s at " + (bodyIn.value === "Moon" ? "the Moon's" : here + "'s") + " distance after braking");
 			rRel.set(num(re.turn * 180 / Math.PI, 1), "ahead of the point facing " + re.parent + ": " + theName(bodyIn.value) + "'s pull turns the departure by this much");
-			rNatP.set(num(re.naturalPerigeeAlt / 1e3, 0), re.naturalPerigeeAlt < 0 ? "below the surface: steep, direct entry" : "");
-			rBurn.set(num(Math.abs(re.burn), 1), re.burn >= 0 ? "prograde, raising perigee" : "retrograde, lowering perigee");
-			if (re.entry) rEntry.set("−" + num(re.entryAngle * 180 / Math.PI, 1), "entry speed " + num(re.entrySpeed / 1e3, 2) + " km/s");
+			rPerigee.set(num(re.perigeeAlt / 1e3, 0), re.perigeeAlt < 0 ? "below the surface: a direct hit" : "");
+			if (re.entry) rEntry.set("−" + num(re.entryAngle * 180 / Math.PI, 1), "at " + num(ifaceAltOf(bodyIn.value), 0) + " km altitude, entry speed " + num(re.entrySpeed / 1e3, 2) + " km/s");
 			if (re.entry && re.atmosphere) rPeakG.set("~" + num(re.peakG, 0));
 		}
 
@@ -572,7 +564,6 @@ export function mountHangingSkyhook(root, opts) {
 		payCard.setSummary(num((t.loads.upperTotal + t.loads.lowerTotal + t.loads.com) / 1e6, 0) + " kt" + (anc ? " + " + anc.name : ""));
 		thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + routeText);
 		kpCard.setSummary((propIn.value === "oxygen" ? "O₂" : "H₂") + " · " + vExIn.value + " km/s");
-		reCard.setSummary("perigee " + perigeeIn.value + " km");
 		orbCard.setSummary(num(t.time / 3600, 2) + " h · top " + num(t.topVel / 1e3, 2) + " km/s");
 		relCard.setSummary(t.hitsSurface ? num(t.hitTheGround, 0) + " m/s at " + num(t.impactFromVertical * 180 / Math.PI, 1) + "°" : "does not land");
 		f = scaled(t.tetherMass, MASS); propCard.setSummary(f[0] + " " + f[1] + " · taper " + num(t.lowRatio, 2) + " / " + num(t.highRatio, 2));
@@ -892,7 +883,7 @@ export function mountHangingSkyhook(root, opts) {
 		// at the moment of release (the tether is drawn at that moment): the hyperbola from the
 		// launch deck, its periapsis. The arrow to the parent leaves the body through the point
 		// facing it, `turn` ahead of the tether, so the departure heads out against the body's orbit.
-		var re = t.reentry, dp = S.depart, reOn = any("re", "reO") && re.escapes && dp.length > 1;
+		var re = t.reentry, dp = S.depart, reOn = any("reO") && re.escapes && dp.length > 1;
 		[gRe, gReHead, tRe, gTurn, tTurn, gEarth, gEarthHead, tEarth, gOrbitP, gOrbitPHead, gReMid].forEach(function (el) { show(el, reOn && isFinite(S.parentDist)); });
 		if (reOn) {
 			var end = dp[dp.length - 1], prev = dp[dp.length - 2];
@@ -983,11 +974,7 @@ export function mountHangingSkyhook(root, opts) {
 	shell.onShown(function () { view.redraw(); });
 	shell.onFocus(function (target) { view.focus(target); });
 	view.onRender(draw);
-	var lastBody = bodyIn.value;
 	bodyIn.addEventListener("change", function () {
-		// the interface follows the new parent unless the viewer has changed it
-		if (Number(ifaceIn.value) === ifaceDefault(lastBody)) ifaceIn.value = ifaceDefault(bodyIn.value);
-		lastBody = bodyIn.value;
 		rejected = { foot: null, top: null };   // a rejection belongs to the body it was made at
 		applyBody(); calc(); view.focus("tether");
 	});

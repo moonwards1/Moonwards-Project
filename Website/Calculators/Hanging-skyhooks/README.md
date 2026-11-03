@@ -7,8 +7,8 @@ entry at the parent planet for cargo released toward it. The same calculator
 also serves the Phobos-anchored skyhook (below).
 
 Built on the calculator shell: inputs, a zoomable drawing and results in three
-columns. Stations, loads, cargo throughput, station-keeping and entry at
-the parent planet are input modules; the fall from the foot, climber energy, release
+columns. Stations, loads, cargo throughput and station-keeping are input
+modules; the fall from the foot, climber energy, release
 points, forces, throughput, station-keeping, and entry are result modules. Card titles glide the drawing to their
 part; the foot, centre-of-mass and top markers can be dragged.
 
@@ -135,12 +135,17 @@ power cost.
 What changes from body to body comes from `Shared/body-profiles.js`, not from
 checks in this calculator:
 
-- **Entry at the parent planet** (input and result modules, `where: "parentEntry"`)
-  exists only where the body's parent planet has an atmosphere — today, the Moon,
-  entering at Earth. Elsewhere it has no chip and no card. Its titles name the
-  parent ("Entry at Earth"), its interface altitude opens at the parent's own
-  (`entryInterface`), and the peak-deceleration estimate uses the parent's scale
-  height (`Shared/constants.js`); a parent with none gets no peak-g figure.
+- **Entry at the parent planet** (a result module with no inputs of its own,
+  `where: "parentEntry"`) exists only where the body's parent planet has an
+  atmosphere — today, the Moon, entering at Earth. Elsewhere it has no chip and
+  no card. Its titles name the parent ("Entry at Earth"). It follows the natural
+  path of a release from the launch deck, with no burn: the cargo leaves the
+  body's distance at apogee moving only sideways, v∞ fixes the perigee, and the
+  entry angle, entry speed and peak deceleration are measured where that path
+  crosses the parent's interface altitude (`entryInterface`). A perigee below
+  the parent's surface is a direct hit; one above the interface is no entry. The
+  peak-deceleration estimate uses the parent's scale height
+  (`Shared/constants.js`); a parent with none gets no peak-g figure.
   The drawing shows the departure in the body-centred frame that does not
   rotate, at the moment of release: the hyperbola from the launch deck (its
   periapsis) out to seven body radii, an arrow to the parent through the point

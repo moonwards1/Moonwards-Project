@@ -4,8 +4,8 @@
 // Pins a reference design (Moon; foot 10, centre 275, top 2000 km;
 // decks 233 / 606.5 / 950 km; lunar silica ×3; loads 40 / 60 / 5000 / 300 / 200 kt (top tip, upper
 // tether, anchor station, lower tether, foot tip); 1000 t/day
-// in 100 t climbers at 200 m/s, 70 %; oxygen at 8 km/s, 60 % / 90 %; perigee
-// 50 km, interface 122 km; the stations carry no mass), then checks what station
+// in 100 t climbers at 200 m/s, 70 %; oxygen at 8 km/s, 60 % / 90 %; entry
+// interface 122 km; the stations carry no mass), then checks what station
 // masses do to it.
 
 import test from "node:test";
@@ -24,7 +24,7 @@ function base() {
 		strength: (m.strength / 3) / m.density, loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
 		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
 		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9,
-		targetPerigee: 50, ifaceAlt: 122
+		ifaceAlt: 122
 	};
 }
 var t = computeSkyhook(moon, base());
@@ -135,7 +135,7 @@ test("the station may sit anywhere the tether can carry it", function () {
 		strength: (weak.strength / 3) / weak.density,
 		loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
 		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
-		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9, targetPerigee: 50, ifaceAlt: 122
+		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9, ifaceAlt: 122
 	};
 	// too light an anchor: no position balances, and that is reported
 	var u = computeSkyhook(moon, base);
@@ -216,11 +216,10 @@ test("entry at the parent planet: Earth, from the Moon", function () {
 	assert.ok(re.escapes && re.entry && re.atmosphere);
 	near(re.vinf, 835, 0, "v∞");
 	near(re.arrivalSpeed, 184, 0, "arrival");
-	near(re.naturalPerigeeAlt / 1e3, -26, 0, "natural perigee km");
-	near(re.burn, 1.1, 1, "burn");
-	near(re.entryAngle * 180 / Math.PI, 6.0, 1, "entry angle");
+	near(re.perigeeAlt / 1e3, -26, 0, "perigee km (below the surface: a direct hit)");
+	near(re.entryAngle * 180 / Math.PI, 8.6, 1, "entry angle");
 	near(re.entrySpeed / 1e3, 10.99, 2, "entry speed");
-	near(re.peakG, 18, 0, "peak g");
+	near(re.peakG, 26, 0, "peak g");
 	near(re.eccentricity, 1.38, 2, "departure eccentricity");
 	near(re.turn * 180 / Math.PI, 46.4, 1, "turn: release this far before longitude 0");
 });
