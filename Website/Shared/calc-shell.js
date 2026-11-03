@@ -135,6 +135,27 @@ export function switchModule(defs, on, id, value) {
 
 // ---- DOM ------------------------------------------------------------------
 var svgNS = "http://www.w3.org/2000/svg";
+
+// Sets a number input's step, min and max. Firefox measures the spinner-arrow
+// grid from `min`, so a minimum that is not a whole number of steps (min 0.001
+// at the default step of 1) puts the grid off the field's values: the first
+// click snaps onto it by a sliver, and later clicks step by the full amount. For
+// such a field the minimum is held back from the attribute and enforced when the
+// value is committed instead, which keeps the grid anchored at zero.
+function limitNumber(input, step, min, max) {
+	var st = step ? parseFloat(step) : 1;
+	var q = min != null ? min / st : 0;
+	var aligned = Math.abs(q - Math.round(q)) < 1e-9;
+	input.step = step || "any";
+	if (min != null && aligned) input.min = min;
+	if (max != null) input.max = max;
+	if (min != null && !aligned) {
+		input.addEventListener("change", function () {
+			var v = parseFloat(input.value);
+			if (v < min) input.value = min;
+		});
+	}
+}
 function icon(path, size, sw, cls) {
 	var s = document.createElementNS(svgNS, "svg");
 	s.setAttribute("width", size); s.setAttribute("height", size);
@@ -499,9 +520,7 @@ export class CalcShell {
 		var input = create("input", false, false, fld);
 		this._register(card, opts, input);
 		input.type = "number";
-		input.step = opts.step || "any";
-		if (opts.min != null) input.min = opts.min;
-		if (opts.max != null) input.max = opts.max;
+		limitNumber(input, opts.step, opts.min, opts.max);
 		input.value = opts.value;
 		if (opts.unit) create("span", "cs-u", opts.unit, fld);
 		this._wire(card, input);
@@ -593,9 +612,7 @@ export class CalcShell {
 			var input = create("input", false, false, fld);
 			self._register(card, { key: f.key || (opts.key + " " + f.label) }, input);
 			input.type = "number";
-			input.step = f.step || "any";
-			if (f.min != null) input.min = f.min;
-			if (f.max != null) input.max = f.max;
+			limitNumber(input, f.step, f.min, f.max);
 			input.value = f.value;
 			if (f.unit) create("span", "cs-u", f.unit, fld);
 			self._wire(card, input);
