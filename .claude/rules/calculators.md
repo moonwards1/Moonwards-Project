@@ -15,18 +15,19 @@ imports and starts the tool.) A new calculator starts by copying
 
 New calculators sit on the **calculator shell**, which `_template/` shows
 whole (`Hanging-skyhooks/` is the first full calculator on it): `Shared/calc-shell.css` + `calc-shell.js` (`CalcShell`) +
-`zoom-view.js` (`ZoomView`). The page is a header (title, then two chip
-groups: input modules on the left, result modules on the right, each two
-lines high and scrolling beyond that) over three columns — inputs, the
-drawing, results — each scrolling on its own.
+`zoom-view.js` (`ZoomView`). The page is a header (overline and title) over
+three columns — inputs, the drawing, results — each scrolling on its own and
+headed by its name, its card count, and fold-all / unfold-all buttons. An
+embedded calculator has no header; its overline alone is a row above the side
+columns, so their heads line up.
 
-- **Cards.** Permanent cards hold the main inputs and results; a card with
-  `module` shows only while its module is on. Every card collapses to its
-  `short` title plus a one-line summary (`card.setSummary`), so keep both
-  short. The main result card may open with a key-figure bar (`shell.hero`).
-- **Modules.** Input modules add input cards, result modules add result
-  cards. Declare `needs` (switched on with it) and, on an input module,
-  `brings` (its paired results). Dependencies resolve in `switchModule`.
+- **Cards.** Every card is always in its column (on its tab, and where its
+  `where` condition holds); a viewer folds it, never removes it. A part of the
+  design that may or may not exist is a ticked line inside a card
+  (`shell.optionalFields`), not a card that comes and goes. Every card
+  collapses to its `short` title plus a one-line summary (`card.setSummary`),
+  so keep both short. The main result card may open with a key-figure bar
+  (`shell.hero`).
 - **Drawing.** World units are the calculator's choice (km in the template).
   Lines take `vector-effect="non-scaling-stroke"`; markers, text and offsets
   are sized in pixels × `view.u` inside the `onRender` callback. Each card's
@@ -37,10 +38,10 @@ drawing, results — each scrolling on its own.
 - **Card ticks.** Embedded in the home workbench, each card has a checkbox
   that shows or hides its marks. Every mark the drawing makes belongs to one
   or more cards and is drawn only while `shell.isShown(id)` is true for one of
-  them (a module card also needs its module on); marks no card owns, like the
+  them; marks no card owns, like the
   body, stay. Call `view.redraw()` from `shell.onShown`.
-- **Colours.** Take card/drawing accent pairs from `ShellColors` so a module's
-  chip, cards and marks match. A calculator sets only `--cs-core` and its
+- **Colours.** Take card/drawing accent pairs from `ShellColors` so a part's
+  cards and marks match. A calculator sets only `--cs-core` and its
   drawing's own rules (own class prefix) in its stylesheet.
 - **Narrowing.** Side columns shrink and cards tighten (container queries)
   before anything stacks — results go under the drawing below 940 px, all

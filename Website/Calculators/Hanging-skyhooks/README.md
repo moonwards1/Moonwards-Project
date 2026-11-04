@@ -7,9 +7,8 @@ entry at the parent planet for cargo released toward it. The same calculator
 also serves the Phobos-anchored skyhook (below).
 
 Built on the calculator shell: inputs, a zoomable drawing and results in three
-columns. Stations, loads, cargo throughput and station-keeping are input
-modules; the fall from the foot, climber energy, release
-points, throughput, station-keeping, and entry are result modules. Card titles glide the drawing to their
+columns. Every card is always there on its tab; each optional station is a
+ticked line in the Optional Stations card. Card titles glide the drawing to their
 part; the foot, centre-of-mass and top markers can be dragged.
 
 The drawing's text fades out once the body spans less than half the drawing's
@@ -38,7 +37,7 @@ The triangle and its labels appear once the impact is more than 220 px from the 
 - `Hanging-skyhooks.html` — page markup: fonts, stylesheets, one `#app` element
 - `Hanging-skyhooks.css` — this page's own styling (core accent, result-group spacing)
 - `Hanging-skyhooks.js` — the standalone page's script: mounts one calculator into `#app`
-- `skyhookCalc.js` — the calculator: cards, modules, drawing, as
+- `skyhookCalc.js` — the calculator: cards, drawing, as
   `mountHangingSkyhook(root, opts)`. The home page's workbench mounts it
   directly, one per hanging skyhook in the design, with the body chosen there
   (`lockBody`), filling its container (`embedded`), and restoring saved
@@ -46,11 +45,10 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   header comment lists the options. A new workbench skyhook (not anchored)
   opens on round figures that work at every workbench body: foot 1,000 km,
   centre of mass 2,000 km, top 3,000 km; 10 kt for each Core Facilities load
-  except the anchor station, 1,000 kt. Optional Stations starts switched off, and
-  when switched on every station starts unticked, at 2,500 km (main launch deck),
+  except the anchor station, 1,000 kt. Every optional station starts unticked, at 2,500 km (main launch deck),
   1,250 km (outer docks) and 1,500 km (receiving deck), 10 kt each. The
-  standalone page opens on the Moon design. Each card and
-  chip names its workbench tab: basics (the three altitudes with their speeds), material, loads,
+  standalone page opens on the Moon design. Each card
+  names its workbench tab: basics (the three altitudes with their speeds), material, loads,
   the foot ↔ ground trips, release points, loads and
   stations (inputs and results) on Architecture; cargo throughput, throughput, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
@@ -68,7 +66,7 @@ relative path:
 - `../../Shared/math-utils.js`, `constants.js` — the maths
 - `../../Shared/materials.js`, `material-card.js` — the Tether materials card and its presets
 - `../../Shared/body-profiles.js` — what is special about each body: the foot floor, which
-  body-specific modules apply, and the Phobos anchor configuration
+  body-specific cards apply, and the Phobos anchor configuration
 
 **It will break if this folder is moved without `Website/Shared/` coming with
 it.**
@@ -151,10 +149,9 @@ power cost.
 What changes from body to body comes from `Shared/body-profiles.js`, not from
 checks in this calculator:
 
-- **Entry at the parent planet** (a result module with no inputs of its own,
+- **Entry at the parent planet** (a result card with no inputs of its own,
   `where: "parentEntry"`) exists only where the body's parent planet has an
-  atmosphere — today, the Moon, entering at Earth. Elsewhere it has no chip and
-  no card. Its titles name the parent ("Entry at Earth"). It follows the natural
+  atmosphere — today, the Moon, entering at Earth. Elsewhere it has no card. Its titles name the parent ("Entry at Earth"). It follows the natural
   path of a release from the launch deck, with no burn: the cargo leaves the
   body's distance at apogee moving only sideways, v∞ fixes the perigee, and the
   entry angle, entry speed and peak deceleration are measured where that path

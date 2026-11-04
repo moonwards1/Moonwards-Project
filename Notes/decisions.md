@@ -468,9 +468,9 @@ don't. With the IAU convention a retrograde rotator's arrows would be backwards.
 ### Body-specific parts declare a condition; bodies don't list cards
 
 What is special about a body lives in `Shared/body-profiles.js`: its figures
-(`footFloor`, `entryInterface`) and named conditions. A card or module that belongs
+(`footFloor`, `entryInterface`) and named conditions. A card that belongs
 only at some bodies carries `where: "<condition>"`, and `CalcShell.setConditions`
-leaves out whatever fails — no chip, no card. A condition tests the body's
+leaves out whatever fails. A condition tests the body's
 physics (orbit.js data plus its profile), never a hand-kept list of body names.
 Why: the same physics recurs at bodies nobody thought to list (an atmosphere at
 the foot is Earth's, Venus's, Mars's and Titan's problem), and a condition catches
@@ -506,16 +506,17 @@ matched this one — re-target them with Update after the elements change.
 ### New calculators use the three-column calculator shell
 
 A calculator page is the shell in `Shared/calc-shell.*` + `Shared/zoom-view.js`:
-inputs | zoomable drawing | results, with optional parts as input and result
-modules switched from header chips, and every card collapsible to a short
-title and summary. `Calculators/_template/` is the reference. The shell is
+inputs | zoomable drawing | results. Every card is always in its column and
+collapsible to a short title and summary; there are no on/off modules. A part
+of the design that may or may not exist is a ticked line inside its card. `Calculators/_template/` is the reference. The shell is
 deliberately light and earthy (sand, paper, basalt drawing panel) so a
 calculator is told apart at a glance from the dark Mission Planner and plotters.
 Calculators on the older `calc-frame.css` keep working and move over one at a
 time.
 
-Why: calculators keep growing optional sections; modules keep the page short
-until a section is asked for, and the drawing stays in view while editing.
+Why: folding keeps a long column short without hiding that a part exists,
+and column space goes to cards rather than switches; the drawing stays in view
+while editing.
 
 ### Tether calculators share one Material card and one preset list
 

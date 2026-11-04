@@ -19,10 +19,10 @@ the **workbench**, and the **apps**.
   one). Three bodies show at a time; more scroll. The "Moonwards" tab, the world used for
   Moonwards media, comes later.
 - **Workbench** — four tabs in working order: Architecture, Logistics,
-  Engineering, Economy, all on the same three-column layout (header with
-  module chips, inputs, drawing, results) for the selected body and
-  installation. Each installation has one calculator serving all four tabs;
-  every card and chip belongs to a tab. An installation with its own
+  Engineering, Economy, all on the same three-column layout (inputs, drawing,
+  results; each side column headed by its name, card count and fold/unfold-all)
+  for the selected body and installation. Each installation has one calculator
+  serving all four tabs; every card belongs to a tab. An installation with its own
   calculator (today: the hanging skyhook, the Phobos skyhook, the standard
   space elevator and the Moon's L1 elevator) shows its cards on the tabs they
   belong to, and **skeleton cards** fill any tab it has none on. Others are
@@ -90,7 +90,7 @@ A calculator joins the workbench in two places: a case in `calcFor()`
 (`design-model.js`) naming it for an installation, and an entry in
 `CALCULATORS` (`home.js`) that loads its mount function. An entry may add
 `opts` to the mount options, so one calculator can serve a configuration: the
-Phobos skyhook is the hanging-skyhook calculator with `anchor: "Phobos"`. Its cards and chips
+Phobos skyhook is the hanging-skyhook calculator with `anchor: "Phobos"`. Its cards
 carry `tab`; the workbench calls `shell.setTab()` as the viewer switches tabs,
 and adds skeleton cards to any tab the calculator leaves empty. As a
 calculator gains cards for a tab, the skeleton steps aside there. The calculator side

@@ -7,19 +7,15 @@
 //
 //   var shell = new CalcShell(document.getElementById("app"), { title: "Circular Orbit" });
 //
-// Modules are the optional parts a viewer switches on from the header chips.
-// An input module (side "in") adds input cards; a result module (side "out")
-// adds result cards. A module switches on what it `needs` (recursively) and an
-// input module also switches on the result modules it `brings`; switching a
-// module off switches off everything that needs it.
-//
-//   shell.addModule({ id: "tgt", side: "in", label: "Target orbit", color: ShellColors.teal, brings: ["xfer"] });
-//   shell.addModule({ id: "xfer", side: "out", label: "Transfer", color: ShellColors.teal, needs: ["tgt"] });
-//
-// Cards appear in their column in the order added. A card with `module` shows
-// only while that module is on. `focus` names the drawing view the card's title
-// asks for (see onFocus); `short` is the title shown when collapsed, beside the
-// card's summary (card.setSummary).
+// Each column is headed by its name, the number of cards it shows, and buttons
+// that fold and unfold them all. Cards appear in their column in the order
+// added, and every card is always there: a viewer folds one away (or, where
+// cards have ticks, unticks it to leave its marks out of the drawing), but
+// never removes it. A part of a
+// design that may or may not exist (a station on a tether) is a ticked line
+// inside its card (optionalFields), not a card that comes and goes. `focus`
+// names the drawing view the card's title asks for (see onFocus); `short` is
+// the title shown when collapsed, beside the card's summary (card.setSummary).
 //
 // A fold is a block inside a card that opens and closes on its own arrow, for
 // detail a viewer looks at only sometimes (a breakdown under a card's totals).
@@ -50,25 +46,22 @@
 //   deck.check.checked        is it in use?       deck.inputs[0].value   its first field
 //
 // Events: onInput(fn) after any field changes; onFocus(fn(target, cardId)) when a
-// card title is clicked; onModules(fn) after the set of shown modules changes.
+// card title is clicked.
 // Working in a field highlights its card without moving the drawing, so the
 // view a viewer has set stays put while they edit. focusCard(id, false) does
 // the same from code (use it while a marker is dragged).
 //
-// Tabs: a module or card may carry `tab` (e.g. "arch", "log", "eng", "eco").
-// After setTab(tab), only that tab's chips and cards show; a card or module
-// without `tab` belongs to the first tab set (opts.firstTab, default "arch").
+// Tabs: a card may carry `tab` (e.g. "arch", "log", "eng", "eco").
+// After setTab(tab), only that tab's cards show; a card without `tab`
+// belongs to the first tab set (opts.firstTab, default "arch").
 // Until setTab is called every card shows, as on a standalone page. Input
 // and result cards stay wired across tabs: they are one calculator.
 //
-// Body-specific parts: a module or card may carry `where`, the name of a
-// condition (Shared/body-profiles.js, e.g. "parentEntry"). After
-// setConditions(fn), each is offered only while fn(where) is true; one that
-// fails has no chip and no card, and counts as off, while its saved on/off
-// setting is kept for when it applies again. A card inherits its module's
-// `where`. setLabel(moduleId, label) renames a chip; card.setTitle(title,
-// short) renames a card, for parts whose name depends on the body;
-// card.setTag(text) puts a small tag beside the title ("" removes it).
+// Body-specific parts: a card may carry `where`, the name of a condition
+// (Shared/body-profiles.js, e.g. "parentEntry"). After setConditions(fn), it
+// shows only while fn(where) is true. card.setTitle(title, short) renames a
+// card, for parts whose name depends on the body; card.setTag(text) puts a
+// small tag beside the title ("" removes it).
 //
 // Wiring made visible: an input card's `feeds` lists result card ids; focusing
 // the input card marks those (cs-fed), so a viewer sees where its numbers go.
@@ -76,19 +69,19 @@
 // Card ticks: an embedded calculator gives each card a checkbox, in its accent
 // colour, in place of the colour square; `cardToggles` overrides that either
 // way. The tick says whether the card's marks are drawn. The calculator asks
-// shell.isShown(cardId) (ticked, and its module on) for each mark it draws and
+// shell.isShown(cardId) (ticked, and it applies here) for each mark it draws and
 // redraws on onShown(fn). Clicking the title still focuses the card. A card
 // that is not ticked is listed in getState().hidden.
 // Beside the tick, an eye button shows that card alone (setSolo): while a card
 // is solo, isShown is false for every other card, so the drawing keeps only
 // that card's marks. Marks the drawing always keeps as context (the structure
 // itself) ask isShown(id, true), which ignores solo. Solo is not saved, and it
-// lapses while the solo card does not apply or its module is off.
+// lapses while the solo card does not apply.
 //
 // Embedding: `embedded: true` fills the root element instead of the window,
 // for a calculator mounted inside another page (the home page's workbench).
-// getState() returns the viewer's settings — field values, modules shown,
-// collapsed cards, open folds — as a plain object; setState(state) puts them back and
+// getState() returns the viewer's settings — field values, collapsed cards,
+// unticked cards, open folds — as a plain object; setState(state) puts them back and
 // fires onInput once. Fields are keyed "<card id>/<label or aria>", so a
 // calculator keeps a field's label and card stable for saved settings to
 // keep finding it (or passes an explicit `key`). A field given `save: false`
@@ -109,37 +102,6 @@ export const ShellColors = {
 	sky:    { card: "#2F7FA8", draw: "#6CC4F0" },
 	umber:  { card: "#6B5A4B", draw: "#EADFCF" }
 };
-
-// ---- pure: module dependency resolution ------------------------------------
-// defs: { id: { needs: [ids], brings: [ids] } }; on: { id: bool }. Return a new
-// on-map with `id` switched (on → with everything it needs and brings; off →
-// with everything that, directly or not, needs it).
-export function switchModule(defs, on, id, value) {
-	var next = Object.assign({}, on);
-	function enable(m) {
-		if (next[m]) return;
-		next[m] = true;
-		var d = defs[m] || {};
-		(d.needs || []).forEach(enable);
-		(d.brings || []).forEach(enable);
-	}
-	if (value) {
-		enable(id);
-	} else {
-		next[id] = false;
-		var changed = true;
-		while (changed) {
-			changed = false;
-			Object.keys(defs).forEach(function (m) {
-				if (next[m] && (defs[m].needs || []).some(function (n) { return !next[n]; })) {
-					next[m] = false;
-					changed = true;
-				}
-			});
-		}
-	}
-	return next;
-}
 
 // ---- DOM ------------------------------------------------------------------
 var svgNS = "http://www.w3.org/2000/svg";
@@ -182,7 +144,6 @@ function icon(path, size, sw, cls) {
 	return s;
 }
 var ICON = {
-	plus: '<path d="M8 3.5v9M3.5 8h9"/>',
 	x: '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>',
 	chev: '<path d="M4 6l4 4 4-4"/>',
 	tick: '<path d="M3 8.5l3.2 3L13 4.5"/>',
@@ -205,9 +166,6 @@ export class CalcShell {
 		root.classList.add("cs-app");
 		if (o.embedded) root.classList.add("cs-embedded");
 		this.fields = {};       // key → input/select (getState / setState)
-		this.modules = {};      // id → def
-		this.moduleOrder = [];
-		this.on = {};           // id → bool
 		this.cards = {};        // id → card
 		this.folds = {};        // "<card id>/<key or label>" → fold (getState / setState)
 		this.cardOrder = [];
@@ -216,22 +174,15 @@ export class CalcShell {
 		this.conditions = null;   // fn(where) → bool, or null: everything applies
 		this.tab = null;        // null: show every tab's cards (standalone page)
 		this.firstTab = o.firstTab || "arch";
-		this.listeners = { input: [], focus: [], modules: [], shown: [] };
+		this.listeners = { input: [], focus: [], shown: [] };
 		this.toggles = o.cardToggles != null ? !!o.cardToggles : !!o.embedded;
 
-		// A page gets a header (title over the chip groups). An embedded
-		// calculator has none: the columns take the full height, and the
-		// chips and the one-line brand move into the column heads below.
-		var top = o.embedded ? null : create("header", "cs-top", false, root);
-		if (top) {
-			var brand = create("div", "cs-brand", false, top);
-			this.overEl = create("span", "cs-over", o.overline || "Moonwards · Calculators", brand);
-			create("h1", "cs-title", o.title || "", brand);
-			this.chipBox = {
-				in: this._chipGroup(top, "Inputs", "Optional input modules", false),
-				out: this._chipGroup(top, "Results", "Optional result modules", true)
-			};
-		}
+		// A page gets a header (overline over the title). An embedded
+		// calculator has none: the overline alone is a row of the column grid,
+		// spanning the side columns so their heads line up beneath it.
+		var brand = create("div", "cs-brand", false, o.embedded ? false : create("header", "cs-top", false, root));
+		this.overEl = create("span", "cs-over", o.overline || "Moonwards · Calculators", brand);
+		if (!o.embedded) create("h1", "cs-title", o.title || "", brand);
 
 		var cols = create("div", "cs-cols", false, root);
 		this.columns = {
@@ -241,19 +192,7 @@ export class CalcShell {
 		this.stage = create("section", "cs-stage", false, cols);
 		this.stage.setAttribute("aria-label", o.stageLabel || "Drawing");
 		this.columns.out = this._column(cols, "Results", "cs-col-out");
-		if (!top) {
-			// Left column: brand, then the input chips, above the column head.
-			var inEl = this.columns.in.el, outEl = this.columns.out.el;
-			var brandEl = create("div", "cs-brand", false, inEl);
-			this.overEl = create("span", "cs-over", o.overline || "Moonwards · Calculators", brandEl);
-			this.chipBox = {
-				in: this._chipGroup(inEl, "Inputs", "Optional input modules", false),
-				out: this._chipGroup(outEl, "Results", "Optional result modules", false)
-			};
-			inEl.insertBefore(this.chipBox.in, inEl.firstChild);
-			inEl.insertBefore(brandEl, inEl.firstChild);
-			outEl.insertBefore(this.chipBox.out, outEl.firstChild);
-		}
+		if (o.embedded) cols.insertBefore(brand, cols.firstChild);
 		this.warning = create("div", "cs-warn", false, false);
 		this.warning.hidden = true;
 		this.columns.out.list.appendChild(this.warning);
@@ -273,20 +212,11 @@ export class CalcShell {
 		return Object.keys(seen);
 	}
 
-	_chipGroup(parent, name, aria, out) {
-		var g = create("div", out ? ["cs-mods", "cs-mods-out"] : "cs-mods", false, parent);
-		g.setAttribute("role", "group");
-		g.setAttribute("aria-label", aria);
-		create("span", "cs-mods-l", name, g);
-		g.hidden = true;
-		return g;
-	}
-
 	_column(parent, name, cls) {
 		var col = create("section", ["cs-col", cls], false, parent);
 		col.setAttribute("aria-label", name);
 		var h = create("div", "cs-col-h", false, col);
-		var h2 = create("h2", false, false, h);
+		var h2 = create("h2", false, name, h);
 		var cnt = create("span", "cs-cnt", false, h2);
 		var self = this, side = cls === "cs-col-in" ? "in" : "out";
 		button("cs-ib", "Collapse all", h).appendChild(icon(ICON.collapse, 16));
@@ -299,58 +229,10 @@ export class CalcShell {
 
 	// ---- body-specific parts ----
 	setConditions(fn) {
-		var self = this;
 		this.conditions = fn || null;
 		this._refresh();
-		this.listeners.modules.forEach(function (f) { f(self.on); });
 	}
-	_applies(def) { return !def || !def.where || !this.conditions || !!this.conditions(def.where); }
-	_cardApplies(c) { return this._applies(c) && (!c.module || this._applies(this.modules[c.module])); }
-
-	// ---- modules ----
-	addModule(def) {
-		var d = Object.assign({ needs: [], brings: [], side: "in" }, def);
-		this.modules[d.id] = d;
-		this.moduleOrder.push(d.id);
-		this.on[d.id] = !!d.on;
-		var color = d.color && d.color.card ? d.color.card : (d.color || "#6B5A4B");
-		var chip = button("cs-chip", false, this.chipBox[d.side]);
-		d.tab = d.tab || null;
-		chip.style.setProperty("--mc", color);
-		chip.title = d.tip || "";
-		create("span", "cs-chip-dot", false, chip);
-		d.labelEl = create("span", false, d.label, chip);
-		var self = this;
-		chip.onclick = function () { self.setModule(d.id, !self.on[d.id]); };
-		d.chip = chip;
-		this.chipBox[d.side].hidden = false;
-		this._refresh();
-		return d;
-	}
-
-	isOn(id) { return !!this.on[id] && this._applies(this.modules[id]); }
-
-	setLabel(id, label) {
-		var d = this.modules[id];
-		if (d) { d.label = label; d.labelEl.textContent = label; }
-	}
-
-	setModule(id, value) {
-		if (value && !this._applies(this.modules[id])) return;
-		var defs = {};
-		var self = this;
-		this.moduleOrder.forEach(function (m) { defs[m] = self.modules[m]; });
-		var before = this.on;
-		this.on = switchModule(defs, this.on, id, value);
-		// open and focus the first card of a module just switched on by the viewer
-		if (value) {
-			var first = this.cardOrder.find(function (c) { return self.cards[c].module === id; });
-			if (first) { this.setCollapsed(first, false); this.focusCard(first); }
-		}
-		this._refresh();
-		var changed = Object.keys(this.on).some(function (m) { return !!before[m] !== !!self.on[m]; });
-		if (changed) this.listeners.modules.forEach(function (fn) { fn(self.on); });
-	}
+	_cardApplies(c) { return !c.where || !this.conditions || !!this.conditions(c.where); }
 
 	// ---- cards ----
 	addCard(def) {
@@ -389,15 +271,10 @@ export class CalcShell {
 		var chev = button("cs-ib", "Collapse card", h);
 		chev.appendChild(icon(ICON.chev, 16, 1.6, "cs-chev"));
 		chev.onclick = function () { self.setCollapsed(d.id, !card.collapsed); };
-		if (d.module) {
-			var rm = button(["cs-ib", "cs-rm"], "Remove module", h);
-			rm.appendChild(icon(ICON.x, 14));
-			rm.onclick = function () { self.setModule(d.module, false); };
-		}
 		var body = create("div", "cs-card-b", false, el);
 		var nm = t.querySelector(".cs-nm"), nmS = t.querySelector(".cs-nm-s");
 		var card = {
-			id: d.id, side: d.side, module: d.module || null, focus: d.focus || null,
+			id: d.id, side: d.side, focus: d.focus || null,
 			tab: d.tab || null, feeds: d.feeds || [], where: d.where || null,
 			el: el, body: body, collapsed: false, chev: chev, chk: chk, solo: solo, shown: true,
 			setSummary: function (text) { sum.textContent = text; },
@@ -428,12 +305,12 @@ export class CalcShell {
 		this.cardOrder.forEach(function (id) { if (self.cards[id].side === side) self.setCollapsed(id, value); });
 	}
 
-	// Whether the card's marks are drawn: it is ticked and, if it belongs to a
-	// module, the module is on. A card with no tick is always ticked. While
-	// another card is solo, false, unless `ignoreSolo` (marks kept as context).
+	// Whether the card's marks are drawn: it is ticked and applies at this body.
+	// A card with no tick is always ticked. While another card is solo, false,
+	// unless `ignoreSolo` (marks kept as context).
 	isShown(id, ignoreSolo) {
 		var c = this.cards[id];
-		if (!c || !c.shown || !this._cardApplies(c) || (c.module && !this.isOn(c.module))) return false;
+		if (!c || !c.shown || !this._cardApplies(c)) return false;
 		return ignoreSolo || !this.soloId || this.soloId === id || !this.isShown(this.soloId, true);
 	}
 
@@ -475,34 +352,18 @@ export class CalcShell {
 
 	_refresh() {
 		var self = this;
-		var chipsShown = { in: 0, out: 0 };
-		this.moduleOrder.forEach(function (m) {
-			var d = self.modules[m], on = !!self.on[m];
-			d.chip.hidden = !self._onTab(d) || !self._applies(d);
-			if (!d.chip.hidden) chipsShown[d.side]++;
-			d.chip.classList.toggle("cs-on", on);
-			d.chip.setAttribute("aria-pressed", String(on));
-			var old = d.chip.querySelector("svg");
-			if (old) old.remove();
-			d.chip.appendChild(icon(on ? ICON.x : ICON.plus, 12, 1.6));
-		});
-		this.chipBox.in.hidden = !chipsShown.in;
-		this.chipBox.out.hidden = !chipsShown.out;
-		var shown = { in: 0, out: 0 }, offered = { in: 0, out: 0 };
+		var shown = { in: 0, out: 0 };
 		this.cardOrder.forEach(function (id) {
 			var c = self.cards[id];
-			var here = self._onTab(c) && self._cardApplies(c);
-			var vis = here && (!c.module || self.isOn(c.module));
+			var vis = self._onTab(c) && self._cardApplies(c);
 			c.el.hidden = !vis;
 			if (vis) shown[c.side]++;
-			if (here) offered[c.side]++;
 		});
 		["in", "out"].forEach(function (side) {
 			var col = self.columns[side];
-			col.count.textContent = shown[side] + " cards";
+			col.count.textContent = shown[side] === 1 ? "1 card" : shown[side] + " cards";
 			col.empty.hidden = shown[side] > 0;
-			col.empty.textContent = offered[side] ? "Switch on a module above to add cards here."
-				: (side === "in" ? "No inputs on this tab yet." : "No results on this tab yet.");
+			col.empty.textContent = side === "in" ? "No inputs on this tab yet." : "No results on this tab yet.";
 		});
 	}
 
@@ -776,7 +637,7 @@ export class CalcShell {
 		this.cardOrder.forEach(function (id) { if (self.cards[id].collapsed) collapsed.push(id); });
 		var open = Object.keys(this.folds).filter(function (k) { return self.folds[k].open; });
 		var hidden = this.cardOrder.filter(function (id) { return !self.cards[id].shown; });
-		return { modules: Object.assign({}, this.on), fields: fields, collapsed: collapsed, open: open, hidden: hidden };
+		return { fields: fields, collapsed: collapsed, open: open, hidden: hidden };
 	}
 
 	// Unknown keys are ignored and disabled fields keep their value, so state
@@ -791,13 +652,6 @@ export class CalcShell {
 			if (el.type === "checkbox") { el.checked = f[k] === "1"; if (el._sync) el._sync(); }
 			else el.value = f[k];
 		});
-		if (state.modules && typeof state.modules === "object") {
-			var on = {};
-			this.moduleOrder.forEach(function (m) { on[m] = m in state.modules ? !!state.modules[m] : !!self.on[m]; });
-			this.on = on;
-			this._refresh();
-			this.listeners.modules.forEach(function (fn) { fn(self.on); });
-		}
 		if (Array.isArray(state.collapsed)) {
 			this.cardOrder.forEach(function (id) { self.setCollapsed(id, state.collapsed.indexOf(id) >= 0); });
 		}
@@ -818,6 +672,5 @@ export class CalcShell {
 	onInput(fn) { this.listeners.input.push(fn); }
 	changed() { this.listeners.input.forEach(function (fn) { fn(null); }); }
 	onFocus(fn) { this.listeners.focus.push(fn); }
-	onModules(fn) { this.listeners.modules.push(fn); }
 	onShown(fn) { this.listeners.shown.push(fn); }
 }

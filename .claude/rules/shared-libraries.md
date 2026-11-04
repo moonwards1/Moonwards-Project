@@ -15,7 +15,7 @@ their conventions. All are ES modules with **named exports**.
 | `math-utils.js` | `OrbitalMath` | pure orbital mechanics — circular/escape/vis-viva speed, hyperbolic excess, period, Hohmann, SOI, Hill radius, synodic period, Tsiolkovsky, tether taper integral/ratio, … |
 | `format-utils.js` | `Fmt` (plus legacy aliases `fmtForce`, `myRound`, … as named exports) | number/unit formatting |
 | `ui-components.js` | `create` | the DOM builder |
-| `calc-shell.css` / `calc-shell.js` | `CalcShell`, `ShellColors`, `switchModule` | the three-column calculator page: module chips, cards, fields, result lines (see `rules/calculators.md`) |
+| `calc-shell.css` / `calc-shell.js` | `CalcShell`, `ShellColors` | the three-column calculator page: cards, fields, result lines (see `rules/calculators.md`) |
 | `zoom-view.js` | `ZoomView`, `svgEl`, plus pure `niceNumber`, `fitRect`, `viewBoxOf`, `zoomAbout` | the pan-and-zoom drawing panel of the calculator shell |
 | `animation.js` | `SkyAnim` | SVG reveal / viewBox-tween helpers |
 | `frames.js` | `Frames` | converts ship-state VECTORS between frames (not to be confused with MissionPlanner's `scene-frames.js`, which builds renderable scenes) |

@@ -132,12 +132,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .hm-work { position: relative; height: clamp(620px, 88vh, 900px); background: var(--hm-paper); border-radius: 0 16px 16px 16px; overflow: hidden; }
 .hm-calc { height: 100%; }
 /* the mounted calculator runs inputs | results | drawing here, with the
-   drawing taking the spare width on the right (wide windows only; narrower
-   ones keep the shell's own stacking) */
+   drawing taking the spare width and full height on the right, and the
+   overline spanning inputs and results (wide windows only; narrower ones keep
+   the shell's own stacking) */
 @media (min-width: 941px) {
-	.hm-work .cs-cols {
+	.hm-work .cs-embedded .cs-cols {
 		grid-template-columns: minmax(236px, 340px) minmax(244px, 370px) minmax(300px, 1fr);
-		grid-template-areas: "in out st";
+		grid-template-areas: "br br st" "in out st";
 		column-gap: calc(var(--cs-pad) - 5px);
 	}
 }

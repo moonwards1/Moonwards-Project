@@ -1,9 +1,9 @@
 // Calculator template — the standard way to build a Moonwards calculator on the
-// calculator shell. A circular orbit around a chosen body, with an optional
-// target orbit and the Hohmann transfer to it, and an optional escape card.
+// calculator shell. A circular orbit around a chosen body, a target orbit and
+// the Hohmann transfer to it, and the escape speed from the orbit.
 //
 // Shows each part of the shell once:
-//   CalcShell (calc-shell.js)  header chips, three columns, cards, fields, results
+//   CalcShell (calc-shell.js)  header, three columns, cards, fields, results
 //   ZoomView  (zoom-view.js)   the pan-and-zoom drawing, focus targets, markers
 //   systems   (orbit.js)       body data;  OrbitalMath (math-utils.js) the maths
 //
@@ -21,14 +21,6 @@ import { ZoomView, svgEl } from "../../Shared/zoom-view.js";
 // ---------- page ----------
 var shell = new CalcShell(document.getElementById("app"), { title: "Circular Orbit", stageLabel: "Orbit drawing" });
 
-// Modules: an input module that brings its result, and a result-only module.
-shell.addModule({ id: "tgt", side: "in", label: "Target orbit", color: C.teal, on: true, brings: ["xfer"],
-	tip: "A second circular orbit; brings the Transfer results" });
-shell.addModule({ id: "xfer", side: "out", label: "Transfer", color: C.teal, on: true, needs: ["tgt"],
-	tip: "Hohmann transfer to the target orbit (needs Target orbit)" });
-shell.addModule({ id: "esc", side: "out", label: "Escape", color: C.violet,
-	tip: "Escape speed from the orbit" });
-
 // ---------- inputs ----------
 var BODIES = ["Moon", "Mercury", "Venus", "Earth", "Mars", "Phobos", "Ceres", "Vesta", "Europa", "Ganymede", "Callisto", "Titan"];
 var FILL = { Mars: "#5E3424", Venus: "#5A4A33", Earth: "#2F3E4A", Europa: "#58524B" };
@@ -42,7 +34,7 @@ var orbitCard = shell.addCard({ id: "orbit", side: "in", title: "Orbit", short: 
 var altIn = shell.numberField(orbitCard, { label: "Altitude", hint: "above the mean surface", unit: "km", value: 100 });
 shell.note(orbitCard, "Or drag the marker on the drawing.");
 
-var tgtCard = shell.addCard({ id: "tgt", side: "in", title: "Target orbit", short: "Target", color: C.teal, module: "tgt", focus: "target" });
+var tgtCard = shell.addCard({ id: "tgt", side: "in", title: "Target orbit", short: "Target", color: C.teal, focus: "target" });
 var tgtIn = shell.numberField(tgtCard, { label: "Target altitude", unit: "km", value: 500 });
 
 // ---------- results ----------
@@ -51,13 +43,13 @@ var hero = shell.hero(resCard, [{ label: "Speed", unit: "km/s" }, { label: "Peri
 var rRadius = shell.line(resCard, { label: "Orbital radius", unit: "km" });
 var rPerDay = shell.line(resCard, { label: "Orbits per day" });
 
-var xferCard = shell.addCard({ id: "xfer", side: "out", title: "Transfer", short: "Transfer", color: C.teal, module: "xfer", focus: "transfer" });
+var xferCard = shell.addCard({ id: "xfer", side: "out", title: "Transfer", short: "Transfer", color: C.teal, focus: "transfer" });
 var rDv1 = shell.line(xferCard, { label: "First burn", unit: "m/s", sub: "leaving the orbit" });
 var rDv2 = shell.line(xferCard, { label: "Second burn", unit: "m/s", sub: "circularising at the target" });
 var rDvT = shell.line(xferCard, { label: "Total Δv", unit: "m/s" });
 var rTof = shell.line(xferCard, { label: "Transfer time", unit: "h" });
 
-var escCard = shell.addCard({ id: "esc", side: "out", title: "Escape", short: "Escape", color: C.violet, module: "esc", focus: "orbit" });
+var escCard = shell.addCard({ id: "esc", side: "out", title: "Escape", short: "Escape", color: C.violet, focus: "orbit" });
 var rVesc = shell.line(escCard, { label: "Escape speed at the orbit", unit: "m/s" });
 var rDvEsc = shell.line(escCard, { label: "Δv to escape from the orbit", unit: "m/s" });
 
@@ -120,45 +112,43 @@ function calc() {
 	resCard.setSummary(num(v / 1e3, 2) + " km/s · " + num(T / 3600, 2) + " h");
 	xferCard.setSummary(num(h.total, 0) + " m/s · " + num(h.tof / 3600, 2) + " h");
 	escCard.setSummary(num(vEsc - v, 0) + " m/s to escape");
-	shell.warn(alt === tgt && shell.isOn("tgt") ? "The target orbit is the same as the orbit: no transfer needed." : "");
+	shell.warn(alt === tgt ? "The target orbit is the same as the orbit: no transfer needed." : "");
 
-	var span = Math.max(S.r1, shell.isOn("tgt") ? S.r2 : 0) * 1.15;
+	var span = Math.max(S.r1, S.r2) * 1.15;
 	view.setMinimap([-span, -span, span, span]);
 	view.redraw();
 }
 
 function draw(vw) {
 	if (!S.R) return;
-	var u = vw.u, tgtOn = shell.isOn("tgt"), xferOn = shell.isOn("xfer");
+	var u = vw.u;
 	gBody.setAttribute("r", S.R); gBody.setAttribute("fill", S.fill);
 	gOrbit.setAttribute("r", S.r1);
-	gTgt.setAttribute("r", S.r2); gTgt.style.display = tgtOn ? "" : "none";
+	gTgt.setAttribute("r", S.r2);
 	// Hohmann half-ellipse: periapsis at the orbit (top), apoapsis on the far side.
 	var a = (S.r1 + S.r2) / 2, bb = Math.sqrt(S.r1 * S.r2);
 	gXfer.setAttribute("d", "M0 " + (-S.r1) + "A" + bb + " " + a + " 0 0 1 0 " + S.r2);
-	gXfer.style.display = xferOn ? "" : "none";
 
 	mOrbit.setAttribute("cy", -S.r1); mOrbit.setAttribute("r", 7 * u);
-	mTgt.setAttribute("cy", -S.r2); mTgt.setAttribute("r", 6 * u); mTgt.style.display = tgtOn ? "" : "none";
+	mTgt.setAttribute("cy", -S.r2); mTgt.setAttribute("r", 6 * u);
 	[tOrbit, tTgt, tDv1, tDv2].forEach(function (t) { t.setAttribute("font-size", 12 * u); t.setAttribute("stroke-width", 4 * u); });
 	tOrbit.setAttribute("x", -14 * u); tOrbit.setAttribute("y", -S.r1 - 7 * u);
 	label(tOrbit, "ORBIT", kmText(S.alt));
 	tTgt.setAttribute("x", -14 * u); tTgt.setAttribute("y", -S.r2 - 7 * u);
-	label(tTgt, "TARGET", kmText(S.tgt)); tTgt.style.display = tgtOn ? "" : "none";
+	label(tTgt, "TARGET", kmText(S.tgt));
 	tDv1.setAttribute("x", 12 * u); tDv1.setAttribute("y", -S.r1 - 10 * u);
 	tDv1.textContent = "Δv₁ " + num(S.h.dv1, 1) + " m/s";
 	tDv2.setAttribute("x", 12 * u); tDv2.setAttribute("y", S.r2 + 16 * u);
 	tDv2.textContent = "Δv₂ " + num(S.h.dv2, 1) + " m/s";
-	tDv1.style.display = tDv2.style.display = xferOn ? "" : "none";
 
 	miniBody.setAttribute("r", S.R); miniBody.setAttribute("fill", S.fill);
 	miniOrbit.setAttribute("r", S.r1);
-	miniTgt.setAttribute("r", S.r2); miniTgt.style.display = tgtOn ? "" : "none";
+	miniTgt.setAttribute("r", S.r2);
 }
 
 // ---------- focus targets: world rects [x0, y0, x1, y1] ----------
 function around(r) { var d = Math.min(r, Math.max(S.R * 0.35, (r - S.R) * 3)); return [-d, -r - 0.6 * d, d, -r + 0.6 * d]; }
-view.addTarget("system", { label: "Whole system", color: "#EADFCF", pad: 1.3, rect: function () { var s = Math.max(S.r1, shell.isOn("tgt") ? S.r2 : 0); return [-s, -s, s, s]; } });
+view.addTarget("system", { label: "Whole system", color: "#EADFCF", pad: 1.3, rect: function () { var s = Math.max(S.r1, S.r2); return [-s, -s, s, s]; } });
 view.addTarget("orbit", { label: "Orbit", color: C.core.draw, rect: function () { return around(S.r1); } });
 view.addTarget("target", { label: "Target orbit", color: C.teal.draw, rect: function () { return around(S.r2); } });
 view.addTarget("transfer", { label: "Transfer", color: C.teal.draw, pad: 1.3, rect: function () { var s = Math.max(S.r1, S.r2); return [-s, -s, s, s]; } });
@@ -176,7 +166,6 @@ view.draggable(mOrbit, dragAltitude(altIn, "orbit"));
 view.draggable(mTgt, dragAltitude(tgtIn, "tgt"));
 
 shell.onInput(calc);
-shell.onModules(calc);
 shell.onFocus(function (target) { view.focus(target); });
 view.onRender(draw);
 
