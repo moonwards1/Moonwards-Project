@@ -9,7 +9,7 @@ also serves the Phobos-anchored skyhook (below).
 Built on the calculator shell: inputs, a zoomable drawing and results in three
 columns. Stations, loads, cargo throughput and station-keeping are input
 modules; the fall from the foot, climber energy, release
-points, forces, throughput, station-keeping, and entry are result modules. Card titles glide the drawing to their
+points, throughput, station-keeping, and entry are result modules. Card titles glide the drawing to their
 part; the foot, centre-of-mass and top markers can be dragged.
 
 The drawing's text fades out once the body spans less than half the drawing's
@@ -51,7 +51,7 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   1,250 km (outer docks) and 1,500 km (receiving deck), 10 kt each. The
   standalone page opens on the Moon design. Each card and
   chip names its workbench tab: basics (the three altitudes with their speeds), material, loads,
-  the foot ↔ ground trips, release points, tether properties, forces and
+  the foot ↔ ground trips, release points, loads and
   stations (inputs and results) on Architecture; cargo throughput, throughput, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
@@ -66,7 +66,7 @@ relative path:
 - `../../Shared/calc-shell.css`, `calc-shell.js`, `zoom-view.js` — the page layout and drawing panel
 - `../../Shared/orbit.js` — planetary-system data
 - `../../Shared/math-utils.js`, `constants.js` — the maths
-- `../../Shared/materials.js`, `material-card.js` — the Material card and its presets
+- `../../Shared/materials.js`, `material-card.js` — the Tether materials card and its presets
 - `../../Shared/body-profiles.js` — what is special about each body: the foot floor, which
   body-specific modules apply, and the Phobos anchor configuration
 
@@ -93,18 +93,17 @@ in tension, and the taper carries on from there, so the tether thickens in steps
 as it passes each station. A station counts on whichever tether it lies on: above
 the centre of mass it hangs from the upper one, below it from the lower one.
 
-The Material card gives, for the lower and the upper tether, the taper ratio
+The Tether materials card gives, for the lower and the upper tether, the taper ratio
 and then the tether's mass as a multiple of everything that tether holds up
 (tip, spread load and stations; the anchor station is left out), each as a
 small bar of figures, "load carried" under the mass. When the anchor station is off the centre of mass (C.o.M.), a
 third line gives the stretch from the anchor station to the C.o.M. as a mass
 multiple of everything on that tether including the station; the tether the
 anchor station lies on is then split in two parts, tip to anchor station
-(holding up what lies beyond it) and anchor station to C.o.M. The Tether
-properties card gives the masses. A fold-out breaks the mass
+(holding up what lies beyond it) and anchor station to C.o.M. The Loads
+card gives the masses. A fold-out breaks the mass
 down by section: tip to first station, station to station, and last station to
-the centre of mass. The Forces card's fold-out does the same for tension: each
-section's tension where it arrives at its inner end, and what each station adds.
+the centre of mass. The Stations card gives the tension at each station's level.
 
 The cable is continuous through the centre of mass and nothing hangs there, so the
 tension arriving from above equals the tension arriving from below. The anchor
@@ -118,9 +117,9 @@ toward the top, as long as the tether material can carry the tension; where
 several positions balance, the one nearest the centre of mass is used, and a
 position where the tether would go slack does not count. If no position balances
 (too light an anchor for the loads), the anchor station is drawn at the centre of
-mass and the Forces card shows both tensions and says how far out of balance
-they are. The Forces card reports the tension at the centre of mass (the peak),
-and the anchor station's offset from the centre of mass. The drawing marks the
+mass and the Loads card shows both tensions and says how far out of balance
+they are. The Loads card reports the total load on each tether, the anchor station's
+offset from the centre of mass, and the tension at the centre of mass (the peak). The drawing marks the
 anchor station with a square and its altitude.
 
 ## Cargo throughput: the route
@@ -197,7 +196,7 @@ the difference, and its orbit settles lower or higher by
   pull per unit mass, ω²r − GM/r², changes with radius on a circular orbit
 - **M** — Phobos's mass (kg)
 
-which the Forces card reports in place of the anchor station's offset (a few
+which the Loads card reports in place of the anchor station's offset (a few
 metres for the opening design). So the centre-of-mass altitude is fixed at
 Phobos's orbit (shown, not editable), there is no anchor-station mass to set, and
 the drawing marks Phobos at the centre of mass. Two limits come from Phobos's

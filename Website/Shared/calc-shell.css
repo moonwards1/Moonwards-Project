@@ -44,6 +44,7 @@
  *   cs-choice     a row led by a cs-radio button, one of a choice between
  *                 fields; cs-unchosen dims the rows not chosen
  *   cs-kvs / cs-kv   a block of result lines / one line: cs-k, cs-v (cs-vn, cs-vu), cs-s
+ *   cs-sec           a section of result lines in a card; a rule divides it from the next section
  *   cs-fold       a block inside a card that opens on its own arrow: cs-fold-t
  *                 (the toggle: chevron + label) over cs-fold-b; cs-open when open
  *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
@@ -395,6 +396,9 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 /* ---------- result lines ---------- */
 .cs-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 12px; padding: 4px 0; border-top: 1px solid rgba(150, 125, 95, .18); }
 .cs-kv:first-child { border-top: 0; }
+/* a section of result lines (calc-shell.js section): a rule between sections, none between its lines */
+.cs-sec + .cs-sec { margin-top: 3px; padding-top: 3px; border-top: 1px solid rgba(150, 125, 95, .3); }
+.cs-sec > .cs-kvs > .cs-kv, .cs-sec > .cs-fold { border-top: 0; }
 .cs-kv[hidden], .cs-row[hidden] { display: none; }
 .cs-k { font-size: 13px; line-height: 1.3; }
 .cs-v { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px; font-weight: 600; text-align: right; white-space: nowrap; }

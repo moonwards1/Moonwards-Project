@@ -12,7 +12,7 @@ counterweight at its tip.
   `node --test Website/Calculators/Space-Elevator-Calculator/spaceElevatorModel.test.js`
 - `spaceElevatorBench.js` — the home workbench's cards for a standard space
   elevator, `mountSpaceElevator(root, opts)`: Tether geometry and the shared
-  Material card (mature CNT ×2) in; Orbital mechanics, Cable properties, Tip
+  Tether materials card (mature CNT ×2) in; Orbital mechanics, Cable properties, Tip
   release and Orbit after release out, all on the Architecture tab. The body's
   GM, equatorial radius, rotation and distance from the Sun come from
   `Shared/orbit.js`.

@@ -167,7 +167,7 @@ minimum), then choose a counterweight at or above it.
 the calculator shell. The Earth–Moon system comes from `Shared/orbit.js`
 (barycentre from the two GMs, rotation by Kepler's law, L1 where $g(r)=0$).
 
-- **Inputs:** Material (the shared card; mature CNT ×3), Counterweight
+- **Inputs:** Tether materials (the shared card; mature CNT ×3), Counterweight
   position, Counterweight mass. The mass is set one of two ways, chosen by a
   radio button: a mass in kilotonnes, or a multiple of the minimum (default
   2×). The field not chosen shows the matching value.

@@ -1,4 +1,4 @@
-// The Material card of the tether calculators on the calculator shell. ES module:
+// The Tether materials card of the tether calculators on the calculator shell. ES module:
 //   import { addMaterialCard } from "../../Shared/material-card.js";
 //
 // One card, top to bottom: a preset menu (Shared/materials.js) with a "Custom
@@ -25,7 +25,7 @@ import { MATERIALS, breakingLength } from "./materials.js";
 export function addMaterialCard(shell, opts) {
 	var o = opts || {};
 	var card = shell.addCard({ id: o.id || "mat", tab: o.tab, feeds: o.feeds || [], side: "in",
-		title: "Material", short: "Material", color: o.color || ShellColors.core, focus: o.focus });
+		title: "Tether materials", short: "Material", color: o.color || ShellColors.core, focus: o.focus });
 	var sel = shell.selectField(card, { aria: "Tether material", value: o.value || "silica",
 		options: Object.keys(MATERIALS).map(function (k) {
 			var m = MATERIALS[k];

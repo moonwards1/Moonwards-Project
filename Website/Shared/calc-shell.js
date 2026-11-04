@@ -28,6 +28,14 @@
 //   var fold = shell.fold(card, { label: "By section" });
 //   var l = shell.line(fold, { label: "Top → deck", unit: "MN" });
 //
+// A section groups result lines (and a fold) inside a card; a rule divides one
+// section from the next, with none between the lines of a section:
+//
+//   var a = shell.section(card), b = shell.section(card);
+//   var total = shell.line(a, { label: "Total", unit: "kt" });
+//   var part = shell.line(a, { label: "Part", unit: "kt" });
+//   var other = shell.line(b, { label: "Other", unit: "kN" });
+//
 //   var card = shell.addCard({ id: "orbit", side: "in", title: "Orbit", short: "Orbit",
 //                              color: ShellColors.core, focus: "orbit" });
 //   var alt = shell.numberField(card, { label: "Altitude", unit: "km", value: 100 });
@@ -697,6 +705,13 @@ export class CalcShell {
 	}
 
 	// ---- results ----
+	// A section: a run of result lines that belong together inside a card (or fold). Add
+	// lines and folds to it as to a card; consecutive sections are divided by a rule and
+	// carry no rule between their own lines. Returns { id, body }.
+	section(card) {
+		return { id: card.id, body: create("div", "cs-sec", false, card.body) };
+	}
+
 	// A line: label, value + unit, optional sub-note. Returns { el, set(value, sub, unit), show(bool) }.
 	line(card, opts) {
 		var box = card._kvs || (card._kvs = create("div", "cs-kvs", false, card.body));
