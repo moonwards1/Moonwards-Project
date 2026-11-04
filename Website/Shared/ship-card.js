@@ -23,7 +23,7 @@
 // stay current.
 
 import { ShellColors as C } from "./calc-shell.js";
-import { SHIP_ROLES, PROPELLANTS, propellant, shipDv, shieldMass, SHIELD_FRACTION, shipTitle, versionName, isLocalRole, MAX_VERSIONS } from "./ships.js";
+import { SHIP_ROLES, PROPELLANTS, SHIELDS, shield, shieldKey, propellant, shipDv, shieldMass, shipTitle, versionName, isLocalRole, MAX_VERSIONS } from "./ships.js";
 
 function num(x, d) { return isFinite(x) ? x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—"; }
 function kms(v) { return num(v / 1e3, 2); }
@@ -51,26 +51,25 @@ export function addShipCards(shell, opts) {
 		var local = isLocalRole(role);
 		var shared = shell.note(card, "");
 		var choice = shell.buttonRow(card);
-		f.prop = shell.selectField(card, { label: "Propellant", save: false,
-			options: PROPELLANTS.map(function (p) { return { value: p.key, label: p.label }; }) });
-		f.isp = shell.numberField(card, { label: "Specific impulse", hint: "vacuum", unit: "s", value: 0, min: 1, save: false });
+		// Each propellant states its vacuum Isp; "~" marks a rough figure.
+		f.prop = shell.selectField(card, { label: "Propellant", hint: "vacuum Isp", save: false,
+			options: PROPELLANTS.map(function (p) { return { value: p.key, label: p.label + " · " + (p.rough ? "~" : "") + p.isp + " s" }; }) });
 		f.prop.closest(".cs-row").classList.add("cs-wide");
-		var ispHint = f.isp.closest(".cs-row").querySelector(".cs-hint");
 		// Mass fields show their class figure (tonnes) divided by `mass`: a
 		// freighter's masses are in kilotonnes, every other ship's in tonnes.
 		var mass = role === "freighter" ? 1000 : 1, mu = mass === 1000 ? "kt" : "t";
-		var scale = { isp: 1, dry: mass, payload: mass, tank: mass };
+		var scale = { dry: mass, payload: mass, tank: mass };
 		f.dry = shell.numberField(card, { label: "Dry mass", unit: mu, value: 0, min: 0.001 / mass, save: false });
 		f.payload = shell.numberField(card, { label: "Payload", unit: mu, value: 0, min: 0, save: false });
 		f.tank = shell.numberField(card, { label: "Propellant capacity", unit: mu, value: 0, min: 0, save: false });
-		var pct = Math.round(SHIELD_FRACTION * 100) + "% loaded ship mass";
-		var shieldNote = role === "capsule" ? shell.note(card, "") : null;
-		if (!shieldNote) f.shield = shell.selectField(card, { label: "Heat shield", hint: " ", save: false,
-			options: [{ value: "0", label: "None" }, { value: "1", label: pct }] });
-		if (f.shield) f.shield.closest(".cs-row").classList.add("cs-wide");
-		var shieldHint = f.shield ? f.shield.closest(".cs-row").querySelector(".cs-hint") : null;
+		// A capsule always carries a heat shield, so it is not offered "None".
+		f.shield = shell.selectField(card, { label: "Heat shield", save: false,
+			options: SHIELDS.filter(function (s) { return role !== "capsule" || s.key !== "none"; })
+				.map(function (s) { return { value: s.key, label: s.label }; }) });
+		f.shield.closest(".cs-row").classList.add("cs-wide");
+		var shieldNote = shell.note(card, "");
 		var hero = shell.hero(card, [{ label: "Δv, loaded", unit: "km/s" }, { label: "Δv, empty", unit: "km/s" }]);
-		shell.note(card, "Δv = Isp · g₀ · ln(m₀ / m_f): m₀ with full tanks, m_f with them empty. Engines count in the dry mass; a heat shield adds to it.");
+		shell.note(card, "Δv = Isp · g₀ · ln(m₀ / m_f): m₀ with full tanks, m_f with them empty. Isp comes with the propellant. Engines count in the dry mass; a heat shield adds to it, as a share of the loaded ship without the shield.");
 
 		function cur() { return fleet.classFor(instId, role); }
 		function edit(patch) { fleet.update(cur().id, patch); }
@@ -99,23 +98,21 @@ export function addShipCards(shell, opts) {
 			}
 			choice.set("Use:", all.map(function (k) { return option(k, fleet.isStandard(k) ? "Standard" : versionName(k, true), k === c); }));
 		}
-		f.prop.addEventListener("change", function () { edit({ propellant: f.prop.value, isp: propellant(f.prop.value).isp }); });
-		["isp", "dry", "payload", "tank"].forEach(function (k) {
+		f.prop.addEventListener("change", function () { edit({ propellant: f.prop.value }); });
+		["dry", "payload", "tank"].forEach(function (k) {
 			f[k].addEventListener("input", function () {
 				var v = parseFloat(f[k].value);
 				if (isFinite(v)) { var p = {}; p[k] = v * scale[k]; edit(p); }
 			});
 		});
-		if (f.shield) f.shield.addEventListener("change", function () { edit({ shield: f.shield.value === "1" }); });
+		f.shield.addEventListener("change", function () { edit({ shield: f.shield.value }); });
 
 		function put(el, value) { if (document.activeElement !== el) el.value = value; }
 		function refresh() {
 			var c = cur();
-			put(f.prop, c.propellant); put(f.isp, c.isp);
+			put(f.prop, c.propellant);
 			["dry", "payload", "tank"].forEach(function (k) { put(f[k], +(c[k] / mass).toPrecision(12)); });
-			if (f.shield) put(f.shield, c.shield ? "1" : "0");
-			var pr = propellant(c.propellant);
-			if (ispHint) ispHint.textContent = pr.rough && c.isp === pr.isp ? "vacuum · rough figure" : "vacuum";
+			put(f.shield, shieldKey(c.shield));
 			var std = fleet.isStandard(c), title = shipTitle(c, std);
 			var tag = std ? "standard" : local ? "local" : "";
 			card.setTitle(title);
@@ -124,9 +121,16 @@ export function addShipCards(shell, opts) {
 				: local ? "Specialized for local service." : "";
 			shared.style.display = shared.textContent ? "" : "none";
 			choices(c, std);
+			var sh = shield(shieldKey(c.shield));
 			var hs = mass === 1000 ? +(shieldMass(c) / 1000).toPrecision(3) + " kt" : +shieldMass(c).toPrecision(3) + " t";
-			if (shieldNote) shieldNote.textContent = "Always carries a heat shield: " + pct + ", " + hs + ".";
-			if (shieldHint) shieldHint.textContent = c.shield ? hs : "";
+			shieldNote.textContent = "";
+			if (sh.fraction) {
+				shieldNote.append(Math.round(sh.fraction * 100) + "% of ship mass: ");
+				var strong = document.createElement("strong");
+				strong.textContent = hs;
+				shieldNote.append(strong, ".");
+			}
+			shieldNote.style.display = sh.fraction ? "" : "none";
 			var dv = shipDv(c);
 			hero[0].set(kms(dv.loaded)); hero[1].set(kms(dv.empty));
 			card.setSummary((tag ? tag + " · " : "") + kms(dv.loaded) + " km/s");

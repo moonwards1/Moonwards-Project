@@ -12,6 +12,13 @@ test("breaking length L = σ / (ρ g₀)", function () {
 	assert.ok(isNaN(breakingLength(0, 1400)));
 });
 
+test("breaking length at a given gravity L = σ / (ρ g)", function () {
+	// g₀ and the explicit equivalent agree; the Moon's 1.62 m/s² gives g₀/1.62 times the length
+	assert.equal(breakingLength(13e9, 2300, 9.80665), breakingLength(13e9, 2300));
+	assert.equal(Math.round(breakingLength(13e9, 2300, 1.62) / 1e3), 3489);
+	assert.ok(isNaN(breakingLength(13e9, 2300, 0)));
+});
+
 test("every preset has a name, strength and density", function () {
 	Object.keys(MATERIALS).forEach(function (k) {
 		var m = MATERIALS[k];

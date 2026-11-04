@@ -176,7 +176,7 @@ export function addSkeletonCards(shell, ctx, tabs) {
 
 	function materialCard() {
 		var mc = addMaterialCard(shell, { id: "sk-mat", tab: "arch", feeds: ["sk-teth"], value: "silica", safety: 3 });
-		calcs.push(mc.read);
+		calcs.push(function () { mc.read(body.GM / (body.R * body.R)); });
 	}
 	function tetherCard() {
 		var t = shell.addCard({ id: "sk-teth", tab: "arch", side: "out", title: "Tether properties", short: "Tether", color: C.core });

@@ -7,9 +7,10 @@
 // Logistics tab shows one card per role (Shared/ship-card.js).
 //
 // A ship CLASS is hardware only: propellant, Isp, dry mass, payload,
-// propellant capacity, heat shield (carried or not). It belongs to the whole design, so one
-// class serves every installation assigned to it and an edit reaches all of
-// them. What a given route asks of the ship stays with the installation.
+// propellant capacity, heat shield (none, crude or advanced). The Isp is not
+// a setting: it follows from the propellant. A class belongs to the whole
+// design, so one class serves every installation assigned to it and an edit
+// reaches all of them. What a given route asks of the ship stays with the installation.
 //
 // Each role has one STANDARD class, the first of the role: every installation
 // uses it unless given its own copy. Capsules and shuttles never leave their
@@ -36,11 +37,13 @@ export const MAX_VERSIONS = 3;
 export function isLocalRole(role) { return role === "shuttle" || role === "capsule"; }
 
 // A freighter version's name, by what sets it apart: payload capacity in
-// kilotonnes, and HS if it carries a heat shield ("0.5 kt HS"). `bare`
-// leaves out the unit, for the compact version buttons ("0.5 HS").
+// kilotonnes, and the heat shield if it carries one ("0.5 kt HS" for an
+// advanced shield, "0.5 kt CHS" for a crude one). `bare` leaves out the
+// unit, for the compact version buttons ("0.5 HS").
 export function versionName(c, bare) {
 	var kt = (c.payload / 1000).toLocaleString("en-US", { maximumSignificantDigits: 3 });
-	return kt + (bare ? "" : " kt") + (c.shield ? " HS" : "");
+	var hs = shieldKey(c.shield);
+	return kt + (bare ? "" : " kt") + (hs === "advanced" ? " HS" : hs === "crude" ? " CHS" : "");
 }
 
 // A class's card title: the role, and a freighter version's name after it.
@@ -49,8 +52,8 @@ export function shipTitle(c, standard) {
 	return standard || isLocalRole(c.role) ? label : label + " " + versionName(c);
 }
 
-// Chemical propellants only. `isp` is a typical vacuum figure, used as the
-// starting value when the propellant is chosen; the Isp field can be edited.
+// Chemical propellants only. `isp` is a typical vacuum figure; a class's Isp
+// is always its propellant's.
 // `rough`: the figure is a placeholder pending a sourced value.
 export const PROPELLANTS = [
 	{ key: "mg-lox", label: "Magnesium / LOX", isp: 260, rough: true },
@@ -71,16 +74,26 @@ export function propellant(key) {
 // given, replaces DEFAULT_PROPELLANT.
 var START = {
 	shuttle: { dry: 20, payload: 30, tank: 40 },
-	freighter: { dry: 4000, payload: 50000, tank: 20000, propellant: "ch4-lox", shield: true },
+	freighter: { dry: 4000, payload: 50000, tank: 20000, propellant: "ch4-lox", shield: "advanced" },
 	capsule: { dry: 8, payload: 4, tank: 3 }
 };
 
-// A carried heat shield's mass, as a fraction of the loaded ship: dry mass,
-// payload and full tanks, the shield itself not counted. The shield is
-// separate from the dry mass and adds to it.
-export const SHIELD_FRACTION = 0.04;
+// Heat shields, as a fraction of the loaded ship's mass: dry mass, payload
+// and full tanks, the shield itself not counted. The shield is separate from
+// the dry mass and adds to it. A capsule always carries one.
+export const SHIELDS = [
+	{ key: "none", label: "None", fraction: 0 },
+	{ key: "crude", label: "Crude - microsphere and frit", fraction: 0.10 },
+	{ key: "advanced", label: "Advanced - PICA", fraction: 0.04 }
+];
+export function shield(key) { return SHIELDS.find(function (s) { return s.key === key; }) || SHIELDS[0]; }
+// A shield setting as a key. A saved design may hold the old yes / no: yes was the 4% shield.
+export function shieldKey(v) {
+	if (v === true) return "advanced";
+	return SHIELDS.some(function (s) { return s.key === v; }) ? v : "none";
+}
 export function shieldMass(c) {
-	return c.shield ? SHIELD_FRACTION * (c.dry + c.payload + c.tank) : 0;
+	return shield(shieldKey(c.shield)).fraction * (c.dry + c.payload + c.tank);
 }
 
 // Δv the class can make with full tanks, loaded and empty:
@@ -106,11 +119,11 @@ function cleanClass(c) {
 		id: c.id, role: c.role,
 		name: typeof c.name === "string" && c.name.trim() ? c.name.trim() : SHIP_ROLES[c.role].label,
 		propellant: p,
-		isp: num(c.isp, propellant(p).isp, 1),
+		isp: propellant(p).isp,
 		dry: num(c.dry, s.dry, 0.001),
 		payload: num(c.payload, s.payload, 0),
 		tank: num(c.tank, s.tank, 0),
-		shield: c.role === "capsule" ? true : !!c.shield
+		shield: c.role === "capsule" && shieldKey(c.shield) === "none" ? "advanced" : shieldKey(c.shield)
 	};
 }
 

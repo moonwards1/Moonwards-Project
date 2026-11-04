@@ -401,6 +401,12 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-vu { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--cs-ink2); }
 .cs-s { grid-column: 1 / -1; font-size: 12px; line-height: 1.4; color: var(--cs-ink2); }
 .cs-s:empty { display: none; }
+/* a ratio line (material-card.js addRatioLine): the label, then two figures; the second has a note directly under it */
+.cs-kv.cs-ratio { grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 6px; align-items: start; }
+.cs-rc { text-align: right; white-space: nowrap; }
+.cs-rv { display: block; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px; font-weight: 600; }
+.cs-rcap { display: block; font-size: 12px; line-height: 1.4; color: var(--cs-ink2); }
+.cs-rcap:empty { display: none; }
 .cs-fold { border-top: 1px solid rgba(150, 125, 95, .18); }
 .cs-fold-t {
 	display: flex;
@@ -437,6 +443,9 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 }
 .cs-hu { margin-left: 3px; font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--cs-ink2); }
 .cs-hu:empty { display: none; }
+/* the "×" of a multiple: bold and a little larger than the units beside it */
+.cs-times, .cs-hero-s .cs-hu.cs-times, .cs-vu.cs-times { font-size: 15px; font-weight: 700; color: inherit; }
+.cs-u.cs-times { color: var(--cs-ink); }
 .cs-hero > div[hidden] { display: none; }
 .cs-hero-s > div { padding: 4px 7px; }
 .cs-hero-s .cs-hl { font-size: 11.5px; color: var(--cs-ink2); }

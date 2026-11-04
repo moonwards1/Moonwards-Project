@@ -142,6 +142,12 @@ var svgNS = "http://www.w3.org/2000/svg";
 // click snaps onto it by a sliver, and later clicks step by the full amount. For
 // such a field the minimum is held back from the attribute and enforced when the
 // value is committed instead, which keeps the grid anchored at zero.
+// A unit that is the multiplication sign gets the bold, slightly larger "×" of a multiple (cs-times).
+function timesMark(el) {
+	el.classList.toggle("cs-times", el.textContent === "×");
+	return el;
+}
+
 function limitNumber(input, step, min, max) {
 	var st = step ? parseFloat(step) : 1;
 	var q = min != null ? min / st : 0;
@@ -522,7 +528,7 @@ export class CalcShell {
 		input.type = "number";
 		limitNumber(input, opts.step, opts.min, opts.max);
 		input.value = opts.value;
-		if (opts.unit) create("span", "cs-u", opts.unit, fld);
+		if (opts.unit) timesMark(create("span", "cs-u", opts.unit, fld));
 		this._wire(card, input);
 		if (opts.choice) opts.choice._add(fld.parentNode, opts.choiceValue, input);
 		return input;
@@ -614,7 +620,7 @@ export class CalcShell {
 			input.type = "number";
 			limitNumber(input, f.step, f.min, f.max);
 			input.value = f.value;
-			if (f.unit) create("span", "cs-u", f.unit, fld);
+			if (f.unit) timesMark(create("span", "cs-u", f.unit, fld));
 			self._wire(card, input);
 			return input;
 		});
@@ -698,14 +704,14 @@ export class CalcShell {
 		create("span", "cs-k", opts.label, row);
 		var v = create("span", "cs-v", false, row);
 		var vn = create("span", "cs-vn", false, v);
-		var vu = opts.unit ? create("small", "cs-vu", opts.unit, v) : null;
+		var vu = opts.unit ? timesMark(create("small", "cs-vu", opts.unit, v)) : null;
 		var s = create("span", "cs-s", opts.sub || "", row);
 		return {
 			el: row,
 			set: function (value, sub, unit) {
 				vn.textContent = value;
 				if (sub != null) s.textContent = sub;
-				if (unit != null && vu) vu.textContent = unit;
+				if (unit != null && vu) { vu.textContent = unit; timesMark(vu); }
 			},
 			show: function (on) { row.hidden = !on; }
 		};
@@ -722,13 +728,13 @@ export class CalcShell {
 			var lab = create("span", "cs-hl", it.label, cell);
 			var v = create("strong", "cs-hv", false, cell);
 			var n = create("span", "cs-hn", false, v);
-			var un = create("small", "cs-hu", it.unit || "", v);
+			var un = timesMark(create("small", "cs-hu", it.unit || "", v));
 			return {
 				el: cell,
 				set: function (value, label, unit) {
 					n.textContent = value;
 					if (label != null) lab.textContent = label;
-					if (unit != null) un.textContent = unit;
+					if (unit != null) { un.textContent = unit; timesMark(un); }
 				},
 				show: function (on) { cell.hidden = !on; }
 			};

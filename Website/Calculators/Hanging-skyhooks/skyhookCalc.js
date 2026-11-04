@@ -131,7 +131,7 @@ export function mountHangingSkyhook(root, opts) {
 	}
 	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "site of boost engines", unit: "km", value: DEF.top });
 	var topSp = speedsUnder(topIn, [{ label: "speed", unit: "km/s" }, { label: "free orbit speed", unit: "km/s", plain: true }, { label: "multiple", unit: "×" }]);
-	var centreIn = shell.numberField(geoCard, { label: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "determines orbital speed", unit: "km", value: DEF.centre });
+	var centreIn = shell.numberField(geoCard, { label: "Centre of mass (C.o.M) altitude", key: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "determines orbital speed", unit: "km", value: DEF.centre });
 	var centreSp = speedsUnder(centreIn, [{ label: "Period", unit: "h" }, { label: "speed", unit: "km/s" }]);
 	if (anc) centreIn.disabled = true;
 	var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: DEF.foot });
@@ -139,8 +139,11 @@ export function mountHangingSkyhook(root, opts) {
 	shell.note(geoCard, "Or drag the markers on the drawing.");
 
 	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop", "frc"], focus: "tether", value: DEF.material || "silica", safety: 3 });
+	var rRatL = matCard.addRatioLine("Lower tether ratio");
+	var rRatU = matCard.addRatioLine("Upper tether ratio");
+	var rRatA = matCard.addRatioLine("Anchor to C.o.M. ratio");
 
-	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["frc"], side: "in", title: "Core Facilities", short: "Core", color: C.rust, focus: "top" });
+	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["frc"], side: "in", title: "Core Facilities", short: "Core", color: C.rust, focus: "tether" });
 	var topLoadIn = shell.numberField(payCard, { label: "Top station", key: "Top tip load", hint: "engines, launch facilities", unit: "kt", value: DEF.topLoad, min: 0,
 		tip: "Mass held at the top tip. It sets the peak tension." });
 	var upperDistIn = shell.numberField(payCard, { label: "Upper tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.upperLoad, min: 0,
@@ -231,8 +234,6 @@ export function mountHangingSkyhook(root, opts) {
 	var rPeri = shell.line(relCard, { label: "Lowest point of the path", unit: "km", sub: "above the surface: it does not land" });
 
 	var propCard = shell.addCard({ id: "prop", tab: "arch", side: "out", title: "Tether properties", short: "Tether", color: C.core, focus: "tether" });
-	var rTrL = shell.line(propCard, { label: "Taper ratio, foot → centre" });
-	var rTrH = shell.line(propCard, { label: "Taper ratio, centre → top" });
 	var rMU = shell.line(propCard, { label: "Upper tether mass", unit: "kt" });
 	var rMA = shell.line(propCard, { label: "Tether, anchor station → centre of mass", unit: "kt" });
 	var rML = shell.line(propCard, { label: "Lower tether mass", unit: "kt" });
@@ -309,15 +310,20 @@ export function mountHangingSkyhook(root, opts) {
 	function kmText(a) { return num(a, a < 100 ? 1 : 0) + " km"; }
 	function field(input, fallback) { var v = parseFloat(input.value); return isFinite(v) ? v : fallback; }
 	function hours(days) { return days >= 1 ? [num(days, 2), "days"] : [num(days * 24, 2), "h"]; }
-	// "0.27 × the 2,600 kt it holds up": tether mass over everything the half carries.
-	function multipleText(x, load) {
-		if (!isFinite(x)) return "holds up no load";
-		var l = scaled(load, MASS);
-		// two decimals, or as many as it takes to reach the first nonzero digit when smaller
+	// Tether mass over everything the half carries: "0.27" (two decimals, or as many as it takes
+	// to reach the first nonzero digit when smaller), "—" when it holds up nothing.
+	function multipleNum(x) {
+		if (!isFinite(x)) return "—";
 		var d = x > 0 && x < 0.1 ? Math.min(12, 1 - Math.floor(Math.log10(x))) : 2;
 		var txt = x.toFixed(d);
 		if (d > 2) txt = txt.replace(/0+$/, "");
-		return txt + " × the " + l[0] + " " + l[1] + " it holds up";
+		return txt;
+	}
+	// "0.27 × the 2,600 kt it holds up"
+	function multipleText(x, load) {
+		if (!isFinite(x)) return "holds up no load";
+		var l = scaled(load, MASS);
+		return multipleNum(x) + " × the " + l[0] + " " + l[1] + " it holds up";
 	}
 	function notAnchor(p) { return !p.anchor; }
 	// A half's loads, itemised: tip + spread + each station on that half.
@@ -397,7 +403,7 @@ export function mountHangingSkyhook(root, opts) {
 
 	function calc() {
 		var body = systems.get(bodyIn.value);
-		var mat = matCard.read();
+		var mat = matCard.read(body.GM / (Number(body.radius) * Number(body.radius)));
 		var stOn = shell.isOn("st");
 		var notes = [], lim = limits();
 		if (anc) centreIn.value = anc.centre;
@@ -460,17 +466,20 @@ export function mountHangingSkyhook(root, opts) {
 		rPeri.set(num((t.newPeriapsis - R) / 1e3, 0));
 
 		// tether properties
-		rTrL.set(num(t.lowRatio, 2)); rTrH.set(num(t.highRatio, 2));
 		var f;
 		var ld = t.loads;
 		var tp = t.tetherParts, seg = tp.anchorSegment, ah = tp.anchorHalf;
-		f = scaled(tp.up.mass, MASS); rMU.set(f[0], multipleText(tp.up.multiple, tp.up.held), f[1]);
-		f = scaled(tp.low.mass, MASS); rML.set(f[0], multipleText(tp.low.multiple, tp.low.held), f[1]);
+		rRatL.set({ taper: "taper " + num(t.lowRatio, 2) + " ·", mass: "mass " + multipleNum(tp.low.multiple) + "×", massNote: "load carried" });
+		rRatU.set({ taper: "taper " + num(t.highRatio, 2) + " ·", mass: "mass " + multipleNum(tp.up.multiple) + "×", massNote: "load carried" });
+		rRatA.show(!!seg);
+		if (seg) rRatA.set({ mass: "mass " + multipleNum(seg.multiple) + "×", massNote: "load carried" });
+		f = scaled(tp.up.mass, MASS); rMU.set(f[0], null, f[1]);
+		f = scaled(tp.low.mass, MASS); rML.set(f[0], null, f[1]);
 		rMU.el.querySelector(".cs-k").textContent = ah === "up" ? "Upper tether, top → anchor station" : "Upper tether mass";
 		rML.el.querySelector(".cs-k").textContent = ah === "low" ? "Lower tether, foot → anchor station" : "Lower tether mass";
 		(ah === "up" ? rMU : rML).el.after(rMA.el);   // the stretch sits under the tether it belongs to
 		rMA.show(!!seg);
-		if (seg) { f = scaled(seg.mass, MASS); rMA.set(f[0], multipleText(seg.multiple, seg.held), f[1]); }
+		if (seg) { f = scaled(seg.mass, MASS); rMA.set(f[0], null, f[1]); }
 		f = scaled(t.tetherMass, MASS); rMT.set(f[0], multipleText(t.massMultiple, ld.upperTotal + ld.lowerTotal) + ", excluding anchor station", f[1]);
 		["up", "low"].forEach(function (h) {
 			var secs = t.sections[h], g = massGroups[h];
@@ -913,7 +922,7 @@ export function mountHangingSkyhook(root, opts) {
 			show(tx, rpOn && !!x);
 			if (!x) return;
 			tx.setAttribute("x", -14 * u); tx.setAttribute("y", -x.location / 1e3 - 6 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
-			tx.textContent = x.name + " ↑ " + kmText(x.altitude / 1e3);
+			tx.textContent = "to " + x.name + " ↑ " + kmText(x.altitude / 1e3);
 		});
 
 		// departure toward the parent planet, in the body-centred frame that does not rotate,

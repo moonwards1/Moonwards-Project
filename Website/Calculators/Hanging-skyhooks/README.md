@@ -93,12 +93,15 @@ in tension, and the taper carries on from there, so the tether thickens in steps
 as it passes each station. A station counts on whichever tether it lies on: above
 the centre of mass it hangs from the upper one, below it from the lower one.
 
-The Tether properties card gives each tether's mass as a multiple of everything
-that tether holds up (tip, spread load and stations; the anchor station is
-left out). The tether the anchor station lies on is shown in two parts, each
-with its own ratio: from its tip to the anchor station, holding up what lies
-beyond it, and from the anchor station to the centre of mass, holding up
-everything on that tether including the station. A fold-out breaks the mass
+The Material card gives, for the lower and the upper tether, the taper ratio
+and then the tether's mass as a multiple of everything that tether holds up
+(tip, spread load and stations; the anchor station is left out), each as a
+small bar of figures, "load carried" under the mass. When the anchor station is off the centre of mass (C.o.M.), a
+third line gives the stretch from the anchor station to the C.o.M. as a mass
+multiple of everything on that tether including the station; the tether the
+anchor station lies on is then split in two parts, tip to anchor station
+(holding up what lies beyond it) and anchor station to C.o.M. The Tether
+properties card gives the masses. A fold-out breaks the mass
 down by section: tip to first station, station to station, and last station to
 the centre of mass. The Forces card's fold-out does the same for tension: each
 section's tension where it arrives at its inner end, and what each station adds.

@@ -49,6 +49,7 @@ export function mountSpaceElevator(root, opts) {
 	var tipIn = shell.numberField(geoCard, { label: "Counterweight altitude", hint: "tip of tether", unit: "km", value: 0, min: 0 });
 	var autoNote = shell.note(geoCard, "");
 	var mat = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["cab"], value: "mwcnt", safety: 2 });
+	var lTaper = mat.addTaperLine("Taper ratio (sync orbit / tip cross-section)");
 
 	// ---------- result cards ----------
 	var orbCard = shell.addCard({ id: "orb", tab: "arch", side: "out", title: "Orbital mechanics", short: "Orbit", color: C.core });
@@ -56,7 +57,6 @@ export function mountSpaceElevator(root, opts) {
 	var lVsync = shell.line(orbCard, { label: "Synchronous orbital speed", unit: "m/s" });
 
 	var cabCard = shell.addCard({ id: "cab", tab: "arch", side: "out", title: "Cable properties", short: "Cable", color: C.core });
-	var lTaper = shell.line(cabCard, { label: "Taper ratio (sync orbit / tip cross-section)" });
 	var lMassR = shell.line(cabCard, { label: "Cable mass per kg of tip payload", unit: "kg" });
 
 	var tipCard = shell.addCard({ id: "tip", tab: "arch", side: "out", title: "Tip release (payload launch)", short: "Tip", color: C.sky });
@@ -74,7 +74,7 @@ export function mountSpaceElevator(root, opts) {
 	function au(r) { return isFinite(r) ? [num(r / Const.AU, 4), "AU"] : ["escapes the Sun", ""]; }
 
 	function calc() {
-		var m = mat.read();
+		var m = mat.read(body.GM / (body.R * body.R));
 		var tipKm = field(tipIn, 0);
 		var se = computeSpaceElevator({ GM: body.GM, R: body.R, omega: body.omega, aSun: body.aSun,
 			rTip: tipKm > 0 ? body.R + tipKm * 1e3 : NaN, sigmaEff: m.sigmaEff, density: m.density });

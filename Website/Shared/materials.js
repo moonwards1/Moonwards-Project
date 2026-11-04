@@ -18,7 +18,9 @@ export const MATERIALS = {
 };
 
 // Breaking length: the length of uniform cable that snaps under its own
-// weight at standard gravity, L = σ / (ρ g₀). Metres, from Pa and kg/m³.
-export function breakingLength(strength, density) {
-	return strength > 0 && density > 0 ? strength / (density * Const.g0) : NaN;
+// weight, L = σ / (ρ g). Metres, from Pa and kg/m³; g in m/s², standard
+// gravity g₀ when omitted.
+export function breakingLength(strength, density, g) {
+	var gr = g === undefined ? Const.g0 : g;
+	return strength > 0 && density > 0 && gr > 0 ? strength / (density * gr) : NaN;
 }

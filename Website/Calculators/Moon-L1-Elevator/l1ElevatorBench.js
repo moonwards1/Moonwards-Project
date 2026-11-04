@@ -73,6 +73,8 @@ export function mountMoonL1Elevator(root, opts) {
 
 	// ---------- input cards ----------
 	var mat = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop", "frc"], value: "mwcnt", safety: 3 });
+	var lTaperS = mat.addTaperLine("Taper ratio (L1 / surface anchor)");
+	var lTaperC = mat.addTaperLine("Taper ratio (L1 / counterweight)");
 
 	var posCard = shell.addCard({ id: "cwpos", tab: "arch", side: "in", title: "Counterweight position", short: "Position", color: C.core, feeds: ["prop", "frc", "orb"] });
 	var rCWIn = shell.numberField(posCard, { label: "Counterweight distance", hint: "from the Moon's centre", unit: "km", value: 222100, min: 1 });
@@ -87,8 +89,6 @@ export function mountMoonL1Elevator(root, opts) {
 
 	// ---------- result cards ----------
 	var propCard = shell.addCard({ id: "prop", tab: "arch", side: "out", title: "Cable properties", short: "Cable", color: C.core });
-	var lTaperS = shell.line(propCard, { label: "Taper ratio (L1 / surface anchor)" });
-	var lTaperC = shell.line(propCard, { label: "Taper ratio (L1 / counterweight)" });
 	var lCable = shell.line(propCard, { label: "Tether (cable) mass", unit: "kt" });
 	var lTotal = shell.line(propCard, { label: "Initial total cable structures mass estimate", unit: "kt" });
 
@@ -110,7 +110,7 @@ export function mountMoonL1Elevator(root, opts) {
 	function blank(lines) { lines.forEach(function (l) { l.set("—"); }); }
 
 	function calc() {
-		var m = mat.read();
+		var m = mat.read(moon.GM / (Number(moon.radius.equator) * Number(moon.radius.equator)));
 		var rCW = field(rCWIn, 222100) * 1e3;
 		var p = Object.assign({}, sys, {
 			sig: m.strength, rho: m.density, safety: m.safety, rCW: rCW,

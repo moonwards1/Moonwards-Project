@@ -45,7 +45,7 @@ the **workbench**, and the **apps**.
   class; a capsule or shuttle card can make a local version for its one
   installation (and remove it to return to the standard). A freighter card
   makes other versions, up to three designs including the standard, titled
-  by payload in kt and HS for a heat shield, and any freighter card can
+  by payload in kt and HS for a heat shield ("CHS" for a crude one), and any freighter card can
   switch among them. The Economy skeleton cards take payload and
   propellant per flight from the installation's first role.
 - **Save design** keeps the design, its ship classes, every mounted
