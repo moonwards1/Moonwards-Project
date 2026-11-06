@@ -144,7 +144,7 @@ export function mountHangingSkyhook(root, opts) {
 	// Each station is optional. Their saved keys are the labels the fields had as plain rows.
 	function station(label, hint, tip, alt, mass) {
 		var st = shell.optionalFields(stCard, { key: label + " used", label: label, hint: hint, tip: tip, checked: DEF.ticked,
-			fields: [{ label: "altitude", unit: "km", value: alt, key: label }, { label: "peak mass", unit: "kt", value: mass, min: 0, key: label + " mass" }] });
+			fields: [{ label: "altitude", unit: "km", value: alt, key: label }, { label: "peak mass", unit: "kt", value: mass, min: 0, key: label + " mass", narrow: true }] });
 		return { use: st.check, alt: st.inputs[0], mass: st.inputs[1] };
 	}
 	var launchSt = station("Main launch deck", "most ships leave here", "Most ships leave from here; released cargo leaves at this deck's speed.", DEF.launch, DEF.launchMass);

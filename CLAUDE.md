@@ -171,15 +171,21 @@ will make it plain.
 
 In this project a **release** is a ship let go by fixed launch
 infrastructure — principally skyhooks and space elevators — not a rocket
-burn. The energy comes from the infrastructure (its rotation, its power
-supply, reboost of its momentum), not from the ship's propellant, so rocket
-fuel reasoning does not transfer: a faster release, or one aimed differently,
+burn. The energy comes from the infrastructure (the momentum and energy stored in
+the anchor's orbit, and the power supply that reboosts it), not from the ship's
+propellant, so rocket fuel reasoning does not transfer: a faster release, or one aimed differently,
 is not a propellant bill for the ship, and one release direction is not
 "harder for the ship" than another (`Notes/decisions.md`, "Carrier release
 phase is free"). The departure card's "technology's share" is what the
 infrastructure delivers. Keep this in mind whenever a discussion or a
 readout involves release speed, release direction, or the cost of a
 departure; the code says "release" rather than "launch" deliberately.
+
+A skyhook is a *hanging* tether: it is held on its anchor, and the anchor is
+the only thing in orbit. It does not rotate. The only added release mechanism
+considered for a hanging skyhook is a linear mass driver (still at the
+initial conceptual stage); tip spin launchers are no longer part of the
+skyhook design.
 
 ## Who does what
 

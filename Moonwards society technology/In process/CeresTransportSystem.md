@@ -35,7 +35,7 @@
 
 - Launches to Ceres can't take advantage of aerobraking to get into Ceres orbit. They have to be able to easily set up capture by one arm of the spin launcher on the Ceres space elevator, which then slows them down and reels them in to the counterweight.
 
-- If a spin launcher is involved in launch from the moon's environs (connected to the skyhook or space elevator), a plane change plus a small overshoot of the orbit of Ceres can be used to set up an encounter with Ceres when it is some distance above or below the ecliptic. But this is worthwhile when the ecliptic latitude on arrival is low. If it is nore than a few degrees, the approach angle on the Ceres end becomes too steep for a capture by the Ceres spin launcher to be feasible, much less safe.
+- If a mass driver (on the skyhook) or a spin launcher (on the space elevator) is involved in launch from the moon's environs, a plane change plus a small overshoot of the orbit of Ceres can be used to set up an encounter with Ceres when it is some distance above or below the ecliptic. But this is worthwhile when the ecliptic latitude on arrival is low. If it is nore than a few degrees, the approach angle on the Ceres end becomes too steep for a capture by the Ceres spin launcher to be feasible, much less safe.
 
 - For these reasons, many Hohmann transfer launch windows are skipped. Only the ones where Ceres will be less than 3 or 4 degrees from the ecliptic are used, and the maximum possible fraction of all ships are launched on the very best windows.
 

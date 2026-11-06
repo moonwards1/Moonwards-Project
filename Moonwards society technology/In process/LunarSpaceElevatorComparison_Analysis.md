@@ -217,8 +217,8 @@ $\exp(v_\text{tip}^2/(2\cdot\sigma/\rho))$, brutal at interplanetary tip speeds.
 conclusion ("a spin launcher would have to deal with a huge Δv boost and require the
 counterweight become far larger") is the right one.
 
-The skyhook gets interplanetary speed the cheap way: it is *already* a rotating/orbiting
-launcher, so extending the tip from 2,000 to 6,000 km adds release speed directly, with
+The skyhook gets interplanetary speed the cheap way: it is *already* a moving
+launcher (its tip moves at the anchor's orbital rate), so extending the tip from 2,000 to 6,000 km adds release speed directly, with
 no new launch mechanism — just more cable and more station‑keeping fuel during the rare Ceres windows (produced over the years between windows, so the average rate is modest).
 
 **The project's stated test is volume + interplanetary reach + robust expansion.** The elevator is excellent at the cislunar bulk‑freight half and structurally poor at the
