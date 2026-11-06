@@ -64,18 +64,18 @@ export function mountHangingSkyhook(root, opts) {
 	// stations open in use. An anchored tether opens on figures that fit around its moon
 	// (the centre of mass is the moon's orbit). A workbench tether opens on its body's own
 	// design where it has one, and otherwise on round figures that suit every workbench body.
-	var LOADS = { topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 300, footLoad: 200, ticked: true, launchMass: 10, outerMass: 200, recvMass: 100 };
+	var LOADS = { topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 300, footLoad: 200, ticked: true, releaseMass: 10, outerMass: 200, recvMass: 100 };
 	var BENCH = {
-		round: { top: 3000, centre: 2000, foot: 1000, recv: 1500, outer: 1250, launch: 2500, material: "silica",
-			topLoad: 10, upperLoad: 10, anchorLoad: 1000, lowerLoad: 10, footLoad: 10, ticked: false, launchMass: 10, outerMass: 10, recvMass: 10 },
-		Moon: { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, launch: 950, material: "silica",
-			topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 30, footLoad: 200, ticked: true, launchMass: 10, outerMass: 20, recvMass: 100 },
-		Earth: { top: 6200, centre: 2900, foot: 120, recv: 1500, outer: 1250, launch: 2500, material: "bestsilica",
-			topLoad: 60, upperLoad: 20, anchorLoad: 5000, lowerLoad: 50, footLoad: 20, ticked: false, launchMass: 10, outerMass: 10, recvMass: 10 }
+		round: { top: 3000, centre: 2000, foot: 1000, recv: 1500, outer: 1250, release: 2500, material: "silica",
+			topLoad: 10, upperLoad: 10, anchorLoad: 1000, lowerLoad: 10, footLoad: 10, ticked: false, releaseMass: 10, outerMass: 10, recvMass: 10 },
+		Moon: { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, release: 950, material: "silica",
+			topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 30, footLoad: 200, ticked: true, releaseMass: 10, outerMass: 20, recvMass: 100 },
+		Earth: { top: 6200, centre: 2900, foot: 120, recv: 1500, outer: 1250, release: 2500, material: "bestsilica",
+			topLoad: 60, upperLoad: 20, anchorLoad: 5000, lowerLoad: 50, footLoad: 20, ticked: false, releaseMass: 10, outerMass: 10, recvMass: 10 }
 	};
-	var DEF = anc ? Object.assign({}, LOADS, { top: 12000, centre: anc.centre, foot: 300, recv: 400, outer: 7000, launch: 11000 })
+	var DEF = anc ? Object.assign({}, LOADS, { top: 12000, centre: anc.centre, foot: 300, recv: 400, outer: 7000, release: 11000 })
 		: bench ? BENCH[o.body] || BENCH.round
-		: Object.assign({}, LOADS, { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, launch: 950 });
+		: Object.assign({}, LOADS, { top: 2000, centre: 275, foot: 10, recv: 233, outer: 606.5, release: 950 });
 	var shell = new CalcShell(root, { title: anc ? anc.name + " Skyhook" : "Hanging Skyhook", stageLabel: "Skyhook drawing", overline: o.overline, embedded: !!o.embedded });
 
 	// ---------- input cards ----------
@@ -124,7 +124,7 @@ export function mountHangingSkyhook(root, opts) {
 	var rRatA = matCard.addRatioLine("Anchor to C.o.M. ratio");
 
 	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["prop"], side: "in", title: "Core Facilities", short: "Core", color: C.rust, focus: "tether" });
-	var topLoadIn = shell.numberField(payCard, { label: "Top station", key: "Top tip load", hint: "engines, launch facilities", unit: "kt", value: DEF.topLoad, min: 0,
+	var topLoadIn = shell.numberField(payCard, { label: "Top station", key: "Top tip load", hint: "engines, release facilities", unit: "kt", value: DEF.topLoad, min: 0,
 		tip: "Mass held at the top tip. It sets the peak tension." });
 	var upperDistIn = shell.numberField(payCard, { label: "Upper tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.upperLoad, min: 0,
 		tip: "Everything carried along the upper tether apart from the stations (climbers, power, fuel, tracks), treated as spread evenly over its length. The stations' masses are on the Optional Stations card." });
@@ -141,27 +141,27 @@ export function mountHangingSkyhook(root, opts) {
 		tip: "Mass held at the foot tip." });
 
 	var stCard = shell.addCard({ id: "st", tab: "arch", feeds: ["thrO", "rp", "prop", "stO"], side: "in", title: "Optional Stations", short: "Optional", color: C.ochre, focus: "stations" });
-	// Each station is optional. Their saved keys are the labels the fields had as plain rows.
-	function station(label, hint, tip, alt, mass) {
-		var st = shell.optionalFields(stCard, { key: label + " used", label: label, hint: hint, tip: tip, checked: DEF.ticked,
-			fields: [{ label: "altitude", unit: "km", value: alt, key: label }, { label: "peak mass", unit: "kt", value: mass, min: 0, key: label + " mass", narrow: true }] });
+	// Each station is optional. The saved key stays fixed while the label shown can change.
+	function station(key, label, hint, tip, alt, mass) {
+		var st = shell.optionalFields(stCard, { key: key + " used", label: label, hint: hint, tip: tip, checked: DEF.ticked,
+			fields: [{ label: "altitude", unit: "km", value: alt, key: key }, { label: "peak mass", unit: "kt", value: mass, min: 0, key: key + " mass", narrow: true }] });
 		return { use: st.check, alt: st.inputs[0], mass: st.inputs[1] };
 	}
-	var launchSt = station("Main launch deck", "most ships leave here", "Most ships leave from here; released cargo leaves at this deck's speed.", DEF.launch, DEF.launchMass);
-	var outerSt = station("Outer docks", "ships from high orbit", "Where incoming ships from high orbit dock.", DEF.outer, DEF.outerMass);
-	var recvSt = station("Receiving deck", "shuttles from the surface", "Where shuttles from the surface join the tether.", DEF.recv, DEF.recvMass);
-	var launchIn = launchSt.alt, launchMassIn = launchSt.mass, outerIn = outerSt.alt, outerMassIn = outerSt.mass, recvIn = recvSt.alt, recvMassIn = recvSt.mass;
+	var releaseSt = station("Release deck", "Release deck", "for alternate destination", "Where ships bound for an alternate destination are released; released cargo leaves at this deck's speed.", DEF.release, DEF.releaseMass);
+	var outerSt = station("Outer docks", "Outer docks", "arrival from holding orbit", "Where incoming ships arriving from holding orbit dock.", DEF.outer, DEF.outerMass);
+	var recvSt = station("Receiving deck", "Receiving deck", "shuttles from the surface", "Where shuttles from the surface join the tether.", DEF.recv, DEF.recvMass);
+	var releaseIn = releaseSt.alt, releaseMassIn = releaseSt.mass, outerIn = outerSt.alt, outerMassIn = outerSt.mass, recvIn = recvSt.alt, recvMassIn = recvSt.mass;
 	shell.note(stCard, "Each station's mass is the facility plus its maximum load of ships, cargo and supplies.");
 
 	var thrCard = shell.addCard({ id: "thr", tab: "log", feeds: ["thrO", "kpO"], side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, focus: "tether" });
 	// The route runs foot to top, or between any two places in use once optional stations are ticked.
 	var ROUTE = [{ v: "foot", label: "Foot station", short: "foot" }, { v: "recv", label: "Receiving deck", short: "receiving deck", st: recvSt },
-		{ v: "outer", label: "Outer docks", short: "outer docks", st: outerSt }, { v: "launch", label: "Main launch deck", short: "launch deck", st: launchSt },
+		{ v: "outer", label: "Outer docks", short: "outer docks", st: outerSt }, { v: "release", label: "Release deck", short: "release deck", st: releaseSt },
 		{ v: "anchor", label: anc ? anc.name : "Anchor station", short: anc ? anc.name : "anchor station" }, { v: "top", label: "Top station", short: "top" }];
 	var routeOpts = ROUTE.map(function (r) { return { value: r.v, label: r.label }; });
 	var fromIn = shell.selectField(thrCard, { label: "From", key: "Cargo from", value: "foot", options: routeOpts, tip: "Where climbers take on cargo." });
 	var toIn = shell.selectField(thrCard, { label: "To", key: "Cargo to", value: "top", options: routeOpts, tip: "Where climbers deliver it." });
-	var rateIn = shell.numberField(thrCard, { label: "Delivery rate", key: "Delivery rate to launch deck", unit: "t/day", value: 1000, min: 0,
+	var rateIn = shell.numberField(thrCard, { label: "Delivery rate", key: "Delivery rate to release deck", unit: "t/day", value: 1000, min: 0,
 		tip: "Cargo delivered along the route. Return traffic, back to where the route starts, is assumed to be 1% of this." });
 	var perClimberIn = shell.numberField(thrCard, { label: "Cargo per climber", unit: "t", value: 100, min: 0.001 });
 	var vClimbIn = shell.numberField(thrCard, { label: "Climb speed", unit: "m/s", value: 200, min: 0.1 });
@@ -308,7 +308,7 @@ export function mountHangingSkyhook(root, opts) {
 		stations.forEach(function (p) { parts.push(p.name.toLowerCase() + " " + num(p.m / 1e6, 0) + " kt"); });
 		return parts.join(" + ");
 	}
-	// "Top → main launch deck", "Outer docks → centre of mass"
+	// "Top → release deck", "Outer docks → centre of mass"
 	function sectionName(half, x) {
 		var from = x.from === "tip" ? (half === "up" ? "Top" : "Foot") : x.from;
 		return from + " → " + (x.to ? x.to.toLowerCase() : "centre of mass");
@@ -362,7 +362,7 @@ export function mountHangingSkyhook(root, opts) {
 	// where the last calculation put it, and the model is given "anchor" to resolve.
 	var anchorKm = null;
 	function cargoRoute(footKm, topKm) {
-		var alt = { foot: footKm, top: topKm, recv: field(recvIn, DEF.recv), outer: field(outerIn, DEF.outer), launch: field(launchIn, DEF.launch),
+		var alt = { foot: footKm, top: topKm, recv: field(recvIn, DEF.recv), outer: field(outerIn, DEF.outer), release: field(releaseIn, DEF.release),
 			anchor: anchorKm != null ? anchorKm : field(centreIn, DEF.centre) };
 		var avail = ROUTE.filter(function (r) { return !r.st || r.st.use.checked; });
 		avail.sort(function (a, b) { return alt[b.v] - alt[a.v]; });
@@ -388,8 +388,8 @@ export function mountHangingSkyhook(root, opts) {
 			foot: (isFinite(footKm) ? footKm : DEF.foot) * 1e3, centre: field(centreIn, DEF.centre) * 1e3, top: (isFinite(topKm) ? topKm : DEF.top) * 1e3,
 			receivingDeck: recvSt.use.checked ? field(recvIn, DEF.recv) * 1e3 : null,
 			outerDocks: outerSt.use.checked ? field(outerIn, DEF.outer) * 1e3 : null,
-			launchDeck: launchSt.use.checked ? field(launchIn, DEF.launch) * 1e3 : null,
-			stationMass: { receivingDeck: field(recvMassIn, DEF.recvMass) * 1e6, outerDocks: field(outerMassIn, DEF.outerMass) * 1e6, launchDeck: field(launchMassIn, DEF.launchMass) * 1e6 },
+			releaseDeck: releaseSt.use.checked ? field(releaseIn, DEF.release) * 1e3 : null,
+			stationMass: { receivingDeck: field(recvMassIn, DEF.recvMass) * 1e6, outerDocks: field(outerMassIn, DEF.outerMass) * 1e6, releaseDeck: field(releaseMassIn, DEF.releaseMass) * 1e6 },
 			cargoFrom: route.from.v === "anchor" ? "anchor" : route.from.alt * 1e3, cargoTo: route.to.v === "anchor" ? "anchor" : route.to.alt * 1e3,
 			strength: mat.specific,
 			loadTop: field(topLoadIn, DEF.topLoad) * 1e6, loadFoot: field(footLoadIn, DEF.footLoad) * 1e6,
@@ -405,9 +405,9 @@ export function mountHangingSkyhook(root, opts) {
 		anchorKm = (t.centre + t.comOffset) / 1e3;
 		route.from.alt = t.throughput.from / 1e3; route.to.alt = t.throughput.to / 1e3;   // the anchor station's, once balanced
 		S = { t: t, body: body, R: R / 1e3, GM: body.GM, foot: t.foot / 1e3, centre: t.centre / 1e3, top: t.top / 1e3,
-			recv: t.receivingDeck / 1e3, outer: t.outerDocks / 1e3, launch: t.launchDeck / 1e3, route: route,
+			recv: t.receivingDeck / 1e3, outer: t.outerDocks / 1e3, release: t.releaseDeck / 1e3, route: route,
 			parentDist: body.orbit ? Number(body.orbit.a) / 1e3 : NaN };
-		// the departure toward the parent planet, from the launch deck out to seven radii, in drawing km
+		// the departure toward the parent planet, from the release deck out to seven radii, in drawing km
 		// (perifocal x, toward the release point, is up the tether; perifocal y, the motion, is +x)
 		var re0 = t.reentry;
 		S.depart = re0.escapes ? OrbitalMath.hyperbolaOutbound(re0.releaseRadius, re0.eccentricity, 7 * R, 80)
@@ -530,7 +530,7 @@ export function mountHangingSkyhook(root, opts) {
 		var reShow = !!re.parent && re.escapes;
 		[rVinf, rRel, rPerigee].forEach(function (l) { l.show(reShow); });
 		rEntry.show(reShow && re.entry); rPeakG.show(reShow && re.entry && re.atmosphere);
-		reOutNote.textContent = re.parent && !re.escapes ? "A release from the launch deck does not escape " + here + ": no transfer to " + re.parent + "."
+		reOutNote.textContent = re.parent && !re.escapes ? "A release from the release deck does not escape " + here + ": no transfer to " + re.parent + "."
 			: reShow && !re.entry ? "The path's perigee is above the " + num(ifaceAltOf(bodyIn.value), 0) + " km entry interface: no atmospheric entry." : "";
 		reOutNote.hidden = !reOutNote.textContent;
 		if (reShow) {
@@ -557,7 +557,7 @@ export function mountHangingSkyhook(root, opts) {
 		// summaries
 		if (bodyCard) bodyCard.setSummary(bodyIn.value);
 		geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km\n" + num(t.footVel / 1e3, 2) + " → " + num(t.centreVel / 1e3, 2) + " → " + num(t.topVel / 1e3, 2) + " km/s");
-		var stUsed = [[recvSt, num(S.recv, 0)], [outerSt, num(S.outer, 1)], [launchSt, num(S.launch, 0)]].filter(function (x) { return x[0].use.checked; });
+		var stUsed = [[recvSt, num(S.recv, 0)], [outerSt, num(S.outer, 1)], [releaseSt, num(S.release, 0)]].filter(function (x) { return x[0].use.checked; });
 		stCard.setSummary(stUsed.length ? stUsed.map(function (x) { return x[1]; }).join(" · ") + " km · " + num((ld.stationsUpper + ld.stationsLower) / 1e6, 0) + " kt" : "none");
 		payCard.setSummary(num((t.loads.upperTotal + t.loads.lowerTotal + t.loads.com) / 1e6, 0) + " kt" + (anc ? " + " + anc.name : ""));
 		thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + routeText);
@@ -833,7 +833,7 @@ export function mountHangingSkyhook(root, opts) {
 
 		// optional stations (right); each label ends with the net pull felt there. Both the
 		// Optional Stations and Stations cards own them, so either one draws them in full.
-		var stOn = any("st", "stO"), decks = [[S.launch, "launch deck", field(launchMassIn, DEF.launchMass), launchSt, "launchDeck"], [S.outer, "outer docks", field(outerMassIn, DEF.outerMass), outerSt, "outerDocks"], [S.recv, "receiving deck", field(recvMassIn, DEF.recvMass), recvSt, "receivingDeck"]].filter(function (d) { return d[3].use.checked; });
+		var stOn = any("st", "stO"), decks = [[S.release, "release deck", field(releaseMassIn, DEF.releaseMass), releaseSt, "releaseDeck"], [S.outer, "outer docks", field(outerMassIn, DEF.outerMass), outerSt, "outerDocks"], [S.recv, "receiving deck", field(recvMassIn, DEF.recvMass), recvSt, "receivingDeck"]].filter(function (d) { return d[3].use.checked; });
 		gStTicks.setAttribute("d", decks.map(function (d) { return "M" + (-9 * u) + " " + (-(R + d[0])) + "L" + (9 * u) + " " + (-(R + d[0])); }).join(""));
 		show(gStTicks, stOn);
 		decks.forEach(function (d, i) {
@@ -900,7 +900,7 @@ export function mountHangingSkyhook(root, opts) {
 
 		// departure toward the parent planet, in the body-centred frame that does not rotate,
 		// at the moment of release (the tether is drawn at that moment): the hyperbola from the
-		// launch deck, its periapsis. The arrow to the parent leaves the body through the point
+		// release deck, its periapsis. The arrow to the parent leaves the body through the point
 		// facing it, `turn` ahead of the tether, so the departure heads out against the body's orbit.
 		var re = t.reentry, dp = S.depart, reOn = any("reO") && re.escapes && dp.length > 1;
 		[gRe, gReHead, tRe, gTurn, tTurn, gEarth, gEarthHead, tEarth, gOrbitP, gOrbitPHead, gReMid].forEach(function (el) { show(el, reOn && isFinite(S.parentDist)); });
@@ -908,9 +908,9 @@ export function mountHangingSkyhook(root, opts) {
 			var end = dp[dp.length - 1], prev = dp[dp.length - 2];
 			gRe.setAttribute("d", "M" + dp.map(function (q) { return q[0] + " " + q[1]; }).join("L"));
 			gReHead.setAttribute("d", arrowHead(end, Math.atan2(end[1] - prev[1], end[0] - prev[0]), u));
-			// a second arrowhead near the start, just past the launch deck's label while that shows
+			// a second arrowhead near the start, just past the release deck's label while that shows
 			// (the label runs along the path's first stretch), else 40 px along
-			var li = decks.findIndex(function (d) { return d[4] === "launchDeck"; });
+			var li = decks.findIndex(function (d) { return d[4] === "releaseDeck"; });
 			var xMid = stOn && li >= 0 && txtOp > 0 ? 14 * u + tSt[li].getComputedTextLength() + 14 * u : 40 * u;
 			for (var j = 1; j < dp.length - 1 && dp[j][0] < xMid; j++);
 			var f0 = dp[j - 1], f1 = dp[j], fr = Math.max(0, Math.min(1, (xMid - f0[0]) / (f1[0] - f0[0])));
@@ -965,7 +965,7 @@ export function mountHangingSkyhook(root, opts) {
 	view.addTarget("centre", { label: "Centre of mass", color: C.core.draw, rect: function () { return rectAround(S.centre, Math.max(120, 0.22 * span()), -0.7, 0.9); } });
 	view.addTarget("top", { label: "Top", color: C.rust.draw, rect: function () { var d = Math.max(140, 0.22 * span()); var r = rectAround(S.top, d, -0.85, 0.85); r[1] -= 0.1 * d; return r; } });
 	view.addTarget("stations", { label: "Stations", color: C.ochre.draw, rect: function () {
-		var d = Math.max(80, S.launch - S.recv); return [-0.5 * d, -(S.R + S.launch) - 0.08 * d, 0.65 * d, -(S.R + S.recv) + 0.08 * d]; } });
+		var d = Math.max(80, S.release - S.recv); return [-0.5 * d, -(S.R + S.release) - 0.08 * d, 0.65 * d, -(S.R + S.recv) + 0.08 * d]; } });
 	view.addTarget("reentry", { label: "Departure to the parent planet", color: C.violet.draw, pad: 1.06, rect: function () {
 		var r = [-S.R * 2.3, -(S.R + S.top) - 0.1 * S.R, S.R * 1.6, S.R * 1.1];   // left: the arrow on the body's orbit
 		S.depart.forEach(function (q) { r[2] = Math.max(r[2], q[0]); r[1] = Math.min(r[1], q[1]); r[3] = Math.max(r[3], q[1]); });

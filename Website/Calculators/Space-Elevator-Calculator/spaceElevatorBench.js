@@ -59,7 +59,7 @@ export function mountSpaceElevator(root, opts) {
 	var cabCard = shell.addCard({ id: "cab", tab: "arch", side: "out", title: "Cable properties", short: "Cable", color: C.core });
 	var lMassR = shell.line(cabCard, { label: "Cable mass per kg of tip payload", unit: "kg" });
 
-	var tipCard = shell.addCard({ id: "tip", tab: "arch", side: "out", title: "Tip release (payload launch)", short: "Tip", color: C.sky });
+	var tipCard = shell.addCard({ id: "tip", tab: "arch", side: "out", title: "Tip release (payload)", short: "Tip", color: C.sky });
 	var lVtip = shell.line(tipCard, { label: "Tip velocity (inertial)", unit: "m/s" });
 	var lAtip = shell.line(tipCard, { label: "Artificial gravity at tip", unit: "m/s²" });
 	var lVesc = shell.line(tipCard, { label: "Tip escape velocity", unit: "m/s" });

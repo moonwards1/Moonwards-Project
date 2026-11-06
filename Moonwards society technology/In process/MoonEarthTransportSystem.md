@@ -56,7 +56,7 @@ The mass driver is a structure 41 km long, sitting directly on the moon's equato
 
 ## Shuttle to foot
 
-## Earthdiver to Main launch deck
+## Earthdiver to Release deck
 
 ## Launch to Earth
 

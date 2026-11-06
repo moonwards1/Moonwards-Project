@@ -481,7 +481,7 @@ export class CalcShell {
 		if (opts.hint) create("span", "cs-opt-d", opts.hint, head);
 		var row = create("div", "cs-opt-f", false, el);
 		var inputs = opts.fields.map(function (f) {
-			var lab = create("label", "cs-opt-fl" + (f.narrow ? " cs-opt-narrow" : ""), false, row);
+			var lab = create("label", f.narrow ? ["cs-opt-fl", "cs-opt-narrow"] : "cs-opt-fl", false, row);
 			create("span", "cs-opt-l", f.label, lab);
 			var fld = create("span", "cs-fld", false, lab);
 			var input = create("input", false, false, fld);

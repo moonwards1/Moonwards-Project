@@ -21,7 +21,7 @@ var m = MATERIALS.silica;
 function base() {
 	return {
 		foot: 10e3, centre: 275e3, top: 2000e3,
-		receivingDeck: 233e3, outerDocks: 606.5e3, launchDeck: 950e3, cargoFrom: 233e3, cargoTo: 950e3,
+		receivingDeck: 233e3, outerDocks: 606.5e3, releaseDeck: 950e3, cargoFrom: 233e3, cargoTo: 950e3,
 		strength: (m.strength / 3) / m.density, loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
 		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
 		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9,
@@ -164,7 +164,7 @@ test("the station may sit anywhere the tether can carry it", function () {
 	var weak = MATERIALS.earlylunarglass;
 	var base = {
 		foot: 10e3, centre: 275e3, top: 2000e3,
-		receivingDeck: 233e3, outerDocks: 606.5e3, launchDeck: 950e3,
+		receivingDeck: 233e3, outerDocks: 606.5e3, releaseDeck: 950e3,
 		strength: (weak.strength / 3) / weak.density,
 		loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
 		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
@@ -264,7 +264,7 @@ test("release points include Earth", function () {
 
 test("stations: masses held at a point step the tension up", function () {
 	var R = Number(moon.radius), w = t.angularVelocity;
-	var masses = { receivingDeck: 50e6, outerDocks: 500e6, launchDeck: 200e6 };
+	var masses = { receivingDeck: 50e6, outerDocks: 500e6, releaseDeck: 200e6 };
 	var u = computeSkyhook(moon, Object.assign({}, base(), { stationMass: masses }));
 	assert.ok(u.balanced);
 	var pull = function (r) { return w * w * r - moon.GM / (r * r); };
@@ -293,7 +293,7 @@ test("stations: masses held at a point step the tension up", function () {
 	assert.ok(u.tetherMassUpper > t.tetherMassUpper);
 	close(u.massMultipleUpper, u.tetherMassUpper / u.loads.upperTotal, "upper multiple");
 	near(u.loads.upperTotal / 1e6, 100 + 700, 2, "upper total: its loads plus the two stations above the centre of mass, kt");
-	// the drawn profile carries the step: two entries at the launch deck's radius
+	// the drawn profile carries the step: two entries at the release deck's radius
 	var rL = 950e3 + R, P = u.profile.up, at = [];
 	P.r.forEach(function (r, i) { if (r === rL) at.push(P.T[i]); });
 	assert.equal(at.length, 2);
@@ -301,32 +301,32 @@ test("stations: masses held at a point step the tension up", function () {
 });
 
 test("stations: no mass, or stations not modelled, changes nothing", function () {
-	var a = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 0, outerDocks: 0, launchDeck: 0 } }));
+	var a = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 0, outerDocks: 0, releaseDeck: 0 } }));
 	assert.equal(a.tensionPeak, t.tensionPeak);
-	var b = computeSkyhook(moon, Object.assign({}, base(), { receivingDeck: null, outerDocks: null, launchDeck: null,
-		stationMass: { receivingDeck: 50e6, outerDocks: 500e6, launchDeck: 200e6 } }));
+	var b = computeSkyhook(moon, Object.assign({}, base(), { receivingDeck: null, outerDocks: null, releaseDeck: null,
+		stationMass: { receivingDeck: 50e6, outerDocks: 500e6, releaseDeck: 200e6 } }));
 	assert.equal(b.tensionPeak, t.tensionPeak);
 	assert.equal(b.sections.up.length, 1);
 });
 
 test("station figures: tension at each level, pull, and the outcome of a release", function () {
-	var withMass = Object.assign({}, base(), { stationMass: { receivingDeck: 100e6, outerDocks: 200e6, launchDeck: 10e6 } });
+	var withMass = Object.assign({}, base(), { stationMass: { receivingDeck: 100e6, outerDocks: 200e6, releaseDeck: 10e6 } });
 	var u = computeSkyhook(moon, withMass), F = u.stationFigures;
-	assert.deepEqual(F.map(function (x) { return x.key; }), ["top", "launchDeck", "outerDocks", "anchor", "receivingDeck", "foot"], "top down: the tips, the stations, the anchor station");
+	assert.deepEqual(F.map(function (x) { return x.key; }), ["top", "releaseDeck", "outerDocks", "anchor", "receivingDeck", "foot"], "top down: the tips, the stations, the anchor station");
 	// the tips carry the tip load's weight
 	close(F[0].tension, 40e6 * u.highAcceleration, "top station tension");
 	close(F[5].tension, 200e6 * u.lowAcceleration, "foot station tension");
 	assert.equal(F[0].release.outcome, "escape");
 	assert.ok(F[0].outward && !F[5].outward, "pulled outward at the top, inward at the foot");
-	// the launch deck's total tension is the tension just inboard of it: where the next stretch of tether starts
-	var up = u.sections.up, i = up.findIndex(function (x) { return x.from === "Main launch deck"; });
-	close(F[1].tension, up[i].tFrom, "launch deck tension");
+	// the release deck's total tension is the tension just inboard of it: where the next stretch of tether starts
+	var up = u.sections.up, i = up.findIndex(function (x) { return x.from === "Release deck"; });
+	close(F[1].tension, up[i].tFrom, "release deck tension");
 	close(F[1].tension, up[i - 1].tTo + F[1].pull, "arriving tension plus its own pull");
 	close(F[1].acceleration, Math.abs(u.angularVelocity * u.angularVelocity * (950e3 + moon.radius) - moon.GM / Math.pow(950e3 + moon.radius, 2)), "net pull per kg");
-	// a release at the launch deck escapes; at the receiving deck, just below the centre of mass, it
+	// a release at the release deck escapes; at the receiving deck, just below the centre of mass, it
 	// is bound with its lowest point a few km above the surface; a lower deck would drop to the surface
 	assert.equal(F[1].release.outcome, "escape");
-	near(F[1].release.vInf, 835, 0, "v_inf at the launch deck");
+	near(F[1].release.vInf, 835, 0, "v_inf at the release deck");
 	assert.equal(F[4].release.outcome, "orbit");
 	assert.equal(F[4].release.apsis, "periapsis");
 	var low = computeSkyhook(moon, Object.assign({}, withMass, { receivingDeck: 100e3 })).stationFigures;
@@ -335,8 +335,8 @@ test("station figures: tension at each level, pull, and the outcome of a release
 	assert.equal(F[5].release.outcome, "impact", "dropped from the foot");
 	close(F[5].release.impactSpeed, u.hitTheGround, "the foot's impact speed is the drop from the foot");
 	// a station with no mass has the tension its level would have with a vanishing mass
-	var z = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 0, outerDocks: 0, launchDeck: 0 } })).stationFigures;
-	var tiny = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 1, outerDocks: 1, launchDeck: 1 } })).stationFigures;
+	var z = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 0, outerDocks: 0, releaseDeck: 0 } })).stationFigures;
+	var tiny = computeSkyhook(moon, Object.assign({}, base(), { stationMass: { receivingDeck: 1, outerDocks: 1, releaseDeck: 1 } })).stationFigures;
 	z.forEach(function (x, k) { assert.ok(Math.abs(x.tension - tiny[k].tension) <= 1e-6 * tiny[k].tension, x.key + " tension without mass"); });
 });
 
@@ -344,7 +344,7 @@ test("a tether anchored on Phobos needs no anchor station and nudges Phobos's or
 	var mars = systems.get("Mars"), phobos = systems.get("Phobos");
 	var inp = Object.assign({}, base(), {
 		foot: 300e3, centre: phobos.orbit.a - Number(mars.radius), top: 12000e3,
-		receivingDeck: null, outerDocks: null, launchDeck: null, anchorMass: phobos.mass
+		receivingDeck: null, outerDocks: null, releaseDeck: null, anchorMass: phobos.mass
 	});
 	var p = computeSkyhook(mars, inp);
 	assert.ok(p.balanced);

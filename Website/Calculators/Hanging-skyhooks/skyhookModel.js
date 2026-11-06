@@ -10,10 +10,10 @@
 //
 // inp:
 //   foot, centre, top          altitudes, m
-//   receivingDeck, outerDocks, launchDeck   altitudes, m; null when the stations
-//                              are not modelled (deck = foot, docks and launch
+//   receivingDeck, outerDocks, releaseDeck   altitudes, m; null when the stations
+//                              are not modelled (deck = foot, docks and release
 //                              deck = top)
-//   stationMass                { receivingDeck, outerDocks, launchDeck }, kg: each station's
+//   stationMass                { receivingDeck, outerDocks, releaseDeck }, kg: each station's
 //                              facility plus its maximum load of ships, cargo and supplies,
 //                              held at that point on the tether; omitted or null for none
 //   strength                   specific strength already divided by the safety
@@ -128,7 +128,7 @@ export function computeSkyhook(moon, inp) {
 	t.foot = inp.foot; t.top = inp.top; t.centre = inp.centre;
 	t.receivingDeck = inp.receivingDeck == null ? t.foot : inp.receivingDeck;   // the foot when not modelled
 	t.outerDocks    = inp.outerDocks    == null ? t.top  : inp.outerDocks;      // the top when not modelled
-	t.launchDeck    = inp.launchDeck    == null ? t.top  : inp.launchDeck;      // where cargo is released
+	t.releaseDeck    = inp.releaseDeck    == null ? t.top  : inp.releaseDeck;      // where cargo is released
 	t.Length = t.top - t.foot;
 	t.surfaceGravity = GM / (R * R);
 
@@ -137,7 +137,7 @@ export function computeSkyhook(moon, inp) {
 	else if (t.centre < t.foot || t.centre > t.top) warnings.push("The centre of mass must be between the foot and the top.");
 	if (inp.receivingDeck != null && (t.receivingDeck < t.foot || t.receivingDeck > t.top)) warnings.push("The receiving deck must be between the foot and the top.");
 	if (inp.outerDocks != null && (t.outerDocks < t.foot || t.outerDocks > t.top)) warnings.push("The outer docks must be between the foot and the top.");
-	if (inp.launchDeck != null && (t.launchDeck < t.foot || t.launchDeck > t.top)) warnings.push("The main launch deck must be between the foot and the top.");
+	if (inp.releaseDeck != null && (t.releaseDeck < t.foot || t.releaseDeck > t.top)) warnings.push("The release deck must be between the foot and the top.");
 
 	// ---- orbit and speeds ----
 	t.time = 2 * Math.PI * Math.sqrt(Math.pow(t.centre + R, 3) / GM);
@@ -145,11 +145,11 @@ export function computeSkyhook(moon, inp) {
 	t.angularVelocity = t.centreVel / (t.centre + R);
 	t.footVel = (t.foot + R) * t.angularVelocity;
 	t.topVel = (t.top + R) * t.angularVelocity;
-	t.launchDeckVel = (t.launchDeck + R) * t.angularVelocity;
+	t.releaseDeckVel = (t.releaseDeck + R) * t.angularVelocity;
 	t.topOrbit = OrbitalMath.circularVelocity(GM, t.top + R);
-	t.launchDeckOrbit = OrbitalMath.circularVelocity(GM, t.launchDeck + R);
+	t.releaseDeckOrbit = OrbitalMath.circularVelocity(GM, t.releaseDeck + R);
 	t.footOrbit = OrbitalMath.circularVelocity(GM, t.foot + R);
-	t.escapeFromTop = Math.sqrt(t.launchDeckVel * t.launchDeckVel - t.launchDeckOrbit * t.launchDeckOrbit * 2);
+	t.escapeFromTop = Math.sqrt(t.releaseDeckVel * t.releaseDeckVel - t.releaseDeckOrbit * t.releaseDeckOrbit * 2);
 
 	// ---- dropped from the foot: apoapsis at the foot, other apsis newPeriapsis (radius) ----
 	t.hitTheGround = Math.sqrt(t.footVel * t.footVel + 2 * GM / R - t.footOrbit * t.footOrbit * 2);
@@ -190,7 +190,7 @@ export function computeSkyhook(moon, inp) {
 	var rFoot = t.foot + R, rTop = t.top + R, rCentre = t.centre + R, w = t.angularVelocity;
 	t.loads = { top: inp.loadTop, foot: inp.loadFoot, distUpper: inp.distUpper, distLower: inp.distLower, com: inp.comMass };
 	var sm = inp.stationMass || {}, points = [];
-	[["launchDeck", "Main launch deck"], ["outerDocks", "Outer docks"], ["receivingDeck", "Receiving deck"]].forEach(function (st) {
+	[["releaseDeck", "Release deck"], ["outerDocks", "Outer docks"], ["receivingDeck", "Receiving deck"]].forEach(function (st) {
 		var m = Number(sm[st[0]]) || 0;
 		if (inp[st[0]] != null && m > 0) points.push({ key: st[0], name: st[1], r: inp[st[0]] + R, m: m });
 	});
@@ -279,7 +279,7 @@ export function computeSkyhook(moon, inp) {
 			acceleration: Math.abs(w * w * p.r - GM / (p.r * p.r)), outward: w * w * p.r - GM / (p.r * p.r) >= 0,
 			release: p.anchor ? null : OrbitalMath.horizontalRelease(GM, p.r, w * p.r, R) };
 	};
-	var named = [["launchDeck", "Main launch deck"], ["outerDocks", "Outer docks"], ["receivingDeck", "Receiving deck"]].filter(function (st) { return inp[st[0]] != null; })
+	var named = [["releaseDeck", "Release deck"], ["outerDocks", "Outer docks"], ["receivingDeck", "Receiving deck"]].filter(function (st) { return inp[st[0]] != null; })
 		.map(function (st) { return { key: st[0], name: st[1], r: inp[st[0]] + R, m: Number(sm[st[0]]) || 0 }; });
 	// The top and foot stations are the tips: the tension there is what the tip load and anything at
 	// the tip hang on, the first point of each half's profile.
@@ -372,7 +372,7 @@ export function computeSkyhook(moon, inp) {
 	sk.energyPerT = sk.genPower / Math.max(th.massFlow, 1e-12) / 1e6;   // GJ/t
 	t.keeping = sk;
 
-	// ---- Earth reentry of cargo released from the launch deck (patched conic) ----
+	// ---- Earth reentry of cargo released from the release deck (patched conic) ----
 	t.reentry = reentry(moon, t, inp);
 
 	t.warnings = warnings;
@@ -415,7 +415,7 @@ function releaseTargets(moon, t) {
 	return targets;
 }
 
-// Cargo released from the launch deck toward the planet the body orbits, entering its
+// Cargo released from the release deck toward the planet the body orbits, entering its
 // atmosphere. Applies where that planet has one (body-profiles.js, "parentEntry"); the
 // figures are computed for any body with a parent, and `parent` names it.
 // The cargo flies the natural path its release gives it, with no burn: the transfer
@@ -440,7 +440,7 @@ function reentry(moon, t, inp) {
 	var rpNat = 2 * aNat - D;                         // transfer perigee radius
 	var rI = Re + inp.ifaceAlt * 1000;
 	out.vinf = vinf;
-	var rL = Number(moon.radius) + t.launchDeck, vL = t.launchDeckVel;
+	var rL = Number(moon.radius) + t.releaseDeck, vL = t.releaseDeckVel;
 	out.releaseRadius = rL;
 	out.eccentricity = rL * vL * vL / moon.GM - 1;
 	out.turn = OrbitalMath.hyperbolaAsymptoteAnomaly(out.eccentricity) - Math.PI / 2;

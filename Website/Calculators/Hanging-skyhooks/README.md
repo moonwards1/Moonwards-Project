@@ -45,7 +45,7 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   header comment lists the options. A new workbench skyhook (not anchored)
   opens on round figures that work at every workbench body: foot 1,000 km,
   centre of mass 2,000 km, top 3,000 km; 10 kt for each Core Facilities load
-  except the anchor station, 1,000 kt. Every optional station starts unticked, at 2,500 km (main launch deck),
+  except the anchor station, 1,000 kt. Every optional station starts unticked, at 2,500 km (release deck),
   1,250 km (outer docks) and 1,500 km (receiving deck), 10 kt each. The
   standalone page opens on the Moon design. Each card
   names its workbench tab: basics (the three altitudes with their speeds), material, loads,
@@ -80,7 +80,7 @@ lines, equipment), and the anchor station. The Optional Stations card lists thre
 stations (each with a tick), each with an altitude and a peak mass: the facility
 plus its maximum load of ships, cargo and supplies, held at that one point. An
 unticked station is left out: the receiving deck then sits at the foot, and the
-outer docks and launch deck at the top. The Stations results card lists the top and foot stations, each optional
+outer docks and release deck at the top. The Stations results card lists the top and foot stations, each optional
 station and the anchor station, top down with its total tension, the net pull felt there, and where a ship released
 at the tether's speed ends up: escape with a v∞, an apoapsis, or the speed at
 impact (a periapsis when its lowest point clears the surface). Each tether is swept from its tip to the centre
@@ -152,7 +152,7 @@ checks in this calculator:
 - **Entry at the parent planet** (a result card with no inputs of its own,
   `where: "parentEntry"`) exists only where the body's parent planet has an
   atmosphere — today, the Moon, entering at Earth. Elsewhere it has no card. Its titles name the parent ("Entry at Earth"). It follows the natural
-  path of a release from the launch deck, with no burn: the cargo leaves the
+  path of a release from the release deck, with no burn: the cargo leaves the
   body's distance at apogee moving only sideways, v∞ fixes the perigee, and the
   entry angle, entry speed and peak deceleration are measured where that path
   crosses the parent's interface altitude (`entryInterface`). A perigee below
@@ -160,13 +160,13 @@ checks in this calculator:
   peak-deceleration estimate uses the parent's scale height
   (`Shared/constants.js`); a parent with none gets no peak-g figure.
   The drawing shows the departure in the body-centred frame that does not
-  rotate, at the moment of release: the hyperbola from the launch deck (its
+  rotate, at the moment of release: the hyperbola from the release deck (its
   periapsis) out to seven body radii, an arrow to the parent through the point
   facing it (longitude 0 for the Moon), the angle between that point and the
   tether, and the body's own orbit round the parent: a line through its centre,
   with an arrowhead just off the surface on each side pointing the way it
   travels. The path carries a second arrowhead near its start, just past the
-  launch deck's label when that shows, with the v∞ label under it. The body's pull turns the departure by
+  release deck's label when that shows, with the v∞ label under it. The body's pull turns the departure by
   δ = arccos(−1/e) − 90°, with e = r·v²/GM − 1 at the deck, so the release comes
   δ before the tether passes longitude 0 (≈ 46° for the default tether), and the
   cargo then leaves against the body's orbit. This assumes the tether orbits the
