@@ -464,7 +464,7 @@ export class CalcShell {
 	// An optional item: a tick, a title and a short description on the first line;
 	// on the second, a row of compact number fields, hidden while it is unticked.
 	// opts: { key, label, hint, tip, checked, parent, fields: [{ label, unit,
-	// value, step, min, max, key }] }. The tick is saved as "<card id>/<key>" ("1" or
+	// value, step, min, max, key, narrow }] }; `narrow` makes that field 10 px narrower. The tick is saved as "<card id>/<key>" ("1" or
 	// "0"); a field is saved under its own `key`, or "<key> <field label>".
 	// Returns { el, check, inputs }.
 	optionalFields(card, opts) {
@@ -481,7 +481,7 @@ export class CalcShell {
 		if (opts.hint) create("span", "cs-opt-d", opts.hint, head);
 		var row = create("div", "cs-opt-f", false, el);
 		var inputs = opts.fields.map(function (f) {
-			var lab = create("label", "cs-opt-fl", false, row);
+			var lab = create("label", "cs-opt-fl" + (f.narrow ? " cs-opt-narrow" : ""), false, row);
 			create("span", "cs-opt-l", f.label, lab);
 			var fld = create("span", "cs-fld", false, lab);
 			var input = create("input", false, false, fld);
