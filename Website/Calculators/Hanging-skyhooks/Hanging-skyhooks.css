@@ -6,3 +6,53 @@
 .cs-note.hs-group-h { margin: 4px 0 0; font-weight: 600; color: var(--cs-ink); }
 .hs-st + .hs-st { margin-top: 4px; }
 .cs-note.hs-st-h { margin: 5px 0 3px; font-weight: 600; color: var(--cs-ink); }
+/* Traffic card (trafficCard.js): a compact form, one line per item, figures on the right */
+.tf-card .cs-tag { border: 0; padding: 0; font-family: inherit; font-size: 11px; letter-spacing: 0; color: var(--cs-ink2); }
+.tf { font-size: 11.5px; line-height: 1.3; padding-left: 11px; }   /* the chevrons hang in this margin */
+.tf-r { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: 3px; min-height: 22px; }
+.tf-r[hidden], .tf-sec[hidden], .tf-body[hidden] { display: none; }
+.tf-chev { flex: none; display: grid; place-items: center; width: 12px; height: 14px; margin-left: -13px; margin-right: 1px; padding: 0; border: 0; background: none; color: var(--cs-ink2); cursor: pointer; }
+.tf-chev svg { transition: transform .15s; }
+.tf-chev.tf-folded svg { transform: rotate(-90deg); }
+.tf-chev:hover { color: var(--cs-ink); }
+.tf-k { display: flex; flex-wrap: wrap; align-items: center; column-gap: 3px; min-width: 0; }
+.tf-v { display: flex; align-items: center; gap: 2px; margin-left: auto; font-family: "JetBrains Mono", monospace; white-space: nowrap; }
+.tf-n { font-weight: 600; }
+.tf-u { color: var(--cs-ink2); }
+.tf-u:empty { display: none; }
+.tf-v .tf-u + .tf-n { margin-left: 6px; }
+.tf-hh { margin: 8px 0 1px; font-size: 13px; font-weight: 700; }
+.tf > .tf-sec:first-child > .tf-hh { margin-top: 0; }
+.tf-hh .tf-lab { font-weight: 700; }
+.tf-route { margin-top: 7px; }
+.tf-route .tf-lab:first-child { font-weight: 700; }
+.tf-ind { padding-left: 14px; }
+.tf-haul { padding-left: 2px; font-size: 10px; color: var(--cs-ink2); min-height: 17px; column-gap: 4px; }
+.tf-haul .tf-v { gap: 4px; font-family: inherit; }
+.tf-haul { flex-wrap: nowrap; }
+.tf-haul .tf-k { flex: 0 1 auto; overflow: hidden; white-space: nowrap; }
+.tf-haul .tf-lab { overflow: hidden; text-overflow: ellipsis; }
+.tf-loss { color: #B3261E; }
+.tf-gain { color: #2E7D32; }
+.tf-rad, .tf-chk { display: inline-flex; align-items: center; gap: 1px; cursor: pointer; }
+.tf-route .tf-rad { font-size: 11px; }
+.tf-rad input, .tf-chk input { margin: 0; accent-color: var(--mc); }
+.tf-in { width: calc(5.5ch + 22px); height: 20px; padding: 0 3px; border: 1px solid var(--cs-rule); border-radius: 3px; background: var(--cs-field); font: inherit; text-align: right; }
+.tf-in { width: calc(9ch + 10px); appearance: textfield; -moz-appearance: textfield; }   /* five digits and three decimals; no spinner arrows */
+.tf-in.tf-pc { width: calc(5ch + 10px); }   /* a share up to 100, five characters (33.33) */
+.tf-in::-webkit-inner-spin-button, .tf-in::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.tf-in[hidden], .tf-u[hidden] { display: none; }
+.tf-in.tf-rem { font-style: italic; color: var(--cs-ink2); }
+.tf-in:disabled { background: transparent; border-color: transparent; color: var(--cs-ink); }
+.tf-sel { height: 20px; font: inherit; font-family: "Instrument Sans", sans-serif; border: 1px solid var(--cs-rule); border-radius: 3px; background: var(--cs-field); }
+.tf-per { color: var(--cs-ink2); }
+.tf.tf-bal { padding-left: 0; }
+.tf-bal .tf-k > .tf-lab:first-child { min-width: 7.6em; }   /* "per orbit" and "per year" line up */
+.tf-dd { position: relative; }
+.tf-dd summary { list-style: none; cursor: pointer; padding: 0 13px 0 4px; border: 1px solid var(--cs-rule); border-radius: 3px; background: var(--cs-field); position: relative; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-dd summary::-webkit-details-marker { display: none; }
+.tf-dd summary::after { content: "▾"; position: absolute; right: 3px; color: var(--cs-ink2); }
+.tf-dd-list { position: absolute; z-index: 5; left: 0; top: calc(100% + 2px); display: flex; flex-direction: column; gap: 2px; min-width: 100%; padding: 4px 6px; border: 1px solid var(--cs-rule); border-radius: 4px; background: var(--cs-paper); box-shadow: 0 3px 10px rgba(0,0,0,.12); white-space: nowrap; }
+.tf-dd-list label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.tf-dd-list label[hidden] { display: none; }
+.tf-dd-list input { margin: 0; accent-color: var(--mc); }

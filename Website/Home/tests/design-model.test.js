@@ -177,9 +177,9 @@ test("ship roles by installation", () => {
 	assert.deepEqual(shipRolesFor({ fam: "driver", v: "tip" }, "Moon"), ["freighter"]);
 	assert.deepEqual(shipRolesFor({ fam: "elevator", v: "l1" }, "Moon"), ["freighter", "capsule"]);
 	assert.deepEqual(shipRolesFor({ fam: "elevator", v: "standard" }, "Ceres"), ["freighter"]);
-	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Moon"), ["freighter", "capsule"]);
-	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Earth"), ["freighter", "capsule"]);
-	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Ceres"), ["freighter"]);
+	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Moon"), ["shuttle", "freighter", "capsule"]);
+	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Earth"), ["shuttle", "freighter", "capsule"]);
+	assert.deepEqual(shipRolesFor({ fam: "skyhook", v: "hanging" }, "Ceres"), ["shuttle", "freighter"]);
 });
 
 test("ships survive a save and load", () => {

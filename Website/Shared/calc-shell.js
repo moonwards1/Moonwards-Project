@@ -86,10 +86,18 @@
 // calculator keeps a field's label and card stable for saved settings to
 // keep finding it (or passes an explicit `key`). A field given `save: false`
 // is left out: its value is kept somewhere else (the design's ship classes).
+// control(card, el, { key, save }) saves a control the calculator builds itself
+// (a radio group, a custom dropdown) with the rest: anything with a string
+// `value` to read and set; the calculator calls changed() when it changes.
 // changed() runs the onInput listeners, for when something outside the
 // calculator that it reads has changed.
+//
+// outline() reads every card that applies here, tab by tab, as plain rows
+// (Shared/card-outline.js), with the results column's warning: what the home
+// workbench's design outline is made from.
 
 import { create } from "./ui-components.js";
+import { readCard } from "./card-outline.js";
 
 // Accent pairs: `card` reads on the paper columns, `draw` on the dark drawing panel.
 export const ShellColors = {
@@ -668,9 +676,29 @@ export class CalcShell {
 		this.listeners.input.forEach(function (fn) { fn(null); });
 	}
 
+	// ---- outline ----
+	// Every card that applies here, in the order added: { warning, cards: [{ id,
+	// tab, side, title, tag, rows }] }, rows as Shared/card-outline.js reads them.
+	outline() {
+		var self = this;
+		return {
+			warning: this.warning.hidden ? "" : this.warning.textContent,
+			cards: this.cardOrder.filter(function (id) { return self._cardApplies(self.cards[id]); }).map(function (id) {
+				var c = self.cards[id];
+				return {
+					id: id, tab: self._tabOf(c), side: c.side,
+					title: c.el.querySelector(".cs-nm").textContent,
+					tag: c.el.querySelector(".cs-tag").textContent,
+					rows: readCard(c.body)
+				};
+			})
+		};
+	}
+
 	// ---- events ----
 	onInput(fn) { this.listeners.input.push(fn); }
 	changed() { this.listeners.input.forEach(function (fn) { fn(null); }); }
+	control(card, el, opts) { this._register(card, opts || {}, el); return el; }
 	onFocus(fn) { this.listeners.focus.push(fn); }
 	onShown(fn) { this.listeners.shown.push(fn); }
 }

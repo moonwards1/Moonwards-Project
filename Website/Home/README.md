@@ -36,7 +36,7 @@ the **workbench**, and the **apps**.
 - **Ships** — support ships are not a family of their own: each installation
   needs some of three roles (`shipRolesFor` in `design-model.js`: surface
   launchers shuttles; launchers on an elevator or skyhook, and elevators and
-  skyhooks themselves, freighters; the Moon's L1
+  skyhooks themselves, freighters; skyhooks shuttles too, from the surface to the foot; the Moon's L1
   elevator, and skyhooks where the body or its parent planet has an
   atmosphere, capsules too), and its Logistics tab shows a card for each role
   plus a Ship legs result card (`Shared/ship-card.js`). A ship class belongs
@@ -50,8 +50,13 @@ the **workbench**, and the **apps**.
   propellant per flight from the installation's first role.
 - **Save design** keeps the design, its ship classes, every mounted
   calculator's settings and the current selection in the browser's local storage, and the page reopens
-  on it. **Export** downloads the same as a `.moonwards.json` file; **Import**
-  reads one back, from a file or pasted text.
+  on it. **Export** is a menu of two files: **Design file**, the same as a
+  `.moonwards.json` file that **Import** reads back (from a file or pasted
+  text); and **Outline (tables)**, a Markdown file listing the bodies and
+  installations, then every installation's cards tab by tab, inputs then
+  results, each card a table of what it shows. Notes (explanatory paragraphs)
+  are left out. The outline mounts, hidden, any calculator not yet shown, so
+  it covers the whole design.
 
 - **Apps** — tabs over the site's full-page apps (Mission Planner, Moon
   Skyhook and Mars–Phobos Skyhook trajectory plotters), each shown in a frame
@@ -76,13 +81,15 @@ the **workbench**, and the **apps**.
   workbench mounts for a tab and installation
 - `body-facts.js` — display strings for the facts panel, plus the rotation
   and heliocentric-orbit numbers the skeleton cards use
+- `design-outline.js` — the outline document, pure: the design plus each
+  installation's `CalcShell.outline()` in, Markdown out
 - `skeleton.js` — skeleton cards for every tab: `addSkeletonCards(shell, ctx,
   tabs)` fills tabs on an existing calculator, `mountSkeleton(root, opts)`
   builds a calculator of skeleton cards only
 - `workbench-math.js` — the skeleton's arithmetic, pure: rocket equation,
   launch-window spacing, minimum-energy transfer time, stationary orbit,
   circular and escape speed, track exit speed
-- `tests/` — `node --test Website/Home/tests/` (design rules and the skeleton's arithmetic)
+- `tests/` — `node --test Website/Home/tests/*.test.js` (design rules, the skeleton's arithmetic, the outline document)
 
 ## Mounting a calculator
 

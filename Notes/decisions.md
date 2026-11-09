@@ -556,6 +556,16 @@ and the foot station stays cool; lower, both grow by about e per scale height.
 Earth and Mars sit nearer the line than the margin would put them because an Earth
 skyhook can afford the reboost and Mars has Phobos as a momentum store.
 
+### Skyhook traffic reaches the orbit only through hauls along the tether
+
+On a hanging skyhook without a mass driver, ships dock and are released at the
+tether's own speed: no impulse. The Traffic card's energy and orbit balance is
+therefore the sum of hauls, cargo between its docking or release point and the
+anchor station, and empty ships from docking to release point, each costing
+ṁ·Δφ in energy and ṁ·ω·Δ(r²) in angular momentum. A mass driver on the skyhook
+releases with a radial or normal push and will add its own terms. Why: a
+matched-speed docking moves no momentum; only moving mass along the tether does.
+
 ### A moon-anchored skyhook: the moon is the anchor station
 
 A skyhook anchored on a moon (`ANCHORS`, today Phobos) is the hanging-skyhook model

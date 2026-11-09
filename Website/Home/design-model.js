@@ -130,6 +130,7 @@ export function calcFor(inst) {
 //   surface launchers (mass driver, spin launcher) launch shuttles;
 //   launchers on an elevator or a skyhook, and elevators and skyhooks
 //   themselves, hand freighters on;
+//   a skyhook also takes shuttles up from the surface to its foot;
 //   the Moon's L1 elevator, and a skyhook at a body with an atmosphere or one
 //   whose cargo can enter its parent planet's (the Moon's, at Earth), also
 //   need capsules.
@@ -139,7 +140,7 @@ export function shipRolesFor(inst, body) {
 	if (inst.fam === "elevator") return inst.v === "l1" ? ["freighter", "capsule"] : ["freighter"];
 	if (inst.fam === "skyhook") {
 		var s = systems.get(body);
-		return (s && s.atmosphere) || applies("parentEntry", body) ? ["freighter", "capsule"] : ["freighter"];
+		return (s && s.atmosphere) || applies("parentEntry", body) ? ["shuttle", "freighter", "capsule"] : ["shuttle", "freighter"];
 	}
 	return [];
 }

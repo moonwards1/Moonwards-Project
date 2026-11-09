@@ -14,6 +14,11 @@
 // The design itself and its rules live in design-model.js (pure, Node-tested);
 // this file is the page: rendering, menus, selection, save / export / import.
 //
+// Export offers two files: the design itself (.moonwards.json, to import
+// again) and its outline (.md): every installation's cards as tables, read
+// from the calculators as they show (design-outline.js). The outline mounts,
+// hidden, any calculator not yet shown, so it covers the whole design.
+//
 // Ships: the design's ship classes (Shared/ships.js) live in one fleet for
 // the whole page. Every render matches it to the installations
 // (shipRolesFor), every calculator gets the ship cards for its roles on its
@@ -30,6 +35,7 @@ import {
 } from "./design-model.js";
 import { BODY_FACTS, FACT_ROWS } from "./body-facts.js";
 import { addSkeletonCards, mountSkeleton } from "./skeleton.js";
+import { designOutline } from "./design-outline.js";
 import { createFleet } from "../Shared/ships.js";
 import { addShipCards } from "../Shared/ship-card.js";
 import { mountApps } from "./apps.js";
@@ -177,13 +183,15 @@ function renderFacts() {
 // ---------- menus ----------
 var pop = null;
 function closePop() { if (pop) { pop.remove(); pop = null; } }
-function openPop(anchor, html) {
+// `host` is the section the menu opens in (default the design band).
+function openPop(anchor, html, host) {
 	closePop();
+	var box = host || el.vision;
 	pop = document.createElement("div");
 	pop.className = "hm-pop";
 	pop.innerHTML = html;
-	el.vision.appendChild(pop);
-	var a = anchor.getBoundingClientRect(), r = el.vision.getBoundingClientRect();
+	box.appendChild(pop);
+	var a = anchor.getBoundingClientRect(), r = box.getBoundingClientRect();
 	var left = Math.max(8, Math.min(a.left - r.left, r.width - pop.offsetWidth - 8));
 	pop.style.left = left + "px";
 	pop.style.top = (a.bottom - r.top + 6) + "px";
@@ -252,9 +260,12 @@ function showTab(entry) {
 	entry.handle.shell.setTab(ui.tab);
 }
 
-function mountCalculator(inst, body) {
+// `hidden`: mount out of sight (the outline mounts every installation).
+// entry.ready resolves to the entry once the calculator is up, or has failed.
+function mountCalculator(inst, body, hidden) {
 	var box = document.createElement("div");
 	box.className = "hm-calc";
+	box.hidden = !!hidden;
 	el.work.appendChild(box);
 	var entry = { el: box, handle: null, instId: inst.id, body: body };
 	mounted[inst.id] = entry;
@@ -262,7 +273,12 @@ function mountCalculator(inst, body) {
 		body: body, inst: inst, lockBody: true, embedded: true,
 		overline: body + " · " + instLabel(inst),   // e.g. "Moon · Hanging skyhook"
 		partners: design.bodies.map(function (b) { return b.body; }),
-		fleet: fleet, instId: inst.id, shipRoles: shipRolesFor(inst, body)
+		fleet: fleet, instId: inst.id, shipRoles: shipRolesFor(inst, body),
+		// the other installations at this body, as the design stands when asked
+		neighbours: function () {
+			var b = findBody(design, body);
+			return b ? b.inst.filter(function (i) { return i.id !== inst.id; }).map(function (i) { return { fam: i.fam, v: i.v }; }) : [];
+		}
 	};
 	var key = calcFor(inst);
 	var ready = key
@@ -273,14 +289,16 @@ function mountCalculator(inst, body) {
 			return h;
 		})
 		: Promise.resolve(mountSkeleton(box, ctx));
-	ready.then(function (h) {
-		if (mounted[inst.id] !== entry) return;   // removed while loading
+	entry.ready = ready.then(function (h) {
+		if (mounted[inst.id] !== entry) return entry;   // removed while loading
 		entry.ships = addShipCards(h.shell, { fleet: fleet, instId: inst.id, roles: ctx.shipRoles });
 		if (inst.state) h.shell.setState(inst.state);
 		entry.handle = h;
 		if (!box.hidden) showTab(entry);
+		return entry;
 	}).catch(function (err) {
 		box.innerHTML = '<div class="hm-empty"><div><b>The calculator didn\'t load</b>' + esc(err.message || String(err)) + '</div></div>';
+		return entry;
 	});
 }
 
@@ -319,6 +337,8 @@ document.addEventListener("click", function (e) {
 	var d = t.dataset;
 	if (d.menu === "body") { bodyMenu(t); return; }
 	if (d.menu === "fam") { famMenu(t, d.fam, d.forbody); return; }
+	if (d.menu === "export") { exportMenu(t); return; }
+	if (d.export) { closePop(); if (d.export === "outline") exportOutline(); else exportDesign(); return; }
 	if (d.mark) { markNote(t, d.mark); return; }
 	if (d.addbody) { design = addBody(design, d.addbody); ui.body = d.addbody; ui.inst = null; closePop(); render(); return; }
 	if (d.addinst) {
@@ -378,18 +398,53 @@ document.getElementById("btnSave").addEventListener("click", function () {
 	}
 });
 
-document.getElementById("btnExport").addEventListener("click", function () {
-	var blob = new Blob([snapshot()], { type: "application/json" });
+function download(text, type, ext) {
+	var blob = new Blob([text], { type: type });
 	var a = document.createElement("a");
 	var slug = (design.name || "design").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "design";
 	a.href = URL.createObjectURL(blob);
-	a.download = slug + ".moonwards.json";
+	a.download = slug + ext;
 	document.body.appendChild(a);
 	a.click();
 	a.remove();
 	setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
 	toast("Downloaded " + a.download);
-});
+}
+function exportMenu(anchor) {
+	openPop(anchor,
+		'<button class="hm-mi" type="button" data-export="design"><b>Design file</b><span>The whole design as a .moonwards.json file, to import again later.</span></button>' +
+		'<button class="hm-mi" type="button" data-export="outline"><b>Outline (tables)</b><span>Every installation\'s settings and results, tab by tab, as tables in a Markdown (.md) file to read or hand on.</span></button>',
+		el.bench);
+}
+function exportDesign() {
+	download(snapshot(), "application/json", ".moonwards.json");
+}
+// Mount every installation's calculator (hidden, if not yet shown), give them
+// a moment to compute, then read each one's cards into the outline.
+function exportOutline() {
+	toast("Preparing the outline…");
+	var waits = [];
+	design.bodies.forEach(function (b) {
+		b.inst.forEach(function (i) {
+			if (!mounted[i.id]) mountCalculator(i, b.body, true);
+			waits.push(mounted[i.id].ready);
+		});
+	});
+	Promise.all(waits).then(function () {
+		return new Promise(function (res) { setTimeout(res, 100); });
+	}).then(function () {
+		var outlines = {};
+		Object.keys(mounted).forEach(function (k) {
+			var m = mounted[k];
+			outlines[m.instId] = m.handle ? m.handle.shell.outline() : null;
+		});
+		var now = new Date(), pad = function (n) { return String(n).padStart(2, "0"); };
+		var date = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()) + " " + pad(now.getHours()) + ":" + pad(now.getMinutes());
+		download(designOutline(design, outlines, { date: date }), "text/markdown", ".outline.md");
+	}).catch(function (err) {
+		toast("The outline couldn't be made: " + (err.message || err));
+	});
+}
 
 var sheet = null;
 function closeSheet() { if (sheet) { sheet.remove(); sheet = null; } }

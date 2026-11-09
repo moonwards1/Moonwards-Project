@@ -17,6 +17,10 @@
 //   opts.embedded  true: fill `root` rather than the window (CalcShell)
 //   opts.overline  the small line above the title
 //   opts.state     settings from an earlier getState(), restored on mount
+//   opts.fleet     the design's ship classes (Shared/ships.js), and opts.instId this
+//                  installation: the Traffic card reads its ships from them
+//   opts.neighbours  function returning the other installations at this body
+//                  ([{ fam, v }]): the Traffic card offers their surface launchers
 //   opts.anchor    a moon the tether hangs from (Shared/body-profiles.js ANCHORS,
 //                  e.g. "Phobos"): the moon is the anchor station, its orbit fixes
 //                  the centre of mass, and the body is the moon's primary
@@ -35,6 +39,7 @@ import { ZoomView, svgEl } from "../../Shared/zoom-view.js";
 import { addMaterialCard } from "../../Shared/material-card.js";
 import { applies, footFloor, profileOf, parentName, anchorConfig } from "../../Shared/body-profiles.js";
 import { computeSkyhook, PROPELLANT_MAX } from "./skyhookModel.js";
+import { addTrafficCard } from "./trafficCard.js";
 
 // Link a stylesheet (path relative to this file) unless the document has it.
 function ensureStylesheet(path) {
@@ -104,6 +109,7 @@ export function mountHangingSkyhook(root, opts) {
 	function speedsUnder(input, items) {
 		var row = input.closest(".cs-row"), box = document.createElement("div");
 		box.className = "hs-speeds";
+		box.dataset.olNest = "";   // the design outline lists them under the field
 		row.parentNode.insertBefore(box, row.nextSibling);
 		var cells = shell.hero({ body: box }, items, { compact: true });
 		cells.forEach(function (c, i) { if (items[i].plain) c.el.querySelector(".cs-hv").style.color = "var(--cs-ink)"; });
@@ -153,6 +159,8 @@ export function mountHangingSkyhook(root, opts) {
 	var releaseIn = releaseSt.alt, releaseMassIn = releaseSt.mass, outerIn = outerSt.alt, outerMassIn = outerSt.mass, recvIn = recvSt.alt, recvMassIn = recvSt.mass;
 	shell.note(stCard, "Each station's mass is the facility plus its maximum load of ships, cargo and supplies.");
 
+	var traffic = addTrafficCard(shell, { fleet: o.fleet, instId: o.instId, neighbours: o.neighbours });
+
 	var thrCard = shell.addCard({ id: "thr", tab: "log", feeds: ["thrO", "kpO"], side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, focus: "tether" });
 	// The route runs foot to top, or between any two places in use once optional stations are ticked.
 	var ROUTE = [{ v: "foot", label: "Foot station", short: "foot" }, { v: "recv", label: "Receiving deck", short: "receiving deck", st: recvSt },
@@ -191,9 +199,11 @@ export function mountHangingSkyhook(root, opts) {
 	function group(fold, title) {
 		var g = { body: document.createElement("div"), lines: [] };
 		g.body.className = "hs-group";
+		g.body.dataset.olNest = "";   // the design outline lists the lines under the heading
 		fold.body.appendChild(g.body);
 		var h = shell.note(g, title);
 		h.classList.add("hs-group-h");
+		h.dataset.olHead = "";
 		g.line = function (i, label) {
 			while (g.lines.length <= i) g.lines.push(shell.line(g, { label: "", unit: "kt" }));
 			var l = g.lines[i];
@@ -237,9 +247,11 @@ export function mountHangingSkyhook(root, opts) {
 	var stBlocks = [0, 1, 2, 3, 4, 5].map(function () {
 		var box = document.createElement("div");
 		box.className = "hs-st";
+		box.dataset.olNest = "";   // the design outline lists the figures under the heading
 		stOCard.body.appendChild(box);
 		var head = shell.note({ body: box }, "");
 		head.classList.add("hs-st-h");
+		head.dataset.olHead = "";
 		var cells = shell.hero({ body: box }, [{ label: "Total strain", unit: "MN" }, { label: "Release", unit: "m/s" }, { label: "Pull felt", unit: "m/s²" }], { compact: true });
 		return { box: box, head: head, cells: cells };
 	});
@@ -422,8 +434,14 @@ export function mountHangingSkyhook(root, opts) {
 			S.arcD[a[0]] = arc ? "M" + arc.points.map(function (q) { return (q[0] / 1e3) + " " + (-q[1] / 1e3); }).join("L") : "";
 		});
 
+		var trafficWarnings = traffic.update({ body: bodyIn.value, GM: body.GM, omega: t.angularVelocity, period: t.time, rMount: R + t.top,
+			places: { foot: R + t.foot, top: R + t.top, anchor: R + t.centre + t.comOffset,
+				recv: recvSt.use.checked ? R + t.receivingDeck : null, outer: outerSt.use.checked ? R + t.outerDocks : null,
+				release: releaseSt.use.checked ? R + t.releaseDeck : null },
+			thruster: { eff: field(effThrIn, 60) / 100, vExhaust: t.keeping.vExhaust } });
+
 		bodyNote.textContent = "Radius " + num(R / 1e3, 1) + " km · surface gravity " + num(t.surfaceGravity, 2) + " m/s²";
-		shell.warn(notes.concat(t.warnings).join(" "));
+		shell.warn(notes.concat(t.warnings, trafficWarnings).join(" "));
 
 		// orbit & speeds, under the altitude fields
 		centreSp[0].set(num(t.time / 3600, 2)); centreSp[1].set(num(t.centreVel / 1e3, 2));

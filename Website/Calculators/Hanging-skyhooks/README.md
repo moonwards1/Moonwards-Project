@@ -50,11 +50,17 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   standalone page opens on the Moon design. Each card
   names its workbench tab: basics (the three altitudes with their speeds), material, loads,
   the foot ↔ ground trips, release points, loads and
-  stations (inputs and results) on Architecture; cargo throughput, throughput, climber energy and
+  stations (inputs and results) on Architecture; traffic, cargo throughput, throughput, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
 - `skyhookModel.test.js` — Node test pinning the default design's figures:
   `node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js`
+- `trafficCard.js` — the Traffic card and its Energy and orbit balance result card (below), `addTrafficCard(shell, opts)`; it reads
+  the design's ship classes (`opts.fleet`, `opts.instId`) and the other installations
+  at the body (`opts.neighbours`), and `skyhookCalc.js` hands it the tether each recalculation
+- `trafficModel.js` — the Traffic card's arithmetic, pure: flights, hauls, ship moves, balance
+- `trafficModel.test.js` — its Node test:
+  `node --test Website/Calculators/Hanging-skyhooks/trafficModel.test.js`
 
 ## Dependencies
 
@@ -119,6 +125,62 @@ mass and the Loads card shows both tensions and says how far out of balance
 they are. The Loads card reports the total load on each tether, the anchor station's
 offset from the centre of mass, and the tension at the centre of mass (the peak). The drawing marks the
 anchor station with a square and its altitude.
+
+## Traffic
+
+The Traffic card (Logistics tab) sets out what arrives, how it divides and what
+leaves, and what moving it along the tether asks of the power supply and the
+orbit. It is a compact form, one line per item, figures on the right, without
+notes. Masses are in kt, each route averaged over its own period, which
+"average" beside the card's title says once for all. Amount fields hold five
+digits and three decimals. Computed masses show whole kilotons, or three decimals
+below 1 kt; the calculation itself is not rounded. Every section title (Incoming
+resources, each route, Total annual resources, Outgoing products per year) has
+a chevron that folds the rest of its section: Incoming and Outgoing fold their
+routes, Total annual resources (not part of Incoming) its three shares. Folds are saved with the design.
+
+- **Routes**: each starts on one line with its name, its period (radio buttons)
+  and its amount. In: from the surface by shuttle (per orbit or day, with the
+  launch method: Detect, the surface launchers built at this body, a launchpad);
+  from the body's near market by freighter (the Moon's is Earth and Earth's the
+  Moon; per day or week; no section elsewhere); from interplanetary by freighter
+  (per year). The total a year divides into products, the surface's share, and
+  waste and use on the anchor, which takes what the other two leave. Out: to the
+  near market (freighters, and capsules where it has an atmosphere) and to
+  interplanetary, which share the products; and to the surface by shuttle.
+- **Ships** come from the design's classes: the installation's shuttle and
+  capsule, and a multiple-choice dropdown of the freighter versions, the same
+  choice on both directions of a route. Each route pair has one Bulk tick: that
+  direction shows "flights per <period>", its flights full; the other shows
+  "load per flight", its cargo shared evenly over the same flights, red past a
+  ship's payload. Several freighter versions fly an equal number of flights each.
+- **Docking and release points**: a multiple-choice dropdown of the places in
+  use, then a line per chosen place with its amount and the haul it needs. One
+  place takes what the others leave: the anchor where chosen, otherwise the one
+  not edited last (in italic). Two amounts that make one total between them
+  (near market and interplanetary; freighters and capsules) work the same way.
+
+All cargo passes through the anchor station: arrivals are hauled from their
+docking point to it, departures from it to their release point. Ships are hauled
+empty (dry mass and heat shield) from their docking points to their release
+points, spread over both in the cargo's shares. Docking and release are at the
+tether's own speed, so they pass no impulse; the hauls are all the skyhook feels.
+For a mass flow hauled from r₁ to r₂:
+
+P = ṁ · [φ(r₂) − φ(r₁)],  τ = ṁ · ω · (r₂² − r₁²),  F = τ / r_top
+
+- **P** — power the hauling delivers (W); negative is energy it can recover (gain)
+- **ṁ** — mass flow (kg/s)
+- **φ** — the effective potential above (J/kg)
+- **τ** — torque taken from the orbit (N·m); negative returns angular momentum (gain)
+- **F** — steady thrust at the top, where the reboost engines sit, that cancels τ (N)
+
+Each haul shows its power and thrust as a loss (red) or gain (green). The
+Energy and orbit balance card (Logistics results) adds them up as energy and impulse per orbit and per year, with the
+efficiency that will turn each into equipment: the climbers' (a line waiting for
+a Climber card) and the reboost thrusters' (from the Station-keeping card).
+Release by a mass driver on the skyhook, whose push is not along the tether's
+motion, is not modelled yet.
 
 ## Cargo throughput: the route
 
