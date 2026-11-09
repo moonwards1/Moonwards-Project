@@ -15,9 +15,12 @@
 // this file is the page: rendering, menus, selection, save / export / import.
 //
 // Export offers two files: the design itself (.moonwards.json, to import
-// again) and its outline (.md): every installation's cards as tables, read
-// from the calculators as they show (design-outline.js). The outline mounts,
-// hidden, any calculator not yet shown, so it covers the whole design.
+// again) and its outline (.md): the installations' cards as tables, read from
+// the calculators as they show (design-outline.js). The outline's dialog picks
+// the installations to detail on a copy of the design grid (at first, those
+// with a calculator of their own) and whether to leave out placeholder cards
+// (at first, yes); the choice is kept in this browser. The outline mounts,
+// hidden, any chosen calculator not yet shown.
 //
 // Ships: the design's ship classes (Shared/ships.js) live in one fleet for
 // the whole page. Every render matches it to the installations
@@ -41,6 +44,7 @@ import { addShipCards } from "../Shared/ship-card.js";
 import { mountApps } from "./apps.js";
 
 var STORE_KEY = "mw-design";
+var PICK_KEY = "mw-outline-pick";   // the outline dialog's last choice
 
 // Calculators the workbench can mount, by the keys calcFor() returns. `load`
 // resolves to the calculator's mount(root, opts) function (see
@@ -338,7 +342,7 @@ document.addEventListener("click", function (e) {
 	if (d.menu === "body") { bodyMenu(t); return; }
 	if (d.menu === "fam") { famMenu(t, d.fam, d.forbody); return; }
 	if (d.menu === "export") { exportMenu(t); return; }
-	if (d.export) { closePop(); if (d.export === "outline") exportOutline(); else exportDesign(); return; }
+	if (d.export) { closePop(); if (d.export === "outline") outlineSheet(); else exportDesign(); return; }
 	if (d.mark) { markNote(t, d.mark); return; }
 	if (d.addbody) { design = addBody(design, d.addbody); ui.body = d.addbody; ui.inst = null; closePop(); render(); return; }
 	if (d.addinst) {
@@ -413,19 +417,83 @@ function download(text, type, ext) {
 function exportMenu(anchor) {
 	openPop(anchor,
 		'<button class="hm-mi" type="button" data-export="design"><b>Design file</b><span>The whole design as a .moonwards.json file, to import again later.</span></button>' +
-		'<button class="hm-mi" type="button" data-export="outline"><b>Outline (tables)</b><span>Every installation\'s settings and results, tab by tab, as tables in a Markdown (.md) file to read or hand on.</span></button>',
+		'<button class="hm-mi" type="button" data-export="outline"><b>Outline (tables)</b><span>The settings and results of the installations you choose, tab by tab, as tables in a Markdown (.md) file to read or hand on.</span></button>',
 		el.bench);
 }
 function exportDesign() {
 	download(snapshot(), "application/json", ".moonwards.json");
 }
-// Mount every installation's calculator (hidden, if not yet shown), give them
-// a moment to compute, then read each one's cards into the outline.
-function exportOutline() {
+// The outline dialog: a copy of the design grid whose installation chips
+// switch on and off (a body's name switches its row), and the placeholder tick.
+function outlineSheet() {
+	closeSheet();
+	var saved = {};
+	try { saved = JSON.parse(localStorage.getItem(PICK_KEY)) || {}; } catch (err) { saved = {}; }
+	var memo = saved.picked && typeof saved.picked === "object" ? saved.picked : {};
+	var on = {}, all = [];
+	design.bodies.forEach(function (b) {
+		b.inst.forEach(function (i) {
+			all.push(i.id);
+			on[i.id] = typeof memo[i.id] === "boolean" ? memo[i.id] : !!calcFor(i);
+		});
+	});
+	sheet = document.createElement("div");
+	sheet.className = "hm-sheet-bg";
+	sheet.innerHTML = '<div class="hm-sheet" role="dialog" aria-modal="true" aria-labelledby="olH">' +
+		'<h3 id="olH">Export an outline</h3><p>Choose the installations to detail. Click a body to switch its whole row. Every installation stays listed in the summary table at the top.</p>' +
+		'<div class="hm-olg" id="olGrid"></div>' +
+		'<label class="hm-olopt"><input type="checkbox" id="olSk"' + (saved.placeholders === true ? "" : " checked") + '> Leave out placeholder cards <small>(parts no calculator covers yet)</small></label>' +
+		'<div class="hm-sheet-row"><button class="hm-btn" type="button" data-olall="1">All</button><button class="hm-btn" type="button" data-olall="0">None</button>' +
+		'<span class="hm-msg hm-olcount" id="olMsg"></span><button class="hm-btn" type="button" data-close>Cancel</button><button class="hm-btn hm-pri" type="button" id="olGo">Export</button></div></div>';
+	el.bench.appendChild(sheet);
+	var grid = document.getElementById("olGrid"), go = document.getElementById("olGo"), msg = document.getElementById("olMsg");
+	function draw() {
+		var h = '<span></span>' + FAMILY_ORDER.map(function (f) { return '<span class="hm-olg-h">' + FAMILIES[f].label + '</span>'; }).join("");
+		design.bodies.forEach(function (b) {
+			h += '<button class="hm-bbtn" type="button" data-olbody="' + b.body + '" title="Switch all of ' + b.body + '">' + b.body + '</button>';
+			FAMILY_ORDER.forEach(function (f) {
+				var mine = b.inst.filter(function (i) { return i.fam === f; });
+				h += '<div class="hm-olg-cell">' + (mine.length ? mine.map(function (i) {
+					return '<button class="hm-olc" type="button" data-olinst="' + i.id + '" aria-pressed="' + on[i.id] + '" title="' + esc(b.body + " · " + instLabel(i)) + '">' + FAMILIES[f].vars[i.v].label + '</button>';
+				}).join("") : '<span class="hm-olg-none">—</span>') + '</div>';
+			});
+		});
+		grid.innerHTML = design.bodies.length ? h : '<p>The design has no installations yet.</p>';
+		var n = all.filter(function (k) { return on[k]; }).length;
+		msg.textContent = all.length ? n + " of " + all.length + " chosen" : "";
+		go.disabled = !n;
+	}
+	draw();
+	sheet.addEventListener("click", function (e) {
+		if (e.target === sheet || e.target.closest("[data-close]")) { closeSheet(); return; }
+		var t = e.target.closest("button");
+		if (!t) return;
+		var d = t.dataset;
+		if (d.olinst) on[d.olinst] = !on[d.olinst];
+		else if (d.olbody) {
+			var row = findBody(design, d.olbody).inst, to = !row.every(function (i) { return on[i.id]; });
+			row.forEach(function (i) { on[i.id] = to; });
+		} else if (d.olall) all.forEach(function (k) { on[k] = d.olall === "1"; });
+		else if (t === go) {
+			var placeholders = !document.getElementById("olSk").checked;
+			try { localStorage.setItem(PICK_KEY, JSON.stringify({ picked: on, placeholders: placeholders })); } catch (err) { /* not kept; fine */ }
+			closeSheet();
+			exportOutline(all.filter(function (k) { return on[k]; }), placeholders);
+			return;
+		} else return;
+		draw();
+	});
+	go.focus();
+}
+
+// Mount the chosen installations' calculators (hidden, if not yet shown), give
+// them a moment to compute, then read each one's cards into the outline.
+function exportOutline(only, placeholders) {
 	toast("Preparing the outline…");
 	var waits = [];
 	design.bodies.forEach(function (b) {
 		b.inst.forEach(function (i) {
+			if (only.indexOf(i.id) < 0) return;
 			if (!mounted[i.id]) mountCalculator(i, b.body, true);
 			waits.push(mounted[i.id].ready);
 		});
@@ -434,13 +502,13 @@ function exportOutline() {
 		return new Promise(function (res) { setTimeout(res, 100); });
 	}).then(function () {
 		var outlines = {};
-		Object.keys(mounted).forEach(function (k) {
+		only.forEach(function (k) {
 			var m = mounted[k];
-			outlines[m.instId] = m.handle ? m.handle.shell.outline() : null;
+			outlines[k] = m && m.handle ? m.handle.shell.outline() : null;
 		});
 		var now = new Date(), pad = function (n) { return String(n).padStart(2, "0"); };
 		var date = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate()) + " " + pad(now.getHours()) + ":" + pad(now.getMinutes());
-		download(designOutline(design, outlines, { date: date }), "text/markdown", ".outline.md");
+		download(designOutline(design, outlines, { date: date, only: only, placeholders: placeholders }), "text/markdown", ".outline.md");
 	}).catch(function (err) {
 		toast("The outline couldn't be made: " + (err.message || err));
 	});

@@ -21,6 +21,9 @@
 // and ship roles. The ship cards themselves are Shared/ship-card.js, added by
 // the workbench to every installation; the Economy cards read the first
 // role's class for payload and propellant.
+//
+// Every skeleton card's id starts "sk-": the design outline (design-outline.js
+// isPlaceholder) leaves them out by that when asked.
 
 import { systems } from "../Shared/orbit.js";
 import { CalcShell, ShellColors as C } from "../Shared/calc-shell.js";

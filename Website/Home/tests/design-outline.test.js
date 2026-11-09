@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { designOutline } from "../design-outline.js";
+import { designOutline, isPlaceholder } from "../design-outline.js";
 
 var design = { name: "Test design", bodies: [
 	{ body: "Moon", inst: [{ id: "a", fam: "skyhook", v: "hanging" }, { id: "b", fam: "driver", v: "surface" }] },
@@ -19,7 +19,8 @@ var outlines = {
 		{ tab: "arch", side: "out", title: "Tether", tag: "", rows: [
 			{ label: "By section", value: "", note: "", depth: 0, head: true },
 			{ label: "Top | deck", value: "12 MN", note: "peak", depth: 1 }] },
-		{ tab: "arch", side: "in", title: "Anchor", tag: "", rows: [] }
+		{ tab: "arch", side: "in", title: "Anchor", tag: "", rows: [] },
+		{ id: "sk-eco", tab: "eco", side: "in", title: "Trade", tag: "", rows: [{ label: "Price", value: "—", note: "", depth: 0 }] }
 	] },
 	b: null
 };
@@ -51,6 +52,28 @@ test("card rows become a table; folds nest and pipes are escaped", function () {
 	assert.match(md, /\| \*\*By section\*\* \|  \|  \|/);
 	assert.match(md, /\| › Top \\\| deck \| 12 MN \| peak \|/);
 	assert.match(md, /##### Anchor\n\n_Nothing to show yet\._/);
+});
+
+test("only the chosen installations are detailed; the summary keeps them all", function () {
+	var md = designOutline(design, outlines, { only: ["a"] });
+	assert.match(md, /Detailed below: 1 of the design's 2 installations\./);
+	assert.match(md, /\| Moon \| Hanging \| — \| Mass driver \|/);
+	assert.match(md, /## Moon · Hanging skyhook/);
+	assert.doesNotMatch(md, /## Moon · Mass driver/);
+});
+
+test("placeholder cards can be left out, and the tabs only they filled", function () {
+	assert.ok(isPlaceholder({ id: "sk-geo" }));
+	assert.ok(!isPlaceholder({ id: "geo" }));
+	var withP = designOutline(design, outlines, {});
+	assert.match(withP, /### Economy[\s\S]*##### Trade/);
+	assert.doesNotMatch(withP, /Placeholder cards/);
+	var without = designOutline(design, outlines, { placeholders: false });
+	assert.doesNotMatch(without, /### Economy/);
+	assert.doesNotMatch(without, /##### Trade/);
+	assert.match(without, /Placeholder cards \(parts no calculator covers yet\) are left out\./);
+	var onlySk = designOutline(design, { a: { warning: "", cards: [outlines.a.cards[3]] } }, { placeholders: false, only: ["a"] });
+	assert.match(onlySk, /_Only placeholder cards so far\._/);
 });
 
 test("an installation whose calculator didn't load says so", function () {

@@ -1,19 +1,28 @@
 // The design outline: the whole design as one Markdown document of lists and
 // tables, for reading or handing on (Export → Outline). ES module:
 //   import { designOutline } from "./design-outline.js";
-//   var md = designOutline(design, outlines, { date: "2026-11-09 10:30" });
+//   var md = designOutline(design, outlines, { date: "2026-11-09 10:30",
+//                                              only: [instId, …], placeholders: false });
 //
 // Pure (no DOM), so it imports directly in Node for testing.
 //
 // `outlines` maps installation id → that installation's calculator outline,
 // as CalcShell.outline() returns it ({ warning, cards: [{ tab, side, title,
 // tag, rows }] }), or null when its calculator didn't load. The document has
-// a table of the bodies and their installations, then each installation in
-// design order: tab by tab, inputs then results, each card a table of its
-// rows. A row inside a fold or under an optional item is led by "›" once per
+// a table of the bodies and their installations (the whole design, always),
+// then each installation in design order — only those in `only`, when given —
+// tab by tab, inputs then results, each card a table of its rows.
+// `placeholders: false` leaves out the skeleton cards (isPlaceholder), and
+// with them any tab they alone filled. A row inside a fold or under an optional item is led by "›" once per
 // level; a fold's title is bold.
 
 import { FAMILIES, FAMILY_ORDER, TABS, instLabel } from "./design-model.js";
+
+// A skeleton card: a stand-in until a calculator covers that part
+// (skeleton.js gives every one an id starting "sk-").
+export function isPlaceholder(card) {
+	return typeof card.id === "string" && card.id.indexOf("sk-") === 0;
+}
 
 // A table cell: one line, pipes escaped.
 function cell(s) {
@@ -41,12 +50,14 @@ function cardTable(card) {
 	return out;
 }
 
-function installationSection(body, inst, outline) {
+function installationSection(body, inst, outline, placeholders) {
 	var out = ["## " + body + " · " + instLabel(inst), ""];
 	if (!outline) return out.concat(["_The calculator for this installation didn't load, so its settings aren't listed._", ""]);
 	if (outline.warning) out.push("> ⚠ " + cell(outline.warning), "");
+	var all = outline.cards.filter(function (c) { return placeholders || !isPlaceholder(c); });
+	if (!all.length) return out.concat(["_Only placeholder cards so far._", ""]);
 	TABS.forEach(function (t) {
-		var cards = outline.cards.filter(function (c) { return c.tab === t.id; });
+		var cards = all.filter(function (c) { return c.tab === t.id; });
 		if (!cards.length) return;
 		out.push("### " + t.label, "");
 		[["in", "Inputs"], ["out", "Results"]].forEach(function (side) {
@@ -61,11 +72,19 @@ function installationSection(body, inst, outline) {
 
 export function designOutline(design, outlines, opts) {
 	var o = opts || {};
+	var placeholders = o.placeholders !== false;
+	var picked = function (i) { return !o.only || o.only.indexOf(i.id) >= 0; };
+	var total = 0, shown = 0;
+	design.bodies.forEach(function (b) { b.inst.forEach(function (i) { total++; if (picked(i)) shown++; }); });
 	var out = ["# " + (design.name || "Design") + " — outline", ""];
 	out.push("Exported from the Moonwards home workbench" + (o.date ? " on " + o.date : "") + ". " +
 		"Each installation lists its calculator's cards tab by tab, inputs then results. " +
 		"\"—\" is a figure with no model behind it yet; ☑ / ☐ is a part in use or not; [x] is the option chosen among buttons; " +
 		"\"›\" marks a line inside a folded section or under an optional part.", "");
+	var scope = [];
+	if (shown < total) scope.push("Detailed below: " + shown + " of the design's " + total + " installations.");
+	if (!placeholders) scope.push("Placeholder cards (parts no calculator covers yet) are left out.");
+	if (scope.length) out.push(scope.join(" "), "");
 
 	out.push("## Bodies and installations", "");
 	if (!design.bodies.length) out.push("_No bodies in the design._", "");
@@ -82,7 +101,7 @@ export function designOutline(design, outlines, opts) {
 	}
 
 	design.bodies.forEach(function (b) {
-		b.inst.forEach(function (i) { out = out.concat(installationSection(b.body, i, outlines[i.id] || null)); });
+		b.inst.filter(picked).forEach(function (i) { out = out.concat(installationSection(b.body, i, outlines[i.id] || null, placeholders)); });
 	});
 	return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }

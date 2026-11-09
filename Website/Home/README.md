@@ -53,10 +53,13 @@ the **workbench**, and the **apps**.
   on it. **Export** is a menu of two files: **Design file**, the same as a
   `.moonwards.json` file that **Import** reads back (from a file or pasted
   text); and **Outline (tables)**, a Markdown file listing the bodies and
-  installations, then every installation's cards tab by tab, inputs then
+  installations, then the chosen installations' cards tab by tab, inputs then
   results, each card a table of what it shows. Notes (explanatory paragraphs)
-  are left out. The outline mounts, hidden, any calculator not yet shown, so
-  it covers the whole design.
+  are left out. Its dialog is a copy of the design grid whose chips switch
+  installations in or out (a body's name switches its row; at first, those
+  with a calculator of their own), with a tick, on at first, that leaves out
+  placeholder (skeleton) cards; the choice is kept in this browser. The
+  outline mounts, hidden, any chosen calculator not yet shown.
 
 - **Apps** — tabs over the site's full-page apps (Mission Planner, Moon
   Skyhook and Mars–Phobos Skyhook trajectory plotters), each shown in a frame
