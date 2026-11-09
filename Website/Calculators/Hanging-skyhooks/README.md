@@ -144,10 +144,15 @@ routes, Total annual resources (not part of Incoming) its three shares. Folds ar
   launch method: Detect, the surface launchers built at this body, a launchpad);
   from the body's near market by freighter (the Moon's is Earth and Earth's the
   Moon; per day or week; no section elsewhere); from interplanetary by freighter
-  (per year). The total a year divides into products, the surface's share, and
-  waste and use on the anchor, which takes what the other two leave. Out: to the
-  near market (freighters, and capsules where it has an atmosphere) and to
-  interplanetary, which share the products; and to the surface by shuttle.
+  (per year). Out: to the near market (freighters, and capsules where it has an
+  atmosphere), to interplanetary, and to the surface by shuttle. Every route's
+  amount is typed, on its own, with the one exception that where the near market
+  has capsules its amount is the freighters' and capsules' typed amounts added.
+  Total annual resources holds the shares you set: what leaves as products and
+  what goes to the surface, with waste and use on the anchor taking the rest.
+  The shares are the budget the typed routes should add up to (the near market
+  and interplanetary to the products; the surface route to the surface share); a
+  warning says when they do not. A new card starts with its routes at the budgets.
 - **Ships** come from the design's classes: the installation's shuttle and
   capsule, and a multiple-choice dropdown of the freighter versions, the same
   choice on both directions of a route. Each route pair has one Bulk tick: that
@@ -157,8 +162,7 @@ routes, Total annual resources (not part of Incoming) its three shares. Folds ar
 - **Docking and release points**: a multiple-choice dropdown of the places in
   use, then a line per chosen place with its amount and the haul it needs. One
   place takes what the others leave: the anchor where chosen, otherwise the one
-  not edited last (in italic). Two amounts that make one total between them
-  (near market and interplanetary; freighters and capsules) work the same way.
+  not edited last (in italic).
 
 All cargo passes through the anchor station: arrivals are hauled from their
 docking point to it, departures from it to their release point. Ships are hauled

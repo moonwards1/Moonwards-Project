@@ -75,7 +75,7 @@ export function addTrafficCard(shell, opts) {
 	card.el.classList.add("tf-card");
 	card.setTag("average");   // every amount is an average over its route's period
 	var form = el("div", "tf", card.body);
-	var period = 1, warnings = [];
+	var period = 1, warnings = [], seeded = false;
 	var changed = function () { shell.changed(); };
 	function secs(unit) { return unit === "orbit" ? period : unit === "day" ? 86400 : unit === "week" ? 604800 : YEAR; }
 	function rate(ktPer, unit) { return ktPer * 1e6 / secs(unit); }   // kg/s
@@ -330,10 +330,10 @@ export function addTrafficCard(shell, opts) {
 	sec = section(form, "Total annual resources", "tf-route", "total");
 	S.total = out(sec.r, "kt");
 	r = row(sec.body, "What leaves as products (or continues on)");
-	S.prod = el("input", "tf-in tf-pc", r.v); S.prod.type = "number"; S.prod.min = 0; S.prod.max = 100; S.prod.step = "any"; S.prod.value = 50;
+	S.prod = el("input", "tf-in tf-pc", r.v); S.prod.type = "number"; S.prod.min = 0; S.prod.max = 100; S.prod.step = "any"; S.prod.value = 90;
 	el("span", "tf-u", r.v, "%"); S.prod.addEventListener("input", changed); shell.control(card, S.prod, { key: "Products share" });
 	r = row(sec.body, "Resources sent to the surface");
-	S.surf = el("input", "tf-in tf-pc", r.v); S.surf.type = "number"; S.surf.min = 0; S.surf.max = 100; S.surf.step = "any"; S.surf.value = 10;
+	S.surf = el("input", "tf-in tf-pc", r.v); S.surf.type = "number"; S.surf.min = 0; S.surf.max = 100; S.surf.step = "any"; S.surf.value = 5;
 	el("span", "tf-u", r.v, "%"); S.surf.addEventListener("input", changed); shell.control(card, S.surf, { key: "Surface share" });
 	r = row(sec.body, "Waste, and resources used on anchor");
 	S.waste = out(r, "%");
@@ -376,7 +376,8 @@ export function addTrafficCard(shell, opts) {
 
 	// to the surface
 	sec = section(outG.body, "To surface", "tf-route", "to surface");
-	S.outSurf = { box: sec.box, per: periodRadios(sec.r, "To surface per", ["orbit", "day"], "orbit"), amount: out(sec.r, "kt") };
+	S.outSurf = { box: sec.box, per: periodRadios(sec.r, "To surface per", ["orbit", "day"], "orbit"), amount: amountIn(sec.r, "To surface amount", 0) };
+	S.outFar.amount.value = S.outSurf.amount.value = "";   // filled on the first update unless saved settings give them
 	r = row(sec.body, "By shuttle");
 	bulkSurf.view(r.k, "out");
 	r = row(sec.body, "load per flight");
@@ -392,27 +393,6 @@ export function addTrafficCard(shell, opts) {
 	r = row(bal, "Orbit balance"); el("span", "tf-lab tf-per", r.k, "per orbit"); S.oOrbit = out(r, "");
 	r = row(bal, "\u00a0"); el("span", "tf-lab tf-per", r.k, "per year"); S.oYear = out(r, "");
 	r = row(bal, "Thruster efficiency"); S.tEff = out(r, "%");
-
-	// Two amounts that make a total between them: the one edited last stays, the other
-	// takes the rest. Each converts to the total's unit by its own factor. Returns both
-	// exactly, in their own units ({ a, b }), and how far the kept one exceeds the total.
-	var pairLast = { capsule: "b" };   // capsules keep what they are given; freighters carry the rest
-	function watchPair(id, a, b) {
-		a.addEventListener("input", function () { pairLast[id] = "a"; });
-		b.addEventListener("input", function () { pairLast[id] = "b"; });
-	}
-	function pair(id, a, b, total, ka, kb) {
-		var keepA = pairLast[id] !== "b";
-		if (document.activeElement === a) keepA = true;
-		if (document.activeElement === b) keepA = false;
-		var keep = keepA ? a : b, other = keepA ? b : a, kk = keepA ? ka : kb, ko = keepA ? kb : ka;
-		var left = total - val(keep) * kk, rest = Math.max(0, left) / ko;
-		other.value = ktField(rest);
-		a.classList.toggle("tf-rem", other === a); b.classList.toggle("tf-rem", other === b);
-		return { a: keepA ? val(a) : rest, b: keepA ? rest : val(b), over: left < 0 ? -left : 0 };
-	}
-	watchPair("market", S.outNear.amount, S.outFar.amount);
-	watchPair("capsule", S.outNear.fTon, S.outNear.cTon);
 
 	// A flights line: on the bulk side "flights per <period>", on the other "load per flight".
 	function flightsLine(f, flights, unit, rateKg, list, bulk) {
@@ -485,34 +465,43 @@ export function addTrafficCard(shell, opts) {
 		var capC = capsule ? fleet.classFor(instId, "capsule") : null;
 		var nearF = near ? freighters(nearShips) : [], farF = freighters(farShips);
 
-		// incoming, and what becomes of it
+		// incoming
 		var uSurf = S.inSurf.per.value, uNearIn = S.inNear.per.value;
 		var inSurf = val(S.inSurf.amount), inNear = near ? val(S.inNear.amount) : 0, inFar = val(S.inFar.amount);
 		var inYear = (rate(inSurf, uSurf) + rate(inNear, uNearIn)) * YEAR / 1e6 + inFar;   // kt/yr
 		S.total.set(ktText(inYear));
+
+		// the shares of the year's arrivals that leave as products and go to the surface; the rest is waste and use on the anchor
 		var pWaste = 100 - val(S.prod) - val(S.surf);
 		S.waste.set(num(Math.max(0, pWaste), 1));
 		if (pWaste < 0) warnings.push("Traffic: products and surface shares come to more than 100%.");
-		var prodYear = inYear * val(S.prod) / 100, surfYear = inYear * val(S.surf) / 100;
-		S.outTotal.set(ktText(prodYear));
+		var prodBudget = inYear * val(S.prod) / 100, surfBudget = inYear * val(S.surf) / 100;
 
-		// outgoing: near market and interplanetary share the products; freighters and capsules the near market's
+		// A fresh card's outgoing amounts start at the shares' budgets.
 		var uNearOut = S.outNear.per.value, uSurfOut = S.outSurf.per.value;
-		S.outFar.amount.disabled = !near;
-		var outNear = 0, outFar = prodYear;
-		if (near) {
-			var pm = pair("market", S.outNear.amount, S.outFar.amount, prodYear, YEAR / secs(uNearOut), 1);
-			if (pm.over > 0) warnings.push("Traffic: the near market and interplanetary come to " + ktText(pm.over) + " kt a year more than the products.");
-			outNear = pm.a; outFar = pm.b;
-		} else { S.outFar.amount.value = ktField(prodYear); S.outFar.amount.classList.remove("tf-rem"); }
-		var outSurf = surfYear * secs(uSurfOut) / YEAR;
-		S.outSurf.amount.set(ktText(outSurf));
-		var fOut = outNear, cOut = 0, fShown = S.outNear.amount.value;
-		if (capsule) {
-			var pc = pair("capsule", S.outNear.fTon, S.outNear.cTon, outNear, 1, 1);
-			if (pc.over > 0) warnings.push("Traffic: freighters and capsules carry " + ktText(pc.over) + " kt more than the route.");
-			fOut = pc.a; cOut = pc.b; fShown = S.outNear.fTon.value;
+		if (!seeded) {
+			seeded = true;
+			if (S.outFar.amount.value === "") S.outFar.amount.value = ktField(prodBudget);
+			if (S.outSurf.amount.value === "") S.outSurf.amount.value = ktField(surfBudget * secs(uSurfOut) / YEAR);
 		}
+
+		// outgoing: every amount is typed. Where the near market has capsules its
+		// amount is the freighters' and capsules' together.
+		S.outNear.amount.disabled = capsule;
+		var fOut = 0, cOut = 0, outNear = 0, fShown = S.outNear.amount.value;
+		if (near) {
+			if (capsule) {
+				fOut = val(S.outNear.fTon); cOut = val(S.outNear.cTon); outNear = fOut + cOut;
+				S.outNear.amount.value = ktField(outNear); fShown = S.outNear.fTon.value;
+			} else { fOut = outNear = val(S.outNear.amount); }
+		}
+		var outFar = val(S.outFar.amount), outSurf = val(S.outSurf.amount);
+		var prodYear = outNear * YEAR / secs(uNearOut) + outFar, surfYear = outSurf * YEAR / secs(uSurfOut);
+		S.outTotal.set(ktText(prodBudget));
+		// the routes should add up to their share's budget, to within what the fields show
+		var off = function (got, want) { return Math.abs(got - want) > Math.max(0.005 * want, 1e-6); };
+		if (off(prodYear, prodBudget)) warnings.push("Traffic: the products routes come to " + ktText(prodYear) + " kt a year; the products share is " + ktText(prodBudget) + " kt.");
+		if (off(surfYear, surfBudget)) warnings.push("Traffic: the surface route comes to " + ktText(surfYear) + " kt a year; the surface share is " + ktText(surfBudget) + " kt.");
 
 		// surface: the same shuttles both ways
 		S.inSurf.ship.set(num(shuttle.payload, 1));
@@ -568,7 +557,7 @@ export function addTrafficCard(shell, opts) {
 		setSigned(S.oYear, b.impulseYear, IMPULSE);
 		S.tEff.set(num(env.thruster.eff * 100, 0));
 
-		card.setSummary(num(inYear, 0) + " kt/yr in · " + num(prodYear, 0) + " kt/yr out");
+		card.setSummary(num(inYear, 0) + " kt/yr in · " + num(prodBudget, 0) + " kt/yr out");
 		balCard.setSummary(signed(b.energyYear, ENERGY).slice(0, 2).join(" ") + "/yr · " + signed(b.impulseYear, IMPULSE).slice(0, 2).join(" ") + "/yr");
 		return warnings;
 	}
