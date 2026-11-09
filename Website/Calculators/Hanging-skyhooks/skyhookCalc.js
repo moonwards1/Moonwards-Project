@@ -568,6 +568,8 @@ export function mountHangingSkyhook(root, opts) {
 			if (!x) return;
 			l.el.querySelector(".cs-k").textContent = x.name;
 			l.set(num(x.altitude / 1e3, 0), "v∞ " + num(x.vinf, 0) + " m/s" + (x.location > R + t.top ? " · beyond the top" : ""));
+			// the design outline lists only the release points on the tether
+			l.el.toggleAttribute("data-ol-skip", x.location > R + t.top || x.location < R + t.foot);
 		});
 		rpNote.hidden = tg.length === 0;
 		if (!tg.length) rpNote.textContent = "This body has no neighbours to transfer to.";

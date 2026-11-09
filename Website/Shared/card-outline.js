@@ -20,6 +20,10 @@
 // <details> dropdown its summary, a pressed button its label in brackets.
 // Other buttons, icons and notes (paragraphs) give nothing.
 //
+// Left out: an optional item that is not ticked (with its fields), and
+// anything a calculator marks data-ol-skip (a line it shows that isn't part of
+// the design, such as a release point beyond the tether's top).
+//
 // Anything hidden is left out (a line that doesn't apply here), except fold
 // bodies — the parts a viewer opens and closes: the card's body, a shell fold,
 // or an element marked data-fold — which count whether open or not. Rows
@@ -107,7 +111,7 @@ function readPair(el, p, depth) {
 
 function walk(el, depth, out) {
 	Array.prototype.forEach.call(el.children, function (c) {
-		if (hidden(c)) return;
+		if (hidden(c) || c.matches("[data-ol-skip], .cs-opt.cs-opt-off")) return;
 		if (c.matches("[data-ol-head]")) {
 			var g = tidy(c.textContent);
 			if (g) out.push({ label: g, value: "", note: "", depth: Math.max(0, depth - (el.matches(NEST) ? 1 : 0)), head: true });
