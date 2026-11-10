@@ -94,7 +94,8 @@ export function addTrafficCard(shell, opts) {
 	// A figure on the right of a line: set(text, unit).
 	function out(r, unit) {
 		var n = el("span", "tf-n", r.v), u = el("span", "tf-u", r.v, unit || "");
-		return { el: n, set: function (text, unit2) { n.textContent = text; if (unit2 != null) u.textContent = unit2; } };
+		return { el: n, set: function (text, unit2) { n.textContent = text; if (unit2 != null) u.textContent = unit2; },
+			show: function (on) { n.hidden = u.hidden = !on; } };
 	}
 	// An amount typed on the right of a line, kt, saved under `key`.
 	function amountIn(r, key, value) {
@@ -394,6 +395,26 @@ export function addTrafficCard(shell, opts) {
 	r = row(bal, "\u00a0"); el("span", "tf-lab tf-per", r.k, "per year"); S.oYear = out(r, "");
 	r = row(bal, "Thruster efficiency"); S.tEff = out(r, "%");
 
+	// Two amounts that make a total between them: the one edited last stays, the other
+	// takes the rest. Each converts to the total's unit by its own factor. Returns both
+	// exactly, in their own units ({ a, b }), and how far the kept one exceeds the total.
+	var pairLast = { capsule: "b" };   // capsules keep what they are given; freighters carry the rest
+	function watchPair(id, a, b) {
+		a.addEventListener("input", function () { pairLast[id] = "a"; });
+		b.addEventListener("input", function () { pairLast[id] = "b"; });
+	}
+	function pair(id, a, b, total, ka, kb) {
+		var keepA = pairLast[id] !== "b";
+		if (document.activeElement === a) keepA = true;
+		if (document.activeElement === b) keepA = false;
+		var keep = keepA ? a : b, other = keepA ? b : a, kk = keepA ? ka : kb, ko = keepA ? kb : ka;
+		var left = total - val(keep) * kk, rest = Math.max(0, left) / ko;
+		other.value = ktField(rest);
+		a.classList.toggle("tf-rem", other === a); b.classList.toggle("tf-rem", other === b);
+		return { a: keepA ? val(a) : rest, b: keepA ? rest : val(b), over: left < 0 ? -left : 0 };
+	}
+	watchPair("capsule", S.outNear.fTon, S.outNear.cTon);
+
 	// A flights line: on the bulk side "flights per <period>", on the other "load per flight".
 	function flightsLine(f, flights, unit, rateKg, list, bulk) {
 		var lab = f.r.k.firstChild, per = flights * secs(unit);
@@ -485,15 +506,14 @@ export function addTrafficCard(shell, opts) {
 			if (S.outSurf.amount.value === "") S.outSurf.amount.value = ktField(surfBudget * secs(uSurfOut) / YEAR);
 		}
 
-		// outgoing: every amount is typed. Where the near market has capsules its
-		// amount is the freighters' and capsules' together.
-		S.outNear.amount.disabled = capsule;
-		var fOut = 0, cOut = 0, outNear = 0, fShown = S.outNear.amount.value;
-		if (near) {
-			if (capsule) {
-				fOut = val(S.outNear.fTon); cOut = val(S.outNear.cTon); outNear = fOut + cOut;
-				S.outNear.amount.value = ktField(outNear); fShown = S.outNear.fTon.value;
-			} else { fOut = outNear = val(S.outNear.amount); }
+		// outgoing: every amount is typed. The near market's line is its total; where capsules
+		// share it with the freighters, the freighters' and capsules' lines make it up between
+		// them, the one edited last staying and the other taking the rest.
+		var outNear = near ? val(S.outNear.amount) : 0, fOut = outNear, cOut = 0, fShown = S.outNear.amount.value;
+		if (capsule) {
+			var pc = pair("capsule", S.outNear.fTon, S.outNear.cTon, outNear, 1, 1);
+			if (pc.over > 0) warnings.push("Traffic: freighters and capsules carry " + ktText(pc.over) + " kt more than the route.");
+			fOut = pc.a; cOut = pc.b; fShown = S.outNear.fTon.value;
 		}
 		var outFar = val(S.outFar.amount), outSurf = val(S.outSurf.amount);
 		var prodYear = outNear * YEAR / secs(uNearOut) + outFar, surfYear = outSurf * YEAR / secs(uSurfOut);

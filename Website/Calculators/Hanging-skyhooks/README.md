@@ -147,7 +147,7 @@ routes, Total annual resources (not part of Incoming) its three shares. Folds ar
   (per year). Out: to the near market (freighters, and capsules where it has an
   atmosphere), to interplanetary, and to the surface by shuttle. Every route's
   amount is typed, on its own, with the one exception that where the near market
-  has capsules its amount is the freighters' and capsules' typed amounts added.
+  has capsules, its line is the total and the By freighter and By capsule lines make it up between them: the one edited last stays and the other takes the rest.
   Total annual resources holds the shares you set: what leaves as products and
   what goes to the surface, with waste and use on the anchor taking the rest.
   The shares are the budget the typed routes should add up to (the near market
