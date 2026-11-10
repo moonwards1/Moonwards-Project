@@ -1,0 +1,145 @@
+/* Earth–Moon Traffic Plotter (emt- prefix). Layout and tones follow the
+   Moon-Skyhook-Trajectory-Plotter's stylesheet. */
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0;
+	height: 100%;
+	background: #05060a;
+	color: #d8dde6;
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 14px;
+}
+
+#emt-app { display: flex; flex-direction: column; width: 100%; height: 100vh; overflow: hidden; }
+#emt-main { flex: 1 1 0; min-height: 0; display: flex; flex-direction: row; width: 100%; }
+#emt-left { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+
+/* ---- date bar ---- */
+#emt-datebar { flex: 0 0 auto; padding: 9px 18px 10px; background: #0c0f17; border-bottom: 1px solid #1b2030; }
+#emt-date-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 6px; }
+.emt-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
+.emt-pov-caption { margin-left: 10px; }
+#emt-pov { display: flex; flex-wrap: wrap; gap: 6px; }
+#emt-pov button {
+	font: inherit; font-size: 12px; padding: 5px 10px; cursor: pointer;
+	background: #131826; color: #cfd6e4; border: 1px solid #2a3142; border-radius: 5px;
+}
+#emt-pov button:hover { background: #1b2336; }
+#emt-pov button[aria-pressed="true"] { background: #24437a; border-color: #5aa9ff; color: #ffffff; }
+
+.emt-slider-line { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
+.emt-slider-line input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
+.emt-slider-end { flex: 0 0 auto; width: 104px; font-size: 11px; color: #8b94a7; }
+.emt-slider-line .emt-slider-end:first-child { text-align: right; }
+.emt-line-release .emt-slider-end { color: #ff9fe2; }
+.emt-line-release input[type="range"] { accent-color: #ff5fd0; }
+.emt-line-flight .emt-slider-end { color: #8fe3b4; }
+.emt-line-flight input[type="range"] { accent-color: #40d27f; }
+#emt-release-time-val, #emt-flight-time-val { width: 168px; }
+
+/* ---- 3D view ---- */
+#emt-view { position: relative; flex: 1 1 0; min-height: 0; background: #05060a; }
+#emt-canvas-holder { position: absolute; inset: 0; }
+#emt-canvas-holder canvas { display: block; }
+#emt-view-caption {
+	position: absolute; left: 12px; top: 10px; z-index: 3; pointer-events: none;
+	font-size: 11px; letter-spacing: 0.05em; color: #8b94a7; text-shadow: 0 1px 2px #000;
+}
+#emt-view-hud {
+	position: absolute; left: 12px; bottom: 10px; z-index: 3; pointer-events: none;
+	font-size: 12px; color: #8b94a7; text-shadow: 0 1px 2px #000;
+}
+.emt-hud-line { margin-top: 2px; }
+.emt-hud-key {
+	display: inline-block; padding: 0 5px; border: 1px solid #2a3142; border-radius: 3px;
+	color: #aeb6c6; background: rgba(20,26,40,0.6);
+}
+
+/* Body name labels: MissionPlanner/scene-frames.js builds the layer and the
+   spans with these class names. */
+.mp-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 2; }
+.mp-label {
+	position: absolute; display: none; font-size: 11px; color: #c3cbdb; white-space: nowrap;
+	transform: translateY(-50%); text-shadow: 0 0 4px #000, 0 0 2px #000;
+}
+
+/* ---- key figures under the view ---- */
+#emt-keys {
+	flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px 26px; align-items: flex-end;
+	padding: 9px 18px 10px; background: #0c0f17; border-top: 1px solid #1b2030; min-height: 54px;
+}
+.emt-key { display: flex; flex-direction: column; gap: 1px; }
+.emt-key-label { font-size: 11px; color: #8b94a7; }
+.emt-key-val { font-size: 15px; font-weight: 650; color: #66f0ff; white-space: nowrap; }
+.emt-key-val.emt-warn { color: #ffcf70; }
+.emt-key-error { color: #ff9a8a; font-size: 13px; }
+
+/* ---- side panel ---- */
+#emt-panel {
+	flex: 0 0 372px; max-width: 372px; height: 100%; overflow-y: auto;
+	padding: 14px 14px 32px; background: #0c0f17; border-left: 1px solid #1b2030;
+}
+#emt-panel h1 { font-size: 18px; margin: 0 4px 12px; font-weight: 650; }
+#emt-panel h2 { font-size: 13px; margin: 0 0 8px; font-weight: 600; color: #c7cedd; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.emt-card { background: #10141f; border: 1px solid #1f2637; border-radius: 8px; margin-bottom: 10px; }
+.emt-card-flight, .emt-card-display { padding: 12px 14px; }
+.emt-card.emt-role-departure { border-color: #a04a86; }
+
+.emt-card-head {
+	display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 14px;
+	background: none; border: 0; color: #e6ebf4; font: inherit; font-size: 15px; font-weight: 650;
+	text-align: left; cursor: pointer;
+}
+.emt-card-head:hover { background: #151b2a; border-radius: 8px; }
+.emt-chev { flex: 0 0 auto; width: 12px; height: 12px; transition: transform 0.12s; }
+.emt-card.emt-open .emt-chev { transform: rotate(90deg); }
+.emt-card-title { flex: 1 1 auto; min-width: 0; }
+.emt-card-sub { display: block; font-size: 11px; font-weight: 400; color: #8b94a7; margin-top: 1px; }
+.emt-badge { flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; }
+.emt-badge-departure { background: #4a1d3d; color: #ffb3e8; }
+.emt-badge-idle { color: #8b94a7; font-weight: 600; letter-spacing: 0; font-size: 11px; }
+.emt-card-body { display: none; padding: 2px 14px 13px; }
+.emt-card.emt-open .emt-card-body { display: block; }
+
+.emt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 5px 0; }
+.emt-muted { color: #8b94a7; font-size: 12px; line-height: 1.45; }
+.emt-fineprint { color: #6b7589; font-size: 11px; line-height: 1.5; margin: 16px 4px 0; }
+
+.emt-fieldpair { display: flex; gap: 10px; margin-bottom: 8px; }
+.emt-field { flex: 1; min-width: 0; }
+.emt-field label { display: block; font-size: 11px; color: #8b94a7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
+.emt-field input[type="number"], .emt-field select { width: 100%; min-width: 0; }
+.emt-bad { border-color: #d0604f !important; }
+.emt-error { color: #ff9a8a; font-size: 12px; margin: 6px 0 2px; }
+
+.emt-readouts { margin-top: 6px; }
+.emt-ro { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 3px 0; }
+.emt-ro-label { color: #8b94a7; font-size: 11px; }
+.emt-ro-val { font-size: 13px; font-weight: 600; color: #e6ebf4; white-space: nowrap; }
+.emt-release { margin-top: 10px; padding-top: 10px; border-top: 1px solid #1f2637; }
+.emt-release .emt-ro-val { color: #66f0ff; }
+.emt-release-line { display: flex; align-items: flex-end; gap: 10px; }
+.emt-release-line .emt-field:last-child { flex: 0 0 92px; }
+
+input[type="range"] { width: 100%; accent-color: #5aa9ff; }
+input[type="date"], select, input[type="number"] {
+	background: #131826; color: #d8dde6; border: 1px solid #2a3142; border-radius: 4px;
+	padding: 5px 7px; font-size: 13px; font-family: inherit;
+}
+select:disabled { color: #8b94a7; }
+
+.emt-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #c7cedd; cursor: pointer; }
+.emt-check input { accent-color: #5aa9ff; margin: 0; }
+.emt-legend { font-size: 11px; color: #8b94a7; }
+.emt-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 6px; }
+.emt-legend .emt-swatch:first-child { margin-left: 0; }
+
+@media (max-width: 860px) {
+	#emt-app { height: auto; min-height: 100vh; overflow: visible; }
+	#emt-main { flex-direction: column; }
+	#emt-view { flex: 0 0 auto; height: 62vh; }
+	#emt-panel { flex: 0 0 auto; max-width: none; width: 100%; height: auto; border-left: 0; border-top: 1px solid #1b2030; }
+}
