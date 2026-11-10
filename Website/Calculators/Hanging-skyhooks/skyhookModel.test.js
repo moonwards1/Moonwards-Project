@@ -13,18 +13,18 @@ import assert from "node:assert/strict";
 
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
-import { computeSkyhook, sweepTether } from "./skyhookModel.js";
+import { computeSkyhook, sweepTether, stationKeeping, exhaustSpeed } from "./skyhookModel.js";
+import { Traffic, YEAR } from "./trafficModel.js";
 import { MATERIALS } from "../../Shared/materials.js";
 
 var moon = systems.get("Moon");
 var m = MATERIALS.silica;
+var R0 = Number(moon.radius);
 function base() {
 	return {
 		foot: 10e3, centre: 275e3, top: 2000e3,
-		receivingDeck: 233e3, outerDocks: 606.5e3, releaseDeck: 950e3, cargoFrom: 233e3, cargoTo: 950e3,
+		receivingDeck: 233e3, outerDocks: 606.5e3, releaseDeck: 950e3,
 		strength: (m.strength / 3) / m.density, loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
-		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
-		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9,
 		ifaceAlt: 122
 	};
 }
@@ -167,8 +167,7 @@ test("the station may sit anywhere the tether can carry it", function () {
 		receivingDeck: 233e3, outerDocks: 606.5e3, releaseDeck: 950e3,
 		strength: (weak.strength / 3) / weak.density,
 		loadTop: 40e6, distUpper: 60e6, comMass: 5000e6, distLower: 300e6, loadFoot: 200e6,
-		rate: 1000, perClimber: 100, vClimb: 200, effDrive: 0.7,
-		propellant: "oxygen", vExhaust: 8, effThruster: 0.6, effSupply: 0.9, ifaceAlt: 122
+		ifaceAlt: 122
 	};
 	// too light an anchor: no position balances, and that is reported
 	var u = computeSkyhook(moon, base);
@@ -201,46 +200,37 @@ test("a heavier load along the tether raises tension and mass", function () {
 	assert.ok(c.tension > b.tension);
 });
 
-test("throughput", function () {
-	var th = t.throughput;
-	near(th.tripDays * 24, 1.0, 2, "trip h");
-	near(th.intervalH, 2.4, 2, "cadence h");
-	near(th.onCable, 0.4, 1, "on cable");
-	near(th.spacingKm, 1728, 0, "spacing km");
-	near(th.cargoT, 41.49, 2, "cargo on the route t");
-	near(th.returnT * 1e3, 414.9, 1, "returning cargo kg");
-	near(th.addedTension / 1e3, 20.12, 2, "added tension kN");
-	near(th.addedTensionPct, 0.01, 2, "added tension %");   // of the tension at the centre, now set by the real loads
-	near(th.liftPower / 1e6, -5.64, 2, "lift power MW");
-	near(th.energyPerT, -0.49, 2, "GJ/t");
-});
+// agreement to a relative tolerance
+function rel(actual, expected, tol, label) {
+	assert.ok(Math.abs(actual - expected) <= Math.abs(expected) * tol, label + ": " + actual + " vs " + expected);
+}
 
-test("cargo route: foot → top unless given, and either direction", function () {
-	var d = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: null, cargoTo: null })).throughput;
-	assert.equal(d.from, 10e3); assert.equal(d.to, 2000e3);
-	near(d.tripDays * 24, 2.76, 2, "foot → top trip h");
-	var r = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: 950e3, cargoTo: 233e3 }));
-	near(r.throughput.liftPower / t.throughput.liftPower, -1, 9, "reversed route: energy changes sign");
-	near(r.keeping.thrust / t.keeping.thrust, -1, 9, "reversed route: the engines brake");
-	near(r.throughput.addedTension / t.throughput.addedTension, 1, 9, "same cargo on the same stretch");
-	near(r.keeping.genPower / t.keeping.genPower, 1, 9, "braking costs the same power as boosting");
-	var an = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: "anchor", cargoTo: 950e3 }));
-	assert.equal(an.throughput.from, an.centre + an.comOffset, "\"anchor\" is the anchor station's balanced altitude");
-	var z = computeSkyhook(moon, Object.assign({}, base(), { cargoFrom: 950e3, cargoTo: 950e3 }));
-	assert.ok(z.warnings.some(function (w) { return /same place/.test(w); }));
-});
-
-test("station-keeping", function () {
-	var sk = t.keeping;
-	near(sk.thrust / 1e3, 7.94, 2, "thrust kN");
-	near(sk.torque / 1e9, 29.69, 2, "torque GN·m");
-	near(sk.propFlow, 0.99, 2, "kg/s");
-	near(sk.propFlow * 86400 / 1e3, 85.80, 2, "t/day");
-	near(sk.jetPower / 1e6, 31.78, 2, "jet MW");
-	near(sk.orbitPower / 1e6, 23.04, 2, "orbit MW");
-	near(sk.elecPower / 1e6, 52.96, 2, "electrical MW");
-	near(sk.genPower / 1e6, 58.85, 2, "generated MW");
-	near(sk.energyPerT, 5.08, 2, "GJ/t");
+test("station-keeping follows the Traffic balance", function () {
+	// 1 kt a year hauled from the foot to the top: the engines cancel the drag
+	var kgs = 1e6 / YEAR, rF = R0 + t.foot, rT = R0 + t.top;
+	var env = { GM: moon.GM, omega: t.angularVelocity, rMount: rT, period: t.time };
+	var h = Traffic.haul(env, rF, rT, kgs);
+	var ve = exhaustSpeed("oxygen", 8), ethr = 0.6, esup = 0.9;
+	var b = Traffic.balance([h], { period: t.time, climberEff: null, thrusterEff: ethr, vExhaust: ve });
+	var sk = stationKeeping(b, { omega: t.angularVelocity, rMount: rT, releasedFlow: kgs, vExhaust: ve, effThruster: ethr, effSupply: esup });
+	rel(sk.thrust, h.torque / rT, 1e-12, "F = τ / r_mount");
+	rel(sk.torque, h.torque, 1e-12, "τ = F · r_mount");
+	rel(sk.jetPower, 0.5 * Math.abs(sk.thrust) * ve, 1e-12, "P_jet = ½ |F| vₑ");
+	rel(sk.elecPower, sk.jetPower / ethr, 1e-12, "P_elec = P_jet / η_th");
+	rel(sk.genPower, sk.elecPower / esup, 1e-12, "P_gen = P_elec / η_sup");
+	rel(sk.propFlow, Math.abs(sk.thrust) / ve, 1e-12, "ṁ_prop = |F| / vₑ");
+	rel(sk.orbitPower, Math.abs(sk.thrust) * t.angularVelocity * rT, 1e-12, "P_orbit = |F| ω r_mount");
+	rel(sk.energyPerT, sk.genPower / kgs / 1e6, 1e-12, "GJ per tonne released");
+	rel(sk.propPerCargo, sk.propFlow / kgs, 1e-12, "t of propellant per t released");
+	// the reverse haul brakes the engines instead, at the same power
+	var back = Traffic.balance([Traffic.haul(env, rT, rF, kgs)], { period: t.time, climberEff: null, thrusterEff: ethr, vExhaust: ve });
+	var sb = stationKeeping(back, { omega: t.angularVelocity, rMount: rT, releasedFlow: kgs, vExhaust: ve, effThruster: ethr, effSupply: esup });
+	rel(sb.thrust / sk.thrust, -1, 1e-9, "reversed: the engines brake");
+	rel(sb.genPower / sk.genPower, 1, 1e-9, "braking costs the same power as boosting");
+	// nothing released: no per-tonne figures
+	var none = stationKeeping(b, { omega: t.angularVelocity, rMount: rT, releasedFlow: 0, vExhaust: ve, effThruster: ethr, effSupply: esup });
+	assert.ok(isNaN(none.energyPerT) && isNaN(none.propPerCargo));
+	assert.equal(exhaustSpeed("oxygen", 50), 20000, "oxygen is capped at 20 km/s");
 });
 
 test("entry at the parent planet: Earth, from the Moon", function () {

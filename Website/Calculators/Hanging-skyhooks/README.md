@@ -1,7 +1,7 @@
 # Hanging Skyhook Calculator
 
 Models a vertical (non-rotating) gravity-gradient skyhook: geometry, speeds,
-taper ratios, masses, climber energy, cargo throughput, VASIMR
+taper ratios, masses, climber energy, traffic, VASIMR
 station-keeping, release points for transfers to neighbouring bodies, and
 entry at the parent planet for cargo released toward it. The same calculator
 also serves the Phobos-anchored skyhook (below).
@@ -50,7 +50,7 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   standalone page opens on the Moon design. Each card
   names its workbench tab: basics (the three altitudes with their speeds), material, loads,
   the foot ↔ ground trips, release points, loads and
-  stations (inputs and results) on Architecture; traffic, cargo throughput, throughput, climber energy and
+  stations (inputs and results) on Architecture; traffic, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
 - `skyhookModel.test.js` — Node test pinning the default design's figures:
@@ -186,29 +186,28 @@ a Climber card) and the reboost thrusters' (from the Station-keeping card).
 Release by a mass driver on the skyhook, whose push is not along the tether's
 motion, is not modelled yet.
 
-## Cargo throughput: the route
+## Station-keeping: from the traffic balance
 
-Cargo climbs along one route, foot to top unless chosen otherwise. The From and
-To lists offer the foot, the anchor station (the anchoring moon, on an anchored
-tether), the top and each ticked optional station, top down; a station that is
-unticked falls back to the foot (From) or the top (To). The anchor station's
-stop is the altitude the balance gives it, which the model resolves from
-`"anchor"`. The route may run either way. Return traffic, back to where the route
-starts, is 1% of the delivery rate (`DESCENT_SHARE`). The energy per kilogram is
-the change in effective potential along the route,
+The reboost engines at the top cancel the net drag the traffic puts on the
+orbit. Their thrust is the Traffic card's balance: the sum of every haul's
+thrust (see Traffic). `trafficCard.js`'s `update` returns that balance and the
+tonnage released from the tether, and `stationKeeping(b, env)` in `skyhookModel.js` turns
+them into the Station-keeping figures:
 
-ΔE = φ(r_to) − φ(r_from),  φ(r) = −GM/r − ½ω²r²
+τ = F · r_mount,  P_jet = ½ |F| vₑ,  P_elec = P_jet / η_th,  P_gen = P_elec / η_sup,  ṁ_prop = |F| / vₑ,  E_t = P_gen / ṁ_rel
 
-- **ΔE** — energy per kilogram delivered (J/kg), before drive efficiency; negative means the climb regenerates
-- **r_from, r_to** — the route's ends, from the body's centre (m)
-- **GM** — the body's gravitational parameter (m³/s²)
-- **ω** — the tether's angular velocity (rad/s)
+- **F** — net thrust at the top (N); negative means the net traffic speeds the orbit and the engines brake, at the same power
+- **r_mount** — distance of the engines from the body's centre (m)
+- **τ** — torque the engines supply (N·m)
+- **P_jet, P_elec, P_gen** — jet power, electrical power at the thrusters, and generated power required (W)
+- **vₑ** — exhaust velocity (m/s), held to the propellant's ceiling (`exhaustSpeed`)
+- **η_th, η_sup** — thruster and power-supply efficiency
+- **ṁ_prop** — propellant flow (kg/s)
+- **ṁ_rel** — all the tonnage released from the tether, products and surface (kg/s)
+- **E_t** — generated energy per tonne released (J/kg; shown as GJ/t)
 
-φ peaks at the centre of mass, so climbing toward it costs and moving away from
-it regenerates. Carrying cargo outward drains the orbit's angular momentum at
-ṁ(1 − 0.01)ω(r_to² − r_from²), which the top engines make up; carried inward,
-the torque reverses and the engines brake instead, at the same propellant and
-power cost.
+Everything is an average over each route's period, so the thrust is the mean
+reboost, not the peak.
 
 ## Body-specific parts
 

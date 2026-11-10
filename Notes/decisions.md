@@ -566,6 +566,10 @@ anchor station, and empty ships from docking to release point, each costing
 releases with a radial or normal push and will add its own terms. Why: a
 matched-speed docking moves no momentum; only moving mass along the tether does.
 
+Station-keeping reads that balance: the reboost thrust is the balance's net thrust, and its
+energy and propellant per tonne are per tonne released from the tether. The tether has
+no separate climber-throughput model.
+
 ### A moon-anchored skyhook: the moon is the anchor station
 
 A skyhook anchored on a moon (`ANCHORS`, today Phobos) is the hanging-skyhook model

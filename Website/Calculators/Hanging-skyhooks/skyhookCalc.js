@@ -1,5 +1,5 @@
 // Hanging Skyhook Calculator — a vertical (non-rotating) gravity-gradient
-// tether: geometry, speeds, taper, masses, climber energy, cargo throughput,
+// tether: geometry, speeds, taper, masses, climber energy,
 // station-keeping, release points, and entry at the parent planet where it has
 // an atmosphere.
 //
@@ -38,7 +38,7 @@ import { CalcShell, ShellColors as C } from "../../Shared/calc-shell.js";
 import { ZoomView, svgEl } from "../../Shared/zoom-view.js";
 import { addMaterialCard } from "../../Shared/material-card.js";
 import { applies, footFloor, profileOf, parentName, anchorConfig } from "../../Shared/body-profiles.js";
-import { computeSkyhook, PROPELLANT_MAX } from "./skyhookModel.js";
+import { computeSkyhook, stationKeeping, exhaustSpeed, PROPELLANT_MAX } from "./skyhookModel.js";
 import { addTrafficCard } from "./trafficCard.js";
 
 // Link a stylesheet (path relative to this file) unless the document has it.
@@ -146,7 +146,7 @@ export function mountHangingSkyhook(root, opts) {
 	var footLoadIn = shell.numberField(payCard, { label: "Foot station", key: "Foot tip load", hint: "for surface shuttles", unit: "kt", value: DEF.footLoad, min: 0,
 		tip: "Mass held at the foot tip." });
 
-	var stCard = shell.addCard({ id: "st", tab: "arch", feeds: ["thrO", "rp", "prop", "stO"], side: "in", title: "Optional Stations", short: "Optional", color: C.ochre, focus: "stations" });
+	var stCard = shell.addCard({ id: "st", tab: "arch", feeds: ["rp", "prop", "stO"], side: "in", title: "Optional Stations", short: "Optional", color: C.ochre, focus: "stations" });
 	// Each station is optional. The saved key stays fixed while the label shown can change.
 	function station(key, label, hint, tip, alt, mass) {
 		var st = shell.optionalFields(stCard, { key: key + " used", label: label, hint: hint, tip: tip, checked: DEF.ticked,
@@ -160,20 +160,6 @@ export function mountHangingSkyhook(root, opts) {
 	shell.note(stCard, "Each station's mass is the facility plus its maximum load of ships, cargo and supplies.");
 
 	var traffic = addTrafficCard(shell, { fleet: o.fleet, instId: o.instId, neighbours: o.neighbours });
-
-	var thrCard = shell.addCard({ id: "thr", tab: "log", feeds: ["thrO", "kpO"], side: "in", title: "Cargo throughput", short: "Cargo", color: C.teal, focus: "tether" });
-	// The route runs foot to top, or between any two places in use once optional stations are ticked.
-	var ROUTE = [{ v: "foot", label: "Foot station", short: "foot" }, { v: "recv", label: "Receiving deck", short: "receiving deck", st: recvSt },
-		{ v: "outer", label: "Outer docks", short: "outer docks", st: outerSt }, { v: "release", label: "Release deck", short: "release deck", st: releaseSt },
-		{ v: "anchor", label: anc ? anc.name : "Anchor station", short: anc ? anc.name : "anchor station" }, { v: "top", label: "Top station", short: "top" }];
-	var routeOpts = ROUTE.map(function (r) { return { value: r.v, label: r.label }; });
-	var fromIn = shell.selectField(thrCard, { label: "From", key: "Cargo from", value: "foot", options: routeOpts, tip: "Where climbers take on cargo." });
-	var toIn = shell.selectField(thrCard, { label: "To", key: "Cargo to", value: "top", options: routeOpts, tip: "Where climbers deliver it." });
-	var rateIn = shell.numberField(thrCard, { label: "Delivery rate", key: "Delivery rate to release deck", unit: "t/day", value: 1000, min: 0,
-		tip: "Cargo delivered along the route. Return traffic, back to where the route starts, is assumed to be 1% of this." });
-	var perClimberIn = shell.numberField(thrCard, { label: "Cargo per climber", unit: "t", value: 100, min: 0.001 });
-	var vClimbIn = shell.numberField(thrCard, { label: "Climb speed", unit: "m/s", value: 200, min: 0.1 });
-	var effDriveIn = shell.numberField(thrCard, { label: "Drive efficiency", unit: "%", value: 70, min: 1, max: 100 });
 
 	var kpCard = shell.addCard({ id: "kp", tab: "eng", feeds: ["kpO"], side: "in", title: "Station-keeping", short: "Keeping", color: C.cobalt, focus: "top" });
 	var propIn = shell.selectField(kpCard, { label: "Propellant", value: "oxygen",
@@ -257,16 +243,6 @@ export function mountHangingSkyhook(root, opts) {
 	});
 	shell.note(stOCard, "Total strain is the tension in the tether at the station's level, its own pull included. Release is where a ship let go there ends up, moving at the tether's speed.");
 
-	var thrOCard = shell.addCard({ id: "thrO", tab: "log", side: "out", title: "Throughput", short: "Throughput", color: C.teal, focus: "tether" });
-	var rTrip = shell.line(thrOCard, { label: "Trip", unit: "h" });
-	var rDep = shell.line(thrOCard, { label: "Departures", unit: "/day" });
-	var rOn = shell.line(thrOCard, { label: "Climbers on the cable" });
-	var rSpace = shell.line(thrOCard, { label: "Mean spacing", unit: "km" });
-	var rCargo = shell.line(thrOCard, { label: "Cargo on the cable", unit: "t" });
-	var rDT = shell.line(thrOCard, { label: "Added tension at centre", unit: "kN" });
-	var rPow = shell.line(thrOCard, { label: "Net lift power", unit: "MW" });
-	var rEpt = shell.line(thrOCard, { label: "Energy per tonne delivered", unit: "GJ/t" });
-
 	var kpOCard = shell.addCard({ id: "kpO", tab: "eng", side: "out", title: "Station-keeping", short: "Keeping", color: C.cobalt, focus: "top" });
 	var rThrust = shell.line(kpOCard, { label: "Reboost thrust at top", unit: "kN" });
 	var rProp = shell.line(kpOCard, { label: "Propellant", unit: "t/day" });
@@ -274,7 +250,7 @@ export function mountHangingSkyhook(root, opts) {
 	var rElec = shell.line(kpOCard, { label: "Electrical power at thrusters", unit: "MW" });
 	var rGen = shell.line(kpOCard, { label: "Generated power required", unit: "MW" });
 	var rEday = shell.line(kpOCard, { label: "Energy to hold the orbit", unit: "GWh/day" });
-	var rEptK = shell.line(kpOCard, { label: "Energy per tonne delivered", unit: "GJ/t" });
+	var rEptK = shell.line(kpOCard, { label: "Energy per tonne released", unit: "GJ/t" });
 
 	var reOCard = shell.addCard({ id: "reO", tab: "log", side: "out", title: "Entry at the parent planet", short: "Entry", color: C.violet, focus: "reentry", where: "parentEntry" });
 	var rVinf = shell.line(reOCard, { label: "v∞ leaving the Moon", unit: "m/s" });
@@ -303,7 +279,6 @@ export function mountHangingSkyhook(root, opts) {
 	var KT = [[0, 1e6, "kt"]];
 	function kmText(a) { return num(a, a < 100 ? 1 : 0) + " km"; }
 	function field(input, fallback) { var v = parseFloat(input.value); return isFinite(v) ? v : fallback; }
-	function hours(days) { return days >= 1 ? [num(days, 2), "days"] : [num(days * 24, 2), "h"]; }
 	// Tether mass over everything the half carries: "0.27" (two decimals, or as many as it takes
 	// to reach the first nonzero digit when smaller), "—" when it holds up nothing.
 	function multipleNum(x) {
@@ -368,26 +343,6 @@ export function mountHangingSkyhook(root, opts) {
 	footIn.addEventListener("change", calc);
 	topIn.addEventListener("change", calc);
 
-	// The two ends of the cargo route: the foot, the top, the anchor station and the ticked
-	// optional stations, top down; a choice no longer offered falls back to foot or top.
-	// The anchor station's altitude comes from the balance, so the list is ordered by
-	// where the last calculation put it, and the model is given "anchor" to resolve.
-	var anchorKm = null;
-	function cargoRoute(footKm, topKm) {
-		var alt = { foot: footKm, top: topKm, recv: field(recvIn, DEF.recv), outer: field(outerIn, DEF.outer), release: field(releaseIn, DEF.release),
-			anchor: anchorKm != null ? anchorKm : field(centreIn, DEF.centre) };
-		var avail = ROUTE.filter(function (r) { return !r.st || r.st.use.checked; });
-		avail.sort(function (a, b) { return alt[b.v] - alt[a.v]; });
-		var has = function (v) { return avail.some(function (r) { return r.v === v; }); };
-		[fromIn, toIn].forEach(function (sel, i) {
-			Array.prototype.forEach.call(sel.options, function (op) { op.hidden = op.disabled = !has(op.value); });
-			avail.forEach(function (r) { sel.appendChild(sel.querySelector('option[value="' + r.v + '"]')); });
-			if (!has(sel.value)) sel.value = i ? "top" : "foot";
-		});
-		var stop = function (v) { var r = ROUTE.find(function (x) { return x.v === v; }); return { v: v, short: r.short, alt: alt[v] }; };
-		return { from: stop(fromIn.value), to: stop(toIn.value) };
-	}
-
 	function calc() {
 		var body = systems.get(bodyIn.value);
 		var mat = matCard.read(body.GM / (Number(body.radius) * Number(body.radius)));
@@ -395,29 +350,21 @@ export function mountHangingSkyhook(root, opts) {
 		if (anc) centreIn.value = anc.centre;
 		var footKm = enforce(footIn, "foot", lim.foot, true, footWhy, notes);
 		var topKm = enforce(topIn, "top", lim.top, false, topWhy, notes);
-		var route = cargoRoute(isFinite(footKm) ? footKm : DEF.foot, isFinite(topKm) ? topKm : DEF.top);
 		var t = computeSkyhook(body, {
 			foot: (isFinite(footKm) ? footKm : DEF.foot) * 1e3, centre: field(centreIn, DEF.centre) * 1e3, top: (isFinite(topKm) ? topKm : DEF.top) * 1e3,
 			receivingDeck: recvSt.use.checked ? field(recvIn, DEF.recv) * 1e3 : null,
 			outerDocks: outerSt.use.checked ? field(outerIn, DEF.outer) * 1e3 : null,
 			releaseDeck: releaseSt.use.checked ? field(releaseIn, DEF.release) * 1e3 : null,
 			stationMass: { receivingDeck: field(recvMassIn, DEF.recvMass) * 1e6, outerDocks: field(outerMassIn, DEF.outerMass) * 1e6, releaseDeck: field(releaseMassIn, DEF.releaseMass) * 1e6 },
-			cargoFrom: route.from.v === "anchor" ? "anchor" : route.from.alt * 1e3, cargoTo: route.to.v === "anchor" ? "anchor" : route.to.alt * 1e3,
 			strength: mat.specific,
 			loadTop: field(topLoadIn, DEF.topLoad) * 1e6, loadFoot: field(footLoadIn, DEF.footLoad) * 1e6,
 			distUpper: field(upperDistIn, DEF.upperLoad) * 1e6, distLower: field(lowerDistIn, DEF.lowerLoad) * 1e6,
 			comMass: field(comIn, DEF.anchorLoad) * 1e6, anchorMass: anc ? anc.mass : 0,
-			rate: field(rateIn, 1000), perClimber: Math.max(1e-3, field(perClimberIn, 100)),
-			vClimb: Math.max(0.1, field(vClimbIn, 200)), effDrive: field(effDriveIn, 70) / 100,
-			propellant: propIn.value, vExhaust: field(vExIn, 8),
-			effThruster: field(effThrIn, 60) / 100, effSupply: field(effSupIn, 90) / 100,
 			ifaceAlt: ifaceAltOf(bodyIn.value)
 		});
 		var R = Number(body.radius);
-		anchorKm = (t.centre + t.comOffset) / 1e3;
-		route.from.alt = t.throughput.from / 1e3; route.to.alt = t.throughput.to / 1e3;   // the anchor station's, once balanced
 		S = { t: t, body: body, R: R / 1e3, GM: body.GM, foot: t.foot / 1e3, centre: t.centre / 1e3, top: t.top / 1e3,
-			recv: t.receivingDeck / 1e3, outer: t.outerDocks / 1e3, release: t.releaseDeck / 1e3, route: route,
+			recv: t.receivingDeck / 1e3, outer: t.outerDocks / 1e3, release: t.releaseDeck / 1e3,
 			parentDist: body.orbit ? Number(body.orbit.a) / 1e3 : NaN };
 		// the departure toward the parent planet, from the release deck out to seven radii, in drawing km
 		// (perifocal x, toward the release point, is up the tether; perifocal y, the motion, is +x)
@@ -434,14 +381,18 @@ export function mountHangingSkyhook(root, opts) {
 			S.arcD[a[0]] = arc ? "M" + arc.points.map(function (q) { return (q[0] / 1e3) + " " + (-q[1] / 1e3); }).join("L") : "";
 		});
 
-		var trafficWarnings = traffic.update({ body: bodyIn.value, GM: body.GM, omega: t.angularVelocity, period: t.time, rMount: R + t.top,
+		var effThruster = field(effThrIn, 60) / 100, vExhaust = exhaustSpeed(propIn.value, field(vExIn, 8));
+		var tr = traffic.update({ body: bodyIn.value, GM: body.GM, omega: t.angularVelocity, period: t.time, rMount: R + t.top,
 			places: { foot: R + t.foot, top: R + t.top, anchor: R + t.centre + t.comOffset,
 				recv: recvSt.use.checked ? R + t.receivingDeck : null, outer: outerSt.use.checked ? R + t.outerDocks : null,
 				release: releaseSt.use.checked ? R + t.releaseDeck : null },
-			thruster: { eff: field(effThrIn, 60) / 100, vExhaust: t.keeping.vExhaust } });
+			thruster: { eff: effThruster, vExhaust: vExhaust } });
+		// the reboost engines cancel the net drag of that traffic
+		t.keeping = stationKeeping(tr.balance, { omega: t.angularVelocity, rMount: R + t.top, releasedFlow: tr.releasedFlow,
+			vExhaust: vExhaust, effThruster: effThruster, effSupply: field(effSupIn, 90) / 100 });
 
 		bodyNote.textContent = "Radius " + num(R / 1e3, 1) + " km · surface gravity " + num(t.surfaceGravity, 2) + " m/s²";
-		shell.warn(notes.concat(t.warnings, trafficWarnings).join(" "));
+		shell.warn(notes.concat(t.warnings, tr.warnings).join(" "));
 
 		// orbit & speeds, under the altitude fields
 		centreSp[0].set(num(t.time / 3600, 2)); centreSp[1].set(num(t.centreVel / 1e3, 2));
@@ -515,27 +466,10 @@ export function mountHangingSkyhook(root, opts) {
 		else rOff.set(num(Math.abs(t.comOffset) / 1e3, 1), t.balanced ? (Math.abs(t.comOffset) < 50 ? "essentially at the centre of mass" : (t.comOffset < 0 ? "below" : "above") + " the centre of mass")
 			: "no position balances these loads · out of balance by " + gapF[0] + " " + gapF[1] + " at the centre of mass", "km");
 
-		// throughput
-		var th = t.throughput;
-		var routeText = route.from.short + " → " + route.to.short;
-		f = hours(th.tripDays);
-		rTrip.el.querySelector(".cs-k").textContent = "Trip, " + routeText;
-		rTrip.set(f[0], "one way; the return traffic takes as long", f[1]);
-		rDep.set(num(th.perDay, 1), "one every " + num(th.intervalH, 2) + " h");
-		rOn.set(num(th.onCable, 1));
-		rSpace.set(num(th.spacingKm, 0));
-		var back = scaled(th.returnT * 1e3, MASS);
-		f = scaled(th.cargoT * 1e3, MASS); rCargo.set(f[0], "plus " + back[0] + " " + back[1] + " returning", f[1]);
-		f = scaled(th.addedTension, FORCE);
-		rDT.set(f[0], num(th.addedTensionPct, 2) + "% of the tension at the centre", f[1]);
-		f = scaled(th.liftPower, POWER);
-		rPow.set(f[0], th.liftPower < 0 ? "Negative: moving away from the centre of mass regenerates more than climbing toward it costs." : routeText.charAt(0).toUpperCase() + routeText.slice(1) + ", net of regeneration, at drive efficiency.", f[1]);
-		rEpt.set(num(th.energyPerT, 2));
-
 		// station-keeping
 		var sk = t.keeping, tq = scaled(sk.torque, TORQUE);
-		f = scaled(sk.thrust, FORCE); rThrust.set(f[0], (sk.thrust < 0 ? "negative: cargo carried inward speeds the orbit, so the engines brake" : "cancels climber drag") + " · torque " + tq[0] + " " + tq[1], f[1]);
-		rProp.set(num(sk.propFlow * 86400 / 1e3, 2), (propIn.value === "oxygen" ? "Oxygen" : "Hydrogen") + " · " + num(sk.propFlow, 2) + " kg/s · " + num(sk.propPerCargo, 2) + " t per t of cargo");
+		f = scaled(sk.thrust, FORCE); rThrust.set(f[0], (sk.thrust < 0 ? "negative: the net traffic carried inward speeds the orbit, so the engines brake" : "cancels the traffic's drag on the orbit") + " · torque " + tq[0] + " " + tq[1], f[1]);
+		rProp.set(num(sk.propFlow * 86400 / 1e3, 2), (propIn.value === "oxygen" ? "Oxygen" : "Hydrogen") + " · " + num(sk.propFlow, 2) + " kg/s · " + num(sk.propPerCargo, 2) + " t per t released");
 		var orbitP = scaled(sk.orbitPower, POWER);
 		f = scaled(sk.jetPower, POWER); rJet.set(f[0], "at " + num(sk.vExhaust / 1e3, 0) + " km/s exhaust · useful orbit power " + orbitP[0] + " " + orbitP[1], f[1]);
 		f = scaled(sk.elecPower, POWER); rElec.set(f[0], null, f[1]);
@@ -580,7 +514,6 @@ export function mountHangingSkyhook(root, opts) {
 		var stUsed = [[recvSt, num(S.recv, 0)], [outerSt, num(S.outer, 1)], [releaseSt, num(S.release, 0)]].filter(function (x) { return x[0].use.checked; });
 		stCard.setSummary(stUsed.length ? stUsed.map(function (x) { return x[1]; }).join(" · ") + " km · " + num((ld.stationsUpper + ld.stationsLower) / 1e6, 0) + " kt" : "none");
 		payCard.setSummary(num((t.loads.upperTotal + t.loads.lowerTotal + t.loads.com) / 1e6, 0) + " kt" + (anc ? " + " + anc.name : ""));
-		thrCard.setSummary(num(field(rateIn, 0), 0) + " t/day · " + routeText);
 		kpCard.setSummary((propIn.value === "oxygen" ? "O₂" : "H₂") + " · " + vExIn.value + " km/s");
 		relCard.setSummary(t.hitsSurface ? num(t.hitTheGround, 0) + " m/s at " + num(t.collisionAngle * 180 / Math.PI, 1) + "°" : "does not land");
 		var sMass = scaled(t.tetherMass, KT), sTens = scaled(t.tensionPeak, [[0, 1e6, "MN"]]);
@@ -589,7 +522,6 @@ export function mountHangingSkyhook(root, opts) {
 		clmCard.setSummary(num(t.lowIntegral / 1e3, 0) + " kJ/kg uphill");
 		var peakStrain = figs.reduce(function (m, x) { return Math.max(m, x.tension); }, 0), pk = scaled(peakStrain, FORCE, 0);
 		stOCard.setSummary("peak strain " + pk[0] + " " + pk[1]);
-		thrOCard.setSummary(num(th.perDay, 1) + "/day · " + hours(th.tripDays).join(" ") + " trip");
 		f = scaled(sk.genPower, POWER); kpOCard.setSummary(f[0] + " " + f[1]);
 		reOCard.setSummary(reShow && re.entry && re.atmosphere ? "~" + num(re.peakG, 0) + " g peak" : "—");
 		// the release points that lie on the tether, filled into at most two lines of about LINE characters
@@ -666,9 +598,6 @@ export function mountHangingSkyhook(root, opts) {
 	var gTaper = g("path", { fill: "#EADFCF", "fill-opacity": 0.92 });
 	var gStTicks = g("path", A({ stroke: C.ochre.draw, "stroke-width": 2.5 }));
 	var tSt = [0, 1, 2].map(function () { return g("text", { fill: C.ochre.draw, "font-family": "Instrument Sans, sans-serif" }); });
-	var gClimber = g("rect", { fill: C.teal.draw });
-	var gClArrow = g("path", A({ fill: "none", stroke: "#1D1814", "stroke-width": 1.6 }));
-	var tClimber = g("text", { fill: C.teal.draw, "font-family": "Instrument Sans, sans-serif" });
 	var gLoadWedge = g("path", A({ fill: "none", stroke: C.rust.draw, "stroke-opacity": 0.8, "stroke-width": 1 }, FADE));
 	var tLoadU = g("text", { fill: C.rust.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "end" });
 	var tLoadL = g("text", { fill: C.rust.draw, "font-family": "Instrument Sans, sans-serif", "text-anchor": "end" });
@@ -864,16 +793,6 @@ export function mountHangingSkyhook(root, opts) {
 		});
 		tSt.forEach(function (tx, i) { if (i >= decks.length) show(tx, false); });
 
-		// climber (throughput)
-		var rt = S.route, rUp = rt.to.alt >= rt.from.alt, dy = rUp ? 2 * u : -2 * u;
-		var thrOn = any("thr", "thrO", "clm"), ca = R + rt.from.alt + 0.36 * (rt.to.alt - rt.from.alt);
-		gClimber.setAttribute("x", -5 * u); gClimber.setAttribute("y", -ca - 7.5 * u);
-		gClimber.setAttribute("width", 10 * u); gClimber.setAttribute("height", 15 * u); gClimber.setAttribute("rx", 2.5 * u);
-		gClArrow.setAttribute("d", "M" + (-2.5 * u) + " " + (-ca + dy) + "L0 " + (-ca - dy) + "L" + (2.5 * u) + " " + (-ca + dy));
-		tClimber.setAttribute("x", 14 * u); tClimber.setAttribute("y", -ca + 4 * u); tClimber.setAttribute("font-size", fsS); tClimber.setAttribute("stroke-width", 4 * u);
-		tClimber.textContent = "climber " + (rUp ? "↑ " : "↓ ") + num(field(vClimbIn, 200), 0) + " m/s · every " + num(t.throughput.spacingKm, 0) + " km";
-		[gClimber, gClArrow, tClimber].forEach(function (el) { show(el, thrOn); });
-
 		// reboost thruster at the top
 		var py = -rT - 14 * u, kpOn = any("kp", "kpO");
 		gNozzle.setAttribute("d", "M" + (-6 * u) + " " + (py - 3 * u) + "L" + (-15 * u) + " " + (py - 6 * u) + "L" + (-15 * u) + " " + (py + 6 * u) + "L" + (-6 * u) + " " + (py + 3 * u) + "Z");
@@ -893,7 +812,6 @@ export function mountHangingSkyhook(root, opts) {
 		show(mBal, !anc && !basicsAlone && base("prop", "geo", "pay", "stO")); show(tBal, ancOn);
 		var taken = [-rT, -rC, -rF];   // the speed arrows and their labels
 		if (stOn) decks.forEach(function (d) { taken.push(-(R + d[0])); });
-		if (thrOn) taken.push(-ca);
 		var yBal = -rB;
 		for (var n = 0; n < 60 && taken.some(function (y) { return Math.abs(y - yBal) < rowH; }); n++) yBal += rowH;
 		var moved = yBal - (-rB) > 4 * u;

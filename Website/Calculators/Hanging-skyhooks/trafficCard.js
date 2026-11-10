@@ -4,7 +4,8 @@
 // supply and storage, reboost engines and their propellant. ES module:
 //   import { addTrafficCard } from "./trafficCard.js";
 //   var traffic = addTrafficCard(shell, { fleet, instId, neighbours });
-//   var warnings = traffic.update(env);   // from the calculator's calc()
+//   var result = traffic.update(env);   // from the calculator's calc()
+//   // result: { warnings, balance (Traffic.balance), releasedFlow (kg/s, all that leaves the tether) }
 //
 // opts.fleet       the design's ship classes (Shared/ships.js createFleet); a
 //                  standalone calculator passes none and gets the standard classes
@@ -14,7 +15,7 @@
 //
 // env: { body, GM, omega, period, rMount, places: { foot, recv, outer, release,
 // top, anchor } (radii, m; null for an optional station not in use),
-// thruster: { eff } }.
+// thruster: { eff, vExhaust } }.
 //
 // Its energy and orbit balance is a result card of its own ("Energy and orbit
 // balance"). The Traffic card is a compact form, one line per item, its sections
@@ -69,7 +70,7 @@ function el(tag, cls, parent, text) {
 export function addTrafficCard(shell, opts) {
 	var o = opts || {};
 	var fleet = o.fleet || createFleet(null), instId = o.instId || "standalone";
-	var card = shell.addCard({ id: "trf", tab: "log", side: "in", title: "Traffic", short: "Traffic", color: C.teal, focus: "stations", feeds: ["trfO"] });
+	var card = shell.addCard({ id: "trf", tab: "log", side: "in", title: "Traffic", short: "Traffic", color: C.teal, focus: "stations", feeds: ["trfO", "kpO"] });
 	// The balance is a result card of its own, in the results column.
 	var balCard = shell.addCard({ id: "trfO", tab: "log", side: "out", title: "Energy and orbit balance", short: "Balance", color: C.teal, focus: "stations" });
 	card.el.classList.add("tf-card");
@@ -569,7 +570,7 @@ export function addTrafficCard(shell, opts) {
 		S.outFar.ferry.set(ferry(env, "freighter", nF, avgEmpty(farF), dF, inFar, rF, outFar, hauls));
 
 		// balance
-		var b = Traffic.balance(hauls, { period: env.period, climberEff: null, thrusterEff: env.thruster.eff });
+		var b = Traffic.balance(hauls, { period: env.period, climberEff: null, thrusterEff: env.thruster.eff, vExhaust: env.thruster.vExhaust });
 		setSigned(S.eOrbit, b.energyOrbit, ENERGY);
 		setSigned(S.eYear, b.energyYear, ENERGY);
 		S.cEff.set("—", "");
@@ -579,7 +580,7 @@ export function addTrafficCard(shell, opts) {
 
 		card.setSummary(num(inYear, 0) + " kt/yr in · " + num(prodBudget, 0) + " kt/yr out");
 		balCard.setSummary(signed(b.energyYear, ENERGY).slice(0, 2).join(" ") + "/yr · " + signed(b.impulseYear, IMPULSE).slice(0, 2).join(" ") + "/yr");
-		return warnings;
+		return { warnings: warnings, balance: b, releasedFlow: (prodYear + surfYear) * 1e6 / YEAR };   // kt/yr to kg/s
 	}
 
 	return { card: card, update: update };

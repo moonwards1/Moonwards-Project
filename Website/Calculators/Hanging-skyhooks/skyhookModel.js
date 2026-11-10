@@ -1,6 +1,6 @@
 // Hanging skyhook model — the pure physics of a vertical (non-rotating)
 // gravity-gradient tether. ES module, no DOM, so it runs in Node:
-//   import { computeSkyhook, PROPELLANT_MAX } from "./skyhookModel.js";
+//   import { computeSkyhook, stationKeeping, exhaustSpeed, PROPELLANT_MAX } from "./skyhookModel.js";
 //
 // Tether materials are Shared/materials.js.
 //
@@ -28,13 +28,6 @@
 //                              from (Shared/body-profiles.js ANCHORS). It takes the anchor
 //                              station's place: the two halves need not balance, since the moon
 //                              holds the difference, and comMass is ignored
-//   cargoFrom, cargoTo         altitudes, m, or "anchor" for the anchor station wherever the balance
-//                              places it: the cargo route, where climbers join the cable and
-//                              where they deliver; omitted for foot → top. Either direction
-//   rate                       delivery rate along the route, t/day
-//   perClimber                 t;  vClimb m/s;  effDrive 0–1
-//   propellant                 "oxygen" | "hydrogen";  vExhaust km/s
-//   effThruster, effSupply     0–1
 //   ifaceAlt                   km above the parent body: where its atmosphere starts (entry at the parent planet)
 
 import { OrbitalMath } from "../../Shared/math-utils.js";
@@ -43,8 +36,10 @@ import { Const } from "../../Shared/constants.js";
 // Viable mature-engine exhaust-speed ceilings, km/s.
 export const PROPELLANT_MAX = { oxygen: 20, hydrogen: 80 };
 
-// Share of the delivery rate that comes back along the route, destination → origin.
-export const DESCENT_SHARE = 0.01;
+// Exhaust speed in m/s: the chosen km/s, held to the propellant's ceiling.
+export function exhaustSpeed(propellant, kmPerS) {
+	return Math.min(kmPerS, PROPELLANT_MAX[propellant]) * 1000;
+}
 
 // Tension and tether mass of a constant-stress tether, built up from one tip inward
 // to rEnd. All radii are from the body's centre, m.
@@ -322,61 +317,35 @@ export function computeSkyhook(moon, inp) {
 	// ---- release points: altitude where a release reaches each neighbour ----
 	t.targets = releaseTargets(moon, t);
 
-	// ---- throughput along the cargo route, origin → destination, with a return stream ----
-	var rateTpd = inp.rate, mC = inp.perClimber, vC = inp.vClimb, eff = inp.effDrive;
-	var end = function (v, dflt) { return v == null ? dflt : v === "anchor" ? t.centre + t.comOffset : v; };
-	var rFrom = end(inp.cargoFrom, t.foot) + R, rTo = end(inp.cargoTo, t.top) + R;
-	if (rFrom === rTo) warnings.push("The cargo route starts and ends at the same place.");
-	if (Math.min(rFrom, rTo) < t.foot + R || Math.max(rFrom, rTo) > t.top + R) warnings.push("The cargo route must lie between the foot and the top.");
-	var L = Math.abs(rTo - rFrom), rLo = Math.min(rFrom, rTo), rHi = Math.max(rFrom, rTo), rC = t.centre + R;
-	var th = { from: rFrom - R, to: rTo - R, up: rTo >= rFrom };
-	th.tripDays = (L / vC) / 86400;   // one way; the return stream takes as long
-	th.perDay = rateTpd / mC;
-	th.intervalH = 24 / th.perDay;
-	th.onCable = th.perDay * th.tripDays;
-	th.cargoT = rateTpd * th.tripDays;
-	th.returnRate = rateTpd * DESCENT_SHARE;
-	th.returnT = th.returnRate * th.tripDays;
-	th.spacingKm = (L / 1e3) / Math.max(th.onCable, 1e-9);
-	// Cargo on the cable adds its weight to the tension at the centre of mass: the
-	// part of the route below the centre pulls inward, the part above pulls outward.
-	var below = rLo < rC ? integral(rLo, Math.min(rHi, rC)) : 0;
-	var above = rHi > rC ? integral(Math.max(rLo, rC), rHi) : 0;
-	var lambda = L > 0 ? (th.cargoT + th.returnT) * 1e3 / L : 0;
-	th.addedTension = lambda * (below + above);
-	th.addedTensionPct = 100 * th.addedTension / t.tensionPeak;
-	th.massFlow = rateTpd * 1e3 / 86400;
-	// Energy per kg is the change in effective potential, highest at the centre of mass:
-	// climbing toward it costs, moving away from it regenerates.
-	var netLift = OrbitalMath.specificPotential(GM, t.angularVelocity, rTo) - OrbitalMath.specificPotential(GM, t.angularVelocity, rFrom);
-	th.liftPower = netLift * th.massFlow / eff;
-	th.energyPerT = netLift / eff / 1e6;   // GJ/t
-	t.throughput = th;
-
-	// ---- station-keeping: reboost thrust at the top cancels the climbers' drag ----
-	// Cargo carried outward takes angular momentum from the orbit: the drain is
-	// mdot·ω·(r_to² − r_from²), less the return stream's share. Cargo carried inward
-	// adds angular momentum, so the thrust is negative: the engines brake instead.
-	var w = t.angularVelocity, r_mount = t.top + R;
-	var sk = {};
-	sk.vMount = w * r_mount;
-	sk.torque = th.massFlow * (1 - DESCENT_SHARE) * w * (rTo * rTo - rFrom * rFrom);
-	sk.thrust = sk.torque / r_mount;
-	sk.orbitPower = Math.abs(sk.thrust) * sk.vMount;   // the engines work as hard to brake as to boost
-	sk.vExhaust = Math.min(inp.vExhaust, PROPELLANT_MAX[inp.propellant]) * 1000;
-	sk.propFlow = Math.abs(sk.thrust) / sk.vExhaust;
-	sk.jetPower = 0.5 * Math.abs(sk.thrust) * sk.vExhaust;
-	sk.elecPower = sk.jetPower / inp.effThruster;
-	sk.genPower = sk.elecPower / inp.effSupply;
-	sk.propPerCargo = sk.propFlow / Math.max(th.massFlow, 1e-12);
-	sk.energyPerT = sk.genPower / Math.max(th.massFlow, 1e-12) / 1e6;   // GJ/t
-	t.keeping = sk;
-
 	// ---- Earth reentry of cargo released from the release deck (patched conic) ----
 	t.reentry = reentry(moon, t, inp);
 
 	t.warnings = warnings;
 	return t;
+}
+
+// Station-keeping: the reboost engines at the top hold the orbit against the net
+// drag of the traffic. Their thrust, power and propellant are the Traffic card's
+// balance (Traffic.balance with the exhaust speed and thruster efficiency given);
+// this adds the orbit's own power, the generated power and the energy per tonne.
+//   b      the balance: { force, reboostPower, propFlow }
+//   env    { omega, rMount, releasedFlow, vExhaust, effThruster, effSupply }
+//          omega rad/s, rMount m from the body's centre, releasedFlow kg/s (all the
+//          tonnage released from the tether), vExhaust m/s, efficiencies 0–1
+//   τ = F · r_mount;   P_orbit = |F| · ω · r_mount;   P_jet = η_th · P_elec;
+//   P_gen = P_elec / η_sup;   energy per tonne = P_gen / ṁ_released
+// A negative thrust means the net traffic speeds the orbit and the engines brake;
+// they work as hard to brake as to boost.
+export function stationKeeping(b, env) {
+	var sk = { thrust: b.force, vExhaust: env.vExhaust, propFlow: b.propFlow, elecPower: b.reboostPower };
+	sk.vMount = env.omega * env.rMount;
+	sk.torque = b.force * env.rMount;
+	sk.orbitPower = Math.abs(b.force) * sk.vMount;
+	sk.jetPower = b.reboostPower * env.effThruster;
+	sk.genPower = b.reboostPower / env.effSupply;
+	sk.propPerCargo = env.releasedFlow > 0 ? b.propFlow / env.releasedFlow : NaN;   // t per t released
+	sk.energyPerT = env.releasedFlow > 0 ? sk.genPower / env.releasedFlow / 1e6 : NaN;   // GJ/t released
+	return sk;
 }
 
 function releaseTargets(moon, t) {
