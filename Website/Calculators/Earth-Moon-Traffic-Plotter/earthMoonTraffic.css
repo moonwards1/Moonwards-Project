@@ -50,6 +50,14 @@ html, body {
 	position: absolute; left: 12px; top: 10px; z-index: 3; pointer-events: none;
 	font-size: 11px; letter-spacing: 0.05em; color: #8b94a7; text-shadow: 0 1px 2px #000;
 }
+#emt-follow {
+	position: absolute; left: 12px; top: 30px; z-index: 4; cursor: pointer;
+	font: inherit; font-size: 12px; padding: 4px 9px; display: inline-flex; gap: 8px; align-items: center;
+	background: rgba(20,26,40,0.85); color: #e6ebf4; border: 1px solid #5aa9ff; border-radius: 6px;
+}
+#emt-follow[hidden] { display: none; }
+#emt-follow:hover { background: rgba(36,53,89,0.95); }
+.emt-follow-x { color: #9fb6ff; }
 #emt-view-hud {
 	position: absolute; left: 12px; bottom: 10px; z-index: 3; pointer-events: none;
 	font-size: 12px; color: #8b94a7; text-shadow: 0 1px 2px #000;

@@ -54,6 +54,17 @@ the catch altitude or the hardware change. It does not reduce the trim burn:
 that depends on the date (the tether turns in Earth's equatorial plane, and the
 ship arrives in a plane set by where the Moon is) and on the catch altitude.
 
+## Pointing at the scene
+
+A single click on anything — Earth, the Moon, the ship, a skyhook's centre of
+mass, top, release point or catch point — makes the camera follow it; the label
+in the view's corner names it, and its ✕ or a right-drag pan lets go. Dragging
+the ship moves it along its path with the camera on it, the way a map is
+dragged: the ship stays centred and the scene scrolls. Double-clicking the path
+puts the ship at that point. The Flight slider is linear in time. **Hold skyhook
+phase** keeps the departure tether's angle to the Earth direction fixed while the
+date changes. Shift (¼) and Ctrl (1/10) slow any slider and the ship drag.
+
 ## Defaults
 
 The skyhooks' default altitudes are the example design exported from the home

@@ -22,6 +22,13 @@
  * the tether at the catch altitude, and keeps doing so as the date, the catch
  * altitude or the hardware change. Moving the release by hand returns to Free.
  *
+ * POINTING AT THE SCENE. A single click on anything — Earth, the Moon, the
+ * ship, a skyhook's markers — makes the camera follow it; a right-drag pan
+ * lets go. Dragging the ship moves it along its path with the camera on it,
+ * the way a map is dragged: the scene scrolls and the ship stays centred.
+ * Double-clicking the path puts the ship there. The Flight slider is plain
+ * linear time, for scrubbing while the camera stays on something else.
+ *
  * HOLD SKYHOOK PHASE keeps the departure tether's angle to the Earth
  * direction fixed while the date changes: the release time is moved to the
  * next instant the tether points that way, so scrubbing the date sliders shows
@@ -40,7 +47,8 @@ import { planeBasis } from "../../Shared/kinematic-chain.js";
 import { moonGeoVel } from "../../Shared/geo-leg.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
 import { createDateBar, bindFineDrag } from "../../Shared/sim/date-bar.js";
-import { makePoint, updateScales, updateLabels, worldSizeAtPointForPx } from "../../Shared/sim/body-renderer.js";
+import { makePoint, updateScales, updateLabels, worldSizeAtPointForPx, projectedRadiusPx }
+	from "../../Shared/sim/body-renderer.js";
 import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card.js";
 import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
 import { CLOCK_EPOCH, FACILITIES, skyhookFigures, phaseAt, tetherAxes, relativePhase, nextPhaseMatch }
@@ -85,7 +93,10 @@ var STUBS = [
 var state = {
 	jd: JD0, baseDays: 0,              // the date bar's own fields (Shared/sim/date-bar.js)
 	relFrac: 0,                        // release time, as a fraction of one departure-skyhook orbit
-	flightFrac: 0,                     // flight slider position, 0..1
+	flightBy: "frac",                  // what holds the flight clock: the slider's "frac", or a "time" set in the view
+	flightFrac: 0,                     // flight slider position, 0..1 (flightBy "frac")
+	flightT: 0,                        // seconds since release (flightBy "time": a drag or a double-click)
+	follow: "Earth",                   // what the camera stays on: "Earth" | "Moon" | "ship" | "<facility>:<marker>" | null
 	from: "moonSkyhook",
 	to: null,                          // destination facility id, or null for an open path
 	hold: false,                       // "Hold skyhook phase": keep the departure tether's angle to its partner body
@@ -118,14 +129,25 @@ function releaseJd() {
 	return state.jd + (fig && fig.ok ? state.relFrac * fig.period / DAY : 0);
 }
 function arrival() { return flight && flight.ok && flight.arrival && flight.arrival.found ? flight.arrival : null; }
-// The flight slider. With a destination it runs from the release to the
-// closest pass, easing at both ends so the departure and the catch can each
-// be scrubbed second by second. On an open path it is cubic in time: an
-// escape runs for months, and the interesting part is the first hours.
+// The flight clock, seconds since release. The slider is linear: from the
+// release to the closest pass when there is a destination, else over the whole
+// drawn path. Held as the slider's fraction, it stays at "the closest pass"
+// while the release is changed; a drag or double-click in the view sets a
+// time outright, and may go on past the closest pass.
+function flightSpan() {
+	if (!flight || !flight.ok) { return 0; }
+	var a = arrival();
+	return a ? a.t : flight.final.duration;
+}
 function flightSeconds() {
 	if (!flight || !flight.ok) { return 0; }
-	var f = state.flightFrac, a = arrival();
-	return a ? a.t * f * f * (3 - 2 * f) : flight.final.duration * f * f * f;
+	if (state.flightBy === "time") { return Math.max(0, Math.min(flight.final.duration, state.flightT)); }
+	return flightSpan() * state.flightFrac;
+}
+function setFlightTime(t) {
+	state.flightBy = "time";
+	state.flightT = Math.max(0, Math.min(flight && flight.ok ? flight.final.duration : 0, t));
+	refresh({ sceneOnly: true });
 }
 function sceneJd() { return releaseJd() + flightSeconds() / DAY; }
 
@@ -155,6 +177,7 @@ function toScene(r) { return new THREE.Vector3(r[0] / U, r[1] / U, r[2] / U); }
 // ---- scene ----------------------------------------------------------------------
 var frame = buildEarthMoonFrame();
 frame.zoomMax = ZOOM_MAX;
+frame.focusBody = null;                // this page keeps the camera on its own follow target (below)
 var renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 holder.appendChild(renderer.domElement);
@@ -163,7 +186,8 @@ holder.appendChild(frame.labelLayer);
 var facilityGroups = {};               // facility id -> THREE.Group under its body's node
 var releaseMesh = null;                // the origin's draggable release marker
 var trajObjects = [];                  // what drawTrajectory added, for removal
-var chevron = makeShipSprite(), chevronDir = new THREE.Vector3(1, 0, 0);
+var chevron = makeShipSprite(), chevronDir = new THREE.Vector3(1, 0, 0), chevronSpeed = 1;
+var markers = {};                      // follow-target id -> { pos (world), label }: the skyhooks' drawn markers
 chevron.visible = false;
 frame.scene.add(chevron);
 
@@ -187,6 +211,7 @@ function drawFacility(id) {
 	var node = frame.bodyNode(FACILITIES[id].body);
 	if (facilityGroups[id]) { node.remove(facilityGroups[id]); disposeTree(facilityGroups[id]); delete facilityGroups[id]; }
 	if (id === state.from) { releaseMesh = null; }
+	Object.keys(markers).forEach(function (k) { if (k.indexOf(id + ":") === 0) { delete markers[k]; } });
 	var fig = figs[id];
 	if (!fig || !fig.ok) { return; }
 	var grp = new THREE.Group();
@@ -232,6 +257,16 @@ function drawFacility(id) {
 		var half = 0.03 * fig.rTop / U, at = along.clone().multiplyScalar(fig.rCatch / U);
 		grp.add(lineOf([at.clone().addScaledVector(pro, -half), at.clone().addScaledVector(pro, half)], COLOR.catchPoint, 1));
 	}
+	// What a click can follow: each marker this skyhook draws.
+	function mark(name, label, r) {
+		markers[id + ":" + name] = { pos: node.position.clone().addScaledVector(along, r / U),
+		                             label: FACILITIES[id].label + " · " + label };
+	}
+	if (showFac.checked) {
+		mark("com", "centre of mass", fig.rCom); mark("top", "top", fig.rTop);
+		if (id === state.from) { mark("release", "release point", fig.rRel); }
+		if (id === state.to) { mark("catch", "catch point", fig.rCatch); }
+	}
 	grp.visible = showFac.checked;
 	node.add(grp);
 	facilityGroups[id] = grp;
@@ -275,21 +310,110 @@ function placeShip() {
 	// Nose along the drawn path: Moon-relative motion on a Moon-bound ellipse.
 	var v = flight.final.kind === "moonEllipse" ? O.vSub(s.v, moonGeoVel(s.jde)) : s.v;
 	chevronDir.set(v[0], v[1], v[2]).normalize();
+	chevronSpeed = Math.max(1, O.vMag(v));     // m/s along the path as drawn
 }
 
 // ---- camera ---------------------------------------------------------------------
-function setPov(name) {
-	var p = POVS[name];
-	state.pov = name;
-	frame.focusBody = p.focus;
-	frame.cam.radius = p.radius;
-	frame.place(sceneJd());
-	syncPovButtons();
+// ---- camera: following, picking, dragging ------------------------------------------
+var ORIGIN = new THREE.Vector3(0, 0, 0);
+var followEl = $("emt-follow");
+var glide = 0;                         // frames left of easing onto a new follow position
+var ring = (function () {              // the mark around whatever is followed
+	var cv = document.createElement("canvas");
+	cv.width = cv.height = 64;
+	var ctx = cv.getContext("2d");
+	ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3;
+	ctx.beginPath(); ctx.arc(32, 32, 28, 0, 2 * Math.PI); ctx.stroke();
+	var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv),
+		depthTest: false, depthWrite: false, transparent: true, opacity: 0.75 }));
+	sp.renderOrder = 14; sp.visible = false;
+	frame.scene.add(sp);
+	return sp;
+})();
+
+// World position of a follow target, or null when it is not in the scene.
+function targetPos(id) {
+	if (id === "Earth") { return ORIGIN; }
+	if (id === "Moon") { return frame.bodyNode("Moon").position; }
+	if (id === "ship") { return chevron.visible ? chevron.position : null; }
+	return markers[id] ? markers[id].pos : null;
 }
-function syncPovButtons() {
+function targetLabel(id) {
+	return id === "ship" ? "the ship" : (markers[id] ? markers[id].label : id);
+}
+function zoomMin() { return state.follow === "Earth" ? 8 : (state.follow === "Moon" ? 2.2 : 0.3); }
+
+// Keep the camera on `id` from now on (null: let go). `pov` names the POV
+// button this came from, if any; any other follow clears the buttons.
+function setFollow(id, pov) {
+	if (id !== state.follow) { glide = 18; }
+	state.follow = id;
+	state.pov = pov || null;
+	frame.cam.radius = Math.max(zoomMin(), frame.cam.radius);
+	syncFollow();
+}
+function syncFollow() {
+	followEl.hidden = !state.follow;
+	followEl.firstChild.textContent = state.follow ? "Following: " + targetLabel(state.follow) : "";
 	Array.prototype.forEach.call($("emt-pov").children, function (btn) {
 		btn.setAttribute("aria-pressed", String(btn.dataset.pov === state.pov));
 	});
+}
+function setPov(name) {
+	var p = POVS[name];
+	frame.cam.radius = p.radius;
+	setFollow(p.focus, name);
+}
+// Per frame: hold the camera's centre on the followed thing, easing onto it
+// for a moment after a change. A target that has left the scene is let go.
+function applyFollow() {
+	ring.visible = false;
+	if (!state.follow) { return; }
+	var pos = targetPos(state.follow);
+	if (!pos) { state.follow = null; state.pov = null; syncFollow(); return; }
+	if (glide > 0) { frame.cam.target.lerp(pos, 0.25); glide--; } else { frame.cam.target.copy(pos); }
+	if (state.follow !== "Earth" && state.follow !== "Moon") {
+		ring.visible = true;
+		ring.position.copy(pos);
+		ring.scale.setScalar(worldSizeAtPointForPx(frame.camera, holder, pos, 40));
+	}
+}
+
+// Screen position (CSS px within the view) of a world point; z > 1 is behind the camera.
+var _sp = new THREE.Vector3();
+function screenOf(pos) {
+	var w = holder.clientWidth, h = holder.clientHeight;
+	_sp.copy(pos).project(frame.camera);
+	return { x: (_sp.x * 0.5 + 0.5) * w, y: (-_sp.y * 0.5 + 0.5) * h, z: _sp.z };
+}
+function cursorOf(e) {
+	var rect = renderer.domElement.getBoundingClientRect();
+	return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+function pxBetween(pos, c) {
+	var s = screenOf(pos);
+	return s.z > 1 ? Infinity : Math.hypot(s.x - c.x, s.y - c.y);
+}
+
+// What a click at the cursor would follow, or null. The ship comes first,
+// then the skyhooks' markers, then the bodies — small things over large — and
+// the nearest within each. A body is hit anywhere on its disc.
+function pickTarget(e) {
+	var c = cursorOf(e);
+	if (chevron.visible && pxBetween(chevron.position, c) < 14) { return "ship"; }
+	var best = null, bestD = 11;
+	Object.keys(markers).forEach(function (id) {
+		var d = pxBetween(markers[id].pos, c);
+		if (d < bestD) { bestD = d; best = id; }
+	});
+	if (best) { return best; }
+	[["Moon", frame.bodyNode("Moon").position, 1737.1], ["Earth", ORIGIN, 6371]].forEach(function (b) {
+		var reach = Math.max(10, projectedRadiusPx(frame.camera, holder, b[2] * 1e3 / U,
+			frame.camera.position.distanceTo(b[1]) || 1e-9));
+		var d = pxBetween(b[1], c);
+		if (d < reach && (best === null || d < bestD)) { bestD = d; best = b[0]; }
+	});
+	return best;
 }
 
 function cursorRay(e) {
@@ -301,13 +425,11 @@ function cursorRay(e) {
 }
 function hitRelease(e) {
 	if (!releaseMesh || !showFac.checked) { return false; }
-	var rect = renderer.domElement.getBoundingClientRect();
 	var wp = new THREE.Vector3();
-	releaseMesh.getWorldPosition(wp).project(frame.camera);
-	if (wp.z > 1) { return false; }
-	return Math.hypot((wp.x * 0.5 + 0.5) * rect.width - (e.clientX - rect.left),
-		(-wp.y * 0.5 + 0.5) * rect.height - (e.clientY - rect.top)) < 16;
+	releaseMesh.getWorldPosition(wp);
+	return pxBetween(wp, cursorOf(e)) < 16;
 }
+function hitShip(e) { return chevron.visible && pxBetween(chevron.position, cursorOf(e)) < 14; }
 // Drag the release marker: the point on the tether's line nearest the cursor
 // ray sets the release altitude, kept between the foot and the top.
 function dragRelease(e) {
@@ -323,22 +445,100 @@ function dragRelease(e) {
 	p.relAlt = Math.max(p.footAlt, Math.min(p.topAlt, t * U - ud.fig.R));
 	refresh({ userRelease: true });
 }
+// Drag the ship along its path. The camera is on the ship, so the ship stays
+// at the centre and the scene scrolls, as a dragged map does: each mouse
+// movement, measured along the path's direction on screen, advances the ship
+// by that many pixels' worth of path. Shift and Ctrl slow it as on the sliders.
+//
+//     dt = (dx * tx + dy * ty) * metresPerPixel / speed
+//
+//     dx, dy           the mouse movement, px
+//     tx, ty           unit vector of the path's direction on screen
+//     metresPerPixel   at the ship's distance from the camera
+//     speed            the ship's speed along the path as drawn, m/s
+//
+// Where the path points almost straight at the camera it has no direction on
+// screen, and left-right movement is used.
+function dragShip(e, dx, dy) {
+	var perPx = worldSizeAtPointForPx(frame.camera, holder, chevron.position, 1);
+	var a = screenOf(chevron.position);
+	var bPos = chevron.position.clone().addScaledVector(chevronDir, perPx * 40), b = screenOf(bPos);
+	var tx = b.x - a.x, ty = b.y - a.y, len = Math.hypot(tx, ty);
+	if (len < 8) { tx = 1; ty = 0; } else { tx /= len; ty /= len; }
+	var slow = e.ctrlKey ? SLOW_DRAG.ctrl : (e.shiftKey ? SLOW_DRAG.shift : 1);
+	setFlightTime(flightSeconds() + (dx * tx + dy * ty) * slow * perPx * U / chevronSpeed);
+}
+// Flight time (s) of the point of the drawn path under the cursor, within
+// 10 px, or null. Where the path passes under the cursor twice, the earlier.
+function pathTimeAt(e) {
+	if (!flight || !flight.ok || !showTraj.checked) { return null; }
+	var c = cursorOf(e), leg = flight.final, a = leg.samples;
+	var off = leg.kind === "moonEllipse" ? frame.bodyNode("Moon").position : ORIGIN;
+	var v = new THREE.Vector3(), prev = null, bestD = 10, bestT = null;
+	for (var k = 0; k < a.length; k++) {
+		v.set(a[k].r[0] / U, a[k].r[1] / U, a[k].r[2] / U).add(off);
+		var s = screenOf(v), cur = { x: s.x, y: s.y, z: s.z, t: a[k].t };
+		if (prev && prev.z <= 1 && cur.z <= 1) {
+			var ex = cur.x - prev.x, ey = cur.y - prev.y, L2 = ex * ex + ey * ey;
+			var f = L2 > 0 ? Math.max(0, Math.min(1, ((c.x - prev.x) * ex + (c.y - prev.y) * ey) / L2)) : 0;
+			var d = Math.hypot(prev.x + f * ex - c.x, prev.y + f * ey - c.y);
+			if (d < bestD - 0.5) { bestD = d; bestT = prev.t + f * (cur.t - prev.t); }
+		}
+		prev = cur;
+	}
+	return bestT;
+}
 
 bindCameraControls(renderer.domElement, function () {
 	return {
 		cam: frame.cam, camera: frame.camera,
-		zoomMin: frame.focusBody === "Earth" ? 8 : 2.2, zoomMax: ZOOM_MAX,
+		zoomMin: zoomMin(), zoomMax: ZOOM_MAX,
 		shiftZoom: true,
-		isLocked: function () { return !!frame.focusBody; },
+		isLocked: function () { return !!state.follow; },
 		pickPoint: function (e) {
 			return raycastPickPoint(frame.camera, renderer.domElement, e,
 				{ meshes: frame.pickMeshes, soiSpheres: frame.pickSoiSpheres });
 		},
-		onPan: function () { frame.focusBody = null; state.pov = null; syncPovButtons(); },
-		captureDrag: function (e) { return e.button === 0 && hitRelease(e) ? "release" : null; },
-		onCapturedMove: function (e) { dragRelease(e); }
+		onPan: function () { if (state.follow) { setFollow(null); } },
+		// A press on the ship or the release marker is theirs: moved, it drags
+		// them; let go where it was pressed, it is a click and follows them. At
+		// the very start of a flight the two sit together, and the marker wins.
+		captureDrag: function (e) {
+			if (e.button !== 0) { return null; }
+			var onRelease = hitRelease(e), onShip = hitShip(e);
+			if (!onRelease && !onShip) { return null; }
+			return { kind: onRelease && (!onShip || flightSeconds() === 0) ? "release" : "ship",
+			         x: e.clientX, y: e.clientY, travel: 0 };
+		},
+		onCapturedMove: function (e, tok) {
+			var dx = e.clientX - tok.x, dy = e.clientY - tok.y;
+			tok.x = e.clientX; tok.y = e.clientY;
+			tok.travel += Math.abs(dx) + Math.abs(dy);
+			if (tok.travel < 3) { return; }
+			if (tok.kind === "release") { dragRelease(e); return; }
+			if (state.follow !== "ship") { setFollow("ship"); }
+			dragShip(e, dx, dy);
+		},
+		onCapturedEnd: function (e, tok) {
+			if (tok.travel < 3) { setFollow(tok.kind === "ship" ? "ship" : state.from + ":release"); }
+		},
+		onPick: function (e) {
+			var id = pickTarget(e);
+			if (id) { setFollow(id); }
+		},
+		onDoubleClick: function (e) {
+			var t = pathTimeAt(e);
+			if (t !== null) { glide = 18; setFlightTime(t); }
+		}
 	};
 });
+// The cursor says what a press would do: a hand over anything a click follows,
+// a grab over the two things that drag.
+renderer.domElement.addEventListener("mousemove", function (e) {
+	if (e.buttons) { return; }
+	renderer.domElement.style.cursor = (hitShip(e) || hitRelease(e)) ? "grab" : (pickTarget(e) ? "pointer" : "");
+});
+followEl.addEventListener("click", function () { setFollow(null); });
 
 function resize() {
 	var w = holder.clientWidth || 600, h = holder.clientHeight || 400;
@@ -351,6 +551,7 @@ function resize() {
 
 function animate() {
 	requestAnimationFrame(animate);
+	applyFollow();
 	updateCamera(frame.camera, frame.cam);
 	updateScales(frame.camera, holder, frame.scaleList, { wantSOI: showSoi.checked });
 	updateLabels(frame.camera, holder, frame.labelList);
@@ -700,7 +901,8 @@ function refresh(opts) {
 
 	var fig = figs[state.from];
 	relVal.textContent = clockTime(releaseJd()) + (fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
-	var t = flightSeconds();
+	var t = flightSeconds(), fSpan = flightSpan();
+	flightSlider.value = fSpan > 0 ? Math.min(1, t / fSpan) : 0;
 	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd).slice(0, 5);
 	$("emt-flight-label").textContent = arrival() ? "Flight to closest pass" : "Flight";
 }
@@ -722,7 +924,11 @@ function init() {
 	dateBar.bind(function () { refresh(); });
 
 	function releaseMoved() { state.relFrac = parseFloat(relSlider.value); refresh({ userRelease: true }); }
-	function flightMoved() { state.flightFrac = parseFloat(flightSlider.value); refresh({ sceneOnly: true }); }
+	function flightMoved() {
+		state.flightBy = "frac";
+		state.flightFrac = parseFloat(flightSlider.value);
+		refresh({ sceneOnly: true });
+	}
 	relSlider.addEventListener("input", releaseMoved);
 	flightSlider.addEventListener("input", flightMoved);
 	bindFineDrag(relSlider, releaseMoved, null, SLOW_DRAG);
@@ -734,7 +940,7 @@ function init() {
 	});
 	function routeChanged() {
 		CARD_ORDER.forEach(function (id) { state.open[id] = id === state.from || id === state.to; });
-		state.flightFrac = 0; flightSlider.value = 0;
+		state.flightBy = "frac"; state.flightFrac = 0; flightSlider.value = 0;
 		state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0;
 		syncCards();
 		refresh();
