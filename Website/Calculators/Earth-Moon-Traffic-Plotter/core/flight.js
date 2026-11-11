@@ -29,7 +29,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { buildIntegratedLeg, buildMoonEllipseLeg, stateAtLegTime, moonGeoPos, moonGeoVel,
          SOI_MOON } from "../../../Shared/geo-leg.js";
-import { skyhookFigures, tetherPointState, phaseAt } from "./facilities.js";
+import { skyhookFigures, tetherPointState, phaseAt, bodyOffPlane } from "./facilities.js";
 import { evaluateArrival } from "./arrival.js";
 
 var O = OrbitalMath;
@@ -105,13 +105,16 @@ function summarize(leg) {
 //     maxTime  optional: fly no longer than this (s) — core/target.js's trial flights
 //     skipArrival  optional: leave `arrival` null (a trial flight judged otherwise)
 // Returns { ok: true, from, to, jd, fig, toFig, release, legs, final, summary,
-// arrival } or { ok: false, diagnostic }.
+// arrival, offPlane } or { ok: false, diagnostic }.
 //   fig       the origin's skyhookFigures
 //   release   { r, v, relR, relV, phase } — geocentric and body-relative state
 //             of the release point at jd, and the tether's clock angle (rad)
 //   legs      Shared/geo-leg.js legs in flight order (one, until burns exist)
 //   toFig     the destination's skyhookFigures, or null
 //   arrival   core/arrival.js's evaluateArrival result, or null with no destination
+//   offPlane  for a flight to another body's facility: how far that body's
+//             centre is from the origin tether's plane at the closest pass
+//             (m, facilities.js's bodyOffPlane); null otherwise
 export var FINE_STEP = { turnStep: 0.005, maxSteps: 40000 };
 export function computeFlight(input) {
 	var fig = skyhookFigures(input.from, input.params && input.params[input.from]);
@@ -139,9 +142,11 @@ export function computeFlight(input) {
 		leg = buildIntegratedLeg(rel.r, rel.v, jd, opts);
 	}
 
+	var arrival = toFig && !input.skipArrival ? evaluateArrival(leg, toFig) : null;
 	return { ok: true, from: input.from, to: input.to || null, jd: jd, fig: fig, toFig: toFig, release: rel,
-	         legs: [leg], final: leg, summary: summarize(leg),
-	         arrival: toFig && !input.skipArrival ? evaluateArrival(leg, toFig) : null };
+	         legs: [leg], final: leg, summary: summarize(leg), arrival: arrival,
+	         offPlane: arrival && arrival.found && toFig.body !== fig.body
+	         	? bodyOffPlane(fig, toFig.body, arrival.jd) : null };
 }
 
 // Geocentric state { r, v, jde } of the ship t seconds after release, clamped

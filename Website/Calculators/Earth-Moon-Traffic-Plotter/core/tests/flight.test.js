@@ -252,3 +252,64 @@ test("relativePhase is the tether's angle from its partner body, and nextPhaseMa
 	var ge = skyhookFigures("earthSkyhook"), te = nextPhaseMatch(ge, JD, 0);
 	assert.ok(O.vDot(tetherAxes(ge, te).along, O.vUnit(moonGeoPos(te))) > 0.88, "Earth tether toward the Moon");
 });
+
+// ---- Earth skyhook to Moon skyhook --------------------------------------------
+
+import { DESTINATIONS, routeReleaseAlt, bodyOffPlane } from "../facilities.js";
+
+test("each skyhook can be aimed at the other, from a release point on its tether", function () {
+	assert.deepEqual(DESTINATIONS, { moonSkyhook: ["earthSkyhook"], earthSkyhook: ["moonSkyhook"] });
+	assert.equal(routeReleaseAlt("moonSkyhook", "earthSkyhook"), 949.4e3);
+	assert.equal(routeReleaseAlt("earthSkyhook", "moonSkyhook"), 5200e3);
+	// A shortened tether keeps the release point on it.
+	assert.equal(routeReleaseAlt("earthSkyhook", "moonSkyhook", { topAlt: 5000e3 }), 5000e3);
+	assert.equal(routeReleaseAlt("earthSkyhook", "earthSkyhook"), null);
+	// Each catch point is where the other skyhook's traffic is at the tether's speed:
+	// the release there is just short of escape.
+	var e = skyhookFigures("earthSkyhook", { relAlt: 5200e3 });
+	assert.ok(e.vRel < e.vEscRel && e.vRel > 0.98 * e.vEscRel, "Earth release is nearly escape speed");
+	assert.equal(FACILITIES.moonSkyhook.defaults.catchAlt, FACILITIES.moonSkyhook.defaults.relAlt);
+});
+
+// 2080-03-31 16:37: a release that reaches the Moon as it crosses Earth's equatorial plane.
+var JD_MOON = JD + 9.6927;
+var TO_MOON = { from: "earthSkyhook", to: "moonSkyhook", jd: JD_MOON, params: { earthSkyhook: { relAlt: 5230e3 } } };
+
+test("a flight from the Earth skyhook reaches the Moon only when the Moon is in its plane", function () {
+	var near = computeFlight(TO_MOON);
+	assert.ok(near.arrival.found);
+	assert.ok(near.arrival.miss < 6000e3, "passes the Moon skyhook closely: " + near.arrival.miss);
+	assert.ok(Math.abs(near.offPlane) < 6000e3, "Moon near the release plane: " + near.offPlane);
+	within(near.offPlane, bodyOffPlane(near.fig, "Moon", near.arrival.jd), 1e-6, "offPlane is bodyOffPlane at the pass");
+	// A week earlier the Moon is far above the equator, and no release time brings the ship near it.
+	var g = skyhookFigures("earthSkyhook"), best = Infinity, off = 0;
+	for (var k = 0; k < 12; k++) {
+		var f = computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: JD_MOON - 7 + k / 12 * g.period / 86400,
+			params: TO_MOON.params, maxTime: 5 * 86400 });
+		if (f.arrival.found && f.arrival.miss < best) { best = f.arrival.miss; off = f.offPlane; }
+	}
+	assert.ok(best > 50000e3, "misses by tens of thousands of km: " + best);
+	assert.ok(Math.abs(off) > 50000e3, "Moon far from the release plane: " + off);
+	assert.equal(computeFlight({ from: "earthSkyhook", jd: JD_MOON }).offPlane, null);
+});
+
+test("Target brings an Earth skyhook release to a catch on the Moon skyhook", function () {
+	var s = solveCatch(TO_MOON);
+	assert.ok(s.ok, s.message);
+	var f = computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: s.jd, params: { earthSkyhook: { relAlt: s.relAlt } } });
+	assert.equal(f.arrival.caught, true, "miss " + f.arrival.miss);
+	within(f.arrival.altitude, 949.4e3, 200, "caught at the release deck");
+	// The ship arrives there at close to the tether's own speed.
+	within(f.arrival.shipSpeed, f.arrival.pointSpeed, 200, "ship speed against tether speed");
+});
+
+test("a ship within reach of the tether's very end is caught", function () {
+	var params = { earthSkyhook: { relAlt: 5230e3 }, moonSkyhook: { catchAlt: 2000e3 } };
+	var s = solveCatch(Object.assign({}, TO_MOON, { params: params }));
+	assert.ok(s.ok, s.message);
+	var f = computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: s.jd,
+		params: { earthSkyhook: { relAlt: s.relAlt }, moonSkyhook: { catchAlt: 2000e3 } } });
+	assert.ok(f.arrival.miss <= CATCH_REACH);
+	assert.equal(f.arrival.caught, true);
+	assert.equal(f.arrival.reason, null);
+});

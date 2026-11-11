@@ -1,4 +1,4 @@
-/* Earth–Moon Traffic Plotter — step 1: release from a skyhook, on the clock.
+/* Earth–Moon Traffic Plotter — flights between the skyhooks, on the clock.
  *
  * A to-scale 3-D view of the Earth–Moon system (the Mission Planner's
  * geocentric frame, MissionPlanner/scene-frames.js) with the system's
@@ -35,7 +35,7 @@
  * what the Moon's position alone does to the flight.
  *
  * Built so far: the two skyhooks, either one as the origin; an open path, or
- * the Earth skyhook as the destination of a flight from the Moon's.
+ * the other skyhook as the destination.
  * Next: the rotating frame, waypoint burns, the L1 elevator, the mass driver.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
@@ -51,8 +51,8 @@ import { makePoint, updateScales, updateLabels, worldSizeAtPointForPx, projected
 	from "../../Shared/sim/body-renderer.js";
 import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card.js";
 import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
-import { CLOCK_EPOCH, FACILITIES, skyhookFigures, phaseAt, tetherAxes, relativePhase, nextPhaseMatch }
-	from "./core/facilities.js";
+import { CLOCK_EPOCH, FACILITIES, DESTINATIONS, routeReleaseAlt, skyhookFigures, phaseAt, tetherAxes,
+         relativePhase, nextPhaseMatch } from "./core/facilities.js";
 import { computeFlight, flightStateAt } from "./core/flight.js";
 import { solveCatch } from "./core/target.js";
 
@@ -65,8 +65,10 @@ var START_DAYS = 81;                   // opens on 2080-03-22
 var COLOR = { top: 0x9fb6ff, com: 0xffd24a, tether: 0xeaf0ff, release: 0xff5fd0,
               Moon: 0xb060ff, Earth: 0x40d27f, Sun: 0xff9a3c,
               catchPoint: 0x3ddc84, pass: 0xffffff };
-// Which facilities a flight from each origin may be aimed at (null: open path).
-var DESTINATIONS = { moonSkyhook: [null, "earthSkyhook"], earthSkyhook: [null] };
+// A flight from the Earth skyhook has no way to the Moon skyhook while the Moon
+// is further than this from the release plane (m); inside it, the Moon's pull
+// can bend the path the rest of the way.
+var OFF_PLANE_WARN = 1e7;
 var CHEVRON_PX = 24;
 // Slider drag speeds while a key is held, on every slider of the page.
 var SLOW_DRAG = { shift: 0.25, ctrl: 0.1 };
@@ -807,7 +809,13 @@ function fillArrivalKeys(s) {
 	var a = arrival();
 	if (a) {
 		key("Flight time", span(a.t));
-		if (s.primary === "Earth" && !s.impact) { key("Perigee", km(s.periAlt)); }
+		if (flight.toFig.body === "Earth" && s.primary === "Earth" && !s.impact) { key("Perigee", km(s.periAlt)); }
+		// A release from Earth's skyhook stays near Earth's equatorial plane, so
+		// it can only meet the Moon while the Moon is crossing that plane.
+		if (flight.fig.body === "Earth" && flight.offPlane != null) {
+			key("Moon from the release plane", km(Math.abs(flight.offPlane)) + (flight.offPlane >= 0 ? " north" : " south"),
+				Math.abs(flight.offPlane) > OFF_PLANE_WARN);
+		}
 		key("Closest pass", a.miss < 1e4 ? num(a.miss) + " m" : km(a.miss), !a.caught);
 		key("At tether altitude", km(a.altitude));
 		key("Trim burn", num(a.trim) + " m/s");
@@ -948,11 +956,10 @@ function init() {
 	function fillDestinations() {
 		var sel = $("emt-to");
 		sel.textContent = "";
-		DESTINATIONS[state.from].forEach(function (id) {
+		[null].concat(DESTINATIONS[state.from]).forEach(function (id) {
 			var o = sel.appendChild(el("option", null, id ? FACILITIES[id].label : "Open path"));
 			o.value = id || "";
 		});
-		sel.disabled = DESTINATIONS[state.from].length < 2;
 		sel.value = state.to || "";
 	}
 	fillDestinations();
@@ -965,6 +972,9 @@ function init() {
 	});
 	$("emt-to").addEventListener("change", function (e) {
 		state.to = e.target.value || null;
+		// A flight to a facility starts from the release point meant for it.
+		var alt = state.to ? routeReleaseAlt(state.from, state.to, state.params[state.from]) : null;
+		if (alt !== null) { state.params[state.from].relAlt = alt; }
 		routeChanged();
 	});
 	$("emt-pov").addEventListener("click", function (e) {

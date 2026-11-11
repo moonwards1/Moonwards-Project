@@ -6,8 +6,8 @@ another. It grows out of the Moon Skyhook Trajectory Plotter and will cover
 the Moon skyhook, the L1 elevator, the lunar mass driver and the Earth skyhook.
 
 **Built so far:** the two skyhooks, a release from either one, an open path,
-and the Earth skyhook as the destination of a flight from the Moon's — judged at
-its closest pass to the tether, with Free and Target aiming. The rotating view,
+and a flight from either skyhook to the other — judged at its closest pass to
+the destination tether, with Free and Target aiming. The rotating view,
 waypoint burns, the L1 elevator and the mass driver come next.
 
 ## Files
@@ -51,8 +51,24 @@ relative to that point. The ship is caught when the miss is within 1 km.
 the two of them so the ship passes through the tether at the catch altitude,
 starting from wherever Free left the flight, and solves again whenever the date,
 the catch altitude or the hardware change. It does not reduce the trim burn:
-that depends on the date (the tether turns in Earth's equatorial plane, and the
-ship arrives in a plane set by where the Moon is) and on the catch altitude.
+that depends on the date (each tether turns in its own body's equatorial plane,
+and the ship arrives in a plane set by where the Moon is) and on the catch altitude.
+
+Choosing a destination puts the release point where that route starts from
+(`releaseFor` in `core/facilities.js`): the Moon skyhook's release deck for a
+flight to Earth, 5,200 km on the Earth skyhook for a flight to the Moon. Each is
+also that skyhook's default catch point — the place where traffic between the
+two moves at the tether's own speed.
+
+**A flight from the Earth skyhook only reaches the Moon near two dates in each
+lunar orbit.** The ship is let go in Earth's equatorial plane and stays close to
+it, so it meets the Moon only if the Moon is crossing that plane when it gets
+there. The **Moon from the release plane** figure under the view is the Moon's
+distance from that plane at the closest pass; it has to come down to a few
+thousand kilometres before a catch is possible (the Moon's pull bends the path
+the rest of the way), and is marked while it is over 10,000 km. A flight from the Moon
+skyhook has no such limit: whatever plane the ship falls toward Earth in, Earth
+is in it.
 
 ## Pointing at the scene
 
@@ -69,7 +85,8 @@ date changes. Shift (¼) and Ctrl (1/10) slow any slider and the ship drag.
 
 The skyhooks' default altitudes are the example design exported from the home
 workbench on 2026-11-10 (Moon: foot 1 km, CoM 275 km, top 2,000 km, release
-deck 949.4 km; Earth: foot 120 km, CoM 2,900 km, top 6,200 km). The tests pin
+deck 949.4 km; Earth: foot 120 km, CoM 2,900 km, top 6,200 km). The Earth
+skyhook's 5,200 km point is this plotter's own figure, not the workbench's. The tests pin
 the resulting speeds, periods and v∞ to the workbench's own figures.
 
 ## Dependencies

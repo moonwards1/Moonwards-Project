@@ -110,7 +110,8 @@ function probe(stateAt, leg, fig, t) {
 // (one that ends within minutes) — or
 //   { found: true, caught, reason, t, jd, r, v, rGeo, point, pointGeo, altitude,
 //     gap, miss, wait, pointSpeed, shipSpeed, vRel, trim, components }
-//   caught      true when the ship can be taken hold of
+//   caught      true when the ship can be taken hold of: within CATCH_REACH of
+//               the tether, its two ends included
 //   reason      null when caught, else "above-top" | "below-foot" | "off-arm"
 //   t, jd       the closest pass: seconds since release, and its Julian date
 //   r, v        the ship there, relative to the tether's body; rGeo geocentric
@@ -159,7 +160,7 @@ export function evaluateArrival(leg, fig) {
 	var D = O.vSub(p.st.r, pointR);
 	var vRel = O.vSub(p.st.v, O.vScale(p.ax.prograde, pointSpeed));
 	var miss = O.vMag(D);
-	var reason = gap > 0 ? "above-top" : (gap < 0 ? "below-foot" : (miss > CATCH_REACH ? "off-arm" : null));
+	var reason = miss <= CATCH_REACH ? null : (gap > 0 ? "above-top" : (gap < 0 ? "below-foot" : "off-arm"));
 	return {
 		found: true, caught: reason === null, reason: reason,
 		t: tc, jd: jd, r: p.st.r, v: p.st.v, rGeo: O.vAdd(base.r, p.st.r),

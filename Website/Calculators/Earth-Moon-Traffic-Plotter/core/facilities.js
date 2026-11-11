@@ -19,8 +19,8 @@
  * equatorial plane (MissionPlanner/modules/skyhook/skyhook.js's equatorPlane),
  * with phase 0 along the equinox direction projected into that plane.
  *
- * Step 1 holds the two skyhooks. The L1 elevator and the lunar mass driver
- * join this table as their own kinds.
+ * The table holds the two skyhooks. The L1 elevator and the lunar mass driver
+ * join it as their own kinds.
  *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  *
@@ -49,23 +49,38 @@ var CLOCK_REF = [1, 0, 0];
 
 // Altitudes in metres above the body's mean radius. Defaults are the example
 // design exported from the home workbench (2026-11-10). relAlt is where a ship
-// is let go when the facility is a flight's origin: the Moon skyhook's release
-// deck (its Earth release point), the Earth skyhook's top. catchAlt is where an
-// arriving ship is aimed when the facility is a flight's destination: on the
-// Earth skyhook, about where a ship falling from the Moon moves at the tether's
-// own speed (omega * r = the ship's speed there, near 5,200 km).
+// is let go when the facility is a flight's origin with no destination: the
+// Moon skyhook's release deck (its Earth release point), the Earth skyhook's
+// top. catchAlt is where an arriving ship is aimed when the facility is a
+// flight's destination.
+//
+// Each skyhook has one point where traffic to and from the other one is at the
+// tether's own speed (omega * r = the ship's speed there), so a ship can be
+// let go onto the slowest path across, or taken hold of off it, with little
+// left to trim: the Moon skyhook's release deck at 949.4 km, and near 5,200 km
+// on the Earth skyhook. That point is both the catch point and, in releaseFor,
+// where a flight to the other skyhook starts from.
+//
+// releaseFor: { <destination id>: altitude } — the release point a flight to
+// that destination starts from (routeReleaseAlt).
 export var FACILITIES = {
 	moonSkyhook: {
 		id: "moonSkyhook", kind: "skyhook", label: "Moon skyhook", body: "Moon",
 		phase0: 0,
-		defaults: { footAlt: 1e3, comAlt: 275e3, topAlt: 2000e3, relAlt: 949.4e3, catchAlt: 2000e3 }
+		defaults: { footAlt: 1e3, comAlt: 275e3, topAlt: 2000e3, relAlt: 949.4e3, catchAlt: 949.4e3 },
+		releaseFor: { earthSkyhook: 949.4e3 }
 	},
 	earthSkyhook: {
 		id: "earthSkyhook", kind: "skyhook", label: "Earth skyhook", body: "Earth",
 		phase0: 0,
-		defaults: { footAlt: 120e3, comAlt: 2900e3, topAlt: 6200e3, relAlt: 6200e3, catchAlt: 5200e3 }
+		defaults: { footAlt: 120e3, comAlt: 2900e3, topAlt: 6200e3, relAlt: 6200e3, catchAlt: 5200e3 },
+		releaseFor: { moonSkyhook: 5200e3 }
 	}
 };
+
+// Which facilities a flight from each origin may be aimed at. A flight may
+// also have no destination at all (an open path).
+export var DESTINATIONS = { moonSkyhook: ["earthSkyhook"], earthSkyhook: ["moonSkyhook"] };
 
 export function facility(id) {
 	var f = FACILITIES[id];
@@ -76,6 +91,15 @@ export function facility(id) {
 // A facility's full param set: its defaults with `params` on top.
 export function resolveParams(id, params) {
 	return Object.assign({}, facility(id).defaults, params || {});
+}
+
+// The release altitude (m) a flight from `from` to `to` starts at, kept on the
+// tether as `params` has it; null when the route names no release point.
+export function routeReleaseAlt(from, to, params) {
+	var alt = (facility(from).releaseFor || {})[to];
+	if (alt == null) { return null; }
+	var p = resolveParams(from, params);
+	return Math.max(p.footAlt, Math.min(p.topAlt, alt));
 }
 
 function fail(code, message, values) {
@@ -157,6 +181,15 @@ export function nextPhaseMatch(fig, jd, held) {
 	var t = jd + first / fig.omega / DAY;
 	for (var i = 0; i < 4; i++) { t += err(t) / fig.omega / DAY; }
 	return t < jd ? jd : t;
+}
+
+// How far the centre of `body` lies from the plane the skyhook `fig` turns in,
+// at Julian date jd: metres, positive on the side of the skyhook's pole. A ship
+// let go by the tether starts out moving in that plane, and near Earth it
+// stays close to it — so a flight from the Earth skyhook can only meet the
+// Moon while the Moon is passing through Earth's equatorial plane.
+export function bodyOffPlane(fig, body, jd) {
+	return O.vDot(O.vSub(baseState(body, jd).r, baseState(fig.body, jd).r), fig.normal);
 }
 
 // The kinematic chain (Shared/kinematic-chain.js) of the point on the tether
