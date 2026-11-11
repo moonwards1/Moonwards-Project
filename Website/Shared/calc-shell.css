@@ -43,6 +43,8 @@
  *   cs-sec           a section of result lines in a card; a rule divides it from the next section
  *   cs-fold       a block inside a card that opens on its own arrow: cs-fold-t
  *                 (the toggle: chevron + label) over cs-fold-b; cs-open when open
+ *   cs-ve         a variant entry in a vehicle card: cs-ve-h header (cs-ve-t toggle with cs-ve-n name and
+ *                 cs-ve-s stats, cs-ve-a buttons) over cs-ve-b the form; cs-open when open
  *   cs-hero       the key-figure bar: cs-hl label, cs-hv value (cs-hn, cs-hu)
  *   cs-tipped     a row whose label carries a hover tip (dotted underline)
  *   cs-btn, cs-btn-pri   a button in a card / its primary form
@@ -378,6 +380,24 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-fold:not(.cs-open) .cs-chev { transform: rotate(-90deg); }
 .cs-fold-b { display: flex; flex-direction: column; gap: 1px; padding: 0 0 3px 20px; }
 .cs-fold-b[hidden] { display: none; }
+.cs-ve-list { display: flex; flex-direction: column; }
+.cs-ve + .cs-ve { border-top: 1px solid rgba(150, 125, 95, .18); }
+.cs-ve-h { display: flex; align-items: center; gap: 6px; }
+.cs-ve-h[hidden] { display: none; }
+.cs-ve-t { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 4px 4px 0; border: 0; border-radius: 7px; background: transparent; color: var(--cs-ink); font: inherit; text-align: left; cursor: pointer; }
+.cs-ve-t:hover { background: rgba(80, 55, 30, .05); }
+.cs-ve-n { font-weight: 700; }
+.cs-ve-s { min-width: 0; margin-left: auto; font-size: 12px; color: var(--cs-ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-ve-s[hidden] { display: none; }
+.cs-ve:not(.cs-open) .cs-chev { transform: rotate(-90deg); }
+.cs-ve-a { display: flex; align-items: center; gap: 4px; flex: none; }
+.cs-ve-x { display: grid; place-items: center; margin: 0; padding: 2px; border: 0; border-radius: 4px; background: transparent; color: var(--cs-ink2); cursor: pointer; }
+.cs-ve-x:hover { color: var(--cs-ink); }
+.cs-ve-a [hidden] { display: none; }
+.cs-ve-on { font-size: 11px; color: var(--cs-ink2); }
+.cs-ve-b { display: flex; flex-direction: column; gap: 3px; padding: 0 0 4px 20px; }
+.cs-ve-b[hidden] { display: none; }
+.cs-ve-list > .cs-ve:only-child > .cs-ve-b { padding-left: 0; }
 .cs-hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 1px; margin-bottom: 3px; border-radius: 10px; overflow: hidden; background: rgba(150, 125, 95, .2); }
 .cs-hero > div { display: flex; flex-direction: column; gap: 1px; padding: 6px 10px; background: var(--cs-field); }
 .cs-hl { font-size: 13px; line-height: 1.2; color: var(--cs-ink); }

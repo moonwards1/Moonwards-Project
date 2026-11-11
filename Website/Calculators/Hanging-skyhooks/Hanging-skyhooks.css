@@ -32,6 +32,8 @@
 .tf-haul { flex-wrap: nowrap; }
 .tf-haul .tf-k { flex: 0 1 auto; overflow: hidden; white-space: nowrap; }
 .tf-haul .tf-lab { overflow: hidden; text-overflow: ellipsis; }
+.tf-eq { padding-left: 2px; font-size: 10px; color: var(--cs-ink2); min-height: 17px; }
+.tf-eq .tf-v { font-family: inherit; }
 .tf-loss { color: #B3261E; }
 .tf-gain { color: #2E7D32; }
 .tf-rad, .tf-chk { display: inline-flex; align-items: center; gap: 1px; cursor: pointer; }

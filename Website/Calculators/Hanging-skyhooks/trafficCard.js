@@ -21,7 +21,7 @@
 // balance"). The Traffic card is a compact form, one line per item, its sections
 // folded by a chevron before each title: a route's name, period and
 // amount on one line, then its ships, flights, and its docking or release points
-// (a multiple-choice dropdown) with each point's share and the haul it needs.
+// (a multiple-choice dropdown), each point's share when more than one is chosen, and the haul it needs.
 // All cargo passes through the anchor station; ships are hauled empty from where
 // they docked to where they are released. The physics is trafficModel.js.
 // Masses are kt, each route averaged over its own period ("average" beside the title).
@@ -127,15 +127,16 @@ export function addTrafficCard(shell, opts) {
 	}
 	// A multiple-choice dropdown, its value the chosen keys joined by commas. Several
 	// views may show one choice (the same ships listed on both directions of a route).
-	function multiChoice(key, options, value) {
-		var chosen = value.slice(), views = [], labels = {}, hidden = {};
+	function multiChoice(key, options, value, single) {
+		var chosen = (single ? value.slice(0, 1) : value.slice()), views = [], labels = {}, hidden = {};
 		options.forEach(function (op) { labels[op] = op; });
 		var model = {
 			get value() { return chosen.join(","); },
-			set value(v) { chosen = String(v).split(",").filter(function (x) { return options.indexOf(x) >= 0; }); model.refresh(); },
+			set value(v) { chosen = String(v).split(",").filter(function (x) { return options.indexOf(x) >= 0; }); if (single) chosen = chosen.slice(0, 1); model.refresh(); },
 			// Chosen keys still offered; at least the first offered one.
 			picked: function () {
 				var p = chosen.filter(function (x) { return !hidden[x]; });
+				if (single && p.length > 1) p = chosen = [p[0]];
 				if (!p.length) { var first = options.find(function (x) { return !hidden[x]; }); if (first) { chosen.push(first); p = [first]; model.refresh(); } }
 				return options.filter(function (x) { return p.indexOf(x) >= 0; });
 			},
@@ -144,10 +145,12 @@ export function addTrafficCard(shell, opts) {
 				var d = el("details", "tf-dd", parent), s = el("summary", null, d), box = el("div", "tf-dd-list", d);
 				var items = options.map(function (op) {
 					var lab = el("label", null, box), x = el("input", null, lab), t = el("span", null, lab);
-					x.type = "checkbox";
+					x.type = single ? "radio" : "checkbox";
+					if (single) x.name = "tf-" + key.replace(/\W/g, "") + "-" + Math.random().toString(36).slice(2, 7);
 					x.addEventListener("change", function () {
-						chosen = options.filter(function (k) { return k === op ? x.checked : chosen.indexOf(k) >= 0; });
+						chosen = single ? [op] : options.filter(function (k) { return k === op ? x.checked : chosen.indexOf(k) >= 0; });
 						model.refresh(); changed();
+						if (single) d.open = false;
 					});
 					return { op: op, lab: lab, x: x, t: t };
 				});
@@ -232,7 +235,8 @@ export function addTrafficCard(shell, opts) {
 				places.forEach(function (p) { choice.offer(p, avail(p), PLACE[p]); });
 				var picked = choice.picked();
 				choice.refresh();
-				var sel = items.filter(function (it) { var on = picked.indexOf(it.at) >= 0; it.row.el.hidden = !on; if (it.haul) it.haul.show(false); return on; });
+				var sel = items.filter(function (it) { return picked.indexOf(it.at) >= 0; });
+				items.forEach(function (it) { it.row.el.hidden = sel.length < 2 || sel.indexOf(it) < 0; if (it.haul) it.haul.show(false); });
 				items.forEach(function (it) { it.input.disabled = false; it.input.classList.remove("tf-rem"); });
 				if (sel.length === 1) {
 					sel[0].input.value = shown != null ? shown : ktField(total); sel[0].input.disabled = true;
@@ -263,6 +267,21 @@ export function addTrafficCard(shell, opts) {
 		};
 	}
 
+	// A route's amount in the periods it is not typed in, on a muted line under its title:
+	// "Equal to  12.3 kt/day · 4,490 kt/yr". set(kt, unit) takes the amount and its period.
+	var PER_SHORT = { orbit: "/orbit", day: "/day", week: "/week", year: "/yr" };
+	function eqText(x) { return x <= 0 ? "0" : x >= 1000 ? num(Math.round(x), 0) : x >= 10 ? num(x, 1) : x >= 1 ? num(x, 2) : String(Number(x.toPrecision(3))); }
+	function equivalents(sec, periods) {
+		var r = row(sec.box, "Equal to", "tf-eq");
+		sec.box.insertBefore(r.el, sec.body);   // under the title line, still shown when the section is folded
+		return { set: function (kt, unit) {
+			var rt = rate(kt, unit);
+			r.v.textContent = periods.filter(function (u) { return u !== unit; }).map(function (u) {
+				return eqText(rt * secs(u) / 1e6) + " kt" + PER_SHORT[u];
+			}).join(" \u00b7 ");
+		} };
+	}
+
 	// ---------- the form ----------
 	// A titled section: its title line, led by a chevron that folds the rest of the
 	// section away, and the body below it that holds the rest. Folds are saved.
@@ -291,6 +310,7 @@ export function addTrafficCard(shell, opts) {
 	sec = section(inG.body, "From surface", "tf-route", "from surface");
 	r = sec.r;
 	S.inSurf = { per: periodRadios(r, "From surface per", ["orbit", "day"], "orbit"), amount: amountIn(r, "From surface amount", 1) };
+	S.inSurf.eq = equivalents(sec, ["orbit", "day", "year"]);
 	r = row(sec.body, "Launch method");
 	S.launch = el("select", "tf-sel", r.v);
 	LAUNCH.forEach(function (l) { el("option", null, S.launch, l.label).value = l.value; });
@@ -309,7 +329,8 @@ export function addTrafficCard(shell, opts) {
 	S.inNear = { box: sec.box, name: sec.r.k.firstChild };
 	S.inNear.per = periodRadios(sec.r, "From near market per", ["day", "week"], "day");
 	S.inNear.amount = amountIn(sec.r, "From near market amount", 0);
-	var nearShips = multiChoice("Near market freighters", ["1", "2", "3"], ["1"]);
+	S.inNear.eq = equivalents(sec, ["day", "week", "year"]);
+	var nearShips = multiChoice("Near market freighters", ["1", "2", "3"], ["1"], true);
 	r = row(sec.body, "By freighter");
 	nearShips.view(r.k); bulkNear.view(r.k, "in");
 	S.inNear.ship = out(r, "kt");
@@ -320,7 +341,8 @@ export function addTrafficCard(shell, opts) {
 	// from interplanetary
 	sec = section(inG.body, "From interplanetary, per year", "tf-route", "from interplanetary");
 	S.inFar = { amount: amountIn(sec.r, "From interplanetary amount", 0) };
-	var farShips = multiChoice("Interplanetary freighters", ["1", "2", "3"], ["1"]);
+	S.inFar.eq = equivalents(sec, ["orbit", "day", "year"]);
+	var farShips = multiChoice("Interplanetary freighters", ["1", "2", "3"], ["1"], true);
 	r = row(sec.body, "By freighter");
 	farShips.view(r.k); bulkFar.view(r.k, "in");
 	S.inFar.ship = out(r, "kt");
@@ -349,6 +371,7 @@ export function addTrafficCard(shell, opts) {
 	S.outNear = { box: sec.box, name: sec.r.k.firstChild };
 	S.outNear.per = periodRadios(sec.r, "To near market per", ["orbit", "day"], "day");
 	S.outNear.amount = amountIn(sec.r, "To near market amount", 0);
+	S.outNear.eq = equivalents(sec, ["orbit", "day", "year"]);
 	r = row(sec.body, "By freighter");
 	nearShips.view(r.k); bulkNear.view(r.k, "out");
 	S.outNear.ship = out(r, "kt");
@@ -368,6 +391,7 @@ export function addTrafficCard(shell, opts) {
 	// to interplanetary
 	sec = section(outG.body, "To interplanetary, per year", "tf-route", "to interplanetary");
 	S.outFar = { box: sec.box, amount: amountIn(sec.r, "To interplanetary amount", 0) };
+	S.outFar.eq = equivalents(sec, ["orbit", "day", "year"]);
 	r = row(sec.body, "By freighter");
 	farShips.view(r.k); bulkFar.view(r.k, "out");
 	S.outFar.ship = out(r, "kt");
@@ -379,6 +403,7 @@ export function addTrafficCard(shell, opts) {
 	// to the surface
 	sec = section(outG.body, "To surface", "tf-route", "to surface");
 	S.outSurf = { box: sec.box, per: periodRadios(sec.r, "To surface per", ["orbit", "day"], "orbit"), amount: amountIn(sec.r, "To surface amount", 0) };
+	S.outSurf.eq = equivalents(sec, ["orbit", "day", "year"]);
 	S.outFar.amount.value = S.outSurf.amount.value = "";   // filled on the first update unless saved settings give them
 	r = row(sec.body, "By shuttle");
 	bulkSurf.view(r.k, "out");
@@ -523,6 +548,9 @@ export function addTrafficCard(shell, opts) {
 		var off = function (got, want) { return Math.abs(got - want) > Math.max(0.005 * want, 1e-6); };
 		if (off(prodYear, prodBudget)) warnings.push("Traffic: the products routes come to " + ktText(prodYear) + " kt a year; the products share is " + ktText(prodBudget) + " kt.");
 		if (off(surfYear, surfBudget)) warnings.push("Traffic: the surface route comes to " + ktText(surfYear) + " kt a year; the surface share is " + ktText(surfBudget) + " kt.");
+
+		S.inSurf.eq.set(inSurf, uSurf); S.inNear.eq.set(inNear, uNearIn); S.inFar.eq.set(inFar, "year");
+		S.outNear.eq.set(outNear, uNearOut); S.outFar.eq.set(outFar, "year"); S.outSurf.eq.set(outSurf, uSurfOut);
 
 		// surface: the same shuttles both ways
 		S.inSurf.ship.set(num(shuttle.payload, 1));
