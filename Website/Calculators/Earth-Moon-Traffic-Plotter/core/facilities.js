@@ -50,17 +50,20 @@ var CLOCK_REF = [1, 0, 0];
 // Altitudes in metres above the body's mean radius. Defaults are the example
 // design exported from the home workbench (2026-11-10). relAlt is where a ship
 // is let go when the facility is a flight's origin: the Moon skyhook's release
-// deck (its Earth release point), the Earth skyhook's top.
+// deck (its Earth release point), the Earth skyhook's top. catchAlt is where an
+// arriving ship is aimed when the facility is a flight's destination: on the
+// Earth skyhook, about where a ship falling from the Moon moves at the tether's
+// own speed (omega * r = the ship's speed there, near 5,200 km).
 export var FACILITIES = {
 	moonSkyhook: {
 		id: "moonSkyhook", kind: "skyhook", label: "Moon skyhook", body: "Moon",
 		phase0: 0,
-		defaults: { footAlt: 1e3, comAlt: 275e3, topAlt: 2000e3, relAlt: 949.4e3 }
+		defaults: { footAlt: 1e3, comAlt: 275e3, topAlt: 2000e3, relAlt: 949.4e3, catchAlt: 2000e3 }
 	},
 	earthSkyhook: {
 		id: "earthSkyhook", kind: "skyhook", label: "Earth skyhook", body: "Earth",
 		phase0: 0,
-		defaults: { footAlt: 120e3, comAlt: 2900e3, topAlt: 6200e3, relAlt: 6200e3 }
+		defaults: { footAlt: 120e3, comAlt: 2900e3, topAlt: 6200e3, relAlt: 6200e3, catchAlt: 5200e3 }
 	}
 };
 
@@ -101,13 +104,17 @@ export function skyhookFigures(id, params) {
 	if (!(p.relAlt >= p.footAlt && p.relAlt <= p.topAlt)) {
 		return fail("release-off-tether", "The release point must lie on the tether, between the foot and the top.", vals);
 	}
+	if (!(p.catchAlt >= p.footAlt && p.catchAlt <= p.topAlt)) {
+		return fail("catch-off-tether", "The catch point must lie on the tether, between the foot and the top.",
+			Object.assign(vals, { catchAlt: p.catchAlt }));
+	}
 	var rFoot = R + p.footAlt, rCom = R + p.comAlt, rTop = R + p.topAlt, rRel = R + p.relAlt;
 	var omega = O.angularVelocity(GM, rCom);
 	var plane = equatorPlane(fac.body, null, CLOCK_REF);
 	return {
 		ok: true, id: id, body: fac.body, GM: GM, R: R,
 		omega: omega, period: TWO_PI / omega,
-		rFoot: rFoot, rCom: rCom, rTop: rTop, rRel: rRel,
+		rFoot: rFoot, rCom: rCom, rTop: rTop, rRel: rRel, rCatch: R + p.catchAlt,
 		vFoot: omega * rFoot, vCom: omega * rCom, vTop: omega * rTop, vRel: omega * rRel,
 		pullTop: omega * omega * rTop - GM / (rTop * rTop),
 		vEscRel: O.escapeVelocity(GM, rRel),
@@ -120,6 +127,36 @@ export function skyhookFigures(id, params) {
 export function phaseAt(fig, jd) {
 	var ph = (fig.phase0 + fig.omega * (jd - CLOCK_EPOCH) * DAY) % TWO_PI;
 	return ph < 0 ? ph + TWO_PI : ph;
+}
+
+// The tether's angle (rad, 0..2pi) measured from the direction of its body's
+// PARTNER — Earth for a skyhook at the Moon, the Moon for one at Earth — as
+// that direction falls in the tether's plane. Zero is the tether pointing at
+// the partner; it grows the way the tether turns. This is the "phase" a user
+// holds steady while searching dates: the same value means the ship is let go
+// the same way relative to the Earth–Moon line.
+export function relativePhase(fig, jd) {
+	var m = baseState("Moon", jd).r;
+	var d = fig.body === "Moon" ? O.vScale(m, -1) : m;
+	var b = planeBasis(fig.normal, fig.ref);
+	var a = (phaseAt(fig, jd) - Math.atan2(O.vDot(d, b.e2), O.vDot(d, b.e1))) % TWO_PI;
+	return a < 0 ? a + TWO_PI : a;
+}
+
+// The first Julian date at or after jd at which relativePhase equals `held`.
+// The tether gains on the partner's direction at very nearly omega, so one
+// estimate and a few corrections land on it; it is always within a little
+// over one tether period.
+export function nextPhaseMatch(fig, jd, held) {
+	function err(t) {
+		var e = (held - relativePhase(fig, t)) % TWO_PI;
+		return e > Math.PI ? e - TWO_PI : (e <= -Math.PI ? e + TWO_PI : e);
+	}
+	var first = err(jd);
+	if (first < -1e-9) { first += TWO_PI; }
+	var t = jd + first / fig.omega / DAY;
+	for (var i = 0; i < 4; i++) { t += err(t) / fig.omega / DAY; }
+	return t < jd ? jd : t;
 }
 
 // The kinematic chain (Shared/kinematic-chain.js) of the point on the tether

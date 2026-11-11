@@ -17,8 +17,10 @@
  *     the ellipse can meet the ground: such a leg is cut at the impact and
  *     carries impact "Moon".
  *
- * Step 1: release from a skyhook, flown to its natural end. Arrivals, waypoint
- * burns and Target mode build on this.
+ * A flight may name a destination facility. The path is then flown with a
+ * finer step (the tether it has to meet is a few metres wide at the scale of
+ * the trip) and judged where it meets the destination: core/arrival.js.
+ * core/target.js adjusts the release until it does.
  *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  */
@@ -28,6 +30,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { buildIntegratedLeg, buildMoonEllipseLeg, stateAtLegTime, moonGeoPos, moonGeoVel,
          SOI_MOON } from "../../../Shared/geo-leg.js";
 import { skyhookFigures, tetherPointState, phaseAt } from "./facilities.js";
+import { evaluateArrival } from "./arrival.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -94,19 +97,30 @@ function summarize(leg) {
 }
 
 // Compute a flight.
-//   input: { from, jd, params }
+//   input: { from, to, jd, params, maxTime }
 //     from     facility id (core/facilities.js) the ship is released from
+//     to       optional facility id it is meant to arrive at
 //     jd       release Julian date
-//     params   optional { <facility id>: { footAlt, comAlt, topAlt, relAlt } }
-// Returns { ok: true, from, jd, fig, release, legs, final, summary } or
-// { ok: false, diagnostic }.
+//     params   optional { <facility id>: { footAlt, comAlt, topAlt, relAlt, catchAlt } }
+//     maxTime  optional: fly no longer than this (s) — core/target.js's trial flights
+//     skipArrival  optional: leave `arrival` null (a trial flight judged otherwise)
+// Returns { ok: true, from, to, jd, fig, toFig, release, legs, final, summary,
+// arrival } or { ok: false, diagnostic }.
 //   fig       the origin's skyhookFigures
 //   release   { r, v, relR, relV, phase } — geocentric and body-relative state
 //             of the release point at jd, and the tether's clock angle (rad)
 //   legs      Shared/geo-leg.js legs in flight order (one, until burns exist)
+//   toFig     the destination's skyhookFigures, or null
+//   arrival   core/arrival.js's evaluateArrival result, or null with no destination
+export var FINE_STEP = { turnStep: 0.005, maxSteps: 40000 };
 export function computeFlight(input) {
 	var fig = skyhookFigures(input.from, input.params && input.params[input.from]);
 	if (!fig.ok) { return fig; }
+	var toFig = null;
+	if (input.to) {
+		toFig = skyhookFigures(input.to, input.params && input.params[input.to]);
+		if (!toFig.ok) { return toFig; }
+	}
 	var jd = input.jd;
 	var rel = tetherPointState(fig, fig.rRel, jd);
 	rel.phase = phaseAt(fig, jd);
@@ -118,10 +132,16 @@ export function computeFlight(input) {
 			leg = moonBoundLeg(rel.relR, rel.relV, jd, elM);
 		}
 	}
-	if (!leg) { leg = buildIntegratedLeg(rel.r, rel.v, jd, { moonPlaneNormal: fig.normal }); }
+	if (!leg) {
+		var opts = { moonPlaneNormal: fig.normal };
+		if (toFig) { Object.assign(opts, FINE_STEP); }
+		if (input.maxTime) { opts.maxTime = input.maxTime; }
+		leg = buildIntegratedLeg(rel.r, rel.v, jd, opts);
+	}
 
-	return { ok: true, from: input.from, jd: jd, fig: fig, release: rel,
-	         legs: [leg], final: leg, summary: summarize(leg) };
+	return { ok: true, from: input.from, to: input.to || null, jd: jd, fig: fig, toFig: toFig, release: rel,
+	         legs: [leg], final: leg, summary: summarize(leg),
+	         arrival: toFig && !input.skipArrival ? evaluateArrival(leg, toFig) : null };
 }
 
 // Geocentric state { r, v, jde } of the ship t seconds after release, clamped

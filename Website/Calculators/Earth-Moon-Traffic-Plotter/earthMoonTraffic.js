@@ -15,9 +15,21 @@
  * since release. The whole scene (Moon, Sun, every tether, the ship) is shown
  * at release + flight time.
  *
- * Built so far: the two skyhooks, either one as the origin, an open path.
- * Next: arrivals at a facility, Free/Target aiming, the rotating frame,
- * waypoint burns, the L1 elevator and the mass driver.
+ * A flight may have a destination. The path is then judged at its closest
+ * pass to that tether (core/arrival.js), and the Flight slider runs from the
+ * release to that pass. In FREE mode the user sets the release by hand; TARGET
+ * (core/target.js) adjusts the release time and altitude until the ship meets
+ * the tether at the catch altitude, and keeps doing so as the date, the catch
+ * altitude or the hardware change. Moving the release by hand returns to Free.
+ *
+ * HOLD SKYHOOK PHASE keeps the departure tether's angle to the Earth
+ * direction fixed while the date changes: the release time is moved to the
+ * next instant the tether points that way, so scrubbing the date sliders shows
+ * what the Moon's position alone does to the flight.
+ *
+ * Built so far: the two skyhooks, either one as the origin; an open path, or
+ * the Earth skyhook as the destination of a flight from the Moon's.
+ * Next: the rotating frame, waypoint burns, the L1 elevator, the mass driver.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
  */
@@ -27,12 +39,14 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 import { planeBasis } from "../../Shared/kinematic-chain.js";
 import { moonGeoVel } from "../../Shared/geo-leg.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
-import { createDateBar } from "../../Shared/sim/date-bar.js";
+import { createDateBar, bindFineDrag } from "../../Shared/sim/date-bar.js";
 import { makePoint, updateScales, updateLabels, worldSizeAtPointForPx } from "../../Shared/sim/body-renderer.js";
 import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card.js";
 import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
-import { CLOCK_EPOCH, FACILITIES, skyhookFigures, phaseAt, tetherAxes } from "./core/facilities.js";
+import { CLOCK_EPOCH, FACILITIES, skyhookFigures, phaseAt, tetherAxes, relativePhase, nextPhaseMatch }
+	from "./core/facilities.js";
 import { computeFlight, flightStateAt } from "./core/flight.js";
+import { solveCatch } from "./core/target.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -41,8 +55,13 @@ var SPAN_DAYS = 1827;                  // to 2085-01-01
 var START_DAYS = 81;                   // opens on 2080-03-22
 
 var COLOR = { top: 0x9fb6ff, com: 0xffd24a, tether: 0xeaf0ff, release: 0xff5fd0,
-              Moon: 0xb060ff, Earth: 0x40d27f, Sun: 0xff9a3c };
+              Moon: 0xb060ff, Earth: 0x40d27f, Sun: 0xff9a3c,
+              catchPoint: 0x3ddc84, pass: 0xffffff };
+// Which facilities a flight from each origin may be aimed at (null: open path).
+var DESTINATIONS = { moonSkyhook: [null, "earthSkyhook"], earthSkyhook: [null] };
 var CHEVRON_PX = 24;
+// Slider drag speeds while a key is held, on every slider of the page.
+var SLOW_DRAG = { shift: 0.25, ctrl: 0.1 };
 
 // Camera presets behind the POV buttons: which body the camera stays on and
 // how far back it sits (scene units, 1000 km).
@@ -68,7 +87,11 @@ var state = {
 	relFrac: 0,                        // release time, as a fraction of one departure-skyhook orbit
 	flightFrac: 0,                     // flight slider position, 0..1
 	from: "moonSkyhook",
-	params: {},                        // facility id -> { footAlt, comAlt, topAlt, relAlt } (m)
+	to: null,                          // destination facility id, or null for an open path
+	hold: false,                       // "Hold skyhook phase": keep the departure tether's angle to its partner body
+	heldAngle: null,                   // that angle (rad, core/facilities.js's relativePhase), or null to capture it
+	mode: "free",                      // "free" | "target"
+	params: {},                        // facility id -> { footAlt, comAlt, topAlt, relAlt, catchAlt } (m)
 	open: {},                          // facility id -> card unfolded?
 	pov: "system"
 };
@@ -78,6 +101,8 @@ CARD_ORDER.forEach(function (id) {
 });
 
 var flight = null;                     // core/flight.js result for the current release, or { ok: false }
+var targetNote = "";                   // why the last Target solve failed, shown until the next change
+var targetTimer = 0;                   // pending re-solve while in Target mode
 var figs = {};                         // facility id -> skyhookFigures result
 
 function $(id) { return document.getElementById(id); }
@@ -92,10 +117,15 @@ function releaseJd() {
 	var fig = figs[state.from];
 	return state.jd + (fig && fig.ok ? state.relFrac * fig.period / DAY : 0);
 }
-// The flight slider is cubic in time: an escape runs for months, and the
-// interesting part is the first hours.
+function arrival() { return flight && flight.ok && flight.arrival && flight.arrival.found ? flight.arrival : null; }
+// The flight slider. With a destination it runs from the release to the
+// closest pass, easing at both ends so the departure and the catch can each
+// be scrubbed second by second. On an open path it is cubic in time: an
+// escape runs for months, and the interesting part is the first hours.
 function flightSeconds() {
-	return flight && flight.ok ? flight.final.duration * Math.pow(state.flightFrac, 3) : 0;
+	if (!flight || !flight.ok) { return 0; }
+	var f = state.flightFrac, a = arrival();
+	return a ? a.t * f * f * (3 - 2 * f) : flight.final.duration * f * f * f;
 }
 function sceneJd() { return releaseJd() + flightSeconds() / DAY; }
 
@@ -197,6 +227,11 @@ function drawFacility(id) {
 		releaseMesh.userData = { along: along.clone(), node: node, fig: fig };
 		grp.add(releaseMesh);
 	}
+	if (id === state.to) {
+		// The catch point: a small bar across the tether at the catch altitude.
+		var half = 0.03 * fig.rTop / U, at = along.clone().multiplyScalar(fig.rCatch / U);
+		grp.add(lineOf([at.clone().addScaledVector(pro, -half), at.clone().addScaledVector(pro, half)], COLOR.catchPoint, 1));
+	}
 	grp.visible = showFac.checked;
 	node.add(grp);
 	facilityGroups[id] = grp;
@@ -210,11 +245,25 @@ function drawTrajectory() {
 	if (!flight || !flight.ok) { return; }
 	var leg = flight.final;
 	var parent = leg.kind === "moonEllipse" ? frame.bodyNode("Moon") : frame.scene;
-	var pts = leg.samples.map(function (s) { return toScene(s.r); });
-	var line = lineOf(pts, COLOR[leg.primary], 1);
+	var a = arrival(), objs = [];
+	if (a) {
+		// Bright up to the closest pass, faint beyond it; the pass itself marked
+		// by the ship's position there and the nearest point of the tether.
+		var before = [], after = [toScene(a.rGeo)];
+		leg.samples.forEach(function (s) { (s.t <= a.t ? before : after).push(toScene(s.r)); });
+		before.push(toScene(a.rGeo));
+		objs.push(lineOf(before, COLOR[leg.primary], 1));
+		if (after.length > 1) { objs.push(lineOf(after, COLOR[leg.primary], 0.3)); }
+		var shipDot = makePoint(COLOR.pass, 6), tetherDot = makePoint(COLOR.catchPoint, 6);
+		shipDot.position.copy(toScene(a.rGeo)); tetherDot.position.copy(toScene(a.pointGeo));
+		objs.push(lineOf([toScene(a.rGeo), toScene(a.pointGeo)], COLOR.pass, 0.6), shipDot, tetherDot);
+	} else {
+		objs.push(lineOf(leg.samples.map(function (s) { return toScene(s.r); }), COLOR[leg.primary], 1));
+	}
 	var start = makePoint(COLOR.release, 5);
-	start.position.copy(pts[0]);
-	[line, start].forEach(function (o) { o.visible = showTraj.checked; parent.add(o); trajObjects.push(o); });
+	start.position.copy(toScene(leg.samples[0].r));
+	objs.push(start);
+	objs.forEach(function (o) { o.visible = showTraj.checked; parent.add(o); trajObjects.push(o); });
 }
 
 function placeShip() {
@@ -272,7 +321,7 @@ function dragRelease(e) {
 	var t = (u.dot(w0) - b * ray.d.dot(w0)) / denom;       // scene units along the tether
 	var p = state.params[state.from];
 	p.relAlt = Math.max(p.footAlt, Math.min(p.topAlt, t * U - ud.fig.R));
-	refresh();
+	refresh({ userRelease: true });
 }
 
 bindCameraControls(renderer.domElement, function () {
@@ -377,19 +426,50 @@ function buildCard(id) {
 	var sl = sf.appendChild(el("label", null, "Release altitude"));
 	sl.htmlFor = "emt-" + id + "-relSlider";
 	refs.relSlider = sf.appendChild(el("input"));
-	refs.relSlider.type = "range"; refs.relSlider.id = sl.htmlFor; refs.relSlider.step = "0.1";
-	refs.relSlider.addEventListener("input", function () {
+	refs.relSlider.type = "range"; refs.relSlider.id = sl.htmlFor; refs.relSlider.step = "any";
+	function relAltMoved() {
 		state.params[id].relAlt = parseFloat(refs.relSlider.value) * 1e3;
-		refresh();
-	});
+		refresh({ userRelease: true });
+	}
+	refs.relSlider.addEventListener("input", relAltMoved);
+	bindFineDrag(refs.relSlider, relAltMoved, null, SLOW_DRAG);
 	refs.relAlt = numberField(line, "emt-" + id + "-relAlt", "km", function () {
 		state.params[id].relAlt = parseFloat(refs.relAlt.value) * 1e3;
-		refresh({ keepInputs: true });
+		refresh({ keepInputs: true, userRelease: true });
 	});
 	var rro = rel.appendChild(el("div", "emt-readouts"));
+	refs.relPhase = readout(rro, "tether angle from the " + (fac.body === "Moon" ? "Earth" : "Moon") + " direction, at release");
 	refs.vRel = readout(rro, "speed on release");
 	refs.vInf = readout(rro, "v∞ leaving " + fac.body);
 	refs.release = rel;
+
+	// The arrival controls and read-outs: shown on the flight's destination only.
+	var arr = body.appendChild(el("div", "emt-release emt-arrival"));
+	var aline = arr.appendChild(el("div", "emt-release-line"));
+	var af = aline.appendChild(el("div", "emt-field"));
+	var al = af.appendChild(el("label", null, "Catch altitude"));
+	al.htmlFor = "emt-" + id + "-catchSlider";
+	refs.catchSlider = af.appendChild(el("input"));
+	refs.catchSlider.type = "range"; refs.catchSlider.id = al.htmlFor; refs.catchSlider.step = "any";
+	function catchAltMoved() {
+		state.params[id].catchAlt = parseFloat(refs.catchSlider.value) * 1e3;
+		refresh();
+	}
+	refs.catchSlider.addEventListener("input", catchAltMoved);
+	bindFineDrag(refs.catchSlider, catchAltMoved, null, SLOW_DRAG);
+	refs.catchAlt = numberField(aline, "emt-" + id + "-catchAlt", "km", function () {
+		state.params[id].catchAlt = parseFloat(refs.catchAlt.value) * 1e3;
+		refresh({ keepInputs: true });
+	});
+	var aro = arr.appendChild(el("div", "emt-readouts"));
+	refs.aMiss = readout(aro, "closest pass to the tether");
+	refs.aPoint = readout(aro, "nearest point of the tether");
+	refs.aWait = readout(aro, "tether timing");
+	refs.aPointSpeed = readout(aro, "tether speed there");
+	refs.aShipSpeed = readout(aro, "ship speed there");
+	refs.aTrim = readout(aro, "trim burn to match");
+	refs.aComp = arr.appendChild(el("div", "emt-muted"));
+	refs.arrival = arr;
 
 	cardsEl.appendChild(card);
 	cards[id] = { el: card, refs: refs };
@@ -409,13 +489,15 @@ function buildStub(stub) {
 // Fold state, role badge and which cards carry the release controls.
 function syncCards() {
 	CARD_ORDER.forEach(function (id) {
-		var c = cards[id], origin = id === state.from;
+		var c = cards[id], origin = id === state.from, dest = id === state.to;
 		c.el.classList.toggle("emt-open", !!state.open[id]);
 		c.el.classList.toggle("emt-role-departure", origin);
+		c.el.classList.toggle("emt-role-arrival", dest);
 		c.refs.head.setAttribute("aria-expanded", String(!!state.open[id]));
-		c.refs.badge.className = "emt-badge " + (origin ? "emt-badge-departure" : "emt-badge-idle");
-		c.refs.badge.textContent = origin ? "DEPARTURE" : "not in this flight";
+		c.refs.badge.className = "emt-badge " + (origin ? "emt-badge-departure" : (dest ? "emt-badge-arrival" : "emt-badge-idle"));
+		c.refs.badge.textContent = origin ? "DEPARTURE" : (dest ? "ARRIVAL" : "not in this flight");
 		c.refs.release.style.display = origin ? "" : "none";
+		c.refs.arrival.style.display = dest ? "" : "none";
 	});
 }
 
@@ -424,16 +506,18 @@ function syncCards() {
 function fillCard(id, opts) {
 	var c = cards[id].refs, p = state.params[id], fig = figs[id];
 	if (!(opts && opts.keepInputs)) {
-		["footAlt", "comAlt", "topAlt", "relAlt"].forEach(function (k) {
+		["footAlt", "comAlt", "topAlt", "relAlt", "catchAlt"].forEach(function (k) {
 			c[k].value = +(p[k] / 1e3).toFixed(1);
 		});
 	}
 	c.sub.textContent = "foot " + num(p.footAlt / 1e3) + " km · CoM " + num(p.comAlt / 1e3) + " km · top " + num(p.topAlt / 1e3) + " km";
 	c.relSlider.min = p.footAlt / 1e3; c.relSlider.max = p.topAlt / 1e3; c.relSlider.value = p.relAlt / 1e3;
+	c.catchSlider.min = p.footAlt / 1e3; c.catchSlider.max = p.topAlt / 1e3; c.catchSlider.value = p.catchAlt / 1e3;
+	if (id === state.to) { fillArrival(c); }
 	c.error.textContent = fig.ok ? "" : fig.diagnostic.message;
 	c.error.style.display = fig.ok ? "none" : "";
 	if (!fig.ok) {
-		["vCom", "vTop", "vFoot", "period", "pull", "phase", "vRel", "vInf"].forEach(function (k) { c[k].textContent = "—"; });
+		["vCom", "vTop", "vFoot", "period", "pull", "phase", "relPhase", "vRel", "vInf"].forEach(function (k) { c[k].textContent = "—"; });
 		return;
 	}
 	c.vCom.textContent = num(fig.vCom) + " m/s";
@@ -442,9 +526,41 @@ function fillCard(id, opts) {
 	c.period.textContent = num(fig.period / 3600, 2) + " h";
 	c.pull.textContent = num(fig.pullTop, 2) + " m/s² · " + num(fig.pullTop / 9.80665, 2) + " g";
 	c.phase.textContent = num(phaseAt(fig, sceneJd()) * 180 / Math.PI, 1) + "°";
+	c.relPhase.textContent = id === state.from
+		? num(relativePhase(fig, releaseJd()) * 180 / Math.PI, 1) + "°" + (state.hold ? " (held)" : "") : "—";
 	c.vRel.textContent = num(fig.vRel) + " m/s";
 	c.vInf.textContent = fig.vInfBody > 0 ? num(fig.vInfBody) + " m/s"
 		: "bound (escape is " + num(fig.vEscRel) + " m/s)";
+}
+
+function signed(x) { return (x >= 0 ? "+" : "−") + num(Math.abs(x)); }
+// Where the ship passes relative to the tether, in words.
+function passText(a) {
+	if (a.caught) { return "meets the tether"; }
+	if (a.reason === "above-top") { return "passes " + km(a.gap) + " above the top"; }
+	if (a.reason === "below-foot") { return "passes " + km(-a.gap) + " below the foot"; }
+	return "misses the tether";
+}
+function noArrivalText(arr) {
+	return arr.reason === "never-leaves" ? "This path stays in orbit around the Moon"
+		: "This path ends before it comes round to the tether's side of " + FACILITIES[state.to].body;
+}
+function fillArrival(c) {
+	var a = arrival();
+	if (!a) {
+		["aMiss", "aPoint", "aWait", "aPointSpeed", "aShipSpeed", "aTrim"].forEach(function (k) { c[k].textContent = "—"; });
+		c.aComp.textContent = flight && flight.ok && flight.arrival ? noArrivalText(flight.arrival) + "." : "";
+		return;
+	}
+	c.aMiss.textContent = a.miss < 1e4 ? num(a.miss) + " m" : km(a.miss);
+	c.aPoint.textContent = km(a.altitude) + (a.gap > 0 ? " (the top)" : (a.gap < 0 ? " (the foot)" : ""));
+	c.aWait.textContent = Math.abs(a.wait) < 1 ? "on time"
+		: "ship is " + span(Math.abs(a.wait)) + (a.wait > 0 ? " early" : " late");
+	c.aPointSpeed.textContent = num(a.pointSpeed) + " m/s";
+	c.aShipSpeed.textContent = num(a.shipSpeed) + " m/s";
+	c.aTrim.textContent = num(a.trim) + " m/s";
+	c.aComp.textContent = "Trim, by direction: along the tether's motion " + signed(a.components.pro)
+		+ ", outward " + signed(a.components.out) + ", across its plane " + signed(a.components.nrm) + " m/s.";
 }
 
 // ---- key figures under the view ------------------------------------------------------
@@ -463,6 +579,7 @@ function fillKeys() {
 	}
 	var s = flight.summary, fig = flight.fig;
 	key("Release speed", num(fig.vRel) + " m/s");
+	if (state.to) { fillArrivalKeys(s); return; }
 	if (s.impact) {
 		key("Path", "reaches " + (s.impact === "Moon" ? "the Moon's" : "Earth's") + " surface", true);
 		key("After", span(s.duration));
@@ -483,16 +600,98 @@ function fillKeys() {
 	key("Path drawn for", span(s.duration));
 }
 
+// The key figures of a flight with a destination, then the verdict and the
+// Free / Target switch.
+function fillArrivalKeys(s) {
+	var a = arrival();
+	if (a) {
+		key("Flight time", span(a.t));
+		if (s.primary === "Earth" && !s.impact) { key("Perigee", km(s.periAlt)); }
+		key("Closest pass", a.miss < 1e4 ? num(a.miss) + " m" : km(a.miss), !a.caught);
+		key("At tether altitude", km(a.altitude));
+		key("Trim burn", num(a.trim) + " m/s");
+	} else {
+		key("Path", flight.arrival.reason === "never-leaves" ? "stays in orbit around the Moon" : "ends before reaching the tether's side", true);
+	}
+	var right = el("div", "emt-keys-right");
+	var busy = state.mode === "target" && targetTimer;
+	right.appendChild(el("span", "emt-chip" + (a && a.caught ? " emt-chip-ok" : ""),
+		busy ? "Solving…" : (targetNote || (a ? FACILITIES[state.to].label + ": " + passText(a) : "No arrival"))));
+	var group = right.appendChild(el("div", "emt-mode"));
+	group.setAttribute("role", "group"); group.setAttribute("aria-label", "Aiming mode");
+	[["free", "Free"], ["target", "Target"]].forEach(function (m) {
+		var b = group.appendChild(el("button", null, m[1]));
+		b.type = "button";
+		b.setAttribute("aria-pressed", String(state.mode === m[0]));
+		b.title = m[0] === "free" ? "Set the release time and altitude by hand"
+			: "Adjust the release time and altitude until the ship meets the tether at the catch altitude";
+		b.addEventListener("click", function () { setMode(m[0]); });
+	});
+	keysEl.appendChild(right);
+}
+
+// ---- Target mode -----------------------------------------------------------------------
+function setMode(mode) {
+	targetNote = "";
+	if (mode === "free") { state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0; fillKeys(); return; }
+	state.mode = "target";
+	scheduleTarget(20);
+}
+// Solve shortly: after the page has painted "Solving…", and — while a slider
+// is being dragged in Target mode — only once it has rested.
+function scheduleTarget(delay) {
+	clearTimeout(targetTimer);
+	targetTimer = setTimeout(runTarget, delay);
+	fillKeys();
+}
+function runTarget() {
+	targetTimer = 0;
+	if (state.mode !== "target" || !state.to) { return; }
+	var res = solveCatch({ from: state.from, to: state.to, jd: releaseJd(), params: state.params });
+	if (res.ok) {
+		var fig = figs[state.from];
+		state.params[state.from].relAlt = res.relAlt;
+		state.relFrac = (res.jd - state.jd) * DAY / fig.period;
+		relSlider.value = state.relFrac;
+		targetNote = "";
+	} else {
+		state.mode = "free";
+		targetNote = res.message;
+	}
+	refresh({ fromTarget: true });
+}
+
+// "Hold skyhook phase". When the user (or Target) has just set the release,
+// that release's angle becomes the one held. On any other change — the date,
+// the hardware — the release time is moved to the next instant, at or after
+// the date bar's own, at which the tether is at the held angle again.
+function applyHold(opts) {
+	var fig = figs[state.from];
+	if (!state.hold || !fig.ok) { return; }
+	if (opts.userRelease || opts.fromTarget || state.heldAngle === null) {
+		state.heldAngle = relativePhase(fig, releaseJd());
+		return;
+	}
+	state.relFrac = (nextPhaseMatch(fig, state.jd, state.heldAngle) - state.jd) * DAY / fig.period;
+	relSlider.value = state.relFrac;
+}
+
 // ---- refresh -----------------------------------------------------------------------
 // Everything downstream of the state. opts.sceneOnly: only the flight clock
 // moved, so the flight itself stands and just the scene time changes.
 function refresh(opts) {
 	opts = opts || {};
 	if (!opts.sceneOnly) {
+		if (!opts.fromTarget) { targetNote = ""; }
+		if (opts.userRelease && state.mode === "target") { state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0; }
 		CARD_ORDER.forEach(function (id) { figs[id] = skyhookFigures(id, state.params[id]); });
-		flight = computeFlight({ from: state.from, jd: releaseJd(), params: state.params });
+		applyHold(opts);
+		flight = computeFlight({ from: state.from, to: state.to, jd: releaseJd(), params: state.params });
 		drawTrajectory();
-		fillKeys();
+		// In Target mode any other change (date, catch altitude, hardware) is
+		// followed by a fresh solve once the control has rested.
+		if (state.mode === "target" && !opts.fromTarget && state.to) { scheduleTarget(350); }
+		else { fillKeys(); }
 	}
 	var jd = sceneJd();
 	frame.place(jd);
@@ -503,6 +702,7 @@ function refresh(opts) {
 	relVal.textContent = clockTime(releaseJd()) + (fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
 	var t = flightSeconds();
 	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd).slice(0, 5);
+	$("emt-flight-label").textContent = arrival() ? "Flight to closest pass" : "Flight";
 }
 
 // ---- wiring -------------------------------------------------------------------------
@@ -510,7 +710,7 @@ var dateBar = createDateBar(state, {
 	coarseSlider: $("emt-date-coarse"), fineSlider: $("emt-date-fine"),
 	fineLoLabel: $("emt-fine-lo"), fineHiLabel: $("emt-fine-hi"),
 	dateField: $("emt-date-field"), jdLabel: $("emt-jd"),
-	jd0: JD0, spanDays: SPAN_DAYS, shortDate: shortDate
+	jd0: JD0, spanDays: SPAN_DAYS, shortDate: shortDate, slowDrag: SLOW_DRAG
 });
 
 function init() {
@@ -521,17 +721,45 @@ function init() {
 	dateBar.setBaseDays(START_DAYS);
 	dateBar.bind(function () { refresh(); });
 
-	relSlider.addEventListener("input", function () { state.relFrac = parseFloat(relSlider.value); refresh(); });
-	flightSlider.addEventListener("input", function () {
-		state.flightFrac = parseFloat(flightSlider.value);
-		refresh({ sceneOnly: true });
+	function releaseMoved() { state.relFrac = parseFloat(relSlider.value); refresh({ userRelease: true }); }
+	function flightMoved() { state.flightFrac = parseFloat(flightSlider.value); refresh({ sceneOnly: true }); }
+	relSlider.addEventListener("input", releaseMoved);
+	flightSlider.addEventListener("input", flightMoved);
+	bindFineDrag(relSlider, releaseMoved, null, SLOW_DRAG);
+	bindFineDrag(flightSlider, flightMoved, null, SLOW_DRAG);
+	$("emt-hold-phase").addEventListener("change", function (e) {
+		state.hold = e.target.checked;
+		state.heldAngle = null;            // captured from the release as it stands
+		refresh();
 	});
-	$("emt-from").addEventListener("change", function (e) {
-		state.from = e.target.value;
-		CARD_ORDER.forEach(function (id) { state.open[id] = id === state.from; });
+	function routeChanged() {
+		CARD_ORDER.forEach(function (id) { state.open[id] = id === state.from || id === state.to; });
 		state.flightFrac = 0; flightSlider.value = 0;
+		state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0;
 		syncCards();
 		refresh();
+	}
+	function fillDestinations() {
+		var sel = $("emt-to");
+		sel.textContent = "";
+		DESTINATIONS[state.from].forEach(function (id) {
+			var o = sel.appendChild(el("option", null, id ? FACILITIES[id].label : "Open path"));
+			o.value = id || "";
+		});
+		sel.disabled = DESTINATIONS[state.from].length < 2;
+		sel.value = state.to || "";
+	}
+	fillDestinations();
+	$("emt-from").addEventListener("change", function (e) {
+		state.from = e.target.value;
+		state.to = null;
+		state.heldAngle = null;
+		fillDestinations();
+		routeChanged();
+	});
+	$("emt-to").addEventListener("change", function (e) {
+		state.to = e.target.value || null;
+		routeChanged();
 	});
 	$("emt-pov").addEventListener("click", function (e) {
 		var btn = e.target.closest("button[data-pov]");

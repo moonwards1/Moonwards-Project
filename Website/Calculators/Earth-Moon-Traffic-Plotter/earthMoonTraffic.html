@@ -26,6 +26,9 @@
 					<button type="button" data-pov="earthHigh">High Earth orbit</button>
 					<button type="button" data-pov="earthLow">Earth skyhook &amp; entry</button>
 				</div>
+				<label class="emt-check emt-hold" title="Keep the departure skyhook's tether at the same angle to the Earth direction (the Moon direction, for the Earth skyhook) while the date changes: the release time jumps to the next moment the tether points that way. Moving the release time sets a new angle to hold.">
+					<input type="checkbox" id="emt-hold-phase"> Hold skyhook phase
+				</label>
 			</div>
 			<div class="emt-slider-line">
 				<span class="emt-slider-end">2080</span>
@@ -34,17 +37,17 @@
 			</div>
 			<div class="emt-slider-line">
 				<span class="emt-slider-end" id="emt-fine-lo"></span>
-				<input type="range" id="emt-date-fine" min="-13.66" max="13.66" step="0.02" value="0" aria-label="Date, one lunar orbit around the slider above">
+				<input type="range" id="emt-date-fine" min="-13.66" max="13.66" step="0.005" value="0" aria-label="Date, one lunar orbit around the slider above">
 				<span class="emt-slider-end" id="emt-fine-hi"></span>
 			</div>
 			<div class="emt-slider-line emt-line-release">
 				<span class="emt-slider-end">Release time</span>
-				<input type="range" id="emt-release-time" min="0" max="1" step="0.0005" value="0" aria-label="Release time within one orbit of the departure skyhook">
+				<input type="range" id="emt-release-time" min="0" max="1" step="any" value="0" aria-label="Release time within one orbit of the departure skyhook">
 				<span class="emt-slider-end" id="emt-release-time-val"></span>
 			</div>
 			<div class="emt-slider-line emt-line-flight">
-				<span class="emt-slider-end">Flight</span>
-				<input type="range" id="emt-flight-time" min="0" max="1" step="0.0005" value="0" aria-label="Time since release">
+				<span class="emt-slider-end" id="emt-flight-label">Flight</span>
+				<input type="range" id="emt-flight-time" min="0" max="1" step="any" value="0" aria-label="Time since release">
 				<span class="emt-slider-end" id="emt-flight-time-val"></span>
 			</div>
 		</div>
@@ -58,6 +61,7 @@
 					<div id="emt-view-hud">
 						<div class="emt-hud-line"><span class="emt-hud-key">drag</span> rotate &nbsp; <span class="emt-hud-key">wheel</span> zoom &nbsp; <span class="emt-hud-key">right-drag</span> pan</div>
 						<div class="emt-hud-line">Drag the pink marker along the tether to move the release point.</div>
+						<div class="emt-hud-line">On any slider: hold <span class="emt-hud-key">shift</span> to scrub at ¼ speed, <span class="emt-hud-key">ctrl</span> at 1/10.</div>
 					</div>
 				</div>
 				<div id="emt-keys" aria-live="polite"></div>
@@ -78,12 +82,10 @@
 						</div>
 						<div class="emt-field">
 							<label for="emt-to">To</label>
-							<select id="emt-to" disabled>
-								<option>Open path</option>
-							</select>
+							<select id="emt-to"></select>
 						</div>
 					</div>
-					<div class="emt-muted">Every facility follows the clock: the release time decides which way the tether points when it lets go. Destinations are the next build step.</div>
+					<div class="emt-muted">Every facility follows the clock: the release time decides which way the tether points when it lets go. With a destination chosen, <b>Target</b> (under the view) adjusts the release time and altitude until the ship meets that tether at its catch altitude.</div>
 				</section>
 
 				<div id="emt-cards"></div>
@@ -104,6 +106,10 @@
 						<span class="emt-swatch" style="background:#40d27f"></span> orbits Earth
 						<span class="emt-swatch" style="background:#ff9a3c"></span> heliocentric
 					</div>
+					<div class="emt-row emt-legend">
+						<span class="emt-swatch" style="background:#3ddc84"></span> catch point, and the tether's nearest point at the closest pass
+						<span class="emt-swatch" style="background:#ffffff"></span> ship at the closest pass
+					</div>
 				</section>
 
 				<p class="emt-fineprint">
@@ -116,7 +122,12 @@
 				Earth + Moon + Sun gravity; a release that stays inside the Moon's
 				sphere of influence is drawn as its two-body ellipse, carried with
 				the Moon. The Flight slider moves the whole scene to that time after
-				release.
+				release. A flight with a destination is judged at its closest pass
+				to that tether: the miss is the distance between ship and tether
+				there, and the trim burn is the ship's speed relative to that point
+				of the tether. Target changes only the release time and altitude; it
+				does not reduce the trim burn, which depends on the date and the
+				catch altitude.
 				</p>
 			</div>
 

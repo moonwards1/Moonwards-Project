@@ -241,3 +241,14 @@ test("constants and field sanity", () => {
 	assert.ok(Math.abs(O.vMag(eh.r) / 1.496e11 - 1) < 0.02);
 	assert.ok(Math.abs(O.vMag(eh.v) - 29780) < 500);
 });
+
+test("opts: turnStep/maxSteps refine the path, maxTime cuts it short, and none of them changes the default", () => {
+	var r0 = [1e8, 0, 0], v0 = [0, Math.sqrt(GM_E / 1e8), 0];
+	var base = integrateTrajectory(r0, v0, JD0);
+	assert.deepEqual(integrateTrajectory(r0, v0, JD0, {}).samples, base.samples);
+	var fine = integrateTrajectory(r0, v0, JD0, { turnStep: 0.005, maxSteps: 40000 });
+	assert.ok(fine.samples.length > 2 * base.samples.length, "finer steps: " + fine.samples.length + " vs " + base.samples.length);
+	assert.ok(Math.abs(fine.duration - base.duration) < 0.02 * base.duration);
+	var cut = integrateTrajectory(r0, v0, JD0, { maxTime: 3600 });
+	assert.ok(cut.duration > 3600 && cut.duration <= 3600 + 2160, "stopped at " + cut.duration);
+});

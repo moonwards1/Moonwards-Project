@@ -33,6 +33,70 @@
 
 import { OrbitalMath } from "../math-utils.js";
 
+// Marker-style fine dragging for any range slider — the date bar's own two,
+// and exported for a tool's other timeline sliders so they all scrub alike.
+// A plain press jumps to the clicked position (native feel), then dragging
+// moves RELATIVELY; holding a modifier key slows the drag. A press with a
+// slowing modifier held fine-tunes from the current value without jumping.
+// Rolling the mouse wheel over the slider scrubs at a tenth of drag speed.
+// (The native `input` listener a caller adds still handles keyboard arrows.)
+//
+//   apply()           called after every change; reads slider.value itself.
+//   onOverflow(v)     optional: -> value. Given a value dragged past an end
+//                     (the fine date slider's wrap), returns one back inside.
+//   slow              optional { shift, ctrl }: drag-speed factors while that
+//                     key is held. Default { shift: 0.1 } — Ctrl does nothing
+//                     unless a factor is given for it. Ctrl wins over Shift.
+//
+// The drag keeps its own running value rather than re-reading slider.value,
+// which the browser snaps to the slider's `step`: a slowed drag moving less
+// than half a step per mouse event would otherwise never move at all.
+export function bindFineDrag(slider, apply, onOverflow, slow) {
+	var shiftF = slow && slow.shift != null ? slow.shift : 0.1;
+	var ctrlF = slow && slow.ctrl != null ? slow.ctrl : 1;
+	function factor(e) { return e.ctrlKey && ctrlF !== 1 ? ctrlF : (e.shiftKey ? shiftF : 1); }
+	function lo() { return parseFloat(slider.min); }
+	function hi() { return parseFloat(slider.max); }
+	var drag = false, lastX = 0, perPx = 1, acc = 0;
+	function setVal(v) {
+		// past an end, an overflow handler (the fine slider's wrap) may
+		// advance the period and return a residual value back inside the track
+		if (onOverflow && (v > hi() || v < lo())) { v = onOverflow(v); }
+		acc = Math.max(lo(), Math.min(hi(), v));
+		slider.value = acc; apply();
+	}
+	slider.addEventListener("pointerdown", function (e) {
+		e.preventDefault();                       // take over from the native thumb
+		drag = true; lastX = e.clientX;
+		perPx = (hi() - lo()) / (slider.clientWidth || 1);   // native units per pixel
+		acc = parseFloat(slider.value);
+		if (factor(e) === 1) {                    // plain press: jump to the click
+			var rect = slider.getBoundingClientRect();
+			var frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+			setVal(lo() + frac * (hi() - lo()));
+		}
+		try { slider.setPointerCapture(e.pointerId); } catch (_) {}
+		slider.focus();
+	});
+	slider.addEventListener("pointermove", function (e) {
+		if (!drag) { return; }
+		var dx = e.clientX - lastX; lastX = e.clientX;
+		setVal(acc + dx * perPx * factor(e));
+	});
+	function end(e) {
+		if (!drag) { return; }
+		drag = false;
+		try { slider.releasePointerCapture(e.pointerId); } catch (_) {}
+	}
+	slider.addEventListener("pointerup", end);
+	slider.addEventListener("pointercancel", end);
+	slider.addEventListener("wheel", function (e) {
+		e.preventDefault();
+		var wheelPerPx = (hi() - lo()) / (slider.clientWidth || 1);
+		setVal(parseFloat(slider.value) - e.deltaY * wheelPerPx * 0.1);
+	}, { passive: false });
+}
+
 // state: the host's shared state object; state.jd and state.baseDays are
 //   read/written in place so every other part of the plotter that already
 //   reads them stays in sync.
@@ -51,6 +115,9 @@ import { OrbitalMath } from "../math-utils.js";
 //                                 (month-level vs. day-level) that this stays
 //                                 caller-supplied rather than baked in.
 //   jdDecimals                  — optional, default 1: toFixed digits for jdLabel.
+//   slowDrag                    — optional { shift, ctrl }: drag-speed factors
+//                                 for both sliders while that key is held (see
+//                                 bindFineDrag). Default: Shift = 0.1.
 //   resolveBaseDays(target)      — optional: -> days. Adjusts the coarse
 //                                 slider's clamped target before it's
 //                                 committed (e.g. a "lock this phase" toggle
@@ -134,43 +201,7 @@ export function createDateBar(state, opts) {
 	// same 0.1 sensitivity. (The native `input` listener still handles
 	// keyboard arrows.)
 	function enableShiftDrag(slider, apply, onOverflow) {
-		var drag = false, lastX = 0, perPx = 1;
-		var lo = parseFloat(slider.min), hi = parseFloat(slider.max);
-		function setVal(v) {
-			// past an end, an overflow handler (the fine slider's wrap) may
-			// advance the period and return a residual value back inside the track
-			if (onOverflow && (v > hi || v < lo)) { v = onOverflow(v); }
-			slider.value = Math.max(lo, Math.min(hi, v)); apply();
-		}
-		slider.addEventListener("pointerdown", function (e) {
-			e.preventDefault();                       // take over from the native thumb
-			drag = true; lastX = e.clientX;
-			perPx = (hi - lo) / (slider.clientWidth || 1);   // native units per pixel
-			if (!e.shiftKey) {                        // plain press: jump to the click
-				var rect = slider.getBoundingClientRect();
-				var frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-				setVal(lo + frac * (hi - lo));
-			}
-			try { slider.setPointerCapture(e.pointerId); } catch (_) {}
-			slider.focus();
-		});
-		slider.addEventListener("pointermove", function (e) {
-			if (!drag) { return; }
-			var dx = e.clientX - lastX; lastX = e.clientX;
-			setVal(parseFloat(slider.value) + dx * perPx * (e.shiftKey ? 0.1 : 1));
-		});
-		function end(e) {
-			if (!drag) { return; }
-			drag = false;
-			try { slider.releasePointerCapture(e.pointerId); } catch (_) {}
-		}
-		slider.addEventListener("pointerup", end);
-		slider.addEventListener("pointercancel", end);
-		slider.addEventListener("wheel", function (e) {
-			e.preventDefault();
-			var wheelPerPx = (hi - lo) / (slider.clientWidth || 1);
-			setVal(parseFloat(slider.value) - e.deltaY * wheelPerPx * 0.1);
-		}, { passive: false });
+		bindFineDrag(slider, apply, onOverflow, opts.slowDrag);
 	}
 
 	// Fine-slider wrap: when dragged past an end, advance the coarse base by

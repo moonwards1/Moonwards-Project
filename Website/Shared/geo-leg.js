@@ -138,8 +138,21 @@ export function conicPeriod(GM, el) { return 2 * Math.PI * Math.sqrt(Math.pow(el
 // leg to recover its state (interpolated — see stateAtLegTime) without
 // re-integrating.
 //
-// opts (all optional): { moonPlaneNormal } — see lunarInclination.
+// opts (all optional):
+//   moonPlaneNormal — see lunarInclination.
+//   turnStep  — the turn-angle bound on a step, radians (default 0.02, ~1 deg).
+//               RK4's error falls with its fourth power, so a caller that must
+//               hit a moving target (the Earth-Moon-Traffic-Plotter meeting a
+//               tether) asks for a smaller one.
+//   maxSteps  — the step budget (default 8000); a smaller turnStep needs more.
+//   maxTime   — stop once this many seconds have been flown, whatever the path
+//               is doing (default: none) — for a caller that only needs the
+//               flight up to a known event.
+// With none of the last three given the integration is exactly as before.
 export function integrateTrajectory(R0, V0, jd0, opts) {
+	var turnStep = (opts && opts.turnStep) || 0.02;
+	var maxSteps = (opts && opts.maxSteps) || 8000;
+	var maxTime = (opts && opts.maxTime) || Infinity;
 	var r = R0.slice(), v = V0.slice(), t = 0;
 	var samples = [{ r: r.slice(), v: v.slice(), t: 0 }];
 	var cleared = false, branch = null, tClear = 0, oscT = 0, impact = null;
@@ -163,7 +176,7 @@ export function integrateTrajectory(R0, V0, jd0, opts) {
 	var inclLunar = moonBoundCap != null
 		? lunarInclination(rMoonRel0, vMoonRel0, opts && opts.moonPlaneNormal) : null;
 
-	for (var step = 0; step < 8000; step++) {
+	for (var step = 0; step < maxSteps; step++) {
 		var jde = jd0 + t / 86400;
 		var a1 = shipAccel(r, jde);
 		var amag = Math.max(1e-12, Math.hypot(a1[0], a1[1], a1[2]));
@@ -182,7 +195,7 @@ export function integrateTrajectory(R0, V0, jd0, opts) {
 		var dMoonNow = Math.hypot(rMnow[0] - r[0], rMnow[1] - r[1], rMnow[2] - r[2]);
 		var dtMax = rNow < SOI_EARTH ? 2160 : 21600;
 		if (dMoonNow < 1e8) { dtMax = Math.min(dtMax, 2e6 / vmag); }
-		var dt = Math.max(1, Math.min(dtMax, 0.02 * vmag / amag));   // ~1 deg of turn, capped
+		var dt = Math.max(1, Math.min(dtMax, turnStep * vmag / amag));   // ~1 deg of turn by default, capped
 		var hd = dt / 2 / 86400;
 		var r2 = O.vAdd(r, O.vScale(v, dt / 2)), v2 = O.vAdd(v, O.vScale(a1, dt / 2)), a2 = shipAccel(r2, jde + hd);
 		var r3 = O.vAdd(r, O.vScale(v2, dt / 2)), v3 = O.vAdd(v, O.vScale(a2, dt / 2)), a3 = shipAccel(r3, jde + hd);
@@ -219,6 +232,7 @@ export function integrateTrajectory(R0, V0, jd0, opts) {
 			break;
 		}
 		if (cleared && branch === "green" && t > tClear + oscT * 1.02) { break; }
+		if (t > maxTime) { break; }
 	}
 	// Fallback branch when the loop ran out without any break condition
 	// firing: matches the plotter's unconditional "green" default exactly

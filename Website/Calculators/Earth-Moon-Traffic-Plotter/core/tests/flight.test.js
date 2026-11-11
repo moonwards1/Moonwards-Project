@@ -142,3 +142,113 @@ test("the Earth skyhook's top releases onto an escape at the workbench's v-infin
 	assert.equal(low.summary.primary, "Earth");
 	within(low.summary.periAlt, 3500e3, 2e3, "perigee is the release point");
 });
+
+// ---- arrivals ---------------------------------------------------------------
+
+import { evaluateArrival, lineApproach, CATCH_REACH } from "../arrival.js";
+import { solveCatch } from "../target.js";
+import { FINE_STEP } from "../flight.js";
+
+test("a flight with a destination is judged at its closest pass to the tether", function () {
+	var f = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: JD });
+	var a = f.arrival;
+	assert.ok(a.found);
+	assert.equal(a.caught, false);
+	assert.ok(a.miss > CATCH_REACH);
+	within(O.vMag(O.vSub(a.rGeo, a.pointGeo)), a.miss, 1e-3, "miss is the ship-to-point distance");
+	within(Math.hypot(a.components.pro, a.components.out, a.components.nrm), a.trim, 1e-6, "components make up the trim");
+	assert.ok(a.point >= f.toFig.rFoot && a.point <= f.toFig.rTop, "the nearest point is on the tether");
+	assert.equal(a.reason, a.gap > 0 ? "above-top" : (a.gap < 0 ? "below-foot" : "off-arm"));
+	assert.equal(computeFlight({ from: "moonSkyhook", jd: JD }).arrival, null);
+});
+
+test("a Moon-bound release never reaches the Earth skyhook", function () {
+	var input = { from: "moonSkyhook", to: "earthSkyhook", jd: JD, params: { moonSkyhook: { relAlt: 400e3 } } };
+	assert.deepEqual(computeFlight(input).arrival, { found: false, reason: "never-leaves" });
+	assert.equal(solveCatch(input).reason, "no-approach");
+});
+
+test("a ship aimed through a tether point is caught there, with its extra speed as the trim", function () {
+	var g = skyhookFigures("earthSkyhook"), jdC = JD + 0.3, lead = 900;
+	var at = tetherPointState(g, g.rCatch, jdC), ax = tetherAxes(g, jdC);
+	// Moving with the tether point but 300 m/s faster across its plane; flown
+	// back a quarter of an hour as a two-body orbit, then forward for real.
+	var back = O.propagateState(g.GM, at.r, O.vAdd(at.v, O.vScale(ax.normal, 300)), -lead);
+	var leg = buildIntegratedLeg(back.r, back.v, jdC - lead / 86400, Object.assign({ maxTime: 2 * lead }, FINE_STEP));
+	var a = evaluateArrival(leg, g);
+	assert.equal(a.caught, true, "miss " + a.miss);
+	within(a.t, lead, 1, "at the moment aimed for");
+	within(a.altitude, 5200e3, 500, "at the catch altitude");
+	within(a.trim, 300, 2, "trim");
+	within(a.components.nrm, 300, 2, "all of it across the plane");
+	var la = lineApproach(leg, g, lead);
+	within(la.radius, g.rCatch, 500, "line approach: radius");
+	within(la.miss, 0, 500, "line approach: miss");
+});
+
+test("Target brings the release to a catch at the catch altitude", function () {
+	var input = { from: "moonSkyhook", to: "earthSkyhook", jd: JD };
+	var s = solveCatch(input);
+	assert.ok(s.ok, s.message);
+	var g = skyhookFigures("moonSkyhook");
+	assert.ok(s.relAlt > g.rFoot - g.R && s.relAlt < g.rTop - g.R, "release point stays on the tether");
+	var f = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: s.jd, params: { moonSkyhook: { relAlt: s.relAlt } } });
+	assert.equal(f.arrival.caught, true, "miss " + f.arrival.miss);
+	within(f.arrival.altitude, 5200e3, 200, "catch altitude");
+	// A different catch altitude is a different answer.
+	var s2 = solveCatch({ from: "moonSkyhook", to: "earthSkyhook", jd: s.jd,
+		params: { moonSkyhook: { relAlt: s.relAlt }, earthSkyhook: { catchAlt: 5400e3 } } });
+	assert.ok(s2.ok, s2.message);
+	var f2 = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: s2.jd,
+		params: { moonSkyhook: { relAlt: s2.relAlt }, earthSkyhook: { catchAlt: 5400e3 } } });
+	assert.equal(f2.arrival.caught, true);
+	within(f2.arrival.altitude, 5400e3, 200, "moved catch altitude");
+});
+
+test("a catch point off the tether is a diagnostic", function () {
+	assert.equal(skyhookFigures("earthSkyhook", { catchAlt: 7000e3 }).diagnostic.code, "catch-off-tether");
+});
+
+test("the closest pass is never measured through the body to a tether on its far side", function () {
+	// Sweep the release through one turn of the Moon skyhook: the ship reaches
+	// Earth with the tether pointing every which way, including straight away.
+	var gm = skyhookFigures("moonSkyhook"), ge = skyhookFigures("earthSkyhook"), seen = 0;
+	for (var k = 0; k < 12; k++) {
+		var f = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: JD + k / 12 * gm.period / 86400,
+			params: { moonSkyhook: { relAlt: 930e3 } }, maxTime: 8 * 86400 });
+		var a = f.arrival;
+		if (!a.found) { continue; }
+		seen++;
+		var along = tetherAxes(ge, a.jd).along;
+		assert.ok(O.vDot(a.r, along) >= ge.R - 1, "release " + k + ": ship is on the tether's side at the pass");
+		// The sight line from the ship to the tether point clears the body.
+		var d = O.vSub(O.vScale(along, a.point), a.r), len = O.vMag(d);
+		var s = Math.max(0, Math.min(len, -O.vDot(a.r, d) / len));
+		assert.ok(O.vMag(O.vAdd(a.r, O.vScale(d, s / len))) >= ge.R - 1, "release " + k + ": sight line clears Earth");
+	}
+	assert.ok(seen >= 6, "enough flights reached Earth: " + seen);
+});
+
+// ---- holding the skyhook's phase ---------------------------------------------
+
+import { relativePhase, nextPhaseMatch } from "../facilities.js";
+
+test("relativePhase is the tether's angle from its partner body, and nextPhaseMatch finds it again", function () {
+	var g = skyhookFigures("moonSkyhook");
+	// Zero means the tether points at Earth (as nearly as its plane allows).
+	var t0 = nextPhaseMatch(g, JD, 0);
+	var toEarth = O.vUnit(O.vScale(moonGeoPos(t0), -1));
+	assert.ok(O.vDot(tetherAxes(g, t0).along, toEarth) > 0.99, "points at Earth");
+	// From any date, the next match is within a little over one period and holds the angle.
+	[0, 0.37, 3.2, 11.9, 400.123].forEach(function (d) {
+		var held = 2.1, t = nextPhaseMatch(g, JD + d, held);
+		assert.ok(t >= JD + d && t - (JD + d) < 1.01 * g.period / 86400, "within one period from +" + d);
+		within(relativePhase(g, t), held, 1e-6, "angle held at +" + d);
+	});
+	// An instant that already matches is its own answer.
+	var t1 = nextPhaseMatch(g, JD + 5, 1.0);
+	within((nextPhaseMatch(g, t1, 1.0) - t1) * 86400, 0, 0.01, "already matching");
+	// The Earth skyhook's partner is the Moon.
+	var ge = skyhookFigures("earthSkyhook"), te = nextPhaseMatch(ge, JD, 0);
+	assert.ok(O.vDot(tetherAxes(ge, te).along, O.vUnit(moonGeoPos(te))) > 0.88, "Earth tether toward the Moon");
+});

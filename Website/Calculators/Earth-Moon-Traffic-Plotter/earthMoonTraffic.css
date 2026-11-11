@@ -21,6 +21,9 @@ html, body {
 #emt-date-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 6px; }
 .emt-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
 .emt-pov-caption { margin-left: 10px; }
+.emt-hold { margin-left: auto; padding: 4px 9px; border: 1px solid #2a3142; border-radius: 5px; background: #131826; }
+.emt-hold:has(input:checked) { border-color: #ff5fd0; color: #ffd0f1; }
+.emt-hold input { accent-color: #ff5fd0; }
 #emt-pov { display: flex; flex-wrap: wrap; gap: 6px; }
 #emt-pov button {
 	font: inherit; font-size: 12px; padding: 5px 10px; cursor: pointer;
@@ -75,6 +78,21 @@ html, body {
 .emt-key-val { font-size: 15px; font-weight: 650; color: #66f0ff; white-space: nowrap; }
 .emt-key-val.emt-warn { color: #ffcf70; }
 .emt-key-error { color: #ff9a8a; font-size: 13px; }
+.emt-keys-right { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.emt-chip {
+	max-width: 420px; padding: 4px 10px; border-radius: 12px; border: 1px solid #a37a2a;
+	color: #ffd27a; font-size: 12px; font-weight: 600; line-height: 1.35;
+}
+.emt-chip.emt-chip-ok { border-color: #2f9a63; color: #9af0c0; }
+.emt-mode { display: flex; }
+.emt-mode button {
+	font: inherit; font-size: 13px; font-weight: 600; padding: 6px 14px; cursor: pointer;
+	background: #131826; color: #cfd6e4; border: 1px solid #2a3142;
+}
+.emt-mode button:first-child { border-radius: 6px 0 0 6px; }
+.emt-mode button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.emt-mode button:hover { background: #1b2336; }
+.emt-mode button[aria-pressed="true"] { background: #24437a; border-color: #5aa9ff; color: #ffffff; }
 
 /* ---- side panel ---- */
 #emt-panel {
@@ -87,6 +105,7 @@ html, body {
 .emt-card { background: #10141f; border: 1px solid #1f2637; border-radius: 8px; margin-bottom: 10px; }
 .emt-card-flight, .emt-card-display { padding: 12px 14px; }
 .emt-card.emt-role-departure { border-color: #a04a86; }
+.emt-card.emt-role-arrival { border-color: #2f9a63; }
 
 .emt-card-head {
 	display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 14px;
@@ -100,6 +119,7 @@ html, body {
 .emt-card-sub { display: block; font-size: 11px; font-weight: 400; color: #8b94a7; margin-top: 1px; }
 .emt-badge { flex: 0 0 auto; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; }
 .emt-badge-departure { background: #4a1d3d; color: #ffb3e8; }
+.emt-badge-arrival { background: #143d2a; color: #9af0c0; }
 .emt-badge-idle { color: #8b94a7; font-weight: 600; letter-spacing: 0; font-size: 11px; }
 .emt-card-body { display: none; padding: 2px 14px 13px; }
 .emt-card.emt-open .emt-card-body { display: block; }
@@ -121,6 +141,8 @@ html, body {
 .emt-ro-val { font-size: 13px; font-weight: 600; color: #e6ebf4; white-space: nowrap; }
 .emt-release { margin-top: 10px; padding-top: 10px; border-top: 1px solid #1f2637; }
 .emt-release .emt-ro-val { color: #66f0ff; }
+.emt-arrival input[type="range"] { accent-color: #3ddc84; }
+.emt-arrival .emt-muted { margin-top: 6px; }
 .emt-release-line { display: flex; align-items: flex-end; gap: 10px; }
 .emt-release-line .emt-field:last-child { flex: 0 0 92px; }
 
