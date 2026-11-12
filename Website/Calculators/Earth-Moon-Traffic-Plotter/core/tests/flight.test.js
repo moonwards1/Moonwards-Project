@@ -313,3 +313,32 @@ test("a ship within reach of the tether's very end is caught", function () {
 	assert.equal(f.arrival.caught, true);
 	assert.equal(f.arrival.reason, null);
 });
+
+// ---- the closest pass to the destination's body ----------------------------
+
+import { bodyPass } from "../flight.js";
+
+test("a flight with a destination finds its closest pass to that body", function () {
+	var f = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: JD });
+	var p = f.bodyPass, leg = f.final;
+	assert.ok(p && p.t > 0 && p.t <= leg.duration);
+	leg.samples.forEach(function (s) { assert.ok(O.vMag(s.r) >= p.distance - 1e-6, "nothing nearer Earth"); });
+	within(p.t, f.arrival.t, 3600, "a catchable path meets the tether near its closest pass to Earth");
+	var toMoon = computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: JD });
+	if (toMoon.bodyPass) {
+		var q = toMoon.bodyPass, m = stateAtMoon(toMoon.final, q.t);
+		within(m, q.distance, 1, "distance is measured from the Moon's centre");
+	}
+	assert.equal(computeFlight({ from: "moonSkyhook", jd: JD }).bodyPass, null);
+});
+
+test("a ship that only draws away from the body has no pass", function () {
+	var leg = { kind: "integrated", jde0: JD, samples: [0, 1, 2].map(function (k) {
+		return { t: k * 60, r: [7e6 + k * 1e5, 0, 0] }; }) };
+	assert.equal(bodyPass(leg, "Earth"), null);
+});
+
+function stateAtMoon(leg, t) {
+	var s = leg.samples.find(function (x) { return x.t === t; });
+	return O.vMag(O.vSub(s.r, moonGeoPos(leg.jde0 + t / 86400)));
+}

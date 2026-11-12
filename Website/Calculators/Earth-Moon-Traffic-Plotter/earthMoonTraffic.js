@@ -17,10 +17,11 @@
  *
  * A flight may have a destination. The path is then judged at its closest
  * pass to that tether (core/arrival.js), and the Flight slider runs from the
- * release to that pass. In FREE mode the user sets the release by hand; TARGET
- * (core/target.js) adjusts the release time and altitude until the ship meets
- * the tether at the catch altitude, and keeps doing so as the date, the catch
- * altitude or the hardware change. Moving the release by hand returns to Free.
+ * release to half an hour past the closest pass to the destination's body.
+ * In FREE mode the user sets the release by hand; TARGET (core/target.js)
+ * adjusts the release time and altitude until the ship meets the tether at
+ * the catch altitude, and keeps doing so as the date, the catch altitude or
+ * the hardware change. Moving the release by hand returns to Free.
  *
  * POINTING AT THE SCENE. A single click on anything — Earth, the Moon, the
  * ship, a skyhook's markers — makes the camera follow it; a right-drag pan
@@ -53,7 +54,7 @@ import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card
 import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
 import { CLOCK_EPOCH, FACILITIES, DESTINATIONS, routeReleaseAlt, skyhookFigures, phaseAt, tetherAxes,
          relativePhase, nextPhaseMatch } from "./core/facilities.js";
-import { computeFlight, flightStateAt } from "./core/flight.js";
+import { computeFlight, flightStateAt, PAST_PASS } from "./core/flight.js";
 import { solveCatch } from "./core/target.js";
 
 var O = OrbitalMath;
@@ -64,7 +65,7 @@ var START_DAYS = 81;                   // opens on 2080-03-22
 
 var COLOR = { top: 0x9fb6ff, com: 0xffd24a, tether: 0xeaf0ff, release: 0xff5fd0,
               Moon: 0xb060ff, Earth: 0x40d27f, Sun: 0xff9a3c,
-              catchPoint: 0x3ddc84, pass: 0xffffff };
+              catchPoint: 0x3ddc84 };
 // A flight from the Earth skyhook has no way to the Moon skyhook while the Moon
 // is further than this from the release plane (m); inside it, the Moon's pull
 // can bend the path the rest of the way.
@@ -132,14 +133,14 @@ function releaseJd() {
 }
 function arrival() { return flight && flight.ok && flight.arrival && flight.arrival.found ? flight.arrival : null; }
 // The flight clock, seconds since release. The slider is linear: from the
-// release to the closest pass when there is a destination, else over the whole
-// drawn path. Held as the slider's fraction, it stays at "the closest pass"
-// while the release is changed; a drag or double-click in the view sets a
-// time outright, and may go on past the closest pass.
+// release to PAST_PASS beyond the closest pass to the destination's body when
+// there is one (core/flight.js's bodyPass), else over the whole drawn path.
+// Held as the slider's fraction, it keeps its place in that span while the release is changed; a
+// drag or double-click in the view sets a time outright, and may go on past it.
 function flightSpan() {
 	if (!flight || !flight.ok) { return 0; }
-	var a = arrival();
-	return a ? a.t : flight.final.duration;
+	var p = flight.bodyPass;
+	return p ? Math.min(flight.final.duration, p.t + PAST_PASS) : flight.final.duration;
 }
 function flightSeconds() {
 	if (!flight || !flight.ok) { return 0; }
@@ -284,16 +285,12 @@ function drawTrajectory() {
 	var parent = leg.kind === "moonEllipse" ? frame.bodyNode("Moon") : frame.scene;
 	var a = arrival(), objs = [];
 	if (a) {
-		// Bright up to the closest pass, faint beyond it; the pass itself marked
-		// by the ship's position there and the nearest point of the tether.
+		// Bright up to the closest pass, faint beyond it.
 		var before = [], after = [toScene(a.rGeo)];
 		leg.samples.forEach(function (s) { (s.t <= a.t ? before : after).push(toScene(s.r)); });
 		before.push(toScene(a.rGeo));
 		objs.push(lineOf(before, COLOR[leg.primary], 1));
 		if (after.length > 1) { objs.push(lineOf(after, COLOR[leg.primary], 0.3)); }
-		var shipDot = makePoint(COLOR.pass, 6), tetherDot = makePoint(COLOR.catchPoint, 6);
-		shipDot.position.copy(toScene(a.rGeo)); tetherDot.position.copy(toScene(a.pointGeo));
-		objs.push(lineOf([toScene(a.rGeo), toScene(a.pointGeo)], COLOR.pass, 0.6), shipDot, tetherDot);
 	} else {
 		objs.push(lineOf(leg.samples.map(function (s) { return toScene(s.r); }), COLOR[leg.primary], 1));
 	}
@@ -912,7 +909,8 @@ function refresh(opts) {
 	var t = flightSeconds(), fSpan = flightSpan();
 	flightSlider.value = fSpan > 0 ? Math.min(1, t / fSpan) : 0;
 	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd).slice(0, 5);
-	$("emt-flight-label").textContent = arrival() ? "Flight to closest pass" : "Flight";
+	$("emt-flight-label").textContent = flight && flight.ok && flight.bodyPass
+		? "Flight past " + flight.toFig.body : "Flight";
 }
 
 // ---- wiring -------------------------------------------------------------------------

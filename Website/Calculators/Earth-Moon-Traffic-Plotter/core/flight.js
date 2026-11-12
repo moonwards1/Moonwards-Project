@@ -112,6 +112,7 @@ function summarize(leg) {
 //   legs      Shared/geo-leg.js legs in flight order (one, until burns exist)
 //   toFig     the destination's skyhookFigures, or null
 //   arrival   core/arrival.js's evaluateArrival result, or null with no destination
+//   bodyPass  bodyPass's result for the destination's body, or null with no destination
 //   offPlane  for a flight to another body's facility: how far that body's
 //             centre is from the origin tether's plane at the closest pass
 //             (m, facilities.js's bodyOffPlane); null otherwise
@@ -145,8 +146,37 @@ export function computeFlight(input) {
 	var arrival = toFig && !input.skipArrival ? evaluateArrival(leg, toFig) : null;
 	return { ok: true, from: input.from, to: input.to || null, jd: jd, fig: fig, toFig: toFig, release: rel,
 	         legs: [leg], final: leg, summary: summarize(leg), arrival: arrival,
+	         bodyPass: toFig && !input.skipArrival ? bodyPass(leg, toFig.body) : null,
 	         offPlane: arrival && arrival.found && toFig.body !== fig.body
 	         	? bodyOffPlane(fig, toFig.body, arrival.jd) : null };
+}
+
+// The flight's closest pass to a body ("Earth" | "Moon"): the recorded sample
+// where the ship is nearest that body's centre, over the whole flight.
+// Returns { t, distance } (s since release, m from the centre), or null when
+// the nearest point is the release itself — a ship that only draws away.
+//
+//   distance = | r_ship(t) - r_body(t) |
+//
+//   r_ship  the ship's geocentric position (a Moon-bound ellipse's samples are
+//           Moon-relative, and are carried with the Moon)
+//   r_body  the body's geocentric position: zero for Earth, the ephemeris for
+//           the Moon
+//
+// The whole flight, not the first approach: a path can dip a little towards
+// the body soon after release and only come truly close much later.
+// Sample-level timing is enough, since the page uses this to end the Flight
+// slider PAST_PASS beyond it.
+export var PAST_PASS = 1800;
+export function bodyPass(leg, body) {
+	var a = leg.samples, best = null;
+	for (var k = 0; k < a.length; k++) {
+		var jde = leg.jde0 + a[k].t / DAY;
+		var r = leg.kind === "moonEllipse" ? O.vAdd(moonGeoPos(jde), a[k].r) : a[k].r;
+		var d = O.vMag(body === "Moon" ? O.vSub(r, moonGeoPos(jde)) : r);
+		if (!best || d < best.distance) { best = { t: a[k].t, distance: d }; }
+	}
+	return best && best.t > a[0].t ? best : null;
 }
 
 // Geocentric state { r, v, jde } of the ship t seconds after release, clamped
