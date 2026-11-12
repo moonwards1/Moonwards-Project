@@ -1,7 +1,8 @@
 /* Earth-Moon-Traffic-Plotter/core/target — Target mode's solve: adjust the
  * release so the ship meets the destination tether at its catch point.
  *
- * Nothing about the hardware or the clock is touched. The two things a
+ * Nothing about the hardware, the clock or the waypoint burns is touched (a
+ * burn stays at its time since release, so it moves with the release). The two things a
  * departure skyhook can choose for free are WHEN it lets go (which, on the
  * clock, is also which way) and FROM HOW HIGH on the tether (how fast). Those
  * are the two unknowns; the two conditions are core/arrival.js's lineApproach:
@@ -59,7 +60,8 @@ export function solveCatch(input) {
 		var params = Object.assign({}, input.params);
 		params[input.from] = Object.assign({}, p0, { relAlt: h });
 		var f = computeFlight({ from: input.from, to: input.to, jd: input.jd + tau / DAY,
-		                        params: params, maxTime: nearT + reach, skipArrival: true });
+		                        params: params, waypoints: input.waypoints,
+		                        maxTime: nearT + reach, skipArrival: true });
 		if (!f.ok) { return null; }
 		var la = lineApproach(f.final, f.toFig, nearT);
 		if (!la) { return null; }

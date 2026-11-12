@@ -35,9 +35,16 @@
  * next instant the tether points that way, so scrubbing the date sliders shows
  * what the Moon's position alone does to the flight.
  *
+ * WAYPOINT BURNS (core/waypoints.js) are small course corrections, up to two,
+ * each placed by its time since release and set with the Mission Planner's
+ * burn-vector editor. Their card sits between the departure and arrival
+ * cards. In the view each reached waypoint carries the prograde / radial /
+ * normal gizmo and the burn's arrows, and its marker can be dragged along the
+ * path like the ship. Target keeps them as they are and solves around them.
+ *
  * Built so far: the two skyhooks, either one as the origin; an open path, or
- * the other skyhook as the destination.
- * Next: the rotating frame, waypoint burns, the L1 elevator, the mass driver.
+ * the other skyhook as the destination; waypoint burns.
+ * Next: the rotating frame, the L1 elevator, the mass driver.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
  */
@@ -45,17 +52,20 @@
 
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { planeBasis } from "../../Shared/kinematic-chain.js";
-import { moonGeoVel } from "../../Shared/geo-leg.js";
+import { moonGeoPos, moonGeoVel } from "../../Shared/geo-leg.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
 import { createDateBar, bindFineDrag } from "../../Shared/sim/date-bar.js";
 import { makePoint, updateScales, updateLabels, worldSizeAtPointForPx, projectedRadiusPx }
 	from "../../Shared/sim/body-renderer.js";
 import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card.js";
+import { createWaypointGizmo, makeBurnArrowPair } from "../../Shared/sim/burn-widget.js";
+import { buildVectorEditor } from "../../Shared/sim/vector-editor.js";
 import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
 import { CLOCK_EPOCH, FACILITIES, DESTINATIONS, routeReleaseAlt, skyhookFigures, phaseAt, tetherAxes,
          relativePhase, nextPhaseMatch } from "./core/facilities.js";
 import { computeFlight, flightStateAt, PAST_PASS } from "./core/flight.js";
 import { solveCatch } from "./core/target.js";
+import { MAX_AXIS_MPS, burnSize } from "./core/waypoints.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -71,6 +81,10 @@ var COLOR = { top: 0x9fb6ff, com: 0xffd24a, tether: 0xeaf0ff, release: 0xff5fd0,
 // can bend the path the rest of the way.
 var OFF_PLANE_WARN = 1e7;
 var CHEVRON_PX = 24;
+var MAX_WAYPOINTS = 2;                 // as the Mission Planner's Ephemeris tab
+var GIZMO_PX = 42;                     // on-screen arm length of a waypoint's gizmo, and its longer burn arrow
+var BURN_COLOR = { dv: 0xff5fd0, dSpeed: 0xffd24a };   // the Mission Planner's burn arrows
+var BURN_ARROW_MIN_KMS = 0.0005;       // draw the arrows of any burn from 0.5 m/s
 // Slider drag speeds while a key is held, on every slider of the page.
 var SLOW_DRAG = { shift: 0.25, ctrl: 0.1 };
 
@@ -106,13 +120,18 @@ var state = {
 	heldAngle: null,                   // that angle (rad, core/facilities.js's relativePhase), or null to capture it
 	mode: "free",                      // "free" | "target"
 	params: {},                        // facility id -> { footAlt, comAlt, topAlt, relAlt, catchAlt } (m)
-	open: {},                          // facility id -> card unfolded?
+	waypoints: [],                     // [{ t (s since release), burn: { pro, rad, nrm } (m/s) }], core/waypoints.js
+	open: { waypoints: true },         // facility id (or "waypoints") -> card unfolded?
 	pov: "system"
 };
 CARD_ORDER.forEach(function (id) {
 	state.params[id] = Object.assign({}, FACILITIES[id].defaults);
 	state.open[id] = id === state.from;
 });
+// The flight as the core is asked for it, from the release instant jd.
+function flightInput(jd) {
+	return { from: state.from, to: state.to, jd: jd, params: state.params, waypoints: state.waypoints };
+}
 
 var flight = null;                     // core/flight.js result for the current release, or { ok: false }
 var targetNote = "";                   // why the last Target solve failed, shown until the next change
@@ -189,6 +208,7 @@ holder.appendChild(frame.labelLayer);
 var facilityGroups = {};               // facility id -> THREE.Group under its body's node
 var releaseMesh = null;                // the origin's draggable release marker
 var trajObjects = [];                  // what drawTrajectory added, for removal
+var wpObjects = [];                    // the waypoints' gizmos and burn arrows, held at GIZMO_PX on screen
 var chevron = makeShipSprite(), chevronDir = new THREE.Vector3(1, 0, 0), chevronSpeed = 1;
 var markers = {};                      // follow-target id -> { pos (world), label }: the skyhooks' drawn markers
 chevron.visible = false;
@@ -298,6 +318,29 @@ function drawTrajectory() {
 	start.position.copy(toScene(leg.samples[0].r));
 	objs.push(start);
 	objs.forEach(function (o) { o.visible = showTraj.checked; parent.add(o); trajObjects.push(o); });
+	drawWaypoints();
+}
+
+// Each reached waypoint: the prograde / radial / normal gizmo of the frame its
+// burn is measured in, and the burn's two arrows — the impulse (pink) and the
+// change in speed relative to that body (yellow), the longer one as long as
+// the gizmo's arms. A flight with waypoints is always a geocentric leg, so
+// they sit in the scene itself.
+function drawWaypoints() {
+	wpObjects.forEach(function (o) { frame.scene.remove(o); disposeTree(o); });
+	wpObjects = [];
+	Object.keys(markers).forEach(function (k) { if (k.indexOf("wp:") === 0) { delete markers[k]; } });
+	if (!flight || !flight.ok || !showTraj.checked) { return; }
+	flight.waypoints.forEach(function (w, i) {
+		if (!w.reached) { return; }
+		var pos = toScene(w.r), add = [createWaypointGizmo(w.relR, w.relV, pos)];
+		var pair = makeBurnArrowPair(pos, O.vScale(O.vUnit(w.relVAfter), w.dSpeed), w.dv,
+			BURN_COLOR.dSpeed, BURN_COLOR.dv, BURN_ARROW_MIN_KMS);
+		if (pair.spdArrow) { add.push(pair.spdArrow); }
+		if (pair.dvArrow) { add.push(pair.dvArrow); }
+		add.forEach(function (o) { frame.scene.add(o); wpObjects.push(o); });
+		markers["wp:" + i] = { pos: pos, label: "waypoint " + (i + 1), dir: toScene(w.v).normalize(), speed: O.vMag(w.v) };
+	});
 }
 
 function placeShip() {
@@ -429,6 +472,16 @@ function hitRelease(e) {
 	return pxBetween(wp, cursorOf(e)) < 16;
 }
 function hitShip(e) { return chevron.visible && pxBetween(chevron.position, cursorOf(e)) < 14; }
+// The waypoint whose marker is under the cursor (its index), or -1.
+function hitWaypoint(e) {
+	var c = cursorOf(e), best = -1, bestD = 14;
+	state.waypoints.forEach(function (wp, i) {
+		var m = markers["wp:" + i];
+		var d = m ? pxBetween(m.pos, c) : Infinity;
+		if (d < bestD) { bestD = d; best = i; }
+	});
+	return best;
+}
 // Drag the release marker: the point on the tether's line nearest the cursor
 // ray sets the release altitude, kept between the foot and the top.
 function dragRelease(e) {
@@ -444,28 +497,39 @@ function dragRelease(e) {
 	p.relAlt = Math.max(p.footAlt, Math.min(p.topAlt, t * U - ud.fig.R));
 	refresh({ userRelease: true });
 }
-// Drag the ship along its path. The camera is on the ship, so the ship stays
-// at the centre and the scene scrolls, as a dragged map does: each mouse
-// movement, measured along the path's direction on screen, advances the ship
-// by that many pixels' worth of path. Shift and Ctrl slow it as on the sliders.
+// Drag something along the path: the ship, or a waypoint. The camera is on
+// it, so it stays at the centre and the scene scrolls, as a dragged map does:
+// each mouse movement, measured along the path's direction on screen,
+// advances it by that many pixels' worth of path. Shift and Ctrl slow it as
+// on the sliders. Returns the change in flight time, s:
 //
 //     dt = (dx * tx + dy * ty) * metresPerPixel / speed
 //
 //     dx, dy           the mouse movement, px
 //     tx, ty           unit vector of the path's direction on screen
-//     metresPerPixel   at the ship's distance from the camera
-//     speed            the ship's speed along the path as drawn, m/s
+//     metresPerPixel   at the dragged thing's distance from the camera
+//     speed            its speed along the path as drawn, m/s
 //
 // Where the path points almost straight at the camera it has no direction on
 // screen, and left-right movement is used.
-function dragShip(e, dx, dy) {
-	var perPx = worldSizeAtPointForPx(frame.camera, holder, chevron.position, 1);
-	var a = screenOf(chevron.position);
-	var bPos = chevron.position.clone().addScaledVector(chevronDir, perPx * 40), b = screenOf(bPos);
+function dragAlongPath(e, dx, dy, pos, dir, speed) {
+	var perPx = worldSizeAtPointForPx(frame.camera, holder, pos, 1);
+	var a = screenOf(pos);
+	var b = screenOf(pos.clone().addScaledVector(dir, perPx * 40));
 	var tx = b.x - a.x, ty = b.y - a.y, len = Math.hypot(tx, ty);
 	if (len < 8) { tx = 1; ty = 0; } else { tx /= len; ty /= len; }
 	var slow = e.ctrlKey ? SLOW_DRAG.ctrl : (e.shiftKey ? SLOW_DRAG.shift : 1);
-	setFlightTime(flightSeconds() + (dx * tx + dy * ty) * slow * perPx * U / chevronSpeed);
+	return (dx * tx + dy * ty) * slow * perPx * U / speed;
+}
+function dragShip(e, dx, dy) {
+	setFlightTime(flightSeconds() + dragAlongPath(e, dx, dy, chevron.position, chevronDir, chevronSpeed));
+}
+// A waypoint's marker sits on the path before its own burn, so moving it
+// along the path leaves the path up to it, and the camera on it, as they are.
+function dragWaypoint(e, dx, dy, i) {
+	var m = markers["wp:" + i], wp = state.waypoints[i];
+	if (!m || !wp) { return; }
+	setWaypointTime(i, wp.t + dragAlongPath(e, dx, dy, m.pos, m.dir, Math.max(1, m.speed)));
 }
 // Flight time (s) of the point of the drawn path under the cursor, within
 // 10 px, or null. Where the path passes under the cursor twice, the earlier.
@@ -499,15 +563,17 @@ bindCameraControls(renderer.domElement, function () {
 				{ meshes: frame.pickMeshes, soiSpheres: frame.pickSoiSpheres });
 		},
 		onPan: function () { if (state.follow) { setFollow(null); } },
-		// A press on the ship or the release marker is theirs: moved, it drags
-		// them; let go where it was pressed, it is a click and follows them. At
-		// the very start of a flight the two sit together, and the marker wins.
+		// A press on the ship, a waypoint or the release marker is theirs:
+		// moved, it drags them; let go where it was pressed, it is a click and
+		// follows them. At the very start of a flight the ship and the release
+		// marker sit together, and the marker wins; where the ship sits on a
+		// waypoint (a new one is put where the ship is), the waypoint wins.
 		captureDrag: function (e) {
 			if (e.button !== 0) { return null; }
-			var onRelease = hitRelease(e), onShip = hitShip(e);
-			if (!onRelease && !onShip) { return null; }
-			return { kind: onRelease && (!onShip || flightSeconds() === 0) ? "release" : "ship",
-			         x: e.clientX, y: e.clientY, travel: 0 };
+			var onRelease = hitRelease(e), onShip = hitShip(e), onWp = hitWaypoint(e);
+			if (!onRelease && !onShip && onWp < 0) { return null; }
+			var kind = onRelease && (!onShip || flightSeconds() === 0) ? "release" : (onWp >= 0 ? "wp" : "ship");
+			return { kind: kind, wp: onWp, x: e.clientX, y: e.clientY, travel: 0 };
 		},
 		onCapturedMove: function (e, tok) {
 			var dx = e.clientX - tok.x, dy = e.clientY - tok.y;
@@ -515,11 +581,18 @@ bindCameraControls(renderer.domElement, function () {
 			tok.travel += Math.abs(dx) + Math.abs(dy);
 			if (tok.travel < 3) { return; }
 			if (tok.kind === "release") { dragRelease(e); return; }
+			if (tok.kind === "wp") {
+				if (state.follow !== "wp:" + tok.wp) { setFollow("wp:" + tok.wp); }
+				dragWaypoint(e, dx, dy, tok.wp);
+				return;
+			}
 			if (state.follow !== "ship") { setFollow("ship"); }
 			dragShip(e, dx, dy);
 		},
 		onCapturedEnd: function (e, tok) {
-			if (tok.travel < 3) { setFollow(tok.kind === "ship" ? "ship" : state.from + ":release"); }
+			if (tok.travel >= 3) { return; }
+			if (tok.kind === "wp") { setFollow("wp:" + tok.wp); openCard("waypoints"); return; }
+			setFollow(tok.kind === "ship" ? "ship" : state.from + ":release");
 		},
 		onPick: function (e) {
 			var id = pickTarget(e);
@@ -535,7 +608,7 @@ bindCameraControls(renderer.domElement, function () {
 // a grab over the two things that drag.
 renderer.domElement.addEventListener("mousemove", function (e) {
 	if (e.buttons) { return; }
-	renderer.domElement.style.cursor = (hitShip(e) || hitRelease(e)) ? "grab" : (pickTarget(e) ? "pointer" : "");
+	renderer.domElement.style.cursor = (hitShip(e) || hitRelease(e) || hitWaypoint(e) >= 0) ? "grab" : (pickTarget(e) ? "pointer" : "");
 });
 followEl.addEventListener("click", function () { setFollow(null); });
 
@@ -558,6 +631,9 @@ function animate() {
 		chevron.scale.setScalar(worldSizeAtPointForPx(frame.camera, holder, chevron.position, CHEVRON_PX));
 		orientMarkerSprite(frame.camera, chevron, chevronDir);
 	}
+	wpObjects.forEach(function (o) {
+		o.scale.setScalar(worldSizeAtPointForPx(frame.camera, holder, o.position, GIZMO_PX));
+	});
 	renderer.render(frame.scene, frame.camera);
 }
 
@@ -684,6 +760,145 @@ function buildStub(stub) {
 	title.appendChild(el("span", "emt-card-sub", stub.sub));
 	head.appendChild(el("span", "emt-badge emt-badge-idle", "not built yet"));
 	cardsEl.appendChild(card);
+	stubEls.push(card);
+}
+var stubEls = [];
+
+// ---- the waypoint card ------------------------------------------------------------
+// One block per waypoint: its time of flight (slider and hours), what the ship
+// is doing there, and the burn, in the Mission Planner's vector editor capped
+// at ±MAX_AXIS_MPS per axis. The blocks are rebuilt only when a waypoint is
+// added or removed; fillWaypointCard writes their values.
+var wpCard = null;                     // { el, refs, rows }
+function buildWaypointCard() {
+	var refs = {};
+	var card = el("section", "emt-card emt-card-wp");
+	var head = card.appendChild(el("button", "emt-card-head"));
+	head.type = "button";
+	head.innerHTML = CHEVRON_SVG;
+	var title = head.appendChild(el("span", "emt-card-title", "Waypoint burns"));
+	refs.sub = title.appendChild(el("span", "emt-card-sub"));
+	refs.badge = head.appendChild(el("span", "emt-badge"));
+	head.addEventListener("click", function () { state.open.waypoints = !state.open.waypoints; syncCards(); });
+	refs.head = head;
+	var body = card.appendChild(el("div", "emt-card-body"));
+	refs.list = body.appendChild(el("div", "emt-wp-list"));
+	refs.add = body.appendChild(el("button", "emt-btn", "+ add waypoint"));
+	refs.add.type = "button";
+	refs.add.title = "Add a burn where the ship is on the Flight slider";
+	refs.add.addEventListener("click", addWaypoint);
+	body.appendChild(el("div", "emt-muted",
+		"Small course corrections, each at a time since release: up to ±" + MAX_AXIS_MPS + " m/s along each axis. " +
+		"Inside the Moon's sphere of influence a burn is measured against the Moon, elsewhere against Earth. " +
+		"A new waypoint goes where the ship is on the Flight slider; drag its marker in the view to move it along the path."));
+	wpCard = { el: card, refs: refs, rows: [] };
+	cardsEl.appendChild(card);
+	rebuildWaypointRows();
+}
+
+function rebuildWaypointRows() {
+	var R = wpCard.refs;
+	R.list.textContent = "";
+	wpCard.rows = [];
+	state.waypoints.forEach(function (wp, i) {
+		var row = {}, box = R.list.appendChild(el("div", "emt-wp"));
+		var head = box.appendChild(el("div", "emt-wp-head"));
+		head.appendChild(el("span", "emt-wp-name", "Waypoint " + (i + 1)));
+		var rm = head.appendChild(el("button", "emt-btn emt-btn-small", "remove"));
+		rm.type = "button";
+		rm.addEventListener("click", function () { removeWaypoint(i); });
+
+		var line = box.appendChild(el("div", "emt-release-line"));
+		var sf = line.appendChild(el("div", "emt-field"));
+		var lab = sf.appendChild(el("label", null, "Time of flight"));
+		lab.htmlFor = "emt-wp" + i + "-slider";
+		row.slider = sf.appendChild(el("input"));
+		row.slider.type = "range"; row.slider.id = lab.htmlFor; row.slider.min = 0; row.slider.step = "any";
+		function moved() { setWaypointTime(i, parseFloat(row.slider.value)); }
+		row.slider.addEventListener("input", moved);
+		bindFineDrag(row.slider, moved, null, SLOW_DRAG);
+		row.hours = numberField(line, "emt-wp" + i + "-hours", "hours", function () {
+			var h = parseFloat(row.hours.value);
+			if (isFinite(h) && h > 0) { setWaypointTime(i, h * 3600, { keepInputs: true }); }
+		});
+
+		row.error = box.appendChild(el("div", "emt-error"));
+		var ro = box.appendChild(el("div", "emt-readouts"));
+		row.when = readout(ro, "at");
+		row.dEarth = readout(ro, "distance from Earth");
+		row.dMoon = readout(ro, "distance from the Moon");
+		row.frame = readout(ro, "burn measured against");
+		row.speed = readout(ro, "speed there, before → after");
+		row.dv = readout(ro, "burn");
+
+		var burnHost = box.appendChild(el("div", "emt-wp-burn"));
+		// wp.burn is the live object: the editor writes into it as it is dragged or typed.
+		buildVectorEditor(burnHost, wp.burn, function () { refresh(); },
+			{ maxDeltaMps: MAX_AXIS_MPS, displayDiv: 1, decimals: 1, step: 0.1, unitLabel: "m/s" });
+		wpCard.rows.push(row);
+	});
+	R.add.hidden = state.waypoints.length >= MAX_WAYPOINTS;
+}
+
+// A new waypoint goes where the ship is on the Flight slider, or halfway
+// along the flight while the slider is at the start; never on top of another.
+function addWaypoint() {
+	if (state.waypoints.length >= MAX_WAYPOINTS) { return; }
+	var fSpan = flightSpan(), t = flightSeconds();
+	if (!(t > 60 && t < fSpan)) { t = fSpan > 0 ? fSpan / 2 : 3600; }
+	state.waypoints.forEach(function (w) { if (Math.abs(w.t - t) < 60) { t += 3600; } });
+	state.waypoints.push({ t: t, burn: { pro: 0, rad: 0, nrm: 0 } });
+	rebuildWaypointRows();
+	openCard("waypoints");
+	refresh();
+}
+function removeWaypoint(i) {
+	state.waypoints.splice(i, 1);
+	if (state.follow && state.follow.indexOf("wp:") === 0) { setFollow(null); }
+	rebuildWaypointRows();
+	refresh();
+}
+function setWaypointTime(i, t, opts) {
+	var wp = state.waypoints[i];
+	if (!wp || !isFinite(t)) { return; }
+	wp.t = Math.max(1, t);
+	refresh(opts);
+}
+function openCard(id) { state.open[id] = true; syncCards(); }
+
+// The burns' total, m/s, over the waypoints the flight reaches.
+function waypointTotal() {
+	if (!flight || !flight.ok) { return 0; }
+	return flight.waypoints.reduce(function (sum, w) { return sum + (w.reached ? burnSize(w.burn) : 0); }, 0);
+}
+
+function fillWaypointCard(opts) {
+	var R = wpCard.refs, n = state.waypoints.length, fSpan = flightSpan();
+	state.waypoints.forEach(function (wp, i) {
+		var row = wpCard.rows[i], w = flight && flight.ok ? flight.waypoints[i] : null;
+		row.slider.max = Math.max(fSpan, wp.t);
+		row.slider.value = wp.t;
+		if (!(opts && opts.keepInputs)) { row.hours.value = +(wp.t / 3600).toFixed(2); }
+		var jd = releaseJd() + wp.t / DAY;
+		row.when.textContent = "T+ " + span(wp.t) + " · " + shortDate(jd) + " " + clockTime(jd).slice(0, 5);
+		var reached = !!(w && w.reached);
+		row.error.style.display = reached || !w ? "none" : "";
+		row.error.textContent = reached || !w ? ""
+			: "The flight ends at T+ " + span(flight.final.duration) + ", before this waypoint, so its burn is not made.";
+		if (!reached) {
+			["dEarth", "dMoon", "frame", "speed", "dv"].forEach(function (k) { row[k].textContent = "—"; });
+			return;
+		}
+		row.dEarth.textContent = km(O.vMag(w.r));
+		row.dMoon.textContent = km(O.vMag(O.vSub(w.r, moonGeoPos(w.jd))));
+		row.frame.textContent = w.body === "Moon" ? "the Moon (inside its sphere of influence)" : "Earth";
+		row.speed.textContent = num(O.vMag(w.relV)) + " → " + num(O.vMag(w.relVAfter)) + " m/s";
+		row.dv.textContent = num(burnSize(w.burn), 1) + " m/s";
+	});
+	var total = waypointTotal();
+	R.sub.textContent = n ? n + (n === 1 ? " waypoint" : " waypoints") + " · " + num(total, 1) + " m/s in all" : "None: the ship coasts from release";
+	R.badge.className = "emt-badge " + (n ? "emt-badge-wp" : "emt-badge-idle");
+	R.badge.textContent = n ? "IN FLIGHT" : "none";
 }
 
 // Fold state, role badge and which cards carry the release controls.
@@ -699,6 +914,17 @@ function syncCards() {
 		c.refs.release.style.display = origin ? "" : "none";
 		c.refs.arrival.style.display = dest ? "" : "none";
 	});
+	wpCard.el.classList.toggle("emt-open", !!state.open.waypoints);
+	wpCard.refs.head.setAttribute("aria-expanded", String(!!state.open.waypoints));
+	orderCards();
+}
+// The sidebar in flight order: the departure, the waypoints, the arrival, then
+// the facilities not in this flight and those not built yet.
+function orderCards() {
+	var els = [cards[state.from].el, wpCard.el];
+	if (state.to) { els.push(cards[state.to].el); }
+	CARD_ORDER.forEach(function (id) { if (id !== state.from && id !== state.to) { els.push(cards[id].el); } });
+	els.concat(stubEls).forEach(function (e) { cardsEl.appendChild(e); });
 }
 
 // Write a card's values. opts.keepInputs leaves the number fields alone, so a
@@ -779,6 +1005,7 @@ function fillKeys() {
 	}
 	var s = flight.summary, fig = flight.fig;
 	key("Release speed", num(fig.vRel) + " m/s");
+	if (state.waypoints.length) { key("Waypoint burns", num(waypointTotal(), 1) + " m/s"); }
 	if (state.to) { fillArrivalKeys(s); return; }
 	if (s.impact) {
 		key("Path", "reaches " + (s.impact === "Moon" ? "the Moon's" : "Earth's") + " surface", true);
@@ -853,7 +1080,7 @@ function scheduleTarget(delay) {
 function runTarget() {
 	targetTimer = 0;
 	if (state.mode !== "target" || !state.to) { return; }
-	var res = solveCatch({ from: state.from, to: state.to, jd: releaseJd(), params: state.params });
+	var res = solveCatch(flightInput(releaseJd()));
 	if (res.ok) {
 		var fig = figs[state.from];
 		state.params[state.from].relAlt = res.relAlt;
@@ -892,7 +1119,7 @@ function refresh(opts) {
 		if (opts.userRelease && state.mode === "target") { state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0; }
 		CARD_ORDER.forEach(function (id) { figs[id] = skyhookFigures(id, state.params[id]); });
 		applyHold(opts);
-		flight = computeFlight({ from: state.from, to: state.to, jd: releaseJd(), params: state.params });
+		flight = computeFlight(flightInput(releaseJd()));
 		drawTrajectory();
 		// In Target mode any other change (date, catch altitude, hardware) is
 		// followed by a fresh solve once the control has rested.
@@ -902,6 +1129,7 @@ function refresh(opts) {
 	var jd = sceneJd();
 	frame.place(jd);
 	CARD_ORDER.forEach(function (id) { drawFacility(id); fillCard(id, opts); });
+	fillWaypointCard(opts);
 	placeShip();
 
 	var fig = figs[state.from];
@@ -923,6 +1151,7 @@ var dateBar = createDateBar(state, {
 
 function init() {
 	CARD_ORDER.forEach(buildCard);
+	buildWaypointCard();
 	STUBS.forEach(buildStub);
 	syncCards();
 
@@ -965,6 +1194,9 @@ function init() {
 		state.from = e.target.value;
 		state.to = null;
 		state.heldAngle = null;
+		// A burn's time since release means nothing on a flight from somewhere else.
+		state.waypoints = [];
+		rebuildWaypointRows();
 		fillDestinations();
 		routeChanged();
 	});

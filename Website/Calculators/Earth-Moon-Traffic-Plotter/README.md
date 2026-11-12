@@ -7,20 +7,23 @@ the Moon skyhook, the L1 elevator, the lunar mass driver and the Earth skyhook.
 
 **Built so far:** the two skyhooks, a release from either one, an open path,
 and a flight from either skyhook to the other — judged at its closest pass to
-the destination tether, with Free and Target aiming. The rotating view,
-waypoint burns, the L1 elevator and the mass driver come next.
+the destination tether, with Free and Target aiming; up to two waypoint burns
+along the way. The rotating view, the L1 elevator and the mass driver come next.
 
 ## Files
 
 - `earthMoonTraffic.html`, `.css` (`emt-` prefix), `.js` — the page: scene, date
   bar, sidebar cards, read-outs. It computes nothing the core could not.
 - `core/facilities.js` — the facilities as data, and their kinematics on the clock. Pure.
-- `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`. Pure.
+- `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`, flying
+  through any waypoint burns. Pure.
+- `core/waypoints.js` — the burns: the ±50 m/s cap, which body a burn is measured
+  against, and applying it (`applyWaypointBurn`). Pure.
 - `core/arrival.js` — how a flight meets a tether: the closest pass, the miss, the
   trim burn (`evaluateArrival`), and the smooth form Target solves on (`lineApproach`). Pure.
 - `core/target.js` — `solveCatch(input)`: adjusts the release time and altitude until
   the ship meets the destination tether at its catch altitude. Pure.
-- `core/tests/flight.test.js` — Node tests:
+- `core/tests/flight.test.js`, `waypoints.test.js` — Node tests:
   `node --test Website/Calculators/Earth-Moon-Traffic-Plotter/core/tests/*.test.js`
 
 ## Everything follows one clock
@@ -73,16 +76,46 @@ the rest of the way), and is marked while it is over 10,000 km. A flight from th
 skyhook has no such limit: whatever plane the ship falls toward Earth in, Earth
 is in it.
 
+## Waypoint burns
+
+The **Waypoint burns** card, between the departure and arrival cards, holds up
+to two small course corrections. Each is placed by its **time since release**
+(not, as in the Mission Planner, by angle round the orbit) and set with the
+Mission Planner's burn-vector editor, capped at ±50 m/s along each of the
+prograde, radial and normal axes. A new waypoint goes where the ship is on the
+Flight slider. A burn is an instant change of velocity,
+
+    v_after = v + pro * p + rad * q + nrm * n
+
+- `v` — the ship's velocity just before the burn
+- `p, q, n` — the prograde, radial and normal unit vectors of
+  `OrbitalMath.burnFrame`, built on the ship's position and velocity relative to
+  the Moon while it is inside the Moon's sphere of influence (~66,000 km), and
+  relative to Earth elsewhere
+- `pro, rad, nrm` — the burn's three components, m/s
+
+The flight is flown in segments between the burns under the same Earth + Moon +
+Sun gravity, and the segments are joined on one clock, so the drawing, the
+Flight slider and the arrival read a flight with burns as they read one
+without. Target keeps the burns as they are, each at its time since release,
+and solves the release time and altitude around them. In the view each burn
+shows the gizmo of its frame and two arrows — the impulse, and the change in
+speed relative to that body — and its marker drags along the path like the ship.
+
+Nothing in the waypoints depends on how the flight began, so the same card and
+core serve the releases still to come: the L1 elevator's and the mass driver's.
+
 ## Pointing at the scene
 
-A single click on anything — Earth, the Moon, the ship, a skyhook's centre of
-mass, top, release point or catch point — makes the camera follow it; the label
-in the view's corner names it, and its ✕ or a right-drag pan lets go. Dragging
-the ship moves it along its path with the camera on it, the way a map is
-dragged: the ship stays centred and the scene scrolls. Double-clicking the path
+A single click on anything — Earth, the Moon, the ship, a waypoint, a skyhook's
+centre of mass, top, release point or catch point — makes the camera follow it;
+the label in the view's corner names it, and its ✕ or a right-drag pan lets go.
+Dragging the ship moves it along its path with the camera on it, the way a map is
+dragged: the ship stays centred and the scene scrolls. A waypoint's marker drags
+the same way, moving the burn along the path. Double-clicking the path
 puts the ship at that point. The Flight slider is linear in time. **Hold skyhook
 phase** keeps the departure tether's angle to the Earth direction fixed while the
-date changes. Shift (¼) and Ctrl (1/10) slow any slider and the ship drag.
+date changes. Shift (¼) and Ctrl (1/10) slow any slider and both drags.
 
 ## Defaults
 
