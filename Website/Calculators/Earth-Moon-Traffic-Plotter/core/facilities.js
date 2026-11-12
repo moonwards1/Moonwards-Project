@@ -51,13 +51,14 @@ var CLOCK_REF = [1, 0, 0];
 // design exported from the home workbench (2026-11-10). relAlt is where a ship
 // is let go when the facility is a flight's origin with no destination: the
 // Moon skyhook's release deck (its Earth release point), the Earth skyhook's
-// top. catchAlt is where an arriving ship is aimed when the facility is a
-// flight's destination.
+// top. catchAlt is where the mobile catcher is when the facility is a flight's
+// destination: the page moves it to wherever the ship passes, and
+// core/target.js's solveCatch aims a ship at it.
 //
 // Each skyhook has one point where traffic to and from the other one is at the
 // tether's own speed (omega * r = the ship's speed there), so a ship can be
 // let go onto the slowest path across, or taken hold of off it, with little
-// left to trim: the Moon skyhook's release deck at 949.4 km, and near 5,200 km
+// relative motion: the Moon skyhook's release deck at 949.4 km, and near 5,200 km
 // on the Earth skyhook. That point is both the catch point and, in releaseFor,
 // where a flight to the other skyhook starts from.
 //

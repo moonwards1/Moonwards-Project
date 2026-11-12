@@ -32,14 +32,21 @@
 			</div>
 			<div class="emt-slider-line">
 				<span class="emt-slider-end">2080</span>
-				<input type="range" id="emt-date-coarse" min="0" max="1827" step="1" value="0" aria-label="Date, 2080 to 2085">
+				<div class="emt-track">
+					<input type="range" id="emt-date-coarse" min="0" max="1827" step="1" value="0" aria-label="Date, 2080 to 2085">
+					<div class="emt-windows" id="emt-windows-coarse" aria-hidden="true"></div>
+				</div>
 				<span class="emt-slider-end">2085</span>
 			</div>
 			<div class="emt-slider-line">
 				<span class="emt-slider-end" id="emt-fine-lo"></span>
-				<input type="range" id="emt-date-fine" min="-13.66" max="13.66" step="0.005" value="0" aria-label="Date, one lunar orbit around the slider above">
+				<div class="emt-track">
+					<input type="range" id="emt-date-fine" min="-13.66" max="13.66" step="0.005" value="0" aria-label="Date, one lunar orbit around the slider above">
+					<div class="emt-windows" id="emt-windows-fine" aria-hidden="true"></div>
+				</div>
 				<span class="emt-slider-end" id="emt-fine-hi"></span>
 			</div>
+			<div id="emt-window-note" aria-live="polite"></div>
 			<div class="emt-slider-line emt-line-release">
 				<span class="emt-slider-end">Release time</span>
 				<input type="range" id="emt-release-time" min="0" max="1" step="any" value="0" aria-label="Release time within one orbit of the departure skyhook">
@@ -86,7 +93,7 @@
 							<select id="emt-to"></select>
 						</div>
 					</div>
-					<div class="emt-muted">Every facility follows the clock: the release time decides which way the tether points when it lets go. With a destination chosen, <b>Target</b> (under the view) adjusts the release time and altitude until the ship meets that tether at its catch altitude.</div>
+					<div class="emt-muted">Every facility follows the clock: the release time decides which way the tether points when it lets go. A ship can be caught anywhere along the destination tether, by a catcher that moves along it and absorbs up to 800 m/s of relative motion. With a destination chosen, <b>Target</b> (under the view) adjusts the release time and altitude until the ship meets that tether at the point where the relative motion is least.</div>
 				</section>
 
 				<div id="emt-cards"></div>
@@ -137,11 +144,20 @@
 				hour past the flight's closest pass to that body; dragging the ship in the view moves
 				it by distance along its path instead. A flight with a destination is judged at its closest pass
 				to that tether: the miss is the distance between ship and tether
-				there, and the trim burn is the ship's speed relative to that point
-				of the tether. Target changes only the release time and altitude; it
-				does not reduce the trim burn, which depends on the date and the
-				catch altitude. A waypoint burn is an instant change of velocity
-				at its time since release, up to 50 m/s along each of the
+				there, and the relative motion is the ship's speed relative to that point
+				of the tether. A catcher that moves along the tether takes hold of the
+				ship there if the relative motion is no more than 800 m/s. Target
+				changes only the release time and altitude, and brings the ship to the
+				point of the tether where the relative motion is least; how low that
+				is depends on the date. The marks under the two date sliders are
+				the release windows for the flight's direction: the Earth skyhook
+				turns in Earth's equatorial plane, which the Moon passes through
+				twice in each lunar orbit, so a ship for the Moon has to arrive
+				around one of those crossings and a ship for the Earth skyhook has
+				to leave around one. Green marks are windows where the relative
+				motion at the catch is expected to be within the catcher's limit,
+				amber ones where it is not. A waypoint burn is an instant change of velocity
+				at its time since release, up to 300 m/s along each of the
 				prograde, radial and normal axes, measured against the Moon inside
 				its sphere of influence and against Earth elsewhere; Target leaves
 				the burns as they are and solves around them.

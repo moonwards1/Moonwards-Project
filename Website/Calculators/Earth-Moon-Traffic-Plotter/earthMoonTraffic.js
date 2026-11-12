@@ -18,10 +18,13 @@
  * A flight may have a destination. The path is then judged at its closest
  * pass to that tether (core/arrival.js), and the Flight slider runs from the
  * release to half an hour past the closest pass to the destination's body.
- * In FREE mode the user sets the release by hand; TARGET (core/target.js)
- * adjusts the release time and altitude until the ship meets the tether at
- * the catch altitude, and keeps doing so as the date, the catch altitude or
- * the hardware change. Moving the release by hand returns to Free.
+ * A mobile catcher takes hold of the ship wherever along the tether it passes,
+ * if their relative motion is within the catcher's limit; the catch point drawn
+ * on the tether is where the catcher has to be. In FREE mode the user sets the
+ * release by hand; TARGET (core/target.js) adjusts the release time and
+ * altitude until the ship meets the tether at the point where that relative
+ * motion is least, and keeps doing so as the date or the hardware change.
+ * Moving the release by hand returns to Free.
  *
  * POINTING AT THE SCENE. A single click on anything — Earth, the Moon, the
  * ship, a skyhook's markers — makes the camera follow it; a right-drag pan
@@ -34,6 +37,11 @@
  * direction fixed while the date changes: the release time is moved to the
  * next instant the tether points that way, so scrubbing the date sliders shows
  * what the Moon's position alone does to the flight.
+ *
+ * RELEASE WINDOWS (core/windows.js) are marked under the two date sliders:
+ * the dates on which a release from the flight's origin suits the Earth
+ * skyhook's plane, green where the catch is expected to be within the
+ * catcher's limit and amber where it is not.
  *
  * WAYPOINT BURNS (core/waypoints.js) are small course corrections, up to two,
  * each placed by its time since release and set with the Mission Planner's
@@ -64,8 +72,10 @@ import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
 import { CLOCK_EPOCH, FACILITIES, DESTINATIONS, routeReleaseAlt, skyhookFigures, phaseAt, tetherAxes,
          relativePhase, nextPhaseMatch } from "./core/facilities.js";
 import { computeFlight, flightStateAt, PAST_PASS } from "./core/flight.js";
-import { solveCatch } from "./core/target.js";
+import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
+import { solveBestCatch } from "./core/target.js";
 import { MAX_AXIS_MPS, burnSize } from "./core/waypoints.js";
+import { releaseWindows } from "./core/windows.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -276,7 +286,7 @@ function drawFacility(id) {
 		grp.add(releaseMesh);
 	}
 	if (id === state.to) {
-		// The catch point: a small bar across the tether at the catch altitude.
+		// The catch point: a small bar across the tether where the catcher is.
 		var half = 0.03 * fig.rTop / U, at = along.clone().multiplyScalar(fig.rCatch / U);
 		grp.add(lineOf([at.clone().addScaledVector(pro, -half), at.clone().addScaledVector(pro, half)], COLOR.catchPoint, 1));
 	}
@@ -721,29 +731,13 @@ function buildCard(id) {
 
 	// The arrival controls and read-outs: shown on the flight's destination only.
 	var arr = body.appendChild(el("div", "emt-release emt-arrival"));
-	var aline = arr.appendChild(el("div", "emt-release-line"));
-	var af = aline.appendChild(el("div", "emt-field"));
-	var al = af.appendChild(el("label", null, "Catch altitude"));
-	al.htmlFor = "emt-" + id + "-catchSlider";
-	refs.catchSlider = af.appendChild(el("input"));
-	refs.catchSlider.type = "range"; refs.catchSlider.id = al.htmlFor; refs.catchSlider.step = "any";
-	function catchAltMoved() {
-		state.params[id].catchAlt = parseFloat(refs.catchSlider.value) * 1e3;
-		refresh();
-	}
-	refs.catchSlider.addEventListener("input", catchAltMoved);
-	bindFineDrag(refs.catchSlider, catchAltMoved, null, SLOW_DRAG);
-	refs.catchAlt = numberField(aline, "emt-" + id + "-catchAlt", "km", function () {
-		state.params[id].catchAlt = parseFloat(refs.catchAlt.value) * 1e3;
-		refresh({ keepInputs: true });
-	});
 	var aro = arr.appendChild(el("div", "emt-readouts"));
 	refs.aMiss = readout(aro, "closest pass to the tether");
-	refs.aPoint = readout(aro, "nearest point of the tether");
+	refs.aPoint = readout(aro, "catcher's place on the tether");
 	refs.aWait = readout(aro, "tether timing");
 	refs.aPointSpeed = readout(aro, "tether speed there");
 	refs.aShipSpeed = readout(aro, "ship speed there");
-	refs.aTrim = readout(aro, "trim burn to match");
+	refs.aTrim = readout(aro, "relative motion (the catcher absorbs up to " + num(CATCH_SPEED_LIMIT) + " m/s)");
 	refs.aComp = arr.appendChild(el("div", "emt-muted"));
 	refs.arrival = arr;
 
@@ -788,7 +782,7 @@ function buildWaypointCard() {
 	refs.add.title = "Add a burn where the ship is on the Flight slider";
 	refs.add.addEventListener("click", addWaypoint);
 	body.appendChild(el("div", "emt-muted",
-		"Small course corrections, each at a time since release: up to ±" + MAX_AXIS_MPS + " m/s along each axis. " +
+		"Course corrections, each at a time since release: up to ±" + MAX_AXIS_MPS + " m/s along each axis. " +
 		"Inside the Moon's sphere of influence a burn is measured against the Moon, elsewhere against Earth. " +
 		"A new waypoint goes where the ship is on the Flight slider; drag its marker in the view to move it along the path."));
 	wpCard = { el: card, refs: refs, rows: [] };
@@ -932,13 +926,12 @@ function orderCards() {
 function fillCard(id, opts) {
 	var c = cards[id].refs, p = state.params[id], fig = figs[id];
 	if (!(opts && opts.keepInputs)) {
-		["footAlt", "comAlt", "topAlt", "relAlt", "catchAlt"].forEach(function (k) {
+		["footAlt", "comAlt", "topAlt", "relAlt"].forEach(function (k) {
 			c[k].value = +(p[k] / 1e3).toFixed(1);
 		});
 	}
 	c.sub.textContent = "foot " + num(p.footAlt / 1e3) + " km · CoM " + num(p.comAlt / 1e3) + " km · top " + num(p.topAlt / 1e3) + " km";
 	c.relSlider.min = p.footAlt / 1e3; c.relSlider.max = p.topAlt / 1e3; c.relSlider.value = p.relAlt / 1e3;
-	c.catchSlider.min = p.footAlt / 1e3; c.catchSlider.max = p.topAlt / 1e3; c.catchSlider.value = p.catchAlt / 1e3;
 	if (id === state.to) { fillArrival(c); }
 	c.error.textContent = fig.ok ? "" : fig.diagnostic.message;
 	c.error.style.display = fig.ok ? "none" : "";
@@ -962,7 +955,8 @@ function fillCard(id, opts) {
 function signed(x) { return (x >= 0 ? "+" : "−") + num(Math.abs(x)); }
 // Where the ship passes relative to the tether, in words.
 function passText(a) {
-	if (a.caught) { return "meets the tether"; }
+	if (a.caught) { return "caught at " + km(a.altitude); }
+	if (a.reason === "too-fast") { return "meets the tether too fast to be caught"; }
 	if (a.reason === "above-top") { return "passes " + km(a.gap) + " above the top"; }
 	if (a.reason === "below-foot") { return "passes " + km(-a.gap) + " below the foot"; }
 	return "misses the tether";
@@ -985,7 +979,7 @@ function fillArrival(c) {
 	c.aPointSpeed.textContent = num(a.pointSpeed) + " m/s";
 	c.aShipSpeed.textContent = num(a.shipSpeed) + " m/s";
 	c.aTrim.textContent = num(a.trim) + " m/s";
-	c.aComp.textContent = "Trim, by direction: along the tether's motion " + signed(a.components.pro)
+	c.aComp.textContent = "Relative motion, by direction: along the tether's motion " + signed(a.components.pro)
 		+ ", outward " + signed(a.components.out) + ", across its plane " + signed(a.components.nrm) + " m/s.";
 }
 
@@ -1040,9 +1034,9 @@ function fillArrivalKeys(s) {
 			key("Moon from the release plane", km(Math.abs(flight.offPlane)) + (flight.offPlane >= 0 ? " north" : " south"),
 				Math.abs(flight.offPlane) > OFF_PLANE_WARN);
 		}
-		key("Closest pass", a.miss < 1e4 ? num(a.miss) + " m" : km(a.miss), !a.caught);
+		key("Closest pass", a.miss < 1e4 ? num(a.miss) + " m" : km(a.miss), !a.met);
 		key("At tether altitude", km(a.altitude));
-		key("Trim burn", num(a.trim) + " m/s");
+		key("Relative motion · catcher limit " + num(CATCH_SPEED_LIMIT) + " m/s", num(a.trim) + " m/s", a.trim > CATCH_SPEED_LIMIT);
 	} else {
 		key("Path", flight.arrival.reason === "never-leaves" ? "stays in orbit around the Moon" : "ends before reaching the tether's side", true);
 	}
@@ -1057,7 +1051,7 @@ function fillArrivalKeys(s) {
 		b.type = "button";
 		b.setAttribute("aria-pressed", String(state.mode === m[0]));
 		b.title = m[0] === "free" ? "Set the release time and altitude by hand"
-			: "Adjust the release time and altitude until the ship meets the tether at the catch altitude";
+			: "Adjust the release time and altitude until the ship meets the tether where its relative motion is least";
 		b.addEventListener("click", function () { setMode(m[0]); });
 	});
 	keysEl.appendChild(right);
@@ -1080,13 +1074,16 @@ function scheduleTarget(delay) {
 function runTarget() {
 	targetTimer = 0;
 	if (state.mode !== "target" || !state.to) { return; }
-	var res = solveCatch(flightInput(releaseJd()));
+	var res = solveBestCatch(flightInput(releaseJd()));
 	if (res.ok) {
 		var fig = figs[state.from];
 		state.params[state.from].relAlt = res.relAlt;
 		state.relFrac = (res.jd - state.jd) * DAY / fig.period;
 		relSlider.value = state.relFrac;
-		targetNote = "";
+		// Target stays on when the best point is still too fast, so the date can
+		// be searched for one that is not.
+		targetNote = res.caught ? "" : "Lowest relative motion on this tether is " + num(res.speed)
+			+ " m/s: over the catcher's " + num(CATCH_SPEED_LIMIT) + " m/s. Try another date.";
 	} else {
 		state.mode = "free";
 		targetNote = res.message;
@@ -1109,6 +1106,61 @@ function applyHold(opts) {
 	relSlider.value = state.relFrac;
 }
 
+// ---- release windows on the date sliders ------------------------------------------
+var FINE_HALF = parseFloat($("emt-date-fine").max);     // the fine slider's half-span, days
+var windows = [], windowsKey = "";
+// The windows for the flight's direction over the whole date span, worked out
+// again only when the origin or either skyhook's geometry changes.
+function updateWindows() {
+	var e = figs.earthSkyhook, m = figs.moonSkyhook;
+	var key = state.from + JSON.stringify([state.params.earthSkyhook, state.params.moonSkyhook], ["footAlt", "comAlt", "topAlt"]);
+	if (key === windowsKey) { return; }
+	windowsKey = key;
+	windows = e.ok && m.ok ? releaseWindows(FACILITIES[state.from].body === "Earth" ? "Moon" : "Earth", e, m,
+		e.R + routeReleaseAlt("earthSkyhook", "moonSkyhook", state.params.earthSkyhook),
+		JD0 - FINE_HALF, JD0 + SPAN_DAYS + FINE_HALF) : [];
+	drawWindows($("emt-windows-coarse"), JD0, JD0 + SPAN_DAYS);
+}
+// Mark the windows that fall between two Julian dates on a slider's strip.
+function drawWindows(strip, lo, hi) {
+	strip.textContent = "";
+	windows.forEach(function (w) {
+		if (w.end < lo || w.start > hi) { return; }
+		var a = Math.max(0, (w.start - lo) / (hi - lo)), b = Math.min(1, (w.end - lo) / (hi - lo));
+		var mark = strip.appendChild(el("div", "emt-window" + (w.within ? "" : " emt-window-over")));
+		mark.style.left = (a * 100) + "%"; mark.style.width = ((b - a) * 100) + "%";
+	});
+}
+// The fine slider's marks, and the line naming the window the date is in or
+// the next one to come.
+function showWindows() {
+	updateWindows();
+	var mid = JD0 + state.baseDays;
+	drawWindows($("emt-windows-fine"), mid - FINE_HALF, mid + FINE_HALF);
+	var note = $("emt-window-note"), w = null;
+	windows.forEach(function (x) { if (!w && x.end >= state.jd) { w = x; } });
+	note.textContent = "";
+	note.classList.toggle("emt-window-over", !!w && !w.within);
+	if (!w) { return; }
+	var toMoon = FACILITIES[state.from].body === "Earth";
+	function stamp(jd) { return shortDate(jd).replace(/ \d+$/, "") + " " + clockTime(jd).slice(0, 5); }
+	note.appendChild(document.createTextNode((w.start <= state.jd ? "In a release window" : "Next release window")
+		+ " for " + (toMoon ? "the Moon" : "the Earth skyhook") + ": "));
+	note.appendChild(el("b", null, stamp(w.start) + " to " + stamp(w.end)));
+	note.appendChild(document.createTextNode(" · relative motion at the catch about " + num(Math.round(w.speed / 10) * 10) + " m/s"
+		+ (w.within ? "" : ", over the catcher's " + num(CATCH_SPEED_LIMIT) + " m/s")
+		+ (toMoon ? " · the Moon crosses Earth's equatorial plane " : " · the Moon is in Earth's equatorial plane ") + stamp(w.crossing)));
+}
+
+// The mobile catcher goes to wherever along the destination tether the ship
+// passes closest.
+function placeCatcher() {
+	var a = arrival();
+	if (!a) { return; }
+	state.params[state.to].catchAlt = a.altitude;
+	figs[state.to] = skyhookFigures(state.to, state.params[state.to]);
+}
+
 // ---- refresh -----------------------------------------------------------------------
 // Everything downstream of the state. opts.sceneOnly: only the flight clock
 // moved, so the flight itself stands and just the scene time changes.
@@ -1119,9 +1171,11 @@ function refresh(opts) {
 		if (opts.userRelease && state.mode === "target") { state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0; }
 		CARD_ORDER.forEach(function (id) { figs[id] = skyhookFigures(id, state.params[id]); });
 		applyHold(opts);
+		showWindows();
 		flight = computeFlight(flightInput(releaseJd()));
+		placeCatcher();
 		drawTrajectory();
-		// In Target mode any other change (date, catch altitude, hardware) is
+		// In Target mode any other change (date, hardware) is
 		// followed by a fresh solve once the control has rested.
 		if (state.mode === "target" && !opts.fromTarget && state.to) { scheduleTarget(350); }
 		else { fillKeys(); }

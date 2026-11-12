@@ -25,7 +25,8 @@
  * around Earth everywhere else. Only the frame's axes depend on this; the
  * impulse itself is the same vector whichever body it is described against.
  *
- * Each component is capped at MAX_AXIS_MPS: these are trims, not departures.
+ * Each component is capped at MAX_AXIS_MPS: enough to turn a path at the far
+ * end of a long loop out from Earth, where the ship is moving slowly.
  *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  */
@@ -36,7 +37,7 @@ import { moonGeoPos, moonGeoVel, SOI_MOON } from "../../../Shared/geo-leg.js";
 var O = OrbitalMath;
 var AXES = ["pro", "rad", "nrm"];
 
-export var MAX_AXIS_MPS = 50;
+export var MAX_AXIS_MPS = 300;
 
 // One burn component, capped to ±MAX_AXIS_MPS; anything not a number is 0.
 export function capAxis(mps) {

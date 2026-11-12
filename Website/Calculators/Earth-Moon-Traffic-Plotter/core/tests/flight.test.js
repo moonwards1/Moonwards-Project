@@ -153,6 +153,7 @@ test("a flight with a destination is judged at its closest pass to the tether", 
 	var f = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: JD });
 	var a = f.arrival;
 	assert.ok(a.found);
+	assert.equal(a.met, false);
 	assert.equal(a.caught, false);
 	assert.ok(a.miss > CATCH_REACH);
 	within(O.vMag(O.vSub(a.rGeo, a.pointGeo)), a.miss, 1e-3, "miss is the ship-to-point distance");
@@ -193,15 +194,16 @@ test("Target brings the release to a catch at the catch altitude", function () {
 	var g = skyhookFigures("moonSkyhook");
 	assert.ok(s.relAlt > g.rFoot - g.R && s.relAlt < g.rTop - g.R, "release point stays on the tether");
 	var f = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: s.jd, params: { moonSkyhook: { relAlt: s.relAlt } } });
-	assert.equal(f.arrival.caught, true, "miss " + f.arrival.miss);
+	assert.equal(f.arrival.met, true, "miss " + f.arrival.miss);
 	within(f.arrival.altitude, 5200e3, 200, "catch altitude");
+	within(s.speed, f.arrival.trim, 1, "the solve reports the relative motion at the meeting");
 	// A different catch altitude is a different answer.
 	var s2 = solveCatch({ from: "moonSkyhook", to: "earthSkyhook", jd: s.jd,
 		params: { moonSkyhook: { relAlt: s.relAlt }, earthSkyhook: { catchAlt: 5400e3 } } });
 	assert.ok(s2.ok, s2.message);
 	var f2 = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: s2.jd,
 		params: { moonSkyhook: { relAlt: s2.relAlt }, earthSkyhook: { catchAlt: 5400e3 } } });
-	assert.equal(f2.arrival.caught, true);
+	assert.equal(f2.arrival.met, true);
 	within(f2.arrival.altitude, 5400e3, 200, "moved catch altitude");
 });
 
@@ -297,21 +299,24 @@ test("Target brings an Earth skyhook release to a catch on the Moon skyhook", fu
 	var s = solveCatch(TO_MOON);
 	assert.ok(s.ok, s.message);
 	var f = computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: s.jd, params: { earthSkyhook: { relAlt: s.relAlt } } });
-	assert.equal(f.arrival.caught, true, "miss " + f.arrival.miss);
-	within(f.arrival.altitude, 949.4e3, 200, "caught at the release deck");
+	assert.equal(f.arrival.met, true, "miss " + f.arrival.miss);
+	within(f.arrival.altitude, 949.4e3, 200, "met at the release deck");
 	// The ship arrives there at close to the tether's own speed.
 	within(f.arrival.shipSpeed, f.arrival.pointSpeed, 200, "ship speed against tether speed");
 });
 
-test("a ship within reach of the tether's very end is caught", function () {
+test("a ship within reach of the tether's very end meets it", function () {
 	var params = { earthSkyhook: { relAlt: 5230e3 }, moonSkyhook: { catchAlt: 2000e3 } };
 	var s = solveCatch(Object.assign({}, TO_MOON, { params: params }));
 	assert.ok(s.ok, s.message);
 	var f = computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: s.jd,
 		params: { earthSkyhook: { relAlt: s.relAlt }, moonSkyhook: { catchAlt: 2000e3 } } });
 	assert.ok(f.arrival.miss <= CATCH_REACH);
-	assert.equal(f.arrival.caught, true);
-	assert.equal(f.arrival.reason, null);
+	assert.equal(f.arrival.met, true);
+	// Too fast for the catcher, which is the only thing against it.
+	assert.ok(f.arrival.trim > CATCH_SPEED_LIMIT);
+	assert.equal(f.arrival.caught, false);
+	assert.equal(f.arrival.reason, "too-fast");
 });
 
 // ---- the closest pass to the destination's body ----------------------------
@@ -342,3 +347,57 @@ function stateAtMoon(leg, t) {
 	var s = leg.samples.find(function (x) { return x.t === t; });
 	return O.vMag(O.vSub(s.r, moonGeoPos(leg.jde0 + t / 86400)));
 }
+
+// ---- the mobile catcher: any point of the tether, within its speed limit ----
+
+import { CATCH_SPEED_LIMIT } from "../arrival.js";
+import { solveBestCatch } from "../target.js";
+
+test("the catcher absorbs up to 800 m/s of relative motion", function () {
+	assert.equal(CATCH_SPEED_LIMIT, 800);
+	// The ship of the earlier test, met at the same point 300 and then 900 m/s off the tether's speed.
+	var g = skyhookFigures("earthSkyhook"), jdC = JD + 0.3, lead = 900;
+	var at = tetherPointState(g, g.rCatch, jdC), ax = tetherAxes(g, jdC);
+	[[300, true, null], [900, false, "too-fast"]].forEach(function (c) {
+		var back = O.propagateState(g.GM, at.r, O.vAdd(at.v, O.vScale(ax.normal, c[0])), -lead);
+		var a = evaluateArrival(buildIntegratedLeg(back.r, back.v, jdC - lead / 86400, Object.assign({ maxTime: 2 * lead }, FINE_STEP)), g);
+		assert.equal(a.met, true, c[0] + " m/s: miss " + a.miss);
+		assert.equal(a.caught, c[1], c[0] + " m/s");
+		assert.equal(a.reason, c[2], c[0] + " m/s");
+	});
+});
+
+// 2080-04-01 00:03: a release whose best point on the Moon skyhook is within the catcher's limit.
+var TO_MOON_SLOW = { from: "earthSkyhook", to: "moonSkyhook", jd: JD + 10.0021, params: { earthSkyhook: { relAlt: 5250e3 } } };
+
+test("Target finds the point of the tether with the least relative motion", function () {
+	var s = solveBestCatch(TO_MOON_SLOW);
+	assert.ok(s.ok, s.message);
+	assert.equal(s.caught, true);
+	assert.ok(s.speed < CATCH_SPEED_LIMIT, "relative motion " + s.speed);
+	var fly = function (jd, relAlt) {
+		return computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: jd, params: { earthSkyhook: { relAlt: relAlt } } });
+	};
+	var f = fly(s.jd, s.relAlt);
+	assert.equal(f.arrival.caught, true, "miss " + f.arrival.miss + ", relative motion " + f.arrival.trim);
+	within(f.arrival.altitude, s.catchAlt, 200, "the flight meets the tether where the solve says");
+	within(f.arrival.trim, s.speed, 1, "at the relative motion it says");
+	// Meeting the tether 150 km lower or higher is a faster meeting.
+	[-150e3, 150e3].forEach(function (d) {
+		var o = solveCatch({ from: "earthSkyhook", to: "moonSkyhook", jd: s.jd,
+			params: { earthSkyhook: { relAlt: s.relAlt }, moonSkyhook: { catchAlt: s.catchAlt + d } } });
+		assert.ok(o.ok, o.message);
+		assert.ok(o.speed > s.speed + 5, "at " + d + " m: " + o.speed + " against " + s.speed);
+	});
+});
+
+test("a best point over the catcher's limit is found and reported, but is not a catch", function () {
+	var s = solveBestCatch(TO_MOON);
+	assert.ok(s.ok, s.message);
+	assert.equal(s.caught, false);
+	assert.ok(s.speed > CATCH_SPEED_LIMIT);
+	var f = computeFlight({ from: "earthSkyhook", to: "moonSkyhook", jd: s.jd, params: { earthSkyhook: { relAlt: s.relAlt } } });
+	assert.equal(f.arrival.met, true);
+	assert.equal(f.arrival.reason, "too-fast");
+	assert.equal(solveBestCatch({ from: "moonSkyhook", to: "earthSkyhook", jd: JD, params: { moonSkyhook: { relAlt: 400e3 } } }).reason, "no-approach");
+});

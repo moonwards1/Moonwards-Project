@@ -17,17 +17,17 @@ function within(actual, expected, tol, label) {
 var JD = CLOCK_EPOCH + 81;   // 2080-03-22
 var H = 3600, ZERO = { pro: 0, rad: 0, nrm: 0 };
 
-test("each burn component is held to ±50 m/s", function () {
-	assert.equal(MAX_AXIS_MPS, 50);
-	assert.equal(capAxis(80), 50);
-	assert.equal(capAxis(-120), -50);
+test("each burn component is held to ±300 m/s", function () {
+	assert.equal(MAX_AXIS_MPS, 300);
+	assert.equal(capAxis(380), 300);
+	assert.equal(capAxis(-420), -300);
 	assert.equal(capAxis(12.5), 12.5);
 	assert.equal(capAxis("x"), 0);
-	var list = [{ t: 5 * H, burn: { pro: 90, rad: -3 } }, { t: 2 * H, burn: ZERO }, { t: -1, burn: ZERO }];
+	var list = [{ t: 5 * H, burn: { pro: 390, rad: -3 } }, { t: 2 * H, burn: ZERO }, { t: -1, burn: ZERO }];
 	var c = cleanWaypoints(list);
 	assert.deepEqual(c.map(function (w) { return w.index; }), [1, 0], "in time order, none before the release");
-	assert.deepEqual(c[1].burn, { pro: 50, rad: -3, nrm: 0 });
-	assert.equal(list[0].burn.pro, 90, "the input is left alone");
+	assert.deepEqual(c[1].burn, { pro: 300, rad: -3, nrm: 0 });
+	assert.equal(list[0].burn.pro, 390, "the input is left alone");
 });
 
 test("a burn is measured against the Moon inside its sphere of influence, Earth outside", function () {
@@ -111,6 +111,6 @@ test("Target still brings the ship to a catch with a burn on the way", function 
 	var f = computeFlight({ from: "moonSkyhook", to: "earthSkyhook", jd: s.jd,
 		params: { moonSkyhook: { relAlt: s.relAlt } }, waypoints: wps });
 	assert.equal(f.waypoints[0].reached, true);
-	assert.equal(f.arrival.caught, true, "miss " + f.arrival.miss);
+	assert.equal(f.arrival.met, true, "miss " + f.arrival.miss);
 	within(f.arrival.altitude, 5200e3, 200, "catch altitude");
 });

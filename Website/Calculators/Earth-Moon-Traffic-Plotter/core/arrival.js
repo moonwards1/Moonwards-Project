@@ -1,13 +1,16 @@
 /* Earth-Moon-Traffic-Plotter/core/arrival — how a flight meets a skyhook.
  *
  * The tether is a straight line from the foot to the top, turning with the
- * clock. A ship is caught when it comes within reach of that line. This file
+ * clock. Ships are taken hold of by a MOBILE CATCHER that is moved along the
+ * tether to wherever the ship will pass, and that absorbs the ship's motion
+ * relative to the tether up to CATCH_SPEED_LIMIT. So a ship is caught when it
+ * comes within reach of the line, anywhere along it, slowly enough. This file
  * finds the flight's CLOSEST PASS to the tether and says how the meeting goes:
  *
  *   - the nearest point of the tether at that instant, and its altitude;
  *   - the MISS: the distance between the ship and that point;
- *   - the TRIM: the ship's speed relative to that point of the tether, which a
- *     burn must cancel for the ship to be held there.
+ *   - the RELATIVE MOTION (`trim`): the ship's speed relative to that point of
+ *     the tether, which the catcher has to absorb.
  *
  *     point = clamp(r . along, rFoot, rTop)       nearest point's radius, m
  *     miss  = | r - point * along |
@@ -60,6 +63,10 @@ var GOLD = (Math.sqrt(5) - 1) / 2;
 // (skyhook.js's own figure).
 export var CATCH_REACH = 1e3;
 
+// The most relative motion, m/s, the mobile catcher can absorb while staying
+// light enough to be moved along the tether.
+export var CATCH_SPEED_LIMIT = 800;
+
 // The ship's state relative to the tether's body at flight time t (s), read
 // off an integrated leg. Between two samples the ship is flown as a two-body
 // orbit about that body from the earlier one: the integration's steps are
@@ -108,11 +115,15 @@ function probe(stateAt, leg, fig, t) {
 // Returns { found: false, reason } — "never-leaves" for a Moon-bound ellipse,
 // "never-beside" for a flight that is never on the tether's side of the body
 // (one that ends within minutes) — or
-//   { found: true, caught, reason, t, jd, r, v, rGeo, point, pointGeo, altitude,
+//   { found: true, met, caught, reason, t, jd, r, v, rGeo, point, pointGeo, altitude,
 //     gap, miss, wait, pointSpeed, shipSpeed, vRel, trim, components }
-//   caught      true when the ship can be taken hold of: within CATCH_REACH of
-//               the tether, its two ends included
+//   met         true when the ship comes within CATCH_REACH of the tether, its
+//               two ends included
+//   caught      true when the ship can be taken hold of: met, with a relative
+//               motion (trim) of no more than CATCH_SPEED_LIMIT
 //   reason      null when caught, else "above-top" | "below-foot" | "off-arm"
+//               for a ship that does not meet the tether, "too-fast" for one
+//               that meets it faster than the catcher can absorb
 //   t, jd       the closest pass: seconds since release, and its Julian date
 //   r, v        the ship there, relative to the tether's body; rGeo geocentric
 //   point       radius of the nearest point of the tether, m; pointGeo its
@@ -160,14 +171,16 @@ export function evaluateArrival(leg, fig) {
 	var D = O.vSub(p.st.r, pointR);
 	var vRel = O.vSub(p.st.v, O.vScale(p.ax.prograde, pointSpeed));
 	var miss = O.vMag(D);
-	var reason = miss <= CATCH_REACH ? null : (gap > 0 ? "above-top" : (gap < 0 ? "below-foot" : "off-arm"));
+	var met = miss <= CATCH_REACH, trim = O.vMag(vRel);
+	var reason = met ? (trim <= CATCH_SPEED_LIMIT ? null : "too-fast")
+		: (gap > 0 ? "above-top" : (gap < 0 ? "below-foot" : "off-arm"));
 	return {
-		found: true, caught: reason === null, reason: reason,
+		found: true, met: met, caught: reason === null, reason: reason,
 		t: tc, jd: jd, r: p.st.r, v: p.st.v, rGeo: O.vAdd(base.r, p.st.r),
 		point: p.point, pointGeo: O.vAdd(base.r, pointR), altitude: p.point - fig.R,
 		gap: gap, miss: miss, wait: O.vDot(D, p.ax.prograde) / pointSpeed,
 		pointSpeed: pointSpeed, shipSpeed: O.vMag(p.st.v),
-		vRel: vRel, trim: O.vMag(vRel),
+		vRel: vRel, trim: trim,
 		components: { pro: O.vDot(vRel, p.ax.prograde), out: O.vDot(vRel, p.ax.along), nrm: O.vDot(vRel, fig.normal) }
 	};
 }
@@ -176,8 +189,9 @@ export function evaluateArrival(leg, fig) {
 // the ship's distance from that line nearest in time to nearT, searched within
 // `window` seconds either side (default: just over half a turn of the tether —
 // the line sweeps past the ship once per turn, so that always holds one dip).
-// Returns { t, radius, miss } or null when the window holds no dip:
+// Returns { t, radius, miss, speed } or null when the window holds no dip:
 //   radius  where along the line the ship passes, from the body's centre, m
+//   speed   the ship's speed relative to that point of the line, m/s
 //   miss    signed distance from the line, m — signed along (along x vRel),
 //           so it runs smoothly through zero as the ship moves from one side
 //           of the tether to the other
@@ -202,5 +216,5 @@ export function lineApproach(leg, fig, nearT, window) {
 	var D = O.vSub(p.st.r, O.vScale(p.ax.along, p.x));
 	var vRel = O.vSub(p.st.v, O.vScale(p.ax.prograde, fig.omega * p.x));
 	var side = O.vCross(p.ax.along, vRel), sMag = O.vMag(side);
-	return { t: tc, radius: p.x, miss: sMag > 1e-9 ? O.vDot(D, side) / sMag : O.vMag(D) };
+	return { t: tc, radius: p.x, miss: sMag > 1e-9 ? O.vDot(D, side) / sMag : O.vMag(D), speed: O.vMag(vRel) };
 }
