@@ -1349,9 +1349,15 @@ export function createMissionView(opts) {
 			ph.value = ""; ph.disabled = true; ph.selected = true;
 			ph.textContent = carriers.length ? "+ Add another technology…" : "+ Add technology…";
 			select.appendChild(ph);
+			// A carrier that lets go on its own (`alone`, the Lagrange elevators)
+			// has nothing beside it, and is not offered beside another.
+			var aloneHere = carriers.some(function (s) {
+				var d = registry.get(s.moduleId); return !!(d && d.alone);
+			});
 			techOptionsFor(body).forEach(function (opt) {
 				// don't re-offer a built carrier already in the chain
 				if (!opt.future && carriers.some(function (s) { return s.moduleId === opt.moduleId; })) { return; }
+				if (!opt.future && (aloneHere || (carriers.length && opt.platform && opt.platform.alone))) { return; }
 				var o = document.createElement("option");
 				o.value = opt.id;
 				o.textContent = opt.label + (opt.future ? " (future)" : "");

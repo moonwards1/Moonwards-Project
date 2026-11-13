@@ -28,7 +28,7 @@
 
 import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
-import { emptyChain, appendElement, applyElement, evaluateChain } from "../../../Shared/kinematic-chain.js";
+import { emptyChain, appendElement, applyElement, evaluateChain, elementCount } from "../../../Shared/kinematic-chain.js";
 import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseEpochFor } from "../../core/release-epoch.js";
@@ -145,6 +145,22 @@ export function makeCarrier(spec, opts) {
 					       params.body + " platform." });
 			}
 
+			// A platform that lets go on its own (`alone`) shares its chain with
+			// nothing: it rides nothing but a base platform, and nothing rides it.
+			// The chain it emits names it, so a carrier stacked after it refuses.
+			if (input && input.data && input.data.alone) {
+				cache.remember(ctx.world, ctx.stageId, null);
+				return makeDiagnostic("rides-alone",
+					"Nothing can ride on the " + input.data.alone + ": it lets the ship go on its own.",
+					{ fix: "Remove this technology, or the " + input.data.alone + "." });
+			}
+			if (spec.alone && input && input.data && elementCount(input.data) > 0) {
+				cache.remember(ctx.world, ctx.stageId, null);
+				return makeDiagnostic("alone",
+					"The " + spec.label + " lets the ship go on its own, so it can't ride on another technology.",
+					{ fix: "Remove the other departure technology, or this one." });
+			}
+
 			var geo = spec.geometry(params);
 			cache.remember(ctx.world, ctx.stageId, geo);
 			if (!geo.ok) { return geo.diagnostic; }
@@ -168,6 +184,10 @@ export function makeCarrier(spec, opts) {
 			var upstream = (input && input.data) ? input.data : emptyChain(params.body);
 			var element = spec.release.element(geo, anchorJd);
 			var chain = appendElement(upstream, element);
+			if (spec.alone) { chain.alone = spec.label; }
+			// The card's readouts see the geometry with the release epoch, for
+			// figures that depend on the date.
+			cache.remember(ctx.world, ctx.stageId, Object.assign({}, geo, { anchorJd: anchorJd }));
 
 			// The straddling readout box's data — see carrierReadout's own
 			// header for what its three rows mean and why the prograde one is
@@ -191,7 +211,11 @@ export function makeCarrier(spec, opts) {
 		// The straddling readout box's own data (carrierReadout, above) — the
 		// hardware's isolated impulse Δv, for anything outside this stage that
 		// wants its own contribution (the mission report's departure tech Δv).
-		readoutFor: function (world, stageId) { return readoutCache.get(world, stageId); }
+		readoutFor: function (world, stageId) { return readoutCache.get(world, stageId); },
+
+		// Lets go on its own (the spec's `alone`): the departure-technology
+		// dropdown offers nothing beside it.
+		alone: !!spec.alone
 	};
 	if (!isBaseOnly && rides === "*") { desc.inputOptional = true; }
 	return desc;

@@ -599,3 +599,14 @@ own side of L1. A release from the
 elevator is always integrated, and a path from a Moon facility that stays with the
 Moon is drawn Moon-relative. Why: near L1 a two-body ellipse about the Moon is wrong,
 and a lunar orbit drawn geocentric is an unreadable wavy line.
+
+### A Lagrange elevator is the only carrier in its chain
+
+In the Mission Planner a Lagrange elevator rides the Moon's base platform and
+nothing else, and nothing rides it (`alone` on its platform spec): `makeCarrier`
+refuses either stacking with a diagnostic, and the departure dropdown offers no
+second technology beside it. Why: chain elements compose by plain vector sum, so
+a skyhook rotor after the elevator's line element would describe a tether turning
+about a point of the elevator at a rate set by the Moon's gravity, which is no
+hardware; a launcher built to ride an elevator would replace this rule with a
+`ridesOn` check.

@@ -34,6 +34,11 @@
  *   appliesTo   optional fn(body) -> bool, ANDed with `bodies` — for
  *               constraints a list can't state (an aerobrake needs an
  *               atmosphere; an elevator needs a workable synchronous radius).
+ *   alone       optional, true for a platform that shares its chain with
+ *               nothing but a base platform: it rides no other carrier and
+ *               none rides it (the Lagrange elevators). makeCarrier refuses
+ *               either stacking with a diagnostic, and the departure dropdown
+ *               offers nothing beside it.
  *   ridesOn     departure layering, the design's "rule set" for add-ons:
  *                 []          must be the base of its chain
  *                 "*"         may ride anything, or self-originate
@@ -45,8 +50,10 @@
  *                        defaultParams and under the stage's explicit params.
  *   params               the card's controls, declared (see PARAM SPEC below).
  *   note(params, role)   optional one-line description above the controls.
- *   readouts(computed, role)  optional [[key, value], ...] shown under them,
- *                        plain rows IN the card — separate from the
+ *   readouts(computed, role)  optional [[key, value], ...] shown under them;
+ *                        `computed` is geometry()'s result, plus `anchorJd`,
+ *                        the release epoch, on a carrier whose chain has one.
+ *                        Plain rows IN the card — separate from the
  *                        straddling impulse/prograde/plane-change box on the
  *                        card's edge (Shared/sim/readout-panes.js), which
  *                        platform-roles.js fills for EVERY release/capture

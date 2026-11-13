@@ -344,6 +344,18 @@ never when it started.
   (`inputOptional`) — for the Moon, `moon-platform`; for any other body it
   self-originates (the body is simply at rest). Release phase is the card's own
   aiming slider.
+- **`modules/elevator/`** — the Lagrange elevator TECHNOLOGY PLATFORM, Moon
+  only: a tether from the Moon's surface through Earth–Moon L2 to a
+  counterweight beyond it (`elevator.js`; kinematics from
+  `Shared/lagrange-elevator.js`). `l2-elevator-departure.js` registers it as the
+  carrier module `l2-elevator`, riding `moon-platform`'s base. It lies along the
+  Earth–Moon line and turns with it, so its release point enters the chain as a
+  LINE element, and the card's impulse is the elevator's own share of the
+  release (the motion it adds to the Moon's). The card sets the counterweight
+  and the release point (held at L2 when L2 is further out at the release),
+  and states whether that release leaves Earth by itself; there is no escape
+  gate, since a bound release is still a departure a waypoint can finish. It
+  shares its chain with no other carrier (the platform's `alone`).
 - **`modules/departure-leg/`** — HEADLESS (`plainCard`): the integrated
   geocentric flight (Earth + Moon + Sun, real ephemerides, RK4) from carrier
   release to Earth-SOI exit, for Earth-origin missions. Applies up to 2

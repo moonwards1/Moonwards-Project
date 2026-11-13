@@ -150,7 +150,9 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 	// The released ship: the carrier chain composed at the anchor. The last
 	// rotor's plane normal is the tech's own reference plane for any
 	// Moon-bound piece's inclination (geo-leg's moonPlaneNormal parameter —
-	// what the plotter measured against its skyhook's plane).
+	// what the plotter measured against its skyhook's plane). A line element
+	// (a Lagrange elevator) turns in no plane of its own, so geo-leg's own
+	// reference serves when the chain holds no rotor.
 	var state = evaluateChain(chainData, anchorJd);
 	if (!(O.vMag(state.r) > 0)) {
 		return { ok: false, diagnostic: makeDiagnostic("no-release-point",
@@ -158,7 +160,8 @@ export function computeDepartureLeg(params, chainData, anchorJd) {
 			" — nothing on it places the payload above the surface.",
 			{ fix: "Add a carrier with a release point above the body (e.g. the skyhook)." }) };
 	}
-	var opts = rotors.length ? { moonPlaneNormal: O.vUnit(rotors[rotors.length - 1].normal) } : undefined;
+	var planar = rotors.filter(function (e) { return e.normal; });
+	var opts = planar.length ? { moonPlaneNormal: O.vUnit(planar[planar.length - 1].normal) } : undefined;
 
 	// Walk the impulse chain: integrate, cut at the next waypoint, apply the
 	// impulse in the local frame there, integrate on.
