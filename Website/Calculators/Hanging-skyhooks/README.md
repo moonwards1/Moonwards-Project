@@ -154,6 +154,9 @@ routes, Total annual resources (not part of Incoming) its three shares. Folds ar
   The shares are the budget the typed routes should add up to (the near market
   and interplanetary to the products; the surface route to the surface share); a
   warning says when they do not. A new card starts with its routes at the budgets.
+  Under the Outgoing title (the products budget) an "accounted for" line totals
+  the tonnage of the products routes (the near market and interplanetary) per
+  year, so the typed routes can be balanced against the stated outflow.
 - **Ships** come from the design's classes: the installation's shuttle and
   capsule, and a multiple-choice dropdown of the freighter versions, the same
   choice on both directions of a route. Each route pair has one Bulk tick: that

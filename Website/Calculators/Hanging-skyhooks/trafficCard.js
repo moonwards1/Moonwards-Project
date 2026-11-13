@@ -365,6 +365,10 @@ export function addTrafficCard(shell, opts) {
 	// ---------- outgoing ----------
 	var outG = section(form, "Outgoing products per year", "tf-hh", "outgoing");
 	S.outTotal = out(outG.r, "kt");
+	// the tonnage the routes below add up to, to set against the stated outflow above it
+	r = row(outG.box, "accounted for", "tf-eq");
+	outG.box.insertBefore(r.el, outG.body);   // under the title line, still shown when the section is folded
+	S.outAccounted = out(r, "kt");
 
 	// to the near market
 	sec = section(outG.body, "To Earth market", "tf-route", "to near market");
@@ -544,6 +548,7 @@ export function addTrafficCard(shell, opts) {
 		var outFar = val(S.outFar.amount), outSurf = val(S.outSurf.amount);
 		var prodYear = outNear * YEAR / secs(uNearOut) + outFar, surfYear = outSurf * YEAR / secs(uSurfOut);
 		S.outTotal.set(ktText(prodBudget));
+		S.outAccounted.set(ktText(prodYear));
 		// the routes should add up to their share's budget, to within what the fields show
 		var off = function (got, want) { return Math.abs(got - want) > Math.max(0.005 * want, 1e-6); };
 		if (off(prodYear, prodBudget)) warnings.push("Traffic: the products routes come to " + ktText(prodYear) + " kt a year; the products share is " + ktText(prodBudget) + " kt.");
