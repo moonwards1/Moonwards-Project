@@ -303,6 +303,12 @@ class System{
 	get axialTiltEcliptic(){
 		return this.properties.axialTiltEcliptic || this.axialTilt
 	}
+	// The equatorial bulge: the zonal gravity coefficient J2 (unnormalized) and the
+	// reference radius it is quoted at, { value, radius } (m), or null for a body
+	// whose gravity field has not been measured.
+	get J2(){
+		return this.properties.J2 || null
+	}
 	// Spin-pole right ascension/declination (ICRF equatorial J2000, radians):
 	// the pole the body turns counter-clockwise about (right-hand rule), which
 	// for a retrograde rotator — Venus, Uranus, Pluto — is the antipode of the
@@ -1190,6 +1196,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Earth",
+	J2: { value: 1.08262668e-3, radius: 6378.137e3 },
 	type: "terrestrial planet",
 	GM: 3.986004418e14,
 	mass: 5.97237e24,
@@ -1298,6 +1305,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Moon",
+	J2: { value: 2.0322e-4, radius: 1738.0e3 },
 	type: "moon",
 	GM: 4.9048695e12,
 	mass: 7.342e22,
@@ -1331,6 +1339,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Mercury",
+	J2: { value: 5.03e-5, radius: 2440.0e3 },
 	type: "terrestrial planet",
 	GM: 2.2032e13,
 	mass: 3.3011e23,
@@ -1362,6 +1371,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Venus",
+	J2: { value: 4.458e-6, radius: 6051.8e3 },
 	type: "terrestrial planet",
 	GM: 3.24859e14,
 	radius: 6051.8e3,
@@ -1497,6 +1507,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Mars",
+	J2: { value: 1.96045e-3, radius: 3396.2e3 },
 	type: "terrestrial planet",
 	GM: 4.282837e13,
 	mass: 6.4171e23,
@@ -1585,6 +1596,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Ceres",
+	J2: { value: 2.67e-2, radius: 470e3 },
 	type: "dwarf planet",
 	period: 9.074170 * 3600,
 	radius: 469.73e3,
@@ -1678,6 +1690,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Vesta",
+	J2: { value: 3.178e-2, radius: 265e3 },
 	type: "asteroid",
 	radius: 262.7e3,
 	lowOrbitAltitude: 100e3,
@@ -1702,6 +1715,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Jupiter",
+	J2: { value: 1.46965e-2, radius: 71492e3 },
 	type: "gas planet",
 	GM: 1.26686534e17,
 	mass: 1.8982e27,
@@ -1733,6 +1747,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Saturn",
+	J2: { value: 1.62906e-2, radius: 60330e3 },
 	type: "gas planet",
 	GM: 3.7931187e16,
 	radius: 58232e3,
@@ -1761,6 +1776,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Uranus",
+	J2: { value: 3.5107e-3, radius: 25559e3 },
 	type: "gas planet",
 	GM: 5.793939e15,
 	color: "#6fc6ec",
@@ -1785,6 +1801,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Neptune",
+	J2: { value: 3.4084e-3, radius: 25225e3 },
 	type: "gas planet",
 	GM: 6.836529e15,
 	radius: 24622e3,
@@ -1859,6 +1876,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Io",
+	J2: { value: 1.8459e-3, radius: 1821.6e3 },
 	type: "moon",
 	mass: 8.931938e22,
 	radius: 1821.6e3,
@@ -1876,6 +1894,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Europa",
+	J2: { value: 4.355e-4, radius: 1565e3 },
 	type: "moon",
 	mass: 4.799844e22,
 	radius: 1560.8e3,
@@ -1889,6 +1908,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Ganymede",
+	J2: { value: 1.2753e-4, radius: 2634e3 },
 	type: "moon",
 	mass: 1.4819e23,
 	radius: 2634.1e3,
@@ -1902,6 +1922,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Callisto",
+	J2: { value: 3.27e-5, radius: 2410.3e3 },
 	type: "moon",
 	radius: 2410.3e3,
 	GM: 7.179289e12,
@@ -1917,6 +1938,7 @@ vp^2 = mu * (2/P - 1/a)
 },
 {
 	name: "Titan",
+	J2: { value: 3.1808e-5, radius: 2575e3 },
 	type: "moon",
 	radius: 2574.73e3,
 	GM: 8.978138e12,

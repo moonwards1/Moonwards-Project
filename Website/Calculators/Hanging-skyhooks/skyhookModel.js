@@ -1,6 +1,6 @@
 // Hanging skyhook model — the pure physics of a vertical (non-rotating)
 // gravity-gradient tether. ES module, no DOM, so it runs in Node:
-//   import { computeSkyhook, stationKeeping, exhaustSpeed, PROPELLANT_MAX } from "./skyhookModel.js";
+//   import { computeSkyhook, stationKeeping, nodalPrecession, exhaustSpeed, PROPELLANT_MAX } from "./skyhookModel.js";
 //
 // Tether materials are Shared/materials.js.
 //
@@ -346,6 +346,83 @@ export function stationKeeping(b, env) {
 	sk.propPerCargo = env.releasedFlow > 0 ? b.propFlow / env.releasedFlow : NaN;   // t per t released
 	sk.energyPerT = env.releasedFlow > 0 ? sk.genPower / env.releasedFlow / 1e6 : NaN;   // GJ/t released
 	return sk;
+}
+
+// Every mass in the installation as points [{ r, m }] (r from the body's centre, m; kg):
+// the tether itself from the tension profile (dm = T/s · dr), the spread loads in even
+// slices from each tip to the centre of mass, every station, and an anchoring moon.
+export function massPoints(moon, t) {
+	var R = Number(moon.radius), rCentre = t.centre + R, pts = [];
+	["up", "low"].forEach(function (h) {
+		var pr = t.profile[h];
+		for (var i = 1; i < pr.r.length; i++) {
+			var dr = Math.abs(pr.r[i] - pr.r[i - 1]);
+			if (dr > 0) pts.push({ r: (pr.r[i] + pr.r[i - 1]) / 2, m: (pr.T[i] + pr.T[i - 1]) / 2 / t.strength * dr });
+		}
+	});
+	var N = 200;
+	[[t.top + R, t.loads.distUpper], [t.foot + R, t.loads.distLower]].forEach(function (x) {
+		if (!(x[1] > 0)) return;
+		for (var k = 0; k < N; k++) pts.push({ r: x[0] + (rCentre - x[0]) * (k + 0.5) / N, m: x[1] / N });
+	});
+	t.stationFigures.forEach(function (st) { if (st.m > 0) pts.push({ r: st.r, m: st.m }); });
+	if (t.anchor) pts.push({ r: rCentre, m: t.anchor.mass });
+	return pts;
+}
+
+// Nodal precession: the body's equatorial bulge (J2) turns the plane of the tether's
+// orbit about the spin axis, keeping its tilt to the equator; one turn is the period
+// over which the plane's tilt to any fixed plane (the ecliptic) runs through its
+// whole range and back. The whole installation turns as one, so the bulge's torque
+// on every piece is set against the angular momentum of every piece
+// (OrbitalMath.j2NodeCoefficient with massPoints).
+//   opts   { inclination (rad, tilt of the orbit plane to the body's equator),
+//            sunSync (true: find the tilt at which the plane keeps pace with the Sun),
+//            exclude (name of a moon that is part of the installation, never a third body) }
+// Returns null where the body has no measured J2; otherwise
+//   { coefficient k (rad/s; Ω̇ = −k cos i), coefficientPoint (all mass at the centre of mass),
+//     inclination (rad; NaN when sun-synchronous is out of reach), rate (rad/s, + eastward),
+//     period (s; Infinity for a polar plane), periodPoint, year (s, the body's or its
+//     planet's turn about the Sun), sunSyncRate (rad/s), sunSyncReach (true if some tilt
+//     gets there), perturbers [{ name, ratio }] — each third body's coefficient over k,
+//     largest first. Third bodies are left out of the rate; the ratio says how much that
+//     leaves out. }
+export function nodalPrecession(moon, t, opts) {
+	var j = moon.J2;
+	if (!j) return null;
+	var o = opts || {}, GM = moon.GM, w = t.angularVelocity, R = Number(moon.radius);
+	var k = OrbitalMath.j2NodeCoefficient(GM, j.value, j.radius, w, massPoints(moon, t));
+	var kPoint = OrbitalMath.j2NodeCoefficient(GM, j.value, j.radius, w);
+	// the Sun's grip: the body (or its planet) about the Sun
+	var helio = moon;
+	while (helio.orbit && String(helio.orbit.system) !== "Sun") helio = helio.orbit.system;
+	var sun = helio.orbit ? helio.orbit.system : null;
+	var aSun = helio.orbit ? Number(helio.orbit.a) : NaN;
+	var nSun = sun ? Math.sqrt(sun.GM / (aSun * aSun * aSun)) : NaN;
+	// third bodies: the Sun, the planet a moon orbits, and the body's own moons outside the tether
+	var rTop = t.top + R, per = [];
+	if (sun) per.push({ name: "the Sun", GM: sun.GM, d: aSun });
+	if (moon.orbit && moon.orbit.system && String(moon.orbit.system) !== "Sun")
+		per.push({ name: String(moon.orbit.system), GM: moon.orbit.system.GM, d: Number(moon.orbit.a) });
+	moon.satellites.forEach(function (s) {
+		if (!s || typeof s === "string" || String(s) === o.exclude || !s.orbit) return;
+		var d = Number(s.orbit.a);
+		if (isFinite(s.GM) && d > 2 * rTop) per.push({ name: String(s) === "Moon" ? "the Moon" : String(s), GM: s.GM, d: d });
+	});
+	var perturbers = per.map(function (p) { return { name: p.name, ratio: OrbitalMath.thirdBodyNodeCoefficient(p.GM, p.d, w) / k }; })
+		.filter(function (p) { return isFinite(p.ratio); })
+		.sort(function (a, b) { return b.ratio - a.ratio; });
+	var reach = isFinite(nSun) && nSun <= k;
+	var inc = o.sunSync ? OrbitalMath.inclinationForNodeRate(k, nSun) : o.inclination;
+	var rate = o.sunSync ? (reach ? nSun : NaN) : -k * Math.cos(inc);
+	var periodOf = function (r) { return Math.abs(r) > 0 ? 2 * Math.PI / Math.abs(r) : Infinity; };
+	return {
+		coefficient: k, coefficientPoint: kPoint, inclination: inc, rate: rate,
+		period: isFinite(rate) ? periodOf(rate) : NaN,
+		periodPoint: o.sunSync ? NaN : periodOf(kPoint * Math.cos(inc)),
+		year: isFinite(nSun) ? 2 * Math.PI / nSun : NaN, sunSyncRate: nSun, sunSyncReach: reach,
+		perturbers: perturbers
+	};
 }
 
 function releaseTargets(moon, t) {

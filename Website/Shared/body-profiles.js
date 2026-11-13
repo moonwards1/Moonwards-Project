@@ -84,14 +84,16 @@ export function parentName(name) {
 // near point of that moon's orbit.
 //   primary   the body the moon orbits, which the tether hangs toward
 //   ceiling   optional: the moon whose orbit the top may not reach
+//   inclination  degrees: the tilt of the moon's orbit to the primary's equator,
+//             which fixes the plane the tether hangs in
 export const ANCHORS = {
-	Phobos: { primary: "Mars", ceiling: "Deimos" }
+	Phobos: { primary: "Mars", ceiling: "Deimos", inclination: 1.08 }
 };
 
 // The working figures of an anchor configuration, km and kg:
 //   { name, primary, mass, centre (altitude of the moon's orbit), swing (how far
 //     the tether rises and falls each orbit), footFloor, topCeiling (or null),
-//     ceiling (name or null) }
+//     ceiling (name or null), inclination (degrees to the primary's equator, or null) }
 export function anchorConfig(name) {
 	var a = ANCHORS[name];
 	if (!a) return null;
@@ -105,6 +107,7 @@ export function anchorConfig(name) {
 		centre: (o.a - R) / 1e3, swing: swing / 1e3,
 		footFloor: floor == null ? null : Math.ceil(floor + swing / 1e3),
 		topCeiling: ceiling == null ? null : Math.floor(ceiling / 1e3),
-		ceiling: a.ceiling || null
+		ceiling: a.ceiling || null,
+		inclination: a.inclination == null ? null : a.inclination
 	};
 }

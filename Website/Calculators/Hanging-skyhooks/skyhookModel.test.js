@@ -13,7 +13,8 @@ import assert from "node:assert/strict";
 
 import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
-import { computeSkyhook, sweepTether, stationKeeping, exhaustSpeed } from "./skyhookModel.js";
+import { computeSkyhook, sweepTether, stationKeeping, exhaustSpeed, nodalPrecession, massPoints } from "./skyhookModel.js";
+import { anchorConfig } from "../../Shared/body-profiles.js";
 import { Traffic, YEAR } from "./trafficModel.js";
 import { MATERIALS } from "../../Shared/materials.js";
 
@@ -346,4 +347,52 @@ test("a tether anchored on Phobos needs no anchor station and nudges Phobos's or
 	close(p.anchor.shift, -p.unbalance / (3 * w * w * phobos.mass), "orbit shift");
 	assert.ok(Math.abs(p.anchor.shift) < 1000, "under a km: " + p.anchor.shift);
 	assert.equal(p.reentry.parent, null, "Mars orbits the Sun: no parent planet");
+});
+
+// ---- nodal precession -------------------------------------------------------------
+// The Earth workbench design: foot 120, centre 2900, top 6200 km; best lunar silica ×3;
+// loads 60 / 20 / 8000 / 50 / 20 kt; no optional stations.
+function earthDesign() {
+	var b = MATERIALS.bestsilica;
+	return computeSkyhook(systems.get("Earth"), { foot: 120e3, centre: 2900e3, top: 6200e3, receivingDeck: null, outerDocks: null, releaseDeck: null,
+		strength: (b.strength / 3) / b.density, loadTop: 60e6, distUpper: 20e6, comMass: 8000e6, distLower: 50e6, loadFoot: 20e6, ifaceAlt: 122 });
+}
+
+test("massPoints holds every kilogram: tether, spread loads, stations", function () {
+	var e = earthDesign(), sum = massPoints(systems.get("Earth"), e).reduce(function (a, p) { return a + p.m; }, 0);
+	var expect = e.tetherMass + 60e6 + 20e6 + 8000e6 + 50e6 + 20e6;
+	assert.ok(Math.abs(sum - expect) / expect < 1e-9, sum + " vs " + expect);
+});
+
+test("nodal precession: Earth design tilted to the ecliptic turns its plane in about 146 days", function () {
+	var np = nodalPrecession(systems.get("Earth"), earthDesign(), { inclination: 23.4392811 * Math.PI / 180 });
+	near(np.period / 86400, 145.8, 1, "period, days");
+	assert.ok(np.rate < 0, "prograde tilt regresses westward");
+	assert.equal(np.perturbers[0].name, "the Moon");
+	assert.ok(np.perturbers[0].ratio < 1e-3);
+});
+
+test("nodal precession: the Earth design's sun-synchronous tilt is retrograde, with a one-year period", function () {
+	var np = nodalPrecession(systems.get("Earth"), earthDesign(), { sunSync: true });
+	near(np.inclination * 180 / Math.PI, 111.5, 1, "tilt, degrees");
+	assert.ok(Math.abs(np.period - np.year) < 1);
+	assert.ok(np.sunSyncReach);
+});
+
+test("nodal precession: the Moon's bulge cannot make the default lunar skyhook sun-synchronous", function () {
+	var np = nodalPrecession(moon, t, { sunSync: true });
+	assert.equal(np.sunSyncReach, false);
+	assert.ok(isNaN(np.inclination) && isNaN(np.period));
+	assert.equal(np.perturbers[0].name, "Earth");
+});
+
+test("nodal precession: a Phobos-anchored skyhook turns with Phobos, about 2.26 years", function () {
+	var a = anchorConfig("Phobos"), mars = systems.get("Mars");
+	var tp = computeSkyhook(mars, Object.assign(base(), { foot: 300e3, centre: a.centre * 1e3, top: 12000e3, receivingDeck: null, outerDocks: null, releaseDeck: null, anchorMass: a.mass }));
+	var np = nodalPrecession(mars, tp, { inclination: a.inclination * Math.PI / 180, exclude: "Phobos" });
+	near(np.period / 86400 / 365.25, 2.26, 2, "period, years");
+});
+
+test("nodal precession: no measured gravity field, no figure", function () {
+	assert.equal(nodalPrecession(systems.get("Psyche"), t, { inclination: 0.1 }), null);
 });

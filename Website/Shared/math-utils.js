@@ -178,6 +178,46 @@ export const OrbitalMath = {
 			);
 		},
 
+		// ---- nodal precession (the turning of an orbit's plane) ---------------
+
+		// How fast a body's equatorial bulge turns the plane of a circular orbit
+		// about the spin axis, per unit cos(inclination), rad/s:
+		//   k = (3/2) J2 GM Req² Σ(m/r³) / (ω Σ m r²)
+		// so that the node moves at Ω̇ = −k cos i (westward below 90°). `masses`
+		// [{ r, m }] spreads a rigid structure turning at omega over radius (the
+		// bulge's torque on each piece over the structure's angular momentum);
+		// omitted, it is one point on its own circular orbit, where k reduces to
+		// (3/2) J2 (Req/r)² n. J2 is unnormalized, quoted at reference radius Req.
+		j2NodeCoefficient: function (GM, J2, Req, omega, masses) {
+			var pts = masses && masses.length ? masses : [{ r: Math.cbrt(GM / (omega * omega)), m: 1 }];
+			var inv3 = 0, sq = 0;
+			pts.forEach(function (p) { inv3 += p.m / (p.r * p.r * p.r); sq += p.m * p.r * p.r; });
+			return 1.5 * J2 * GM * Req * Req * inv3 / (omega * sq);
+		},
+
+		// The node's rate under the bulge, rad/s: −k cos i (negative is westward).
+		j2NodeRate: function (GM, J2, Req, omega, inclination, masses) {
+			return -OrbitalMath.j2NodeCoefficient(GM, J2, Req, omega, masses) * Math.cos(inclination);
+		},
+
+		// The same coefficient for a distant third body on a circular orbit of
+		// radius d (GM3 its gravitational parameter), turning the plane about that
+		// third body's orbit normal: k₃ = (3/4) GM3 / (d³ ω). Secular, for d ≫ r.
+		// Independent of how the structure's mass is spread, since both the tidal
+		// torque and the angular momentum go as Σ m r².
+		thirdBodyNodeCoefficient: function (GM3, d, omega) {
+			return 0.75 * GM3 / (d * d * d) / omega;
+		},
+
+		// The inclination (rad) at which a plane with coefficient k turns at
+		// `rate` (rad/s, positive eastward): cos i = −rate / k. NaN where no
+		// inclination reaches it. A sun-synchronous orbit's rate is the body's
+		// mean motion about the Sun, so its inclination lies past 90°.
+		inclinationForNodeRate: function (k, rate) {
+			var c = -rate / k;
+			return Math.abs(c) <= 1 ? Math.acos(c) : NaN;
+		},
+
 		// ---- spin launchers (rotating-arm catapults) --------------------------
 
 		// Out-of-plane velocity component that tilts an in-plane velocity of

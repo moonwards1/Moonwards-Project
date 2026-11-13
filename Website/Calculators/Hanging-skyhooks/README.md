@@ -50,9 +50,10 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   standalone page opens on the Moon design. Each card
   names its workbench tab: basics (the three altitudes with their speeds), material, loads,
   the foot ↔ ground trips, release points, loads and
-  stations (inputs and results) on Architecture; traffic, climber energy and
+  stations (inputs and results), and nodal precession on Architecture; traffic, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
-- `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`
+- `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`,
+  and `nodalPrecession(body, t, opts)` over `massPoints(body, t)`
 - `skyhookModel.test.js` — Node test pinning the default design's figures:
   `node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js`
 - `trafficCard.js` — the Traffic card and its Energy and orbit balance result card (below), `addTrafficCard(shell, opts)`; it reads
@@ -208,6 +209,44 @@ them into the Station-keeping figures:
 
 Everything is an average over each route's period, so the thrust is the mean
 reboost, not the peak.
+
+## Nodal precession
+
+The Nodal precession card (Architecture, inputs) takes the tilt of the orbit plane
+to the body's equator and gives the period over which the body's equatorial bulge
+turns that plane once round the spin axis. The tilt to the equator holds while the
+plane turns, so its tilt to the ecliptic runs from the difference of the two tilts
+to their sum and back once per period. The tilt opens on the equator's own tilt to
+the ecliptic (Earth 23.44°), where the plane lies in the ecliptic at one end of the
+cycle. The installation turns as one rigid structure, so the bulge's torque on
+every piece is set against the angular momentum of every piece:
+
+k = (3/2) J₂ GM R_eq² · Σ(m/r³) / (ω Σ m r²),  Ω̇ = −k cos i,  P = 2π / |Ω̇|
+
+- **J₂, R_eq** — the body's zonal gravity coefficient and the reference radius it is quoted at (`orbit.js`, `J2`)
+- **GM** — the body's gravitational parameter (m³/s²)
+- **m, r** — every mass in the installation and its distance from the body's centre (`massPoints`):
+  the tether (dm = T/s · dr from the load sweep), the spread loads, every station, an anchoring moon
+- **ω** — the tether's angular rate (rad/s)
+- **i** — tilt of the orbit plane to the equator
+- **Ω̇** — rate of the node (rad/s); negative is westward, against the spin
+- **P** — the precession period
+
+With all the mass at the centre of mass this is the familiar −(3/2) J₂ (R_eq/r)² n cos i,
+which the period line gives alongside for comparison. **Sun-synchronous** (the tick)
+finds the tilt at which the plane turns eastward once a year (the body's year, or its
+planet's for a moon): cos i = −n_☉ / k. That tilt is past 90° (retrograde). Where the
+bulge is too weak (k < n_☉) no tilt reaches it, and the warning says so.
+
+Other bodies also turn the plane, about their own orbit normals rather than the spin
+axis, at k₃ = (3/4) GM₃ / (d³ ω): the Sun, the planet a moon orbits, and the body's
+own moons beyond twice the top's radius (an anchoring moon is part of the
+installation, not one of these). They are not in the period; the card gives each
+one's k₃ as a share of k, and the warning flags any above 10%, where the period is
+only rough (the Moon: Earth's pull is comparable to the Moon's small bulge). A body
+with no measured J₂ (Psyche, Pluto) shows "—". A Phobos-anchored skyhook's plane is
+Phobos's orbit (`anchorConfig("Phobos").inclination`, 1.08° to Mars's equator), and
+its period is Phobos's own, about 2.26 years.
 
 ## Body-specific parts
 

@@ -611,3 +611,37 @@ test("lagrangeL1Fraction: L1 between Earth and the Moon, and the small-mass limi
 	var tiny = O.lagrangeL1Fraction(1, 1e-9);
 	assert.ok(Math.abs(tiny / Math.cbrt(1e-9 / 3) - 1) < 1e-3);
 });
+
+// ---- nodal precession ---------------------------------------------------------
+var GM_E = 3.986004418e14, J2_E = 1.08262668e-3, RE = 6378137;
+var YEAR_S = 365.25636 * DAY;
+
+test("j2NodeRate: a point orbit regresses at −(3/2) J2 (Req/r)² n cos i", function () {
+	var r = RE + 2900e3, n = Math.sqrt(GM_E / (r * r * r)), i = 23.4392811 * Math.PI / 180;
+	var rate = O.j2NodeRate(GM_E, J2_E, RE, n, i);
+	assert.ok(Math.abs(rate - (-1.5 * J2_E * (RE / r) * (RE / r) * n * Math.cos(i))) < 1e-18);
+	var days = 2 * Math.PI / Math.abs(rate) / DAY;
+	assert.ok(Math.abs(days - 146.2) < 0.1, "period " + days + " days");
+});
+
+test("j2NodeCoefficient: one mass on its own orbit matches the point formula", function () {
+	var r = RE + 1000e3, n = Math.sqrt(GM_E / (r * r * r));
+	var a = O.j2NodeCoefficient(GM_E, J2_E, RE, n), b = O.j2NodeCoefficient(GM_E, J2_E, RE, n, [{ r: r, m: 5e9 }]);
+	assert.ok(Math.abs(a - b) / a < 1e-12);
+	// mass spread outward turns the plane more slowly than mass at the centre of mass
+	var c = O.j2NodeCoefficient(GM_E, J2_E, RE, n, [{ r: r - 500e3, m: 1 }, { r: r + 500e3, m: 1 }]);
+	assert.ok(c > 0 && c !== a);
+});
+
+test("inclinationForNodeRate: the textbook sun-synchronous orbit at 700 km is about 98.2°", function () {
+	var r = RE + 700e3, n = Math.sqrt(GM_E / (r * r * r));
+	var i = O.inclinationForNodeRate(O.j2NodeCoefficient(GM_E, J2_E, RE, n), 2 * Math.PI / YEAR_S) * 180 / Math.PI;
+	assert.ok(Math.abs(i - 98.19) < 0.05, "inclination " + i);
+	assert.ok(isNaN(O.inclinationForNodeRate(1e-9, 2 * Math.PI / YEAR_S)), "too weak a bulge has no answer");
+});
+
+test("thirdBodyNodeCoefficient: the Moon's pull on a low Earth orbit is small beside J2", function () {
+	var r = RE + 2900e3, n = Math.sqrt(GM_E / (r * r * r));
+	var k3 = O.thirdBodyNodeCoefficient(4.9048695e12, 384400e3, n), k = O.j2NodeCoefficient(GM_E, J2_E, RE, n);
+	assert.ok(k3 / k > 1e-4 && k3 / k < 1e-3, "ratio " + k3 / k);
+});
