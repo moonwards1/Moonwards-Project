@@ -5,8 +5,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { evaluateChain, baseState, planeBasis, emptyChain, appendElement,
-         rotorElement, impulseElement, elementCount } from "../kinematic-chain.js";
+import { evaluateChain, baseState, planeBasis, emptyChain, appendElement, applyElement,
+         rotorElement, impulseElement, lineElement, lineFrame, elementCount } from "../kinematic-chain.js";
 import { OrbitalMath as O } from "../math-utils.js";
 import { LunarEphemeris as LE } from "../lunar-ephemeris.js";
 import { systems } from "../orbit.js";
@@ -181,4 +181,23 @@ test("an element with no kind is taken for a rotor, as chains originally held", 
 	assert.equal(chain.impulses.length, 0);
 	assert.deepEqual(evaluateChain(chain, jd),
 		evaluateChain({ base: "Mars", rotors: [plain] }, jd));
+});
+
+test("a line element: the point a fixed distance along the Moon–Earth line, carried round with it", () => {
+	var jd = 2463218.546734214, s = 150000e3;
+	var el = lineElement("Moon", "Earth", -s);    // beyond the Moon, away from Earth
+	var chain = appendElement(emptyChain("Moon"), el);
+	assert.equal(chain.rotors.length, 1, "a line places the payload, so it sits with the rotors");
+	assert.equal(chain.impulses.length, 0);
+	assert.equal(elementCount(chain), 1);
+	var f = lineFrame("Moon", "Earth", jd), moon = baseState("Moon", jd), st = evaluateChain(chain, jd);
+	// Moon, then the point, on the far side from Earth.
+	assert.ok(Math.abs(O.vMag(st.r) - (f.D + s)) < 1e-3);
+	// Isolated from the Moon it rides on, its own share is s along the line and s times the line's turn.
+	var own = applyElement({ r: [0, 0, 0], v: [0, 0, 0] }, el, jd);
+	assert.ok(O.vMag(O.vSub(own.v, O.vScale(f.uDot, -s))) < 1e-12);
+	assert.ok(O.vMag(O.vSub(O.vAdd(moon.v, own.v), st.v)) < 1e-9);
+	// Once round in about a sidereal month: some 24.5 days' worth near perigee, 30.5 near apogee.
+	var days = 2 * Math.PI / f.turnRate / 86400;
+	assert.ok(days > 23.5 && days < 31.5, "turning period " + days + " d");
 });

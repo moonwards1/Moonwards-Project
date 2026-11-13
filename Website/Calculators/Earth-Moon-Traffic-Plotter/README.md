@@ -17,7 +17,8 @@ arrivals at the elevator and the mass driver come next.
 - `earthMoonTraffic.html`, `.css` (`emt-` prefix), `.js` — the page: scene, date
   bar, sidebar cards, read-outs. It computes nothing the core could not.
 - `core/facilities.js` — the facilities as data, and their kinematics on the clock:
-  the skyhooks' tethers and the L1 elevator. Pure.
+  the skyhooks' tethers and the L1 elevator (its line and L1 from
+  `Shared/lagrange-elevator.js`). Pure.
 - `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`, flying
   through any waypoint burns. Pure.
 - `core/waypoints.js` — the burns: the ±50 m/s cap, which body a burn is measured

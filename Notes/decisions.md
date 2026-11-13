@@ -581,18 +581,21 @@ the swing. Why: the moon outweighs any tether by many orders of magnitude (Phobo
 a few metres of shift for the opening design), so an anchor-station balance would
 only add a meaningless input.
 
-### Traffic plotter: the L1 elevator rides the Earth–Moon line, and L1 slides along it
+### Lagrange elevators ride the Earth–Moon line, and their Lagrange point slides along it
 
-In the Earth–Moon Traffic Plotter the elevator's tether lies along the instantaneous
-line from the Moon's centre to Earth's, each point at a fixed distance from the Moon
-and moving with the line's own turning rate (`core/facilities.js`, `elevatorAt`). L1
-is γ·D from the Moon (γ = 0.1509, `OrbitalMath.lagrangeL1Fraction`), so it moves
-along the tether as the distance D changes; the four legs' anchors are fixed to the
-Moon's body and follow its librations. The tether's own pendulum swing is left out.
+An elevator through Earth–Moon L1 or L2 lies along the instantaneous line through the
+Moon's centre and Earth's (toward Earth for L1, away for L2), each point at a fixed
+distance from the Moon and moving with the line's own turning rate
+(`Shared/lagrange-elevator.js`; in a departure chain, `kinematic-chain.js`'s line
+element). The Lagrange point is γ·D from the Moon (γ = 0.1509 for L1, 0.1679 for L2,
+`OrbitalMath.lagrangeL1Fraction`/`lagrangeL2Fraction`), so it moves along the tether as
+the distance D changes; the legs' anchors are fixed to the Moon's body and follow its
+librations. The tether's own pendulum swing is left out.
 Why: that is the motion the ephemeris alone gives, predictable years ahead, and it
 is what sets a released ship's path; the swing is a smaller correction riding on it.
 
-Each of the two release points is held on its own side of L1. A release from the
+In the traffic plotter, each of the L1 elevator's two release points is held on its
+own side of L1. A release from the
 elevator is always integrated, and a path from a Moon facility that stays with the
 Moon is drawn Moon-relative. Why: near L1 a two-body ellipse about the Moon is wrong,
 and a lunar orbit drawn geocentric is an unreadable wavy line.

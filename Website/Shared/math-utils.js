@@ -484,6 +484,29 @@ export const OrbitalMath = {
 			return (lo + hi) / 2;
 		},
 
+		// Where L2 lies beyond the SECONDARY (GM2), on the far side from the
+		// primary (GM1), as a fraction of their separation measured from the
+		// secondary outward. With the separation as the unit of length and x the
+		// distance beyond the secondary, the primary's pull, the secondary's pull
+		// and the centrifugal term balance where
+		//
+		//     GM1 / (1 + x)^2  +  GM2 / x^2  -  (GM1 + GM2) (1 + x)  +  GM2  =  0
+		//
+		// (the last two terms are -omega^2 (1 + x - x_b): omega^2 = GM1 + GM2 and
+		// the barycentre is x_b = GM2 / (GM1 + GM2) from the primary). Solved by
+		// bisection; like L1's, the fraction depends only on the mass ratio and
+		// holds on an eccentric orbit. Earth-Moon: 0.1679, about 64,500 km beyond
+		// the Moon.
+		lagrangeL2Fraction: function (GM1, GM2) {
+			function g(x) { return GM1 / ((1 + x) * (1 + x)) + GM2 / (x * x) - (GM1 + GM2) * (1 + x) + GM2; }
+			var lo = 1e-9, hi = 1;
+			for (var i = 0; i < 200; i++) {
+				var mid = (lo + hi) / 2;
+				if (g(mid) > 0) { lo = mid; } else { hi = mid; }
+			}
+			return (lo + hi) / 2;
+		},
+
 		// ---- Kepler's equation -------------------------------------------------
 
 		// Eccentric anomaly E from mean anomaly M (rad) for an ellipse (e<1).

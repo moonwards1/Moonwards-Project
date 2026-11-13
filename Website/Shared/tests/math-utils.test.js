@@ -612,6 +612,21 @@ test("lagrangeL1Fraction: L1 between Earth and the Moon, and the small-mass limi
 	assert.ok(Math.abs(tiny / Math.cbrt(1e-9 / 3) - 1) < 1e-3);
 });
 
+test("lagrangeL2Fraction: L2 beyond the Moon, and the small-mass limit", function () {
+	var GM_E = 3.986004418e14, GM_M = 4.9028e12;
+	var x = O.lagrangeL2Fraction(GM_E, GM_M);
+	// About 64,500 km beyond the Moon's centre at the mean distance.
+	assert.ok(Math.abs(x * 384400 - 64520) < 30, "L2 at " + x * 384400 + " km");
+	// The forces balance there (unit separation, turning at the pair's own rate).
+	var g = GM_E / ((1 + x) * (1 + x)) + GM_M / (x * x) - (GM_E + GM_M) * (1 + x) + GM_M;
+	assert.ok(Math.abs(g) < 1e-3 * GM_M);
+	// Further from the secondary than L1, as it should be.
+	assert.ok(x > O.lagrangeL1Fraction(GM_E, GM_M));
+	// A very light secondary: L2 at the Hill radius too, cbrt(m / 3M) of the separation.
+	var tiny = O.lagrangeL2Fraction(1, 1e-9);
+	assert.ok(Math.abs(tiny / Math.cbrt(1e-9 / 3) - 1) < 1e-3);
+});
+
 // ---- nodal precession ---------------------------------------------------------
 var GM_E = 3.986004418e14, J2_E = 1.08262668e-3, RE = 6378137;
 var YEAR_S = 365.25636 * DAY;
