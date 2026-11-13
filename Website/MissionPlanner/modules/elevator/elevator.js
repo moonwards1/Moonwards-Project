@@ -2,11 +2,13 @@
  * tether from the Moon's surface through an Earth–Moon Lagrange point to a
  * counterweight beyond it.
  *
- * This file is the platform SPEC (see ../platform/platform-spec.js for the
- * contract); the role adapter beside it is thin:
+ * This file holds the two platform SPECS, L1_ELEVATOR and L2_ELEVATOR (see
+ * ../platform/platform-spec.js for the contract), built from one factory; the
+ * role adapters beside it are thin:
  *
- *   l2-elevator-departure.js  the carrier — appends the release point's line
- *                             element to the kinematic chain and lets go.
+ *   l1-elevator-departure.js,  the carriers — each appends its release
+ *   l2-elevator-departure.js   point's line element to the kinematic chain
+ *                              and lets go.
  *
  * The kinematics are Shared/lagrange-elevator.js's: leaving its own swinging
  * aside, the elevator lies along the line through the Moon's centre and
@@ -36,7 +38,10 @@
  * as the geometry — the line turns faster near perigee — and an elevator that
  * leaves the ship bound to Earth is still a departure a waypoint burn can
  * finish. The card says which it is at the release; the departure leg flies
- * it either way.
+ * it either way. From the L2 side, far enough out, the release leaves Earth by
+ * itself. From the L1 side it never does: the point moves round Earth slower
+ * than the Moon, and the ship falls toward Earth, to a perigee where a burn
+ * buys the most.
  *
  * IT LETS GO ON ITS OWN (`alone`): it rides only the Moon, and nothing rides
  * it. A rotor composed onto a point of the elevator would be a skyhook turning
@@ -67,12 +72,19 @@ var R_MOON = +systems.get("Moon").radius;
 export var ELEVATOR_LIMITS = { cwMin: 70000e3, cwMax: 300000e3 };
 
 // Each side's design: where the four legs meet the ground (selenographic
-// degrees, 20° either side of the sub-Earth or far-side point), and the
-// default counterweight. The release point defaults to the counterweight.
+// degrees, 20° either side of the sub-Earth or far-side point), the default
+// counterweight, and the low end of the release slider, km (a little inside
+// where the Lagrange point comes nearest in the month). The release point
+// defaults to the counterweight.
 var SIDES = {
+	L1: {
+		id: "l1-elevator", label: "L1 elevator", where: "near side",
+		cwAlt: 222200e3, relMinKm: 50000,
+		anchors: [{ lat: 20, lon: 20 }, { lat: 20, lon: -20 }, { lat: -20, lon: -20 }, { lat: -20, lon: 20 }]
+	},
 	L2: {
 		id: "l2-elevator", label: "L2 elevator", where: "far side",
-		cwAlt: 250000e3,
+		cwAlt: 250000e3, relMinKm: 60000,
 		anchors: [{ lat: 20, lon: 160 }, { lat: 20, lon: -160 }, { lat: -20, lon: -160 }, { lat: -20, lon: 160 }]
 	}
 };
@@ -197,7 +209,7 @@ function makeSpec(side) {
 		params: [
 			{ name: "cwAlt", label: "counterweight altitude", unit: "km", scale: 1e3, step: 1000, roles: ["release"] },
 			{ name: "relAlt", label: "release altitude", unit: "km", scale: 1e3, kind: "slider",
-			  min: 60000, max: ELEVATOR_LIMITS.cwMax / 1e3, step: 100, spinStep: 1000, roles: ["release"] }
+			  min: S.relMinKm, max: ELEVATOR_LIMITS.cwMax / 1e3, step: 100, spinStep: 1000, roles: ["release"] }
 		],
 
 		note: function () {
@@ -253,4 +265,5 @@ function makeSpec(side) {
 }
 
 var SPECS = {};
+export var L1_ELEVATOR = SPECS.L1 = makeSpec("L1");
 export var L2_ELEVATOR = SPECS.L2 = makeSpec("L2");

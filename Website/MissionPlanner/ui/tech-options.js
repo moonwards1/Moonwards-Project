@@ -27,7 +27,7 @@
 
 import { platformAppliesTo } from "../modules/platform/platform-spec.js";
 import { SKYHOOK } from "../modules/skyhook/skyhook.js";
-import { L2_ELEVATOR } from "../modules/elevator/elevator.js";
+import { L1_ELEVATOR, L2_ELEVATOR } from "../modules/elevator/elevator.js";
 
 // Does `opt` apply at `body`? Built entries ask their platform; future entries
 // use their own list.
@@ -40,8 +40,10 @@ export var DEPARTURE_TECH_OPTIONS = [
 	// The generic skyhook, which orbits any body (modules/skyhook).
 	{ id: "skyhook", label: "Skyhook", platform: SKYHOOK,
 	  moduleId: "orbital-skyhook", moduleUrl: "../modules/skyhook/skyhook-departure.js" },
-	// The elevator through Earth–Moon L2, from the Moon's far side
-	// (modules/elevator). Moon only: its platform says so.
+	// The elevators through Earth–Moon L1, from the Moon's near side, and L2,
+	// from its far side (modules/elevator). Moon only: their platforms say so.
+	{ id: "l1-elevator", label: "L1 elevator", platform: L1_ELEVATOR,
+	  moduleId: "l1-elevator", moduleUrl: "../modules/elevator/l1-elevator-departure.js" },
 	{ id: "l2-elevator", label: "L2 elevator", platform: L2_ELEVATOR,
 	  moduleId: "l2-elevator", moduleUrl: "../modules/elevator/l2-elevator-departure.js" },
 	{ id: "space-elevator", label: "Space elevator", bodies: "*", future: true },

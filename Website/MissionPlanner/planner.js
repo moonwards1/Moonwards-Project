@@ -50,7 +50,8 @@ var MODULE_URLS = [
 	// moon-platform, escaping Earth via departure-leg) and any HELIO_BODIES
 	// origin (self-originating, escaping that body via body-departure-leg).
 	"./modules/skyhook/skyhook-departure.js",
-	// The L2 elevator, a Moon-origin carrier riding moon-platform's base.
+	// The L1 and L2 elevators, Moon-origin carriers riding moon-platform's base.
+	"./modules/elevator/l1-elevator-departure.js",
 	"./modules/elevator/l2-elevator-departure.js",
 	// The two integrated departure flights: geocentric (Earth+Moon+Sun) and
 	// generic body-centric (body+Sun).

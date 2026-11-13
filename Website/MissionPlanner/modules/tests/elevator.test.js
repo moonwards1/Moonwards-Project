@@ -1,4 +1,4 @@
-// Node tests for modules/elevator — the L2 elevator as a Moon-origin carrier.
+// Node tests for modules/elevator — the L1 and L2 elevators as Moon-origin carriers.
 // Run from the repo root:
 //   node --test Website/MissionPlanner/modules/tests/elevator.test.js
 
@@ -10,9 +10,10 @@ import { createRegistry } from "../../core/registry.js";
 import { createEngine } from "../../core/recompute.js";
 import moonPlatform from "../moon-platform/moon-platform.js";
 import skyhook from "../skyhook/skyhook-departure.js";
+import l1Elevator from "../elevator/l1-elevator-departure.js";
 import l2Elevator from "../elevator/l2-elevator-departure.js";
 import departureLeg from "../departure-leg/departure-leg.js";
-import { L2_ELEVATOR, ELEVATOR_LIMITS, releaseRadius, releaseFigures } from "../elevator/elevator.js";
+import { L1_ELEVATOR, L2_ELEVATOR, ELEVATOR_LIMITS, releaseRadius, releaseFigures } from "../elevator/elevator.js";
 import { techOptionsFor } from "../../ui/tech-options.js";
 import { lagrangeLineAt, linePointState } from "../../../Shared/lagrange-elevator.js";
 import { OrbitalMath as O } from "../../../Shared/math-utils.js";
@@ -25,24 +26,28 @@ function within(actual, expected, tol, label) {
 	assert.ok(Math.abs(actual - expected) <= tol, label + ": " + actual + " not within " + tol + " of " + expected);
 }
 
-// moon-platform, then the given carriers, then the departure leg released at JD.
-function run(carriers) {
+// moon-platform, then the given carriers, then the departure leg released at JD
+// with the given waypoints.
+function run(carriers, waypoints) {
 	var reg = createRegistry();
-	[moonPlatform, skyhook, l2Elevator, departureLeg].forEach(function (m) { reg.register(m); });
+	[moonPlatform, skyhook, l1Elevator, l2Elevator, departureLeg].forEach(function (m) { reg.register(m); });
 	var world = createWorld({ jd: JD }), ids = { carriers: [] };
 	ids.moon = world.set({ addStage: { moduleId: "moon-platform", params: {} } });
 	carriers.forEach(function (c) {
 		ids.carriers.push(world.set({ addStage: { moduleId: c[0], params: Object.assign({ body: "Moon" }, c[1]) } }));
 	});
-	ids.dep = world.set({ addStage: { moduleId: "departure-leg", params: { releaseJd: JD } } });
+	ids.dep = world.set({ addStage: { moduleId: "departure-leg", params: { releaseJd: JD, waypoints: waypoints || [] } } });
 	var engine = createEngine(world, reg);
 	return { world: world, reg: reg, ids: ids, res: function (id) { return engine.resultFor(id); } };
 }
 
-test("the L2 elevator is offered at the Moon only", function () {
-	assert.ok(techOptionsFor("Moon").some(function (o) { return o.id === "l2-elevator" && !o.future; }));
-	assert.ok(!techOptionsFor("Mars").some(function (o) { return o.id === "l2-elevator"; }));
+test("both elevators are offered at the Moon only", function () {
+	["l1-elevator", "l2-elevator"].forEach(function (id) {
+		assert.ok(techOptionsFor("Moon").some(function (o) { return o.id === id && !o.future; }), id);
+		assert.ok(!techOptionsFor("Mars").some(function (o) { return o.id === id; }), id);
+	});
 	assert.equal(L2_ELEVATOR.geometry({ body: "Mars" }).diagnostic.code, "wrong-body");
+	assert.equal(L1_ELEVATOR.geometry({ body: "Earth" }).diagnostic.code, "wrong-body");
 });
 
 test("its defaults: counterweight 250,000 km above the far side, released from the counterweight", function () {
@@ -116,4 +121,47 @@ test("the card's readouts state the release, on the release date", function () {
 	assert.equal(rows.length, 6);
 	assert.equal(rows[5][1], "leaves Earth by itself");
 	assert.deepEqual(L2_ELEVATOR.readouts(L2_ELEVATOR.geometry({ body: "Moon" })), [], "nothing before there is a release date");
+});
+
+// ---- the L1 elevator ------------------------------------------------------------
+
+test("the L1 elevator's defaults: counterweight 222,200 km above the near side, released from it", function () {
+	var g = L1_ELEVATOR.geometry({ body: "Moon" });
+	assert.ok(g.ok);
+	assert.equal(g.side, "L1");
+	within(g.rCw - R_MOON, 222200e3, 1e-3, "counterweight altitude");
+	assert.equal(g.rRelSet, g.rCw);
+	g.anchors.forEach(function (a) { assert.ok(Math.abs(a.lon) === 20 && Math.abs(a.lat) === 20); });
+});
+
+test("released from L1's counterweight, the ship stays bound and falls to a perigee near Earth", function () {
+	var f = releaseFigures(L1_ELEVATOR.geometry({ body: "Moon" }), JD);
+	assert.equal(f.escapes, false);
+	assert.ok(f.rEarth < 384400e3, "between the Moon and Earth: " + f.rEarth);
+	var c = run([["l1-elevator", {}]]), dep = c.res(c.ids.dep);
+	assert.equal(dep.status, "ok");
+	assert.equal(dep.output, null, "no hand-off: the flight stays with Earth");
+	var leg = c.reg.get("departure-leg").legFor(c.world, c.ids.dep), peri = null;
+	leg.samples.forEach(function (s) { var m = O.vMag(s.r); if (!peri || m < peri.r) { peri = { r: m, t: s.t }; } });
+	// A day and a half later it passes 1,000 to 3,000 km above Earth (this date: about 1,860).
+	assert.ok(peri.r - 6378e3 > 1000e3 && peri.r - 6378e3 < 3000e3, "perigee altitude " + (peri.r - 6378e3));
+	assert.ok(peri.t > 30 * 3600 && peri.t < 50 * 3600, "perigee after " + peri.t / 3600 + " h");
+});
+
+test("a prograde burn at that perigee turns the L1 release into a departure: the Oberth effect", function () {
+	var c0 = run([["l1-elevator", {}]]), leg = c0.reg.get("departure-leg").legFor(c0.world, c0.ids.dep), tPeri = 0, rMin = Infinity;
+	leg.samples.forEach(function (s) { var m = O.vMag(s.r); if (m < rMin) { rMin = m; tPeri = s.t; } });
+	var c = run([["l1-elevator", {}]], [{ t: tPeri, burn: { pro: 300, rad: 0, nrm: 0 } }]), dep = c.res(c.ids.dep);
+	assert.equal(dep.status, "ok");
+	assert.equal(dep.output.type, "ship-state");
+	// 300 m/s added at ~9.6 km/s, just short of the ~9.8 km/s escape speed there:
+	// v_inf = sqrt((v_p + dv)^2 - v_esc^2), about 1.3 km/s.
+	var vinf = c.reg.get("departure-leg").legFor(c.world, c.ids.dep).vinfEarth;
+	within(vinf, 1290, 60, "v-infinity, m/s");
+});
+
+test("the two elevators don't share a chain either", function () {
+	var c = run([["l1-elevator", {}], ["l2-elevator", {}]]);
+	assert.equal(c.res(c.ids.carriers[1]).diagnostic.code, "rides-alone");
+	assert.equal(l1Elevator.alone, true);
 });
