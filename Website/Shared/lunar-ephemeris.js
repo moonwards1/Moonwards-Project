@@ -83,6 +83,13 @@
 		[1,0,-1,-1,  -119],[4,-1,0,-1,   115],[2,-2,0,1,    107]
 	];
 
+	// The Moon's mean argument of latitude F (degrees): its mean distance
+	// along its orbit from the orbit's ascending node. Meeus 47.5.
+	function meanArgLatitude(T) {
+		return rev(93.2720950 + 483202.0175233*T - 0.0036539*T*T
+				- T*T*T/3526000 + T*T*T*T/863310000);
+	}
+
 	// Geocentric ecliptic position of the Moon (of date). jde in TD.
 	// Returns { lon, lat, dist } — degrees, degrees, km.
 	function moonEcliptic(jde) {
@@ -97,8 +104,7 @@
 				+ T*T*T/24490000);                            // Sun mean anomaly
 		var Mp = rev(134.9633964 + 477198.8675055*T + 0.0087414*T*T
 				+ T*T*T/69699 - T*T*T*T/14712000);            // Moon mean anomaly
-		var F  = rev(93.2720950 + 483202.0175233*T - 0.0036539*T*T
-				- T*T*T/3526000 + T*T*T*T/863310000);         // arg. of latitude
+		var F  = meanArgLatitude(T);                           // arg. of latitude
 
 		var A1 = rev(119.75 + 131.849*T);
 		var A2 = rev(53.09 + 479264.290*T);
@@ -141,6 +147,48 @@
 			m.dist * cb * sind(m.lon),
 			m.dist * sind(m.lat)
 		];
+	}
+
+	// Which way the Moon's body is turned at jde: its spin pole, and the
+	// direction of its prime meridian (selenographic longitude 0 on the
+	// equator — the MEAN sub-Earth point). Unit vectors in the same ecliptic
+	// axes of date as moonVector. Cassini's laws, as in Meeus Ch. 53 (optical
+	// librations; the physical librations, under 0.04 deg, are left out):
+	//
+	//     pole     = ( -sin I sin Om,  sin I cos Om,  cos I )
+	//     node     = (  cos Om,        sin Om,        0     )
+	//     meridian = cos(F + 180) node + sin(F + 180) (pole x node)
+	//
+	//     I    1.54242 deg, the fixed tilt of the Moon's equator to the ecliptic
+	//     Om   mean longitude of the ascending node of the Moon's orbit; the
+	//          Moon's equator crosses the ecliptic along the same line, going
+	//          down where the orbit goes up
+	//     F    the Moon's mean argument of latitude
+	//
+	// The Moon turns at a steady rate while its orbital motion speeds up and
+	// slows down, and its equator is tilted to its orbit, so Earth is not
+	// always over the prime meridian: seen from the Moon it wanders about
+	// 8 deg east-west and 7 deg north-south each month (the librations).
+	// A point at selenographic latitude b, longitude l (east positive) lies
+	// along  cos b cos l meridian + cos b sin l (pole x meridian) + sin b pole.
+	var MOON_EQUATOR_TILT = 1.54242;
+	function moonOrientation(jde) {
+		var T = centuries(jde);
+		var Om = rev(125.0445479 - 1934.1362891*T + 0.0020754*T*T
+				+ T*T*T/467441 - T*T*T*T/60616000);
+		var a = meanArgLatitude(T) + 180;
+		var sI = sind(MOON_EQUATOR_TILT), cI = cosd(MOON_EQUATOR_TILT);
+		var pole = [-sI*sind(Om), sI*cosd(Om), cI];
+		var node = [cosd(Om), sind(Om), 0];
+		var east = [pole[1]*node[2] - pole[2]*node[1],
+		            pole[2]*node[0] - pole[0]*node[2],
+		            pole[0]*node[1] - pole[1]*node[0]];
+		return {
+			pole: pole,
+			meridian: [cosd(a)*node[0] + sind(a)*east[0],
+			           cosd(a)*node[1] + sind(a)*east[1],
+			           cosd(a)*node[2] + sind(a)*east[2]]
+		};
 	}
 
 	// Geocentric Moon state (position + velocity) by central finite difference,
@@ -196,6 +244,7 @@
 		moonEcliptic: moonEcliptic,
 		moonVector: moonVector,
 		moonState: moonState,
+		moonOrientation: moonOrientation,
 		sunLongitude: sunLongitude,
 		sunDirection: sunDirection,
 		sunDistance: sunDistance,

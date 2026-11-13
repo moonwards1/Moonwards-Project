@@ -4,7 +4,9 @@
  *
  * A flight starts at a facility (core/facilities.js) at a release date. The
  * facility's position and velocity at that instant come from the clock, so
- * the release state is not chosen — it is where the release point IS then.
+ * the release state is not chosen — it is where the release point IS then
+ * (facilities.js's releaseState: a skyhook's release point, or the one of the
+ * L1 elevator's two that the flight is let go from).
  * The ship then coasts under Earth + Moon + Sun gravity (Shared/geo-leg.js,
  * RK4, real ephemerides, no sphere-of-influence hand-off).
  *
@@ -15,7 +17,11 @@
  *     same split the Moon-Skyhook-Trajectory-Plotter makes). Unlike that
  *     plotter, a release from below the centre of mass is allowed here, so
  *     the ellipse can meet the ground: such a leg is cut at the impact and
- *     carries impact "Moon".
+ *     carries impact "Moon". Only a skyhook's release is ever drawn this way.
+ *     One from the elevator starts tens of thousands of kilometres out, where
+ *     Earth's pull shapes the path as much as the Moon's does, so it is always
+ *     integrated; if it stays with the Moon it comes back as an integrated
+ *     leg whose primary is "Moon".
  *
  * A flight may carry WAYPOINT BURNS (core/waypoints.js), each at a time since
  * release. It is then flown in segments, one integrated leg from the release
@@ -39,7 +45,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { buildIntegratedLeg, buildMoonEllipseLeg, stateAtLegTime, moonGeoPos, moonGeoVel,
          shipAccel, SOI_MOON } from "../../../Shared/geo-leg.js";
-import { skyhookFigures, tetherPointState, phaseAt, bodyOffPlane } from "./facilities.js";
+import { facilityFigures, releaseState, bodyOffPlane } from "./facilities.js";
 import { evaluateArrival } from "./arrival.js";
 import { cleanWaypoints, applyWaypointBurn } from "./waypoints.js";
 
@@ -179,15 +185,16 @@ function flyWaypoints(r0, v0, jd, wps, opts, maxTime) {
 //     from     facility id (core/facilities.js) the ship is released from
 //     to       optional facility id it is meant to arrive at
 //     jd       release Julian date
-//     params   optional { <facility id>: { footAlt, comAlt, topAlt, relAlt, catchAlt } }
+//     params   optional { <facility id>: its params } — a skyhook's { footAlt, comAlt,
+//              topAlt, relAlt, catchAlt }, the elevator's { cwAlt, lowAlt, highAlt, relPoint }
 //     maxTime  optional: fly no longer than this (s) — core/target.js's trial flights
 //     skipArrival  optional: leave `arrival` null (a trial flight judged otherwise)
 //     waypoints    optional [{ t, burn: { pro, rad, nrm } }] — core/waypoints.js
 // Returns { ok: true, from, to, jd, fig, toFig, release, legs, final, summary,
 // arrival, offPlane, waypoints } or { ok: false, diagnostic }.
-//   fig       the origin's skyhookFigures
-//   release   { r, v, relR, relV, phase } — geocentric and body-relative state
-//             of the release point at jd, and the tether's clock angle (rad)
+//   fig       the origin's figures (facilities.js's facilityFigures)
+//   release   facilities.js's releaseState at jd: { r, v, relR, relV, radius },
+//             and for a skyhook `phase`, the tether's clock angle (rad)
 //   legs      the Shared/geo-leg.js legs flown, in flight order: one, or one
 //             per segment between burns (each on its own clock from its start)
 //   final     the flight as one leg: legs[0] itself, or the segments joined
@@ -200,28 +207,36 @@ function flyWaypoints(r0, v0, jd, wps, opts, maxTime) {
 //             centre is from the origin tether's plane at the closest pass
 //             (m, facilities.js's bodyOffPlane); null otherwise
 export var FINE_STEP = { turnStep: 0.005, maxSteps: 40000 };
+// A release from the elevator's upper point is on its way to Earth, however
+// slowly it starts: it is flown this long (s) before a path still near the
+// Moon is called a Moon orbit (Shared/geo-leg.js's moonCap).
+export var UPPER_RELEASE_MOON_CAP = 40 * DAY;
 export function computeFlight(input) {
-	var fig = skyhookFigures(input.from, input.params && input.params[input.from]);
+	var fig = facilityFigures(input.from, input.params && input.params[input.from]);
 	if (!fig.ok) { return fig; }
 	var toFig = null;
 	if (input.to) {
-		toFig = skyhookFigures(input.to, input.params && input.params[input.to]);
+		toFig = facilityFigures(input.to, input.params && input.params[input.to]);
 		if (!toFig.ok) { return toFig; }
+		if (toFig.kind !== "skyhook") {
+			return { ok: false, diagnostic: { code: "no-arrival", values: { to: input.to },
+				message: "Arrivals at the " + input.to + " are not worked out yet." } };
+		}
 	}
 	var jd = input.jd;
-	var rel = tetherPointState(fig, fig.rRel, jd);
-	rel.phase = phaseAt(fig, jd);
+	var rel = releaseState(fig, jd);
 
 	var wps = cleanWaypoints(input.waypoints);
 	var opts = { moonPlaneNormal: fig.normal };
 	if (toFig) { Object.assign(opts, FINE_STEP); }
+	if (fig.kind === "elevator" && fig.relPoint === "high") { opts.moonCap = UPPER_RELEASE_MOON_CAP; }
 	var leg = null, legs, wpOut = (input.waypoints || []).map(function (w) { return { reached: false, t: +w.t }; });
 	if (wps.length) {
 		var flown = flyWaypoints(rel.r, rel.v, jd, wps, opts, input.maxTime);
 		legs = flown.legs; leg = flown.joined;
 		flown.resolved.forEach(function (w) { wpOut[w.index] = w; });
 	} else {
-		if (fig.body === "Moon") {
+		if (fig.kind === "skyhook" && fig.body === "Moon") {
 			var elM = O.elementsFromState(GM_M, rel.relR, rel.relV);
 			if (elM.e < 1 && O.apoapsisRadius(elM.a, elM.e) < SOI_MOON) {
 				leg = moonBoundLeg(rel.relR, rel.relV, jd, elM);

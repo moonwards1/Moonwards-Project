@@ -68,7 +68,7 @@
 					<button type="button" id="emt-follow" title="Stop following" hidden><span></span><span class="emt-follow-x" aria-hidden="true">✕</span></button>
 					<div id="emt-view-hud">
 						<div class="emt-hud-line"><span class="emt-hud-key">drag</span> rotate &nbsp; <span class="emt-hud-key">wheel</span> zoom &nbsp; <span class="emt-hud-key">right-drag</span> pan &nbsp; <span class="emt-hud-key">click</span> anything to follow it</div>
-						<div class="emt-hud-line">Drag the ship along its path, or double-click the path to put it there. Drag the pink marker to move the release point, a waypoint's marker to move it along the path.</div>
+						<div class="emt-hud-line">Drag the ship along its path, or double-click the path to put it there. Drag a pink marker along its tether to move the release point, a waypoint's marker to move it along the path.</div>
 						<div class="emt-hud-line">On any slider: hold <span class="emt-hud-key">shift</span> to scrub at ¼ speed, <span class="emt-hud-key">ctrl</span> at 1/10.</div>
 					</div>
 				</div>
@@ -86,6 +86,7 @@
 							<select id="emt-from">
 								<option value="moonSkyhook">Moon skyhook</option>
 								<option value="earthSkyhook">Earth skyhook</option>
+								<option value="moonElevator">L1 elevator</option>
 							</select>
 						</div>
 						<div class="emt-field">
@@ -93,7 +94,7 @@
 							<select id="emt-to"></select>
 						</div>
 					</div>
-					<div class="emt-muted">Every facility follows the clock: the release time decides which way the tether points when it lets go. A ship can be caught anywhere along the destination tether, by a catcher that moves along it and absorbs up to 800 m/s of relative motion. With a destination chosen, <b>Target</b> (under the view) adjusts the release time and altitude until the ship meets that tether at the point where the relative motion is least.</div>
+					<div class="emt-muted">Every facility follows the clock: the release time decides which way a skyhook's tether points when it lets go, and where the Moon has carried the L1 elevator. A ship can be caught anywhere along the destination tether, by a catcher that moves along it and absorbs up to 800 m/s of relative motion. With a destination chosen, <b>Target</b> (under the view) adjusts the release time and altitude until the ship meets that tether at the point where the relative motion is least.</div>
 				</section>
 
 				<div id="emt-cards"></div>
@@ -116,6 +117,8 @@
 					</div>
 					<div class="emt-row emt-legend">
 						<span class="emt-swatch" style="background:#3ddc84"></span> catch point
+						<span class="emt-swatch" style="background:#7fe3ff"></span> L1
+						<span class="emt-swatch" style="background:#ffa64d"></span> elevator counterweight
 					</div>
 					<div class="emt-row emt-legend">
 						Waypoint:
@@ -136,10 +139,24 @@
 				distance. Each skyhook is a hanging (gravity-gradient) tether in its
 				body's equatorial plane, turning once per orbit, so a point at
 				radius r moves at &omega;r. Its angle at any instant follows a clock
-				started on 2080-01-01. The released path is integrated (RK4) under
+				started on 2080-01-01. The L1 elevator lies along the line from the
+				Moon to Earth and turns with it, its own swinging left aside: a
+				point of it keeps its distance from the Moon and is carried round
+				Earth at the rate that line is turning, faster when the Moon is
+				near Earth and slower when it is far. L1 is the point of the line
+				where the pulls balance, 15.1% of the Earth–Moon distance from the
+				Moon, so it slides along the tether by about 7,600 km over the
+				month. The elevator's four legs run from the ground at 20° north
+				and south, 20° east and west, to L1; their anchors turn with the
+				Moon, which nods a few degrees either way as seen from Earth (the
+				librations). One release point hangs below L1 and one is on the
+				tether above it, each held at L1 while L1 is in its way; a flight
+				from the elevator is aimed by hand. The released path is integrated (RK4) under
 				Earth + Moon + Sun gravity; a release that stays inside the Moon's
 				sphere of influence is drawn as its two-body ellipse, carried with
-				the Moon. The Flight slider moves the whole scene to that time after
+				the Moon; a release below L1 that stays with the Moon is
+				integrated like any other and drawn as the Moon sees it, carried
+				with the Moon. The Flight slider moves the whole scene to that time after
 				release, and is linear in time; with a destination it runs to half an
 				hour past the flight's closest pass to that body; dragging the ship in the view moves
 				it by distance along its path instead. A flight with a destination is judged at its closest pass

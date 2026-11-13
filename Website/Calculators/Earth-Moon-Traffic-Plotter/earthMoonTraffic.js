@@ -1,4 +1,4 @@
-/* Earth–Moon Traffic Plotter — flights between the skyhooks, on the clock.
+/* Earth–Moon Traffic Plotter — flights between the facilities, on the clock.
  *
  * A to-scale 3-D view of the Earth–Moon system (the Mission Planner's
  * geocentric frame, MissionPlanner/scene-frames.js) with the system's
@@ -56,9 +56,18 @@
  * normal gizmo and the burn's arrows, and its marker can be dragged along the
  * path like the ship. Target keeps them as they are and solves around them.
  *
- * Built so far: the two skyhooks, either one as the origin; an open path, or
- * the other skyhook as the destination; waypoint burns.
- * Next: the rotating frame, the L1 elevator, the mass driver.
+ * THE L1 ELEVATOR (core/facilities.js) is drawn along the line from the Moon
+ * to Earth: four legs from the ground to L1, one tether on to the
+ * counterweight, a dot at each of those two, and two arrow markers that slide
+ * — a release point hanging below L1, on its own line down from L1, and one
+ * on the tether above it. A flight starts from whichever of the two is chosen.
+ * A path that stays with the Moon is drawn as the Moon sees it, carried along
+ * with the Moon, so an orbit of the Moon looks like one.
+ *
+ * Built so far: the two skyhooks and the L1 elevator as origins; an open
+ * path, or a skyhook as the destination; waypoint burns. Target, the far-burn
+ * solve and the release windows are for flights from one skyhook to the other.
+ * Next: the rotating frame, arrivals at the elevator, the mass driver.
  *
  * ES module; Three.js is the one classic-script exception (global THREE).
  */
@@ -75,8 +84,9 @@ import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card
 import { createWaypointGizmo, makeBurnArrowPair } from "../../Shared/sim/burn-widget.js";
 import { buildVectorEditor } from "../../Shared/sim/vector-editor.js";
 import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
-import { CLOCK_EPOCH, FACILITIES, DESTINATIONS, routeReleaseAlt, skyhookFigures, phaseAt, tetherAxes,
-         relativePhase, nextPhaseMatch } from "./core/facilities.js";
+import { CLOCK_EPOCH, FACILITIES, DESTINATIONS, routeReleaseAlt, facilityFigures, phaseAt, tetherAxes,
+         relativePhase, nextPhaseMatch, elevatorAt, elevatorPointState, ELEVATOR_LIMITS }
+	from "./core/facilities.js";
 import { computeFlight, flightStateAt, PAST_PASS } from "./core/flight.js";
 import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
 import { solveBestCatch } from "./core/target.js";
@@ -92,12 +102,18 @@ var START_DAYS = 81;                   // opens on 2080-03-22
 
 var COLOR = { top: 0x9fb6ff, com: 0xffd24a, tether: 0xeaf0ff, release: 0xff5fd0,
               Moon: 0xb060ff, Earth: 0x40d27f, Sun: 0xff9a3c,
-              catchPoint: 0x3ddc84 };
+              catchPoint: 0x3ddc84, l1: 0x7fe3ff, counterweight: 0xffa64d };
 // A flight from the Earth skyhook has no way to the Moon skyhook while the Moon
 // is further than this from the release plane (m); inside it, the Moon's pull
 // can bend the path the rest of the way.
 var OFF_PLANE_WARN = 1e7;
 var CHEVRON_PX = 24;
+var ARROW_PX = 18;                     // on-screen length of the elevator's two arrow markers
+var IDLE_ARROW_OPACITY = 0.45;         // the elevator's marker that is not the flight's release point
+// The sliders of the elevator's two points, km of altitude: the lower one may
+// be set up to where L1 gets to when the Moon is furthest, the upper one down
+// to where L1 is when the Moon is nearest. Each is held at L1 while L1 is in the way.
+var L1_ALT_KM = { nearest: 52000, furthest: 59700 };
 var MAX_WAYPOINTS = 2;                 // as the Mission Planner's Ephemeris tab
 var GIZMO_PX = 42;                     // on-screen arm length of a waypoint's gizmo, and its longer burn arrow
 var BURN_COLOR = { dv: 0xff5fd0, dSpeed: 0xffd24a };   // the Mission Planner's burn arrows
@@ -116,17 +132,17 @@ var POVS = {
 };
 var ZOOM_MAX = 2600;                   // Earth's sphere of influence fills the view
 
-var CARD_ORDER = ["moonSkyhook", "earthSkyhook"];
+var CARD_ORDER = ["moonSkyhook", "earthSkyhook", "moonElevator"];
 // Facilities not built yet: shown folded so the sidebar already has its shape.
 var STUBS = [
-	{ label: "L1 elevator", sub: "Moon surface, through L1, to the counterweight" },
 	{ label: "Lunar mass driver", sub: "Surface track: launch mode or catch mode" }
 ];
+function isElevator(id) { return FACILITIES[id].kind === "elevator"; }
 
 // ---- state ------------------------------------------------------------------
 var state = {
 	jd: JD0, baseDays: 0,              // the date bar's own fields (Shared/sim/date-bar.js)
-	relFrac: 0,                        // release time, as a fraction of one departure-skyhook orbit
+	relFrac: 0,                        // release time, as a fraction of the release slider's span: one orbit of a departure skyhook, a day for the elevator
 	flightBy: "frac",                  // what holds the flight clock: the slider's "frac", or a "time" set in the view
 	flightFrac: 0,                     // flight slider position, 0..1 (flightBy "frac")
 	flightT: 0,                        // seconds since release (flightBy "time": a drag or a double-click)
@@ -136,7 +152,7 @@ var state = {
 	hold: false,                       // "Hold skyhook phase": keep the departure tether's angle to its partner body
 	heldAngle: null,                   // that angle (rad, core/facilities.js's relativePhase), or null to capture it
 	mode: "free",                      // "free" | "target"
-	params: {},                        // facility id -> { footAlt, comAlt, topAlt, relAlt, catchAlt } (m)
+	params: {},                        // facility id -> its params (m): a skyhook's { footAlt, comAlt, topAlt, relAlt, catchAlt }, the elevator's { cwAlt, lowAlt, highAlt, relPoint }
 	waypoints: [],                     // [{ t (s since release), burn: { pro, rad, nrm } (m/s) }], core/waypoints.js
 	open: { waypoints: true },         // facility id (or "waypoints") -> card unfolded?
 	pov: "system"
@@ -154,7 +170,7 @@ var flight = null;                     // core/flight.js result for the current 
 var targetNote = "";                   // why the last Target solve failed, shown until the next change
 var targetTimer = 0;                   // pending re-solve while in Target mode
 var farBusy = false;                   // a far-burn solve is about to run
-var figs = {};                         // facility id -> skyhookFigures result
+var figs = {};                         // facility id -> core/facilities.js's facilityFigures result
 
 function $(id) { return document.getElementById(id); }
 var holder = $("emt-canvas-holder");
@@ -224,7 +240,8 @@ holder.appendChild(renderer.domElement);
 holder.appendChild(frame.labelLayer);
 
 var facilityGroups = {};               // facility id -> THREE.Group under its body's node
-var releaseMesh = null;                // the origin's draggable release marker
+var handles = [];                      // the draggable markers: { id, name, mesh, along, node, R, set(altitude m) }
+var pxArrows = [];                     // markers held at a size on screen: { id, mesh, px }
 var trajObjects = [];                  // what drawTrajectory added, for removal
 var wpObjects = [];                    // the waypoints' gizmos and burn arrows, held at GIZMO_PX on screen
 var chevron = makeShipSprite(), chevronDir = new THREE.Vector3(1, 0, 0), chevronSpeed = 1;
@@ -251,11 +268,33 @@ function lineOf(points, colorHex, opacity) {
 function drawFacility(id) {
 	var node = frame.bodyNode(FACILITIES[id].body);
 	if (facilityGroups[id]) { node.remove(facilityGroups[id]); disposeTree(facilityGroups[id]); delete facilityGroups[id]; }
-	if (id === state.from) { releaseMesh = null; }
+	handles = handles.filter(function (h) { return h.id !== id; });
+	pxArrows = pxArrows.filter(function (a) { return a.id !== id; });
 	Object.keys(markers).forEach(function (k) { if (k.indexOf(id + ":") === 0) { delete markers[k]; } });
 	var fig = figs[id];
 	if (!fig || !fig.ok) { return; }
 	var grp = new THREE.Group();
+	if (fig.kind === "elevator") { drawElevator(id, fig, node, grp); }
+	else { drawSkyhook(id, fig, node, grp); }
+	grp.visible = showFac.checked;
+	node.add(grp);
+	facilityGroups[id] = grp;
+}
+
+// A triangle with its tip at the origin, pointing along `dir`, its base
+// spread along `across` (both unit vectors, scene axes): `len` long and
+// 2 * `halfWidth` wide.
+function arrowMesh(dir, across, len, halfWidth, opacity) {
+	var bL = dir.clone().multiplyScalar(-len).addScaledVector(across, halfWidth);
+	var bR = dir.clone().multiplyScalar(-len).addScaledVector(across, -halfWidth);
+	var geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
+		0, 0, 0, bL.x, bL.y, bL.z, bR.x, bR.y, bR.z]), 3));
+	return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: COLOR.release, side: THREE.DoubleSide,
+		transparent: opacity < 1, opacity: opacity }));
+}
+
+function drawSkyhook(id, fig, node, grp) {
 	var b = planeBasis(fig.normal, fig.ref);
 	var e1 = toScene(b.e1).multiplyScalar(U), e2 = toScene(b.e2).multiplyScalar(U);   // unit vectors
 
@@ -282,16 +321,15 @@ function drawFacility(id) {
 	});
 
 	if (id === state.from) {
-		var len = 0.09 * fig.rTop / U, hw = 0.02 * fig.rTop / U;
-		var bL = pro.clone().multiplyScalar(-len).add(along.clone().multiplyScalar(hw));
-		var bR = pro.clone().multiplyScalar(-len).add(along.clone().multiplyScalar(-hw));
-		var geo = new THREE.BufferGeometry();
-		geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([
-			0, 0, 0, bL.x, bL.y, bL.z, bR.x, bR.y, bR.z]), 3));
-		releaseMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: COLOR.release, side: THREE.DoubleSide }));
+		var releaseMesh = arrowMesh(pro, along, 0.09 * fig.rTop / U, 0.02 * fig.rTop / U, 1);
 		releaseMesh.position.copy(along.clone().multiplyScalar(fig.rRel / U));
-		releaseMesh.userData = { along: along.clone(), node: node, fig: fig };
 		grp.add(releaseMesh);
+		handles.push({ id: id, name: "release", mesh: releaseMesh, along: along.clone(), node: node, R: fig.R,
+			set: function (alt) {
+				var p = state.params[id];
+				p.relAlt = Math.max(p.footAlt, Math.min(p.topAlt, alt));
+				refresh({ userRelease: true });
+			} });
 	}
 	if (id === state.to) {
 		// The catch point: a small bar across the tether where the catcher is.
@@ -308,32 +346,99 @@ function drawFacility(id) {
 		if (id === state.from) { mark("release", "release point", fig.rRel); }
 		if (id === state.to) { mark("catch", "catch point", fig.rCatch); }
 	}
-	grp.visible = showFac.checked;
-	node.add(grp);
-	facilityGroups[id] = grp;
 }
 
-// The flight's path. A geocentric leg is drawn where it really goes; a
-// Moon-bound ellipse is Moon-relative and rides the Moon's node.
+// The L1 elevator, where the Moon's ephemeris puts it at the scene's time
+// (core/facilities.js's elevatorAt): four legs from their anchors on the
+// ground to L1, the single tether from L1 to the counterweight, a dot at each
+// of those two, and its two release-or-catch points as arrows pointing the
+// way the tether is carried round Earth. The lower point hangs below L1 on
+// its own line; the upper one is on the tether. The arrows keep one size on
+// screen, since the elevator is looked at from a hundred kilometres and from
+// across the whole system; the one a flight starts from is solid.
+function drawElevator(id, fig, node, grp) {
+	var at = elevatorAt(fig, sceneJd());
+	var u = toScene(at.u).multiplyScalar(U), travel = toScene(at.travel).multiplyScalar(U);   // unit vectors
+	function on(r) { return u.clone().multiplyScalar(r / U); }
+	var l1 = on(at.rL1), cw = on(fig.rCw);
+	at.anchors.forEach(function (a) { grp.add(lineOf([toScene(a), l1], COLOR.tether, 0.9)); });
+	grp.add(lineOf([l1, cw], COLOR.tether, 1));
+	grp.add(lineOf([on(at.rLow), l1], COLOR.tether, 0.9));
+	[[l1, COLOR.l1], [cw, COLOR.counterweight]].forEach(function (d) {
+		var dot = makePoint(d[1], 7);
+		dot.position.copy(d[0]);
+		grp.add(dot);
+	});
+	var p = state.params[id], L = ELEVATOR_LIMITS;
+	[["low", at.rLow], ["high", at.rHigh]].forEach(function (pt) {
+		var name = pt[0], active = id === state.from && fig.relPoint === name;
+		var mesh = arrowMesh(travel, u, 1, 0.3, active ? 1 : IDLE_ARROW_OPACITY);
+		mesh.position.copy(on(pt[1]));
+		grp.add(mesh);
+		pxArrows.push({ id: id, mesh: mesh, px: ARROW_PX });
+		handles.push({ id: id, name: name, mesh: mesh, along: u.clone(), node: node, R: fig.R,
+			// A dragged point becomes the one the flight starts from, and stays on its side of L1.
+			set: function (alt) {
+				var altL1 = at.rL1 - fig.R;
+				if (name === "low") { p.lowAlt = Math.max(L.lowMin, Math.min(altL1, alt)); }
+				else { p.highAlt = Math.max(altL1, Math.min(p.cwAlt, alt)); }
+				p.relPoint = name;
+				refresh({ userRelease: id === state.from });
+			} });
+	});
+	function mark(name, label, r) {
+		markers[id + ":" + name] = { pos: node.position.clone().add(on(r)), label: FACILITIES[id].label + " · " + label };
+	}
+	if (showFac.checked) {
+		mark("l1", "L1", at.rL1); mark("cw", "counterweight", fig.rCw);
+		mark("low", "lower release point", at.rLow); mark("high", "upper release point", at.rHigh);
+	}
+}
+
+// A path that stays with the Moon, from a facility at the Moon, is drawn as
+// the Moon sees it and carried along with the Moon — so an orbit of the Moon
+// looks like one, where its true path round Earth is a long wavy line.
+function moonFramed() {
+	return !!(flight && flight.ok && (flight.final.kind === "moonEllipse"
+		|| (flight.final.primary === "Moon" && flight.fig.body === "Moon")));
+}
+// A point of the flight's path in scene units, within whatever the path is
+// drawn under: `r` (m) as the leg's own samples have it, at flight time t (s).
+// A Moon-bound ellipse's samples are Moon-relative already; an integrated
+// leg's are geocentric, and are taken relative to where the Moon was then.
+function pathPoint(r, t) {
+	var leg = flight.final;
+	if (leg.kind !== "moonEllipse" && moonFramed()) { r = O.vSub(r, moonGeoPos(leg.jde0 + t / DAY)); }
+	return toScene(r);
+}
+// The same point in the scene itself, as the scene stands now.
+function pathWorld(r, t) {
+	var v = pathPoint(r, t);
+	return moonFramed() ? v.add(frame.bodyNode("Moon").position) : v;
+}
+
+// The flight's path. A geocentric leg is drawn where it really goes; a path
+// that stays with the Moon (moonFramed) is Moon-relative and rides the Moon's node.
 function drawTrajectory() {
 	trajObjects.forEach(function (o) { if (o.parent) { o.parent.remove(o); } disposeTree(o); });
 	trajObjects = [];
 	if (!flight || !flight.ok) { return; }
 	var leg = flight.final;
-	var parent = leg.kind === "moonEllipse" ? frame.bodyNode("Moon") : frame.scene;
+	var parent = moonFramed() ? frame.bodyNode("Moon") : frame.scene;
 	var a = arrival(), objs = [];
 	if (a) {
-		// Bright up to the closest pass, faint beyond it.
-		var before = [], after = [toScene(a.rGeo)];
-		leg.samples.forEach(function (s) { (s.t <= a.t ? before : after).push(toScene(s.r)); });
-		before.push(toScene(a.rGeo));
+		// Bright up to the closest pass, faint beyond it. (An arrival is never
+		// read off a Moon-bound ellipse, so rGeo is in the samples' own frame.)
+		var before = [], after = [pathPoint(a.rGeo, a.t)];
+		leg.samples.forEach(function (s) { (s.t <= a.t ? before : after).push(pathPoint(s.r, s.t)); });
+		before.push(pathPoint(a.rGeo, a.t));
 		objs.push(lineOf(before, COLOR[leg.primary], 1));
 		if (after.length > 1) { objs.push(lineOf(after, COLOR[leg.primary], 0.3)); }
 	} else {
-		objs.push(lineOf(leg.samples.map(function (s) { return toScene(s.r); }), COLOR[leg.primary], 1));
+		objs.push(lineOf(leg.samples.map(function (s) { return pathPoint(s.r, s.t); }), COLOR[leg.primary], 1));
 	}
 	var start = makePoint(COLOR.release, 5);
-	start.position.copy(toScene(leg.samples[0].r));
+	start.position.copy(pathPoint(leg.samples[0].r, leg.samples[0].t));
 	objs.push(start);
 	objs.forEach(function (o) { o.visible = showTraj.checked; parent.add(o); trajObjects.push(o); });
 	drawWaypoints();
@@ -342,8 +447,9 @@ function drawTrajectory() {
 // Each reached waypoint: the prograde / radial / normal gizmo of the frame its
 // burn is measured in, and the burn's two arrows — the impulse (pink) and the
 // change in speed relative to that body (yellow), the longer one as long as
-// the gizmo's arms. A flight with waypoints is always a geocentric leg, so
-// they sit in the scene itself.
+// the gizmo's arms. They sit in the scene itself, where the path is now
+// (pathWorld), so they are drawn again whenever a Moon-framed path moves with
+// the Moon.
 function drawWaypoints() {
 	wpObjects.forEach(function (o) { frame.scene.remove(o); disposeTree(o); });
 	wpObjects = [];
@@ -351,13 +457,14 @@ function drawWaypoints() {
 	if (!flight || !flight.ok || !showTraj.checked) { return; }
 	flight.waypoints.forEach(function (w, i) {
 		if (!w.reached) { return; }
-		var pos = toScene(w.r), add = [createWaypointGizmo(w.relR, w.relV, pos)];
+		var pos = pathWorld(w.r, w.t), add = [createWaypointGizmo(w.relR, w.relV, pos)];
+		var along = moonFramed() ? O.vSub(w.v, moonGeoVel(w.jd)) : w.v;
 		var pair = makeBurnArrowPair(pos, O.vScale(O.vUnit(w.relVAfter), w.dSpeed), w.dv,
 			BURN_COLOR.dSpeed, BURN_COLOR.dv, BURN_ARROW_MIN_KMS);
 		if (pair.spdArrow) { add.push(pair.spdArrow); }
 		if (pair.dvArrow) { add.push(pair.dvArrow); }
 		add.forEach(function (o) { frame.scene.add(o); wpObjects.push(o); });
-		markers["wp:" + i] = { pos: pos, label: "waypoint " + (i + 1), dir: toScene(w.v).normalize(), speed: O.vMag(w.v) };
+		markers["wp:" + i] = { pos: pos, label: "waypoint " + (i + 1), dir: toScene(along).normalize(), speed: O.vMag(along) };
 	});
 }
 
@@ -367,8 +474,8 @@ function placeShip() {
 	if (!ok) { return; }
 	var s = flightStateAt(flight, flightSeconds());
 	chevron.position.copy(toScene(s.r));
-	// Nose along the drawn path: Moon-relative motion on a Moon-bound ellipse.
-	var v = flight.final.kind === "moonEllipse" ? O.vSub(s.v, moonGeoVel(s.jde)) : s.v;
+	// Nose along the drawn path: Moon-relative motion on a path drawn with the Moon.
+	var v = moonFramed() ? O.vSub(s.v, moonGeoVel(s.jde)) : s.v;
 	chevronDir.set(v[0], v[1], v[2]).normalize();
 	chevronSpeed = Math.max(1, O.vMag(v));     // m/s along the path as drawn
 }
@@ -483,11 +590,24 @@ function cursorRay(e) {
 		.unproject(frame.camera).sub(frame.camera.position).normalize();
 	return { o: frame.camera.position.clone(), d: dir };
 }
-function hitRelease(e) {
-	if (!releaseMesh || !showFac.checked) { return false; }
-	var wp = new THREE.Vector3();
-	releaseMesh.getWorldPosition(wp);
-	return pxBetween(wp, cursorOf(e)) < 16;
+// The draggable marker under the cursor (one of `handles`), or null: the
+// nearest within 16 px, the flight's own release point first where two overlap.
+function hitHandle(e) {
+	if (!showFac.checked) { return null; }
+	var c = cursorOf(e), wp = new THREE.Vector3(), best = null, bestD = 16;
+	handles.forEach(function (h) {
+		h.mesh.getWorldPosition(wp);
+		var d = pxBetween(wp, c) - (isReleaseHandle(h) ? 0.5 : 0);
+		if (d < bestD) { bestD = d; best = h; }
+	});
+	return best;
+}
+function isReleaseHandle(h) {
+	return h.id === state.from && (h.name === "release" || h.name === figs[h.id].relPoint);
+}
+function findHandle(id, name) {
+	for (var i = 0; i < handles.length; i++) { if (handles[i].id === id && handles[i].name === name) { return handles[i]; } }
+	return null;
 }
 function hitShip(e) { return chevron.visible && pxBetween(chevron.position, cursorOf(e)) < 14; }
 // The waypoint whose marker is under the cursor (its index), or -1.
@@ -500,20 +620,19 @@ function hitWaypoint(e) {
 	});
 	return best;
 }
-// Drag the release marker: the point on the tether's line nearest the cursor
-// ray sets the release altitude, kept between the foot and the top.
-function dragRelease(e) {
-	var ud = releaseMesh && releaseMesh.userData;
-	if (!ud) { return; }
+// Drag a marker along its tether: the point of the tether's line nearest the
+// cursor ray sets its altitude, which the marker's own `set` keeps in range.
+// The marker is looked up afresh each time, since every refresh redraws it.
+function dragHandle(e, id, name) {
+	var h = findHandle(id, name);
+	if (!h) { return; }
 	var ray = cursorRay(e), A = new THREE.Vector3();
-	ud.node.getWorldPosition(A);
-	var u = ud.along, w0 = ray.o.clone().sub(A);
+	h.node.getWorldPosition(A);
+	var u = h.along, w0 = ray.o.clone().sub(A);
 	var b = ray.d.dot(u), denom = 1 - b * b;
 	if (Math.abs(denom) < 1e-9) { return; }
 	var t = (u.dot(w0) - b * ray.d.dot(w0)) / denom;       // scene units along the tether
-	var p = state.params[state.from];
-	p.relAlt = Math.max(p.footAlt, Math.min(p.topAlt, t * U - ud.fig.R));
-	refresh({ userRelease: true });
+	h.set(t * U - h.R);
 }
 // Drag something along the path: the ship, or a waypoint. The camera is on
 // it, so it stays at the centre and the scene scrolls, as a dragged map does:
@@ -554,11 +673,9 @@ function dragWaypoint(e, dx, dy, i) {
 function pathTimeAt(e) {
 	if (!flight || !flight.ok || !showTraj.checked) { return null; }
 	var c = cursorOf(e), leg = flight.final, a = leg.samples;
-	var off = leg.kind === "moonEllipse" ? frame.bodyNode("Moon").position : ORIGIN;
-	var v = new THREE.Vector3(), prev = null, bestD = 10, bestT = null;
+	var prev = null, bestD = 10, bestT = null;
 	for (var k = 0; k < a.length; k++) {
-		v.set(a[k].r[0] / U, a[k].r[1] / U, a[k].r[2] / U).add(off);
-		var s = screenOf(v), cur = { x: s.x, y: s.y, z: s.z, t: a[k].t };
+		var s = screenOf(pathWorld(a[k].r, a[k].t)), cur = { x: s.x, y: s.y, z: s.z, t: a[k].t };
 		if (prev && prev.z <= 1 && cur.z <= 1) {
 			var ex = cur.x - prev.x, ey = cur.y - prev.y, L2 = ex * ex + ey * ey;
 			var f = L2 > 0 ? Math.max(0, Math.min(1, ((c.x - prev.x) * ex + (c.y - prev.y) * ey) / L2)) : 0;
@@ -581,24 +698,25 @@ bindCameraControls(renderer.domElement, function () {
 				{ meshes: frame.pickMeshes, soiSpheres: frame.pickSoiSpheres });
 		},
 		onPan: function () { if (state.follow) { setFollow(null); } },
-		// A press on the ship, a waypoint or the release marker is theirs:
+		// A press on the ship, a waypoint or a tether marker is theirs:
 		// moved, it drags them; let go where it was pressed, it is a click and
 		// follows them. At the very start of a flight the ship and the release
 		// marker sit together, and the marker wins; where the ship sits on a
 		// waypoint (a new one is put where the ship is), the waypoint wins.
 		captureDrag: function (e) {
 			if (e.button !== 0) { return null; }
-			var onRelease = hitRelease(e), onShip = hitShip(e), onWp = hitWaypoint(e);
+			var onRelease = hitHandle(e), onShip = hitShip(e), onWp = hitWaypoint(e);
 			if (!onRelease && !onShip && onWp < 0) { return null; }
 			var kind = onRelease && (!onShip || flightSeconds() === 0) ? "release" : (onWp >= 0 ? "wp" : "ship");
-			return { kind: kind, wp: onWp, x: e.clientX, y: e.clientY, travel: 0 };
+			return { kind: kind, wp: onWp, x: e.clientX, y: e.clientY, travel: 0,
+			         id: onRelease ? onRelease.id : null, name: onRelease ? onRelease.name : null };
 		},
 		onCapturedMove: function (e, tok) {
 			var dx = e.clientX - tok.x, dy = e.clientY - tok.y;
 			tok.x = e.clientX; tok.y = e.clientY;
 			tok.travel += Math.abs(dx) + Math.abs(dy);
 			if (tok.travel < 3) { return; }
-			if (tok.kind === "release") { dragRelease(e); return; }
+			if (tok.kind === "release") { dragHandle(e, tok.id, tok.name); return; }
 			if (tok.kind === "wp") {
 				if (state.follow !== "wp:" + tok.wp) { setFollow("wp:" + tok.wp); }
 				dragWaypoint(e, dx, dy, tok.wp);
@@ -610,7 +728,7 @@ bindCameraControls(renderer.domElement, function () {
 		onCapturedEnd: function (e, tok) {
 			if (tok.travel >= 3) { return; }
 			if (tok.kind === "wp") { setFollow("wp:" + tok.wp); openCard("waypoints"); return; }
-			setFollow(tok.kind === "ship" ? "ship" : state.from + ":release");
+			setFollow(tok.kind === "ship" ? "ship" : tok.id + ":" + tok.name);
 		},
 		onPick: function (e) {
 			var id = pickTarget(e);
@@ -626,7 +744,7 @@ bindCameraControls(renderer.domElement, function () {
 // a grab over the two things that drag.
 renderer.domElement.addEventListener("mousemove", function (e) {
 	if (e.buttons) { return; }
-	renderer.domElement.style.cursor = (hitShip(e) || hitRelease(e) || hitWaypoint(e) >= 0) ? "grab" : (pickTarget(e) ? "pointer" : "");
+	renderer.domElement.style.cursor = (hitShip(e) || hitHandle(e) || hitWaypoint(e) >= 0) ? "grab" : (pickTarget(e) ? "pointer" : "");
 });
 followEl.addEventListener("click", function () { setFollow(null); });
 
@@ -639,6 +757,7 @@ function resize() {
 	frame.camera.updateProjectionMatrix();
 }
 
+var _wp = new THREE.Vector3();
 function animate() {
 	requestAnimationFrame(animate);
 	applyFollow();
@@ -651,6 +770,10 @@ function animate() {
 	}
 	wpObjects.forEach(function (o) {
 		o.scale.setScalar(worldSizeAtPointForPx(frame.camera, holder, o.position, GIZMO_PX));
+	});
+	pxArrows.forEach(function (a) {
+		a.mesh.getWorldPosition(_wp);
+		a.mesh.scale.setScalar(worldSizeAtPointForPx(frame.camera, holder, _wp, a.px));
 	});
 	renderer.render(frame.scene, frame.camera);
 }
@@ -683,7 +806,128 @@ function numberField(parent, id, label, onInput) {
 	return inp;
 }
 
+// A slider with its number field beside it, both in km.
+function sliderLine(parent, id, label, onSlide, onType) {
+	var line = parent.appendChild(el("div", "emt-release-line"));
+	var sf = line.appendChild(el("div", "emt-field"));
+	var sl = sf.appendChild(el("label", null, label));
+	sl.htmlFor = id + "-slider";
+	var slider = sf.appendChild(el("input"));
+	slider.type = "range"; slider.id = sl.htmlFor; slider.step = "any";
+	slider.addEventListener("input", onSlide);
+	bindFineDrag(slider, onSlide, null, SLOW_DRAG);
+	return { slider: slider, field: numberField(line, id, "km", onType) };
+}
+
+// The L1 elevator's card: the counterweight, what the month is doing to the
+// elevator now, its two release-or-catch points, and — on the flight's
+// origin — which of the two the ship is let go from.
+function buildElevatorCard(id) {
+	var fac = FACILITIES[id], refs = {};
+	var card = el("section", "emt-card");
+	var head = card.appendChild(el("button", "emt-card-head"));
+	head.type = "button";
+	head.innerHTML = CHEVRON_SVG;
+	var title = head.appendChild(el("span", "emt-card-title", fac.label));
+	refs.sub = title.appendChild(el("span", "emt-card-sub"));
+	refs.badge = head.appendChild(el("span", "emt-badge"));
+	head.addEventListener("click", function () { state.open[id] = !state.open[id]; syncCards(); });
+	refs.head = head;
+
+	var body = card.appendChild(el("div", "emt-card-body"));
+	var p = state.params[id];
+	var alts = body.appendChild(el("div", "emt-fieldpair"));
+	refs.cwAlt = numberField(alts, "emt-" + id + "-cwAlt", "Counterweight altitude (km)", function () {
+		var atTop = p.highAlt >= p.cwAlt;          // an upper point at the counterweight stays there
+		p.cwAlt = parseFloat(refs.cwAlt.value) * 1e3;
+		if (isFinite(p.cwAlt) && (atTop || p.highAlt > p.cwAlt)) { p.highAlt = p.cwAlt; }
+		refresh({ keepInputs: true });
+	});
+	refs.error = body.appendChild(el("div", "emt-error"));
+	var ro = body.appendChild(el("div", "emt-readouts"));
+	refs.dist = readout(ro, "Earth–Moon distance now");
+	refs.turn = readout(ro, "the Earth–Moon line turns once in");
+	refs.l1 = readout(ro, "L1 now, above the Moon");
+	refs.cwEarth = readout(ro, "counterweight now, from Earth's centre");
+	refs.cwSpeed = readout(ro, "counterweight's speed round Earth now");
+
+	// The two points: always there, since each is a catch point as well.
+	var pts = body.appendChild(el("div", "emt-release emt-points"));
+	function point(key, label) {
+		function moved(alt, opts) {
+			p[key] = alt;
+			if (id === state.from) { p.relPoint = key === "lowAlt" ? "low" : "high"; }
+			refresh(Object.assign({ userRelease: id === state.from }, opts));
+		}
+		var sl = sliderLine(pts, "emt-" + id + "-" + key, label,
+			function () { moved(parseFloat(sl.slider.value) * 1e3); },
+			function () { moved(parseFloat(sl.field.value) * 1e3, { keepInputs: true }); });
+		refs[key + "Slider"] = sl.slider; refs[key] = sl.field;
+	}
+	point("lowAlt", "Lower point, below L1");
+	point("highAlt", "Upper point, above L1");
+	refs.held = pts.appendChild(el("div", "emt-muted"));
+
+	// The release controls: shown on the flight's origin only.
+	var rel = body.appendChild(el("div", "emt-release"));
+	var pick = rel.appendChild(el("div", "emt-pick"));
+	pick.appendChild(el("span", "emt-pick-label", "Release from"));
+	var group = pick.appendChild(el("div", "emt-mode"));
+	group.setAttribute("role", "group"); group.setAttribute("aria-label", "Release point");
+	refs.pick = {};
+	[["low", "Lower point"], ["high", "Upper point"]].forEach(function (m) {
+		var b = refs.pick[m[0]] = group.appendChild(el("button", null, m[1]));
+		b.type = "button";
+		b.addEventListener("click", function () { p.relPoint = m[0]; refresh({ userRelease: true }); });
+	});
+	var rro = rel.appendChild(el("div", "emt-readouts"));
+	refs.relAt = readout(rro, "release point, above the Moon");
+	refs.relEarth = readout(rro, "its distance from Earth's centre");
+	refs.vGeo = readout(rro, "speed on release, round Earth");
+	refs.vMoon = readout(rro, "speed on release, relative to the Moon");
+	refs.release = rel;
+	refs.arrival = body.appendChild(el("div"));     // arrivals at the elevator: nothing to show yet
+
+	cardsEl.appendChild(card);
+	cards[id] = { el: card, refs: refs };
+}
+
+function fillElevatorCard(id, opts) {
+	var c = cards[id].refs, p = state.params[id], fig = figs[id];
+	if (!(opts && opts.keepInputs)) {
+		["cwAlt", "lowAlt", "highAlt"].forEach(function (k) { c[k].value = +(p[k] / 1e3).toFixed(1); });
+	}
+	c.sub.textContent = "Moon surface · L1 · counterweight at " + (isFinite(p.cwAlt) ? num(p.cwAlt / 1e3) : "—") + " km";
+	c.lowAltSlider.min = ELEVATOR_LIMITS.lowMin / 1e3; c.lowAltSlider.max = L1_ALT_KM.furthest; c.lowAltSlider.value = p.lowAlt / 1e3;
+	c.highAltSlider.min = L1_ALT_KM.nearest; c.highAltSlider.max = p.cwAlt / 1e3; c.highAltSlider.value = p.highAlt / 1e3;
+	c.error.textContent = fig.ok ? "" : fig.diagnostic.message;
+	c.error.style.display = fig.ok ? "none" : "";
+	["low", "high"].forEach(function (k) { c.pick[k].setAttribute("aria-pressed", String(p.relPoint === k)); });
+	if (!fig.ok) {
+		["dist", "turn", "l1", "cwEarth", "cwSpeed", "relAt", "relEarth", "vGeo", "vMoon"].forEach(function (k) { c[k].textContent = "—"; });
+		c.held.textContent = "";
+		return;
+	}
+	var jd = sceneJd(), at = elevatorAt(fig, jd);
+	c.dist.textContent = km(at.D);
+	c.turn.textContent = num(2 * Math.PI / at.turnRate / DAY, 2) + " d";
+	c.l1.textContent = km(at.rL1 - fig.R);
+	c.cwEarth.textContent = km(at.D - fig.rCw);
+	c.cwSpeed.textContent = num(O.vMag(elevatorPointState(fig, fig.rCw, jd, at).v)) + " m/s";
+	var held = [];
+	if (at.rLow < fig.rLowSet) { held.push("the lower point is held at L1"); }
+	if (at.rHigh > fig.rHighSet) { held.push("the upper point is held at L1"); }
+	c.held.textContent = held.length ? "L1 is at " + km(at.rL1 - fig.R) + " now: " + held.join(", and ") + "." : "";
+	if (id !== state.from) { return; }
+	var atRel = elevatorAt(fig, releaseJd()), s = elevatorPointState(fig, atRel.rRel, releaseJd(), atRel);
+	c.relAt.textContent = km(atRel.rRel - fig.R);
+	c.relEarth.textContent = km(O.vMag(s.r));
+	c.vGeo.textContent = num(O.vMag(s.v)) + " m/s";
+	c.vMoon.textContent = num(O.vMag(s.relV)) + " m/s";
+}
+
 function buildCard(id) {
+	if (isElevator(id)) { buildElevatorCard(id); return; }
 	var fac = FACILITIES[id], refs = {};
 	var card = el("section", "emt-card");
 	var head = card.appendChild(el("button", "emt-card-head"));
@@ -932,6 +1176,7 @@ function orderCards() {
 // Write a card's values. opts.keepInputs leaves the number fields alone, so a
 // half-typed value is not rewritten under the cursor.
 function fillCard(id, opts) {
+	if (isElevator(id)) { fillElevatorCard(id, opts); return; }
 	var c = cards[id].refs, p = state.params[id], fig = figs[id];
 	if (!(opts && opts.keepInputs)) {
 		["footAlt", "comAlt", "topAlt", "relAlt"].forEach(function (k) {
@@ -1006,7 +1251,15 @@ function fillKeys() {
 		return;
 	}
 	var s = flight.summary, fig = flight.fig;
-	key("Release speed", num(fig.vRel) + " m/s");
+	// A skyhook's release speed is about its own body; the elevator's is quoted
+	// against the body the ship is headed for: the Moon from below L1, Earth from above.
+	if (fig.kind === "elevator") {
+		key("Released at", km(flight.release.radius - fig.R) + " above the Moon");
+		if (fig.relPoint === "low") { key("Release speed, relative to the Moon", num(O.vMag(flight.release.relV)) + " m/s"); }
+		else { key("Release speed, round Earth", num(O.vMag(flight.release.v)) + " m/s"); }
+	} else {
+		key("Release speed", num(fig.vRel) + " m/s");
+	}
 	if (state.waypoints.length) { key("Waypoint burns", num(waypointTotal(), 1) + " m/s"); }
 	if (state.to) { fillArrivalKeys(s); return; }
 	if (s.impact) {
@@ -1025,7 +1278,7 @@ function fillKeys() {
 		key(s.primary === "Moon" ? "Periapsis" : "Perigee", km(s.periAlt));
 		key(s.primary === "Moon" ? "Apoapsis" : "Apogee", s.apoAlt == null ? "—" : km(s.apoAlt));
 	}
-	if (s.inclRad != null) { key("Inclination to the " + (s.primary === "Moon" ? "skyhook's plane" : "ecliptic"), num(s.inclRad * 180 / Math.PI, 1) + "°"); }
+	if (s.inclRad != null) { key("Inclination to the " + (s.primary === "Moon" ? "Moon skyhook's plane" : "ecliptic"), num(s.inclRad * 180 / Math.PI, 1) + "°"); }
 	key("Path drawn for", span(s.duration));
 }
 
@@ -1052,6 +1305,9 @@ function fillArrivalKeys(s) {
 	var busy = farBusy || (state.mode === "target" && targetTimer);
 	right.appendChild(el("span", "emt-chip" + (a && a.caught ? " emt-chip-ok" : ""),
 		busy ? "Solving…" : (targetNote || (a ? FACILITIES[state.to].label + ": " + passText(a) : "No arrival"))));
+	// Target and the far-burn solve work on a skyhook's release (its time and
+	// altitude); a flight from the elevator is aimed by hand.
+	if (flight.fig.kind !== "skyhook") { keysEl.appendChild(right); return; }
 	var group = right.appendChild(el("div", "emt-mode"));
 	group.setAttribute("role", "group"); group.setAttribute("aria-label", "Aiming mode");
 	[["free", "Free"], ["target", "Target"]].forEach(function (m) {
@@ -1137,7 +1393,7 @@ function runTarget() {
 // the date bar's own, at which the tether is at the held angle again.
 function applyHold(opts) {
 	var fig = figs[state.from];
-	if (!state.hold || !fig.ok) { return; }
+	if (!state.hold || !fig.ok || fig.kind !== "skyhook") { return; }
 	if (opts.userRelease || opts.fromTarget || state.heldAngle === null) {
 		state.heldAngle = relativePhase(fig, releaseJd());
 		return;
@@ -1150,13 +1406,14 @@ function applyHold(opts) {
 var FINE_HALF = parseFloat($("emt-date-fine").max);     // the fine slider's half-span, days
 var windows = [], windowsKey = "";
 // The windows for the flight's direction over the whole date span, worked out
-// again only when the origin or either skyhook's geometry changes.
+// again only when the origin or either skyhook's geometry changes. They are
+// for flights from one skyhook to the other: there are none from the elevator.
 function updateWindows() {
 	var e = figs.earthSkyhook, m = figs.moonSkyhook;
 	var key = state.from + JSON.stringify([state.params.earthSkyhook, state.params.moonSkyhook], ["footAlt", "comAlt", "topAlt"]);
 	if (key === windowsKey) { return; }
 	windowsKey = key;
-	windows = e.ok && m.ok ? releaseWindows(FACILITIES[state.from].body === "Earth" ? "Moon" : "Earth", e, m,
+	windows = e.ok && m.ok && !isElevator(state.from) ? releaseWindows(FACILITIES[state.from].body === "Earth" ? "Moon" : "Earth", e, m,
 		e.R + routeReleaseAlt("earthSkyhook", "moonSkyhook", state.params.earthSkyhook),
 		JD0 - FINE_HALF, JD0 + SPAN_DAYS + FINE_HALF) : [];
 	drawWindows($("emt-windows-coarse"), JD0, JD0 + SPAN_DAYS);
@@ -1198,7 +1455,7 @@ function placeCatcher() {
 	var a = arrival();
 	if (!a) { return; }
 	state.params[state.to].catchAlt = a.altitude;
-	figs[state.to] = skyhookFigures(state.to, state.params[state.to]);
+	figs[state.to] = facilityFigures(state.to, state.params[state.to]);
 }
 
 // ---- refresh -----------------------------------------------------------------------
@@ -1209,7 +1466,7 @@ function refresh(opts) {
 	if (!opts.sceneOnly) {
 		if (!opts.fromTarget) { targetNote = ""; }
 		if (opts.userRelease && state.mode === "target") { state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0; }
-		CARD_ORDER.forEach(function (id) { figs[id] = skyhookFigures(id, state.params[id]); });
+		CARD_ORDER.forEach(function (id) { figs[id] = facilityFigures(id, state.params[id]); });
 		applyHold(opts);
 		showWindows();
 		flight = computeFlight(flightInput(releaseJd()));
@@ -1224,10 +1481,12 @@ function refresh(opts) {
 	frame.place(jd);
 	CARD_ORDER.forEach(function (id) { drawFacility(id); fillCard(id, opts); });
 	fillWaypointCard(opts);
+	if (moonFramed()) { drawWaypoints(); }         // they ride with the Moon, which has just been moved
 	placeShip();
 
 	var fig = figs[state.from];
-	relVal.textContent = clockTime(releaseJd()) + (fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
+	relVal.textContent = clockTime(releaseJd()) + (!fig.ok ? ""
+		: (fig.kind === "skyhook" ? " · one orbit " : " · slider spans ") + num(fig.period / 3600, fig.kind === "skyhook" ? 2 : 0) + " h");
 	var t = flightSeconds(), fSpan = flightSpan();
 	flightSlider.value = fSpan > 0 ? Math.min(1, t / fSpan) : 0;
 	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd).slice(0, 5);
@@ -1269,6 +1528,10 @@ function init() {
 	});
 	function routeChanged() {
 		CARD_ORDER.forEach(function (id) { state.open[id] = id === state.from || id === state.to; });
+		// Holding a phase is a skyhook's: the elevator has no angle of its own to hold.
+		var holdBox = $("emt-hold-phase");
+		holdBox.disabled = isElevator(state.from);
+		if (holdBox.disabled) { holdBox.checked = false; state.hold = false; }
 		state.flightBy = "frac"; state.flightFrac = 0; flightSlider.value = 0;
 		state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0;
 		syncCards();

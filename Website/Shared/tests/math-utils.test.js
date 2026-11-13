@@ -598,3 +598,16 @@ test("fallTimeFromApoapsis: zero at the apoapsis, half a period at the periapsis
 	assert.equal(O.fallTimeFromApoapsis(GM, ra, ra, ra), null, "circular: no fall");
 	assert.equal(O.fallTimeFromApoapsis(GM, ra, rp, 0.9e6), null, "inside the periapsis");
 });
+
+test("lagrangeL1Fraction: L1 between Earth and the Moon, and the small-mass limit", function () {
+	var GM_E = 3.986004418e14, GM_M = 4.9028e12;
+	var x = O.lagrangeL1Fraction(GM_E, GM_M);
+	// The Moon-L1-Elevator calculator's own L1 at the mean distance: 58,016 km from the Moon's centre.
+	assert.ok(Math.abs(x * 384400 - 58020) < 20, "L1 at " + x * 384400 + " km");
+	// The forces balance there (unit separation, turning at the pair's own rate).
+	var g = GM_E / ((1 - x) * (1 - x)) - GM_M / (x * x) + (GM_E + GM_M) * x - GM_E;
+	assert.ok(Math.abs(g) < 1e-3 * GM_M);
+	// A very light secondary: L1 at the Hill radius, cbrt(m / 3M) of the separation.
+	var tiny = O.lagrangeL1Fraction(1, 1e-9);
+	assert.ok(Math.abs(tiny / Math.cbrt(1e-9 / 3) - 1) < 1e-3);
+});

@@ -148,7 +148,13 @@ export function conicPeriod(GM, el) { return 2 * Math.PI * Math.sqrt(Math.pow(el
 //   maxTime   — stop once this many seconds have been flown, whatever the path
 //               is doing (default: none) — for a caller that only needs the
 //               flight up to a known event.
-// With none of the last three given the integration is exactly as before.
+//   moonCap   — how long (s) a leg that has not drawn clear of the Moon is
+//               flown before it is ended as a Moon orbit, in place of the
+//               one-orbit cap worked out from its starting ellipse (default:
+//               that cap). For a start the ellipse says nothing useful about:
+//               one near L1, almost at rest against the Moon, which looks
+//               Moon-bound and is on its way to Earth.
+// With none of the last four given the integration is exactly as before.
 export function integrateTrajectory(R0, V0, jd0, opts) {
 	var turnStep = (opts && opts.turnStep) || 0.02;
 	var maxSteps = (opts && opts.maxSteps) || 8000;
@@ -167,7 +173,8 @@ export function integrateTrajectory(R0, V0, jd0, opts) {
 	// computeTrajectory), so moonBoundCap is always null there.
 	var rMoonRel0 = O.vSub(r, moonGeoPos(jd0)), vMoonRel0 = O.vSub(v, moonGeoVel(jd0));
 	var elM0 = O.elementsFromState(GM_M, rMoonRel0, vMoonRel0);
-	var moonBoundCap = (elM0.e < 1 && O.apoapsisRadius(elM0.a, elM0.e) < SOI_MOON)
+	var moonBoundCap = (opts && opts.moonCap) ? opts.moonCap
+		: (elM0.e < 1 && O.apoapsisRadius(elM0.a, elM0.e) < SOI_MOON)
 		? conicPeriod(GM_M, elM0) * 1.02 : null;
 	// Lunar inclination: only relevant when this leg starts Moon-bound, i.e.
 	// exactly when moonBoundCap applies. Computed once from the leg's

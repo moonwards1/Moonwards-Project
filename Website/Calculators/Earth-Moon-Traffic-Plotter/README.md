@@ -5,16 +5,19 @@ where a clock puts it, and the path of a ship flying from one piece of it to
 another. It grows out of the Moon Skyhook Trajectory Plotter and will cover
 the Moon skyhook, the L1 elevator, the lunar mass driver and the Earth skyhook.
 
-**Built so far:** the two skyhooks, a release from either one, an open path,
-and a flight from either skyhook to the other — judged at its closest pass to
-the destination tether, with Free and Target aiming; up to two waypoint burns
-along the way. The rotating view, the L1 elevator and the mass driver come next.
+**Built so far:** the two skyhooks and the L1 elevator, a release from any of
+them, an open path, and a flight to a skyhook — judged at its closest pass to
+the destination tether; up to two waypoint burns along the way. Target aiming,
+the far-burn solve and the release windows are for flights from one skyhook to
+the other; a flight from the elevator is aimed by hand. The rotating view,
+arrivals at the elevator and the mass driver come next.
 
 ## Files
 
 - `earthMoonTraffic.html`, `.css` (`emt-` prefix), `.js` — the page: scene, date
   bar, sidebar cards, read-outs. It computes nothing the core could not.
-- `core/facilities.js` — the facilities as data, and their kinematics on the clock. Pure.
+- `core/facilities.js` — the facilities as data, and their kinematics on the clock:
+  the skyhooks' tethers and the L1 elevator. Pure.
 - `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`, flying
   through any waypoint burns. Pure.
 - `core/waypoints.js` — the burns: the ±50 m/s cap, which body a burn is measured
@@ -23,7 +26,7 @@ along the way. The rotating view, the L1 elevator and the mass driver come next.
   trim burn (`evaluateArrival`), and the smooth form Target solves on (`lineApproach`). Pure.
 - `core/target.js` — `solveCatch(input)`: adjusts the release time and altitude until
   the ship meets the destination tether at its catch altitude. Pure.
-- `core/tests/flight.test.js`, `waypoints.test.js` — Node tests:
+- `core/tests/*.test.js` (flight, waypoints, windows, farburn, elevator) — Node tests:
   `node --test Website/Calculators/Earth-Moon-Traffic-Plotter/core/tests/*.test.js`
 
 ## Everything follows one clock
@@ -44,6 +47,64 @@ and moves the whole scene — Moon, Sun, tethers, ship — to that time. With a
 destination it runs to half an hour past the flight's closest pass to the
 destination's body (`core/flight.js`'s `bodyPass`), so the ship can be watched
 coming up on the tether and going past it; otherwise over the whole drawn path.
+
+## The L1 elevator
+
+A tether from the Moon's surface, through the Earth–Moon L1 point, to a
+counterweight beyond it. Its own swinging left aside, it lies along the line
+from the Moon's centre to Earth's and turns with that line, so the Moon's
+ephemeris is its clock. A point of it at distance `s` from the Moon's centre is at
+
+    r(s) = r_M + s * u                u = (r_E - r_M) / D
+    v(s) = v_M + s * du/dt            du/dt = (w - u (u . w)) / D
+
+- `r_M`, `v_M` — the Moon's geocentric position and velocity (the ephemeris)
+- `r_E` — Earth's position, the origin
+- `D` — the Earth–Moon distance at that instant
+- `u` — unit vector from the Moon toward Earth
+- `w` — Earth's velocity relative to the Moon, `-v_M`
+- `du/dt` — how fast `u` is turning: the part of `w` across the line, over `D`
+
+Each point keeps its distance from the Moon and is carried round Earth at the
+line's own turning rate, which is faster near perigee and slower near apogee.
+The counterweight, about 162,000 km from Earth's centre, moves round Earth at
+some 430 m/s; let go there, a ship falls to a perigee at or near Earth's atmosphere.
+
+**L1 is not a point of the tether.** It is the place on the line where Earth's
+pull, the Moon's pull and the turning balance, and it stays at a fixed fraction
+of the Earth–Moon distance from the Moon:
+
+    s_L1 = gamma * D                  gamma = 0.1509
+
+- `gamma` — `OrbitalMath.lagrangeL1Fraction(GM_Earth, GM_Moon)`, the root of
+  `GM_E / (1 - x)^2 - GM_M / x^2 + (GM_E + GM_M) x - GM_E = 0`
+- `D` — the Earth–Moon distance
+
+so over the month it slides along the tether between about 52,100 and 59,650 km
+above the Moon. The dot marking L1 moves with it.
+
+**Four legs** run from anchors on the ground, at 20° north and south and 20°
+east and west of the Moon's prime meridian, to L1, where they join the single
+tether to the counterweight. The anchors are fixed to the Moon's body, which
+turns steadily about its own pole (`LunarEphemeris.moonOrientation`, Cassini's
+laws) while its orbital motion speeds up and slows down, so they nod about the
+line to Earth by up to 8° east–west and 7° north–south: the librations.
+
+**Two release-or-catch points**, each an arrow marker that slides. The upper one
+is on the single tether, anywhere from L1 to the counterweight. The lower one
+hangs below L1 on the line to the Moon's centre, on its own line from L1. Each
+is held at L1 while L1 is in its way. A flight starts from whichever is chosen
+(the card's **Release from**, or by dragging a marker): from the upper point a
+ship falls toward Earth, from the lower one toward the Moon. A release from the
+default 45,000 km comes down to a periapsis about 1,600 km above the Moon,
+within the Moon skyhook's reach.
+
+A release from the elevator is always integrated under Earth + Moon + Sun
+gravity, never drawn as a two-body ellipse: that far out Earth shapes the path
+as much as the Moon does. A path that stays with the Moon is drawn as the Moon
+sees it, carried along with the Moon, so an orbit of the Moon looks like one.
+The elevator has no orbit of its own, so with it as the origin the **Release
+time** slider spans one day.
 
 ## Arrivals, Free and Target
 
@@ -108,7 +169,8 @@ core serve the releases still to come: the L1 elevator's and the mass driver's.
 ## Pointing at the scene
 
 A single click on anything — Earth, the Moon, the ship, a waypoint, a skyhook's
-centre of mass, top, release point or catch point — makes the camera follow it;
+centre of mass, top, release point or catch point, the elevator's L1 point,
+counterweight or either of its two markers — makes the camera follow it;
 the label in the view's corner names it, and its ✕ or a right-drag pan lets go.
 Dragging the ship moves it along its path with the camera on it, the way a map is
 dragged: the ship stays centred and the scene scrolls. A waypoint's marker drags
@@ -125,9 +187,14 @@ deck 949.4 km; Earth: foot 120 km, CoM 2,900 km, top 6,200 km). The Earth
 skyhook's 5,200 km point is this plotter's own figure, not the workbench's. The tests pin
 the resulting speeds, periods and v∞ to the workbench's own figures.
 
+The elevator's counterweight is 222,200 km above the Moon's surface, its upper
+point at the counterweight and its lower point at 45,000 km. The counterweight
+may be set between 70,000 and 300,000 km.
+
 ## Dependencies
 
-`Shared/` (orbit, math-utils, kinematic-chain, geo-leg, lunar-ephemeris and the
+`Shared/` (orbit, math-utils, kinematic-chain, geo-leg, lunar-ephemeris — the
+Moon's position, and the way its body is turned — and the
 `sim/` scene kit), `MissionPlanner/scene-frames.js` (the geocentric Earth–Moon
 scene) and `MissionPlanner/modules/skyhook/skyhook.js` (the equatorial plane a
 skyhook orbits in). The folder breaks if moved without them.

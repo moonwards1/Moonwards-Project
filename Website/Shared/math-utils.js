@@ -419,6 +419,31 @@ export const OrbitalMath = {
 			];
 		},
 
+		// ---- Lagrange points ---------------------------------------------------
+
+		// Where L1 lies between two bodies in orbit about each other, as a
+		// fraction of their separation measured from the SECONDARY (GM2) toward
+		// the primary (GM1): the point where, turning with the pair, the two
+		// pulls and the centrifugal term cancel. With the separation as the unit
+		// of length and x the distance from the secondary,
+		//
+		//     GM1 / (1 - x)^2  -  GM2 / x^2  +  (GM1 + GM2) x  -  GM1  =  0
+		//
+		// (the last two terms are omega^2 (x - x_b): omega^2 = GM1 + GM2 and the
+		// barycentre is x_b = GM1 / (GM1 + GM2) from the secondary). Solved by
+		// bisection. The fraction depends only on the mass ratio, and it holds
+		// on an eccentric orbit too: L1 stays at this fraction of the changing
+		// separation. Earth-Moon: 0.1509, about 58,000 km from the Moon.
+		lagrangeL1Fraction: function (GM1, GM2) {
+			function g(x) { return GM1 / ((1 - x) * (1 - x)) - GM2 / (x * x) + (GM1 + GM2) * x - GM1; }
+			var lo = 1e-9, hi = 1 - 1e-9;
+			for (var i = 0; i < 200; i++) {
+				var mid = (lo + hi) / 2;
+				if (g(mid) < 0) { lo = mid; } else { hi = mid; }
+			}
+			return (lo + hi) / 2;
+		},
+
 		// ---- Kepler's equation -------------------------------------------------
 
 		// Eccentric anomaly E from mean anomaly M (rad) for an ellipse (e<1).

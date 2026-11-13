@@ -19,8 +19,12 @@
  * equatorial plane (MissionPlanner/modules/skyhook/skyhook.js's equatorPlane),
  * with phase 0 along the equinox direction projected into that plane.
  *
- * The table holds the two skyhooks. The L1 elevator and the lunar mass driver
- * join it as their own kinds.
+ * The L1 ELEVATOR is the other kind here: a tether from the Moon's surface,
+ * through the Earth–Moon L1 point, to a counterweight beyond it. It has no
+ * angle of its own to keep: it lies along the line from the Moon to Earth, so
+ * the Moon's ephemeris is its clock. See "the L1 elevator" below.
+ *
+ * The lunar mass driver joins the table as its own kind.
  *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  *
@@ -32,6 +36,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { emptyChain, appendElement, evaluateChain, rotorElement, planeBasis, baseState }
 	from "../../../Shared/kinematic-chain.js";
+import { LunarEphemeris } from "../../../Shared/lunar-ephemeris.js";
 import { equatorPlane } from "../../../MissionPlanner/modules/skyhook/skyhook.js";
 
 var O = OrbitalMath;
@@ -76,12 +81,22 @@ export var FACILITIES = {
 		phase0: 0,
 		defaults: { footAlt: 120e3, comAlt: 2900e3, topAlt: 6200e3, relAlt: 6200e3, catchAlt: 5200e3 },
 		releaseFor: { moonSkyhook: 5200e3 }
+	},
+	// The L1 elevator. cwAlt is the counterweight; lowAlt and highAlt are its
+	// two release-or-catch points, one hanging below L1 and one on the single
+	// tether above it; relPoint says which of the two a flight is let go from.
+	// `anchors` are where its four legs meet the ground, selenographic degrees.
+	moonElevator: {
+		id: "moonElevator", kind: "elevator", label: "L1 elevator", body: "Moon",
+		defaults: { cwAlt: 222200e3, lowAlt: 45000e3, highAlt: 222200e3, relPoint: "high" },
+		anchors: [{ lat: 20, lon: 20 }, { lat: 20, lon: -20 }, { lat: -20, lon: -20 }, { lat: -20, lon: 20 }]
 	}
 };
 
 // Which facilities a flight from each origin may be aimed at. A flight may
 // also have no destination at all (an open path).
-export var DESTINATIONS = { moonSkyhook: ["earthSkyhook"], earthSkyhook: ["moonSkyhook"] };
+export var DESTINATIONS = { moonSkyhook: ["earthSkyhook"], earthSkyhook: ["moonSkyhook"],
+                            moonElevator: ["earthSkyhook", "moonSkyhook"] };
 
 export function facility(id) {
 	var f = FACILITIES[id];
@@ -137,7 +152,7 @@ export function skyhookFigures(id, params) {
 	var omega = O.angularVelocity(GM, rCom);
 	var plane = equatorPlane(fac.body, null, CLOCK_REF);
 	return {
-		ok: true, id: id, body: fac.body, GM: GM, R: R,
+		ok: true, id: id, kind: "skyhook", body: fac.body, GM: GM, R: R,
 		omega: omega, period: TWO_PI / omega,
 		rFoot: rFoot, rCom: rCom, rTop: rTop, rRel: rRel, rCatch: R + p.catchAlt,
 		vFoot: omega * rFoot, vCom: omega * rCom, vTop: omega * rTop, vRel: omega * rRel,
@@ -219,4 +234,154 @@ export function tetherAxes(fig, jd) {
 		prograde: O.vAdd(O.vScale(b.e1, -Math.sin(ph)), O.vScale(b.e2, Math.cos(ph))),
 		normal: fig.normal
 	};
+}
+
+// ---- the L1 elevator ---------------------------------------------------------
+//
+// Leaving its own swinging aside, the elevator lies along the line from the
+// Moon's centre to Earth's, and turns with that line. A point of it at
+// distance s from the Moon's centre is therefore at
+//
+//     r(s) = r_M + s * u                    u = (r_E - r_M) / D
+//     v(s) = v_M + s * du/dt                du/dt = (w - u (u . w)) / D
+//
+//     r_M, v_M   the Moon's geocentric position and velocity (the ephemeris)
+//     r_E        Earth's position: the origin
+//     D          the Earth–Moon distance at that instant, |r_E - r_M|
+//     u          unit vector from the Moon toward Earth
+//     w          Earth's velocity relative to the Moon, -v_M
+//     du/dt      how fast u is turning: the part of w across the line, over D
+//
+// so each point is carried round Earth at the line's own turning rate — fast
+// near perigee, slow near apogee — and keeps its distance from the Moon.
+//
+// L1 is not a point of the tether: it is the place on the line where the pulls
+// balance, a fixed fraction of the Earth–Moon distance from the Moon
+// (Shared/math-utils.js's lagrangeL1Fraction), so it slides along the tether
+// as that distance changes over the month:
+//
+//     s_L1 = gamma * D                      gamma = 0.1509 for Earth and Moon
+//
+// THE FOUR LEGS run from anchors on the ground to L1, where they join the
+// single tether that goes on to the counterweight. The anchors are fixed to
+// the Moon's body, which turns at a steady rate about its own pole
+// (Shared/lunar-ephemeris.js's moonOrientation), so they nod about the line to
+// Earth with the Moon's librations.
+//
+// TWO RELEASE-OR-CATCH POINTS. The upper one is on the single tether, anywhere
+// from L1 to the counterweight. The lower one hangs below L1 on the line to
+// the Moon's centre, between the legs. Each is kept on its own side of L1 as
+// L1 moves: a lower point set higher than L1 is at L1, and the same the other
+// way for the upper one.
+
+var GM_EARTH = systems.get("Earth").GM, GM_MOON = systems.get("Moon").GM;
+var R_MOON = +systems.get("Moon").radius;
+var DEG = Math.PI / 180;
+
+// L1's distance from the Moon's centre, as a fraction of the Earth–Moon distance.
+export var L1_FRACTION = O.lagrangeL1Fraction(GM_EARTH, GM_MOON);
+
+// The elevator's limits, altitudes in metres above the Moon's mean radius.
+// The counterweight has to be beyond L1 wherever L1 is in the month (it comes
+// out to 59,650 km when the Moon is furthest), and short of Earth when the
+// Moon is nearest. The lower point may hang down to LOW_MIN.
+export var ELEVATOR_LIMITS = { cwMin: 70000e3, cwMax: 300000e3, lowMin: 100e3 };
+
+// How long the release-time slider spans for the elevator, s: nothing on it
+// turns quickly, so a day of fine control over the release instant.
+var ELEVATOR_RELEASE_SPAN = DAY;
+
+// An elevator's fixed figures for one param set. Pure; returns
+// { ok: true, ...figures } (SI) or { ok: false, diagnostic }. What depends on
+// the date — where L1 is, where the release points end up — is elevatorAt's.
+//   rCw              the counterweight's distance from the Moon's centre, m
+//   rLowSet, rHighSet  the two release points as set (elevatorAt gives where
+//                    L1 lets them be)
+//   relPoint         "low" | "high": the one a flight is let go from
+//   normal           the pole of the Moon skyhook's plane, which the
+//                    inclination of a lunar orbit is quoted against
+//   period           the span of the page's release-time slider, s
+export function elevatorFigures(id, params) {
+	var fac = facility(id);
+	var p = resolveParams(id, params), L = ELEVATOR_LIMITS;
+	var vals = { cwAlt: p.cwAlt, lowAlt: p.lowAlt, highAlt: p.highAlt };
+	if (!(isFinite(p.cwAlt) && isFinite(p.lowAlt) && isFinite(p.highAlt))) {
+		return fail("bad-params", "The " + fac.label + " needs a number for every altitude.", vals);
+	}
+	if (!(p.cwAlt >= L.cwMin && p.cwAlt <= L.cwMax)) {
+		return fail("counterweight-range", "The counterweight must be beyond L1 and short of Earth: between "
+			+ (L.cwMin / 1e6) + " and " + (L.cwMax / 1e6) + " thousand km above the Moon.", vals);
+	}
+	if (!(p.lowAlt >= L.lowMin)) {
+		return fail("release-off-tether", "The lower release point must be at least " + (L.lowMin / 1e3) + " km above the Moon.", vals);
+	}
+	if (!(p.highAlt > 0 && p.highAlt <= p.cwAlt)) {
+		return fail("release-off-tether", "The upper release point must lie on the tether, no higher than the counterweight.", vals);
+	}
+	return {
+		ok: true, id: id, kind: "elevator", body: fac.body, GM: GM_MOON, R: R_MOON,
+		l1Frac: L1_FRACTION, rCw: R_MOON + p.cwAlt,
+		rLowSet: R_MOON + p.lowAlt, rHighSet: R_MOON + p.highAlt,
+		relPoint: p.relPoint === "low" ? "low" : "high",
+		anchors: fac.anchors, normal: O.vUnit(equatorPlane(fac.body, null, CLOCK_REF).normal),
+		period: ELEVATOR_RELEASE_SPAN
+	};
+}
+
+// Where the elevator is at Julian date jd.
+//   moon       the Moon's geocentric { r, v }
+//   D, dDot    the Earth–Moon distance and its rate, m and m/s
+//   u, uDot    unit vector from the Moon toward Earth, and its rate (1/s)
+//   travel     unit vector the way the tether's points are carried round Earth
+//   turnRate   how fast the line turns, rad/s
+//   rL1        L1's distance from the Moon's centre, m
+//   rLow, rHigh  the two release points, each kept on its own side of L1
+//   rRel       the one a flight is let go from
+//   anchors    the four anchors, Moon-relative positions (m)
+export function elevatorAt(fig, jd) {
+	var moon = baseState("Moon", jd);
+	var D = O.vMag(moon.r), u = O.vScale(moon.r, -1 / D), w = O.vScale(moon.v, -1);
+	var uDot = O.vScale(O.vSub(w, O.vScale(u, O.vDot(u, w))), 1 / D);
+	var turnRate = O.vMag(uDot);
+	var rL1 = fig.l1Frac * D;
+	var rLow = Math.min(fig.rLowSet, rL1), rHigh = Math.min(fig.rCw, Math.max(fig.rHighSet, rL1));
+	var o = LunarEphemeris.moonOrientation(jd), east = O.vCross(o.pole, o.meridian);
+	return {
+		moon: moon, D: D, dDot: -O.vDot(u, w), u: u, uDot: uDot,
+		travel: O.vScale(uDot, -1 / turnRate), turnRate: turnRate,
+		rL1: rL1, rLow: rLow, rHigh: rHigh, rRel: fig.relPoint === "low" ? rLow : rHigh,
+		anchors: fig.anchors.map(function (a) {
+			var cb = Math.cos(a.lat * DEG);
+			return O.vScale(O.vAdd(O.vAdd(O.vScale(o.meridian, cb * Math.cos(a.lon * DEG)),
+				O.vScale(east, cb * Math.sin(a.lon * DEG))), O.vScale(o.pole, Math.sin(a.lat * DEG))), fig.R);
+		})
+	};
+}
+
+// State of the point of the elevator at distance s from the Moon's centre, at
+// jd: { r, v } geocentric and { relR, relV } relative to the Moon. `at` is
+// elevatorAt's result for that jd, when the caller already has it.
+export function elevatorPointState(fig, s, jd, at) {
+	at = at || elevatorAt(fig, jd);
+	var relR = O.vScale(at.u, s), relV = O.vScale(at.uDot, s);
+	return { r: O.vAdd(at.moon.r, relR), v: O.vAdd(at.moon.v, relV), relR: relR, relV: relV };
+}
+
+// ---- any facility --------------------------------------------------------------
+
+// A facility's figures, whatever its kind: skyhookFigures or elevatorFigures.
+export function facilityFigures(id, params) {
+	return facility(id).kind === "elevator" ? elevatorFigures(id, params) : skyhookFigures(id, params);
+}
+
+// The state a ship is let go with from the facility `fig` at Julian date jd:
+// { r, v } geocentric, { relR, relV } relative to the facility's body, and
+// `radius`, the release point's distance from that body's centre (m). A
+// skyhook's also carries `phase`, its tether's clock angle (rad).
+export function releaseState(fig, jd) {
+	if (fig.kind === "elevator") {
+		var at = elevatorAt(fig, jd);
+		return Object.assign(elevatorPointState(fig, at.rRel, jd, at), { radius: at.rRel });
+	}
+	return Object.assign(tetherPointState(fig, fig.rRel, jd), { radius: fig.rRel, phase: phaseAt(fig, jd) });
 }

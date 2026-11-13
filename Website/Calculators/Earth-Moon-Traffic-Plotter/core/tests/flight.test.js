@@ -260,7 +260,9 @@ test("relativePhase is the tether's angle from its partner body, and nextPhaseMa
 import { DESTINATIONS, routeReleaseAlt, bodyOffPlane } from "../facilities.js";
 
 test("each skyhook can be aimed at the other, from a release point on its tether", function () {
-	assert.deepEqual(DESTINATIONS, { moonSkyhook: ["earthSkyhook"], earthSkyhook: ["moonSkyhook"] });
+	assert.deepEqual(DESTINATIONS.moonSkyhook, ["earthSkyhook"]);
+	assert.deepEqual(DESTINATIONS.earthSkyhook, ["moonSkyhook"]);
+	assert.equal(routeReleaseAlt("moonElevator", "earthSkyhook"), null);
 	assert.equal(routeReleaseAlt("moonSkyhook", "earthSkyhook"), 949.4e3);
 	assert.equal(routeReleaseAlt("earthSkyhook", "moonSkyhook"), 5200e3);
 	// A shortened tether keeps the release point on it.

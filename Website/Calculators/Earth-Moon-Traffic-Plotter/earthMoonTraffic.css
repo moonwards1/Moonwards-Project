@@ -161,6 +161,11 @@ html, body {
 .emt-arrival input[type="range"] { accent-color: #3ddc84; }
 .emt-arrival .emt-muted { margin-top: 6px; }
 .emt-release-line { display: flex; align-items: flex-end; gap: 10px; }
+.emt-points .emt-release-line + .emt-release-line { margin-top: 8px; }
+.emt-points .emt-muted { margin-top: 6px; }
+.emt-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.emt-pick-label { font-size: 11px; color: #8b94a7; text-transform: uppercase; letter-spacing: 0.03em; }
+.emt-pick .emt-mode button { font-size: 12px; padding: 4px 11px; }
 .emt-release-line .emt-field:last-child { flex: 0 0 92px; }
 
 input[type="range"] { width: 100%; accent-color: #5aa9ff; }
