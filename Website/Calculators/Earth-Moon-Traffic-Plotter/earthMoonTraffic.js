@@ -38,12 +38,18 @@
  * next instant the tether points that way, so scrubbing the date sliders shows
  * what the Moon's position alone does to the flight.
  *
+ * SOLVE FAR BURN (core/farburn.js) is for a flight to the Earth skyhook by
+ * way of a long loop out past the Moon's orbit. It keeps the release and
+ * sets the two waypoints itself: a burn far out that turns the path into the
+ * tether's plane and brings its perigee onto the tether at the tether's
+ * speed, and a small trim a day before the arrival.
+ *
  * RELEASE WINDOWS (core/windows.js) are marked under the two date sliders:
  * the dates on which a release from the flight's origin suits the Earth
  * skyhook's plane, green where the catch is expected to be within the
  * catcher's limit and amber where it is not.
  *
- * WAYPOINT BURNS (core/waypoints.js) are small course corrections, up to two,
+ * WAYPOINT BURNS (core/waypoints.js) are course corrections, up to two,
  * each placed by its time since release and set with the Mission Planner's
  * burn-vector editor. Their card sits between the departure and arrival
  * cards. In the view each reached waypoint carries the prograde / radial /
@@ -74,6 +80,7 @@ import { CLOCK_EPOCH, FACILITIES, DESTINATIONS, routeReleaseAlt, skyhookFigures,
 import { computeFlight, flightStateAt, PAST_PASS } from "./core/flight.js";
 import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
 import { solveBestCatch } from "./core/target.js";
+import { solveFarBurn } from "./core/farburn.js";
 import { MAX_AXIS_MPS, burnSize } from "./core/waypoints.js";
 import { releaseWindows } from "./core/windows.js";
 
@@ -146,6 +153,7 @@ function flightInput(jd) {
 var flight = null;                     // core/flight.js result for the current release, or { ok: false }
 var targetNote = "";                   // why the last Target solve failed, shown until the next change
 var targetTimer = 0;                   // pending re-solve while in Target mode
+var farBusy = false;                   // a far-burn solve is about to run
 var figs = {};                         // facility id -> skyhookFigures result
 
 function $(id) { return document.getElementById(id); }
@@ -1041,7 +1049,7 @@ function fillArrivalKeys(s) {
 		key("Path", flight.arrival.reason === "never-leaves" ? "stays in orbit around the Moon" : "ends before reaching the tether's side", true);
 	}
 	var right = el("div", "emt-keys-right");
-	var busy = state.mode === "target" && targetTimer;
+	var busy = farBusy || (state.mode === "target" && targetTimer);
 	right.appendChild(el("span", "emt-chip" + (a && a.caught ? " emt-chip-ok" : ""),
 		busy ? "Solving…" : (targetNote || (a ? FACILITIES[state.to].label + ": " + passText(a) : "No arrival"))));
 	var group = right.appendChild(el("div", "emt-mode"));
@@ -1054,7 +1062,39 @@ function fillArrivalKeys(s) {
 			: "Adjust the release time and altitude until the ship meets the tether where its relative motion is least";
 		b.addEventListener("click", function () { setMode(m[0]); });
 	});
+	if (FACILITIES[state.to].body === "Earth") {
+		var fb = right.appendChild(el("button", "emt-btn emt-btn-small", "Solve far burn"));
+		fb.type = "button"; fb.disabled = farBusy;
+		fb.title = "For a release that loops out past the Moon's orbit: keep the release, and set the two waypoint burns "
+			+ "(one far out, one small trim a day before arrival) so the ship meets the tether at its own speed. Takes a few seconds.";
+		fb.addEventListener("click", startFarBurn);
+	}
 	keysEl.appendChild(right);
+}
+
+// ---- far burn --------------------------------------------------------------------------
+// One solve per click: it sets the waypoints and leaves the flight in Free.
+function startFarBurn() {
+	if (farBusy || !state.to) { return; }
+	state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0;
+	farBusy = true; targetNote = "";
+	fillKeys();                                    // paints "Solving…" before the work starts
+	setTimeout(runFarBurn, 30);
+}
+function runFarBurn() {
+	farBusy = false;
+	var res = solveFarBurn(flightInput(releaseJd()));
+	if (res.ok) {
+		state.waypoints = res.waypoints;
+		rebuildWaypointRows();
+		openCard("waypoints");
+		targetNote = res.caught ? "" : (res.met
+			? "The far burn brings the ship to the tether at " + num(res.speed) + " m/s: over the catcher's " + num(CATCH_SPEED_LIMIT) + " m/s."
+			: "The far burn was set, but the ship still does not meet the tether. Try another release.");
+	} else {
+		targetNote = res.message;
+	}
+	refresh({ fromTarget: true });
 }
 
 // ---- Target mode -----------------------------------------------------------------------

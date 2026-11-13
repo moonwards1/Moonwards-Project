@@ -269,11 +269,21 @@ as the foot floor. The configuration's figures come from `anchorConfig("Phobos")
 
 ## The drawn taper
 
-The tether is drawn as a filled shape, symmetric about its axis, whose width at
-each point is the tether's diameter, √(T/T_ref): the tension from the load sweep
-(cross-section = T/σ) against the thinnest point that carries a real tension. The
-thin end is drawn 3 px wide until the thickest point would pass 16 px; beyond that
-the ends thin toward a 1 px minimum to make room, and once they reach it the
-thickest point keeps growing without limit, so a very large taper shows as a
-tether that balloons in the middle. A label gives the true diameter ratio. With no loads at all there is no tension to scale by, and the tether is
-drawn as a plain thin line.
+The tether is drawn as a filled shape, symmetric about its axis. The upper and
+lower tethers are each drawn to their own scale, so each shape shows that
+tether's own taper ratio. Widths are not comparable between the two: the one
+holding the heavier load is not drawn thicker, because how heavy a tether looks
+should come from its taper, not from the load it holds. The two meet at the
+anchor station (at the centre of mass when there is none). The cable between
+the anchor station and the centre of mass carries the same tension as the
+tether it continues, so it is drawn as part of that tether.
+
+Within each tether the width at a point is its diameter, √(T/T_ref): T is the
+tension from the load sweep (cross-section = T/σ), and T_ref is that tether's
+thinnest point carrying a real tension. A tether's thin end is drawn 3 px wide
+until its thickest point would pass 16 px. Beyond that the thin end narrows
+toward a 0.5 px minimum to make room (anti-aliasing leaves it faint), and once
+it reaches 0.5 px the thickest point keeps growing without limit, so a very large
+taper shows as a tether that balloons toward the anchor station. With no loads
+at all there is no tension to scale by, and the tether is drawn as a plain thin
+line.

@@ -17,17 +17,13 @@ along the way. The rotating view, the L1 elevator and the mass driver come next.
 - `core/facilities.js` — the facilities as data, and their kinematics on the clock. Pure.
 - `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`, flying
   through any waypoint burns. Pure.
-- `core/waypoints.js` — the burns: the ±300 m/s cap, which body a burn is measured
+- `core/waypoints.js` — the burns: the ±50 m/s cap, which body a burn is measured
   against, and applying it (`applyWaypointBurn`). Pure.
 - `core/arrival.js` — how a flight meets a tether: the closest pass, the miss, the
-  relative motion and whether the catcher can take it (`evaluateArrival`), and the
-  smooth form Target solves on (`lineApproach`). Pure.
-- `core/target.js` — `solveBestCatch(input)`: adjusts the release time and altitude
-  until the ship meets the destination tether at the point where its relative
-  motion is least; `solveCatch(input)` does the same for one given point. Pure.
-- `core/windows.js` — the release windows marked on the date sliders: when the Moon
-  crosses the Earth skyhook's plane, and how good each crossing is. Pure.
-- `core/tests/flight.test.js`, `waypoints.test.js`, `windows.test.js` — Node tests:
+  trim burn (`evaluateArrival`), and the smooth form Target solves on (`lineApproach`). Pure.
+- `core/target.js` — `solveCatch(input)`: adjusts the release time and altitude until
+  the ship meets the destination tether at its catch altitude. Pure.
+- `core/tests/flight.test.js`, `waypoints.test.js` — Node tests:
   `node --test Website/Calculators/Earth-Moon-Traffic-Plotter/core/tests/*.test.js`
 
 ## Everything follows one clock
@@ -54,43 +50,21 @@ coming up on the tether and going past it; otherwise over the whole drawn path.
 With a destination chosen, the path is flown with a finer step
 (`Shared/geo-leg.js`'s `turnStep` option) and judged where it passes closest to
 the destination's tether. The **miss** is the distance between the ship and the
-nearest point of the tether there; the **relative motion** is the ship's speed
-relative to that point.
-
-A ship can be caught anywhere along the tether: a **mobile catcher** is moved
-along it to wherever the ship will pass, and absorbs the relative motion. It is
-kept light enough to move by limiting what it absorbs to 800 m/s
-(`CATCH_SPEED_LIMIT` in `core/arrival.js`). So the ship is caught when the miss
-is within 1 km and the relative motion is within 800 m/s. The catch point drawn
-on the tether is where the catcher has to be: the nearest point of the tether
-at the closest pass.
+nearest point of the tether there; the **trim burn** is the ship's speed
+relative to that point. The ship is caught when the miss is within 1 km.
 
 **Free** leaves the release time and altitude to the user. **Target** solves for
-the two of them so the ship passes through the tether at the point where its
-relative motion is least, starting from wherever Free left the flight, and
-solves again whenever the date or the hardware change. Meeting the tether at
-one given radius `rCatch` fixes both the release time and the release altitude,
-and gives one relative motion there,
-
-    speed(rCatch) = | v_ship - omega * rCatch * prograde |
-
-- `v_ship` — the ship's velocity at the meeting, relative to the tether's body
-- `omega` — the tether's rotation rate, rad/s
-- `rCatch` — the meeting point's distance from the body's centre
-- `prograde` — unit vector the way the tether moves
-
-Target walks `rCatch` along the tether downhill in that speed and closes in on
-the lowest point. If the lowest is within 800 m/s the flight is a catch;
-otherwise Target says what the lowest is and stays on, so the date can be
-searched for a better one. How low it gets depends on the date: each tether
-turns in its own body's equatorial plane, and the ship arrives in a plane set
-by where the Moon is.
+the two of them so the ship passes through the tether at the catch altitude,
+starting from wherever Free left the flight, and solves again whenever the date,
+the catch altitude or the hardware change. It does not reduce the trim burn:
+that depends on the date (each tether turns in its own body's equatorial plane,
+and the ship arrives in a plane set by where the Moon is) and on the catch altitude.
 
 Choosing a destination puts the release point where that route starts from
 (`releaseFor` in `core/facilities.js`): the Moon skyhook's release deck for a
-flight to Earth, 5,200 km on the Earth skyhook for a flight to the Moon — the
-place on each skyhook where traffic between the two moves at about the tether's
-own speed.
+flight to Earth, 5,200 km on the Earth skyhook for a flight to the Moon. Each is
+also that skyhook's default catch point — the place where traffic between the
+two moves at the tether's own speed.
 
 **A flight from the Earth skyhook only reaches the Moon near two dates in each
 lunar orbit.** The ship is let go in Earth's equatorial plane and stays close to
@@ -102,55 +76,12 @@ the rest of the way), and is marked while it is over 10,000 km. A flight from th
 skyhook has no such limit: whatever plane the ship falls toward Earth in, Earth
 is in it.
 
-## Release windows
-
-The strip under each date slider marks the dates to release on, for the
-direction the flight is going (`core/windows.js`). They come from one fact: the
-Earth skyhook turns in Earth's equatorial plane, and the Moon is in that plane
-only twice in each lunar orbit.
-
-- **From the Earth skyhook**, the ship has to *arrive* while the Moon is within
-  about 7,000 km of the plane, so the window is that crossing moved earlier by
-  the flight time (2.4 to 3.5 days): about a day and a half long, ending two or
-  three days before the crossing.
-- **To the Earth skyhook**, the ship has to *leave* while the Moon is within 3°
-  of the plane: about a day, centred on the crossing.
-
-Both hold for anything at the Moon's end of the flight, since only the Earth
-skyhook's plane and the Moon's position go into them. Traffic that does not use
-the Earth skyhook has no such windows.
-
-A mark is green when the relative motion expected at the catch is within the
-catcher's limit and amber when it is not; the line under the sliders names the
-current or next window and gives that figure. It is estimated from the
-**mismatch** at the crossing,
-
-    m = (Vt * e - V_moon) . nM
-
-- `Vt` — the speed, out at the Moon's distance, of the path that fits the Earth
-  skyhook: the far end of an ellipse from its Moon-traffic point (5,200 km)
-- `e` — the direction of that speed: along Earth's equatorial plane, square to
-  the Earth–Moon line
-- `V_moon` — the Moon's velocity round Earth
-- `nM` — the Moon skyhook's pole
-
-the part of the ship's motion past the Moon that sticks out of the Moon
-tether's plane. A ship going to the Moon brings it to the Moon tether, as
-`v * |m| / vInf` (`v` the ship's speed at the tether, `vInf` its speed past the
-Moon far out). A ship going to Earth leaves in the Moon tether's plane, so the
-mismatch instead tilts its whole path to Earth's equator by
-`i = atan(|m| * |nM . nE| / Vt)` and reaches the Earth tether as
-`2 * v_tether * sin(i / 2)`. Through 2080–2085 the mismatch is 110 to 190 m/s:
-290 to 460 m/s at the Moon skyhook, but 3,200 to 4,800 m/s at the Earth
-skyhook, so every window to the Moon is green and every window to the Earth
-skyhook is amber.
-
 ## Waypoint burns
 
 The **Waypoint burns** card, between the departure and arrival cards, holds up
 to two small course corrections. Each is placed by its **time since release**
 (not, as in the Mission Planner, by angle round the orbit) and set with the
-Mission Planner's burn-vector editor, capped at ±300 m/s along each of the
+Mission Planner's burn-vector editor, capped at ±50 m/s along each of the
 prograde, radial and normal axes. A new waypoint goes where the ship is on the
 Flight slider. A burn is an instant change of velocity,
 

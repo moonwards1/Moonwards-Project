@@ -670,25 +670,34 @@ export function mountHangingSkyhook(root, opts) {
 		miniBody.setAttribute("r", R); miniBody.setAttribute("fill", FILL[bodyIn.value] || "#4A4038");
 		miniTether.setAttribute("d", "M0 " + (-rF) + "L0 " + (-rT));
 
-		// taper: the drawn width follows the tether's diameter, sqrt(T/T_ref), where T is
-		// the tension from the load sweep (cross-section = T/σ) and T_ref the thinnest
-		// point that carries a real tension. The thin end is tipPx wide until the thickest
-		// point would pass maxPx; then the thin end shrinks toward minPx to make room. Once
+		// taper: the upper and lower tethers are each drawn to their own scale, so each shape shows
+		// that tether's own taper ratio; widths are not comparable between them. The two meet at the
+		// anchor station (at the centre of mass when there is none): the cable between the anchor
+		// station and the centre of mass carries the same tension as the tether it continues, so it
+		// is drawn with that tether. Within a tether the drawn width follows its diameter,
+		// sqrt(T/T_ref), where T is the tension from the load sweep (cross-section = T/σ) and T_ref
+		// that tether's thinnest point carrying a real tension. Its thin end is tipPx wide until its
+		// thickest point would pass maxPx; then the thin end shrinks toward minPx to make room. Once
 		// it is down to minPx, it stays there and the thickest point keeps growing, without limit.
-		var P = t.profile, peak = t.tensionPeak, tipPx = 3, maxPx = 16, minPx = 1, pts = [];
-		P.low.r.forEach(function (r, i) { pts.push([r / 1e3, P.low.T[i]]); });
-		for (var q = P.up.r.length - 1; q >= 0; q--) pts.push([P.up.r[q] / 1e3, P.up.T[q]]);
-		var ref = Infinity, dMax = 1, kPx = 2;
-		pts.forEach(function (p) { if (p[1] > 1e-6 * peak && p[1] < ref) ref = p[1]; });
-		var hasTaper = peak > 0 && isFinite(peak) && isFinite(ref);
-		if (hasTaper) {
-			pts.forEach(function (p) { dMax = Math.max(dMax, Math.sqrt(p[1] / ref)); });
-			kPx = Math.max(minPx, Math.min(tipPx, maxPx / dMax));
+		var P = t.profile, tipPx = 3, maxPx = 16, minPx = 0.5, all = [];
+		P.low.r.forEach(function (r, i) { all.push([r, P.low.T[i]]); });
+		for (var q = P.up.r.length - 1; q >= 0; q--) all.push([P.up.r[q], P.up.T[q]]);
+		var rSplit = P.low.r[P.low.r.length - 1] + t.comOffset, iSplit = all.length - 1;
+		for (var j = 0; j < all.length; j++) { if (all[j][0] >= rSplit - 1) { iSplit = j; break; } }
+		function widths(seg) {
+			var peak = seg.reduce(function (a, p) { return Math.max(a, p[1]); }, 0), ref = Infinity, dMax = 1, kPx = 2;
+			seg.forEach(function (p) { if (p[1] > 1e-6 * peak && p[1] < ref) ref = p[1]; });
+			var tapered = peak > 0 && isFinite(peak) && isFinite(ref);
+			if (tapered) {
+				seg.forEach(function (p) { dMax = Math.max(dMax, Math.sqrt(p[1] / ref)); });
+				kPx = Math.max(minPx, Math.min(tipPx, maxPx / dMax));
+			}
+			return seg.map(function (p) { return [p[0] / 1e3, Math.max(0.5 * kPx * (tapered ? Math.sqrt(p[1] / ref) : 1), 0.2) * u]; });
 		}
+		var pts = widths(all.slice(0, iSplit + 1)).concat(widths(all.slice(iSplit + 1)));
 		var right = [], left = [];
 		pts.forEach(function (p) {
-			var hw = Math.max(0.5 * kPx * (hasTaper ? Math.sqrt(p[1] / ref) : 1), 0.2) * u;
-			right.push(hw + " " + (-p[0])); left.unshift((-hw) + " " + (-p[0]));
+			right.push(p[1] + " " + (-p[0])); left.unshift((-p[1]) + " " + (-p[0]));
 		});
 		gTaper.setAttribute("d", "M" + right.join("L") + "L" + left.join("L") + "Z");
 		show(gTaper, base("geo", "prop"));
