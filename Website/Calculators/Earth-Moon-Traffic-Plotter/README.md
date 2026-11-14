@@ -27,10 +27,13 @@ arrivals at the elevator and the mass driver come next.
   trim burn (`evaluateArrival`), and the smooth form Target solves on (`lineApproach`). Pure.
 - `core/target.js` — `solveCatch(input)`: adjusts the release time and altitude until
   the ship meets the destination tether at its catch altitude. Pure.
+- `core/offworld.js` — `readArrival`: takes in an arrival sent from the Mission
+  Planner, checks it is already aimed at the aerobrake corridor, and gives the
+  date it is flown on. Pure.
 - `core/arrival-date.js` — `arrivalDateInSpan`: the date inside the clock's span an
   arrival from another world is flown on, with the Sun within 10° of its real
   direction and the Moon as near its real place as the span allows. Pure.
-- `core/tests/*.test.js` (flight, waypoints, windows, farburn, elevator, arrival-date) — Node tests:
+- `core/tests/*.test.js` (flight, waypoints, windows, farburn, elevator, arrival-date, offworld) — Node tests:
   `node --test Website/Calculators/Earth-Moon-Traffic-Plotter/core/tests/*.test.js`
 
 ## Everything follows one clock
@@ -141,6 +144,31 @@ thousand kilometres before a catch is possible (the Moon's pull bends the path
 the rest of the way), and is marked while it is over 10,000 km. A flight from the Moon
 skyhook has no such limit: whatever plane the ship falls toward Earth in, Earth
 is in it.
+
+## Offworld arrivals
+
+A ship arriving from another world starts its flight here at Earth's sphere of
+influence. The Mission Planner sends it (**Send to Earth–Moon Traffic**, on the
+arrival leg of a mission to Earth) as the ship's position and velocity relative
+to Earth where it enters the SOI. It comes through the shared mailbox
+(`Shared/exchange.js`, target `earth-moon-traffic`) or with a `#pkt=` link. One
+waiting in the mailbox when the page opens is shown on the **Offworld arrival**
+card, with **Fly this arrival**. One that comes in while the page is open, or
+by link, is flown straight away. **From: Offworld arrival** starts the flight
+from it.
+
+**The date.** The arrival's own date is usually outside this plotter's span, so
+it is flown on the date inside it where the Sun is within 10° of its real
+direction and the Moon is as near its real place as the span allows
+(`core/arrival-date.js`). The ship's position and velocity are kept as they
+were. While the flight starts from an arrival, the date bar and the release
+time are set by it and stand still.
+
+**The pass must already be aimed at the air.** The pass's height, from the
+two-body path about Earth through the arrival's state, has to be within
+1,000 km of the aerobrake corridor (80 km). Otherwise the card refuses the
+arrival and says why, and the arrival goes back to the Mission Planner to be
+aimed with a burn before the ship reaches Earth's sphere of influence.
 
 ## Waypoint burns
 

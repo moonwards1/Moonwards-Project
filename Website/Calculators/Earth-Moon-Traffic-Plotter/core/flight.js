@@ -6,7 +6,9 @@
  * facility's position and velocity at that instant come from the clock, so
  * the release state is not chosen — it is where the release point IS then
  * (facilities.js's releaseState: a skyhook's release point, or the one of the
- * L1 elevator's two that the flight is let go from).
+ * L1 elevator's two that the flight is let go from). A flight from an
+ * offworld arrival (core/offworld.js) starts instead from the ship's own state
+ * where it enters Earth's sphere of influence, on the arrival's date.
  * The ship then coasts under Earth + Moon + Sun gravity (Shared/geo-leg.js,
  * RK4, real ephemerides, no sphere-of-influence hand-off).
  *

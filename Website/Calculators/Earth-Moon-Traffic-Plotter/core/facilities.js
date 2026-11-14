@@ -93,13 +93,21 @@ export var FACILITIES = {
 		id: "moonElevator", kind: "elevator", side: "L1", label: "L1 elevator", body: "Moon",
 		defaults: { cwAlt: 222200e3, lowAlt: 45000e3, highAlt: 222200e3, relPoint: "high" },
 		anchors: [{ lat: 20, lon: 20 }, { lat: 20, lon: -20 }, { lat: -20, lon: -20 }, { lat: -20, lon: 20 }]
+	},
+	// A ship arriving from another world (core/offworld.js). It is no
+	// hardware: its params are the arrival itself, { r, v, jd } — the ship's
+	// geocentric state where it enters Earth's sphere of influence, and the
+	// date it is flown on — and the flight starts there.
+	offworld: {
+		id: "offworld", kind: "offworld", label: "Offworld arrival", body: "Earth",
+		defaults: {}
 	}
 };
 
 // Which facilities a flight from each origin may be aimed at. A flight may
 // also have no destination at all (an open path).
 export var DESTINATIONS = { moonSkyhook: ["earthSkyhook"], earthSkyhook: ["moonSkyhook"],
-                            moonElevator: ["earthSkyhook", "moonSkyhook"] };
+                            moonElevator: ["earthSkyhook", "moonSkyhook"], offworld: [] };
 
 export function facility(id) {
 	var f = FACILITIES[id];
@@ -258,6 +266,7 @@ export function tetherAxes(fig, jd) {
 
 var GM_MOON = systems.get("Moon").GM;
 var R_MOON = +systems.get("Moon").radius;
+var R_EARTH = +systems.get("Earth").radius;
 
 // L1's distance from the Moon's centre, as a fraction of the Earth–Moon distance.
 export var L1_FRACTION = LAGRANGE_SIDES.L1.fraction;
@@ -334,16 +343,34 @@ export function elevatorPointState(fig, s, jd, at) {
 
 // ---- any facility --------------------------------------------------------------
 
-// A facility's figures, whatever its kind: skyhookFigures or elevatorFigures.
+// An offworld arrival's figures: the state it is flown from. period is 0,
+// since the date is the arrival's own and there is no release time to set.
+export function offworldFigures(id, params) {
+	var p = params || {};
+	if (!(Array.isArray(p.r) && Array.isArray(p.v) && isFinite(p.jd))) {
+		return fail("no-arrival", "No arrival has been received yet. Send one from the Mission Planner: "
+			+ "Send to Earth–Moon Traffic, on the arrival leg of a mission to Earth.");
+	}
+	return { ok: true, id: id, kind: "offworld", body: "Earth", R: R_EARTH, r: p.r.slice(), v: p.v.slice(), jd: p.jd,
+	         normal: O.vUnit(equatorPlane("Moon", null, CLOCK_REF).normal), period: 0 };
+}
+
+// A facility's figures, whatever its kind.
 export function facilityFigures(id, params) {
-	return facility(id).kind === "elevator" ? elevatorFigures(id, params) : skyhookFigures(id, params);
+	var kind = facility(id).kind;
+	return kind === "elevator" ? elevatorFigures(id, params)
+		: kind === "offworld" ? offworldFigures(id, params) : skyhookFigures(id, params);
 }
 
 // The state a ship is let go with from the facility `fig` at Julian date jd:
 // { r, v } geocentric, { relR, relV } relative to the facility's body, and
 // `radius`, the release point's distance from that body's centre (m). A
-// skyhook's also carries `phase`, its tether's clock angle (rad).
+// skyhook's also carries `phase`, its tether's clock angle (rad). An offworld
+// arrival's is its own state, whatever jd: its date is its own.
 export function releaseState(fig, jd) {
+	if (fig.kind === "offworld") {
+		return { r: fig.r.slice(), v: fig.v.slice(), relR: fig.r.slice(), relV: fig.v.slice(), radius: O.vMag(fig.r) };
+	}
 	if (fig.kind === "elevator") {
 		var at = elevatorAt(fig, jd);
 		return Object.assign(elevatorPointState(fig, at.rRel, jd, at), { radius: at.rRel });

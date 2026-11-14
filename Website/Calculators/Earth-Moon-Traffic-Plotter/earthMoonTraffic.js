@@ -93,6 +93,8 @@ import { solveBestCatch } from "./core/target.js";
 import { solveFarBurn } from "./core/farburn.js";
 import { MAX_AXIS_MPS, burnSize } from "./core/waypoints.js";
 import { releaseWindows } from "./core/windows.js";
+import { readArrival, OFFWORLD_TARGET, ACCEPT_WITHIN, CORRIDOR_ALT } from "./core/offworld.js";
+import { Exchange } from "../../Shared/exchange.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -132,12 +134,13 @@ var POVS = {
 };
 var ZOOM_MAX = 2600;                   // Earth's sphere of influence fills the view
 
-var CARD_ORDER = ["moonSkyhook", "earthSkyhook", "moonElevator"];
+var CARD_ORDER = ["moonSkyhook", "earthSkyhook", "moonElevator", "offworld"];
 // Facilities not built yet: shown folded so the sidebar already has its shape.
 var STUBS = [
 	{ label: "Lunar mass driver", sub: "Surface track: launch mode or catch mode" }
 ];
 function isElevator(id) { return FACILITIES[id].kind === "elevator"; }
+function isOffworld(id) { return FACILITIES[id].kind === "offworld"; }
 
 // ---- state ------------------------------------------------------------------
 var state = {
@@ -155,7 +158,8 @@ var state = {
 	params: {},                        // facility id -> its params (m): a skyhook's { footAlt, comAlt, topAlt, relAlt, catchAlt }, the elevator's { cwAlt, lowAlt, highAlt, relPoint }
 	waypoints: [],                     // [{ t (s since release), burn: { pro, rad, nrm } (m/s) }], core/waypoints.js
 	open: { waypoints: true },         // facility id (or "waypoints") -> card unfolded?
-	pov: "system"
+	pov: "system",
+	arrivalIn: null                    // the last arrival received: core/offworld.js's readArrival result
 };
 CARD_ORDER.forEach(function (id) {
 	state.params[id] = Object.assign({}, FACILITIES[id].defaults);
@@ -182,6 +186,7 @@ var showSoi = $("emt-show-soi"), showFac = $("emt-show-facilities"), showTraj = 
 // ---- time -------------------------------------------------------------------
 function releaseJd() {
 	var fig = figs[state.from];
+	if (fig && fig.ok && fig.kind === "offworld") { return fig.jd; }
 	return state.jd + (fig && fig.ok ? state.relFrac * fig.period / DAY : 0);
 }
 function arrival() { return flight && flight.ok && flight.arrival && flight.arrival.found ? flight.arrival : null; }
@@ -272,7 +277,7 @@ function drawFacility(id) {
 	pxArrows = pxArrows.filter(function (a) { return a.id !== id; });
 	Object.keys(markers).forEach(function (k) { if (k.indexOf(id + ":") === 0) { delete markers[k]; } });
 	var fig = figs[id];
-	if (!fig || !fig.ok) { return; }
+	if (!fig || !fig.ok || fig.kind === "offworld") { return; }
 	var grp = new THREE.Group();
 	if (fig.kind === "elevator") { drawElevator(id, fig, node, grp); }
 	else { drawSkyhook(id, fig, node, grp); }
@@ -928,6 +933,7 @@ function fillElevatorCard(id, opts) {
 
 function buildCard(id) {
 	if (isElevator(id)) { buildElevatorCard(id); return; }
+	if (isOffworld(id)) { buildOffworldCard(id); return; }
 	var fac = FACILITIES[id], refs = {};
 	var card = el("section", "emt-card");
 	var head = card.appendChild(el("button", "emt-card-head"));
@@ -997,6 +1003,67 @@ function buildCard(id) {
 	cards[id] = { el: card, refs: refs };
 }
 
+// The offworld arrival's card: what the Mission Planner sent, the date it is
+// flown on here, and whether the plotter can take it.
+function buildOffworldCard(id) {
+	var refs = {};
+	var card = el("section", "emt-card");
+	var head = card.appendChild(el("button", "emt-card-head"));
+	head.type = "button";
+	head.innerHTML = CHEVRON_SVG;
+	var title = head.appendChild(el("span", "emt-card-title", FACILITIES[id].label));
+	refs.sub = title.appendChild(el("span", "emt-card-sub"));
+	refs.badge = head.appendChild(el("span", "emt-badge"));
+	head.addEventListener("click", function () { state.open[id] = !state.open[id]; syncCards(); });
+	refs.head = head;
+	var body = card.appendChild(el("div", "emt-card-body"));
+	refs.error = body.appendChild(el("div", "emt-error"));
+	var ro = body.appendChild(el("div", "emt-readouts"));
+	refs.origDate = readout(ro, "arrives at Earth's sphere of influence");
+	refs.flownDate = readout(ro, "flown here on");
+	refs.sun = readout(ro, "Sun's direction, against the real date");
+	refs.moon = readout(ro, "Moon's place, against the real date");
+	refs.dist = readout(ro, "distance from Earth");
+	refs.speed = readout(ro, "speed relative to Earth");
+	refs.vInf = readout(ro, "v∞ arriving");
+	refs.pass = readout(ro, "closest pass, Earth's pull alone");
+	refs.fly = body.appendChild(el("button", "emt-btn", "Fly this arrival"));
+	refs.fly.type = "button";
+	refs.fly.addEventListener("click", function () { selectFrom(id); });
+	refs.note = body.appendChild(el("div", "emt-muted"));
+	refs.note.textContent = "Sent from the Mission Planner (Send to Earth–Moon Traffic, on the arrival leg of a mission to Earth). "
+		+ "The ship is taken where it enters Earth's sphere of influence, on the date inside this plotter's span where "
+		+ "the Sun and the Moon stand most nearly as they did; its position and velocity relative to Earth are kept. "
+		+ "Its pass has to be within " + km(ACCEPT_WITHIN) + " of the aerobrake corridor (" + km(CORRIDOR_ALT) + ") already.";
+	// syncCards shows these on a facility's departure or arrival; an arrival has neither.
+	refs.release = el("div"); refs.arrival = el("div");
+	cardsEl.appendChild(card);
+	cards[id] = { el: card, refs: refs };
+}
+function fillOffworldCard(id) {
+	var c = cards[id].refs, a = state.arrivalIn;
+	var rows = ["origDate", "flownDate", "sun", "moon", "dist", "speed", "vInf", "pass"];
+	c.error.textContent = a && !a.ok ? a.reason : (a ? "" : figs[id].diagnostic.message);
+	c.error.style.display = c.error.textContent ? "" : "none";
+	c.fly.hidden = !(a && a.ok) || state.from === id;
+	if (!a || !a.ok) {
+		c.sub.textContent = a ? "refused" : "none received";
+		rows.forEach(function (k) { c[k].textContent = "—"; });
+		if (a && a.pass) { c.pass.textContent = passHeight(a.pass.periAlt); }
+		return;
+	}
+	c.sub.textContent = a.label;
+	c.origDate.textContent = shortDate(a.origJd) + " " + clockTime(a.origJd).slice(0, 5);
+	c.flownDate.textContent = shortDate(a.jd) + " " + clockTime(a.jd).slice(0, 5);
+	c.sun.textContent = a.moved ? num(a.sunDeg, 1) + "° off" : "the real date";
+	c.moon.textContent = a.moved ? km(a.moonMiss) + " off" : "the real date";
+	c.dist.textContent = km(a.distance);
+	c.speed.textContent = num(a.speed) + " m/s";
+	c.vInf.textContent = a.vInf == null ? "bound to Earth" : num(a.vInf) + " m/s";
+	c.pass.textContent = passHeight(a.periAlt);
+}
+function passHeight(h) { return h >= 0 ? km(h) + " up" : km(-h) + " below the surface"; }
+
 function buildStub(stub) {
 	var card = el("section", "emt-card");
 	var head = card.appendChild(el("button", "emt-card-head"));
@@ -1009,6 +1076,7 @@ function buildStub(stub) {
 	stubEls.push(card);
 }
 var stubEls = [];
+var selectFrom = null;                 // put the flight on a new origin (set up in init)
 
 // ---- the waypoint card ------------------------------------------------------------
 // One block per waypoint: its time of flight (slider and hours), what the ship
@@ -1156,7 +1224,7 @@ function syncCards() {
 		c.el.classList.toggle("emt-role-arrival", dest);
 		c.refs.head.setAttribute("aria-expanded", String(!!state.open[id]));
 		c.refs.badge.className = "emt-badge " + (origin ? "emt-badge-departure" : (dest ? "emt-badge-arrival" : "emt-badge-idle"));
-		c.refs.badge.textContent = origin ? "DEPARTURE" : (dest ? "ARRIVAL" : "not in this flight");
+		c.refs.badge.textContent = origin ? (isOffworld(id) ? "START" : "DEPARTURE") : (dest ? "ARRIVAL" : "not in this flight");
 		c.refs.release.style.display = origin ? "" : "none";
 		c.refs.arrival.style.display = dest ? "" : "none";
 	});
@@ -1177,6 +1245,7 @@ function orderCards() {
 // half-typed value is not rewritten under the cursor.
 function fillCard(id, opts) {
 	if (isElevator(id)) { fillElevatorCard(id, opts); return; }
+	if (isOffworld(id)) { fillOffworldCard(id); return; }
 	var c = cards[id].refs, p = state.params[id], fig = figs[id];
 	if (!(opts && opts.keepInputs)) {
 		["footAlt", "comAlt", "topAlt", "relAlt"].forEach(function (k) {
@@ -1253,7 +1322,10 @@ function fillKeys() {
 	var s = flight.summary, fig = flight.fig;
 	// A skyhook's release speed is about its own body; the elevator's is quoted
 	// against the body the ship is headed for: the Moon from below L1, Earth from above.
-	if (fig.kind === "elevator") {
+	if (fig.kind === "offworld") {
+		key("Starts at", km(flight.release.radius) + " from Earth");
+		key("Speed there", num(O.vMag(flight.release.v)) + " m/s");
+	} else if (fig.kind === "elevator") {
 		key("Released at", km(flight.release.radius - fig.R) + " above the Moon");
 		if (fig.relPoint === "low") { key("Release speed, relative to the Moon", num(O.vMag(flight.release.relV)) + " m/s"); }
 		else { key("Release speed, round Earth", num(O.vMag(flight.release.v)) + " m/s"); }
@@ -1413,7 +1485,7 @@ function updateWindows() {
 	var key = state.from + JSON.stringify([state.params.earthSkyhook, state.params.moonSkyhook], ["footAlt", "comAlt", "topAlt"]);
 	if (key === windowsKey) { return; }
 	windowsKey = key;
-	windows = e.ok && m.ok && !isElevator(state.from) ? releaseWindows(FACILITIES[state.from].body === "Earth" ? "Moon" : "Earth", e, m,
+	windows = e.ok && m.ok && FACILITIES[state.from].kind === "skyhook" ? releaseWindows(FACILITIES[state.from].body === "Earth" ? "Moon" : "Earth", e, m,
 		e.R + routeReleaseAlt("earthSkyhook", "moonSkyhook", state.params.earthSkyhook),
 		JD0 - FINE_HALF, JD0 + SPAN_DAYS + FINE_HALF) : [];
 }
@@ -1484,7 +1556,7 @@ function refresh(opts) {
 	placeShip();
 
 	var fig = figs[state.from];
-	relVal.textContent = clockTime(releaseJd()) + (!fig.ok ? ""
+	relVal.textContent = fig.ok && fig.kind === "offworld" ? "set by the arrival" : clockTime(releaseJd()) + (!fig.ok ? ""
 		: (fig.kind === "skyhook" ? " · one orbit " : " · slider spans ") + num(fig.period / 3600, fig.kind === "skyhook" ? 2 : 0) + " h");
 	var t = flightSeconds(), fSpan = flightSpan();
 	flightSlider.value = fSpan > 0 ? Math.min(1, t / fSpan) : 0;
@@ -1529,12 +1601,22 @@ function init() {
 		CARD_ORDER.forEach(function (id) { state.open[id] = id === state.from || id === state.to; });
 		// Holding a phase is a skyhook's: the elevator has no angle of its own to hold.
 		var holdBox = $("emt-hold-phase");
-		holdBox.disabled = isElevator(state.from);
+		holdBox.disabled = FACILITIES[state.from].kind !== "skyhook";
 		if (holdBox.disabled) { holdBox.checked = false; state.hold = false; }
 		state.flightBy = "frac"; state.flightFrac = 0; flightSlider.value = 0;
 		state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0;
 		syncCards();
+		lockDate();
 		refresh();
+	}
+	// An offworld arrival brings its own date: the date bar shows it and the
+	// release-time controls stand still.
+	function lockDate() {
+		var fig = facilityFigures(state.from, state.params[state.from]);
+		var locked = isOffworld(state.from);
+		["emt-date-coarse", "emt-date-fine", "emt-date-field"].forEach(function (i) { $(i).disabled = locked; });
+		relSlider.disabled = locked;
+		if (locked && fig.ok) { dateBar.setJd(fig.jd); }
 	}
 	function fillDestinations() {
 		var sel = $("emt-to");
@@ -1546,8 +1628,12 @@ function init() {
 		sel.value = state.to || "";
 	}
 	fillDestinations();
-	$("emt-from").addEventListener("change", function (e) {
-		state.from = e.target.value;
+	selectFrom = function (id) {
+		$("emt-from").value = id;
+		fromChanged(id);
+	};
+	function fromChanged(id) {
+		state.from = id;
 		state.to = null;
 		state.heldAngle = null;
 		// A burn's time since release means nothing on a flight from somewhere else.
@@ -1555,7 +1641,29 @@ function init() {
 		rebuildWaypointRows();
 		fillDestinations();
 		routeChanged();
-	});
+	}
+	$("emt-from").addEventListener("change", function (e) { fromChanged(e.target.value); });
+
+	// Arrivals from the Mission Planner: one waiting in the mailbox is shown on
+	// its card; one that comes in while the page is open, or with the link the
+	// Mission Planner offers, is flown straight away.
+	var loading = true;
+	function takeArrival(packet) {
+		state.arrivalIn = readArrival(packet, JD0, JD0 + SPAN_DAYS);
+		if (state.arrivalIn.ok) {
+			var a = state.arrivalIn;
+			state.params.offworld = { r: a.r, v: a.v, jd: a.jd };
+		}
+		state.open.offworld = true;
+		if (!loading && state.arrivalIn.ok) { selectFrom("offworld"); return; }
+		if (state.from === "offworld") { routeChanged(); return; }
+		syncCards();
+		if (!loading) { refresh(); }
+	}
+	Exchange.accept(["ship-state"], takeArrival, OFFWORLD_TARGET);
+	var linked = Exchange.fromLocationFragment();
+	loading = false;
+	if (linked) { takeArrival(linked); }
 	$("emt-to").addEventListener("change", function (e) {
 		state.to = e.target.value || null;
 		// A flight to a facility starts from the release point meant for it.
