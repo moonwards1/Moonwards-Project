@@ -18,11 +18,7 @@
 
 - Present the full range of realistic options for space transport in a developed space economy, specializing in fixed infrastructure approaches
 
-- Provide means to explore and expand on this world
-
-# Ladder of Products:
-
-## Website - First step and core reference
+## Website - project core
 
 - Relies on interactives, calculators, diagrams, and animations
 
@@ -32,7 +28,19 @@
 
 - Lays out how the envisioned industry and transport works
 
-- May be split into a few pages - current plan is a main page with educational interactives for designing a space economy, and a second page with more of a 'lore' focus, about the Moonwards space economy
+- Split into two main modes: the Moonwards design, and free design:
+
+  - The Moonwards design is the one chosen as the most effective leveraging of the portrayed technology for a robust, profitable, beneficial space economy. It minimizes fuel use by rockets, and instead focuses on providing a system of giant infrastructure facilities. The set of facilities finally chosen will be the ones that get the needed inputs for profitable manufacturing as reliably and cheaply as possible from the bodies where they can be obtained, and are only as big and expensive as is needed to do so. A central assertion of the paradigm is that, over time, it is more efficient and effective for most delta v to be achieved by facilities, not rockets. 
+
+  - The free design allows users to explore alternative approaches, in order to learn about the physics involved, the engineering and economics trade-offs that must be made, and to get a feel for what the undertaking of building such a world would be. It also allows a user to frame an alternate system based on different assertions about what the best way is to build a space economy, and to argue for their system.
+
+  - The Moonwards design is being completed as the free design space construction advances, as it allows Kim to validate what the best design is. So, the Moonwards mode will be built afterwards. The default designs worked out for each app and calculator are the current best guess as to what might work, but not all of them will be adopted into the Moonwards system - only the ones needed to perform the required duties. 
+
+- Is currently a single page with lazy loading, where apps are opened as part of the page. May later be packaged for download as a set of integrated apps and associated calculators, with a dashboard interface very similar to the website. 
+
+- Once the Moonwards mode is being actively worked on, a separate lore page is currently envisioned. This would be where all sorts of concepts that underlie the calculators and apps, but are never explained, would be explored: their technical viability explained, the engineering gaps clarified, the supporting technology spelled out, the whole setting framed. For instance, why the Materials card lists a certain set of materials wiith certain properties, why the celestial bodies that are part of Moonwards are included, and the kind of AI and robots that allow work to be done without humans present.
+
+- Lore passages are drawn on through Nutshell for pop-up notes on the home page
 
 - All content has a permissive license
 
@@ -47,24 +55,6 @@
 - Try to enable this in annotations within 3d viewer
 
 - Adaptation for the 3D viewer happens in a fork, **https://github.com/moonwards1/nutshell** (upstream is CC0, so this is unrestricted); the fork's built file then gets vendored into `Website/Shared/` (see `Website/README.md`, "Nutshell")
-
-### 3D models - Next step
-
-- Models of major infrastructure and equipment built in Blender
-
-- Designs are low-poly
-
-- In .usdz
-
-- Communicate the engineering and operations
-
-- 3D models developed outside repository
-
-### Virtual environment - Final destination to enable storytelling
-
-- May be chiefly used to film explanatory videos for the website
-
-- If there is sufficient interest, may be fleshed out over time as fully modelled locations in Blender and Unreal
 
 # Repository and local use
 

@@ -110,28 +110,6 @@ export function addSkeletonCards(shell, ctx, tabs) {
 				});
 			}
 			tetherCard();
-		} else if (fam === "elevator") {
-			// Through L2 (the standard and L1 elevators have their own calculators).
-			var eg = shell.addCard({ id: "sk-geo", tab: "arch", side: "in", title: "Tether geometry", short: "Geometry", color: C.core, feeds: ["sk-orb", "sk-teth"] });
-			F.len = shell.numberField(eg, { label: "Length away from Earth", hint: "from the far-side surface", unit: "km", value: 100000, min: 1 });
-			materialCard();
-			var ec = shell.addCard({ id: "sk-cap", tab: "arch", side: "in", title: "Maximum capacity", short: "Capacity", color: C.ochre, feeds: ["sk-teth"] });
-			F.climbT = shell.numberField(ec, { label: "Climber payload", unit: "t", value: 20, min: 0 });
-			F.climbers = shell.numberField(ec, { label: "Climbers on the cable", value: 8, min: 0 });
-
-			var eo = shell.addCard({ id: "sk-orb", tab: "arch", side: "out", title: "Balance & speeds", short: "Speeds", color: C.core });
-			var hl = shell.hero(eo, [{ label: "L2 from the Moon's centre", unit: "km" }, { label: "Far end past L2", unit: "km" }]);
-			var lRel = shell.line(eo, { label: "Far-end speed, Moon-relative", unit: "km/s" });
-			calcs.push(function () {
-				var point = body.sys.L2, end = body.R + val(F.len, 100000) * 1e3;
-				var w = 2 * Math.PI / Math.abs(body.rot);
-				hl[0].set(num(point / 1e3, 0)); hl[1].set(num((end - point) / 1e3, 0));
-				lRel.set(num(w * end / 1e3, 3), end > point
-					? "Past L2, the system's rotation holds the far end out."
-					: "The far end hasn't reached L2: the tether can't stay up.");
-				eo.setSummary("L2 " + num(point / 1e3, 0) + " km");
-			});
-			tetherCard();
 		} else {
 			var spin = inst.v === "spin";
 			var tr = shell.addCard({ id: "sk-track", tab: "arch", side: "in", title: spin ? "Arm" : "Track", short: spin ? "Arm" : "Track", color: C.core, feeds: ["sk-launch", "sk-pow"] });

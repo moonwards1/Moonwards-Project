@@ -147,7 +147,7 @@ test("installations with their own calculator", function () {
 	assert.equal(calcFor(hang), "hanging-skyhook");
 	assert.equal(calcFor({ id: "e", fam: "elevator", v: "standard" }), "space-elevator");
 	assert.equal(calcFor({ id: "l", fam: "elevator", v: "l1" }), "moon-l1-elevator");
-	assert.equal(calcFor({ id: "m", fam: "elevator", v: "l2" }), null);
+	assert.equal(calcFor({ id: "m", fam: "elevator", v: "l2" }), "moon-l2-elevator");
 	assert.equal(calcFor({ id: "p", fam: "skyhook", v: "phobos" }), "phobos-skyhook");
 	assert.equal(calcFor({ id: "d", fam: "skyhook", v: "deimos" }), null);
 	assert.equal(calcFor(null), null);

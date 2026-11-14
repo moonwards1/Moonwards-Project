@@ -1,15 +1,19 @@
 # Moon–L1 Elevator Calculator
 
-A tether from the Moon's surface, through Earth–Moon L1, to a counterweight beyond it.
+A tether from the Moon's surface, through Earth–Moon L1, to a counterweight
+beyond it. The workbench's L2 elevator (from the far side, through L2) is the
+same calculator with `side: "L2"`, and this README derives the tether model
+every workbench elevator shares (`Shared/radial-tether.js`).
 
 ## Files
 
-- `l1ElevatorModel.js` — the physics, pure (no DOM): `L1Elevator.buildContext`,
-  `loadedMetrics`, `sweepSpeeds`, `releaseOrbit`, `findL1`, `omega`
+- `l1ElevatorModel.js` — the standalone example design's model, pure (no DOM):
+  `L1Elevator.buildContext`, `loadedMetrics` (its cargo traffic on top of
+  `Shared/radial-tether.js`), `sweepSpeeds`, `releaseOrbit`, `findL1`, `omega`
 - `l1ElevatorModel.test.js` — Node test pinning the original example design:
   `node --test Website/Calculators/Moon-L1-Elevator/l1ElevatorModel.test.js`
-- `l1ElevatorBench.js` — the home workbench's cards for an L1 elevator,
-  `mountMoonL1Elevator(root, opts)` (see "In the workbench" below)
+- `l1ElevatorBench.js` — the home workbench's cards for the L1 or L2 elevator,
+  `mountMoonLagrangeElevator(root, opts)` (see "In the workbench" below)
 
 ## Dependencies
 
@@ -17,8 +21,10 @@ A tether from the Moon's surface, through Earth–Moon L1, to a counterweight be
 
 - `../../Shared/math-utils.js` (`OrbitalMath`)
 - `../../Shared/constants.js` (`Const`)
+- `../../Shared/radial-tether.js` (the tether sizing)
 - the workbench cards also use `../../Shared/orbit.js` (Earth and Moon data),
-  `calc-shell.js` / `calc-shell.css`, `material-card.js` and `materials.js`
+  `calc-shell.js` / `calc-shell.css`, `material-card.js`, `materials.js` and
+  `counterweight-card.js`
 
 Moving this folder without `Website/Shared/` coming along will break it.
 
@@ -161,24 +167,113 @@ can hold the cable down but not up, so the whole elevator sinks and crashes onto
 the Moon. Hence the two-step UI: fix structure + traffic first (which fixes the
 minimum), then choose a counterweight at or above it.
 
+### Other fields
+
+The same tether serves the standard elevator and the L2 one; only the field
+changes, with $r$ measured from the anchoring body's centre and $g$ positive
+away from it. A standard elevator on a body turning at $\omega$:
+
+$$
+g(r) = \omega^2 r - \frac{GM}{r^2}, \qquad \Phi(r) = -\frac{GM}{r} - \tfrac12 \omega^2 r^2
+$$
+
+- $GM$ — the body's gravitational parameter
+- $\omega$ — its rotation rate; $g = 0$ at synchronous orbit
+
+The L2 elevator, from the far side, away from Earth:
+
+$$
+g(r) = -\frac{GM_m}{r^2} - \frac{GM_e}{(D+r)^2} + \omega^2 (r + x_b), \qquad
+\Phi(r) = -\frac{GM_m}{r} - \frac{GM_e}{D+r} - \tfrac12\omega^2 (r + x_b)^2
+$$
+
+- symbols as for L1; $g = 0$ at L2
+
+In all three, $g$ rises steadily with $r$, so a felt force names one point on
+each side of the balance point.
+
+### Stations and the multiple
+
+A station of mass $m_s$ at $r_s$ is a point load. It adds to the tension
+everywhere between the surface and itself:
+
+$$
+\Delta T_s(r) = m_s\, g(r_s)\, \exp\!\Big[\tfrac{\rho}{\sigma_\text{eff}}\big(\Phi(r) - \Phi(r_s)\big)\Big] \qquad (R_\text{moon} < r < r_s)
+$$
+
+- $\Delta T_s(r)$ — the station's share of the tension at $r$
+- $m_s$, $r_s$ — its mass and position
+- $g(r_s)$ — its felt force, signed: positive (outward) beyond the balance
+  point, where it helps hold the structure up; negative inside it, where it
+  hangs on the cable
+- $\rho$, $\sigma_\text{eff}$, $\Phi$ — as above
+
+Every load's pull at the surface anchor has this form, $P = F\,w$ with
+$w = \exp[\tfrac{\rho}{\sigma_\text{eff}}(\Phi(R_\text{moon}) - \Phi(r))]$:
+
+- counterweight: $P_\text{cw} = M_\text{cw}\, g(r_\text{cw})\, E(R_\text{moon})$
+- track: $P_\text{track} = (\lambda_\text{min} + \lambda_\text{cargo})\,C_1(R_\text{moon}) + \lambda_\text{grav}\,C_g(R_\text{moon})$
+- station: $P_s = m_s\, g(r_s)\, w(r_s)$
+
+The surface tension is their sum. The **multiple** compares the two sides:
+
+$$
+\mu = \frac{\sum P_\text{up}}{\left|\sum P_\text{down}\right|}
+$$
+
+- $\mu$ — the multiple the card shows
+- $P_\text{up}$ — the pulls that are positive (the counterweight, stations
+  beyond the balance point)
+- $P_\text{down}$ — the pulls that are negative (the track, counted as one net
+  load; stations inside the balance point)
+
+Tension is least either at the surface or at the counterweight, so
+$\mu \ge 1$ means the cable is taut everywhere. With no stations,
+$\mu = M_\text{cw}/M_\text{cw,min}$. The counterweight that reaches a multiple
+$\mu^*$ is
+
+$$
+M_\text{cw} = \frac{\mu^* \left|\sum P_\text{down}\right| - \sum_\text{stations} P_\text{up}}{g(r_\text{cw})\, E(R_\text{moon})}
+$$
+
+- $\mu^*$ — the target multiple (1.5 on the workbench, the floor)
+- other symbols — as above
+
+Holding the multiple fixed, a station inside the balance point raises the
+counterweight and so thickens the cable above it; a station beyond the
+balance point lowers it.
+
 ## In the workbench
 
 `l1ElevatorBench.js` puts the model on the home page's Architecture tab, on
-the calculator shell. The Earth–Moon system comes from `Shared/orbit.js`
-(barycentre from the two GMs, rotation by Kepler's law, L1 where $g(r)=0$).
+the calculator shell, for L1 (`side: "L1"`) or L2 (`side: "L2"`). The
+Earth–Moon system comes from `Shared/orbit.js` (barycentre from the two GMs,
+rotation by Kepler's law, the Lagrange point where $g(r)=0$).
 
-- **Inputs:** Tether materials (the shared card; mature CNT ×3), Counterweight
-  position, Counterweight mass. The mass is set one of two ways, chosen by a
-  radio button: a mass in kilotonnes, or a multiple of the minimum (default
-  2×). The field not chosen shows the matching value.
+- **Inputs:** Tether materials (the shared card; mature CNT ×3), and
+  Counterweight & stations (`Shared/counterweight-card.js`, shared with the
+  standard elevator):
+  - **Counterweight distance** from the Moon's centre (default 222,100 km for
+    L1, 100,000 km for L2).
+  - **Counterweight mass** in kilotonnes. Empty, it takes the mass for 3×.
+    Below 1.5× it is raised to 1.5×, and the card says so; below 3× a small
+    warning stays.
+  - **Multiple** — $\mu$ above.
+  - **Stations** — up to three: one on the Moon side of the Lagrange point,
+    two beyond it, one at it. "Create station" asks for the side, then an
+    altitude or a felt force (the net acceleration there, toward the Moon on
+    the inner side, toward Earth or away from the Moon on the outer), each
+    with its range; then the station takes a mass. A station at the
+    Lagrange point feels no force and changes nothing here.
 - **Results:** Cable properties, Forces, Orbit after release.
-- **No cargo yet.** The cable carries its track (the original
-  example's default gauges) but no cargo, so the minimum is the structure's own
-  $M_\text{cw,min}$ with $\lambda_\text{cargo}=0$. Cargo will raise it once
-  traffic is modelled on the Logistics and Engineering tabs. With no track
-  either, $M_\text{cw,min}=0$: a cable tapered to its counterweight never
-  sets a floor by its own weight.
-- **Orbit after release** is the natural orbit of a vessel let go at the
-  counterweight: release at apogee, no burn, entry angle and peak deceleration
-  at a 122 km interface when the perigee lies below it.
-
+- **No cargo yet.** The cable carries its track (the original example's
+  default gauges) and the stations, but no cargo; the 1.5× floor and the 3×
+  advice leave room for it until traffic is modelled on the Logistics and
+  Engineering tabs.
+- **Orbit after release** is the natural two-body orbit about Earth of a
+  vessel let go at the counterweight. From L1 it moves below circular speed
+  about Earth, so release is the apogee; the card gives the perigee and, when
+  it lies below a 122 km interface, the entry angle and peak deceleration.
+  From L2 it moves above circular speed, so release is the perigee; the card
+  gives the apogee, or the hyperbolic excess speed when it escapes Earth
+  (beyond about 99,000 km from the Moon). The Moon's pull is left out.

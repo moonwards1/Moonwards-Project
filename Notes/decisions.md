@@ -526,16 +526,19 @@ their material from `Shared/material-card.js` over the presets in
 factor. Why: one list of materials, so a material reads the same wherever a
 design uses it.
 
-### The workbench's L1 elevator is sized for its structure, without cargo
+### The workbench's elevators are sized by one tether model, against a 1.5× pull multiple
 
-The minimum counterweight on the workbench counts the cable and its track,
-not cargo; a counterweight is entered as a mass or as a multiple of that
-minimum. At least 3× is advised (a warning below it) and 1.5× is the floor:
-the Architecture tab is an estimate, and the margin stands in for cargo and
-everything the structure doesn't count yet. Cargo joins the sizing when traffic is modelled on the Logistics and
-Engineering tabs. Why: a cable tapered to its counterweight has no minimum
-from its own weight, so the always-on track is the honest floor until the
-traffic is known.
+The standard, L1 and L2 elevators on the workbench are the same tether in three
+force fields (`Shared/radial-tether.js`), sized for their structure: cable,
+track and up to three stations, not cargo. The card shows the multiple — the
+surface pull of everything holding the structure up (counterweight, stations
+beyond the balance point) ÷ everything hanging on it (track, stations inside
+it), each weighted by exp[(ρ/σ_eff)(Φ(R) − Φ(r))]. Below 1.5× the counterweight
+is raised to reach it; below 3× a warning stays. Why: the multiple counts what
+outward stations contribute, which a "multiple of the minimum counterweight"
+cannot; tension is least at the anchor or the counterweight, so 1× is exactly
+taut, and the margin stands in for cargo until traffic is modelled on the
+Logistics and Engineering tabs.
 
 ### A hanging skyhook's tethers are split at its centre of mass
 

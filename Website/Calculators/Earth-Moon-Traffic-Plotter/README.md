@@ -41,8 +41,9 @@ No facility has a phase dial. A skyhook's angle at any Julian date is
 - `jd` — Julian date
 
 so two facilities shown at the same instant are where they would really be
-relative to each other. The date bar's two sliders (2080–2085, then one lunar
-orbit) and the **Release time** slider (one orbit of the departure skyhook)
+relative to each other. The date bar's two sliders (2080 to mid-2098, one
+18.6-year turn of the Moon's orbital plane against Earth's equator, then one
+lunar orbit) and the **Release time** slider (one orbit of the departure skyhook)
 together set the release instant; the **Flight** slider is time since release,
 and moves the whole scene — Moon, Sun, tethers, ship — to that time. With a
 destination it runs to half an hour past the flight's closest pass to the

@@ -121,6 +121,7 @@ export function calcFor(inst) {
 	if (inst.fam === "skyhook" && inst.v === "phobos") return "phobos-skyhook";
 	if (inst.fam === "elevator" && inst.v === "standard") return "space-elevator";
 	if (inst.fam === "elevator" && inst.v === "l1") return "moon-l1-elevator";
+	if (inst.fam === "elevator" && inst.v === "l2") return "moon-l2-elevator";
 	return null;
 }
 

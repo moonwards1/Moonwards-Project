@@ -24,7 +24,7 @@ the **workbench**, and the **apps**.
   for the selected body and installation. Each installation has one calculator
   serving all four tabs; every card belongs to a tab. An installation with its own
   calculator (today: the hanging skyhook, the Phobos skyhook, the standard
-  space elevator and the Moon's L1 elevator) shows its cards on the tabs they
+  space elevator and the Moon's L1 and L2 elevators) shows its cards on the tabs they
   belong to, and **skeleton cards** fill any tab it has none on. Others are
   made entirely of skeleton cards. Skeleton input cards are wired to their
   result cards; results that are plain arithmetic are computed, the rest show

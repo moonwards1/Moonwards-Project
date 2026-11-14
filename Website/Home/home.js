@@ -69,8 +69,14 @@ var CALCULATORS = {
 	},
 	"moon-l1-elevator": {
 		load: function () {
-			return import("../Calculators/Moon-L1-Elevator/l1ElevatorBench.js").then(function (m) { return m.mountMoonL1Elevator; });
+			return import("../Calculators/Moon-L1-Elevator/l1ElevatorBench.js").then(function (m) { return m.mountMoonLagrangeElevator; });
 		}
+	},
+	"moon-l2-elevator": {
+		load: function () {
+			return import("../Calculators/Moon-L1-Elevator/l1ElevatorBench.js").then(function (m) { return m.mountMoonLagrangeElevator; });
+		},
+		opts: { side: "L2" }
 	}
 };
 var mounted = {};   // installation id → { el, handle, instId, body }

@@ -9,7 +9,7 @@
  * core could not be asked for.
  *
  * Time. Three sliders set the RELEASE instant: the date bar's coarse (2080 to
- * 2085) and fine (one lunar orbit) pair, then the release time within one
+ * 2098, one turn of the Moon's orbital plane) and fine (one lunar orbit) pair, then the release time within one
  * orbit of the departure skyhook — the fine control the tether's angle needs,
  * since there is no phase dial. The fourth slider is the flight clock: time
  * since release. The whole scene (Moon, Sun, every tether, the ship) is shown
@@ -97,7 +97,7 @@ import { releaseWindows } from "./core/windows.js";
 var O = OrbitalMath;
 var DAY = 86400;
 var JD0 = CLOCK_EPOCH;                 // 2080-01-01
-var SPAN_DAYS = 1827;                  // to 2085-01-01
+var SPAN_DAYS = 6799;                  // to 2098-08-13: one 18.61-year turn of the Moon's nodes
 var START_DAYS = 81;                   // opens on 2080-03-22
 
 var COLOR = { top: 0x9fb6ff, com: 0xffd24a, tether: 0xeaf0ff, release: 0xff5fd0,
@@ -1402,7 +1402,7 @@ function applyHold(opts) {
 	relSlider.value = state.relFrac;
 }
 
-// ---- release windows on the date sliders ------------------------------------------
+// ---- release windows on the fine date slider ------------------------------------------
 var FINE_HALF = parseFloat($("emt-date-fine").max);     // the fine slider's half-span, days
 var windows = [], windowsKey = "";
 // The windows for the flight's direction over the whole date span, worked out
@@ -1416,7 +1416,6 @@ function updateWindows() {
 	windows = e.ok && m.ok && !isElevator(state.from) ? releaseWindows(FACILITIES[state.from].body === "Earth" ? "Moon" : "Earth", e, m,
 		e.R + routeReleaseAlt("earthSkyhook", "moonSkyhook", state.params.earthSkyhook),
 		JD0 - FINE_HALF, JD0 + SPAN_DAYS + FINE_HALF) : [];
-	drawWindows($("emt-windows-coarse"), JD0, JD0 + SPAN_DAYS);
 }
 // Mark the windows that fall between two Julian dates on a slider's strip.
 function drawWindows(strip, lo, hi) {

@@ -16,7 +16,7 @@
 		<div id="emt-datebar">
 			<div id="emt-date-head">
 				<span class="emt-date-caption">Ephemeris date</span>
-				<input type="date" id="emt-date-field" min="2080-01-01" max="2085-01-01" value="2080-01-01" aria-label="Ephemeris date">
+				<input type="date" id="emt-date-field" min="2080-01-01" max="2098-08-13" value="2080-01-01" aria-label="Ephemeris date">
 				<span id="emt-jd" class="emt-muted"></span>
 				<span class="emt-date-caption emt-pov-caption">POV</span>
 				<div id="emt-pov" role="group" aria-label="Point of view">
@@ -33,10 +33,9 @@
 			<div class="emt-slider-line">
 				<span class="emt-slider-end">2080</span>
 				<div class="emt-track">
-					<input type="range" id="emt-date-coarse" min="0" max="1827" step="1" value="0" aria-label="Date, 2080 to 2085">
-					<div class="emt-windows" id="emt-windows-coarse" aria-hidden="true"></div>
+					<input type="range" id="emt-date-coarse" min="0" max="6799" step="1" value="0" aria-label="Date, 2080 to 2098">
 				</div>
-				<span class="emt-slider-end">2085</span>
+				<span class="emt-slider-end">2098</span>
 			</div>
 			<div class="emt-slider-line">
 				<span class="emt-slider-end" id="emt-fine-lo"></span>
@@ -166,7 +165,7 @@
 				ship there if the relative motion is no more than 800 m/s. Target
 				changes only the release time and altitude, and brings the ship to the
 				point of the tether where the relative motion is least; how low that
-				is depends on the date. The marks under the two date sliders are
+				is depends on the date. The marks under the lunar-orbit date slider are
 				the release windows for the flight's direction: the Earth skyhook
 				turns in Earth's equatorial plane, which the Moon passes through
 				twice in each lunar orbit, so a ship for the Moon has to arrive
