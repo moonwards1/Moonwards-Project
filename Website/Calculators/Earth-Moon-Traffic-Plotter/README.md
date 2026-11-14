@@ -27,7 +27,10 @@ arrivals at the elevator and the mass driver come next.
   trim burn (`evaluateArrival`), and the smooth form Target solves on (`lineApproach`). Pure.
 - `core/target.js` — `solveCatch(input)`: adjusts the release time and altitude until
   the ship meets the destination tether at its catch altitude. Pure.
-- `core/tests/*.test.js` (flight, waypoints, windows, farburn, elevator) — Node tests:
+- `core/arrival-date.js` — `arrivalDateInSpan`: the date inside the clock's span an
+  arrival from another world is flown on, with the Sun within 10° of its real
+  direction and the Moon as near its real place as the span allows. Pure.
+- `core/tests/*.test.js` (flight, waypoints, windows, farburn, elevator, arrival-date) — Node tests:
   `node --test Website/Calculators/Earth-Moon-Traffic-Plotter/core/tests/*.test.js`
 
 ## Everything follows one clock

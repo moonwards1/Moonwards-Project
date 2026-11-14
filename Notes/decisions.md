@@ -499,6 +499,22 @@ Consequence: missions authored against other positions (the example missions)
 arrive only as well as their authoring ephemeris
 matched this one — re-target them with Update after the elements change.
 
+### A ship that meets an atmosphere is a capsule, judged fully loaded
+
+`Shared/ships.js`: any ship class with a heat shield is taken to be
+capsule-shaped, the shield its whole face and the engines opposite, and
+carries the shield's diameter (`shieldD`, m). Its ballistic coefficient is
+
+    β = m / (Cd · A),  A = π D² / 4
+
+with `Cd = CAPSULE_CD` (1.5, the Earth aerobrake model's figure) and `m` the
+entry mass with full tanks, shield included (`entryMass`). Every aerobrake
+figure (the Earth–Moon Traffic Plotter's included) reads β from here.
+
+Why: the shape is what a ship flown through the air dozens of times can
+plausibly be; full tanks is the heaviest case, so the braking depth it gives
+is the deepest.
+
 ---
 
 ## Calculators

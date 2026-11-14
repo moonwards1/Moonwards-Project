@@ -29,7 +29,7 @@
 // stay current.
 
 import { ShellColors as C } from "./calc-shell.js";
-import { SHIP_ROLES, PROPELLANTS, SHIELDS, shield, shieldKey, shipDv, shieldMass, shipTitle, versionName, isLocalRole, MAX_VERSIONS } from "./ships.js";
+import { SHIP_ROLES, PROPELLANTS, SHIELDS, shield, shieldKey, shipDv, shieldMass, ballisticCoefficient, shipTitle, versionName, isLocalRole, MAX_VERSIONS } from "./ships.js";
 
 function num(x, d) { return isFinite(x) ? x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—"; }
 function kms(v) { return num(v / 1e3, 2); }
@@ -122,6 +122,9 @@ export function addShipCards(shell, opts) {
 				options: SHIELDS.filter(function (s) { return role !== "capsule" || s.key !== "none"; })
 					.map(function (s) { return { value: s.key, label: s.label }; }) });
 			f.shield.closest(".cs-row").classList.add("cs-wide");
+			f.shieldD = shell.numberField(card, { label: "Heat-shield diameter", unit: "m", value: 0, min: 0.1, save: false, parent: body,
+				tip: "The ship is taken to be capsule-shaped: the heat shield is its whole face, with the engines on the opposite side. The diameter sets how deep the ship has to go into the air to slow down." });
+			var shieldDRow = f.shieldD.closest(".cs-row");
 			var shieldNote = shell.note(card, "", body);
 			var hero = shell.hero({ body: body }, [{ label: "Δv, loaded", unit: "km/s" }, { label: "Δv, empty", unit: "km/s" }]);
 
@@ -134,6 +137,10 @@ export function addShipCards(shell, opts) {
 				});
 			});
 			f.shield.addEventListener("change", function () { edit({ shield: f.shield.value }); });
+			f.shieldD.addEventListener("input", function () {
+				var v = parseFloat(f.shieldD.value);
+				if (isFinite(v) && v > 0) edit({ shieldD: v });
+			});
 			function put(input, value) { if (document.activeElement !== input) input.value = value; }
 
 			// `count`: how many entries the card has; `inUse`: the one this installation uses.
@@ -143,6 +150,7 @@ export function addShipCards(shell, opts) {
 				put(f.prop, c.propellant);
 				["dry", "payload", "tank"].forEach(function (k) { put(f[k], +(c[k] / mass).toPrecision(12)); });
 				put(f.shield, shieldKey(c.shield));
+				put(f.shieldD, +c.shieldD.toPrecision(12));
 				var dv = shipDv(c);
 				nm.textContent = std ? "Standard" : local ? "Local" : versionName(c);
 				stat.textContent = +(c.payload / mass).toPrecision(3) + " " + mu + " · Δv " + kms(dv.loaded) + " km/s";
@@ -160,8 +168,12 @@ export function addShipCards(shell, opts) {
 					shieldNote.append(Math.round(sh.fraction * 100) + "% of ship mass: ");
 					var strong = document.createElement("strong");
 					strong.textContent = hs;
-					shieldNote.append(strong, ".");
+					shieldNote.append(strong, ". Ballistic coefficient β = m / (Cd · A), loaded with full tanks: ");
+					var beta = document.createElement("strong");
+					beta.textContent = Math.round(ballisticCoefficient(c)).toLocaleString("en-US") + " kg/m²";
+					shieldNote.append(beta, " — the lower it is, the higher and more gently the ship brakes.");
 				}
+				shieldDRow.style.display = sh.fraction ? "" : "none";
 				shieldNote.style.display = sh.fraction ? "" : "none";
 				hero[0].set(kms(dv.loaded)); hero[1].set(kms(dv.empty));
 				paint();

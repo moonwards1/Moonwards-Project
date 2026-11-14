@@ -46,7 +46,8 @@
  *
  * HEADLESS (`plainCard`), like the departure legs: its card is the window
  * readout plus the waypoint cards, each with a straddling impulse/prograde/
- * plane-change readout box (Shared/sim/readout-panes.js); its visible output
+ * plane-change readout box (Shared/sim/readout-panes.js), and for an arrival
+ * at Earth the Send to Earth–Moon Traffic box (earth-handoff.js); its visible output
  * is the polyline in the destination frame (hand-off/closest-approach/end
  * dots, waypoint gizmos + burn arrows). Emits the leg-end ship-state (lifted
  * to helio) so an arrival technology downstream (arrival-skyhook) keeps its
@@ -73,6 +74,8 @@ import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn
 import { makeShipSprite } from "../../../Shared/sim/marker-card.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { arrivalMark, equatorNormal } from "../arrival-approach.js";
+import { Exchange } from "../../../Shared/exchange.js";
+import { earthHandoff, handoffPacket, EARTH_MOON_TRAFFIC } from "./earth-handoff.js";
 import { computeArrivalSeam, SEAM_MIN_DAYS, ARRIVAL_TAIL_DAYS } from "../../core/arrival-seam.js";
 import { legFor as coastLegFor, stateAtElapsed as coastStateAtElapsed,
 	nearestApproach as coastNearestApproach, WAYPOINT_AXIS_CAP_MPS }
@@ -263,7 +266,7 @@ export function computeArrivalLeg(params, spec) {
 			wpVisuals[wp.originalIndex] = { renderPos: local.r, rLocal: local.r, vLocal: local.v, eff: eff };
 			var mag = burnMag(wp.burn);
 			totalDv += mag;
-			events.push({ jd: jd,
+			events.push({ jd: jd, kind: "waypoint", t: tPrev, index: wp.originalIndex,
 			              label: "Arrival waypoint impulse — " + (mag / 1000).toFixed(2) + " km/s" });
 			local = { r: local.r, v: eff.vAfter };
 			var lifted = Frames.localToHelio(body, jd, local.r, local.v);
@@ -589,9 +592,47 @@ export default {
 			stageParams = saved;
 		}
 		rebuildWaypointRows();
+
+		// An arrival at Earth can be handed to the Earth–Moon Traffic Plotter,
+		// which flies it on from Earth's SOI (earth-handoff.js).
+		var sendBox = document.createElement("div"); sendBox.className = "mp-card mp-card-inset";
+		var sendBtn = document.createElement("button"); sendBtn.className = "mp-btn"; sendBtn.type = "button";
+		sendBtn.textContent = "Send to Earth–Moon Traffic";
+		var sendNote = document.createElement("div"); sendNote.className = "mp-muted";
+		sendBox.appendChild(sendBtn); sendBox.appendChild(sendNote);
+		host.appendChild(sendBox);
+		var handoff = null;
+		function missionLabel() {
+			var stages = ctx.world.stages(), origin = null;
+			for (var i = 0; i < stages.length; i++) {
+				if (stages[i].moduleId === "adopted-plan") { origin = stages[i].params && stages[i].params.origin; break; }
+			}
+			return (origin || "Mission") + " → Earth, arriving " + isoOf(handoff.jd);
+		}
+		function refreshSend() {
+			sendBox.hidden = stageParams().body !== "Earth";
+			if (sendBox.hidden) { return; }
+			handoff = earthHandoff(legFor(ctx.world, ctx.stageId));
+			sendBtn.disabled = !handoff.ok;
+			sendNote.textContent = handoff.ok
+				? "Hands the ship over where it enters Earth's sphere of influence, " + isoOf(handoff.jd) +
+				  ". The plotter takes it from there: aerobrake, then on to the Moon."
+				: handoff.reason;
+		}
+		sendBtn.addEventListener("click", function () {
+			if (!handoff || !handoff.ok) { return; }
+			var packet = Exchange.send(handoffPacket(handoff, missionLabel()), { target: EARTH_MOON_TRAFFIC });
+			var url = Exchange.linkFor(packet, "../Calculators/Earth-Moon-Traffic-Plotter/earthMoonTraffic.html");
+			sendNote.textContent = "Sent. It is waiting in the Earth–Moon Traffic Plotter, or ";
+			var a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener";
+			a.textContent = "open it in a new tab";
+			sendNote.appendChild(a);
+			sendNote.appendChild(document.createTextNode("."));
+		});
+		refreshSend();
 		// Only the readout follows every recompute; rebuilding the waypoint
 		// cards here would tear down a vector editor mid-drag.
-		ctx.onResult(refreshWindowNote);
+		ctx.onResult(function () { refreshWindowNote(); refreshSend(); });
 	},
 
 	// The approach polyline in the destination frame: hand-off dot (magenta),

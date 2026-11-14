@@ -46,7 +46,9 @@ the **workbench**, and the **apps**.
   installation (and remove it to return to the standard). A freighter card
   makes other versions, up to three designs including the standard, titled
   by payload in kt and HS for a heat shield ("CHS" for a crude one), and any freighter card can
-  switch among them. The Economy skeleton cards take payload and
+  switch among them. A ship with a heat shield also has its diameter: the ship
+  is taken to be capsule-shaped, the shield its whole face and the engines
+  opposite, and the card shows the ballistic coefficient that follows. The Economy skeleton cards take payload and
   propellant per flight from the installation's first role.
 - **Save design** keeps the design, its ship classes, every mounted
   calculator's settings and the current selection in the browser's local storage, and the page reopens

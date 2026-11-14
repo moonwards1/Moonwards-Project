@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createFleet, shipDv, shieldMass, SHIELDS, shipTitle, versionName, MAX_VERSIONS, PROPELLANTS, DEFAULT_PROPELLANT } from "../ships.js";
+import { createFleet, shipDv, shieldMass, entryMass, ballisticCoefficient, CAPSULE_CD, SHIELDS, shipTitle, versionName, MAX_VERSIONS, PROPELLANTS, DEFAULT_PROPELLANT } from "../ships.js";
 
 test("chemical propellants only, magnesium / LOX by default", () => {
 	assert.equal(DEFAULT_PROPELLANT, "mg-lox");
@@ -138,4 +138,28 @@ test("removing a version sends its installations to the standard", () => {
 	assert.equal(f.classFor("b", "freighter"), s);
 	f.remove(s.id);   // the standard can't be removed
 	assert.equal(f.get(s.id), s);
+});
+
+test("heat-shield diameter: defaults by role, cleaned on edit, kept through JSON", () => {
+	const f = createFleet();
+	f.sync({ a: ["freighter", "capsule", "shuttle"] });
+	const fr = f.classFor("a", "freighter");
+	assert.equal(fr.shieldD, 400);
+	assert.equal(f.classFor("a", "capsule").shieldD, 6);
+	assert.equal(f.classFor("a", "shuttle").shieldD, 10);
+	f.update(fr.id, { shieldD: -3 });
+	assert.equal(fr.shieldD, 400);
+	f.update(fr.id, { shieldD: 250 });
+	assert.equal(createFleet(f.toJSON()).classFor("a", "freighter").shieldD, 250);
+	// a design saved before the field existed gets the role's default
+	assert.equal(createFleet({ classes: [{ id: "x", role: "freighter" }] }).list("freighter")[0].shieldD, 400);
+});
+
+test("ballistic coefficient of the capsule-shaped ship, loaded with full tanks", () => {
+	const c = { dry: 4000, payload: 50000, tank: 20000, shield: "advanced", shieldD: 400 };
+	assert.equal(entryMass(c), 76960);
+	const beta = 76960e3 / (CAPSULE_CD * Math.PI * 400 * 400 / 4);
+	assert.ok(Math.abs(ballisticCoefficient(c) - beta) < 1e-9);
+	assert.equal(Math.round(beta), 408);
+	assert.equal(ballisticCoefficient({ ...c, shield: "none" }), null);
 });

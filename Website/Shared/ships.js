@@ -7,7 +7,8 @@
 // Logistics tab shows one card per role (Shared/ship-card.js).
 //
 // A ship CLASS is hardware only: propellant, Isp, dry mass, payload,
-// propellant capacity, heat shield (none, crude or advanced). The Isp is not
+// propellant capacity, heat shield (none, crude or advanced) and the
+// heat shield's diameter. The Isp is not
 // a setting: it follows from the propellant. A class belongs to the whole
 // design, so one class serves every installation assigned to it and an edit
 // reaches all of them. What a given route asks of the ship stays with the installation.
@@ -20,9 +21,10 @@
 // MAX_VERSIONS freighter designs, the standard included. Freighter versions
 // stay in the design while unused; a local version nothing uses is dropped.
 //
-// Masses are tonnes, Isp seconds, Δv m/s.
+// Masses are tonnes, Isp seconds, Δv m/s, the shield's diameter metres.
 
 import { Const } from "./constants.js";
+import { OrbitalMath } from "./math-utils.js";
 
 export const SHIP_ROLES = {
 	shuttle: { label: "Shuttle", desc: "Frequent short round trips; small burns to circularize, dock and land." },
@@ -73,9 +75,9 @@ export function propellant(key) {
 // Starting figures for a new class of each role; the propellant, where
 // given, replaces DEFAULT_PROPELLANT.
 var START = {
-	shuttle: { dry: 20, payload: 30, tank: 40 },
-	freighter: { dry: 4000, payload: 50000, tank: 20000, propellant: "ch4-lox", shield: "advanced" },
-	capsule: { dry: 8, payload: 4, tank: 3 }
+	shuttle: { dry: 20, payload: 30, tank: 40, shieldD: 10 },
+	freighter: { dry: 4000, payload: 50000, tank: 20000, propellant: "ch4-lox", shield: "advanced", shieldD: 400 },
+	capsule: { dry: 8, payload: 4, tank: 3, shieldD: 6 }
 };
 
 // Heat shields, as a fraction of the loaded ship's mass: dry mass, payload
@@ -94,6 +96,27 @@ export function shieldKey(v) {
 }
 export function shieldMass(c) {
 	return shield(shieldKey(c.shield)).fraction * (c.dry + c.payload + c.tank);
+}
+
+// A ship that enters an atmosphere is taken to be capsule-shaped: a blunt
+// heat shield across its whole face, engines on the opposite side. Its
+// hypersonic drag coefficient is CAPSULE_CD, the figure the Earth aerobrake
+// model uses (Calculators/Earth-Aerobrake-Calculator).
+export const CAPSULE_CD = 1.5;
+
+// The ship's mass meeting the atmosphere, tonnes: loaded, full tanks and
+// shield included, the heaviest case.
+export function entryMass(c) {
+	return c.dry + shieldMass(c) + c.payload + c.tank;
+}
+
+// How deep the ship has to go into the air to slow down, kg/m²:
+//   β = m / (Cd · A),  A = π D² / 4
+// m the entry mass (kg), Cd = CAPSULE_CD, D the shield's diameter. The lower
+// β is, the higher and more gently the ship brakes. null without a shield.
+export function ballisticCoefficient(c) {
+	if (!shield(shieldKey(c.shield)).fraction || !(c.shieldD > 0)) return null;
+	return OrbitalMath.ballisticCoefficient(entryMass(c) * 1000, CAPSULE_CD, Math.PI * c.shieldD * c.shieldD / 4);
 }
 
 // Δv the class can make with full tanks, loaded and empty:
@@ -123,7 +146,8 @@ function cleanClass(c) {
 		dry: num(c.dry, s.dry, 0.001),
 		payload: num(c.payload, s.payload, 0),
 		tank: num(c.tank, s.tank, 0),
-		shield: c.role === "capsule" && shieldKey(c.shield) === "none" ? "advanced" : shieldKey(c.shield)
+		shield: c.role === "capsule" && shieldKey(c.shield) === "none" ? "advanced" : shieldKey(c.shield),
+		shieldD: num(c.shieldD, s.shieldD, 0.1)
 	};
 }
 

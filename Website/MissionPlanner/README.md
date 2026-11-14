@@ -410,6 +410,14 @@ never when it started.
   the pass is constructed: where the ship goes past, how close and how fast are
   whatever the coast delivers. Waypoints (up to 2) put burns on it; a retro
   burn near the pass drops/captures. HEADLESS (`plainCard`).
+- **`modules/arrival-leg/earth-handoff.js`** — an arrival at Earth can be
+  sent to the Earth–Moon Traffic Plotter (**Send to Earth–Moon Traffic** on
+  the arrival leg's card). What it hands over is a `ship-state` packet,
+  `frame: "body:Earth"`: the ship's geocentric state where the flown arrival
+  first crosses into Earth's SOI (or the leg's start, if that is already
+  inside), sent through `Shared/exchange.js` to the target
+  `earth-moon-traffic`, with a `#pkt=` link as well. An arrival waypoint that
+  fires inside the SOI blocks the send: burns from there on are the plotter's.
 - **`modules/skyhook/skyhook-arrival.js`** — the same skyhook platform in its
   terminal role: a CATCH at the destination, the very same tether geometry run
   in reverse, with the same card: CoM altitude, catch altitude and catch
