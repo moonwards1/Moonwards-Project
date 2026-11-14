@@ -97,7 +97,9 @@ export var FACILITIES = {
 	// A ship arriving from another world (core/offworld.js). It is no
 	// hardware: its params are the arrival itself, { r, v, jd } — the ship's
 	// geocentric state where it enters Earth's sphere of influence, and the
-	// date it is flown on — and the flight starts there.
+	// date it is flown on — and what is done with it: the entry trim
+	// { pro, rad, nrm } (m/s), the aerobrake's exit apoapsis exitApo (m from
+	// Earth's centre) and the ship class that makes the pass (Shared/ships.js).
 	offworld: {
 		id: "offworld", kind: "offworld", label: "Offworld arrival", body: "Earth",
 		defaults: {}
@@ -352,6 +354,7 @@ export function offworldFigures(id, params) {
 			+ "Send to Earth–Moon Traffic, on the arrival leg of a mission to Earth.");
 	}
 	return { ok: true, id: id, kind: "offworld", body: "Earth", R: R_EARTH, r: p.r.slice(), v: p.v.slice(), jd: p.jd,
+	         trim: p.trim || null, exitApo: p.exitApo || null, ship: p.ship || null,
 	         normal: O.vUnit(equatorPlane("Moon", null, CLOCK_REF).normal), period: 0 };
 }
 

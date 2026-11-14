@@ -519,6 +519,23 @@ is the deepest.
 
 ## Calculators
 
+### Earth–Moon Traffic: an offworld arrival's aerobrake is one instant shed at periapsis
+
+`core/aerobrake.js`. The pass is an instant loss of speed along the ship's
+motion at periapsis. Within ±2 km of the braking altitude (the corridor) the
+ship's lift holds the chosen exit apoapsis exactly; beyond it the shed goes
+with the air's density, `exp(-(excess) / H)`, H = 7.16 km. The braking
+altitude comes from the Earth aerobrake model with the ship's β
+(`Shared/ships.js`), taken at the speed the ship would have 70 km up.
+
+Why: the exit leaves only just below escape, so a pure density law would put a
+pass 100 m off on an orbit 230,000 km longer. Real ships fly the corridor with
+lift; the model gives them that much and no more.
+
+An arrival is accepted, and Aim solves the entry trim, on the pass as flown
+(Earth + Moon + Sun), never the two-body conic: from the SOI edge the Sun and
+the Moon move the pass by hundreds to thousands of kilometres.
+
 ### New calculators use the three-column calculator shell
 
 A calculator page is the shell in `Shared/calc-shell.*` + `Shared/zoom-view.js`:

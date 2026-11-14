@@ -15,16 +15,18 @@
  *
  *     | h_p - h_corridor | <= ACCEPT_WITHIN
  *
- *     h_p          the pass's height above Earth's surface, from the
- *                  two-body conic about Earth through (r, v):
- *                      r_p = a (1 - e),  h_p = r_p - R_E
- *                  negative for a path that would hit the ground
+ *     h_p          the pass's height above Earth's surface, as flown from
+ *                  (r, v) under Earth + Moon + Sun on the date it is flown
+ *                  here (core/flight.js's arrivalPass); negative for a path
+ *                  that would hit the ground, the height its two-body path
+ *                  about Earth would reach
  *     h_corridor   the corridor's height (corridorAlt; CORRIDOR_ALT unless
  *                  the caller has the ship's own)
  *     a, e         the conic's semi-major axis and eccentricity
  *
- * The conic is only Earth's pull, which is what decides a pass a day or two
- * ahead; the Moon and the Sun move it by a few kilometres. From the SOI edge a
+ * The flown pass, not Earth's conic: over the two or three days in from the
+ * SOI edge the Sun's and the Moon's pulls move the pass by up to several
+ * hundred kilometres. From the SOI edge a
  * trim of 1 m/s moves the pass by roughly 100–140 km, so an arrival at the
  * limit needs some 7–10 m/s to reach the corridor.
  *
@@ -34,6 +36,8 @@
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { arrivalDateInSpan } from "./arrival-date.js";
+import { offworldFigures } from "./facilities.js";
+import { arrivalPass } from "./flight.js";
 
 var O = OrbitalMath;
 var GM_E = systems.get("Earth").GM;
@@ -55,8 +59,8 @@ function vec3(x) {
 function kmText(m) { return Math.round(m / 1e3).toLocaleString("en-US") + " km"; }
 function passText(h) { return h >= 0 ? kmText(h) + " above Earth" : kmText(-h) + " below Earth's surface"; }
 
-// The incoming pass of a geocentric state: { periAlt (m), vInf (m/s, null if
-// bound), speed (m/s), distance (m) }.
+// The incoming pass of a geocentric state on its two-body path about Earth:
+// { periAlt (m), vInf (m/s, null if bound), speed (m/s), distance (m) }.
 export function incomingPass(r, v) {
 	var el = O.elementsFromState(GM_E, r, v);
 	var speed = O.vMag(v), dist = O.vMag(r), v2 = speed * speed - 2 * GM_E / dist;
@@ -80,14 +84,16 @@ export function readArrival(packet, jd0, jd1, corridorAlt) {
 	if (pass.distance > SOI_EARTH * 1.01 || O.vDot(d.r, d.v) >= 0) {
 		return { ok: false, reason: "The ship is not coming in across Earth's sphere of influence." };
 	}
+	var date = arrivalDateInSpan(d.jd, jd0, jd1);
+	if (!date) { return { ok: false, reason: "There is no date in the plotter's span to fly this arrival on." }; }
+	var flown = arrivalPass(offworldFigures("offworld", { r: d.r, v: d.v, jd: date.jd }), date.jd, null, []);
+	if (flown) { pass.periAlt = flown.alt; }
 	if (Math.abs(pass.periAlt - hc) > ACCEPT_WITHIN) {
 		return { ok: false, pass: pass, reason: "The ship's closest pass is " + passText(pass.periAlt)
 			+ ", more than " + kmText(ACCEPT_WITHIN) + " from the aerobrake corridor at " + kmText(hc)
 			+ ". Aim the arrival closer in the Mission Planner, with a burn before the ship reaches Earth's "
 			+ "sphere of influence, and send it again." };
 	}
-	var date = arrivalDateInSpan(d.jd, jd0, jd1);
-	if (!date) { return { ok: false, reason: "There is no date in the plotter's span to fly this arrival on." }; }
 	return Object.assign({ ok: true, r: d.r.slice(), v: d.v.slice(), jd: date.jd, origJd: d.jd, moved: date.moved,
 	                       sunDeg: date.sunDeg, moonMiss: date.moonMiss,
 	                       label: (packet.source && packet.source.label) || "Offworld arrival" }, pass);

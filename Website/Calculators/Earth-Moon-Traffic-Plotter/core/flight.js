@@ -49,11 +49,13 @@ import { buildIntegratedLeg, buildMoonEllipseLeg, stateAtLegTime, moonGeoPos, mo
          shipAccel, SOI_MOON } from "../../../Shared/geo-leg.js";
 import { facilityFigures, releaseState, bodyOffPlane } from "./facilities.js";
 import { evaluateArrival } from "./arrival.js";
-import { cleanWaypoints, applyWaypointBurn } from "./waypoints.js";
+import { cleanWaypoints, applyWaypointBurn, burnSize } from "./waypoints.js";
+import { brakingNeeds, passAt, defaultFreighter, EXIT_APO_DEFAULT, ABOVE_AIR, speedAt, NOMINAL_ALT } from "./aerobrake.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
 var R_E = +systems.get("Earth").radius;
+var GM_E = systems.get("Earth").GM;
 var R_M = +systems.get("Moon").radius;
 var GM_M = systems.get("Moon").GM;
 var A_EARTH = (systems.get("Earth").orbit.apoapsis + systems.get("Earth").orbit.periapsis) / 2;
@@ -229,6 +231,7 @@ export function computeFlight(input) {
 	var rel = releaseState(fig, jd);
 
 	var wps = cleanWaypoints(input.waypoints);
+	if (fig.kind === "offworld") { return flyArrival(input, fig, rel, wps, toFig); }
 	var opts = { moonPlaneNormal: fig.normal };
 	if (toFig) { Object.assign(opts, FINE_STEP); }
 	if (fig.kind === "elevator" && fig.relPoint === "high") { opts.moonCap = UPPER_RELEASE_MOON_CAP; }
@@ -296,4 +299,93 @@ export function flightStateAt(flight, t) {
 	var jde = leg.jde0 + t / DAY;
 	var s = O.propagateState(GM_M, leg.relR, leg.relV, t);
 	return { r: O.vAdd(moonGeoPos(jde), s.r), v: O.vAdd(moonGeoVel(jde), s.v), jde: jde };
+}
+
+// ---- an arrival from another world ----------------------------------------------
+//
+// It starts at Earth's sphere of influence (core/offworld.js) with the ENTRY
+// TRIM, a burn there of at most TRIM_MAX in all, then falls to its pass by
+// Earth. Where the pass is in the air, the AEROBRAKE (core/aerobrake.js) takes
+// speed off at periapsis, straight back along the ship's motion, and the ship
+// flies on from there: out to a long orbit, back to space too fast, or down
+// into the atmosphere. Waypoint burns are flown as on any flight, at their
+// times since the arrival.
+export var TRIM_MAX = 50;
+
+// The trim as flown: each axis a number, the whole burn no bigger than TRIM_MAX.
+export function capTrim(trim) {
+	var b = { pro: +((trim || {}).pro) || 0, rad: +((trim || {}).rad) || 0, nrm: +((trim || {}).nrm) || 0 };
+	var size = burnSize(b);
+	if (size > TRIM_MAX) { var k = TRIM_MAX / size; b.pro *= k; b.rad *= k; b.nrm *= k; }
+	return b;
+}
+
+// Time (s) from (r, v) to periapsis on the two-body path about Earth, searched
+// within tMax: the minimum of |r(t)|, which on an inbound path is unimodal.
+function conicPeriTime(r, v, tMax) {
+	var lo = 0, hi = tMax;
+	for (var i = 0; i < 100 && hi - lo > 1e-3; i++) {
+		var a = lo + (hi - lo) / 3, b = hi - (hi - lo) / 3;
+		if (O.vMag(O.propagateState(GM_E, r, v, a).r) < O.vMag(O.propagateState(GM_E, r, v, b).r)) { hi = b; } else { lo = a; }
+	}
+	return (lo + hi) / 2;
+}
+
+// The ship's pass by Earth, flown from its trimmed state at the SOI under
+// Earth + Moon + Sun through the waypoints before it. Returns { t, jd, r, v,
+// alt, speed } at periapsis (t s since the arrival, alt m above the surface),
+// with `impact` set if the path meets the ground first; null if there is no
+// pass (the ship is not coming in).
+export function arrivalPass(fig, jd, trim, wps) {
+	var v0 = applyWaypointBurn(fig.r, fig.v, jd, capTrim(trim)).vAfter;
+	if (O.vDot(fig.r, v0) >= 0) { return null; }
+	var tc = conicPeriTime(fig.r, v0, 60 * DAY);
+	var flown = flyWaypoints(fig.r, v0, jd, (wps || []).filter(function (w) { return w.t < tc; }),
+		Object.assign({ moonPlaneNormal: fig.normal }, FINE_STEP), tc + 3 * 3600);
+	var a = flown.joined.samples, k = 0;
+	for (var i = 1; i < a.length; i++) { if (O.vMag(a[i].r) < O.vMag(a[k].r)) { k = i; } }
+	var s = a[k];
+	// From the nearest sample, a minute or so either side: Earth's conic is exact enough there.
+	var span = Math.max(600, (k + 1 < a.length ? a[k + 1].t : s.t) - (k > 0 ? a[k - 1].t : s.t));
+	var back = O.propagateState(GM_E, s.r, s.v, -span);
+	var dt = conicPeriTime(back.r, back.v, 2 * span) - span;
+	var p = O.propagateState(GM_E, s.r, s.v, dt);
+	return { t: s.t + dt, jd: jd + (s.t + dt) / DAY, r: p.r, v: p.v, alt: O.vMag(p.r) - R_E, speed: O.vMag(p.v),
+	         impact: flown.joined.impact || null, leg: flown };
+}
+
+function flyArrival(input, fig, rel, wps, toFig) {
+	var jd = input.jd, trim = capTrim(fig.trim);
+	var b = applyWaypointBurn(fig.r, fig.v, jd, trim), v0 = b.vAfter;
+	var opts = { moonPlaneNormal: fig.normal };
+	if (toFig) { Object.assign(opts, FINE_STEP); }
+	var pass = arrivalPass(fig, jd, trim, wps), aero = null, maxTime = input.maxTime;
+	var all = wps.slice();
+	if (pass && !pass.impact && pass.alt > 0 && pass.alt < ABOVE_AIR) {
+		var ship = fig.ship || defaultFreighter();
+		var needs = brakingNeeds(ship, speedAt(NOMINAL_ALT, pass.speed, pass.alt), fig.exitApo || EXIT_APO_DEFAULT);
+		var at = passAt(needs, pass.alt, pass.speed);
+		aero = { t: pass.t, jd: pass.jd, r: pass.r, alt: pass.alt, speed: pass.speed, needs: needs, pass: at,
+		         exitApo: fig.exitApo || EXIT_APO_DEFAULT };
+		if (at.falls) {
+			maxTime = maxTime ? Math.min(maxTime, pass.t) : pass.t;
+			all = all.filter(function (w) { return w.t < pass.t; });
+		} else {
+			all.push({ index: -1, t: pass.t, burn: { pro: -at.shed, rad: 0, nrm: 0 } });
+			all.sort(function (x, y) { return x.t - y.t; });
+		}
+	}
+	var flown = flyWaypoints(fig.r, v0, jd, all, opts, maxTime);
+	var leg = flown.joined;
+	var wpOut = (input.waypoints || []).map(function (w) { return { reached: false, t: +w.t }; });
+	flown.resolved.forEach(function (w) { if (w.index >= 0) { wpOut[w.index] = w; } });
+	var summary = summarize(leg);
+	if (aero && aero.pass.falls) { summary.impact = "Earth"; summary.falls = true; summary.impactSpeed = aero.pass.vAfter; }
+	var arrival = toFig && !input.skipArrival ? evaluateArrival(leg, toFig) : null;
+	return { ok: true, from: input.from, to: input.to || null, jd: jd, fig: fig, toFig: toFig,
+	         release: Object.assign({}, rel, { v: v0 }), trim: Object.assign({ size: burnSize(trim) }, b, { burn: trim }),
+	         legs: flown.legs, final: leg, waypoints: wpOut, summary: summary, arrival: arrival,
+	         bodyPass: toFig && !input.skipArrival ? bodyPass(leg, toFig.body) : null,
+	         offPlane: null, pass: pass ? { t: pass.t, jd: pass.jd, alt: pass.alt, speed: pass.speed, impact: pass.impact } : null,
+	         aerobrake: aero };
 }

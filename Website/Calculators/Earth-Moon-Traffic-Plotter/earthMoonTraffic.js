@@ -95,6 +95,10 @@ import { MAX_AXIS_MPS, burnSize } from "./core/waypoints.js";
 import { releaseWindows } from "./core/windows.js";
 import { readArrival, OFFWORLD_TARGET, ACCEPT_WITHIN, CORRIDOR_ALT } from "./core/offworld.js";
 import { Exchange } from "../../Shared/exchange.js";
+import { createFleet, entryMass } from "../../Shared/ships.js";
+import { TRIM_MAX, capTrim } from "./core/flight.js";
+import { solveEntryTrim } from "./core/entry-trim.js";
+import { defaultFreighter, EXIT_APO_DEFAULT, EXIT_APO_RANGE, CORRIDOR_HALF, EARTH_SOI } from "./core/aerobrake.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -1026,7 +1030,20 @@ function buildOffworldCard(id) {
 	refs.dist = readout(ro, "distance from Earth");
 	refs.speed = readout(ro, "speed relative to Earth");
 	refs.vInf = readout(ro, "v∞ arriving");
-	refs.pass = readout(ro, "closest pass, Earth's pull alone");
+	refs.pass = readout(ro, "pass as sent, before any trim");
+	// The entry trim: shown while the flight starts from the arrival.
+	var trim = body.appendChild(el("div", "emt-release"));
+	trim.appendChild(el("div", "emt-wp-name", "Entry trim"));
+	refs.trimHost = trim.appendChild(el("div", "emt-wp-burn"));
+	var tro = trim.appendChild(el("div", "emt-readouts"));
+	refs.trimSize = readout(tro, "trim, in all (up to " + TRIM_MAX + " m/s)");
+	refs.passNow = readout(tro, "pass as flown");
+	refs.aim = trim.appendChild(el("button", "emt-btn", "Aim at the corridor"));
+	refs.aim.type = "button";
+	refs.aim.title = "Change the trim as little as it takes to bring the pass to the aerobrake's braking altitude";
+	refs.aim.addEventListener("click", aimTrim);
+	refs.aimNote = trim.appendChild(el("div", "emt-muted"));
+	refs.trim = trim;
 	refs.fly = body.appendChild(el("button", "emt-btn", "Fly this arrival"));
 	refs.fly.type = "button";
 	refs.fly.addEventListener("click", function () { selectFrom(id); });
@@ -1042,6 +1059,12 @@ function buildOffworldCard(id) {
 }
 function fillOffworldCard(id) {
 	var c = cards[id].refs, a = state.arrivalIn;
+	c.trim.style.display = state.from === id && figs[id].ok ? "" : "none";
+	if (state.from === id && flight && flight.ok && flight.trim) {
+		c.trimSize.textContent = num(flight.trim.size, 2) + " m/s";
+		c.passNow.textContent = flight.pass ? passHeight(flight.pass.alt) + (flight.pass.impact ? " (hits the ground first)" : "") : "—";
+		c.aimNote.textContent = aimNote;
+	}
 	var rows = ["origDate", "flownDate", "sun", "moon", "dist", "speed", "vInf", "pass"];
 	c.error.textContent = a && !a.ok ? a.reason : (a ? "" : figs[id].diagnostic.message);
 	c.error.style.display = c.error.textContent ? "" : "none";
@@ -1063,6 +1086,132 @@ function fillOffworldCard(id) {
 	c.pass.textContent = passHeight(a.periAlt);
 }
 function passHeight(h) { return h >= 0 ? km(h) + " up" : km(-h) + " below the surface"; }
+
+// The entry trim's editor writes into state.params.offworld.trim as it is
+// dragged or typed; it is rebuilt when a new arrival comes in.
+function buildTrimEditor() {
+	var p = state.params.offworld, host = cards.offworld.refs.trimHost;
+	if (!p.trim) { p.trim = { pro: 0, rad: 0, nrm: 0 }; }
+	host.textContent = "";
+	buildVectorEditor(host, p.trim, function () { aimNote = ""; refresh(); },
+		{ maxDeltaMps: TRIM_MAX, displayDiv: 1, decimals: 2, step: 0.01, unitLabel: "m/s" });
+}
+var aimNote = "";                      // what the last Aim found, until the trim changes
+function aimTrim() {
+	var fig = figs.offworld;
+	if (!fig || !fig.ok) { return; }
+	var res = solveEntryTrim(fig, fig.jd, cleanWaypointsForPage());
+	if (res.ok) {
+		var t = state.params.offworld.trim;
+		t.pro = res.trim.pro; t.rad = res.trim.rad; t.nrm = res.trim.nrm;
+		buildTrimEditor();
+		aimNote = "Aimed: the pass is " + km(res.alt) + " up, the braking altitude " + km(res.target) + ".";
+	} else {
+		aimNote = res.reason;
+	}
+	refresh();
+}
+function cleanWaypointsForPage() {
+	return state.waypoints.map(function (w, i) { return { index: i, t: +w.t, burn: w.burn }; })
+		.filter(function (w) { return w.t > 0; }).sort(function (a, b) { return a.t - b.t; });
+}
+
+// The ship that makes the pass: the standard freighter of the design saved on
+// the home page's workbench, or the workbench's starting freighter.
+function savedFreighter() {
+	try {
+		var d = JSON.parse(localStorage.getItem("mw-design"));
+		if (d && d.ships) { return { ship: createFleet(d.ships).standard("freighter"), saved: true }; }
+	} catch (e) { /* no saved design, or storage blocked */ }
+	return { ship: createFleet().standard("freighter"), saved: false };
+}
+
+// The Aerobrake card: what the pass needs of the ship, and what it does.
+var abCard = null;
+function buildAerobrakeCard() {
+	var refs = {};
+	var card = el("section", "emt-card");
+	var head = card.appendChild(el("button", "emt-card-head"));
+	head.type = "button";
+	head.innerHTML = CHEVRON_SVG;
+	var title = head.appendChild(el("span", "emt-card-title", "Aerobrake"));
+	refs.sub = title.appendChild(el("span", "emt-card-sub"));
+	refs.badge = head.appendChild(el("span", "emt-badge emt-badge-departure", "PASS"));
+	head.addEventListener("click", function () { state.open.aerobrake = !state.open.aerobrake; syncCards(); });
+	refs.head = head;
+	var body = card.appendChild(el("div", "emt-card-body"));
+	refs.ship = body.appendChild(el("div", "emt-muted"));
+	var line = body.appendChild(el("div", "emt-fieldpair"));
+	refs.exitApo = numberField(line, "emt-exit-apo", "Exit apoapsis (thousand km)", function () {
+		var v = parseFloat(refs.exitApo.value) * 1e6;
+		if (isFinite(v)) {
+			state.params.offworld.exitApo = Math.max(EXIT_APO_RANGE[0], Math.min(EXIT_APO_RANGE[1], v));
+			aimNote = "";
+			refresh({ keepInputs: true });
+		}
+	});
+	refs.verdict = body.appendChild(el("div", "emt-error"));
+	var ro = body.appendChild(el("div", "emt-readouts"));
+	refs.beta = readout(ro, "ballistic coefficient β");
+	refs.hBrake = readout(ro, "braking altitude (the corridor ±" + km(CORRIDOR_HALF) + ")");
+	refs.hPass = readout(ro, "pass as flown");
+	refs.vp = readout(ro, "speed at the pass");
+	refs.shed = readout(ro, "speed taken off");
+	refs.apo = readout(ro, "leaves for apoapsis");
+	refs.g = readout(ro, "peak deceleration");
+	refs.q = readout(ro, "peak dynamic pressure");
+	refs.flux = readout(ro, "peak heat flux (convective)");
+	refs.load = readout(ro, "heat load");
+	refs.shield = readout(ro, "heat shield needed · carried");
+	body.appendChild(el("div", "emt-muted",
+		"One grazing pass at periapsis, taken as an instant loss of speed along the ship's motion. The ship is "
+		+ "capsule-shaped, its heat shield its whole face (the workbench's Freighter card). Within the corridor its lift "
+		+ "holds the exit; beyond it, every scale height (7.2 km) deeper takes e times as much speed off. A pass that "
+		+ "leaves slower than circular speed falls into the atmosphere."));
+	abCard = { el: card, refs: refs };
+	cardsEl.appendChild(card);
+}
+function fillAerobrakeCard(opts) {
+	var c = abCard.refs, p = state.params.offworld, shown = state.from === "offworld" && figs.offworld && figs.offworld.ok;
+	abCard.el.style.display = shown ? "" : "none";
+	if (!shown) { return; }
+	var src = savedFreighter();
+	c.ship.textContent = (src.saved ? "Ship: the standard freighter of the design saved on the workbench, "
+		: "Ship: the workbench's starting freighter (no design is saved), ")
+		+ num(entryMass(src.ship) / 1e3, 1) + " kt loaded with full tanks and its shield, the shield "
+		+ num(src.ship.shieldD) + " m across.";
+	if (!(opts && opts.keepInputs)) { c.exitApo.value = +((p.exitApo || EXIT_APO_DEFAULT) / 1e6).toFixed(0); }
+	var ab = flight && flight.ok ? flight.aerobrake : null;
+	var rows = ["beta", "hBrake", "hPass", "vp", "shed", "apo", "g", "q", "flux", "load", "shield"];
+	if (!ab) {
+		rows.forEach(function (k) { c[k].textContent = "—"; });
+		c.sub.textContent = "no pass through the air";
+		c.verdict.textContent = flight && flight.ok && flight.pass
+			? (flight.pass.impact || flight.pass.alt <= 0 ? "The ship hits the ground: its pass is " + passHeight(flight.pass.alt) + "."
+				: "The pass is " + passHeight(flight.pass.alt) + ", above the air.") : "";
+		c.verdict.style.display = c.verdict.textContent ? "" : "none";
+		return;
+	}
+	var n = ab.needs, at = ab.pass;
+	c.sub.textContent = at.inCorridor ? "in the corridor" : at.falls ? "falls into the air"
+		: (at.offBy > 0 ? km(at.offBy - CORRIDOR_HALF) + " above the corridor" : km(-at.offBy - CORRIDOR_HALF) + " below the corridor");
+	c.verdict.textContent = at.inCorridor ? ""
+		: at.falls ? "Too deep: the pass takes off so much speed that the ship cannot climb back out. It falls into the atmosphere."
+		: at.offBy > 0 ? "Too high: the pass takes off too little" + (at.rApo === null ? ", and the ship goes back out of Earth's sphere of influence." : ".")
+		: "Too low: the pass takes off too much, and the ship leaves on a shorter orbit.";
+	c.verdict.style.display = c.verdict.textContent ? "" : "none";
+	c.beta.textContent = num(n.beta) + " kg/m²";
+	c.hBrake.textContent = km(n.hBrake);
+	c.hPass.textContent = km(ab.alt) + " (" + (ab.pass.offBy >= 0 ? "+" : "−") + num(Math.abs(ab.pass.offBy) / 1e3, 1) + " km)";
+	c.vp.textContent = num(ab.speed) + " m/s";
+	c.shed.textContent = num(at.shed) + " m/s";
+	c.apo.textContent = at.falls ? "— (falls)" : at.rApo === null ? "— (escapes)" : km(at.rApo) + " · " + num(at.rApo / EARTH_SOI * 100) + "% of the SOI";
+	c.g.textContent = num(at.gPeak, 2) + " g";
+	c.q.textContent = num(at.dynPressureAtm, 3) + " atm";
+	c.flux.textContent = num(at.heatFluxWcm2) + " W/cm²";
+	c.load.textContent = num(n.heatLoadKJcm2, 1) + " kJ/cm²";
+	c.shield.textContent = num(n.shieldNeeded) + " t · " + num(n.shieldCarried) + " t";
+}
 
 function buildStub(stub) {
 	var card = el("section", "emt-card");
@@ -1229,13 +1378,15 @@ function syncCards() {
 		c.refs.arrival.style.display = dest ? "" : "none";
 	});
 	wpCard.el.classList.toggle("emt-open", !!state.open.waypoints);
+	abCard.el.classList.toggle("emt-open", state.open.aerobrake !== false);
+	abCard.refs.head.setAttribute("aria-expanded", String(state.open.aerobrake !== false));
 	wpCard.refs.head.setAttribute("aria-expanded", String(!!state.open.waypoints));
 	orderCards();
 }
 // The sidebar in flight order: the departure, the waypoints, the arrival, then
 // the facilities not in this flight and those not built yet.
 function orderCards() {
-	var els = [cards[state.from].el, wpCard.el];
+	var els = [cards[state.from].el, abCard.el, wpCard.el];
 	if (state.to) { els.push(cards[state.to].el); }
 	CARD_ORDER.forEach(function (id) { if (id !== state.from && id !== state.to) { els.push(cards[id].el); } });
 	els.concat(stubEls).forEach(function (e) { cardsEl.appendChild(e); });
@@ -1323,8 +1474,13 @@ function fillKeys() {
 	// A skyhook's release speed is about its own body; the elevator's is quoted
 	// against the body the ship is headed for: the Moon from below L1, Earth from above.
 	if (fig.kind === "offworld") {
-		key("Starts at", km(flight.release.radius) + " from Earth");
-		key("Speed there", num(O.vMag(flight.release.v)) + " m/s");
+		key("Entry trim", num(flight.trim.size, 2) + " m/s");
+		if (flight.pass) { key("Pass", passHeight(flight.pass.alt)); }
+		if (flight.aerobrake) {
+			var at = flight.aerobrake.pass;
+			key("Aerobrake", at.inCorridor ? "in the corridor" : at.falls ? "too deep: falls" : at.offBy > 0 ? "too high" : "too low", !at.inCorridor);
+			if (!at.falls) { key("Speed taken off", num(at.shed) + " m/s"); }
+		}
 	} else if (fig.kind === "elevator") {
 		key("Released at", km(flight.release.radius - fig.R) + " above the Moon");
 		if (fig.relPoint === "low") { key("Release speed, relative to the Moon", num(O.vMag(flight.release.relV)) + " m/s"); }
@@ -1334,6 +1490,10 @@ function fillKeys() {
 	}
 	if (state.waypoints.length) { key("Waypoint burns", num(waypointTotal(), 1) + " m/s"); }
 	if (state.to) { fillArrivalKeys(s); return; }
+	if (s.falls) {
+		key("Path", "falls into Earth's atmosphere at the pass", true);
+		return;
+	}
 	if (s.impact) {
 		key("Path", "reaches " + (s.impact === "Moon" ? "the Moon's" : "Earth's") + " surface", true);
 		key("After", span(s.duration));
@@ -1537,6 +1697,7 @@ function refresh(opts) {
 	if (!opts.sceneOnly) {
 		if (!opts.fromTarget) { targetNote = ""; }
 		if (opts.userRelease && state.mode === "target") { state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0; }
+		if (state.params.offworld.r) { state.params.offworld.ship = savedFreighter().ship; }
 		CARD_ORDER.forEach(function (id) { figs[id] = facilityFigures(id, state.params[id]); });
 		applyHold(opts);
 		showWindows();
@@ -1552,6 +1713,7 @@ function refresh(opts) {
 	frame.place(jd);
 	CARD_ORDER.forEach(function (id) { drawFacility(id); fillCard(id, opts); });
 	fillWaypointCard(opts);
+	fillAerobrakeCard(opts);
 	if (moonFramed()) { drawWaypoints(); }         // they ride with the Moon, which has just been moved
 	placeShip();
 
@@ -1575,6 +1737,7 @@ var dateBar = createDateBar(state, {
 
 function init() {
 	CARD_ORDER.forEach(buildCard);
+	buildAerobrakeCard();
 	buildWaypointCard();
 	STUBS.forEach(buildStub);
 	syncCards();
@@ -1652,7 +1815,10 @@ function init() {
 		state.arrivalIn = readArrival(packet, JD0, JD0 + SPAN_DAYS);
 		if (state.arrivalIn.ok) {
 			var a = state.arrivalIn;
-			state.params.offworld = { r: a.r, v: a.v, jd: a.jd };
+			state.params.offworld = { r: a.r, v: a.v, jd: a.jd, trim: { pro: 0, rad: 0, nrm: 0 },
+			                          exitApo: state.params.offworld.exitApo || EXIT_APO_DEFAULT };
+			buildTrimEditor();
+			aimNote = "";
 		}
 		state.open.offworld = true;
 		if (!loading && state.arrivalIn.ok) { selectFrom("offworld"); return; }

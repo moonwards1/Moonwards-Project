@@ -30,10 +30,15 @@ arrivals at the elevator and the mass driver come next.
 - `core/offworld.js` — `readArrival`: takes in an arrival sent from the Mission
   Planner, checks it is already aimed at the aerobrake corridor, and gives the
   date it is flown on. Pure.
+- `core/aerobrake.js` — the single grazing pass: what it needs of the ship
+  (`brakingNeeds`, from the Earth aerobrake model and the ship's ballistic
+  coefficient) and what a pass at a given height does (`passAt`). Pure.
+- `core/entry-trim.js` — `solveEntryTrim`: Aim, the entry trim that brings the
+  pass to the braking altitude. Pure.
 - `core/arrival-date.js` — `arrivalDateInSpan`: the date inside the clock's span an
   arrival from another world is flown on, with the Sun within 10° of its real
   direction and the Moon as near its real place as the span allows. Pure.
-- `core/tests/*.test.js` (flight, waypoints, windows, farburn, elevator, arrival-date, offworld) — Node tests:
+- `core/tests/*.test.js` (flight, waypoints, windows, farburn, elevator, arrival-date, offworld, aerobrake) — Node tests:
   `node --test Website/Calculators/Earth-Moon-Traffic-Plotter/core/tests/*.test.js`
 
 ## Everything follows one clock
@@ -169,6 +174,48 @@ two-body path about Earth through the arrival's state, has to be within
 1,000 km of the aerobrake corridor (80 km). Otherwise the card refuses the
 arrival and says why, and the arrival goes back to the Mission Planner to be
 aimed with a burn before the ship reaches Earth's sphere of influence.
+
+**The entry trim** is a burn at the SOI edge, at most 50 m/s in all, set on the
+Offworld arrival card with the burn editor. **Aim at the corridor** changes it
+as little as it can so the pass, flown under Earth + Moon + Sun, comes down to
+the braking altitude (`core/entry-trim.js`). The trim moves the pass most per
+m/s along one direction, read off the two-body path about Earth; Aim adds to
+the trim along that direction and solves how far with the secant method on the
+flown pass. Moving an arrival to its flown date shifts its pass by a few tens
+of kilometres, which the trim takes up for well under 1 m/s.
+
+## The aerobrake
+
+Where the pass is in the air (below 300 km), the **Aerobrake** card takes over.
+The pass is one instant loss of speed at periapsis, straight back along the
+ship's motion. To leave for the exit apoapsis `r_a` (set on the card, 90% of
+Earth's SOI by default) the ship must come out of periapsis at
+
+    v_out = sqrt( 2 GM r_a / ( r_p (r_a + r_p) ) )
+
+- `GM` — Earth's gravitational parameter
+- `r_p` — periapsis radius, m
+
+The Earth aerobrake model (`Calculators/Earth-Aerobrake-Calculator`) gives the
+**braking altitude** where the air takes that much off, for the standard
+freighter of the design saved on the workbench (or the workbench's starting
+one): its ballistic coefficient β, from the Freighter card's heat-shield
+diameter (`Shared/ships.js`). It also gives the peak deceleration, dynamic
+pressure, heat flux and heat load, and the heat-shield mass the pass needs.
+
+The exit is very sensitive to the pass, since the orbit leaves only just
+below escape. The ship's lift holds it within the **corridor**, 2 km either
+side of the braking altitude; beyond that, every scale height H = 7.16 km
+deeper takes e times as much speed off:
+
+    shed = shed_0 · exp( -(|h_p - h_b| - 2 km) / H · sign(h_p - h_b) )
+
+- `shed_0` — the speed taken off to leave for `r_a`
+- `h_p`, `h_b` — the pass's height and the braking altitude
+
+A pass above the corridor leaves on a longer orbit, or out of the SOI; one
+below it on a shorter one, or, if it leaves slower than circular speed, falls
+into the atmosphere.
 
 ## Waypoint burns
 

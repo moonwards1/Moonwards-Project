@@ -79,6 +79,8 @@ var START = {
 	freighter: { dry: 4000, payload: 50000, tank: 20000, propellant: "ch4-lox", shield: "advanced", shieldD: 400 },
 	capsule: { dry: 8, payload: 4, tank: 3, shieldD: 6 }
 };
+// The same, for a tool that has no saved design to read a class from.
+export const START_CLASSES = START;
 
 // Heat shields, as a fraction of the loaded ship's mass: dry mass, payload
 // and full tanks, the shield itself not counted. The shield is separate from
