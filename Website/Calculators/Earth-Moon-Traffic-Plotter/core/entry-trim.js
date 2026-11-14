@@ -3,8 +3,8 @@
  *
  * The entry trim is the burn an arrival from another world makes where it
  * enters Earth's sphere of influence (core/flight.js). Aim solves it so the
- * pass by Earth comes down to the braking altitude h_b the ship's own
- * aerobrake needs (core/aerobrake.js), changing the trim the user has set by
+ * pass by Earth comes down to the height h_0 of the ship's reference pass
+ * (core/aerobrake.js), the one that leaves for REF_APO, changing the trim the user has set by
  * as little as it can:
  *
  *     trim(k) = trim_0 + k * u          u = g / |g|
@@ -28,13 +28,13 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { systems } from "../../../Shared/orbit.js";
 import { arrivalPass, capTrim, TRIM_MAX } from "./flight.js";
 import { applyWaypointBurn, burnSize } from "./waypoints.js";
-import { brakingNeeds, defaultFreighter, EXIT_APO_DEFAULT, speedAt, NOMINAL_ALT } from "./aerobrake.js";
+import { brakingNeeds, defaultFreighter } from "./aerobrake.js";
 
 var O = OrbitalMath;
 var GM = systems.get("Earth").GM;
 var R_E = +systems.get("Earth").radius;
 var AXES = ["pro", "rad", "nrm"];
-export var AIM_TOLERANCE = 100;            // m of pass height
+export var AIM_TOLERANCE = 0.5;            // m of pass height: the corridor is only a few hundred metres wide
 
 // The two-body pass height (m) for the arrival `fig` (core/facilities.js's
 // offworldFigures) with trim `t`.
@@ -46,7 +46,7 @@ function conicAlt(fig, jd, t) {
 // Solve the entry trim. wps: the flight's waypoints (cleanWaypoints). Returns
 // { ok: true, trim, alt, target } or { ok: false, reason }.
 export function solveEntryTrim(fig, jd, wps) {
-	var ship = fig.ship || defaultFreighter(), apo = fig.exitApo || EXIT_APO_DEFAULT;
+	var ship = fig.ship || defaultFreighter();
 	var t0 = capTrim(fig.trim), h0 = conicAlt(fig, jd, t0), g = {};
 	AXES.forEach(function (a) {
 		var t = Object.assign({}, t0); t[a] += 0.5;
@@ -58,7 +58,7 @@ export function solveEntryTrim(fig, jd, wps) {
 	function miss(k) {
 		var p = arrivalPass(Object.assign({}, fig, { trim: null }), jd, trimAt(k), wps);
 		if (!p) { return null; }
-		var target = brakingNeeds(ship, speedAt(NOMINAL_ALT, p.speed, p.alt), apo).hBrake;
+		var target = brakingNeeds(ship, p.speed, p.alt, null, fig.tankFill).hBrake;
 		if (!isFinite(target)) { return null; }
 		return { f: p.alt - target, alt: p.alt, target: target };
 	}

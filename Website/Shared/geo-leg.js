@@ -154,11 +154,16 @@ export function conicPeriod(GM, el) { return 2 * Math.PI * Math.sqrt(Math.pow(el
 //               that cap). For a start the ellipse says nothing useful about:
 //               one near L1, almost at rest against the Moon, which looks
 //               Moon-bound and is on its way to Earth.
-// With none of the last four given the integration is exactly as before.
+//   orbits    — how many periods of its osculating Earth orbit a bound leg
+//               is flown once clear of the Moon (default 1.02): more for a
+//               loop far out, which the Sun's pull stretches well past its
+//               two-body period.
+// With none of the last five given the integration is exactly as before.
 export function integrateTrajectory(R0, V0, jd0, opts) {
 	var turnStep = (opts && opts.turnStep) || 0.02;
 	var maxSteps = (opts && opts.maxSteps) || 8000;
 	var maxTime = (opts && opts.maxTime) || Infinity;
+	var orbits = (opts && opts.orbits) || 1.02;
 	var r = R0.slice(), v = V0.slice(), t = 0;
 	var samples = [{ r: r.slice(), v: v.slice(), t: 0 }];
 	var cleared = false, branch = null, tClear = 0, oscT = 0, impact = null;
@@ -238,7 +243,7 @@ export function integrateTrajectory(R0, V0, jd0, opts) {
 			helioEl = O.elementsFromState(GM_S, O.vAdd(eh.r, r), O.vAdd(eh.v, v));
 			break;
 		}
-		if (cleared && branch === "green" && t > tClear + oscT * 1.02) { break; }
+		if (cleared && branch === "green" && t > tClear + oscT * orbits) { break; }
 		if (t > maxTime) { break; }
 	}
 	// Fallback branch when the loop ran out without any break condition

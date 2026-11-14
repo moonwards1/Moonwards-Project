@@ -4,40 +4,45 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { systems } from "../../../../Shared/orbit.js";
-import { brakingNeeds, passAt, defaultFreighter, EXIT_APO_DEFAULT, SCALE_H, CORRIDOR_HALF } from "../aerobrake.js";
+import { brakingNeeds, passAt, defaultFreighter, REF_APO, SCALE_H, CORRIDOR_APO } from "../aerobrake.js";
 
 var GM = systems.get("Earth").GM, RE = +systems.get("Earth").radius;
 var ship = Object.assign({ shield: "advanced" }, defaultFreighter());
 function vpFor(vInf, h) { return Math.sqrt(vInf * vInf + 2 * GM / (RE + h)); }
 
 test("the standard freighter brakes high and gently, and its shield is enough", function () {
-	var n = brakingNeeds(ship, vpFor(4000, 70e3), EXIT_APO_DEFAULT);
-	assert.ok(Math.abs(n.beta - 408) < 1, "beta " + n.beta);
+	var n = brakingNeeds(ship, vpFor(4000, 70e3), 70e3);
+	// Arriving with its tanks 20% full: 4,000 + 2,960 + 50,000 + 0.2 × 20,000 = 60,960 t.
+	assert.ok(Math.abs(n.beta - 60960e3 / (1.5 * Math.PI * 400 * 400 / 4)) < 1e-6, "beta " + n.beta);
+	assert.ok(brakingNeeds(ship, vpFor(4000, 70e3), 70e3, null, 1).beta > n.beta, "fuller tanks, heavier ship, higher beta");
 	assert.ok(n.hBrake > 55e3 && n.hBrake < 80e3, "braking altitude " + n.hBrake);
 	assert.ok(n.shed > 500 && n.shed < 1500, "shed " + n.shed);
 	assert.ok(n.gPeak < 3, "peak g " + n.gPeak);
 	assert.ok(n.shieldNeeded < n.shieldCarried, n.shieldNeeded + " t needed of " + n.shieldCarried);
 });
 
-test("a pass at the braking altitude leaves for the chosen apoapsis", function () {
-	var vp = vpFor(4000, 70e3), n = brakingNeeds(ship, vp, EXIT_APO_DEFAULT);
+test("a pass at the reference height leaves for the reference apoapsis, within the corridor", function () {
+	var vp = vpFor(4000, 70e3), n = brakingNeeds(ship, vp, 70e3);
 	var p = passAt(n, n.hBrake, vpFor(4000, n.hBrake));
 	assert.equal(p.inCorridor, true);
-	assert.ok(Math.abs(p.rApo - EXIT_APO_DEFAULT) / EXIT_APO_DEFAULT < 0.01, "apoapsis " + p.rApo);
+	assert.ok(Math.abs(p.rApo - REF_APO) / REF_APO < 0.01, "apoapsis " + p.rApo);
+	assert.ok(p.corridor[0] < n.hBrake && n.hBrake < p.corridor[1]);
+	// The corridor's edges leave for its two apoapses.
+	var lo = passAt(n, p.corridor[0], vpFor(4000, p.corridor[0])), hi = passAt(n, p.corridor[1], vpFor(4000, p.corridor[1]));
+	assert.ok(Math.abs(lo.rApo - CORRIDOR_APO[0]) / CORRIDOR_APO[0] < 0.02, "low edge " + lo.rApo);
+	assert.ok(Math.abs(hi.rApo - CORRIDOR_APO[1]) / CORRIDOR_APO[1] < 0.02, "high edge " + hi.rApo);
+	assert.ok(p.corridor[1] - p.corridor[0] < 1000, "a narrow band: " + (p.corridor[1] - p.corridor[0]) + " m");
 });
 
 test("higher sheds less, deeper sheds more, and too deep falls", function () {
-	var n = brakingNeeds(ship, vpFor(4000, 70e3), EXIT_APO_DEFAULT);
-	var edge = passAt(n, n.hBrake + 2e3, vpFor(4000, n.hBrake + 2e3));
-	assert.equal(edge.inCorridor, true);
-	assert.ok(Math.abs(edge.rApo - EXIT_APO_DEFAULT) / EXIT_APO_DEFAULT < 1e-9, "lift holds the exit across the corridor");
-	var hi = passAt(n, n.hBrake + 4e3, vpFor(4000, n.hBrake + 4e3));
+	var n = brakingNeeds(ship, vpFor(4000, 70e3), 70e3);
+	var hi = passAt(n, n.hBrake + 2e3, vpFor(4000, n.hBrake + 2e3));
+	assert.ok(Math.abs(hi.shed / n.shed - Math.exp(-2e3 / SCALE_H)) < 1e-12);
 	assert.equal(hi.inCorridor, false);
 	assert.ok(hi.rApo === null, "skips out unbound");
 	var deep = passAt(n, n.hBrake - 20e3, vpFor(4000, n.hBrake - 20e3));
 	assert.equal(deep.falls, true);
 	assert.ok(deep.gPeak > n.gPeak * 10);
-	assert.equal(CORRIDOR_HALF, 2e3);
 });
 
 // ---- the arrival flown through its pass ----------------------------------------
@@ -77,13 +82,14 @@ test("Aim brings the pass to the braking altitude with a small trim, and the shi
 	assert.equal(s.ok, true, s.reason);
 	var size = Math.hypot(s.trim.pro, s.trim.rad, s.trim.nrm);
 	assert.ok(size > 0.5 && size < 10, "trim " + size);
-	assert.ok(Math.abs(s.alt - s.target) < 100);
+	assert.ok(Math.abs(s.alt - s.target) < 5);
 	var f = computeFlight({ from: "offworld", jd: JD, params: arrivalParams(st, { trim: s.trim }) });
 	assert.equal(f.ok, true);
 	assert.ok(f.aerobrake && f.aerobrake.pass.inCorridor, "in the corridor");
-	assert.ok(Math.abs(f.aerobrake.pass.rApo - f.aerobrake.exitApo) / f.aerobrake.exitApo < 0.02);
+	assert.ok(f.aerobrake.pass.rApo > 500e6 && f.aerobrake.pass.rApo < 1.45e9, "a loop in the corridor: " + f.aerobrake.pass.rApo);
 	assert.equal(f.summary.primary, "Earth", "bound to Earth after the pass");
 	assert.ok(f.summary.apoAlt > 500e6, "a long orbit: apogee " + f.summary.apoAlt);
+	assert.ok(f.aerobrake.loop && f.aerobrake.loop.apo > 700e6, "the loop's apogee is read off the flight");
 });
 
 test("a pass well below the corridor falls into the air; one far above it goes on by", function () {

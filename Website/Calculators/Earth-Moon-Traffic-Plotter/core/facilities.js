@@ -98,8 +98,8 @@ export var FACILITIES = {
 	// hardware: its params are the arrival itself, { r, v, jd } — the ship's
 	// geocentric state where it enters Earth's sphere of influence, and the
 	// date it is flown on — and what is done with it: the entry trim
-	// { pro, rad, nrm } (m/s), the aerobrake's exit apoapsis exitApo (m from
-	// Earth's centre) and the ship class that makes the pass (Shared/ships.js).
+	// { pro, rad, nrm } (m/s), the ship class that makes the pass
+	// (Shared/ships.js) and how full its tanks are, tankFill (a fraction).
 	offworld: {
 		id: "offworld", kind: "offworld", label: "Offworld arrival", body: "Earth",
 		defaults: {}
@@ -109,7 +109,8 @@ export var FACILITIES = {
 // Which facilities a flight from each origin may be aimed at. A flight may
 // also have no destination at all (an open path).
 export var DESTINATIONS = { moonSkyhook: ["earthSkyhook"], earthSkyhook: ["moonSkyhook"],
-                            moonElevator: ["earthSkyhook", "moonSkyhook"], offworld: [] };
+                            moonElevator: ["earthSkyhook", "moonSkyhook"],
+                            offworld: ["moonElevator", "moonSkyhook", "earthSkyhook"] };
 
 export function facility(id) {
 	var f = FACILITIES[id];
@@ -354,7 +355,7 @@ export function offworldFigures(id, params) {
 			+ "Send to Earth–Moon Traffic, on the arrival leg of a mission to Earth.");
 	}
 	return { ok: true, id: id, kind: "offworld", body: "Earth", R: R_EARTH, r: p.r.slice(), v: p.v.slice(), jd: p.jd,
-	         trim: p.trim || null, exitApo: p.exitApo || null, ship: p.ship || null,
+	         trim: p.trim || null, ship: p.ship || null, tankFill: p.tankFill == null ? null : p.tankFill,
 	         normal: O.vUnit(equatorPlane("Moon", null, CLOCK_REF).normal), period: 0 };
 }
 

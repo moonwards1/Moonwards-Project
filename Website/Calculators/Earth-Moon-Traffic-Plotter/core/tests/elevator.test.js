@@ -160,6 +160,10 @@ test("an elevator flight can be judged against a skyhook", function () {
 	assert.ok(f.ok);
 	assert.ok(f.arrival && f.arrival.found);
 	assert.ok(isFinite(f.arrival.miss) && isFinite(f.arrival.trim));
-	assert.equal(computeFlight({ from: "moonSkyhook", to: "moonElevator", jd: JD }).diagnostic.code, "no-arrival");
+	var toElevator = computeFlight({ from: "moonSkyhook", to: "moonElevator", jd: JD });
+	assert.ok(toElevator.ok && toElevator.arrival && toElevator.arrival.found, "a flight is judged against the elevator too");
+	var ea = toElevator.arrival;
+	assert.ok(isFinite(ea.miss) && isFinite(ea.trim) && isFinite(ea.altitude));
+	assert.ok(ea.point >= toElevator.toFig.rLowSet - 1 && ea.point <= toElevator.toFig.rCw + 1, "the catch point lies on the catchable line");
 	assert.ok(FACILITIES.moonElevator);
 });

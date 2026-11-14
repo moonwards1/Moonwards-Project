@@ -98,7 +98,7 @@ import { Exchange } from "../../Shared/exchange.js";
 import { createFleet, entryMass } from "../../Shared/ships.js";
 import { TRIM_MAX, capTrim } from "./core/flight.js";
 import { solveEntryTrim } from "./core/entry-trim.js";
-import { defaultFreighter, EXIT_APO_DEFAULT, EXIT_APO_RANGE, CORRIDOR_HALF, EARTH_SOI } from "./core/aerobrake.js";
+import { CORRIDOR_APO, REF_APO, EARTH_SOI, TANK_FILL } from "./core/aerobrake.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -120,7 +120,7 @@ var IDLE_ARROW_OPACITY = 0.45;         // the elevator's marker that is not the 
 // be set up to where L1 gets to when the Moon is furthest, the upper one down
 // to where L1 is when the Moon is nearest. Each is held at L1 while L1 is in the way.
 var L1_ALT_KM = { nearest: 52000, furthest: 59700 };
-var MAX_WAYPOINTS = 2;                 // as the Mission Planner's Ephemeris tab
+var MAX_WAYPOINTS = 4;                 // an arrival's route can take an apoapsis burn and trims
 var GIZMO_PX = 42;                     // on-screen arm length of a waypoint's gizmo, and its longer burn arrow
 var BURN_COLOR = { dv: 0xff5fd0, dSpeed: 0xffd24a };   // the Mission Planner's burn arrows
 var BURN_ARROW_MIN_KMS = 0.0005;       // draw the arrows of any burn from 0.5 m/s
@@ -136,7 +136,7 @@ var POVS = {
 	earthHigh:   { focus: "Earth", radius: 420 },
 	earthLow:    { focus: "Earth", radius: 48 }
 };
-var ZOOM_MAX = 2600;                   // Earth's sphere of influence fills the view
+var ZOOM_MAX = 4300;                   // Earth's Hill sphere (about 1.5 million km) fills the view
 
 var CARD_ORDER = ["moonSkyhook", "earthSkyhook", "moonElevator", "offworld"];
 // Facilities not built yet: shown folded so the sidebar already has its shape.
@@ -895,7 +895,17 @@ function buildElevatorCard(id) {
 	refs.vGeo = readout(rro, "speed on release, round Earth");
 	refs.vMoon = readout(rro, "speed on release, relative to the Moon");
 	refs.release = rel;
-	refs.arrival = body.appendChild(el("div"));     // arrivals at the elevator: nothing to show yet
+	// The arrival read-outs: shown on the flight's destination only.
+	var arr = body.appendChild(el("div", "emt-release emt-arrival"));
+	var aro = arr.appendChild(el("div", "emt-readouts"));
+	refs.aMiss = readout(aro, "closest pass to the elevator's line");
+	refs.aPoint = readout(aro, "catcher's place, above the Moon");
+	refs.aWait = readout(aro, "line timing");
+	refs.aPointSpeed = readout(aro, "line's speed there, round Earth");
+	refs.aShipSpeed = readout(aro, "ship's speed there, round Earth");
+	refs.aTrim = readout(aro, "relative motion (the catcher absorbs up to " + num(CATCH_SPEED_LIMIT) + " m/s)");
+	refs.aComp = arr.appendChild(el("div", "emt-muted"));
+	refs.arrival = arr;
 
 	cardsEl.appendChild(card);
 	cards[id] = { el: card, refs: refs };
@@ -907,6 +917,7 @@ function fillElevatorCard(id, opts) {
 		["cwAlt", "lowAlt", "highAlt"].forEach(function (k) { c[k].value = +(p[k] / 1e3).toFixed(1); });
 	}
 	c.sub.textContent = "Moon surface · L1 · counterweight at " + (isFinite(p.cwAlt) ? num(p.cwAlt / 1e3) : "—") + " km";
+	if (id === state.to) { fillArrival(c); }
 	c.lowAltSlider.min = ELEVATOR_LIMITS.lowMin / 1e3; c.lowAltSlider.max = L1_ALT_KM.furthest; c.lowAltSlider.value = p.lowAlt / 1e3;
 	c.highAltSlider.min = L1_ALT_KM.nearest; c.highAltSlider.max = p.cwAlt / 1e3; c.highAltSlider.value = p.highAlt / 1e3;
 	c.error.textContent = fig.ok ? "" : fig.diagnostic.message;
@@ -1038,9 +1049,19 @@ function buildOffworldCard(id) {
 	var tro = trim.appendChild(el("div", "emt-readouts"));
 	refs.trimSize = readout(tro, "trim, in all (up to " + TRIM_MAX + " m/s)");
 	refs.passNow = readout(tro, "pass as flown");
+	var fillLine = trim.appendChild(el("div", "emt-fieldpair"));
+	refs.tankFill = numberField(fillLine, "emt-tank-fill", "Freighter's tanks on arrival (% full)", function () {
+		var v = parseFloat(refs.tankFill.value);
+		if (isFinite(v)) {
+			state.params.offworld.tankFill = Math.max(0, Math.min(100, v)) / 100;
+			aimNote = "";
+			refresh({ keepInputs: true });
+		}
+	});
 	refs.aim = trim.appendChild(el("button", "emt-btn", "Aim at the corridor"));
 	refs.aim.type = "button";
-	refs.aim.title = "Change the trim as little as it takes to bring the pass to the aerobrake's braking altitude";
+	refs.aim.title = "Change the trim as little as it takes to bring the pass to the height that leaves the ship on a loop out to "
+		+ Math.round(REF_APO / 1e6).toLocaleString("en-US") + " thousand km. Fine-tune the trim from there to choose the loop.";
 	refs.aim.addEventListener("click", aimTrim);
 	refs.aimNote = trim.appendChild(el("div", "emt-muted"));
 	refs.trim = trim;
@@ -1060,6 +1081,10 @@ function buildOffworldCard(id) {
 function fillOffworldCard(id) {
 	var c = cards[id].refs, a = state.arrivalIn;
 	c.trim.style.display = state.from === id && figs[id].ok ? "" : "none";
+	if (document.activeElement !== c.tankFill) {
+		var tf = state.params.offworld.tankFill;
+		c.tankFill.value = +((tf == null ? TANK_FILL : tf) * 100).toFixed(1);
+	}
 	if (state.from === id && flight && flight.ok && flight.trim) {
 		c.trimSize.textContent = num(flight.trim.size, 2) + " m/s";
 		c.passNow.textContent = flight.pass ? passHeight(flight.pass.alt) + (flight.pass.impact ? " (hits the ground first)" : "") : "—";
@@ -1094,7 +1119,7 @@ function buildTrimEditor() {
 	if (!p.trim) { p.trim = { pro: 0, rad: 0, nrm: 0 }; }
 	host.textContent = "";
 	buildVectorEditor(host, p.trim, function () { aimNote = ""; refresh(); },
-		{ maxDeltaMps: TRIM_MAX, displayDiv: 1, decimals: 2, step: 0.01, unitLabel: "m/s" });
+		{ maxDeltaMps: TRIM_MAX, displayDiv: 1, decimals: 4, step: 0.0001, unitLabel: "m/s" });
 }
 var aimNote = "";                      // what the last Aim found, until the trim changes
 function aimTrim() {
@@ -1105,7 +1130,8 @@ function aimTrim() {
 		var t = state.params.offworld.trim;
 		t.pro = res.trim.pro; t.rad = res.trim.rad; t.nrm = res.trim.nrm;
 		buildTrimEditor();
-		aimNote = "Aimed: the pass is " + km(res.alt) + " up, the braking altitude " + km(res.target) + ".";
+		aimNote = "Aimed: the pass is " + num(res.alt / 1e3, 3) + " km up, the height that leaves on a loop out to about "
+			+ Math.round(REF_APO / 1e6).toLocaleString("en-US") + " thousand km. A tenth of a mm/s of trim moves the pass by about 10 m.";
 	} else {
 		aimNote = res.reason;
 	}
@@ -1141,33 +1167,27 @@ function buildAerobrakeCard() {
 	refs.head = head;
 	var body = card.appendChild(el("div", "emt-card-body"));
 	refs.ship = body.appendChild(el("div", "emt-muted"));
-	var line = body.appendChild(el("div", "emt-fieldpair"));
-	refs.exitApo = numberField(line, "emt-exit-apo", "Exit apoapsis (thousand km)", function () {
-		var v = parseFloat(refs.exitApo.value) * 1e6;
-		if (isFinite(v)) {
-			state.params.offworld.exitApo = Math.max(EXIT_APO_RANGE[0], Math.min(EXIT_APO_RANGE[1], v));
-			aimNote = "";
-			refresh({ keepInputs: true });
-		}
-	});
 	refs.verdict = body.appendChild(el("div", "emt-error"));
 	var ro = body.appendChild(el("div", "emt-readouts"));
+	refs.trim = readout(ro, "entry trim");
 	refs.beta = readout(ro, "ballistic coefficient β");
-	refs.hBrake = readout(ro, "braking altitude (the corridor ±" + km(CORRIDOR_HALF) + ")");
+	refs.hBrake = readout(ro, "the corridor: pass heights for loops out to " + num(CORRIDOR_APO[0] / 1e9, 2) + "–" + num(CORRIDOR_APO[1] / 1e9, 2) + " million km");
 	refs.hPass = readout(ro, "pass as flown");
 	refs.vp = readout(ro, "speed at the pass");
 	refs.shed = readout(ro, "speed taken off");
 	refs.apo = readout(ro, "leaves for apoapsis");
+	refs.loop = readout(ro, "the loop, as flown: apogee · back to perigee");
 	refs.g = readout(ro, "peak deceleration");
 	refs.q = readout(ro, "peak dynamic pressure");
 	refs.flux = readout(ro, "peak heat flux (convective)");
 	refs.load = readout(ro, "heat load");
 	refs.shield = readout(ro, "heat shield needed · carried");
 	body.appendChild(el("div", "emt-muted",
-		"One grazing pass at periapsis, taken as an instant loss of speed along the ship's motion. The ship is "
-		+ "capsule-shaped, its heat shield its whole face (the workbench's Freighter card). Within the corridor its lift "
-		+ "holds the exit; beyond it, every scale height (7.2 km) deeper takes e times as much speed off. A pass that "
-		+ "leaves slower than circular speed falls into the atmosphere."));
+		"A readout: the entry trim on the Offworld arrival card sets the pass, and the pass sets the loop. One grazing "
+		+ "pass at periapsis, taken as an instant loss of speed along the ship's motion. The ship is capsule-shaped, its "
+		+ "heat shield its whole face (the workbench's Freighter card). Every scale height (7.2 km) deeper takes e times as "
+		+ "much speed off, and the loop is very sensitive to it: 100 m of pass height can move its apogee by hundreds of "
+		+ "thousands of km. A pass that leaves slower than circular speed falls into the atmosphere."));
 	abCard = { el: card, refs: refs };
 	cardsEl.appendChild(card);
 }
@@ -1178,11 +1198,12 @@ function fillAerobrakeCard(opts) {
 	var src = savedFreighter();
 	c.ship.textContent = (src.saved ? "Ship: the standard freighter of the design saved on the workbench, "
 		: "Ship: the workbench's starting freighter (no design is saved), ")
-		+ num(entryMass(src.ship) / 1e3, 1) + " kt loaded with full tanks and its shield, the shield "
+		+ num(entryMass(src.ship, p.tankFill == null ? TANK_FILL : p.tankFill) / 1e3, 1) + " kt loaded, with its shield and its tanks "
+		+ num((p.tankFill == null ? TANK_FILL : p.tankFill) * 100) + "% full, the shield "
 		+ num(src.ship.shieldD) + " m across.";
-	if (!(opts && opts.keepInputs)) { c.exitApo.value = +((p.exitApo || EXIT_APO_DEFAULT) / 1e6).toFixed(0); }
 	var ab = flight && flight.ok ? flight.aerobrake : null;
-	var rows = ["beta", "hBrake", "hPass", "vp", "shed", "apo", "g", "q", "flux", "load", "shield"];
+	c.trim.textContent = flight && flight.ok && flight.trim ? num(flight.trim.size, 2) + " m/s" : "—";
+	var rows = ["beta", "hBrake", "hPass", "vp", "shed", "apo", "loop", "g", "q", "flux", "load", "shield"];
 	if (!ab) {
 		rows.forEach(function (k) { c[k].textContent = "—"; });
 		c.sub.textContent = "no pass through the air";
@@ -1194,18 +1215,23 @@ function fillAerobrakeCard(opts) {
 	}
 	var n = ab.needs, at = ab.pass;
 	c.sub.textContent = at.inCorridor ? "in the corridor" : at.falls ? "falls into the air"
-		: (at.offBy > 0 ? km(at.offBy - CORRIDOR_HALF) + " above the corridor" : km(-at.offBy - CORRIDOR_HALF) + " below the corridor");
+		: (ab.alt > at.corridor[1] ? num((ab.alt - at.corridor[1]) / 1e3, 2) + " km above the corridor"
+			: num((at.corridor[0] - ab.alt) / 1e3, 2) + " km below the corridor");
 	c.verdict.textContent = at.inCorridor ? ""
 		: at.falls ? "Too deep: the pass takes off so much speed that the ship cannot climb back out. It falls into the atmosphere."
-		: at.offBy > 0 ? "Too high: the pass takes off too little" + (at.rApo === null ? ", and the ship goes back out of Earth's sphere of influence." : ".")
-		: "Too low: the pass takes off too much, and the ship leaves on a shorter orbit.";
+		: ab.alt > at.corridor[1] ? "Too high: the pass takes off too little" + (at.rApo === null ? ", and the ship leaves Earth." : ", and the loop goes out past Earth's Hill sphere.")
+		: "Too low: the pass takes off too much, and the loop does not reach past the Moon's orbit.";
 	c.verdict.style.display = c.verdict.textContent ? "" : "none";
 	c.beta.textContent = num(n.beta) + " kg/m²";
-	c.hBrake.textContent = km(n.hBrake);
-	c.hPass.textContent = km(ab.alt) + " (" + (ab.pass.offBy >= 0 ? "+" : "−") + num(Math.abs(ab.pass.offBy) / 1e3, 1) + " km)";
+	c.hBrake.textContent = num(at.corridor[0] / 1e3, 2) + " – " + num(at.corridor[1] / 1e3, 2) + " km";
+	c.hPass.textContent = num(ab.alt / 1e3, 3) + " km";
 	c.vp.textContent = num(ab.speed) + " m/s";
 	c.shed.textContent = num(at.shed) + " m/s";
 	c.apo.textContent = at.falls ? "— (falls)" : at.rApo === null ? "— (escapes)" : km(at.rApo) + " · " + num(at.rApo / EARTH_SOI * 100) + "% of the SOI";
+	var lp = ab.loop;
+	c.loop.textContent = !lp || lp.apo === null ? "—" : km(lp.apo) + " on day " + num(lp.apoT / DAY, 1) + " · "
+		+ (lp.impact ? "comes down into " + lp.impact + " on day " + num(lp.endT / DAY, 1)
+			: lp.peri === null || lp.cut ? "the flight ends first" : km(lp.peri) + " on day " + num(lp.periT / DAY, 1));
 	c.g.textContent = num(at.gPeak, 2) + " g";
 	c.q.textContent = num(at.dynPressureAtm, 3) + " atm";
 	c.flux.textContent = num(at.heatFluxWcm2) + " W/cm²";
@@ -1475,12 +1501,7 @@ function fillKeys() {
 	// against the body the ship is headed for: the Moon from below L1, Earth from above.
 	if (fig.kind === "offworld") {
 		key("Entry trim", num(flight.trim.size, 2) + " m/s");
-		if (flight.pass) { key("Pass", passHeight(flight.pass.alt)); }
-		if (flight.aerobrake) {
-			var at = flight.aerobrake.pass;
-			key("Aerobrake", at.inCorridor ? "in the corridor" : at.falls ? "too deep: falls" : at.offBy > 0 ? "too high" : "too low", !at.inCorridor);
-			if (!at.falls) { key("Speed taken off", num(at.shed) + " m/s"); }
-		}
+		if (flight.aerobrake && !flight.aerobrake.pass.inCorridor) { key("Aerobrake", "off the corridor", true); }
 	} else if (fig.kind === "elevator") {
 		key("Released at", km(flight.release.radius - fig.R) + " above the Moon");
 		if (fig.relPoint === "low") { key("Release speed, relative to the Moon", num(O.vMag(flight.release.relV)) + " m/s"); }
@@ -1684,7 +1705,7 @@ function showWindows() {
 // passes closest.
 function placeCatcher() {
 	var a = arrival();
-	if (!a) { return; }
+	if (!a || FACILITIES[state.to].kind !== "skyhook") { return; }
 	state.params[state.to].catchAlt = a.altitude;
 	figs[state.to] = facilityFigures(state.to, state.params[state.to]);
 }
@@ -1815,8 +1836,9 @@ function init() {
 		state.arrivalIn = readArrival(packet, JD0, JD0 + SPAN_DAYS);
 		if (state.arrivalIn.ok) {
 			var a = state.arrivalIn;
+			var keepFill = state.params.offworld.tankFill;
 			state.params.offworld = { r: a.r, v: a.v, jd: a.jd, trim: { pro: 0, rad: 0, nrm: 0 },
-			                          exitApo: state.params.offworld.exitApo || EXIT_APO_DEFAULT };
+			                          tankFill: keepFill == null ? TANK_FILL : keepFill };
 			buildTrimEditor();
 			aimNote = "";
 		}

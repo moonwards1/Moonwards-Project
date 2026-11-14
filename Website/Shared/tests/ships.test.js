@@ -162,4 +162,6 @@ test("ballistic coefficient of the capsule-shaped ship, loaded with full tanks",
 	assert.ok(Math.abs(ballisticCoefficient(c) - beta) < 1e-9);
 	assert.equal(Math.round(beta), 408);
 	assert.equal(ballisticCoefficient({ ...c, shield: "none" }), null);
+	assert.equal(entryMass(c, 0.2), 60960);
+	assert.ok(Math.abs(ballisticCoefficient(c, 0.2) - 60960e3 / (CAPSULE_CD * Math.PI * 400 * 400 / 4)) < 1e-9);
 });

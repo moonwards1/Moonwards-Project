@@ -499,7 +499,7 @@ Consequence: missions authored against other positions (the example missions)
 arrive only as well as their authoring ephemeris
 matched this one — re-target them with Update after the elements change.
 
-### A ship that meets an atmosphere is a capsule, judged fully loaded
+### A ship that meets an atmosphere is a capsule
 
 `Shared/ships.js`: any ship class with a heat shield is taken to be
 capsule-shaped, the shield its whole face and the engines opposite, and
@@ -508,12 +508,15 @@ carries the shield's diameter (`shieldD`, m). Its ballistic coefficient is
     β = m / (Cd · A),  A = π D² / 4
 
 with `Cd = CAPSULE_CD` (1.5, the Earth aerobrake model's figure) and `m` the
-entry mass with full tanks, shield included (`entryMass`). Every aerobrake
-figure (the Earth–Moon Traffic Plotter's included) reads β from here.
+entry mass, shield included, with the tanks as full as the caller says
+(`entryMass(c, fill)`). The workbench card quotes β with full tanks, the
+worst case; the Earth–Moon Traffic Plotter takes an arrival's tanks as the
+user sets them, 20% full by default (`TANK_FILL`), since tanks are sized for
+the worst route and an arrival keeps only a reserve. Every aerobrake figure
+reads β from here.
 
 Why: the shape is what a ship flown through the air dozens of times can
-plausibly be; full tanks is the heaviest case, so the braking depth it gives
-is the deepest.
+plausibly be.
 
 ---
 
@@ -522,15 +525,18 @@ is the deepest.
 ### Earth–Moon Traffic: an offworld arrival's aerobrake is one instant shed at periapsis
 
 `core/aerobrake.js`. The pass is an instant loss of speed along the ship's
-motion at periapsis. Within ±2 km of the braking altitude (the corridor) the
-ship's lift holds the chosen exit apoapsis exactly; beyond it the shed goes
-with the air's density, `exp(-(excess) / H)`, H = 7.16 km. The braking
-altitude comes from the Earth aerobrake model with the ship's β
-(`Shared/ships.js`), taken at the speed the ship would have 70 km up.
+motion at periapsis, and its height alone decides the exit: the speed shed
+goes with the air's density, `shed_0 · exp(-(h_p - h_0) / H)`, H = 7.16 km,
+anchored on the Earth aerobrake model's reference pass for the ship's β
+(`Shared/ships.js`) leaving for REF_APO, its entry speed taken at its own
+height. No exit apoapsis is set anywhere: the entry trim sets the pass and the
+pass sets the loop. The corridor is the band of pass heights that leave on a
+loop out to 450,000–1,450,000 km, a few hundred metres wide, so the trim is
+edited to 0.1 mm/s.
 
-Why: the exit leaves only just below escape, so a pure density law would put a
-pass 100 m off on an orbit 230,000 km longer. Real ships fly the corridor with
-lift; the model gives them that much and no more.
+Why: the exit leaves only just below escape, so the loop is extremely
+sensitive to the pass height, and it is the course the trim sets that the
+ship flies, not a target typed in.
 
 An arrival is accepted, and Aim solves the entry trim, on the pass as flown
 (Earth + Moon + Sun), never the two-body conic: from the SOI edge the Sun and

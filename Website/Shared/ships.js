@@ -106,19 +106,21 @@ export function shieldMass(c) {
 // model uses (Calculators/Earth-Aerobrake-Calculator).
 export const CAPSULE_CD = 1.5;
 
-// The ship's mass meeting the atmosphere, tonnes: loaded, full tanks and
-// shield included, the heaviest case.
-export function entryMass(c) {
-	return c.dry + shieldMass(c) + c.payload + c.tank;
+// The ship's mass meeting the atmosphere, tonnes: loaded, shield included,
+// its tanks `fill` full (a fraction; 1, the heaviest case, when not given).
+export function entryMass(c, fill) {
+	var f = fill == null ? 1 : Math.max(0, Math.min(1, fill));
+	return c.dry + shieldMass(c) + c.payload + f * c.tank;
 }
 
 // How deep the ship has to go into the air to slow down, kg/m²:
 //   β = m / (Cd · A),  A = π D² / 4
-// m the entry mass (kg), Cd = CAPSULE_CD, D the shield's diameter. The lower
-// β is, the higher and more gently the ship brakes. null without a shield.
-export function ballisticCoefficient(c) {
+// m the entry mass (kg, tanks `fill` full: full when not given), Cd =
+// CAPSULE_CD, D the shield's diameter. The lower β is, the higher and more
+// gently the ship brakes. null without a shield.
+export function ballisticCoefficient(c, fill) {
 	if (!shield(shieldKey(c.shield)).fraction || !(c.shieldD > 0)) return null;
-	return OrbitalMath.ballisticCoefficient(entryMass(c) * 1000, CAPSULE_CD, Math.PI * c.shieldD * c.shieldD / 4);
+	return OrbitalMath.ballisticCoefficient(entryMass(c, fill) * 1000, CAPSULE_CD, Math.PI * c.shieldD * c.shieldD / 4);
 }
 
 // Δv the class can make with full tanks, loaded and empty:
