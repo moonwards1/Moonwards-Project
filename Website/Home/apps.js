@@ -32,6 +32,10 @@ var APPS = [
 	{
 		id: "emtraffic", label: "Earth–Moon Traffic", url: "Calculators/Earth-Moon-Traffic-Plotter/earthMoonTraffic.html",
 		intro: "<p>To-scale 3D Earth–Moon system with its skyhooks turning on one clock, and the path of a ship released from either. Flights between facilities are being added.</p>"
+	},
+	{
+		id: "marstraffic", label: "Mars System Traffic", url: "Calculators/Mars-System-Traffic-Plotter/marsSystemTraffic.html",
+		intro: "<p>To-scale 3D Mars system on one clock: Mars turning, Phobos and Deimos on their orbits. Its skyhooks, space elevator and mass drivers, and the flights between them, are being added.</p>"
 	}
 ];
 var POP_FEATURES = "popup,width=1440,height=900";

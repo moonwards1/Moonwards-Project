@@ -21,6 +21,7 @@ their conventions. All are ES modules with **named exports**.
 | `kinematic-chain.js` / `lagrange-elevator.js` | `evaluateChain`, `lineElement`, … / `lagrangeLineAt`, `lineElementFor`, … | a departure platform stack composed into a release state; the L1/L2 elevators' kinematics, used by the traffic plotter and the planner's elevator platform |
 | `radial-tether.js` | `standardField`, `earthMoonField`, `tetherContext`, `tetherMetrics`, `pullBalance`, `counterweightFor`, … | the tether sizing every space elevator on the workbench shares (standard, L1, L2), stations included |
 | `material-card.js` / `counterweight-card.js` | `addMaterialCard` / `addCounterweightCard` | the tether calculators' shared cards |
+| `mars-ephemeris.js` | `MarsEphemeris` | the Mars system on a clock: Mars's orientation, Phobos and Deimos, the Sun, Mars-centred |
 | `frames.js` | `Frames` | converts ship-state VECTORS between frames (not to be confused with MissionPlanner's `scene-frames.js`, which builds renderable scenes) |
 | `exchange.js` / `exchange-types.js` | `Exchange` / `PacketTypes` | the calculator-to-calculator mailbox and its versioned payload registry |
 | `three.min.js` | global `THREE` | **the one classic-script exception** — vendored, loaded with a plain `<script src>` tag ahead of the page module |

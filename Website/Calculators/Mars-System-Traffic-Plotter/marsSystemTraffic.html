@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<title>Mars System Traffic Plotter</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="marsSystemTraffic.css">
+	<!-- three.min.js is the one classic script (provides the global THREE);
+	     the page script is an ES module and imports the rest itself. -->
+	<script src="../../Shared/three.min.js"></script>
+</head>
+<body>
+	<div id="mst-app">
+
+		<!-- Date bar: the clock everything in the scene follows -->
+		<div id="mst-datebar">
+			<div id="mst-date-head">
+				<span class="mst-date-caption">Ephemeris date</span>
+				<input type="date" id="mst-date-field" min="2080-01-01" max="2085-08-23" value="2080-01-01" aria-label="Ephemeris date">
+				<span id="mst-jd" class="mst-muted"></span>
+				<span class="mst-date-caption mst-pov-caption">POV</span>
+				<div id="mst-pov" class="mst-buttons" role="group" aria-label="Point of view">
+					<button type="button" data-pov="soi">Sphere of influence</button>
+					<button type="button" data-pov="system">Mars system</button>
+					<button type="button" data-pov="phobosOrbit">Mars ↔ Phobos</button>
+					<button type="button" data-pov="low">Low orbit &amp; surface</button>
+					<button type="button" data-pov="phobos">Phobos</button>
+				</div>
+			</div>
+			<div class="mst-slider-line">
+				<span class="mst-slider-end">2080</span>
+				<div class="mst-track">
+					<input type="range" id="mst-date-coarse" min="0" max="2061" step="1" value="0" aria-label="Date, 2080 to 2085: three Mars years">
+				</div>
+				<span class="mst-slider-end">2085</span>
+			</div>
+			<div class="mst-slider-line">
+				<span class="mst-slider-end" id="mst-fine-lo"></span>
+				<div class="mst-track">
+					<input type="range" id="mst-date-fine" min="-1.5" max="1.5" step="0.0002" value="0" aria-label="Time, three days around the slider above">
+				</div>
+				<span class="mst-slider-end" id="mst-fine-hi"></span>
+			</div>
+		</div>
+
+		<div id="mst-main">
+
+			<div id="mst-left">
+				<div id="mst-view">
+					<div id="mst-canvas-holder"></div>
+					<div id="mst-view-caption"></div>
+					<button type="button" id="mst-follow" title="Stop following" hidden><span></span><span class="mst-follow-x" aria-hidden="true">✕</span></button>
+					<div id="mst-frames" class="mst-buttons" role="group" aria-label="What the view is held still against"></div>
+					<div id="mst-view-hud">
+						<div class="mst-hud-line"><span class="mst-hud-key">drag</span> rotate &nbsp; <span class="mst-hud-key">wheel</span> zoom &nbsp; <span class="mst-hud-key">right-drag</span> pan &nbsp; <span class="mst-hud-key">click</span> Mars or a moon to follow it</div>
+						<div class="mst-hud-line">On either slider: hold <span class="mst-hud-key">shift</span> to scrub at ¼ speed, <span class="mst-hud-key">ctrl</span> at 1/10.</div>
+					</div>
+				</div>
+				<div id="mst-keys" aria-live="polite"></div>
+			</div>
+
+			<div id="mst-panel">
+				<h1>Mars System Traffic Plotter</h1>
+
+				<section class="mst-card mst-card-plain">
+					<h2>The system</h2>
+					<div class="mst-readouts" id="mst-system"></div>
+				</section>
+
+				<div id="mst-cards"></div>
+
+				<section class="mst-card mst-card-plain">
+					<div class="mst-row">
+						<label class="mst-check"><input type="checkbox" id="mst-show-soi" checked> Sphere of influence</label>
+						<label class="mst-check"><input type="checkbox" id="mst-show-orbits" checked> Orbits</label>
+						<label class="mst-check"><input type="checkbox" id="mst-show-grid" checked> Grid</label>
+					</div>
+					<div class="mst-row mst-legend">
+						<span class="mst-swatch" style="background:#5d6f96"></span> a moon's orbit
+						<span class="mst-swatch" style="background:#3f8f86"></span> areostationary
+						<span class="mst-swatch" style="background:#ffffff"></span> prime meridian
+					</div>
+				</section>
+
+				<p class="mst-fineprint">
+				Mars-centred view, to scale, with Mars's north pole up. Mars turns
+				once in 24 h 37 min 23 s about its real pole, and the grid on it
+				is every 30° of latitude and longitude. Phobos and Deimos follow
+				precessing ellipses built from JPL's mean elements: Phobos's
+				orbit is tilted 1.08° to Mars's equator and that tilt swings
+				round once in 2.26 years; its distance from Mars's centre varies
+				between 9,234 and 9,518 km over each orbit. Deimos's orbit swings
+				round a plane 0.9° off the equator once in 56 years, so its tilt
+				to the equator is anywhere from 0.9° to 2.7°. These give the
+				shape and motion of the system, not a forecast of where along
+				its orbit a moon will be on a given date in the 2080s. The Sun
+				is at its true direction and distance. The three views hold
+				different things still: the stars, the ground of Mars, or
+				Phobos. The facilities and the flights between them are added
+				in later steps.
+				</p>
+			</div>
+
+		</div>
+	</div>
+	<script type="module" src="marsSystemTraffic.js"></script>
+</body>
+</html>

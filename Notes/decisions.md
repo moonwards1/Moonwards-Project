@@ -652,3 +652,17 @@ a skyhook rotor after the elevator's line element would describe a tether turnin
 about a point of the elevator at a rate set by the Moon's gravity, which is no
 hardware; a launcher built to ride an elevator would replace this rule with a
 `ridesOn` check.
+
+### The Mars system is computed in ecliptic axes and drawn with Mars's pole up
+
+`Shared/mars-ephemeris.js` and every flight in the Mars System Traffic Plotter work in
+Mars-centred ecliptic axes, the frame `Shared/body-leg.js` integrates in. Only the
+drawing changes axes (`core/view-frames.js`): fixed to the stars, turning with Mars, or
+turning with Phobos, each a set of unit axes at a date. Why: one frame for the physics
+keeps the shared integrators usable as they are, and nearly everything at Mars lies
+near its equator, 26.7° off the ecliptic, so an ecliptic-up drawing is hard to read.
+
+Phobos and Deimos are precessing ellipses from JPL mean elements, with Phobos's
+eccentricity and 1.08° tilt kept. Why: the tilt and the in-and-out motion set the
+clearances between tethers; the moons' absolute places along their orbits in the 2080s
+are not predictable to that precision and nothing depends on them.
