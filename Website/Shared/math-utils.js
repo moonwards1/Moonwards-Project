@@ -200,6 +200,20 @@ export const OrbitalMath = {
 			return -OrbitalMath.j2NodeCoefficient(GM, J2, Req, omega, masses) * Math.cos(inclination);
 		},
 
+		// The extra acceleration (m/s², a vector) the equatorial bulge puts on a
+		// mass at position r from the body's centre, beyond the point-mass pull:
+		//   a = −(3/2) J2 GM Req² / r⁵ · [ (1 − 5 z²/r²) r + 2 z p ]
+		// p is the unit spin pole and z = r · p the height above the equator, so
+		// r may be in any axes as long as p is in the same ones. Over the equator
+		// it pulls inward a little harder; over a pole, a little less. This is
+		// what turns an orbit's plane (j2NodeRate) and speeds a low moon round.
+		j2Acceleration: function (GM, J2, Req, r, pole) {
+			var d2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2], d = Math.sqrt(d2);
+			var z = r[0] * pole[0] + r[1] * pole[1] + r[2] * pole[2];
+			var k = -1.5 * J2 * GM * Req * Req / (d2 * d2 * d), f = 1 - 5 * z * z / d2;
+			return [k * (f * r[0] + 2 * z * pole[0]), k * (f * r[1] + 2 * z * pole[1]), k * (f * r[2] + 2 * z * pole[2])];
+		},
+
 		// The same coefficient for a distant third body on a circular orbit of
 		// radius d (GM3 its gravitational parameter), turning the plane about that
 		// third body's orbit normal: k₃ = (3/4) GM3 / (d³ ω). Secular, for d ≫ r.

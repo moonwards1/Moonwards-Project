@@ -666,3 +666,17 @@ Phobos and Deimos are precessing ellipses from JPL mean elements, with Phobos's
 eccentricity and 1.08° tilt kept. Why: the tilt and the in-and-out motion set the
 clearances between tethers; the moons' absolute places along their orbits in the 2080s
 are not predictable to that precision and nothing depends on them.
+
+### Flights inside the Mars system feel Mars's equatorial bulge
+
+The Mars System Traffic Plotter flies a ship under Mars + its J2 bulge + the Sun
+(`core/flight.js`, through `Shared/body-leg.js`'s `extraAccel`). Why: the moons' motion
+comes from observed mean elements, which include the bulge's effect (it speeds Phobos
+round by 0.04%); without it a ship let go beside Phobos drifts away from it and a
+tilted orbit's plane does not turn, so nothing flown would line up with the facilities
+it is meant to meet. A flight ends at the 125 km entry interface, after one orbit, or
+at the sphere of influence.
+
+The Phobos skyhook's altitudes are stated with Phobos at its mean distance; the tether
+rides Phobos's eccentric orbit, 142 km up and down, along the line from Mars's centre
+through Phobos's.

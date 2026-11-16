@@ -660,3 +660,19 @@ test("thirdBodyNodeCoefficient: the Moon's pull on a low Earth orbit is small be
 	var k3 = O.thirdBodyNodeCoefficient(4.9048695e12, 384400e3, n), k = O.j2NodeCoefficient(GM_E, J2_E, RE, n);
 	assert.ok(k3 / k > 1e-4 && k3 / k < 1e-3, "ratio " + k3 / k);
 });
+
+test("j2Acceleration: matches the textbook components, in any axes", function () {
+	var r = [RE + 800e3, 0, 0], z = [0, 0, 1], k = 1.5 * J2_E * GM_E * RE * RE;
+	var eq = O.j2Acceleration(GM_E, J2_E, RE, r, z), d = r[0];
+	assert.ok(Math.abs(eq[0] + k / Math.pow(d, 4)) < 1e-12 && eq[1] === 0 && eq[2] === 0, "over the equator: inward");
+	var pole = O.j2Acceleration(GM_E, J2_E, RE, [0, 0, d], z);
+	assert.ok(Math.abs(pole[2] - 2 * k / Math.pow(d, 4)) < 1e-12, "over a pole: outward, twice as strong");
+	// A general point against a_x = −k x (1 − 5z²/r²)/r⁵, a_z = −k z (3 − 5z²/r²)/r⁵
+	var p = [5e6, -3e6, 4e6], m = Math.hypot(p[0], p[1], p[2]), q = 5 * p[2] * p[2] / (m * m);
+	var a = O.j2Acceleration(GM_E, J2_E, RE, p, z);
+	assert.ok(Math.abs(a[0] + k * p[0] * (1 - q) / Math.pow(m, 5)) < 1e-12);
+	assert.ok(Math.abs(a[2] + k * p[2] * (3 - q) / Math.pow(m, 5)) < 1e-12);
+	// The same point with the pole along x instead: the answer turns with the axes.
+	var b = O.j2Acceleration(GM_E, J2_E, RE, [p[2], p[1], p[0]], [1, 0, 0]);
+	assert.ok(Math.abs(b[0] - a[2]) < 1e-15 && Math.abs(b[2] - a[0]) < 1e-15);
+});

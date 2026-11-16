@@ -18,8 +18,10 @@ The Mars system could have a wide variety of facilities. Only the ones selected 
 
 - Space elevator, in Layout A or Layout B from the session 'Mars space elevator dimensions'. User is free to chose where on Mars' equator to place it, aside from the suggested default
 
-- A mass driver on the surface that sends traffic to other facilities, user is free to place it anywhere on the equator, Pavonis Mons is the default. Length, acceleration, and release speed can be chosen - any two, and the third figure is supplied.
+- A mass driver on the surface that sends traffic to other facilities, user is free to place it anywhere with the available heightmapped terrain, Pavonis Mons is the default. Length, acceleration, and release speed can be chosen - any two, and the third figure is supplied. Elevation and track angle are derived from the heightmap. 
 
 The parameters for these installations can be imported from their cards in the workbench by clicking a button. But the cards don't exist yet, so that happens later. We can set initial defaults.
 
 Trajectories after release from these facilities, or after launch from a mass driver, are plotted. The purpose is to consider movement within the system. Unlike the Mission Planner, which will be developed to look at how arrival is handled on one facility, this looks at the exchange of cargo between different facilities. Also, in the case of this app, there will be no packet exchange with the Mission Planner. In the case of Earth, aerobrake is the standard approach to entry into a flight plan ending in capture and docking. For Mars, capture at any of the multiple facilities available is the standard approach. That can be handled solely in the Mission Planner.
+
+Catches of vehicles moving within the system can happen anywhere on a tether at a relative speed of up to 800 m/s. 

@@ -41,6 +41,16 @@
 				</div>
 				<span class="mst-slider-end" id="mst-fine-hi"></span>
 			</div>
+			<div class="mst-slider-line mst-line-release">
+				<span class="mst-slider-end">Release time</span>
+				<input type="range" id="mst-release-time" min="0" max="1" step="any" value="0" aria-label="Release time within one orbit of the departure facility">
+				<span class="mst-slider-end" id="mst-release-time-val"></span>
+			</div>
+			<div class="mst-slider-line mst-line-flight">
+				<span class="mst-slider-end">Flight</span>
+				<input type="range" id="mst-flight-time" min="0" max="1" step="any" value="0" aria-label="Time since release">
+				<span class="mst-slider-end" id="mst-flight-time-val"></span>
+			</div>
 		</div>
 
 		<div id="mst-main">
@@ -52,11 +62,15 @@
 					<button type="button" id="mst-follow" title="Stop following" hidden><span></span><span class="mst-follow-x" aria-hidden="true">✕</span></button>
 					<div id="mst-frames" class="mst-buttons" role="group" aria-label="What the view is held still against"></div>
 					<div id="mst-view-hud">
-						<div class="mst-hud-line"><span class="mst-hud-key">drag</span> rotate &nbsp; <span class="mst-hud-key">wheel</span> zoom &nbsp; <span class="mst-hud-key">right-drag</span> pan &nbsp; <span class="mst-hud-key">click</span> Mars or a moon to follow it</div>
-						<div class="mst-hud-line">On either slider: hold <span class="mst-hud-key">shift</span> to scrub at ¼ speed, <span class="mst-hud-key">ctrl</span> at 1/10.</div>
+						<div class="mst-hud-line"><span class="mst-hud-key">drag</span> rotate &nbsp; <span class="mst-hud-key">wheel</span> zoom &nbsp; <span class="mst-hud-key">right-drag</span> pan &nbsp; <span class="mst-hud-key">click</span> anything to follow it</div>
+						<div class="mst-hud-line">Drag the pink marker along the tether to move the release point.</div>
+						<div class="mst-hud-line">On any slider: hold <span class="mst-hud-key">shift</span> to scrub at ¼ speed, <span class="mst-hud-key">ctrl</span> at 1/10.</div>
 					</div>
 				</div>
-				<div id="mst-keys" aria-live="polite"></div>
+				<div id="mst-keys">
+					<div id="mst-key-list" aria-live="polite"></div>
+					<label class="mst-check mst-keys-right" title="Give the ship's speed as the ground of Mars sees it, turning with the planet"><input type="checkbox" id="mst-ground-speed"> Speed relative to the surface</label>
+				</div>
 			</div>
 
 			<div id="mst-panel">
@@ -74,6 +88,19 @@
 						<label class="mst-check"><input type="checkbox" id="mst-show-soi" checked> Sphere of influence</label>
 						<label class="mst-check"><input type="checkbox" id="mst-show-orbits" checked> Orbits</label>
 						<label class="mst-check"><input type="checkbox" id="mst-show-grid" checked> Grid</label>
+						<label class="mst-check"><input type="checkbox" id="mst-show-facilities" checked> Facilities</label>
+						<label class="mst-check"><input type="checkbox" id="mst-show-traj" checked> Trajectory</label>
+					</div>
+					<div class="mst-row mst-legend">
+						<span class="mst-swatch" style="background:#8fd0c8"></span> skyhook foot
+						<span class="mst-swatch" style="background:#9fb6ff"></span> skyhook top
+						<span class="mst-swatch" style="background:#ff5fd0"></span> release point
+					</div>
+					<div class="mst-row mst-legend">
+						Path:
+						<span class="mst-swatch" style="background:#ff6f61"></span> falls to Mars
+						<span class="mst-swatch" style="background:#40d27f"></span> stays in orbit
+						<span class="mst-swatch" style="background:#ff9a3c"></span> leaves Mars
 					</div>
 					<div class="mst-row mst-legend">
 						<span class="mst-swatch" style="background:#5d6f96"></span> a moon's orbit
@@ -100,8 +127,22 @@
 				its orbit a moon will be on a given date in the 2080s. The Sun
 				is at its true direction and distance. The three views hold
 				different things still: the stars, the ground of Mars, or
-				Phobos. The facilities and the flights between them are added
-				in later steps.
+				Phobos. The Phobos skyhook is a tether built on Phobos, lying
+				along the line from Mars's centre through Phobos's, its own
+				swinging left aside: each point keeps its distance from Phobos
+				and is carried round Mars as that line turns. Its altitudes are
+				given with Phobos at its mean distance, and the whole tether
+				rises and falls 142 km each orbit. A ship is let go with the
+				position and velocity its release point has at that instant.
+				Its path is integrated (RK4) under Mars's gravity, the extra
+				pull of Mars's equatorial bulge, and the Sun, until it comes
+				down to 125 km (taken as the top of the air), has gone once
+				round its orbit, or leaves Mars's sphere of influence. In a
+				turning view the path is the ship's track against whatever the
+				view holds still. The Release time slider spans one orbit of
+				Phobos; the Flight slider moves the whole scene to that time
+				after release. The other facilities and flights from one to
+				another are added in later steps.
 				</p>
 			</div>
 

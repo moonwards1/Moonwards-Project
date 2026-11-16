@@ -222,11 +222,36 @@ function entryConditionsFromState(r, v) {
 // (r,v,t) sample trail (turn-angle-capped step, ~1° per step, tighter inside
 // the SOI) so a waypoint dropped anywhere on this leg can recover its state
 // (interpolated — see stateAtLegTime) without re-integrating.
-export function integrateTrajectory(name, R0, V0, jd0) {
+//
+// opts (all optional; with none given the integration is exactly as above):
+//   extraAccel(r, jde) — a further acceleration (m/s², [x,y,z]) added to the
+//               body's and the Sun's at every stage: the body's equatorial
+//               bulge (OrbitalMath.j2Acceleration), for a flight that stays
+//               close enough for it to matter.
+//   entryRadius — the radius (m) at which the flight has reached the
+//               atmosphere or the ground, in place of radius + atmosphere height.
+//   exitRadius — an unbound flight is ended as "sun" once it is this far out
+//               (m), in place of 0.1x the body's heliocentric distance: for a
+//               caller that only follows the ship to the sphere of influence.
+//   orbits    — how many periods of its starting ellipse a bound flight is
+//               flown (default 1.02).
+//   maxTime   — stop once this many seconds have been flown, whatever the
+//               path is doing; the branch is then "time".
+//   turnStep  — the turn-angle bound on a step, radians (default 0.02).
+//   maxSteps  — the step budget (default 8000).
+export function integrateTrajectory(name, R0, V0, jd0, opts) {
+	opts = opts || {};
 	var c = bodyConstants(name);
 	var r = R0.slice(), v = V0.slice(), t = 0;
 	var samples = [{ r: r.slice(), v: v.slice(), t: 0 }];
-	var entryR = c.entryR, cutoff = c.cutoff;
+	var entryR = opts.entryRadius || c.entryR, cutoff = opts.exitRadius || c.cutoff;
+	var turnStep = opts.turnStep || 0.02, maxSteps = opts.maxSteps || 8000;
+	var maxTime = opts.maxTime || Infinity;
+	var accel = !opts.extraAccel ? function (rr, jj) { return bodyAccel(name, rr, jj); }
+		: function (rr, jj) {
+			var a = bodyAccel(name, rr, jj), x = opts.extraAccel(rr, jj);
+			return [a[0] + x[0], a[1] + x[1], a[2] + x[2]];
+		};
 	var rmin = Infinity, rmax = 0, helioEl = null, vinfSun = null, vinfBody = null, entry = null, branch = null;
 	// Absolute heliocentric escape state (m, m/s) + the Julian date it was
 	// captured at, for the caller that wants the interplanetary hand-off. Null
@@ -249,19 +274,22 @@ export function integrateTrajectory(name, R0, V0, jd0) {
 	var boundCap = null;
 	if (E0 < 0) {
 		var el0 = O.elementsFromState(c.GM, r, v);
-		if (el0.e < 1 && isFinite(el0.a)) { boundCap = 2 * Math.PI * Math.sqrt(Math.pow(el0.a, 3) / c.GM) * 1.02; }
+		if (el0.e < 1 && isFinite(el0.a)) {
+			boundCap = 2 * Math.PI * Math.sqrt(Math.pow(el0.a, 3) / c.GM) * (opts.orbits || 1.02);
+		}
 	}
 
-	for (var step = 0; step < 8000; step++) {
+	for (var step = 0; step < maxSteps; step++) {
+		if (t >= maxTime) { branch = "time"; break; }
 		var jde = jd0 + t / 86400;
-		var a1 = bodyAccel(name, r, jde);
+		var a1 = accel(r, jde);
 		var amag = Math.max(1e-12, Math.hypot(a1[0], a1[1], a1[2]));
 		var vmag = Math.max(1, Math.hypot(v[0], v[1], v[2]));
 		var rNow = Math.hypot(r[0], r[1], r[2]);
 		var dtMax = rNow < c.SOI ? 2160 : 21600;
-		var dt = Math.max(0.05, Math.min(dtMax, 0.02 * vmag / amag));   // ~1 deg of turn, capped
-		var stepped = rk4StepToEntry(function (rr, jj) { return bodyAccel(name, rr, jj); },
-			r, v, jde, dt, entryR);
+		var dt = Math.max(0.05, Math.min(dtMax, turnStep * vmag / amag));   // ~1 deg of turn, capped
+		if (t + dt > maxTime) { dt = maxTime - t; }
+		var stepped = rk4StepToEntry(accel, r, v, jde, dt, entryR);
 		r = stepped.r; v = stepped.v; t += stepped.dt;
 		samples.push({ r: r.slice(), v: v.slice(), t: t });
 		var rmag = Math.hypot(r[0], r[1], r[2]);
@@ -323,12 +351,13 @@ export function localFrameAt(name, rLocal, jde, primary) {
 
 // A leg integrated with real body + Sun gravity (RK4) from a body-centred
 // state, run to its natural end (entry / one bound orbit / heliocentric
-// escape) — see integrateTrajectory. Samples are body-centred (m); the body
+// escape) — see integrateTrajectory, whose `opts` pass straight through.
+// Samples are body-centred (m); the body
 // itself is the fixed origin, so no "as if the satellite stood still" render
 // hack is needed (unlike geo-leg's Moon).
-export function buildIntegratedLeg(name, R0, V0, jde0) {
-	var res = integrateTrajectory(name, R0, V0, jde0);
-	var primary = res.branch === "sun" ? "Sun" : name;   // "entry"/"body" are both body-primary
+export function buildIntegratedLeg(name, R0, V0, jde0, opts) {
+	var res = integrateTrajectory(name, R0, V0, jde0, opts);
+	var primary = res.branch === "sun" ? "Sun" : name;   // "entry"/"body"/"time" are all body-primary
 	var s0 = res.samples[0];
 	var leg = {
 		kind: "integrated", body: name, primary: primary, branch: res.branch,
