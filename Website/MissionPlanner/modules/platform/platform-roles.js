@@ -419,12 +419,21 @@ function nudgeRate(frac) {
 // control's `change` event gives it).
 function attachNudgeSlider(slider, onTick, onRelease) {
 	var timer = null;
+	function recentre() { slider.value = 0; }
+	// The handle's resting place is always centre. Recentring happens on every
+	// way a drag can end (the release may land outside the slider, and the
+	// browser's own end-of-drag handling can run after our pointerup), so it
+	// is repeated on the next frame and never depends on a tick having started.
 	function stop() {
-		if (!timer) { return; }
-		clearInterval(timer);
-		timer = null;
-		slider.value = 0;
-		onRelease();
+		var wasHeld = !!timer;
+		if (timer) { clearInterval(timer); timer = null; }
+		recentre();
+		requestAnimationFrame(recentre);
+		window.removeEventListener("pointerup", stop);
+		window.removeEventListener("pointercancel", stop);
+		window.removeEventListener("mouseup", stop);
+		window.removeEventListener("touchend", stop);
+		if (wasHeld) { onRelease(); }
 	}
 	function start() {
 		if (timer) { return; }
@@ -432,11 +441,16 @@ function attachNudgeSlider(slider, onTick, onRelease) {
 			var rate = nudgeRate(parseFloat(slider.value));
 			if (rate !== 0) { onTick(rate * (NUDGE_TICK_MS / 1000)); }
 		}, NUDGE_TICK_MS);
+		window.addEventListener("pointerup", stop);
+		window.addEventListener("pointercancel", stop);
+		window.addEventListener("mouseup", stop);
+		window.addEventListener("touchend", stop);
 	}
 	slider.addEventListener("pointerdown", start);
 	slider.addEventListener("pointerup", stop);
 	slider.addEventListener("pointercancel", stop);
 	slider.addEventListener("lostpointercapture", stop);
+	slider.addEventListener("change", recentre);
 	slider.addEventListener("keydown", function (e) {
 		if (e.key === "ArrowLeft" || e.key === "ArrowRight") { start(); }
 	});
