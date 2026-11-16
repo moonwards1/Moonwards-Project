@@ -31,6 +31,7 @@ Website/
 │   ├── _template/                              # Canonical wiring — copy this to start a new calculator
 │   ├── Earth-Aerobrake-Calculator/             # model only: no page of its own
 │   ├── Hanging-skyhooks/
+│   ├── Mars-Elevator/                          # model + home-workbench cards (off-equator elevator)
 │   ├── Mars-Phobos-Skyhook-Trajectory-Plotter/
 │   ├── Modified-tether-tool/                   # Tether/skyhook simulator (adapted from Sigvart Brendberg's tether-tool)
 │   ├── Mass-Driver-Launch-Calculator/          # model only: no page of its own

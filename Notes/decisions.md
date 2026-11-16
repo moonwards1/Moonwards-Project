@@ -568,7 +568,8 @@ design uses it.
 ### The workbench's elevators are sized by one tether model, against a 1.5× pull multiple
 
 The standard, L1 and L2 elevators on the workbench are the same tether in three
-force fields (`Shared/radial-tether.js`), sized for their structure: cable,
+force fields (`Shared/radial-tether.js`), and the off-equator Mars elevator is
+its two-dimensional counterpart (`Shared/meridian-tether.js`), all sized for their structure: cable,
 track and up to three stations, not cargo. The card shows the multiple — the
 surface pull of everything holding the structure up (counterweight, stations
 beyond the balance point) ÷ everything hanging on it (track, stations inside
@@ -578,6 +579,26 @@ outward stations contribute, which a "multiple of the minimum counterweight"
 cannot; tension is least at the anchor or the counterweight, so 1× is exactly
 taut, and the margin stands in for cargo until traffic is modelled on the
 Logistics and Engineering tabs.
+
+### Mars's elevator is anchored off the equator; it clears Phobos and stops short of or dodges Deimos
+
+An equatorial elevator at Mars stays blocked: Phobos and Deimos both cross its line.
+The one form offered is a single tether from an anchor well off the equator (Olympus
+Mons, 18.65°N, by default), bowing toward the plane and staying a few hundred km off
+it, clear of Phobos's 1.08° tilt (191 km at worst). Deimos, tilted more, is handled by
+stopping the counterweight inside its orbit or by dodging: the tether's slowest
+north–south swing (≈24.4 h), built up over about a week by timing how much cargo sits
+on a slanted stretch low on the tether. Why: one anchor and no second leg; the swing
+needs no propellant, and north–south motion is free of Coriolis coupling.
+
+The tether bends in its meridian plane, so it is solved in two dimensions
+(`Shared/meridian-tether.js`), with J2: shot from the counterweight, whose net pull
+the tether lies along, to land at the anchor's latitude. The card carries the track
+and stations of the other elevators, so the multiple floor of 1.5× applies; and the
+counterweight is also raised until the tether leaves the anchor at least 10° above
+horizontal. Why: a lighter counterweight leaves less tension at the bottom, where the
+track's weight bends the tether down toward the ground, and below some mass it no
+longer lands at the anchor at all.
 
 ### A hanging skyhook's tethers are split at its centre of mass
 

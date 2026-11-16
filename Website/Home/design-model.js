@@ -51,7 +51,8 @@ export const FAMILIES = {
 	elevator: { label: "Space Elevator", menu: false, vars: {
 		standard: { label: "Standard", desc: "Surface to beyond stationary orbit, with a counterweight.", once: true },
 		l1: { label: "Through L1", desc: "From the near side through Earth–Moon L1; Earth's pull holds the far end as its counterweight.", only: ["Moon"], once: true },
-		l2: { label: "Through L2", desc: "From the far side through Earth–Moon L2; the Earth–Moon system's rotation holds the far end out as its counterweight.", only: ["Moon"], once: true }
+		l2: { label: "Through L2", desc: "From the far side through Earth–Moon L2; the Earth–Moon system's rotation holds the far end out as its counterweight.", only: ["Moon"], once: true },
+		offequator: { label: "Off-equator", desc: "Anchored far enough from the equator that the tether passes above Phobos's orbit; Deimos is kept below the counterweight or dodged.", only: ["Mars"], once: true }
 	} },
 	driver: { label: "Kinetic Launcher", vars: {
 		surface: { label: "Mass driver", group: "On the surface", desc: "Linear track on the ground." },
@@ -73,8 +74,8 @@ export const MARKS = {
 	"Mars|skyhook": { k: "*", open: true, allow: ["phobos", "deimos"], title: "Mars's moons can anchor skyhooks",
 		head: "Also possible, anchored on a moon",
 		text: "Phobos orbits about 9,400 km from Mars's centre and Deimos about 23,500 km, so either can anchor a skyhook, alongside the ordinary Hanging and Rotating forms. The two tethers share the space around the moons, so each has limits. Phobos's tether can't reach higher than Deimos's orbit, and Deimos's can't reach lower than Phobos's. The ends of the two tethers can't overlap either, or they would eventually hit each other." },
-	"Mars|elevator": { k: "x", title: "No space elevator at Mars",
-		text: "Phobos orbits below stationary altitude and Deimos just above it, so both cross the cable's line. Phobos would pass the cable about every 11 hours." },
+	"Mars|elevator": { k: "*", allow: ["offequator"], title: "No equatorial elevator at Mars",
+		text: "Phobos orbits below stationary altitude and Deimos just above it, so both would cross a cable on the equator; Phobos would pass it about every 11 hours. Anchored well off the equator, on Olympus Mons at 18.65°N for instance, the tether bows toward the equatorial plane but stays a few hundred km off it, clear of Phobos's slightly tilted orbit. Deimos's orbit is tilted more, so the counterweight either stops short of it or the tether dodges it: a north–south swing, built up over about a week by timing climber traffic, carries it clear as Deimos passes." },
 	"Venus|elevator": { k: "x", title: "No space elevator at Venus",
 		text: "Venus turns once every 243 days. Its stationary orbit would be about 1.5 million km out, beyond its Hill sphere (about 1 million km), so there is no orbit for a cable to reach." },
 	"Mercury|elevator": { k: "x", title: "No space elevator at Mercury",
@@ -122,6 +123,7 @@ export function calcFor(inst) {
 	if (inst.fam === "elevator" && inst.v === "standard") return "space-elevator";
 	if (inst.fam === "elevator" && inst.v === "l1") return "moon-l1-elevator";
 	if (inst.fam === "elevator" && inst.v === "l2") return "moon-l2-elevator";
+	if (inst.fam === "elevator" && inst.v === "offequator") return "mars-elevator";
 	return null;
 }
 
@@ -146,10 +148,10 @@ export function shipRolesFor(inst, body) {
 	return [];
 }
 
-// Short display name for an installation, e.g. "Hanging skyhook".
+// Short display name for an installation, e.g. "Hanging skyhook", "L1 elevator".
 export function instLabel(inst) {
-	if (inst.fam === "elevator" && inst.v !== "standard") return inst.v.toUpperCase() + " elevator";
 	var fam = FAMILIES[inst.fam], def = fam.vars[inst.v];
+	if (inst.fam === "elevator" && inst.v !== "standard") return (inst.v === "l1" || inst.v === "l2" ? inst.v.toUpperCase() : def.label) + " elevator";
 	if (inst.fam === "driver") return def.full || def.label;
 	return def.label + " " + fam.label.toLowerCase();
 }

@@ -11,7 +11,7 @@ the **workbench**, and the **apps**.
   installation chips selects it; the panel on the right shows that body's main
   facts. A `*` in a cell means the family has special forms there (the Moon's
   elevator runs through L1 or L2; Mars's skyhooks can anchor on Phobos or
-  Deimos); an `×` means it can't be built there with this world's technology.
+  Deimos, and its one elevator is anchored off the equator); an `×` means it can't be built there with this world's technology.
   Both open a card explaining why, and the `*` card is where its special forms
   are added, each at most once. Column menus carry no notes and leave the
   special forms out; the Space Elevator column has no menu at all, since its
@@ -24,7 +24,8 @@ the **workbench**, and the **apps**.
   for the selected body and installation. Each installation has one calculator
   serving all four tabs; every card belongs to a tab. An installation with its own
   calculator (today: the hanging skyhook, the Phobos skyhook, the standard
-  space elevator and the Moon's L1 and L2 elevators) shows its cards on the tabs they
+  space elevator, the Moon's L1 and L2 elevators and the off-equator Mars
+  elevator) shows its cards on the tabs they
   belong to, and **skeleton cards** fill any tab it has none on. Others are
   made entirely of skeleton cards. Skeleton input cards are wired to their
   result cards; results that are plain arithmetic are computed, the rest show

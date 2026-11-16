@@ -3,10 +3,13 @@
 //   import { standardField, earthMoonField, tetherContext, tetherMetrics,
 //            pullBalance, counterweightFor, radiusAtForce } from "../../Shared/radial-tether.js";
 //
-// Serves every space elevator on the workbench: the standard one (a body's
+// Serves the workbench's radial space elevators: the standard one (a body's
 // equator past synchronous orbit) and the Moon's elevators through Earth–Moon
 // L1 and L2. Each is the same tether in a different one-dimensional force
-// field; the derivation is in Calculators/Moon-L1-Elevator/README.md.
+// field; the derivation is in Calculators/Moon-L1-Elevator/README.md. The
+// off-equator Mars elevator, which bends in two dimensions, is
+// Shared/meridian-tether.js; pullBalance and counterweightFor work on its
+// solutions too.
 //
 // A field is { g(r), Phi(r), R, rBalance }:
 //   r          distance from the anchoring body's centre along the tether,

@@ -17,6 +17,8 @@
 //   var st = cw.resolve({ field, rCW });    the stations as [{ r, m }] (m), ranges and rows brought up to date
 //   var ctx = tetherContext(field, { ..., stations: st });
 //   var s = cw.settle(ctx);                 { M, mult, req, raised }: the counterweight used
+//   cw.settle(ctx, { M, why })              the same, with a further least mass the calculator sets
+//                                           ("Raised to 2.1 Mt " + why)
 //   cw.blank();                             when the geometry can't hold a tether
 //
 // The multiple is everything holding the structure up ÷ everything hanging on
@@ -242,8 +244,11 @@ export function addCounterweightCard(shell, opts) {
 		return out;
 	}
 
-	function settle(ctx) {
-		var req = counterweightFor(ctx, MULT_FLOOR);
+	// floor (optional): { M (kg), why } — a further least counterweight the
+	// calculator's own geometry sets; the card raises to it as to the multiple.
+	function settle(ctx, floor) {
+		var req = counterweightFor(ctx, MULT_FLOOR), byFloor = !!(floor && floor.M > req);
+		if (byFloor) req = floor.M;
 		var typed = parseNum(massIn.value);
 		if (typed == null) {
 			typed = roundUp3(counterweightFor(ctx, MULT_ADVISED) / 1e6);
@@ -253,7 +258,7 @@ export function addCounterweightCard(shell, opts) {
 		var raised = typed < req * (1 - 1e-9);
 		var M = raised ? req : typed;
 		raisedNote.hidden = !raised;
-		raisedNote.textContent = raised ? "Raised to " + mass(M) + " to reach " + MULT_FLOOR + "×." : "";
+		raisedNote.textContent = raised ? "Raised to " + mass(M) + (byFloor ? " " + floor.why : " to reach " + MULT_FLOOR + "×.") : "";
 		var b = pullBalance(ctx, M);
 		lMult.set(isFinite(b.mult) ? num(b.mult, 2) : "—");
 		advNote.hidden = !(b.mult < MULT_ADVISED - 0.005);   // as shown to two decimals

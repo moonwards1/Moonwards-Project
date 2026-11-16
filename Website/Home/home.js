@@ -77,6 +77,11 @@ var CALCULATORS = {
 			return import("../Calculators/Moon-L1-Elevator/l1ElevatorBench.js").then(function (m) { return m.mountMoonLagrangeElevator; });
 		},
 		opts: { side: "L2" }
+	},
+	"mars-elevator": {
+		load: function () {
+			return import("../Calculators/Mars-Elevator/marsElevatorBench.js").then(function (m) { return m.mountMarsElevator; });
+		}
 	}
 };
 var mounted = {};   // installation id → { el, handle, instId, body }

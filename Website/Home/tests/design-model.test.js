@@ -38,7 +38,7 @@ test("marks refer to real bodies, families and variants", function () {
 	});
 });
 
-test("the Moon takes only the L1 and L2 elevators; Mars, Venus, Mercury take none", function () {
+test("the Moon takes only the L1 and L2 elevators, Mars only the off-equator one; Venus, Mercury take none", function () {
 	var d = sampleDesign();
 	assert.match(variantBlock(d, "Moon", "elevator", "standard"), /\*/);
 	assert.equal(variantBlock(d, "Moon", "elevator", "l2"), null);
@@ -48,13 +48,19 @@ test("the Moon takes only the L1 and L2 elevators; Mars, Venus, Mercury take non
 		assert.ok(variantBlock(d, n, "elevator", "standard"), n);
 		assert.ok(variantBlock(d, n, "elevator", "l1"), n);
 	});
+	assert.equal(variantBlock(d, "Mars", "elevator", "offequator"), null);
+	assert.equal(variantBlock(d, "Moon", "elevator", "offequator"), "Only at Mars.");
+	assert.ok(variantBlock(d, "Venus", "elevator", "offequator"));
+	assert.equal(instLabel({ fam: "elevator", v: "offequator" }), "Off-equator elevator");
+	assert.equal(instLabel({ fam: "elevator", v: "standard" }), "Standard space elevator");
 	assert.ok(variantBlock(d, "Earth", "elevator", "l1"));
 	assert.equal(variantBlock(addBody(d, "Vesta"), "Vesta", "elevator", "standard"), null);
 });
 
 test("an asterisk's hint says what clicking offers; a × only explains", function () {
 	assert.match(markHint("Moon|elevator"), /^No standard elevator at the Moon\. Click to choose/);
-	assert.match(markHint("Mars|elevator"), /Click for why\.$/);
+	assert.match(markHint("Mars|elevator"), /^No equatorial elevator at Mars\. Click to choose Off-equator\.$/);
+	assert.match(markHint("Venus|elevator"), /Click for why\.$/);
 	assert.equal(markHint("Earth|elevator"), "");
 });
 
@@ -148,6 +154,7 @@ test("installations with their own calculator", function () {
 	assert.equal(calcFor({ id: "e", fam: "elevator", v: "standard" }), "space-elevator");
 	assert.equal(calcFor({ id: "l", fam: "elevator", v: "l1" }), "moon-l1-elevator");
 	assert.equal(calcFor({ id: "m", fam: "elevator", v: "l2" }), "moon-l2-elevator");
+	assert.equal(calcFor({ id: "o", fam: "elevator", v: "offequator" }), "mars-elevator");
 	assert.equal(calcFor({ id: "p", fam: "skyhook", v: "phobos" }), "phobos-skyhook");
 	assert.equal(calcFor({ id: "d", fam: "skyhook", v: "deimos" }), null);
 	assert.equal(calcFor(null), null);
