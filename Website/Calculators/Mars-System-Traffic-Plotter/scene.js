@@ -1,6 +1,8 @@
 /* Mars-System-Traffic-Plotter/scene — the Three.js scene of the Mars system:
- * Mars with a latitude–longitude grid, Phobos, Deimos, their orbits, the
- * areostationary ring, Mars's sphere of influence and the Sun.
+ * Mars with a latitude–longitude grid and arrows showing which way it turns,
+ * Phobos, Deimos, their orbits, the areostationary ring, Mars's sphere of
+ * influence, the Sun, and the stretch of Mars's own orbit round the Sun that
+ * it is on.
  *
  * buildMarsScene() returns the scene, its camera and place(jd, viewId), which
  * puts everything where the clock has it, drawn in one of the views of
@@ -17,7 +19,7 @@ import { systems } from "../../Shared/orbit.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
 import { MarsEphemeris as ME } from "../../Shared/mars-ephemeris.js";
 import { createCam } from "../../Shared/sim/camera-controller.js";
-import { makePoint, makeSOIShell, createSunBody, addLabel } from "../../Shared/sim/body-renderer.js";
+import { makePoint, makeSOIShell, makeSpinArrows, createSunBody, addLabel } from "../../Shared/sim/body-renderer.js";
 import { makeStars } from "../../MissionPlanner/scene-frames.js";
 import { viewBasis, toView } from "./core/view-frames.js";
 
@@ -32,8 +34,13 @@ export var R_STATIONARY = O.synchronousRadius(MARS.GM, 2 * Math.PI / ME.SIDEREAL
 export var SOI_MARS = O.sphereOfInfluence(MARS.orbit.semiMajor, MARS.mass, SUN.mass || SUN.GM / 6.6743e-11);
 
 var COLOR = { mars: 0xb5522f, marsGlow: 0x2a120a, grid: 0xf0c9a8, prime: 0xffffff,
-              phobos: 0xa89f94, deimos: 0xb8b0a2, orbit: 0x5d6f96, stationary: 0x3f8f86 };
+              phobos: 0xa89f94, deimos: 0xb8b0a2, orbit: 0x5d6f96, stationary: 0x3f8f86,
+              sunOrbit: 0xc9a24a };
 var RING_POINTS = 160;
+// The stretch of Mars's orbit round the Sun that is drawn: this fraction of a
+// Mars year, half behind Mars and half ahead.
+var SUN_ORBIT_SHARE = 0.08, SUN_ORBIT_POINTS = 96;
+var MARS_YEAR = 2 * Math.PI * Math.sqrt(Math.pow(MARS.orbit.semiMajor, 3) / SUN.GM);
 
 function vec(p) { return new THREE.Vector3(p[0] / U, p[1] / U, p[2] / U); }
 
@@ -108,7 +115,9 @@ export function buildMarsScene() {
 		new THREE.MeshStandardMaterial({ color: COLOR.mars, emissive: COLOR.marsGlow, roughness: 0.9 }));
 	marsCore.rotation.x = Math.PI / 2;         // the sphere's own pole onto local z
 	var grid = makeGrid(rU * 1.002);
-	marsTurn.add(marsCore); marsTurn.add(grid);
+	// Arrowheads on the equator, pointing the way the ground moves (eastward).
+	var spinArrows = makeSpinArrows(rU, 0xffe9d6, 0.9, 6);
+	marsTurn.add(marsCore); marsTurn.add(grid); marsTurn.add(spinArrows);
 	var marsPoint = makePoint(0xf0a070, 2.5);
 	var soi = makeSOIShell(SOI_MARS / U, 0xf0a070, 0.05);
 	marsGroup.add(marsTurn); marsGroup.add(marsPoint); marsGroup.add(soi);
@@ -155,6 +164,11 @@ export function buildMarsScene() {
 	var sunBody = createSunBody(scene, scaleList, { sys: SUN, AU: U });
 	addLabel(labelLayer, labelList, "Sun", sunBody.group, "mst-label");
 
+	// Mars's path round the Sun, drawn through Mars: where its centre was and
+	// will be, measured from where it is now.
+	var sunOrbit = movingLine(SUN_ORBIT_POINTS + 1, COLOR.sunOrbit, 0.6);
+	scene.add(sunOrbit);
+
 	var show = { orbits: true, grid: true };
 
 	return {
@@ -171,6 +185,7 @@ export function buildMarsScene() {
 			Object.assign(show, what);
 			grid.visible = show.grid;
 			stationary.visible = show.orbits;
+			sunOrbit.visible = show.orbits;
 			Object.keys(moons).forEach(function (n) { moons[n].ring.visible = show.orbits; });
 		},
 		// Put everything where it is at Julian date jd, in the view `viewId`.
@@ -201,7 +216,16 @@ export function buildMarsScene() {
 				pos.needsUpdate = true;
 			});
 
-			var sun = view(ME.sunVector(jd)), d = O.vMag(sun);
+			var here = ME.sunVector(jd), path = sunOrbit.geometry.attributes.position;
+			for (var q = 0; q <= SUN_ORBIT_POINTS; q++) {
+				var when = jd + (q / SUN_ORBIT_POINTS - 0.5) * SUN_ORBIT_SHARE * MARS_YEAR / DAY;
+				// Mars's centre then, from its centre now: the Sun's offset now less its offset then.
+				var c = view(O.vSub(here, ME.sunVector(when)));
+				path.setXYZ(q, c[0] / U, c[1] / U, c[2] / U);
+			}
+			path.needsUpdate = true;
+
+			var sun = view(here), d = O.vMag(sun);
 			sunBody.group.position.copy(vec(sun));
 			sunLight.position.set(sun[0] / d * 5e4, sun[1] / d * 5e4, sun[2] / d * 5e4);
 		}

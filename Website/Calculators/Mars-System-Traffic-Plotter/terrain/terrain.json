@@ -1,0 +1,63 @@
+{
+ "source": "MGS MOLA DEM mosaic 463 m (USGS Astrogeology), band 18 S - 18 N, averaged to 32 per degree in TerreSculptor",
+ "units": "m above the MOLA areoid",
+ "format": "int16 little-endian, rows north to south, each row west to east",
+ "referenceRadius": 3396190.0,
+ "latNorth": 18.0,
+ "latSouth": -18.0,
+ "lonWest": -180.0,
+ "detail": {
+  "perDegree": 32,
+  "rows": 1152,
+  "tileDegrees": 10,
+  "tileCols": 320,
+  "tiles": [
+   "detail/lon-180.bin",
+   "detail/lon-170.bin",
+   "detail/lon-160.bin",
+   "detail/lon-150.bin",
+   "detail/lon-140.bin",
+   "detail/lon-130.bin",
+   "detail/lon-120.bin",
+   "detail/lon-110.bin",
+   "detail/lon-100.bin",
+   "detail/lon-90.bin",
+   "detail/lon-80.bin",
+   "detail/lon-70.bin",
+   "detail/lon-60.bin",
+   "detail/lon-50.bin",
+   "detail/lon-40.bin",
+   "detail/lon-30.bin",
+   "detail/lon-20.bin",
+   "detail/lon-10.bin",
+   "detail/lon0.bin",
+   "detail/lon10.bin",
+   "detail/lon20.bin",
+   "detail/lon30.bin",
+   "detail/lon40.bin",
+   "detail/lon50.bin",
+   "detail/lon60.bin",
+   "detail/lon70.bin",
+   "detail/lon80.bin",
+   "detail/lon90.bin",
+   "detail/lon100.bin",
+   "detail/lon110.bin",
+   "detail/lon120.bin",
+   "detail/lon130.bin",
+   "detail/lon140.bin",
+   "detail/lon150.bin",
+   "detail/lon160.bin",
+   "detail/lon170.bin"
+  ]
+ },
+ "overview": {
+  "perDegree": 8,
+  "rows": 288,
+  "cols": 2880,
+  "file": "overview.bin"
+ },
+ "range": [
+  -5701,
+  21180
+ ]
+}

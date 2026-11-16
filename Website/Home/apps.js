@@ -35,7 +35,7 @@ var APPS = [
 	},
 	{
 		id: "marstraffic", label: "Mars System Traffic", url: "Calculators/Mars-System-Traffic-Plotter/marsSystemTraffic.html",
-		intro: "<p>To-scale 3D Mars system on one clock: Mars turning, Phobos and Deimos on their orbits. Its skyhooks, space elevator and mass drivers, and the flights between them, are being added.</p>"
+		intro: "<p>To-scale 3D Mars system on one clock: Mars turning, Phobos and Deimos on their orbits. Its skyhooks, space elevator and mass driver, and the flights between them, are being added.</p>"
 	}
 ];
 var POP_FEATURES = "popup,width=1440,height=900";

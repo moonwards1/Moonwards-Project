@@ -8,6 +8,11 @@
 # commit-message drafts, deleted once used, so tracking them is pure churn.
 /Notes/changelog.md
 
+# Source terrain for the Mars System Traffic Plotter: the MOLA equatorial band
+# exported from TerreSculptor. Its tools/make-terrain.py turns it into the
+# plotter's terrain/ files, which ARE tracked.
+/Mars_MGS_MOLA_DEM_mosaic_*.tif
+
 # OS cruft
 Thumbs.db
 Desktop.ini

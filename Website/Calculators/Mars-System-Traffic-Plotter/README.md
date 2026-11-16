@@ -1,27 +1,41 @@
 # Mars System Traffic Plotter
 
 A to-scale 3-D view of the Mars system on a clock, for plotting cargo flights
-between the system's transport facilities: the Phobos skyhook, up to two
-hanging skyhooks, a space elevator (Layout A or B) and two surface mass
-drivers. Flights stay inside the system; it exchanges nothing with the Mission
+between the system's transport facilities: the Phobos skyhook, a hanging
+skyhook, a space elevator (Layout A or B) and a surface mass driver on the
+equator. Flights stay inside the system; it exchanges nothing with the Mission
 Planner.
 
 **Built so far:** the scene and its clock — Mars turning, Phobos and Deimos on
 their orbits, the Sun — the three views, the POV buttons and click-to-follow.
 The facilities are listed folded in the sidebar and come next, starting with
-the Phobos skyhook.
+the Phobos skyhook. The ground model for the mass driver (terrain and the
+track profile) is in the core, not yet on the page.
 
 ## Files
 
 - `marsSystemTraffic.html`, `.css` (`mst-` prefix), `.js` — the page: date bar,
   view, key figures, sidebar. It computes nothing the core and
   `Shared/mars-ephemeris.js` could not.
-- `scene.js` — the Three.js scene: Mars and its grid, the moons and their
-  orbits, the areostationary ring, the sphere of influence, the Sun.
+- `scene.js` — the Three.js scene: Mars with its grid and spin arrows, the
+  moons and their orbits, the areostationary ring, the sphere of influence,
+  the Sun, and the stretch of Mars's orbit round the Sun it is on.
   `place(jd, viewId)` puts everything where the clock has it.
 - `core/clock.js` — `CLOCK_EPOCH` (2080-01-01) and `SPAN_DAYS`. Pure.
 - `core/view-frames.js` — `viewBasis(kind, jd)` and `toView`: the axes the view
   is drawn in. Pure.
+- `core/terrain.js` — ground heights from the terrain files: loads the
+  overview and the tiles a track needs, and interpolates a height at any
+  latitude and longitude in the band. Pure apart from the fetch it is given.
+- `core/track-profile.js` — the ground under a mass driver's track: the
+  points from breech to muzzle, their heights, the grades, the muzzle's
+  height and distance from Mars's centre. Pure.
+- `terrain/` — heights of the band 18° S to 18° N from the MOLA mosaic, in
+  whole metres above the areoid: `overview.bin` (8 per degree, ~1.7 MB),
+  `detail/lon<W>.bin` (32 per degree, 36 tiles of 10° by the whole band,
+  ~0.74 MB each) and `terrain.json` describing the grid.
+- `tools/make-terrain.py` — makes `terrain/` from the TerreSculptor export
+  kept (untracked) at the repo root; its header gives the conversion.
 - `core/tests/*.test.js` — Node tests:
   `node --test Website/Calculators/Mars-System-Traffic-Plotter/core/tests/*.test.js`
 

@@ -2,9 +2,8 @@
  *
  * A to-scale 3-D view of the Mars system on a clock: Mars turning, Phobos and
  * Deimos on their orbits, the Sun. It is the ground the system's transport
- * facilities — the Phobos skyhook, up to two hanging skyhooks, a space
- * elevator and surface mass drivers — and the flights of cargo between them
- * are built on.
+ * facilities — the Phobos skyhook, a hanging skyhook, a space elevator and a
+ * surface mass driver — and the flights of cargo between them are built on.
  *
  * Built so far: the scene and its clock, the three views (fixed to the
  * stars, turning with Mars, turning with Phobos), the POV buttons and
@@ -47,10 +46,9 @@ var BODIES = ["Phobos", "Deimos", "Mars"];     // small things first: they are p
 // The facilities still to be built, shown folded so the sidebar already has its shape.
 var STUBS = [
 	{ label: "Phobos skyhook", sub: "Tether built on Phobos: foot and top altitude" },
-	{ label: "Hanging skyhook 1", sub: "Tilted orbit; ballast timing to stay clear of other tethers" },
-	{ label: "Hanging skyhook 2", sub: "Optional second one" },
+	{ label: "Hanging skyhook", sub: "Tilted orbit; ballast timing to stay clear of other tethers" },
 	{ label: "Space elevator", sub: "Layout A (both moons pass between the legs) or B (Phobos only)" },
-	{ label: "Mass drivers", sub: "Two surface tracks near the equator" }
+	{ label: "Mass driver", sub: "Surface track on the equator; Pavonis Mons by default" }
 ];
 
 var state = {
