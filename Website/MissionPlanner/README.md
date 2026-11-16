@@ -294,8 +294,12 @@ and the mission differs from its last commit: it then re-solves nothing, and
 records the mission as it stands as a new report line and plan-history step.
 The report's Arrival columns are the arrival waypoints' burns (fuel) and
 whatever remains of the arrival's total for the catching hardware (tech);
-without a catch, tech and total are blank. **Mission report** opens
-a menu carrying the per-iteration table and the mission link. Update and
+without a catch, tech and total are blank. **Mission data** opens
+the per-iteration table: one line per Update, holding the figures and the
+whole World as they were at the click, plus a "now" line read live from the
+mission. Clicking an Update line rebuilds the mission from its stored World
+(the tab, plan history and report lines are kept; the lines are session-only).
+The mission link is a separate button. Update and
 Mission report write into the **message area** beside the flight timeline;
 Refine writes there too.
 

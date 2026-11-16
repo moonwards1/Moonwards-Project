@@ -212,6 +212,11 @@ export function deleteWorkspaceSlot(missionId) {
 //                 the opening World when absent
 //    onPlanRecorded — optional () called after an Update appends a set, so
 //                 the shell can persist the history without polling
+//    report     — optional [{ metrics, world }] the mission report's Update
+//                 lines, carried over when the shell rebuilds this view to
+//                 restore an Update's state
+//    onRestore  — optional (worldData, reportLines) called when a report line
+//                 is clicked; the shell rebuilds the mission from worldData
 //
 //  Returns { world, engine, root, missionId, planHistory, show, hide, render,
 //  resize, dispose }. Only the active (shown) view should have render()/resize()
@@ -1802,7 +1807,6 @@ export function createMissionView(opts) {
 		var sol = retargetSolveNow();
 		var dest = (adoptedPlanStage() && (adoptedPlanStage().params.arrival || {}).body) || "the destination";
 		checked = sol.ok ? Object.assign({ plan: planKeyOf(adoptedPlanStage()) }, sol) : null;
-		nowSnapshot = snapshotForReport();   // the report's "now" row's own refresh point
 		showMessage("Refine — nothing written", function (wrap) {
 			solveMessage(wrap, sol, dest, false);
 		});
@@ -1821,17 +1825,14 @@ export function createMissionView(opts) {
 		var dest = (planStage.params.arrival || {}).body || "the destination";
 		var applied = sol.ok && sol.withinTolerance;
 		if (applied) {
-			// The row "now" was showing (whatever Check, import, or the initial
-			// capture last left it at) becomes a permanent "Update N" line —
-			// literally that value, not a fresh read, so the row states what the
-			// user was looking at when they committed rather than a number that
-			// changes out from under the click.
-			history.push(nowSnapshot || snapshotForReport());
+			// The mission as it stands at the click — its live figures and its
+			// whole World — becomes a permanent "Update N" line, taken before
+			// the re-target moves anything.
+			history.push(reportLineNow());
 			applyRetarget(planStage.id, sol);   // this recomputes and redraws
 			planHistory = recordUpdate(planHistory, world.serialize());
 			if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
 			checked = null;
-			nowSnapshot = snapshotForReport();   // a fresh "now", the just-committed state
 		}
 		showMessage(applied ? "Update — the plan has changed" : "Update — nothing written",
 			function (wrap) { solveMessage(wrap, sol, dest, applied); });
@@ -1845,11 +1846,9 @@ export function createMissionView(opts) {
 	function recordCatch() {
 		var c = catchNow();
 		if (!c.verdict.ok || committedAsNow()) { return; }
-		var snap = snapshotForReport();
-		history.push(snap);
+		history.push(reportLineNow());
 		planHistory = recordUpdate(planHistory, world.serialize());
 		if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
-		nowSnapshot = snap;
 		showMessage("Update " + history.length + " — caught at " + c.cap.body, function (wrap) {
 			msgPara(wrap, "The ship meets the " + escapeText(stageTitle(arrivalTechStage()).toLowerCase()) +
 				" at <b>" + Math.round(c.verdict.relSpeed) + " m/s</b> relative to it — inside the " +
@@ -1871,17 +1870,12 @@ export function createMissionView(opts) {
 	// each Update bought is visible as a column of numbers rather than a
 	// remembered impression. Transient — it belongs to this session, not to the
 	// mission, so it is neither saved nor carried in a mission link.
-	var history = [];
+	// Each line is { metrics, world }: the figures at the instant Update was
+	// clicked and the whole serialized World at that instant, which is what
+	// clicking the line restores.
+	var history = opts.report ? opts.report.slice() : [];
 
-	// The report's "now" row: the mission's CURRENT figures, but not a live
-	// read — a checkpoint, refreshed only at Refine (refineBtn, below) or by an
-	// Update starting a fresh one (updateBtn, below), plus one lazy initial
-	// capture the first time a flight exists at all (so "now" is never blank
-	// on a freshly created or freshly imported mission; a link that already
-	// carries a hand-off gets a populated line immediately, with no Check
-	// needed first). Deliberately not tied to every recompute — a waypoint
-	// drag mid-edit shouldn't make the row flicker.
-	var nowSnapshot = null;
+	// The report's "now" row is read live from the mission, never stored.
 
 	// Departure's own Δv split: FUEL is what the departure leg's own waypoint
 	// burns cost (the user's own impulses); TECH is what a carrier platform's
@@ -1960,6 +1954,12 @@ export function createMissionView(opts) {
 		};
 	}
 
+	// A report line as of this instant: the live figures plus the World they
+	// describe.
+	function reportLineNow() {
+		return { metrics: snapshotForReport(), world: world.serialize() };
+	}
+
 	// One more decimal than cbarKms's — the report is read as a comparison
 	// across rows, where cbarKms's 2 places round too many variants to the
 	// same digits — and no " km/s" suffix: the table states the unit once,
@@ -1986,15 +1986,15 @@ export function createMissionView(opts) {
 	function renderReport() {
 		showReport(function (wrap) {
 			// One row per committed Update (`history`, pushed in updateBtn's
-			// handler above), plus "now" — the mission's current checkpoint
-			// (nowSnapshot: refreshed by Check or a fresh Update, populated once
-			// on the mission's first working flight so it is never the empty
-			// row). No row for "original": with nothing yet committed, "now" IS
-			// the mission as first set up.
-			var rows = history.map(function (snap, i) {
-				return { label: "Update " + (i + 1), metrics: snap, live: false };
+			// handler above), plus "now" — the mission's live figures, read
+			// afresh each time the report is drawn. Clicking an Update row
+			// restores the mission as it was when that Update was clicked. No
+			// row for "original": with nothing yet committed, "now" IS the
+			// mission as first set up.
+			var rows = history.map(function (line, i) {
+				return { label: "Update " + (i + 1), metrics: line.metrics, live: false, line: line };
 			});
-			rows.push({ label: "now", metrics: nowSnapshot, live: true });
+			rows.push({ label: "now", metrics: snapshotForReport(), live: true });
 
 			var t = document.createElement("table");
 			t.className = "mp-report-table";
@@ -2025,6 +2025,20 @@ export function createMissionView(opts) {
 			rows.forEach(function (r) {
 				var tr = document.createElement("tr");
 				if (r.live) { tr.className = "now"; }
+				else if (opts.onRestore) {
+					tr.className = "mp-report-restore";
+					tr.tabIndex = 0;
+					tr.setAttribute("role", "button");
+					tr.title = "Restore the mission as it was when " + r.label + " was clicked";
+					var restore = function () {
+						closeReportPopup();
+						opts.onRestore(r.line.world, history.slice());
+					};
+					tr.addEventListener("click", restore);
+					tr.addEventListener("keydown", function (e) {
+						if (e.key === "Enter" || e.key === " ") { e.preventDefault(); restore(); }
+					});
+				}
 				var labelTd = document.createElement("td"); labelTd.textContent = r.label;
 				tr.appendChild(labelTd);
 				reportCells(r.metrics).forEach(function (text, i) {
@@ -2045,6 +2059,11 @@ export function createMissionView(opts) {
 	// showReport has already added "open") from closing it again in the same
 	// turn.
 	function closeReportPopup() { reportPopupEl.classList.remove("open"); }
+	// The popup holds only the report, so it is open exactly while the report
+	// is showing; "now" is redrawn from the live mission while it is.
+	function refreshReportIfOpen() {
+		if (reportPopupEl.classList.contains("open")) { renderReport(); }
+	}
 	q(".mp-copy-mission").addEventListener("click", function () { shareMission(); });
 	q(".mp-report").addEventListener("click", function (ev) {
 		ev.stopPropagation();
@@ -2878,6 +2897,7 @@ export function createMissionView(opts) {
 	function refreshViews() {
 		renderComplianceBar(engine.results());
 		updateShipCard();
+		refreshReportIfOpen();
 	}
 
 	var unRecompute = engine.onRecompute(function (results) {
@@ -2890,14 +2910,9 @@ export function createMissionView(opts) {
 			drawStage(res);
 			updateCard(res);
 		});
-		// The report's "now" row's one-time initial capture (see nowSnapshot's
-		// own comment, above) — the first time this mission has a flight to
-		// measure at all.
-		if (nowSnapshot === null && flightAsDelivered()) {
-			nowSnapshot = snapshotForReport();
-		}
 		renderComplianceBar(results);
 		updateShipCard();
+		refreshReportIfOpen();
 		updateDepartureInfo();
 		updateArrivalInfo();
 		coastSlider.update({ start: span ? span.start : NaN, end: span ? span.end : NaN, jd: world.jd,

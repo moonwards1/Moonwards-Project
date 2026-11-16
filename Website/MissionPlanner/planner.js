@@ -230,11 +230,15 @@ function titleFor(missionId) {
 // The one place a mission view is built (initial load, E2 spawn, paste
 // import). getTitle looks the title up live so the share link always
 // carries the current name.
-function makeMissionView(world, missionId, defaultMainId, plan) {
+function makeMissionView(world, missionId, defaultMainId, plan, report) {
 	return createMissionView({
 		world: world,
 		plan: plan || null,
+		report: report || null,
 		onPlanRecorded: saveMissionsStore,
+		onRestore: function (worldData, reportLines) {
+			restoreMission(missionId, worldData, reportLines);
+		},
 		registry: registry,
 		renderer: renderer,
 		container: viewsEl,
@@ -243,6 +247,26 @@ function makeMissionView(world, missionId, defaultMainId, plan) {
 		defaultMain: defaultMainId || DEFAULT_MAIN_FRAME,
 		getTitle: function () { return titleFor(missionId); }
 	});
+}
+
+// Puts a mission back as it was when a report line was recorded: the view is
+// rebuilt in place from that serialized World, keeping the tab, its title, its
+// plan history and its report lines. Deferred a tick so the view whose click
+// asked for this is not torn down inside its own event handler.
+function restoreMission(missionId, worldData, reportLines) {
+	setTimeout(function () {
+		var entry = missions.find(function (m) { return m.id === missionId; });
+		if (!entry) { return; }
+		var res = deserializeWorld(worldData);
+		if (!res.ok) { return; }
+		var wasActive = activeTabId === missionId;
+		var plan = entry.view.planHistory();
+		if (wasActive) { entry.view.hide(); }
+		entry.view.dispose();
+		entry.view = makeMissionView(res.world, missionId, null, plan, reportLines);
+		if (wasActive) { entry.view.show(); }
+		saveMissionsStore();
+	}, 0);
 }
 
 // Register a freshly built World as a new mission tab and switch to it — the

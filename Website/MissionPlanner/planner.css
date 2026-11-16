@@ -220,6 +220,10 @@ body {
 .mp-report-table th { color: var(--dim); font-weight: 400; border-bottom: 1px solid var(--line2); }
 .mp-report-table th:first-child, .mp-report-table td:first-child { text-align: left; color: var(--dim); }
 .mp-report-table tr.now td { color: var(--text); }
+.mp-report-table tr.mp-report-restore { cursor: pointer; }
+.mp-report-table tr.mp-report-restore:hover td,
+.mp-report-table tr.mp-report-restore:focus-visible td { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+.mp-report-table tr.mp-report-restore:focus-visible { outline: 1px solid var(--acc); }
 /* Departure / Coast / Arrival's own group-header row: bold and capitalized so
    the three read as section titles rather than more data columns, centered
    over their span — but faded to the same muted grey a disabled button's
