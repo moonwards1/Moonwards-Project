@@ -7,8 +7,8 @@
  * buildMarsScene() returns the scene, its camera and place(jd, viewId), which
  * puts everything where the clock has it, drawn in one of the views of
  * core/view-frames.js. Scene units are 1,000 km (U metres); +Z is up, which
- * the views make Mars's north pole (or, in the Phobos view, the pole of
- * Phobos's orbit).
+ * the views make ecliptic north (Sun view), Mars's north pole (surface view)
+ * or the pole of Phobos's orbit (Phobos view).
  *
  * Nothing here computes where a thing is: positions come from
  * Shared/mars-ephemeris.js through core/view-frames.js.

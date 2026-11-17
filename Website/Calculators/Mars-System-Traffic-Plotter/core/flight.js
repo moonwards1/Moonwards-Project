@@ -20,6 +20,10 @@
  *   "escape"  it leaves Mars's sphere of influence, unbound
  *   "orbit"   neither: it is flown once round its orbit
  *
+ * A flight bound for the other skyhook is flown the same way, and is then
+ * judged against that skyhook's tether (core/arrival.js): its closest pass,
+ * and whether the ship can be caught there.
+ *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  */
 
@@ -28,6 +32,10 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { MarsEphemeris as ME } from "../../../Shared/mars-ephemeris.js";
 import { buildIntegratedLeg, bodySOI, stateAtLegTime } from "../../../Shared/body-leg.js";
 import { allFigures, releaseState, GM_MARS, R_MARS, ENTRY_ALT } from "./facilities.js";
+import { evaluateArrival } from "./arrival.js";
+
+// The destination that is not a facility: the ground.
+export var SURFACE = "surface";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -94,22 +102,30 @@ function summarize(leg, rel, jd) {
 }
 
 // Compute a flight.
-//   input: { from, jd, params }
+//   input: { from, to, jd, params }
 //     from     facility id (core/facilities.js) the ship is released from
+//     to       SURFACE (the default), or the id of the skyhook it is bound for
 //     jd       release Julian date
 //     params   optional { <facility id>: its params; null for one not in the design }
-// Returns { ok: true, from, jd, fig, release, leg, summary } or { ok: false, diagnostic }.
+// Returns { ok: true, from, to, jd, fig, release, leg, summary, toFig, arrival } or { ok: false, diagnostic }.
+//   toFig, arrival   the destination skyhook's figures and arrival.js's
+//                    evaluateArrival result; both null for a flight to the surface
 //   fig      the origin's figures (facilities.js's allFigures)
 //   release  facilities.js's releaseState at jd
 //   leg      the Shared/body-leg.js leg flown: Mars-centred { r, v, t } samples
 export function computeFlight(input) {
-	var fig = allFigures(input.params)[input.from];
+	var figs = allFigures(input.params), fig = figs[input.from], to = input.to || SURFACE;
+	var toFig = to === SURFACE ? null : figs[to];
+	if (to !== SURFACE && (!toFig || to === input.from)) {
+		return { ok: false, diagnostic: { code: "no-destination", message: "That destination is not in the design.", values: {} } };
+	}
+	if (toFig && !toFig.ok) { return toFig; }
 	if (!fig) { return { ok: false, diagnostic: { code: "no-facility", message: "That facility is not in the design.", values: {} } }; }
 	if (!fig.ok) { return fig; }
 	var rel = releaseState(fig, input.jd);
 	var leg = buildIntegratedLeg("Mars", rel.r, rel.v, input.jd, LEG_OPTS);
-	return { ok: true, from: input.from, jd: input.jd, fig: fig, release: rel, leg: leg,
-	         summary: summarize(leg, rel, input.jd) };
+	return { ok: true, from: input.from, to: to, jd: input.jd, fig: fig, release: rel, leg: leg,
+	         summary: summarize(leg, rel, input.jd), toFig: toFig, arrival: toFig ? evaluateArrival(leg, toFig) : null };
 }
 
 // Mars-centred state { r, v, jde } of the ship t seconds after release,

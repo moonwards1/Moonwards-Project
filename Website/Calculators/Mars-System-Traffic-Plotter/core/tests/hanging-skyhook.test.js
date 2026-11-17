@@ -10,8 +10,8 @@ import { hangingFigures, resonantComAlt, resonanceGap, hangingAt, hangingPointSt
 import { tetherDistance, closestPass, firstClosePass, bestStartAngle, workOutSidesteps, timingGuidance, slantFactor }
 	from "../clearance.js";
 import { RATIOS } from "../hanging-skyhook.js";
-import { moonSkyhookFigures, allFigures, releaseState, GM_MARS, R_MARS } from "../facilities.js";
-import { computeFlight } from "../flight.js";
+import { moonSkyhookFigures, allFigures, releaseState, facilityAt, pointState, centreRadius, GM_MARS, R_MARS } from "../facilities.js";
+import { computeFlight, flightStateAt } from "../flight.js";
 import { CLOCK_EPOCH } from "../clock.js";
 import { MarsEphemeris as ME } from "../../../../Shared/mars-ephemeris.js";
 import { OrbitalMath as O } from "../../../../Shared/math-utils.js";
@@ -213,4 +213,30 @@ test("ships let go by the hanging skyhook: the foot falls, the centre of mass or
 	// Left out of the design, it has no figures and no flights.
 	assert.equal(allFigures({ hangingSkyhook: null }).hangingSkyhook, undefined);
 	assert.equal(computeFlight({ from: "hangingSkyhook", jd: JD, params: { hangingSkyhook: null } }).diagnostic.code, "no-facility");
+});
+
+test("a flight bound for the other skyhook is judged at its closest pass to that tether", async function () {
+	var { evaluateArrival, CATCH_REACH } = await import("../arrival.js");
+	var params = { hangingSkyhook: { relAlt: 1200e3 } };
+	var fl = computeFlight({ from: "hangingSkyhook", to: "phobosSkyhook", jd: JD, params: params });
+	var a = fl.arrival;
+	assert.ok(fl.ok && a.found && fl.toFig.id === "phobosSkyhook");
+	assert.ok(a.t >= 0 && a.t <= fl.leg.duration && a.miss > 0);
+	assert.equal(a.blocked, O.segmentDistance([0, 0, 0], [0, 0, 0], a.r, a.pointR).distance < R_MARS);
+	near(O.vMag(O.vSub(a.r, a.pointR)), a.miss, 1e-6);
+	assert.ok(a.altitude >= fl.toFig.footAlt - 150e3 && a.altitude <= fl.toFig.topAlt + 150e3, "altitude " + a.altitude);
+	assert.equal(a.met, a.miss <= CATCH_REACH);
+	assert.ok(["above-top", "below-foot", "off-arm", "too-fast", null].indexOf(a.reason) >= 0);
+	// No sampled instant of the flight is closer than the pass found.
+	var fig = fl.toFig;
+	for (var k = 0; k <= 2000; k++) {
+		var st = flightStateAt(fl, fl.leg.duration * k / 2000), at = facilityAt(fig, st.jde), x = O.vDot(st.r, at.u);
+		var pt = pointState(fig, at, Math.max(fig.sFoot, Math.min(fig.sTop, x - centreRadius(fig, at))));
+		assert.ok(O.vMag(O.vSub(st.r, pt.r)) >= a.miss - 1, "closer at sample " + k);
+	}
+	// A skyhook is not its own destination, nor is one left out of the design.
+	assert.equal(computeFlight({ from: "phobosSkyhook", to: "phobosSkyhook", jd: JD }).diagnostic.code, "no-destination");
+	assert.equal(computeFlight({ from: "phobosSkyhook", to: "hangingSkyhook", jd: JD, params: { hangingSkyhook: null } }).diagnostic.code, "no-destination");
+	// To the surface there is no arrival to judge.
+	assert.equal(computeFlight({ from: "hangingSkyhook", jd: JD, params: params }).arrival, null);
 });

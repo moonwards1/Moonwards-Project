@@ -5,7 +5,7 @@
  * path of a ship let go by one of them. The facilities are the Phobos skyhook,
  * a hanging skyhook, a space elevator and a surface mass driver.
  *
- * Built so far: the scene and its clock, the three views (fixed to the stars,
+ * Built so far: the scene and its clock, the three views (held toward the Sun,
  * turning with Mars, turning with Phobos), the POV buttons and click-to-follow;
  * the Phobos skyhook and the hanging skyhook, with a release from any point of
  * either tether flown to its end — down to the air, round an orbit, or out of
@@ -34,7 +34,8 @@ import { FACILITIES, SKYHOOKS, allFigures, facilityAt, pointState, centreRadius,
 import { HANGING_DEFAULTS, RATIOS, resonantComAlt } from "./core/hanging-skyhook.js";
 import { DEFAULT_LIMIT, bestStartAngle, closestPass, tetherDistance, workOutSidesteps, timingGuidance }
 	from "./core/clearance.js";
-import { computeFlight, flightStateAt, groundRelative } from "./core/flight.js";
+import { computeFlight, flightStateAt, groundRelative, SURFACE } from "./core/flight.js";
+import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
 import { buildMarsScene, R_STATIONARY, SOI_MARS, U } from "./scene.js";
 import { buildOverlay } from "./overlay.js";
 
@@ -71,8 +72,9 @@ var state = {
 	flightFrac: 0,                     // flight slider position, 0..1 of the flight's span
 	follow: "Mars",                    // what the camera stays on: a body's name, "ship", "<facility>:<marker>", or null
 	pov: "system",
-	view: "stars",                     // core/view-frames.js: "stars" | "surface" | "phobos"
+	view: "sun",                       // core/view-frames.js: "sun" | "surface" | "phobos"
 	from: PHOBOS,                      // the skyhook the ship is let go from
+	to: SURFACE,                       // where it is bound: SURFACE, or the other skyhook's id
 	params: {},                        // facility id -> its params (m)
 	included: {},                      // facility id -> in the design? (the Phobos skyhook always is)
 	limit: DEFAULT_LIMIT,              // the least clearance allowed between the two tethers, m
@@ -189,7 +191,8 @@ var glide = 0;                         // frames left of easing onto a new follo
 function targetPos(id) {
 	if (id === "ship") { return overlay.ship.visible ? overlay.ship.position : null; }
 	if (overlay.markers[id]) {
-		var fig = figs[id.split(":")[0]];
+		var parts = id.split(":"), fig = figs[parts[0]];
+		if (parts[1] === "release" && parts[0] !== state.from) { return null; }   // only the departure has one
 		return showFac.checked && fig && fig.ok ? overlay.markers[id].pos : null;
 	}
 	return frame.bodyPosition(id);
@@ -230,7 +233,8 @@ function syncButtons() {
 	pressed($("mst-frames"), "frame", state.view);
 	var f = VIEW_FRAMES.filter(function (v) { return v.id === state.view; })[0];
 	$("mst-view-caption").textContent = "MARS SYSTEM · Mars-centred, "
-		+ (state.view === "phobos" ? "Phobos's orbit pole up" : "north up") + " · " + f.caption;
+		+ (state.view === "phobos" ? "Phobos's orbit pole up" : state.view === "sun" ? "ecliptic north up" : "north up")
+		+ " · " + f.caption;
 }
 // Per frame: hold the camera's centre on the followed thing, easing onto it
 // for a moment after a change. A target that has left the scene is let go.
@@ -269,18 +273,14 @@ function pickTarget(e) {
 	}
 	return null;
 }
-// The skyhook whose release marker is under the cursor, or null.
+// The departure skyhook's id if its release marker is under the cursor, else null.
 function releaseMarkerAt(e) {
-	for (var i = 0; i < SKYHOOKS.length; i++) {
-		var pos = targetPos(SKYHOOKS[i] + ":release");
-		if (pos && pxFrom(e, pos) < 12) { return SKYHOOKS[i]; }
-	}
-	return null;
+	var pos = targetPos(state.from + ":release");
+	return pos && pxFrom(e, pos) < 12 ? state.from : null;
 }
 
-// Dragging a skyhook's release marker: it goes to the point of the tether
-// nearest the cursor's line of sight, and that skyhook becomes the one the
-// ship is let go from.
+// Dragging the departure's release marker: it goes to the point of the tether
+// nearest the cursor's line of sight.
 //
 //     x = ( (u . w) - (d . u)(d . w) ) / ( 1 - (d . u)^2 )
 //
@@ -302,7 +302,6 @@ function dragRelease(e, id) {
 	var x = (u.dot(w) - b * d.dot(w)) / den * U;           // m from Mars's centre
 	var alt = altitudeOf(fig, x - centreRadius(fig, at));  // as the card gives altitudes
 	state.params[id].relAlt = Math.max(fig.footAlt, Math.min(fig.topAlt, alt));
-	state.from = id;
 	refresh();
 }
 
@@ -384,7 +383,8 @@ function cardShell(label, sub, stub) {
 	head.innerHTML = CHEVRON_SVG;
 	var title = head.appendChild(el("span", "mst-card-title", label));
 	title.appendChild(el("span", "mst-card-sub", sub));
-	return { el: card, head: head, body: card.appendChild(el("div", "mst-card-body")) };
+	var badge = head.appendChild(el("span", "mst-badge"));
+	return { el: card, head: head, badge: badge, body: card.appendChild(el("div", "mst-card-body")) };
 }
 function numberField(parent, id, label, onInput) {
 	var f = parent.appendChild(el("div", "mst-field"));
@@ -402,9 +402,11 @@ function checkBox(parent, id, label, onChange) {
 	box.addEventListener("change", function () { onChange(box.checked); });
 	return box;
 }
-// The release point's controls and readouts, the same on either skyhook's card.
+// The release point's controls and readouts, the same on either skyhook's
+// card and shown on the flight's departure; then the arrival's readouts, shown
+// on its destination.
 function releaseSection(parent, id, prefix, r) {
-	var rel = parent.appendChild(el("div", "mst-release"));
+	var rel = r.release = parent.appendChild(el("div", "mst-release"));
 	var line = rel.appendChild(el("div", "mst-release-line"));
 	var sf = line.appendChild(el("div", "mst-field"));
 	var lab = sf.appendChild(el("label", null, "Release point, from foot to top"));
@@ -416,36 +418,56 @@ function releaseSection(parent, id, prefix, r) {
 		var fig = figs[id];
 		if (!(fig && fig.ok)) { return; }
 		state.params[id].relAlt = fig.footAlt + parseFloat(r.relSlider.value) * (fig.topAlt - fig.footAlt);
-		state.from = id;
 		refresh({ fromSlider: id });
 	}
 	r.relSlider.addEventListener("input", slid);
 	bindFineDrag(r.relSlider, slid, null, SLOW_DRAG);
 	r.rel = numberField(line, prefix + "-rel", "Altitude (km)", function (kmVal) {
-		if (isFinite(kmVal)) { state.params[id].relAlt = kmVal * 1e3; state.from = id; refresh(); }
+		if (isFinite(kmVal)) { state.params[id].relAlt = kmVal * 1e3; refresh(); }
 	});
 	var rr = rel.appendChild(el("div", "mst-readouts"));
 	r.relNow = readout(rr, "At the release");
 	r.relEsc = readout(rr, "Escape speed there");
 	r.relFate = readout(rr, "A ship let go here");
+	var arr = r.arrival = parent.appendChild(el("div", "mst-arrival mst-readouts"));
+	r.arrPass = readout(arr, "The ship's closest pass");
+	r.arrMiss = readout(arr, "It passes the tether by");
+	r.arrPoint = readout(arr, "Nearest point of the tether");
+	r.arrTrim = readout(arr, "Its motion relative to that point");
+	r.arrCatch = readout(arr, "Caught");
 }
+// Whether, and why not, a ship is caught at its closest pass (core/arrival.js).
+function catchText(a) {
+	if (a.caught) { return "yes"; }
+	if (a.reason === "too-fast") { return "no: faster than the " + num(CATCH_SPEED_LIMIT) + " m/s a catcher absorbs"; }
+	if (a.blocked) { return "no: Mars is between them"; }
+	return "no: " + (a.reason === "above-top" ? "passes " + km(a.gap) + " above the top"
+		: a.reason === "below-foot" ? "passes " + km(-a.gap) + " below the foot" : "passes wide of the tether");
+}
+function distText(m) { return m < 10e3 ? num(m / 1e3, 2) + " km" : km(m); }
 function fillRelease(id, r, opts) {
-	var fig = figs[id];
+	var fig = figs[id], dep = state.from === id, dest = state.to === id;
+	var card = id === PHOBOS ? hookCard : hangCard;
+	r.release.style.display = dep ? "" : "none";
+	r.arrival.style.display = dest ? "" : "none";
+	card.badge.textContent = dep ? "departure" : (dest ? "arrival" : "");
+	card.badge.className = "mst-badge" + (dep ? " mst-badge-departure" : (dest ? " mst-badge-arrival" : ""));
 	show(r.rel, kmField(state.params[id].relAlt));
+	var a = dest && flight && flight.ok && flight.arrival && flight.arrival.found ? flight.arrival : null;
+	r.arrPass.textContent = a ? "T+ " + span(a.t) + " · " + dateTime(a.jd) : "—";
+	r.arrMiss.textContent = a ? (a.met ? "meets it" : distText(a.miss)) : "—";
+	r.arrPoint.textContent = a ? km(a.altitude) + " up · " + speed(a.pointSpeed) : "—";
+	r.arrTrim.textContent = a ? speed(a.trim) : "—";
+	r.arrCatch.textContent = a ? catchText(a) : "—";
 	if (!(fig && fig.ok)) {
 		[r.relNow, r.relEsc, r.relFate].forEach(function (x) { x.textContent = "—"; });
 		return;
 	}
 	if (opts.fromSlider !== id) { r.relSlider.value = (fig.relAlt - fig.footAlt) / (fig.topAlt - fig.footAlt); }
-	if (state.from === id && flight && flight.ok) {
+	if (dep && flight && flight.ok) {
 		r.relNow.textContent = km(flight.release.altitude) + " · " + speed(O.vMag(flight.release.v));
 		r.relEsc.textContent = speed(O.escapeVelocity(fig.GM, flight.release.radius));
 		r.relFate.textContent = { entry: "falls to Mars", orbit: "stays in orbit", escape: "leaves Mars" }[flight.summary.outcome];
-	} else {
-		var st = pointState(fig, facilityAt(fig, sceneJd()), fig.sRel), radius = O.vMag(st.r);
-		r.relNow.textContent = km(radius - R_MARS) + " · " + speed(O.vMag(st.v));
-		r.relEsc.textContent = speed(O.escapeVelocity(fig.GM, radius));
-		r.relFate.textContent = "not the departure";
 	}
 }
 // Set a field's text unless the user is typing in it.
@@ -473,7 +495,7 @@ function buildSkyhookCard() {
 	r.pullFoot = readout(ro, "Weight of 1 kg at the foot");
 	r.pullTop = readout(ro, "Weight of 1 kg at the top");
 	releaseSection(c.body, PHOBOS, "mst-hook", r);
-	hookCard = { el: c.el, refs: r };
+	hookCard = { el: c.el, refs: r, badge: c.badge };
 }
 // A point of a skyhook as it is now: altitude and speed.
 function pointNow(fig, at, s) {
@@ -582,7 +604,7 @@ function buildHangingCard() {
 	r.stepUntil = readout(r.stepBox, "Next close pass put off until");
 
 	releaseSection(c.body, HANGING, "mst-hang", r);
-	hangCard = { el: c.el, refs: r, resKey: null };
+	hangCard = { el: c.el, refs: r, badge: c.badge, resKey: null };
 }
 
 // What the skyhook's period means for its timing, in words (core/clearance.js's timingGuidance).
@@ -832,6 +854,16 @@ function fillKeys() {
 	var now = flightStateAt(flight, flightSeconds());
 	key("Ship altitude", km(O.vMag(now.r) - R_MARS));
 	key("Ship speed", speed(O.vMag(ground ? groundRelative(now.r, now.v, now.jde) : now.v)));
+	// Bound for the other skyhook: how the ship's closest pass to that tether goes.
+	if (flight.toFig) {
+		var a = flight.arrival, name = FACILITIES[flight.to].label;
+		key("Closest pass to the " + name + " after", span(a.t));
+		key("Passes the tether by", a.met ? "meets it" : distText(a.miss));
+		key("At", km(a.altitude) + " up the tether");
+		key("Relative motion", speed(a.trim));
+		key("Caught", a.caught ? "yes" : "no");
+		return;
+	}
 	if (s.outcome === "entry") {
 		key("Reaches the air (" + num(ENTRY_ALT / 1e3) + " km) after", span(s.duration));
 		key("Speed there", speed(ground ? s.entryAirSpeed : s.entrySpeed));
@@ -857,14 +889,16 @@ function refresh(opts) {
 	if (!opts.sceneOnly) {
 		computeFigures();
 		if (!figs[state.from]) { state.from = PHOBOS; }
-		syncFrom();
-		flight = computeFlight({ from: state.from, jd: releaseJd(), params: designParams() });
+		if (state.to !== SURFACE && (!figs[state.to] || state.to === state.from)) { state.to = SURFACE; }
+		syncFlightCard();
+		flight = computeFlight({ from: state.from, to: state.to, jd: releaseJd(), params: designParams() });
 		overlay.drawFlight(flight, state.view, showTraj.checked);
 	}
 	var jd = sceneJd(), t = flightSeconds();
 	frame.setShown({ orbits: showOrbits.checked, grid: showGrid.checked });
 	frame.place(jd, state.view);
-	SKYHOOKS.forEach(function (id) { overlay.drawSkyhook(id, figs[id], jd, state.view, showFac.checked); });
+	SKYHOOKS.forEach(function (id) { overlay.drawSkyhook(id, figs[id], jd, state.view, showFac.checked, id === state.from); });
+	fillFlightNote();
 	overlay.placeShip(flight, t, state.view, showTraj.checked);
 	fillKeys();
 	fillSystemCard(jd);
@@ -877,18 +911,42 @@ function refresh(opts) {
 	relVal.textContent = clockTime(releaseJd()) + (fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
 	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd);
 }
-// The "Release from" list: the skyhooks in the design, the departure chosen.
-var fromSelect = $("mst-from");
-function syncFrom() {
-	var have = SKYHOOKS.filter(function (id) { return !!figs[id]; });
-	if (fromSelect.options.length !== have.length) {
-		fromSelect.textContent = "";
-		have.forEach(function (id) {
-			var o = fromSelect.appendChild(el("option", null, FACILITIES[id].label));
-			o.value = id;
-		});
+// The Flight card's lists: From holds the skyhooks in the design, To the
+// surface and every skyhook that is not the departure.
+var fromSelect = $("mst-from"), toSelect = $("mst-to"), showPass = $("mst-show-pass");
+function fillList(select, items, value) {
+	var key = items.map(function (x) { return x[0]; }).join(",");
+	if (select.dataset.key !== key) {
+		select.dataset.key = key;
+		select.textContent = "";
+		items.forEach(function (x) { select.appendChild(el("option", null, x[1])).value = x[0]; });
 	}
-	fromSelect.value = state.from;
+	select.value = value;
+}
+function syncFlightCard() {
+	var have = SKYHOOKS.filter(function (id) { return !!figs[id]; });
+	fillList(fromSelect, have.map(function (id) { return [id, FACILITIES[id].label]; }), state.from);
+	fillList(toSelect, [[SURFACE, "The surface"]].concat(have.filter(function (id) { return id !== state.from; })
+		.map(function (id) { return [id, FACILITIES[id].label]; })), state.to);
+}
+// The flight in a sentence, under the lists.
+function fillFlightNote() {
+	var note = $("mst-flight-note"), a = flight && flight.ok ? flight.arrival : null;
+	showPass.disabled = !(a && a.found);
+	showPass.style.display = state.to === SURFACE ? "none" : "";
+	if (!flight || !flight.ok) { note.textContent = flight ? flight.diagnostic.message : ""; return; }
+	var s = flight.summary;
+	if (state.to === SURFACE) {
+		note.textContent = s.outcome === "entry"
+			? "Reaches the air after " + span(s.duration) + ", at " + speed(s.entryAirSpeed) + " against the air and " + num(s.entryAirAngle * DEG, 1) + "° below level."
+			: "Let go here, the ship does not come down: it " + (s.outcome === "orbit" ? "stays in orbit, no lower than " + km(s.periAlt) : "leaves Mars")
+				+ ". Lower the release point, or change the release time.";
+		return;
+	}
+	var name = FACILITIES[state.to].label;
+	note.textContent = a.caught ? "Caught by the " + name + " after " + span(a.t) + ", " + km(a.altitude) + " up its tether, at " + speed(a.trim) + " relative to it."
+		: "Closest pass to the " + name + " after " + span(a.t) + ": " + (a.met ? "it meets the tether " : distText(a.miss) + " from the tether, ")
+			+ km(a.altitude) + " up" + (a.blocked ? ", with Mars between them" : "") + ", at " + speed(a.trim) + " relative to it. Not caught. Move the release time, the release point or the date to bring them together.";
 }
 
 // ---- wiring ---------------------------------------------------------------------------
@@ -919,7 +977,20 @@ function init() {
 
 	function releaseMoved() { state.relFrac = parseFloat(relSlider.value); refresh(); }
 	function flightMoved() { state.flightFrac = parseFloat(flightSlider.value); refresh({ sceneOnly: true }); }
-	fromSelect.addEventListener("change", function () { state.from = fromSelect.value; refresh(); });
+	// Choosing the destination as the departure swaps the two.
+	fromSelect.addEventListener("change", function () {
+		var was = state.from;
+		state.from = fromSelect.value;
+		if (state.to === state.from) { state.to = was; }
+		refresh();
+	});
+	toSelect.addEventListener("change", function () { state.to = toSelect.value; refresh(); });
+	showPass.addEventListener("click", function () {
+		var a = flight && flight.ok ? flight.arrival : null;
+		if (!(a && a.found)) { return; }
+		state.flightFrac = a.t / flight.leg.duration; flightSlider.value = state.flightFrac;
+		refresh({ sceneOnly: true });
+	});
 	relSlider.addEventListener("input", releaseMoved);
 	flightSlider.addEventListener("input", flightMoved);
 	bindFineDrag(relSlider, releaseMoved, null, SLOW_DRAG);

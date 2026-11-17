@@ -23,7 +23,7 @@ import { U } from "./scene.js";
 var O = OrbitalMath;
 var DAY = 86400;
 export var COLOR = { tether: 0xeaf0ff, top: 0x9fb6ff, foot: 0x8fd0c8, release: 0xff5fd0,
-                     com: 0xfff2b0, ballast: 0xe8b24a,
+                     com: 0xfff2b0, ballast: 0xe8b24a, pass: 0x3ddc84,
                      orbit: 0x40d27f, escape: 0xff9a3c, entry: 0xff6f61 };
 var NAMES = { phobosSkyhook: "Phobos skyhook", hangingSkyhook: "hanging skyhook" };
 var TRACE_POINTS = 120;
@@ -68,13 +68,17 @@ export function buildOverlay(scene) {
 	ship.visible = false;
 	scene.add(ship);
 	var shipDir = new THREE.Vector3(1, 0, 0);
+	var pass = makePoint(COLOR.pass, 9);
+	pass.visible = false;
+	scene.add(pass);
 
 	return {
 		markers: markers, ship: ship, shipDir: shipDir,
 
 		// The skyhook `id` with figures `fig` (core/facilities.js) as it is at
 		// jd; hidden when `shown` is false or its figures are missing or not ok.
-		drawSkyhook: function (id, fig, jd, viewId, shown) {
+		// Its release point is marked only on the `departure`.
+		drawSkyhook: function (id, fig, jd, viewId, shown, departure) {
 			var h = hooks[id];
 			h.group.visible = !!(shown && fig && fig.ok);
 			if (!h.group.visible) { return; }
@@ -87,6 +91,7 @@ export function buildOverlay(scene) {
 			var pos = h.tether.geometry.attributes.position;
 			setPoint(pos, 0, put(h.foot, fig.sFoot)); setPoint(pos, 1, put(h.top, fig.sTop));
 			pos.needsUpdate = true;
+			h.release.visible = !!departure;
 			put(h.release, fig.sRel);
 			if (h.com) {
 				put(h.com, 0);
@@ -113,10 +118,10 @@ export function buildOverlay(scene) {
 		// result; nothing is drawn for one that is not ok, or when not shown.
 		drawFlight: function (flight, viewId, shown) {
 			if (path) { scene.remove(path); path.geometry.dispose(); path.material.dispose(); path = null; }
+			pass.visible = false;
 			if (!shown || !flight || !flight.ok) { return; }
-			var fixed = viewId === "stars" ? viewBasis(viewId, flight.jd) : null;
 			var pts = flight.leg.samples.map(function (s) {
-				var p = toView(fixed || viewBasis(viewId, flight.jd + s.t / DAY), s.r);
+				var p = toView(viewBasis(viewId, flight.jd + s.t / DAY), s.r);
 				return new THREE.Vector3(p[0] / U, p[1] / U, p[2] / U);
 			});
 			path = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
@@ -124,6 +129,13 @@ export function buildOverlay(scene) {
 					opacity: 0.95, depthWrite: false }));
 			path.frustumCulled = false;
 			scene.add(path);
+			// Where the ship is at its closest pass to the destination's tether.
+			var a = flight.arrival;
+			pass.visible = !!(a && a.found);
+			if (pass.visible) {
+				var q = toView(viewBasis(viewId, a.jd), a.r);
+				pass.position.set(q[0] / U, q[1] / U, q[2] / U);
+			}
 		},
 
 		// The ship t seconds into the flight, and the way it is heading in the view.

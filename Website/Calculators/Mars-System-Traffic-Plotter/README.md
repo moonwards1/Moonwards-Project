@@ -40,6 +40,8 @@ page.
   Phobos's orbit, their clearance, and the working-out of the sidesteps. Pure.
 - `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`: a
   release flown to its end, and what the page reads off it. Pure.
+- `core/arrival.js` — a flight's closest pass to the destination skyhook's
+  tether, and whether the ship is caught there. Pure.
 - `core/view-frames.js` — `viewBasis(kind, jd)` and `toView`: the axes the view
   is drawn in. Pure.
 - `core/terrain.js` — ground heights from the terrain files: loads the
@@ -80,7 +82,9 @@ All positions are computed in Mars-centred ecliptic axes, the frame
 `Shared/body-leg.js` flies a ship in. The view is drawn in axes of its own
 (`core/view-frames.js`), chosen with the buttons at the view's top right:
 
-- **Fixed stars** — Mars's north pole up, nothing turning with the view.
+- **Sun** — ecliptic north up, so the horizontal is the ecliptic, with the
+  view turned to keep the Sun ahead along x. Mars's equator, and the moons'
+  orbits near it, lean 26.7° to it.
 - **Mars surface** — turning with the ground: a space elevator and anything
   areostationary stand still.
 - **Phobos** — turning with the line from Mars to Phobos, the pole of Phobos's
@@ -218,8 +222,12 @@ working. It stops at 400 sidesteps and says how far it got.
 
 ## A flight
 
-A ship is let go from the skyhook chosen under **Release from** (or the one
-whose pink marker was last dragged), with the position and velocity its
+The **Flight** card at the top of the sidebar sets the flight: **From** one of
+the skyhooks in the design, **To** the surface or the other skyhook. The
+departure's card shows the release point's controls and the destination's card
+the arrival's readouts.
+
+A ship is let go by the From skyhook with the position and velocity its
 release point has at the release instant: the date bar's date plus the
 **Release time** slider, which spans one orbit of that skyhook. It then coasts under
 
@@ -242,6 +250,25 @@ Mars sees them (`groundRelative` in `core/flight.js`), which near the ground is
 the speed against the air. The bulge is in because it is what speeds Phobos round its orbit: with
 it, a ship let go at Phobos stays within a few tens of km of Phobos over an
 orbit.
+
+Bound for the other skyhook, the flight is flown the same way and then judged
+at its **closest pass** to that tether (`core/arrival.js`):
+
+    x     = r . u
+    miss  = | r - r_point |
+    trim  = | v - v_point |
+
+- `r`, `v` — the ship's position and velocity from Mars's centre
+- `u` — unit vector out along the destination's tether at that instant
+- `r_point`, `v_point` — the point of the tether nearest `x`, between its foot
+  and its top, and how that point is moving
+
+The closest pass is the least `miss` of the whole flight; where Mars lies
+between the ship and the tether at that moment, the page says so. The ship is
+caught if `miss` is within 1 km and `trim` is no more than 800 m/s, the most a
+catcher moving along the tether absorbs. The pass is marked in green, and
+**Show the closest pass** moves the Flight slider to it. Nothing yet searches
+for a release that ends in a catch.
 
 The **Flight** slider is time since release and moves the whole scene to that
 time. In a turning view the path is drawn as that view sees it.

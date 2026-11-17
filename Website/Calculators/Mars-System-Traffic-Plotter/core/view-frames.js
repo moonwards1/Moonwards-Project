@@ -2,14 +2,15 @@
  * drawn in.
  *
  * Everything is computed in Mars-centred ecliptic axes (Shared/mars-ephemeris.js,
- * Shared/body-leg.js). Nearly all of the Mars system lies close to Mars's
- * equator, which is tilted 26.7 degrees to the ecliptic, so the view is drawn
- * with Mars's north pole up instead. There are three ways of holding the view
- * still, each a set of three unit axes { x, y, z } at a Julian date:
+ * Shared/body-leg.js). There are three ways of holding the view still, each a
+ * set of three unit axes { x, y, z } at a Julian date:
  *
- *   "stars"    fixed to the stars. z is Mars's pole, x the direction of the
- *              Sun at Mars's northern spring equinox. Orbits keep their shape
- *              and Mars turns under them.
+ *   "sun"      held toward the Sun. z is ecliptic north, so the horizontal is
+ *              the ecliptic; x points from Mars to the Sun as seen in that
+ *              plane. The Sun stands still (Mars's orbit is tilted 1.85
+ *              degrees to the ecliptic, so the Sun sits up to that far above
+ *              or below the horizontal); Mars's equator, and the moons' orbits
+ *              near it, lean at 26.7 degrees.
  *   "surface"  turning with Mars. z is the pole, x passes through the prime
  *              meridian. The ground, a space elevator and anything
  *              areostationary stand still; the Sun goes round once a day.
@@ -34,12 +35,10 @@ var O = OrbitalMath;
 
 // The views, in the order their buttons are shown.
 export var VIEW_FRAMES = [
-	{ id: "stars", label: "Fixed stars", caption: "fixed to the stars" },
+	{ id: "sun", label: "Sun", caption: "held toward the Sun" },
 	{ id: "surface", label: "Mars surface", caption: "turning with Mars" },
 	{ id: "phobos", label: "Phobos", caption: "turning with Phobos" }
 ];
-
-var STARS = { x: ME.equinox, y: O.vCross(ME.pole, ME.equinox), z: ME.pole };
 
 // The view's axes at Julian date jd, as unit vectors in ecliptic axes.
 export function viewBasis(kind, jd) {
@@ -51,7 +50,9 @@ export function viewBasis(kind, jd) {
 		var s = ME.moonState("Phobos", jd), x = O.vUnit(s.r);
 		return { x: x, y: O.vCross(s.normal, x), z: s.normal };
 	}
-	return STARS;
+	// "sun": the Sun's direction laid flat in the ecliptic.
+	var s = ME.sunVector(jd), u = O.vUnit([s[0], s[1], 0]);
+	return { x: u, y: [-u[1], u[0], 0], z: [0, 0, 1] };
 }
 
 // A vector r (ecliptic axes) in the view's axes.

@@ -28,15 +28,20 @@ test("every view's axes are unit vectors at right angles, right-handed", functio
 	});
 });
 
-test("Mars's pole is straight up in the star and surface views", function () {
-	["stars", "surface"].forEach(function (id) {
-		var p = toView(viewBasis(id, JD), ME.pole);
-		near(p[0], 0, 1e-12); near(p[1], 0, 1e-12); near(p[2], 1, 1e-12);
-	});
+test("Mars's pole is straight up in the surface view", function () {
+	var p = toView(viewBasis("surface", JD), ME.pole);
+	near(p[0], 0, 1e-12); near(p[1], 0, 1e-12); near(p[2], 1, 1e-12);
 });
 
-test("the star view does not turn", function () {
-	assert.deepEqual(viewBasis("stars", JD), viewBasis("stars", JD + 77));
+test("the Sun view has ecliptic north up and the Sun ahead along x", function () {
+	[0, 77, 300, 600].forEach(function (dt) {
+		var b = viewBasis("sun", JD + dt), p = toView(b, ME.sunVector(JD + dt));
+		near(O.vMag(O.vSub(b.z, [0, 0, 1])), 0, 1e-15, "z");
+		near(p[1], 0, 1e-3, "sideways (m)");
+		assert.ok(p[0] > 0, "the Sun is ahead");
+		// No more than Mars's 1.85 deg orbital tilt above or below the ecliptic.
+		assert.ok(Math.abs(Math.atan2(p[2], p[0])) < 1.9 * Math.PI / 180, "Sun's elevation");
+	});
 });
 
 test("a point on the ground stands still in the surface view", function () {

@@ -26,8 +26,6 @@
 					<button type="button" data-pov="low">Low orbit &amp; surface</button>
 					<button type="button" data-pov="phobos">Phobos</button>
 				</div>
-				<label class="mst-date-caption mst-pov-caption" for="mst-from">Release from</label>
-				<select id="mst-from" aria-label="The skyhook the ship is let go from"></select>
 			</div>
 			<div class="mst-slider-line">
 				<span class="mst-slider-end">2080</span>
@@ -67,7 +65,7 @@
 					<div id="mst-frames" class="mst-buttons" role="group" aria-label="What the view is held still against"></div>
 					<div id="mst-view-hud">
 						<div class="mst-hud-line"><span class="mst-hud-key">drag</span> rotate &nbsp; <span class="mst-hud-key">wheel</span> zoom &nbsp; <span class="mst-hud-key">right-drag</span> pan &nbsp; <span class="mst-hud-key">click</span> anything to follow it</div>
-						<div class="mst-hud-line">Drag a pink marker along its tether to move the release point and let the ship go from that skyhook.</div>
+						<div class="mst-hud-line">Drag the pink marker along the departure skyhook's tether to move the release point.</div>
 						<div class="mst-hud-line">On any slider: hold <span class="mst-hud-key">shift</span> to scrub at ¼ speed, <span class="mst-hud-key">ctrl</span> at 1/10.</div>
 					</div>
 				</div>
@@ -79,6 +77,25 @@
 
 			<div id="mst-panel">
 				<h1>Mars System Traffic Plotter</h1>
+
+				<section class="mst-card mst-card-plain mst-card-flight">
+					<h2>Flight</h2>
+					<div class="mst-fieldpair">
+						<div class="mst-field">
+							<label for="mst-from">From</label>
+							<select id="mst-from"></select>
+						</div>
+						<div class="mst-field">
+							<label for="mst-to">To</label>
+							<select id="mst-to"></select>
+						</div>
+					</div>
+					<div class="mst-guide" id="mst-flight-note" aria-live="polite"></div>
+					<div class="mst-row">
+						<button type="button" class="mst-action mst-action-small" id="mst-show-pass" title="Move the Flight slider to the ship's closest pass to the destination's tether">Show the closest pass</button>
+					</div>
+					<div class="mst-muted">Every facility follows the clock: the date and the release time decide where the departure skyhook's release point is, and how it is moving, when it lets the ship go. A ship bound for the other skyhook can be caught anywhere along that tether, by a catcher that moves along it and absorbs up to 800 m/s of relative motion.</div>
+				</section>
 
 				<section class="mst-card mst-card-plain">
 					<h2>The system</h2>
@@ -99,6 +116,7 @@
 						<span class="mst-swatch" style="background:#8fd0c8"></span> skyhook foot
 						<span class="mst-swatch" style="background:#9fb6ff"></span> skyhook top
 						<span class="mst-swatch" style="background:#ff5fd0"></span> release point
+						<span class="mst-swatch" style="background:#3ddc84"></span> closest pass
 						<span class="mst-swatch" style="background:#fff2b0"></span> centre of mass
 						<span class="mst-swatch" style="background:#e8b24a"></span> ballast
 					</div>
@@ -137,14 +155,18 @@
 				shape and motion of the system, not a forecast of where along
 				its orbit a moon will be on a given date in the 2080s. The Sun
 				is at its true direction and distance. The three views hold
-				different things still: the stars, the ground of Mars, or
-				Phobos. The Phobos skyhook is a tether built on Phobos, lying
+				different things still: the Sun, with the ecliptic level, the
+				ground of Mars, or Phobos. The Phobos skyhook is a tether built on Phobos, lying
 				along the line from Mars's centre through Phobos's, its own
 				swinging left aside: each point keeps its distance from Phobos
 				and is carried round Mars as that line turns. Its altitudes are
 				given with Phobos at its mean distance, and the whole tether
-				rises and falls 142 km each orbit. A ship is let go with the
-				position and velocity its release point has at that instant.
+				rises and falls 142 km each orbit. A ship is let go by the
+				skyhook chosen as From on the Flight card, with the position
+				and velocity its release point has at that instant. Bound for
+				the other skyhook, it is judged at its closest pass to that
+				tether: caught if it comes within 1 km of the tether at no
+				more than 800 m/s relative to it.
 				Its path is integrated (RK4) under Mars's gravity, the extra
 				pull of Mars's equatorial bulge, and the Sun, until it comes
 				down to 125 km (taken as the top of the air), has gone once
