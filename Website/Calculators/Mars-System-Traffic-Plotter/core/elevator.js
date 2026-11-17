@@ -16,6 +16,27 @@
  *
  * The anchor stands on the areoid: the ground's own height is left out.
  *
+ * THE CARGO. Cargo going up the tether at a steady net flow weighs on it,
+ * and is brought up to the ground's speed by it, pushing it west in return.
+ * The tether's equilibrium with both is solved in three dimensions
+ * (Shared/meridian-tether.js, leanedTether), the counterweight held at its
+ * design distance; at the anchor the lean satisfies
+ *
+ *     sin(theta) * T0 * x_A = mdot * w * ( x_c^2 - x_A^2 )
+ *
+ *     theta   the lean west of the anchor's meridian where the tether leaves it
+ *     T0      the tension at the anchor, with the cargo aboard
+ *     x_A, x_c   the anchor's and the counterweight's distance from the axis
+ *     mdot    the net cargo flow up, kg/s
+ *     w       Mars's spin rate
+ *
+ * Past some flow (mostFlow) the two together drag the bottom of the tether
+ * down to the ground and no equilibrium is left; such a flow is refused.
+ * Every figure below, the curve drawn, the Phobos clearance, Deimos's
+ * crossings and the hanging skyhook's passes, is the tether with its cargo
+ * aboard. The dodge swing's shape and the pumping are worked out on the
+ * tether without it.
+ *
  * PHOBOS. A tether built on Phobos lies along the line from Mars's centre
  * through Phobos, whose orbit is tilted i = 1.08 degrees to the equator, so
  * its point at distance rho from Mars's centre gets as far as
@@ -63,6 +84,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { MarsEphemeris as EPH } from "../../../Shared/mars-ephemeris.js";
 import { MATERIALS } from "../../../Shared/materials.js";
 import { anchorConfig } from "../../../Shared/body-profiles.js";
+import { leanedTether, mostFlow } from "../../../Shared/meridian-tether.js";
 import { MarsElevator as MEL } from "../../Mars-Elevator/marsElevatorModel.js";
 import { CLOCK_EPOCH, SPAN_DAYS } from "./clock.js";
 
@@ -72,11 +94,13 @@ var SYS = MEL.marsSystem();
 var R_MARS = +systems.get("Mars").radius;
 var PHOBOS = anchorConfig("Phobos");
 
-// The anchor's default is the summit of Olympus Mons. lat and lon in degrees
+// The defaults are a design for heavy traffic: the anchor on the summit of
+// Olympus Mons, a heavy counterweight, and 150 kg/s (about 4.7 Mt a year). lat and lon in degrees
 // (north and east positive), rCW the counterweight's distance from Mars's
 // centre (m), cwMass its mass (kg), or null for the one that holds the
-// structure up three times over.
-export var ELEVATOR_DEFAULTS = { lat: 18.65, lon: 226.2, material: "ecnt", safety: 2.5, rCW: 51000e3, cwMass: null };
+// structure up three times over. cargoFlow is the net flow of cargo up the
+// tether, kg/s, which leans it west.
+export var ELEVATOR_DEFAULTS = { lat: 18.65, lon: 226.2, material: "ecnt", safety: 2.4, rCW: 55000e3, cwMass: 700e6, cargoFlow: 150 };
 // The cable materials on offer, each with the range its safety factor may take.
 export var ELEVATOR_MATERIALS = {
 	ecnt: { label: MATERIALS.ecnt.name, safety: [1.5, 3] },
@@ -256,7 +280,21 @@ function swingFrom(knots, omega, jd) {
 
 // ---- the figures -----------------------------------------------------------------
 
+// Along a tether path { r, x, y, z } (anchor first) at distance R from Mars's
+// centre: distance from the axis, height above the plane (on the anchor's
+// side) and how far west of the anchor's meridian it stands, as an angle
+// about the axis.
+function alongPath(lp, R) {
+	var ln = lp.r.length, lo = 0, hi = ln - 1;
+	if (R <= lp.r[0]) { hi = 1; } else if (R >= lp.r[hi]) { lo = hi - 1; R = lp.r[hi]; }
+	else { while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (lp.r[mid] < R) { lo = mid; } else { hi = mid; } } }
+	var t = Math.max(0, Math.min(1, (R - lp.r[lo]) / (lp.r[hi] - lp.r[lo])));
+	var x = lp.x[lo] + t * (lp.x[hi] - lp.x[lo]), y = lp.y[lo] + t * (lp.y[hi] - lp.y[lo]), z = lp.z[lo] + t * (lp.z[hi] - lp.z[lo]);
+	return { x: Math.hypot(x, y), z: z, west: Math.atan2(-y, x) };
+}
+
 var memo = { key: null, value: null };
+var mostMemo = { key: null, value: null };    // the most flow, which doesn't depend on the flow shown
 
 // The elevator's figures for one param set (ELEVATOR_DEFAULTS with `params`
 // on top). Returns { ok: false, diagnostic } or { ok: true, ... } in SI:
@@ -279,10 +317,28 @@ var memo = { key: null, value: null };
 //             — distance from the spin axis and height on the anchor's side
 //             of the plane, the dodge swing's displacement along the unit
 //             normal (nx, nz), and distance from Mars's centre, all m
+//             — and `west`, how far west of the anchor's meridian each point
+//             stands under the cargo's lean, as an angle about the axis (rad)
 //   stretch   the pumping stretch's first and last indices in `curve`
+//   lean      the tether with its cargo aboard: { flow (kg/s), angle (west
+//             of the meridian at the anchor, rad), elevation (above level at
+//             the anchor, rad), side (the sideways pull on the anchor, N),
+//             torque (N·m), T0, Tpeak (the tension at the anchor and the
+//             peak, N), cargo (kg on the tether at once), atPhobos, atDeimos,
+//             atCW ({ angle, distance }: how far west of the anchor's
+//             meridian the tether stands there, rad and m; atDeimos null
+//             where it ends short of Deimos), most (the most flow it
+//             carries, kg/s), mostBy ("ground": past it the tether is drawn
+//             down to the ground; "phobos": past it, too near Phobos),
+//             mostElevation (how far above level it leaves the anchor at
+//             that flow), floor (the least departure the
+//             empty tether is sized for, rad) }
+//   zCW, zPhobos, zDeimos, phobosClear, phobosTopCap are with the cargo
+//   aboard too; length, the masses, Tpeak, T0, Tcw and departure are the
+//   tether as sized, empty
 export function elevatorFigures(params) {
 	var p = Object.assign({}, ELEVATOR_DEFAULTS, params || {});
-	var key = [p.lat, p.lon, p.material, p.safety, p.rCW, p.cwMass].join("|");
+	var key = [p.lat, p.lon, p.material, p.safety, p.rCW, p.cwMass, p.cargoFlow].join("|");
 	if (memo.key !== key) { memo = { key: key, value: figure(p) }; }
 	return memo.value;
 }
@@ -299,6 +355,7 @@ function figure(p) {
 		return fail("safety-range", "With " + mat.label.toLowerCase() + " the safety factor must be between " + mat.safety[0] + " and " + mat.safety[1] + ".");
 	}
 	if (p.cwMass != null && !(p.cwMass > 0)) { return fail("mass-range", "The counterweight's mass must be more than nothing; leave it empty for the usual one."); }
+	if (!(isFinite(p.cargoFlow) && p.cargoFlow >= 0)) { return fail("flow-range", "The cargo flow up the tether must be zero or more."); }
 	if (!(p.rCW > SYS.rStat && p.rCW <= CW_MAX)) {
 		return fail("cw-range", "The counterweight must be between " + kmText(SYS.rStat) + " from Mars's centre (areostationary orbit, beyond which it pulls outward) and " + kmText(CW_MAX) + ".");
 	}
@@ -309,31 +366,63 @@ function figure(p) {
 			: "No counterweight at this distance makes the tether land at the anchor.");
 	}
 	var sol = sized.sol, de = SYS.deimos, ph = SYS.phobos;
-	// The tether meets Deimos's orbit unless it ends short of it.
+
+	// The tether as it stands with the cargo aboard, and the most flow it
+	// carries: until the bottom of it is drawn down to the ground, or it is
+	// drawn so near the equatorial plane that it no longer clears Phobos.
+	// The dodge swing's size along the tether is the empty tether's.
 	var reaches = p.rCW >= de.peri - de.radius - KEEP_CLEAR;
 	var sw = MEL.swings(SYS, sol, { rRef: Math.min(de.a, p.rCW), dodge: DODGE.swing }), slow = sw.modes[0];
-	function height(rho) { return rho >= p.rCW ? sol.zCW : MEL.heightAtRadius(sol, rho); }
-	function swingAt(rho) { return reaches ? Math.abs(MEL.etaAt(sw.nodes, slow.eta, Math.min(rho, p.rCW * (1 - 1e-12)))) || 0 : 0; }
-
+	function etaAt(R) { return reaches ? MEL.etaAt(sw.nodes, slow.eta, Math.max(sw.nodes.r[0], Math.min(R, p.rCW * (1 - 1e-12)))) || 0 : 0; }
+	function swingAt(rho) { return Math.abs(etaAt(rho)); }
 	var topCeiling = R_MARS + (PHOBOS.topCeiling + PHOBOS.swing) * 1e3;
-	var pc = phobosClearance(height, swingAt, Math.min(p.rCW, topCeiling));
-	if (pc.clear < KEEP_CLEAR) {
-		return fail("phobos", "This tether passes " + (pc.clear > 0 ? "only " + kmText(pc.clear) + " from" : "through") + " Phobos's reach; "
+	function clearOf(path) { return phobosClearance(function (rho) { return alongPath(path, rho).z; }, swingAt, Math.min(p.rCW, topCeiling)); }
+	// Empty, it must clear Phobos already.
+	var pc0 = clearOf(sol.path.y ? sol.path : { r: sol.path.r, x: sol.path.x, y: new Float64Array(sol.path.r.length), z: sol.path.z });
+	if (pc0.clear < KEEP_CLEAR) {
+		return fail("phobos", "This tether passes " + (pc0.clear > 0 ? "only " + kmText(pc0.clear) + " from" : "through") + " Phobos's reach; "
 			+ kmText(KEEP_CLEAR) + " is the least allowed. A lower safety factor, a heavier counterweight or an anchor farther from the equator each lift it farther off the equatorial plane.");
 	}
-
-	// The drawn curve, thinned from the swing's nodes.
-	var nd = sw.nodes, N = nd.r.length, idx = [0];
-	for (var i = 1; i < N - 1; i++) {
-		var last = idx[idx.length - 1], want = Math.min(CURVE_STEP[2], CURVE_STEP[0] + CURVE_STEP[1] * (nd.r[last] - anchor.r));
-		if (nd.s[i] - nd.s[last] >= want) { idx.push(i); }
+	var mostKey = [p.lat, p.material, p.safety, p.rCW, p.cwMass].join("|");
+	if (mostMemo.key !== mostKey) {
+		var mf = mostFlow(SYS.field, sol, { v: TRAFFIC.vFull, tol: 0.003,
+			accept: function (L) { return clearOf(L.path).clear >= KEEP_CLEAR; } });
+		mostMemo = { key: mostKey, value: { flow: mf.flow, elevation: mf.at ? mf.at.elevation : 0, by: mf.by } };
 	}
-	idx.push(N - 1);
+	var mostV = mostMemo.value, most = mostV.flow;
+	var lt = p.cargoFlow > most * 1.0001 ? { ok: false } : leanedTether(SYS.field, sol, { mdot: p.cargoFlow, v: TRAFFIC.vFull });
+	if (!lt.ok) {
+		return fail("flow-limit", "This tether carries at most about " + Math.floor(most) + " kg/s (" + (most * 365.25 * DAY / 1e9).toFixed(2) + " Mt a year): "
+			+ (mostV.by === "accept"
+				? "the cargo's weight draws it down toward the equatorial plane, and past that it passes within " + kmText(KEEP_CLEAR) + " of Phobos's reach."
+				: "by then the cargo's weight and its push west together have drawn the bottom of the tether down until it leaves the anchor only "
+					+ (mostV.elevation / DEG).toFixed(1) + "° above level, and past that no equilibrium holds it up off the ground.")
+			+ " A heavier counterweight, a stronger cable or a lower safety factor carries more.");
+	}
+	var lp = lt.path, ln = lp.r.length;
+	function along(R) { return alongPath(lp, R); }
+	function westPoint(R) { var q = along(R); return { angle: q.west, distance: q.west * q.x }; }
+	function height(rho) { return along(rho).z; }
+	var pc = clearOf(lp);
+	if (pc.clear < KEEP_CLEAR) {
+		return fail("phobos", "This tether passes " + (pc.clear > 0 ? "only " + kmText(pc.clear) + " from" : "through") + " Phobos's reach"
+			+ (p.cargoFlow > 0 ? " with this cargo aboard" : "") + "; " + kmText(KEEP_CLEAR)
+			+ " is the least allowed. A lower safety factor, a heavier counterweight, an anchor farther from the equator or less cargo each lift it farther off the equatorial plane.");
+	}
+
+	// The drawn curve, thinned from the leaned tether's points.
+	var idx = [0];
+	for (var i = 1; i < ln - 1; i++) {
+		var last = idx[idx.length - 1], want = Math.min(CURVE_STEP[2], CURVE_STEP[0] + CURVE_STEP[1] * (lp.r[last] - anchor.r));
+		if (lp.s[i] - lp.s[last] >= want) { idx.push(i); }
+	}
+	idx.push(ln - 1);
 	var n = idx.length, cx = new Float64Array(n), cz = new Float64Array(n), ce = new Float64Array(n);
-	var cnx = new Float64Array(n), cnz = new Float64Array(n), cr = new Float64Array(n);
+	var cnx = new Float64Array(n), cnz = new Float64Array(n), cr = new Float64Array(n), cw = new Float64Array(n);
 	idx.forEach(function (j, k) {
-		cr[k] = nd.r[j]; cz[k] = nd.z[j]; cx[k] = Math.sqrt(Math.max(0, nd.r[j] * nd.r[j] - nd.z[j] * nd.z[j]));
-		ce[k] = reaches ? slow.eta[j] : 0;
+		cr[k] = lp.r[j]; cz[k] = lp.z[j]; cx[k] = Math.hypot(lp.x[j], lp.y[j]);
+		cw[k] = Math.atan2(-lp.y[j], lp.x[j]);
+		ce[k] = etaAt(lp.r[j]);
 	});
 	for (var k = 0; k < n; k++) {
 		var a = Math.max(0, k - 1), b = Math.min(n - 1, k + 1), tx = cx[b] - cx[a], tz = cz[b] - cz[a], len = Math.hypot(tx, tz) || 1;
@@ -345,14 +434,17 @@ function figure(p) {
 		if (cr[k] <= anchor.r + TRAFFIC.to) { sHi = k; }
 	}
 
+	var nd = sw.nodes;
 	var pumping = reaches ? MEL.pumping({ nodes: nd, mode: slow, rA: anchor.r, from: TRAFFIC.from, to: TRAFFIC.to,
 		cycles: TRAFFIC.cycles, vFull: TRAFFIC.vFull, vSlow: TRAFFIC.vSlow }) : null;
 	var lon = wrap(p.lon * DEG), dodges = null;
 	if (reaches) {
-		var crossings = deimosCrossings(lon, CLOCK_EPOCH - MARGIN_DAYS, CLOCK_EPOCH + SPAN_DAYS + MARGIN_DAYS);
+		// Deimos crosses the tether where it stands at Deimos's distance, west of the anchor's meridian by the lean.
+		var crossings = deimosCrossings(lon - along(de.a).west, CLOCK_EPOCH - MARGIN_DAYS, CLOCK_EPOCH + SPAN_DAYS + MARGIN_DAYS);
 		crossings.forEach(function (c) { c.miss = c.z - side * height(c.rho); });
 		dodges = planDodges(crossings, slow.omega);
 	}
+	var cwAt = along(p.rCW);
 	return {
 		ok: true, id: "spaceElevator", kind: "spaceElevator",
 		lat: p.lat * DEG, lon: lon, side: side, rA: anchor.r, rCW: p.rCW,
@@ -360,21 +452,25 @@ function figure(p) {
 		cwMass: sized.M, mult: sized.mult, raised: sized.raised, asked: sized.asked,
 		length: sol.length, cableMass: sol.mass, trackMass: sol.trackMass,
 		Tpeak: sol.Tpeak, rPeak: sol.rPeak, T0: sol.T0, Tcw: sol.Tcw, departure: sol.departure,
-		zCW: sol.zCW, zPhobos: height(ph.a), zDeimos: reaches ? height(de.a) : null,
+		zCW: cwAt.z, zPhobos: height(ph.a), zDeimos: reaches ? height(de.a) : null,
 		phobosClear: pc.clear,
 		phobosTopCap: pc.capRadius == null ? null : pc.capRadius - PHOBOS.swing * 1e3 - R_MARS,
 		release: MEL.releaseOrbit(SYS, p.rCW),
 		swing: reaches ? { period: slow.period, omega: slow.omega, energy: slow.energy, atPhobos: slow.atPhobos, atCW: slow.atCW } : null,
 		pumping: pumping, dodges: dodges,
-		curve: { x: cx, z: cz, eta: ce, nx: cnx, nz: cnz, r: cr }, stretch: [sLo, sHi]
+		curve: { x: cx, z: cz, eta: ce, nx: cnx, nz: cnz, r: cr, west: cw }, stretch: [sLo, sHi],
+		lean: { flow: p.cargoFlow, angle: lt.lean, side: lt.side, torque: lt.torque, elevation: lt.elevation,
+			T0: lt.T0, Tpeak: lt.Tpeak, cargo: lt.cargo,
+			atPhobos: westPoint(ph.a), atDeimos: reaches ? westPoint(de.a) : null, atCW: westPoint(p.rCW),
+			most: most, mostBy: mostV.by === "accept" ? "phobos" : "ground", mostElevation: mostV.elevation, floor: MEL.MIN_DEPARTURE }
 	};
 }
 
 // ---- on the clock ------------------------------------------------------------------
 
 // Where the elevator is at Julian date jd:
-//   out, pole   unit vectors from the spin axis toward the anchor's meridian,
-//               and along the spin axis (north)
+//   out, pole, east   unit vectors from the spin axis toward the anchor's
+//               meridian, along the spin axis (north), and east at the anchor
 //   spin        Mars's spin as a vector, rad/s
 //   swing       swingFrom's result: the dodge swing then
 //   q           the swing as a fraction of the full dodge swing, signed along
@@ -383,14 +479,17 @@ export function elevatorAt(fig, jd) {
 	var o = EPH.orientation(jd);
 	var out = O.vAdd(O.vScale(o.meridian, Math.cos(fig.lon)), O.vScale(o.east, Math.sin(fig.lon)));
 	var swing = fig.dodges ? swingFrom(fig.dodges.knots, fig.swing.omega, jd) : { d: 0, size: 0, trend: 0 };
-	return { out: out, pole: o.pole, spin: O.vScale(o.pole, o.rate), swing: swing, q: fig.side * swing.d / DODGE.swing };
+	return { out: out, pole: o.pole, east: O.vCross(o.pole, out), spin: O.vScale(o.pole, o.rate), swing: swing,
+	         q: fig.side * swing.d / DODGE.swing };
 }
 
 // Position from Mars's centre (m, ecliptic axes) of point k of the curve,
-// where the elevator is as elevatorAt gave it.
+// where the elevator is as elevatorAt gave it: swung by the dodge in its own
+// plane, then turned west about the axis by the lean.
 export function elevatorPoint(fig, at, k) {
-	var c = fig.curve, e = at.q * c.eta[k];
-	return O.vAdd(O.vScale(at.out, c.x[k] + e * c.nx[k]), O.vScale(at.pole, fig.side * (c.z[k] + e * c.nz[k])));
+	var c = fig.curve, e = at.q * c.eta[k], x = c.x[k] + e * c.nx[k], w = c.west[k];
+	var across = O.vAdd(O.vScale(at.out, Math.cos(w)), O.vScale(at.east, -Math.sin(w)));
+	return O.vAdd(O.vScale(across, x), O.vScale(at.pole, fig.side * (c.z[k] + e * c.nz[k])));
 }
 
 // The dodging spell under way at jd, else the next, else the last; null if there is none.

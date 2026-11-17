@@ -106,9 +106,9 @@ export var STRUCTURE = {
 //                 CLOCK_EPOCH (rad from the rising node), and the sidesteps
 //                 made since (core/clearance.js)
 export var HANGING_DEFAULTS = {
-	footAlt: 220e3, comAlt: 331e3, topAlt: 2400e3, relAlt: 2400e3, tilt: 93, sunSync: true,
+	footAlt: 220e3, comAlt: 1120e3, topAlt: 5000e3, relAlt: 5000e3, tilt: 93, sunSync: true,
 	anchorMass: 8000e6, ballastMass: 400e6, ballastHome: 220e3,
-	upperBallastMass: 30e6, upperBallastHome: 2400e3, ballastSpeed: 20, timing: null
+	upperBallastMass: 200e6, upperBallastHome: 4000e3, ballastSpeed: 20, timing: null
 };
 
 function fail(code, message, values) {
@@ -345,6 +345,9 @@ export function resonantComAlt(params, phobos, ratio, opts) {
 	var o = opts || {}, n = o.mars ? N_MARS : N_PHOBOS;
 	var p = Object.assign({}, HANGING_DEFAULTS, params || {}), alt = null;
 	var fig = hangingFigures(p, phobos, o.elevator);
+	// Where the centre of mass is now may not balance; start from the
+	// resonance's own height, the node's turning left out at first.
+	if (!fig.ok) { fig = hangingFigures(Object.assign({}, p, { comAlt: Math.cbrt(GM / (ratio * ratio * n * n)) - R }), phobos, o.elevator); }
 	if (!fig.ok) { return null; }
 	for (var k = 0; k < 6; k++) {
 		// Aim the turning rate at ratio * (the other's rate against the node line as it is now).

@@ -5,16 +5,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { settle, ballastResponse, planSidestep, sidestepState } from "../ballast.js";
-import { hangingFigures, resonantComAlt, resonanceGap, hangingAt, hangingPointState, timingAt, MIN_TILT }
+import { resonanceGap, hangingAt, hangingPointState, timingAt, MIN_TILT }
 	from "../hanging-skyhook.js";
 import { tetherDistance, closestPass, firstClosePass, bestStartAngle, workOutSidesteps, timingGuidance, slantFactor }
 	from "../clearance.js";
 import { RATIOS } from "../hanging-skyhook.js";
-import { moonSkyhookFigures, allFigures, releaseState, facilityAt, pointState, centreRadius, GM_MARS, R_MARS } from "../facilities.js";
-import { computeFlight, flightStateAt } from "../flight.js";
+import { releaseState, facilityAt, pointState, centreRadius, GM_MARS, R_MARS } from "../facilities.js";
+import { flightStateAt } from "../flight.js";
 import { CLOCK_EPOCH } from "../clock.js";
 import { MarsEphemeris as ME } from "../../../../Shared/mars-ephemeris.js";
 import { OrbitalMath as O } from "../../../../Shared/math-utils.js";
+import { moonSkyhookFigures, hangingFigures, resonantComAlt, allFigures, computeFlight } from "./studies.js";
 
 var DAY = 86400, DEG = 180 / Math.PI, JD = CLOCK_EPOCH + 81.3, LIMIT = 200e3;
 var PHOBOS = moonSkyhookFigures("phobosSkyhook");

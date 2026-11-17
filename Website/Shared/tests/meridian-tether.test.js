@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { oblateField, areoidRadius, stationaryRadius, solveMeridianTether, heightAtRadius, northSouthModes } from "../meridian-tether.js";
+import { oblateField, areoidRadius, stationaryRadius, solveMeridianTether, heightAtRadius, northSouthModes, eastWestLean, leanedTether, mostFlow } from "../meridian-tether.js";
 import { standardField, tetherContext, tetherMetrics, pullBalance, counterweightFor } from "../radial-tether.js";
 
 var GM = 4.282837e13, R = 3396.2e3, W = 2 * Math.PI / 88642.66;
@@ -68,3 +68,23 @@ test("slowest north–south swing is close to one turn", function () {
 	near(ms.modes[0].eta[ms.modes[0].eta.length - 1], 1, 1e-12, "scaled to 1 at the counterweight");
 	assert.equal(ms.modes[0].eta[0], 0, "fixed at the anchor");
 });
+
+test("cargo's lean: the full solution matches the small-deflection one where the lean is small", async function () {
+	var { MarsElevator: MEL } = await import("../../Calculators/Mars-Elevator/marsElevatorModel.js");
+	var sys = MEL.marsSystem(), a = MEL.anchor(sys, 18.65, 0);
+	var sol = MEL.sizeStructure(sys, { lat: a.lat, rA: a.r, rCW: 51000e3, density: 1450, sigmaEff: 18e9 / 2.5 }).sol;
+	var zero = leanedTether(sys.field, sol, { mdot: 0, v: 200 });
+	assert.ok(zero.ok); assert.ok(Math.abs(zero.T0 / sol.T0 - 1) < 1e-4, "no cargo: the tether as sized");
+	assert.ok(Math.abs(zero.elevation - sol.departure) < 1e-4);
+	var full = leanedTether(sys.field, sol, { mdot: 2, v: 200 }), small = eastWestLean(sys.field, sol, { mdot: 2, v: 200 });
+	assert.ok(Math.abs(full.lean / Math.asin(small.side / small.T0) - 1) < 0.03, full.lean + " vs " + Math.asin(small.side / small.T0));
+	// The anchor's sideways pull times its distance from the axis carries the whole torque.
+	var xA = Math.hypot(full.path.x[0], full.path.y[0]);
+	assert.ok(Math.abs(full.side * xA / full.torque - 1) < 1e-3);
+	// Past the most flow, no equilibrium; just under it, one.
+	var most = mostFlow(sys.field, sol, { v: 200 });
+	assert.ok(most.flow > 33 && most.flow < 40, "most " + most.flow);
+	assert.ok(most.at.elevation > 0 && most.at.elevation < 8 * Math.PI / 180, "low over the ground at the anchor by then");
+	assert.ok(!leanedTether(sys.field, sol, { mdot: most.flow * 1.15, v: 200 }).ok, "well past it, none");
+});
+

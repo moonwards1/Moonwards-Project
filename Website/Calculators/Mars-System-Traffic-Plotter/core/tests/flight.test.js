@@ -3,12 +3,13 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FACILITIES, moonSkyhookFigures, moonSkyhookLimits, skyhookAt, tetherPointState, releaseState,
+import { FACILITIES, moonSkyhookLimits, skyhookAt, tetherPointState, releaseState,
          GM_MARS, R_MARS, ENTRY_ALT } from "../facilities.js";
-import { computeFlight, flightStateAt, groundRelative, SOI_MARS } from "../flight.js";
+import { flightStateAt, groundRelative, SOI_MARS } from "../flight.js";
 import { CLOCK_EPOCH } from "../clock.js";
 import { MarsEphemeris as ME } from "../../../../Shared/mars-ephemeris.js";
 import { OrbitalMath as O } from "../../../../Shared/math-utils.js";
+import { moonSkyhookFigures, computeFlight } from "./studies.js";
 
 var DAY = 86400, DEG = 180 / Math.PI, JD = CLOCK_EPOCH + 81.3;
 function near(x, want, tol, what) {

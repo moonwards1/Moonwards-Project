@@ -133,7 +133,7 @@ function computeFigures() {
 	if (!(h && h.ok)) { return; }
 	var key = [hp.footAlt, hp.comAlt, hp.topAlt, hp.tilt, hp.sunSync, hp.anchorMass, hp.ballastMass, hp.ballastHome,
 	           hp.upperBallastMass, hp.upperBallastHome, hp.ballastSpeed, state.limit, p && p.ok ? p.footAlt + "/" + p.topAlt : "none",
-	           h.shareElevator ? [ep.lat, ep.lon, ep.material, ep.safety, ep.rCW, ep.cwMass].join("/") : "none"].join("|");
+	           h.shareElevator ? [ep.lat, ep.lon, ep.material, ep.safety, ep.rCW, ep.cwMass, ep.cargoFlow].join("/") : "none"].join("|");
 	if (key !== timingKey) {
 		timingKey = key; schedule = null;
 		hp.timing = { a0: needsTiming(h, others()) ? bestStartAngle(h, others(), state.limit) : 0, sidesteps: [] };
@@ -932,6 +932,10 @@ function buildElevatorCard() {
 	var a3 = c.body.appendChild(el("div", "mst-fieldpair"));
 	r.rcw = numberField(a3, "mst-elev-rcw", "Counterweight at (km)", set("rCW", 1e3));
 	r.mass = numberField(a3, "mst-elev-mass", "Its mass (kt)", function (v) { P.cwMass = isFinite(v) && v > 0 ? v * 1e6 : null; refresh(); });
+	var a4 = c.body.appendChild(el("div", "mst-fieldpair mst-tilt-line"));
+	r.flowIn = numberField(a4, "mst-elev-flow", "Cargo flow up (kg/s)", set("cargoFlow", 1));
+	r.flowIn.min = 0;
+	r.flowYear = a4.appendChild(el("div", "mst-field mst-muted mst-flow-year"));
 	r.error = c.body.appendChild(el("div", "mst-error"));
 	c.body.appendChild(el("div", "mst-muted", "The anchor starts at the summit of Olympus Mons; the ground's own height is left out. The counterweight's distance is from Mars's centre. Leave its mass empty for the one that holds the cable and its track up three times over."));
 
@@ -944,6 +948,22 @@ function buildElevatorCard() {
 	r.depart = readout(ro, "Leaves the anchor at");
 	r.cwOff = readout(ro, "Counterweight off the equatorial plane");
 	r.release = readout(ro, "A ship let go at the counterweight");
+
+	c.body.appendChild(el("div", "mst-subhead", "With the cargo aboard"));
+	var lr = c.body.appendChild(el("div", "mst-readouts"));
+	r.leanAnchor = readout(lr, "Lean where it leaves the anchor");
+	r.leanElev = readout(lr, "Leaves the anchor at, loaded");
+	r.leanPhobos = readout(lr, "West of the anchor's meridian, at Phobos's distance");
+	r.leanDeimos = readout(lr, "At Deimos's distance");
+	r.leanCW = readout(lr, "At the counterweight");
+	r.leanSide = readout(lr, "Sideways pull on the anchor");
+	r.leanHold = readout(lr, "Tension at the anchor with the cargo aboard");
+	r.leanCargo = readout(lr, "Cargo on the tether at once");
+	r.leanPeak = readout(lr, "Peak tension, loaded");
+	r.leanLimit = readout(lr, "Most flow this tether carries");
+	r.leanNote = c.body.appendChild(el("div", "mst-guide"));
+	c.body.appendChild(el("div", "mst-muted", "Cargo climbing the tether is brought up to the speed of the ground beneath it, and the tether does that by pushing it east; the cargo pushes the tether west in return. The tether stands nearly as a turn of the whole of it about Mars's axis, west of its anchor's meridian, held by the sideways part of the tension at the anchor. The cargo's weight also bows the bottom of the tether down toward the ground; by the most flow the two together have brought it down nearly to the ground. Worked out in full in three dimensions, the counterweight held at its distance. Everything below is with the cargo aboard: the drawing, Phobos's clearance, Deimos's crossings and the hanging skyhook's passes. Climbers at "
+		+ num(TRAFFIC.vFull) + " m/s; the flow is net, up less down."));
 
 	c.body.appendChild(el("div", "mst-subhead", "Keeping clear of Phobos"));
 	var pr = c.body.appendChild(el("div", "mst-readouts"));
@@ -1012,6 +1032,8 @@ function fillElevatorCard() {
 	elevCard.el.classList.toggle("mst-card-off", !on);
 	show(r.lat, String(P.lat)); show(r.lon, String(P.lon)); show(r.safety, String(P.safety));
 	show(r.rcw, kmField(P.rCW)); show(r.mass, P.cwMass == null ? "" : String(Math.round(P.cwMass / 1e3) / 1e3));
+	show(r.flowIn, String(P.cargoFlow));
+	r.flowYear.textContent = isFinite(P.cargoFlow) ? num(P.cargoFlow * 365.25 * DAY / 1e6, P.cargoFlow < 10 ? 1 : 0) + " kt a year · " + num(P.cargoFlow * 86.4, 0) + " t a day" : "";
 	r.mass.placeholder = ok && P.cwMass == null ? num(fig.cwMass / 1e6, 1).replace(/,/g, "") : "";
 	r.material.value = P.material;
 	r.safety.min = range[0]; r.safety.max = range[1];
@@ -1022,15 +1044,33 @@ function fillElevatorCard() {
 	r.safety.classList.toggle("mst-bad", code === "safety-range" || code === "phobos");
 	r.rcw.classList.toggle("mst-bad", code === "cw-range" || code === "no-landing");
 	r.mass.classList.toggle("mst-bad", code === "mass-range");
+	r.flowIn.classList.toggle("mst-bad", code === "flow-range" || code === "flow-limit");
 	var all = [r.length, r.peak, r.hold, r.cable, r.cw, r.depart, r.cwOff, r.release, r.zPhobos, r.phClear, r.cap,
+	           r.leanAnchor, r.leanElev, r.leanPhobos, r.leanDeimos, r.leanCW, r.leanSide, r.leanHold, r.leanCargo, r.leanPeak, r.leanLimit,
 	           r.zDeimos, r.count, r.swing, r.now, r.closest, r.stretch, r.load, r.build, r.flow, r.energy];
 	var list = dodgedCrossings(fig);
 	r.prev.disabled = r.next.disabled = !list.length;
 	if (!ok) {
 		all.forEach(function (x) { x.textContent = "—"; });
-		r.status.textContent = ""; r.stepBox.hidden = true;
+		r.status.textContent = ""; r.stepBox.hidden = true; r.leanNote.textContent = "";
 		return;
 	}
+	var L = fig.lean;
+	function westText(w) { return w ? num(w.angle * DEG, w.angle * DEG < 10 ? 2 : 1) + "° · " + km(w.distance) : "—"; }
+	r.leanAnchor.textContent = num(L.angle * DEG, 1) + "° west of the meridian";
+	r.leanPhobos.textContent = westText(L.atPhobos);
+	r.leanDeimos.textContent = L.atDeimos ? westText(L.atDeimos) : "ends short of Deimos";
+	r.leanCW.textContent = westText(L.atCW);
+	r.leanSide.textContent = meganewtons(L.side);
+	r.leanHold.textContent = meganewtons(L.T0) + (L.flow > 0 ? " (" + meganewtons(fig.T0) + " empty)" : "");
+	r.leanCargo.textContent = tonnes(L.cargo);
+	r.leanElev.textContent = num(L.elevation * DEG, 1) + "° above level (" + num(fig.departure * DEG, 1) + "° empty)";
+	r.leanPeak.textContent = meganewtons(L.Tpeak) + " · " + num(L.Tpeak / fig.Tpeak * 100, 1) + "% of its working stress";
+	r.leanLimit.textContent = "about " + num(Math.floor(L.most)) + " kg/s · " + num(L.most * 365.25 * DAY / 1e9, 2) + " Mt a year · "
+		+ (L.mostBy === "phobos" ? "then too near Phobos" : "then down to " + num(L.mostElevation * DEG, 1) + "° at the anchor");
+	var low = L.elevation < L.floor;
+	r.leanNote.textContent = low ? "The cargo draws the bottom of the tether down below the " + num(L.floor * DEG) + "° above level the empty tether is sized to leave its anchor at. A heavier counterweight or a stronger cable holds it up." : "";
+	r.leanElev.classList.toggle("mst-warn", low);
 	var jd = sceneJd(), away = fig.side > 0 ? " north" : " south";
 	r.length.textContent = km(fig.length);
 	r.peak.textContent = meganewtons(fig.Tpeak) + ", " + km(fig.rPeak - R_MARS) + " up";
@@ -1266,8 +1306,9 @@ function init() {
 	// The Phobos skyhook starts with its top as high as the elevator allows, where that is under its own default.
 	var cap = allFigures(designParams())[ELEVATOR].phobosTopCap;
 	if (cap != null && cap < state.params[PHOBOS].topAlt) { state.params[PHOBOS].topAlt = Math.floor(cap / 100e3) * 100e3; }
-	// The hanging skyhook starts on its 4:1 resonance with Phobos, to the metre.
-	var onResonance = resonantComAlt(state.params[HANGING], allFigures(designParams())[PHOBOS], 4);
+	// The hanging skyhook starts on its 3:1 resonance with Phobos, to the metre.
+	var start = allFigures(designParams());
+	var onResonance = resonantComAlt(state.params[HANGING], start[PHOBOS] || null, 3, { elevator: start[ELEVATOR] || null });
 	if (onResonance != null) { state.params[HANGING].comAlt = onResonance; }
 	STUBS.forEach(function (s) { cardShell(s.label, s.sub, true); });
 	syncCards();

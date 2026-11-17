@@ -4,12 +4,14 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { allFigures } from "../facilities.js";
-import { ELEVATOR_DEFAULTS } from "../elevator.js";
-import { HANGING_DEFAULTS, DAY_RATIOS, resonantComAlt } from "../hanging-skyhook.js";
+import { DAY_RATIOS } from "../hanging-skyhook.js";
 import { elevatorDistance, walkElevatorPasses, needsTiming, firstClosePass, closestPass, bestStartAngle,
          workOutSidesteps, elevatorGuidance } from "../clearance.js";
 import { CLOCK_EPOCH } from "../clock.js";
+import { planeAt } from "../hanging-skyhook.js";
+import { elevatorAt, elevatorPoint } from "../elevator.js";
+import { OrbitalMath as O } from "../../../../Shared/math-utils.js";
+import { ELEVATOR_STUDY, HANGING_STUDY, allFigures, resonantComAlt } from "./studies.js";
 
 var DAY = 86400, DEG = Math.PI / 180, LIMIT = 200e3;
 function near(x, want, tol, what) {
@@ -18,7 +20,7 @@ function near(x, want, tol, what) {
 // A design: the default elevator, the Phobos skyhook (null to leave it out),
 // and a hanging skyhook, optionally put on a resonance first.
 function design(phobos, hang, res) {
-	var base = { spaceElevator: ELEVATOR_DEFAULTS, phobosSkyhook: phobos }, hp = Object.assign({}, HANGING_DEFAULTS, hang || {});
+	var base = { spaceElevator: ELEVATOR_STUDY, phobosSkyhook: phobos }, hp = Object.assign({}, HANGING_STUDY, hang || {});
 	var f = allFigures(base);
 	if (res) { hp.comAlt = resonantComAlt(hp, f.phobosSkyhook || null, res.ratio, { elevator: f.spaceElevator, mars: res.mars }); }
 	f = allFigures(Object.assign({}, base, { hangingSkyhook: hp }));
@@ -38,7 +40,7 @@ test("the hanging tether meets the elevator's unless its tilt keeps it nearer th
 	assert.equal(design(null, { sunSync: false, tilt: 15 }).h.diagnostic.code, "tilt-elevator");
 	assert.ok(design(null, { sunSync: false, tilt: 30 }).h.ok);
 	// With no elevator in the design there is nothing to share.
-	assert.equal(allFigures({ hangingSkyhook: HANGING_DEFAULTS }).hangingSkyhook.shareElevator, null);
+	assert.equal(allFigures({ hangingSkyhook: HANGING_STUDY }).hangingSkyhook.shareElevator, null);
 });
 
 test("the passes found are the close approaches a plain search of every few seconds finds", function () {
@@ -101,4 +103,34 @@ test("the working stops when its time runs out, and says how far it got", functi
 	var res = workOutSidesteps(d.h, d.others, { limit: LIMIT, budgetMs: 1 });
 	assert.equal(res.complete, false); assert.equal(res.stopped, "time");
 	assert.ok(res.jdReached < CLOCK_EPOCH + 400);
+});
+
+test("the hanging skyhook's passes come where the cargo's lean puts the elevator's tether", function () {
+	// When a point of the elevator's tether halfway up the hanging tether's heights crosses the orbit's plane.
+	function crossings(flow) {
+		var f = allFigures({ spaceElevator: Object.assign({}, ELEVATOR_STUDY, { cargoFlow: flow }), phobosSkyhook: null, hangingSkyhook: HANGING_STUDY });
+		var h = f.hangingSkyhook, e = f.spaceElevator, k = 0, out = [];
+		while (e.curve.r[k] < h.R + 0.5 * (h.footAlt + h.topAlt)) { k++; }
+		function off(jd) { return O.vDot(elevatorPoint(e, elevatorAt(e, jd), k), planeAt(h, jd).normal); }
+		for (var jd = CLOCK_EPOCH; jd < CLOCK_EPOCH + 3; jd += 0.01) {
+			if (off(jd) * off(jd + 0.01) < 0) {
+				var a = jd, b = jd + 0.01;
+				for (var i = 0; i < 40; i++) { var m = 0.5 * (a + b); if (off(m) * off(a) <= 0) { b = m; } else { a = m; } }
+				out.push(a);
+			}
+		}
+		// The passes the sidesteps are worked out against, too.
+		h.timing = { a0: 0, sidesteps: [] };
+		var passes = 0;
+		walkElevatorPasses(h, e, h.timing, CLOCK_EPOCH, CLOCK_EPOCH + 3, LIMIT, function () { passes++; });
+		return { at: out, west: e.curve.west[k], h: h, passes: passes };
+	}
+	var still = crossings(0), leaning = crossings(20);
+	assert.ok(leaning.west > 1 * DEG, "lean there: " + leaning.west / DEG + "°");
+	assert.equal(leaning.at.length, still.at.length);
+	assert.equal(leaning.passes, still.passes);
+	// Mars carries the leaning tether through the plane later by the lean over its turning rate against the plane.
+	var lag = leaning.west / (2 * Math.PI / 88642.66 - leaning.h.nodeRate);
+	// (A little off that, since the cargo also lowers the tether toward the plane.)
+	leaning.at.forEach(function (t, i) { near((t - still.at[i]) * DAY, lag, 0.03 * lag, "crossing " + i + " later by (s)"); });
 });

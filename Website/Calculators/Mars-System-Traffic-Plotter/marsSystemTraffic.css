@@ -138,6 +138,7 @@ html, body {
 .mst-field label { display: block; font-size: 11px; color: #8b94a7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
 .mst-field input[type="number"], .mst-field select { width: 100%; min-width: 0; }
 .mst-field-wide { flex: 1.6; }
+.mst-flow-year { padding-bottom: 7px; }
 .mst-bad { border-color: #d0604f !important; }
 .mst-error { color: #ff9a8a; font-size: 12px; margin: 6px 0 2px; }
 .mst-error:empty { display: none; }

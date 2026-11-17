@@ -58,7 +58,7 @@ var MIN_ARM = 50e3;
 export var FACILITIES = {
 	phobosSkyhook: {
 		id: "phobosSkyhook", kind: "moonSkyhook", label: "Phobos skyhook", moon: "Phobos",
-		defaults: { footAlt: 260e3, topAlt: 10000e3, relAlt: 260e3 }
+		defaults: { footAlt: 260e3, topAlt: 6800e3, relAlt: 260e3 }
 	},
 	hangingSkyhook: {
 		id: "hangingSkyhook", kind: "hangingSkyhook", label: "Hanging skyhook", defaults: HANGING_DEFAULTS

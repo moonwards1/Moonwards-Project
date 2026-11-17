@@ -153,7 +153,8 @@ function elevatorChain(h, e) {
 	var idx = [], n = Math.min(CHAIN_PIECES, last - first);
 	for (var j = 0; j <= n; j++) { idx.push(Math.round(first + (last - first) * j / n)); }
 	var mid = idx[idx.length >> 1];
-	var span = Math.abs(Math.atan2(c.z[first], c.x[first]) - Math.atan2(c.z[last], c.x[last]));
+	// The angle the stretch spans, north–south and, under the lean, east–west.
+	var span = Math.hypot(Math.atan2(c.z[first], c.x[first]) - Math.atan2(c.z[last], c.x[last]), c.west[first] - c.west[last]);
 	return { idx: idx, mid: mid, r: c.r[mid], halfSpan: span / 2 };
 }
 

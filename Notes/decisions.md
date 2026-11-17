@@ -755,3 +755,20 @@ needs sidesteps for one of them. A tilt within 10° above the elevator tether's
 latitudes at the shared heights is refused; one at least 3° below them never meets it
 and needs no timing. Every facility has an "In the design" tick, the Phobos skyhook
 included, so any two can be modelled without the third.
+
+### The Mars elevator carries its cargo in a full 3-D equilibrium, the counterweight held at its distance
+
+In the Mars System Traffic Plotter the net cargo flow up the elevator is an input, and
+the tether's equilibrium with the cargo aboard (its weight, ṁ/v per metre, and its
+Coriolis push west, 2ṁω per metre of distance from the axis) is solved in three
+dimensions (`leanedTether`, `Shared/meridian-tether.js`). The cable keeps the
+cross-section it was sized with at each distance from Mars's centre, and the
+counterweight is held at its design distance, the tether taking up or paying out
+length. Why that and not a fixed length: the cable stretches by about 0.7% at working
+stress (hundreds of km), so a fixed length is no truer, and holding the counterweight
+where the sizing put it is what reeling would do; a fixed-length solution also folds
+at far lower flows. The loaded tether is the one drawn and the one Phobos's clearance,
+the Phobos cap, Deimos's crossings and the hanging skyhook's passes are found against.
+The most flow (`mostFlow`) is where it either passes Phobos's reach by under 50 km or
+is drawn down to the ground; a flow past it is refused. The workbench card's
+single-angle lean formula is the small-flow limit at the anchor.

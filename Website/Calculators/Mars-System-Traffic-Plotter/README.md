@@ -19,6 +19,29 @@ the sidebar; flights to and from the elevator come next. The ground model for
 the mass driver (terrain and the track profile) is in the core, not yet on the
 page.
 
+## The default design
+
+The page opens on a design for heavy traffic, all three facilities in it:
+
+- **Space elevator:** anchored on the summit of Olympus Mons, early carbon
+  nanotube at a safety factor of 2.4, a 700 kt counterweight 55,000 km from
+  Mars's centre, carrying 150 kg/s (about 4.7 Mt a year). It carries up to
+  about 626 kg/s; at 150 it leans 7.8° west at the anchor and leaves it 34.5°
+  above level.
+- **Phobos skyhook:** foot 260 km, top 6,800 km (the elevator allows up to
+  9,298 km).
+- **Hanging skyhook:** sun-synchronous, foot 220 km, top 5,000 km, 200 kt of
+  upper ballast at 4,000 km, the centre of mass set at the page's start to
+  the 3:1 resonance with Phobos (1,118 km). It is then 9.66 orbits a Mars
+  day, out of step with the elevator.
+
+The worked figures elsewhere in this README are for fixed **study designs**,
+the ones the Node tests pin (`core/tests/studies.js`): the Phobos skyhook's
+top at 10,000 km; the hanging skyhook on 4:1 with Phobos, top 2,400 km, 30 kt
+of upper ballast at the top; the elevator in early nanotube at 2.5, its
+counterweight at 51,000 km of the mass that holds it up three times over
+(151 kt), carrying 1 kg/s.
+
 ## Files
 
 - `marsSystemTraffic.html`, `.css` (`mst-` prefix), `.js` — the page: date bar,
@@ -62,6 +85,8 @@ page.
   ~0.74 MB each) and `terrain.json` describing the grid.
 - `tools/make-terrain.py` — makes `terrain/` from the TerreSculptor export
   kept (untracked) at the repo root; its header gives the conversion.
+- `core/tests/studies.js` — the fixed study designs the tests pin their
+  figures to, apart from the page's defaults.
 - `core/tests/*.test.js` — Node tests:
   `node --test Website/Calculators/Mars-System-Traffic-Plotter/core/tests/*.test.js`
 
@@ -133,8 +158,7 @@ The foot may be set from 257 km (Mars's 115 km floor for a tether, plus the
 142 km the tether drops at Phobos's periapsis) to 50 km below Phobos; the top
 from 50 km above Phobos to 19,924 km, short of Deimos (`Shared/body-profiles.js`,
 `anchorConfig`), or to the space elevator's limit where that is lower (see
-"Keeping clear of Phobos"). Defaults: foot 260 km, top 10,000 km; the page opens with the top at 6,800 km,
-under the default elevator's limit. The release point is
+"Keeping clear of Phobos"). Defaults: foot 260 km, top 6,800 km. The release point is
 anywhere between, set on the card or by dragging the pink marker.
 
 ## The hanging skyhook
@@ -247,21 +271,21 @@ A pass within one and a half times the limit by that estimate is measured
 exactly: the least distance, over the minutes around their nearest, between
 the hanging tether and the elevator's stretch taken as 12 straight pieces
 (`elevatorDistance`), with the elevator's tether where its Deimos swing has
-it. With the default 200 km clearance about one pass in four is too near when
-the timing is left to chance.
+it. For the study design at the default 200 km clearance about one pass in
+four is too near when the timing is left to chance.
 
 **In step with Mars's day.** With a whole number of orbits to one Mars day
 or two, the skyhook is at the same places round its orbit every time the
 elevator's tether comes through, so a start that is clear stays clear. The
-card lists the centres of mass that do it (13 a day at 309 km, 25 in 2 days
-at 407 km, 12 a day at 511 km, and so on); clicking one sets it exactly. Any
+card lists the centres of mass that do it (for the study design, 13 a day at
+309 km, 25 in 2 days at 407 km, 12 a day at 511 km, and so on); clicking one sets it exactly. Any
 other period is allowed, and the card says how far the skyhook's place at a
 pass moves from one day to the next.
 
 No period is in step with both Phobos and Mars's day: 4:1 with Phobos is
 12.88 orbits a Mars day. With the hanging tether sharing heights with both
-others, one of the two needs sidesteps every few days. At the default 200 km
-clearance the ballast cannot keep up and some passes are left too near; at 50
+others, one of the two needs sidesteps every few days. For the study design
+at the default 200 km clearance the ballast cannot keep up and some passes are left too near; at 50
 km it can, with a sidestep about every 12 days. Raising the Phobos skyhook's
 foot above the hanging tether's top, or leaving one of the three out of the
 design, lets one resonance hold the timing with no sidesteps.
@@ -293,7 +317,8 @@ ground's own height is left out) and no stations.
 
 The card sets the anchor's latitude (within 20° of the equator) and longitude,
 the cable (early carbon nanotube at a safety factor of 1.5 to 3, or mature at
-1.5 to 4), and the counterweight's distance from Mars's centre and its mass.
+1.5 to 4), the counterweight's distance from Mars's centre and its mass, and
+the net flow of cargo up the tether.
 An empty mass takes the counterweight that holds the cable and its track up
 three times over; one too light to hold 1.5×, or to leave the anchor 10° above
 level, is raised. The card can leave the elevator out of the design.
@@ -307,6 +332,73 @@ plane is at
 - `m`, `e`, `p` — Mars's prime-meridian, 90°-east and pole directions at that
   instant (`Shared/mars-ephemeris.js`)
 - `lon` — the anchor's east longitude
+
+### The cargo aboard: weight and westward lean
+
+Cargo climbing the tether has to be brought up to the speed of the ground
+beneath it, and the tether does that by pushing it east; the cargo pushes the
+tether west in return. The cargo also weighs on the tether. Both are in the
+tether's equilibrium, solved in full in three dimensions (`leanedTether` in
+`Shared/meridian-tether.js`), in axes turning with Mars (x toward the
+anchor's meridian, y east, z north):
+
+    d(T t) / ds  +  (lambda + mdot / v) f  -  2 mdot w (z x t)  =  0
+
+- `T` — tension; `t` — unit vector along the tether, pointing out
+- `s` — distance along the tether
+- `lambda` — the cable and its track per metre, as sized with no cargo: the
+  cable at each distance from Mars's centre keeps its cross-section
+- `mdot / v` — the cargo per metre: the net flow up (kg/s) over the climbers'
+  speed (200 m/s)
+- `f` — gravity (with the equatorial bulge) and spin, per kg
+- `w` — Mars's spin rate; `z x t` points east for a tether pointing out, so
+  the last term is the cargo's push west, `2 mdot w` per metre of distance
+  from the spin axis it climbs
+
+The counterweight is held at its design distance from Mars's centre, as in
+the sizing, the tether taking up or paying out whatever length that needs;
+where on that sphere it hangs is solved for, from the counterweight's net
+pull down the tether to the anchor (Newton's method on the counterweight's
+latitude and longitude). Only the anchor resists turning the tether about
+Mars's axis, so its sideways pull carries the whole torque:
+
+    sin(theta) * T0 * x_A = mdot * w * ( x_c^2 - x_A^2 )
+
+- `theta` — the lean west of the anchor's meridian where the tether leaves it
+- `T0` — the tension at the anchor, with the cargo aboard
+- `x_A`, `x_c` — the anchor's and the counterweight's distance from the axis
+
+For the study elevator at 10 kg/s: 4.1° of lean at the anchor, the
+counterweight turned 1.3° (1,180 km) west, the tether leaving the anchor
+14.2° above level instead of 16.8°, and 8.05 MN at the anchor instead of 8.32.
+
+**The most flow.** As the flow rises, the cargo's weight bows the bottom of
+the tether down toward the ground and its push tips it west, and together
+they lower the whole tether toward the equatorial plane. The card gives the
+most flow the tether carries (`mostFlow`), whichever comes first of:
+
+- **Phobos.** The tether drawn so near the plane that it passes Phobos's
+  reach by less than 50 km. This is what holds the study elevator to about
+  22 kg/s (0.72 Mt a year); it also lowers the cap on the Phobos skyhook's top
+  as the flow rises (6,838 km empty, 6,390 km at 20 kg/s).
+- **The ground.** The bottom of the tether drawn down until it leaves the
+  anchor only a few degrees above level, past which no equilibrium holds it
+  up. Mature nanotube at 2.5, which rides far above Phobos, reaches this at
+  about 103 kg/s (3.3 Mt a year).
+
+A flow past it is refused. A heavier counterweight, a stronger cable or a
+lower safety factor carries more: with 300 kt instead of the study's 151 kt,
+early nanotube carries about 144 kg/s. The search for the most flow steps up
+from 1 kg/s and stops a few percent short of the true edge where the tether
+leaves the anchor nearly level. The card warns once the loaded tether leaves
+its anchor below the 10° the empty tether is sized for.
+
+Everything on the card past the sizing, the drawing, Phobos's clearance and
+the Phobos cap, Deimos's crossings and the hanging skyhook's passes are the
+tether with its cargo aboard. The Deimos dodge swing's shape and the pumping
+are worked out on the empty tether. Left out: the cargo's own turning along
+the curved tether (`mdot * v * dt/ds`, under half a percent of the tension),
+the cable's stretch, and the east–west sway that changes in the flow cause.
 
 ### Keeping clear of Phobos
 
@@ -322,7 +414,7 @@ either side. The Phobos skyhook's top may be set only as high as
   that ends short of Deimos)
 - `rho` — taken with Phobos at its apoapsis, 142 km beyond the card's altitude
 
-holds all the way up it. For the default elevator that is 6,838 km; the
+holds all the way up it. For the study elevator empty that is 6,838 km; the
 Phobos card gives the limit and a red marker on the Phobos tether's line
 shows it. An elevator that passes Phobos itself (at apoapsis, its radius
 added) by less than 50 km is refused. A stronger cable, a lower safety factor
@@ -382,8 +474,8 @@ the stretch during that half, the flow that keeps it there, and the swing's
 energy.
 
 Left out: the pull of the Sun and the moons on the tether, Mars's gravity
-beyond its equatorial bulge, the east–west sway and westward lean that
-climbing cargo causes, and how the swing changes the tension.
+beyond its equatorial bulge, the east–west sway that changes in the cargo
+flow cause, and how the swing changes the tension.
 
 ## A flight
 
