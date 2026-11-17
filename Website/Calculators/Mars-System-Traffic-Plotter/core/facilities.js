@@ -178,14 +178,14 @@ export function tetherPointState(at, s) {
 
 // Every facility's figures for the plotter's params { <facility id>: params }.
 // The Phobos skyhook is read against the space elevator, which limits its
-// top, and the hanging skyhook against the Phobos skyhook, whose tether it
-// must keep clear of. A skyhook whose params are null is not in the design
+// top, and the hanging skyhook against the Phobos skyhook and the space
+// elevator, whose tethers it must keep clear of. A skyhook whose params are null is not in the design
 // and gets no entry; nor does the space elevator unless it is given params.
 export function allFigures(params) {
 	var p = params || {}, out = {};
 	if (p.spaceElevator) { out.spaceElevator = elevatorFigures(p.spaceElevator); }
 	if (p.phobosSkyhook !== null) { out.phobosSkyhook = moonSkyhookFigures("phobosSkyhook", p.phobosSkyhook, out.spaceElevator); }
-	if (p.hangingSkyhook !== null) { out.hangingSkyhook = hangingFigures(p.hangingSkyhook, out.phobosSkyhook || null); }
+	if (p.hangingSkyhook !== null) { out.hangingSkyhook = hangingFigures(p.hangingSkyhook, out.phobosSkyhook || null, out.spaceElevator || null); }
 	return out;
 }
 

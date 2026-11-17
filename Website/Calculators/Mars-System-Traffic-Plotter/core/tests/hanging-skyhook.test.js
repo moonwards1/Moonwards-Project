@@ -24,7 +24,7 @@ function near(x, want, tol, what) {
 function hanging(params) { return hangingFigures(params, PHOBOS); }
 function started(params) {
 	var h = hanging(params);
-	h.timing = { a0: bestStartAngle(h, PHOBOS, LIMIT), sidesteps: [] };
+	h.timing = { a0: bestStartAngle(h, { phobos: PHOBOS }, LIMIT), sidesteps: [] };
 	return h;
 }
 
@@ -141,7 +141,7 @@ test("every point of the tether moves as its position changes, and the plane kee
 
 test("on the 4:1 resonance the tethers stay far apart with no sidestep", function () {
 	var h = started({ comAlt: resonantComAlt({}, PHOBOS, 4) });
-	var res = workOutSidesteps(h, PHOBOS, { limit: LIMIT, days: 400 });
+	var res = workOutSidesteps(h, { phobos: PHOBOS }, { limit: LIMIT, days: 400 });
 	assert.equal(res.sidesteps.length, 0); assert.equal(res.unavoided.length, 0); assert.ok(res.complete);
 	assert.ok(res.closest.distance > 1000e3, "closest pass " + res.closest.distance);
 	assert.equal(timingGuidance(h, RATIOS, LIMIT).needs, null);
@@ -154,12 +154,12 @@ test("off the resonance, sidesteps keep every pass clear, about as often as the 
 	var h = started({ comAlt: 344e3 }), g = timingGuidance(h, RATIOS, LIMIT);
 	assert.equal(g.near.p, 4); assert.equal(g.needs, "faster");
 	assert.ok(g.off < 0 && g.faster > 0.02 && g.slower > 0.004);
-	assert.ok(firstClosePass(h, PHOBOS, h.timing, CLOCK_EPOCH, CLOCK_EPOCH + 60, LIMIT), "left alone, a pass comes too close");
-	var res = workOutSidesteps(h, PHOBOS, { limit: LIMIT, days: 60 });
+	assert.ok(firstClosePass(h, { phobos: PHOBOS }, h.timing, CLOCK_EPOCH, CLOCK_EPOCH + 60, LIMIT), "left alone, a pass comes too close");
+	var res = workOutSidesteps(h, { phobos: PHOBOS }, { limit: LIMIT, days: 60 });
 	assert.ok(res.complete && res.unavoided.length === 0 && res.sidesteps.length >= 5, "sidesteps " + res.sidesteps.length);
 	assert.ok(res.closest.distance >= LIMIT, "closest pass " + res.closest.distance);
 	var timing = { a0: res.a0, sidesteps: res.sidesteps };
-	assert.equal(firstClosePass(h, PHOBOS, timing, CLOCK_EPOCH, CLOCK_EPOCH + 60, LIMIT), null);
+	assert.equal(firstClosePass(h, { phobos: PHOBOS }, timing, CLOCK_EPOCH, CLOCK_EPOCH + 60, LIMIT), null);
 	var gaps = [];
 	for (var k = 1; k < res.sidesteps.length; k++) {
 		assert.ok(res.sidesteps[k].jdStart >= res.sidesteps[k - 1].jdEnd, "sidesteps overlap");
@@ -177,14 +177,14 @@ test("off the resonance, sidesteps keep every pass clear, about as often as the 
 test("a skyhook running fast with ballast that can only speed it up: the close passes are listed, not hidden", function () {
 	var h = started({ comAlt: 331e3, upperBallastMass: 0 }), g = timingGuidance(h, RATIOS, LIMIT);
 	assert.equal(g.needs, "slower"); assert.ok(g.slower < 0.001);
-	var res = workOutSidesteps(h, PHOBOS, { limit: LIMIT, days: 300 });
+	var res = workOutSidesteps(h, { phobos: PHOBOS }, { limit: LIMIT, days: 300 });
 	assert.ok(res.unavoided.length >= 1 && res.unavoided[0].passes > 1);
 	assert.ok(res.unavoided[0].distance < LIMIT);
 });
 
 test("the same fast skyhook with upper ballast: bringing it down slows the skyhook, and every pass stays clear", function () {
 	var h = started({ comAlt: 331e3 });
-	var res = workOutSidesteps(h, PHOBOS, { limit: LIMIT, days: 300 });
+	var res = workOutSidesteps(h, { phobos: PHOBOS }, { limit: LIMIT, days: 300 });
 	assert.equal(res.unavoided.length, 0);
 	assert.ok(res.sidesteps.length >= 1 && res.closest.distance >= LIMIT);
 	res.sidesteps.forEach(function (s) { assert.ok(s.resp.which === "upper" && s.psi < 0 && s.rate < 0); });
@@ -193,7 +193,7 @@ test("the same fast skyhook with upper ballast: bringing it down slows the skyho
 test("a slanting pass comes closer than it is at the crossing", function () {
 	near(slantFactor(hanging()), 0.958, 0.005);
 	assert.ok(slantFactor(hanging({ sunSync: false, tilt: 25 })) < 0.6);
-	var h = started({ sunSync: false, tilt: 30 }), c = closestPass(h, PHOBOS, h.timing, CLOCK_EPOCH, CLOCK_EPOCH + 2, 5000e3);
+	var h = started({ sunSync: false, tilt: 30 }), c = closestPass(h, { phobos: PHOBOS }, h.timing, CLOCK_EPOCH, CLOCK_EPOCH + 2, 5000e3);
 	assert.ok(c.exact, "measured, not estimated");
 	// No instant near that pass is closer than the pass found.
 	for (var k = -40; k <= 40; k++) {

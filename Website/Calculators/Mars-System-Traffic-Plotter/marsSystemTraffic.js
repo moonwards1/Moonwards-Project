@@ -34,9 +34,9 @@ import { CLOCK_EPOCH, SPAN_DAYS } from "./core/clock.js";
 import { VIEW_FRAMES, viewBasis, toView } from "./core/view-frames.js";
 import { FACILITIES, SKYHOOKS, allFigures, facilityAt, pointState, centreRadius, altitudeOf, moonSkyhookLimits, R_MARS, ENTRY_ALT }
 	from "./core/facilities.js";
-import { HANGING_DEFAULTS, RATIOS, resonantComAlt } from "./core/hanging-skyhook.js";
-import { DEFAULT_LIMIT, bestStartAngle, closestPass, tetherDistance, workOutSidesteps, timingGuidance }
-	from "./core/clearance.js";
+import { HANGING_DEFAULTS, RATIOS, DAY_RATIOS, resonantComAlt } from "./core/hanging-skyhook.js";
+import { DEFAULT_LIMIT, bestStartAngle, closestPass, tetherDistance, elevatorDistance, needsTiming, workOutSidesteps,
+         timingGuidance, elevatorGuidance } from "./core/clearance.js";
 import { ELEVATOR_DEFAULTS, ELEVATOR_MATERIALS, KEEP_CLEAR, DODGE, TRAFFIC, elevatorAt } from "./core/elevator.js";
 import { computeFlight, flightStateAt, groundRelative, SURFACE } from "./core/flight.js";
 import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
@@ -79,13 +79,14 @@ var state = {
 	from: PHOBOS,                      // the skyhook the ship is let go from
 	to: SURFACE,                       // where it is bound: SURFACE, or the other skyhook's id
 	params: {},                        // facility id -> its params (m)
-	included: {},                      // facility id -> in the design? (the Phobos skyhook always is)
-	limit: DEFAULT_LIMIT,              // the least clearance allowed between the two tethers, m
+	included: {},                      // facility id -> in the design?
+	limit: DEFAULT_LIMIT,              // the least clearance allowed between the hanging tether and another, m
 	open: {}                           // facility id -> card unfolded?
 };
 state.params[PHOBOS] = Object.assign({}, FACILITIES[PHOBOS].defaults);
 state.params[HANGING] = Object.assign({}, HANGING_DEFAULTS);
 state.params[ELEVATOR] = Object.assign({}, ELEVATOR_DEFAULTS);
+state.included[PHOBOS] = true;
 state.included[HANGING] = true;
 state.included[ELEVATOR] = true;
 state.open[PHOBOS] = true;
@@ -117,7 +118,7 @@ function releaseJd() {
 // The params core/ takes: a facility left out of the design is null.
 function designParams() {
 	var p = {};
-	p[PHOBOS] = state.params[PHOBOS];
+	p[PHOBOS] = state.included[PHOBOS] ? state.params[PHOBOS] : null;
 	p[HANGING] = state.included[HANGING] ? state.params[HANGING] : null;
 	p[ELEVATOR] = state.included[ELEVATOR] ? state.params[ELEVATOR] : null;
 	return p;
@@ -125,19 +126,22 @@ function designParams() {
 // Every facility's figures. A change to anything the hanging skyhook's timing
 // rests on starts that timing afresh: its place round its orbit at the start
 // of the clock is the one that keeps its first passes widest of the Phobos
-// tether, and no sidesteps are worked out.
+// tether and the space elevator's, and no sidesteps are worked out.
 function computeFigures() {
 	figs = allFigures(designParams());
-	var h = figs[HANGING], p = figs[PHOBOS], hp = state.params[HANGING];
+	var h = figs[HANGING], p = figs[PHOBOS], hp = state.params[HANGING], ep = state.params[ELEVATOR];
 	if (!(h && h.ok)) { return; }
 	var key = [hp.footAlt, hp.comAlt, hp.topAlt, hp.tilt, hp.sunSync, hp.anchorMass, hp.ballastMass, hp.ballastHome,
-	           hp.upperBallastMass, hp.upperBallastHome, hp.ballastSpeed, state.limit, p.ok ? p.footAlt + "/" + p.topAlt : "none"].join("|");
+	           hp.upperBallastMass, hp.upperBallastHome, hp.ballastSpeed, state.limit, p && p.ok ? p.footAlt + "/" + p.topAlt : "none",
+	           h.shareElevator ? [ep.lat, ep.lon, ep.material, ep.safety, ep.rCW, ep.cwMass].join("/") : "none"].join("|");
 	if (key !== timingKey) {
 		timingKey = key; schedule = null;
-		hp.timing = { a0: h.share ? bestStartAngle(h, p, state.limit) : 0, sidesteps: [] };
+		hp.timing = { a0: needsTiming(h, others()) ? bestStartAngle(h, others(), state.limit) : 0, sidesteps: [] };
 	}
 	h.timing = hp.timing;
 }
+// The tethers the hanging skyhook is timed against (core/clearance.js).
+function others() { return { phobos: figs[PHOBOS] || null, elevator: figs[ELEVATOR] || null }; }
 function flightSeconds() { return flight && flight.ok ? flight.leg.duration * state.flightFrac : 0; }
 function sceneJd() { return releaseJd() + flightSeconds() / DAY; }
 
@@ -491,6 +495,8 @@ function buildSkyhookCard() {
 			if (isFinite(kmVal)) { state.params[PHOBOS][key] = kmVal * 1e3; refresh(); }
 		};
 	}
+	var inRow = c.body.appendChild(el("div", "mst-row"));
+	r.included = checkBox(inRow, "mst-hook-in", "In the design", function (on) { state.included[PHOBOS] = on; refresh(); });
 	var pair = c.body.appendChild(el("div", "mst-fieldpair"));
 	r.foot = numberField(pair, "mst-hook-foot", "Foot altitude (km)", setAlt("footAlt"));
 	r.top = numberField(pair, "mst-hook-top", "Top altitude (km)", setAlt("topAlt"));
@@ -512,10 +518,12 @@ function pointNow(fig, at, s) {
 	return km(O.vMag(st.r) - R_MARS) + " · " + speed(O.vMag(st.v));
 }
 function fillSkyhookCard(opts) {
-	var r = hookCard.refs, fig = figs[PHOBOS], p = state.params[PHOBOS];
+	var r = hookCard.refs, fig = figs[PHOBOS], p = state.params[PHOBOS], on = !!state.included[PHOBOS];
+	r.included.checked = on;
+	hookCard.el.classList.toggle("mst-card-off", !on);
 	show(r.foot, kmField(p.footAlt)); show(r.top, kmField(p.topAlt));
-	r.error.textContent = fig.ok ? "" : fig.diagnostic.message;
-	var code = fig.ok ? "" : fig.diagnostic.code;
+	r.error.textContent = !fig || fig.ok ? "" : fig.diagnostic.message;
+	var code = !fig || fig.ok ? "" : fig.diagnostic.code;
 	r.foot.classList.toggle("mst-bad", code === "foot-range");
 	r.top.classList.toggle("mst-bad", code === "top-range");
 	r.rel.classList.toggle("mst-bad", code === "release-off-tether");
@@ -523,7 +531,7 @@ function fillSkyhookCard(opts) {
 	// With a space elevator in the design, its tether sets the limit; otherwise Deimos does.
 	var ev = figs[ELEVATOR], cap = ev && ev.ok && ev.phobosTopCap != null && ev.phobosTopCap < FACILITIES_TOP_MAX ? ev.phobosTopCap : null;
 	r.cap.textContent = cap != null ? num(Math.floor(cap / 1e3)) + " km: beyond, too near the space elevator" : km(FACILITIES_TOP_MAX) + ": short of Deimos";
-	if (!fig.ok) {
+	if (!(fig && fig.ok)) {
 		[r.length, r.footNow, r.topNow, r.pullFoot, r.pullTop].forEach(function (x) { x.textContent = "—"; });
 		return;
 	}
@@ -538,7 +546,7 @@ function fillSkyhookCard(opts) {
 // ---- the hanging skyhook's card --------------------------------------------------------
 var hangCard = null;
 function buildHangingCard() {
-	var c = cardShell(FACILITIES[HANGING].label, "On its own tilted orbit, timed to stay clear of the Phobos tether"), r = {};
+	var c = cardShell(FACILITIES[HANGING].label, "On its own tilted orbit, timed to stay clear of the Phobos tether and the space elevator's"), r = {};
 	var P = state.params[HANGING];
 	c.head.addEventListener("click", function () { state.open[HANGING] = !state.open[HANGING]; syncCards(); });
 	function set(key, scale) {
@@ -574,6 +582,16 @@ function buildHangingCard() {
 	r.resList = c.body.appendChild(el("div", "mst-res-list"));
 	r.guide = c.body.appendChild(el("div", "mst-guide"));
 
+	c.body.appendChild(el("div", "mst-subhead", "Timing against the space elevator"));
+	var em = c.body.appendChild(el("div", "mst-readouts"));
+	r.evShare = readout(em, "The elevator's tether at these heights");
+	r.evRatio = readout(em, "Orbits per Mars day");
+	r.evGapNow = readout(em, "Tethers apart now");
+	r.evClosest = readout(em, "Closest pass, next 5 days");
+	c.body.appendChild(el("div", "mst-muted mst-res-head", "Centres of mass on this tether in step with Mars's day (click to use one). In step, the elevator's tether comes through the orbit's plane at the same places round it every time:"));
+	r.dayList = c.body.appendChild(el("div", "mst-res-list"));
+	r.evGuide = c.body.appendChild(el("div", "mst-guide"));
+
 	c.body.appendChild(el("div", "mst-subhead", "Ballast and sidesteps"));
 	var b1 = c.body.appendChild(el("div", "mst-fieldpair"));
 	r.ballast = numberField(b1, "mst-hang-ballast", "Ballast (kt)", set("ballastMass", 1e6));
@@ -605,6 +623,7 @@ function buildHangingCard() {
 	r.status = c.body.appendChild(el("div", "mst-guide"));
 	r.stepBox = c.body.appendChild(el("div", "mst-readouts mst-step"));
 	r.stepHead = r.stepBox.appendChild(el("div", "mst-step-head"));
+	r.stepAvoids = readout(r.stepBox, "Avoids");
 	r.stepSlip = readout(r.stepBox, "Slips the skyhook");
 	r.stepMove = readout(r.stepBox, "Ballast moved");
 	r.stepTimes = readout(r.stepBox, "Out · held · back");
@@ -643,9 +662,30 @@ function guidanceText(h) {
 	}
 	return text;
 }
+// The same for the space elevator's tether (core/clearance.js's elevatorGuidance).
+function elevatorGuidanceText(h) {
+	var ev = figs[ELEVATOR];
+	if (!(ev && ev.ok)) { return ""; }
+	if (!h.shareElevator) { return "This tether never comes as far from the equator as the space elevator's tether stands at these heights, so they cannot meet: no timing is needed."; }
+	var g = elevatorGuidance(h, ev, DAY_RATIOS, state.limit);
+	var name = g.near.q === 1 ? g.near.p + " orbits a Mars day" : g.near.p + " orbits in " + g.near.q + " Mars days";
+	var text;
+	if (g.held) {
+		text = "In step with Mars's day, at " + name + ": the elevator's tether comes through this orbit's plane at the same places round it every time, so passes that are clear stay clear while the skyhook keeps this period.";
+	} else {
+		text = "The elevator's tether comes through this orbit's plane twice a Mars day. Left to chance, about one pass in "
+			+ num(Math.max(1, 1 / Math.max(g.chance, 1e-3))) + " comes within the least clearance. Out of step with Mars's day (the nearest is " + name
+			+ ", " + pct(g.off) + " away), the skyhook's place at a pass moves " + num(Math.abs(g.creep) * DEG) + "° round its orbit from one day to the next, so a sidestep clears only the next few days.";
+	}
+	if (h.share) {
+		text += " No period is in step with both Phobos and Mars's day. With both tethers at shared heights, one of them needs frequent sidesteps; raising the Phobos skyhook's foot above this tether's top, or leaving one of the three out of the design, removes that.";
+	}
+	return text;
+}
+var AGAINST = { phobos: "the Phobos tether", elevator: "the space elevator's tether" };
 // The schedule in words.
 function scheduleText(h) {
-	if (!h.share) { return ""; }
+	if (!needsTiming(h, others())) { return ""; }
 	if (!schedule) { return "The sidesteps for this design are not worked out yet."; }
 	var n = schedule.sidesteps.length, u = schedule.unavoided, end = shortDate(schedule.jdReached), text;
 	if (n) {
@@ -657,8 +697,11 @@ function scheduleText(h) {
 		var worst = u.reduce(function (a, b) { return Math.min(a, b.distance); }, Infinity);
 		text += " " + u.length + (u.length === 1 ? " spell" : " spells") + " of close passes the ballast cannot avoid, the first on "
 			+ shortDate(u[0].jd) + ", the closest " + km(worst) + ": marked in red.";
-	} else if (schedule.closest) { text += " Closest pass left: " + km(schedule.closest.distance) + "."; }
-	if (!schedule.complete) { text += " Worked out only that far: beyond it the count ran out."; }
+	} else if (schedule.closest) { text += " Closest pass left: " + km(schedule.closest.distance) + ", to " + AGAINST[schedule.closest.against] + "."; }
+	if (!schedule.complete) {
+		text += schedule.stopped === "time" ? " Worked out only that far: the working was stopped after " + num(WORK_BUDGET / 1e3) + " seconds."
+			: " Worked out only that far: beyond it the count ran out.";
+	}
 	return text;
 }
 // The sidestep to show at jd: the one under way, else the next, else the last. -1 if there is none.
@@ -678,13 +721,14 @@ function jumpSidestep(dir) {
 	dateBar.setJd(pick.jdStart);
 	refresh();
 }
+var WORK_BUDGET = 25000;               // the longest the sidesteps are worked on, ms
 function workOut() {
-	var h = figs[HANGING], p = figs[PHOBOS];
-	if (!(h && h.ok && p.ok && h.share)) { return; }
+	var h = figs[HANGING];
+	if (!(h && h.ok && needsTiming(h, others()))) { return; }
 	hangCard.refs.status.textContent = "Working through the passes…";
 	// Let the message show before the page is busy.
 	setTimeout(function () {
-		schedule = workOutSidesteps(h, p, { limit: state.limit });
+		schedule = workOutSidesteps(h, others(), { limit: state.limit, budgetMs: WORK_BUDGET });
 		state.params[HANGING].timing = { a0: schedule.a0, sidesteps: schedule.sidesteps };
 		refresh();
 	}, 30);
@@ -705,7 +749,7 @@ function fillHangingCard(opts) {
 	r.foot.classList.toggle("mst-bad", code === "foot-range");
 	r.com.classList.toggle("mst-bad", code === "com-range" || code === "unbalanced");
 	r.top.classList.toggle("mst-bad", code === "top-range");
-	r.tilt.classList.toggle("mst-bad", code === "tilt-low" || code === "tilt-range" || code === "no-sun-sync");
+	r.tilt.classList.toggle("mst-bad", code === "tilt-low" || code === "tilt-elevator" || code === "tilt-range" || code === "no-sun-sync");
 	r.anchor.classList.toggle("mst-bad", code === "anchor-range" || code === "unbalanced");
 	r.home.classList.toggle("mst-bad", code === "ballast-home");
 	r.upper.classList.toggle("mst-bad", code === "unbalanced");
@@ -714,16 +758,18 @@ function fillHangingCard(opts) {
 	fillRelease(HANGING, r, opts);
 	// A sun-synchronous tilt is the skyhook's own; otherwise the field holds what was typed.
 	if (P.sunSync) { r.tilt.value = ok ? (fig.tilt * DEG).toFixed(2) : ""; } else { show(r.tilt, String(P.tilt)); }
-	var live = [r.period, r.footNow, r.comNow, r.topNow, r.plane, r.mass, r.share, r.ratio, r.gapNow, r.closest, r.faster, r.slower, r.ballastNow];
-	r.work.disabled = !(ok && fig.share && figs[PHOBOS].ok);
+	var live = [r.period, r.footNow, r.comNow, r.topNow, r.plane, r.mass, r.share, r.ratio, r.gapNow, r.closest, r.faster, r.slower, r.ballastNow,
+	            r.evShare, r.evRatio, r.evGapNow, r.evClosest];
+	r.work.disabled = !(ok && needsTiming(fig, others()));
 	r.prev.disabled = r.next.disabled = !(ok && schedule && schedule.sidesteps.length);
 	if (!ok) {
 		live.forEach(function (x) { x.textContent = "—"; });
 		r.guide.textContent = ""; r.status.textContent = ""; r.resList.textContent = ""; hangCard.resKey = null;
+		r.evGuide.textContent = ""; r.dayList.textContent = ""; hangCard.dayKey = null;
 		r.stepBox.hidden = true;
 		return;
 	}
-	var jd = sceneJd(), at = facilityAt(fig, jd), ph = figs[PHOBOS];
+	var jd = sceneJd(), at = facilityAt(fig, jd), ph = figs[PHOBOS] || { ok: false }, ev = figs[ELEVATOR] || { ok: false };
 	r.period.textContent = hours(fig.period);
 	r.footNow.textContent = pointNow(fig, at, fig.sFoot);
 	r.comNow.textContent = pointNow(fig, at, 0);
@@ -736,7 +782,7 @@ function fillHangingCard(opts) {
 	r.share.textContent = fig.share ? km(fig.share.lo).replace(" km", "") + " to " + km(fig.share.hi) : "none";
 	r.ratio.textContent = num(fig.ratio, 4);
 	r.gapNow.textContent = ph.ok ? km(tetherDistance(fig, ph, fig.timing, jd)) : "—";
-	var near = ph.ok && fig.share ? closestPass(fig, ph, fig.timing, jd, jd + 5, state.limit) : null;
+	var near = ph.ok && fig.share ? closestPass(fig, { phobos: ph }, fig.timing, jd, jd + 5, state.limit) : null;
 	r.closest.textContent = near ? km(near.distance) + (near.distance < state.limit ? " · too close" : "") : "—";
 	r.closest.classList.toggle("mst-warn", !!near && near.distance < state.limit);
 
@@ -750,13 +796,39 @@ function fillHangingCard(opts) {
 			b.type = "button";
 			b.setAttribute("aria-pressed", String(Math.abs(fig.ratio / x.ratio - 1) < 2e-6));
 			b.addEventListener("click", function () {
-				var alt = resonantComAlt(state.params[HANGING], figs[PHOBOS], x.ratio);
+				var alt = resonantComAlt(state.params[HANGING], figs[PHOBOS] || null, x.ratio, { elevator: figs[ELEVATOR] || null });
 				if (alt != null) { state.params[HANGING].comAlt = alt; refresh(); }
 			});
 		});
 		if (!fig.resonances.length) { r.resList.appendChild(el("span", "mst-muted", "none between this foot and top")); }
 	}
-	r.guide.textContent = guidanceText(fig);
+	r.guide.textContent = ph.ok ? guidanceText(fig) : "The Phobos skyhook is not in the design.";
+
+	// The space elevator's tether: where it stands at these heights, and the timing against it.
+	var meets = ev.ok && !!fig.shareElevator, sh = fig.shareElevator;
+	r.evShare.textContent = !ev.ok ? "not in the design" : meets
+		? num(sh.latLo * DEG, 1) + "° to " + num(sh.latHi * DEG, 1) + "° " + (ev.side > 0 ? "N" : "S") : "out of this tether's reach";
+	r.evRatio.textContent = num(fig.dayRatio, 4);
+	r.evGapNow.textContent = meets ? km(elevatorDistance(fig, ev, fig.timing, jd)) : "—";
+	var evNear = meets ? closestPass(fig, { elevator: ev }, fig.timing, jd, jd + 5, state.limit) : null;
+	r.evClosest.textContent = evNear ? km(evNear.distance) + (evNear.distance < state.limit ? " · too close" : "") : "—";
+	r.evClosest.classList.toggle("mst-warn", !!evNear && evNear.distance < state.limit);
+	var dayKey = fig.dayResonances.map(function (x) { return x.p + "/" + x.q + "@" + Math.round(x.comAlt); }).join(",") + "|" + Math.round(fig.comAlt);
+	if (dayKey !== hangCard.dayKey) {
+		hangCard.dayKey = dayKey;
+		r.dayList.textContent = "";
+		fig.dayResonances.forEach(function (x) {
+			var b = r.dayList.appendChild(el("button", "mst-res", (x.q === 1 ? x.p + " a day" : x.p + " in " + x.q + " days") + " · " + num(x.comAlt / 1e3) + " km"));
+			b.type = "button";
+			b.setAttribute("aria-pressed", String(Math.abs(fig.dayRatio / x.ratio - 1) < 2e-6));
+			b.addEventListener("click", function () {
+				var alt = resonantComAlt(state.params[HANGING], figs[PHOBOS] || null, x.ratio, { elevator: figs[ELEVATOR] || null, mars: true });
+				if (alt != null) { state.params[HANGING].comAlt = alt; refresh(); }
+			});
+		});
+		if (!fig.dayResonances.length) { r.dayList.appendChild(el("span", "mst-muted", "none between this foot and top")); }
+	}
+	r.evGuide.textContent = elevatorGuidanceText(fig);
 
 	var g = timingGuidance(fig, RATIOS, state.limit);
 	r.faster.textContent = g.faster > 1e-5 ? pct(g.faster) : "cannot";
@@ -773,6 +845,7 @@ function fillHangingCard(opts) {
 	var st = schedule.sidesteps[i], homeAlt = st.resp.rHome - R_MARS, toAlt = st.rTo - R_MARS;
 	r.stepHead.textContent = "Sidestep " + (i + 1) + " of " + schedule.sidesteps.length + " · ballast leaves home "
 		+ dateTime(st.jdStart) + (jd >= st.jdStart && jd <= st.jdEnd ? " · under way" : "");
+	r.stepAvoids.textContent = AGAINST[st.avoids.against] + ", " + km(st.avoids.distance) + " away on " + shortDate(st.avoids.jd);
 	r.stepSlip.textContent = num(Math.abs(st.psi) * DEG) + "° " + (st.psi > 0 ? "ahead" : "back") + " round its orbit";
 	r.stepMove.textContent = (st.resp.which === "upper" ? "upper, " : "") + num(st.resp.mass / 1e6) + " kt, " + num(homeAlt / 1e3) + " → " + num(toAlt / 1e3) + " km";
 	r.stepTimes.textContent = span(st.tMove) + " · " + span(st.tHold) + " · " + span(st.tMove);
@@ -805,8 +878,8 @@ function drawMarks(strip, loDay, hiDay) {
 		m.title = title;
 	}
 	if (schedule && state.included[HANGING]) {
-		schedule.sidesteps.forEach(function (st) { bar(st.jdStart, st.jdEnd, "mst-mark-step", "Sidestep: " + dateTime(st.jdStart)); });
-		schedule.unavoided.forEach(function (u) { bar(u.jd, u.jdLast, "mst-mark-close", "Close passes the ballast cannot avoid"); });
+		schedule.sidesteps.forEach(function (st) { bar(st.jdStart, st.jdEnd, "mst-mark-step", "Sidestep, avoiding " + AGAINST[st.avoids.against] + ": " + dateTime(st.jdStart)); });
+		schedule.unavoided.forEach(function (u) { bar(u.jd, u.jdLast, "mst-mark-close", "Close passes of " + AGAINST[u.against] + " the ballast cannot avoid"); });
 	}
 	var ev = figs[ELEVATOR];
 	if (ev && ev.ok && ev.dodges) {
@@ -1107,10 +1180,11 @@ function refresh(opts) {
 	opts = opts || {};
 	if (!opts.sceneOnly) {
 		computeFigures();
-		if (!figs[state.from]) { state.from = PHOBOS; }
+		if (!figs[state.from]) { state.from = SKYHOOKS.filter(function (id) { return !!figs[id]; })[0] || state.from; }
 		if (state.to !== SURFACE && (!figs[state.to] || state.to === state.from)) { state.to = SURFACE; }
 		syncFlightCard();
-		flight = computeFlight({ from: state.from, to: state.to, jd: releaseJd(), params: designParams() });
+		flight = figs[state.from] ? computeFlight({ from: state.from, to: state.to, jd: releaseJd(), params: designParams() })
+			: { ok: false, diagnostic: { code: "no-skyhook", message: "No skyhook is in the design, so there is nothing to let a ship go from.", values: {} } };
 		overlay.drawFlight(flight, state.view, showTraj.checked);
 	}
 	var jd = sceneJd(), t = flightSeconds();
@@ -1135,7 +1209,7 @@ function refresh(opts) {
 	drawMarks($("mst-marks-fine"), state.baseDays - half, state.baseDays + half);
 
 	var fig = figs[state.from];
-	relVal.textContent = clockTime(releaseJd()) + (fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
+	relVal.textContent = clockTime(releaseJd()) + (fig && fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
 	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd);
 }
 // The Flight card's lists: From holds the skyhooks in the design, To the

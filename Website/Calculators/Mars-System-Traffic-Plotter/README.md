@@ -10,12 +10,12 @@ Planner.
 their orbits, the Sun — the three views, the POV buttons and click-to-follow;
 the Phobos skyhook and the hanging skyhook, with a release from any point of
 either tether flown to its end: down to the air, round an orbit, or out of
-Mars's sphere of influence; the hanging skyhook's timing against the
-Phobos tether, with the sidesteps that keep the two apart marked on the date
-sliders; and the space elevator, with the limit it puts on the Phobos
-skyhook's top and its dodges of Deimos marked on the date sliders. The mass
-driver is listed folded in the sidebar; flights to and from the elevator, and
-the hanging skyhook's timing against it, come next. The ground model for
+Mars's sphere of influence; the space elevator, with the limit it puts on the
+Phobos skyhook's top and its dodges of Deimos marked on the date sliders; and
+the hanging skyhook's timing against the Phobos tether and the elevator's,
+with the sidesteps that keep them apart marked on the date sliders. Each of
+the three can be left out of the design. The mass driver is listed folded in
+the sidebar; flights to and from the elevator come next. The ground model for
 the mass driver (terrain and the track profile) is in the core, not yet on the
 page.
 
@@ -38,8 +38,9 @@ page.
   its resonances with Phobos, and where it is on the clock. Pure.
 - `core/ballast.js` — what moving ballast along a hanging skyhook does to its
   orbit, and the sidestep built from it. Pure.
-- `core/clearance.js` — the passes of the hanging tether through the plane of
-  Phobos's orbit, their clearance, and the working-out of the sidesteps. Pure.
+- `core/clearance.js` — the passes of the hanging tether by the Phobos tether
+  and by the space elevator's, their clearance, and the working-out of the
+  sidesteps. Pure.
 - `core/elevator.js` — the space elevator: its figures, how far a Phobos
   tether may reach beside it, Deimos's crossings and the dodges, and where its
   tether is on the clock. Pure.
@@ -107,7 +108,8 @@ that point's own instant.
 
 ## The Phobos skyhook
 
-A tether built on Phobos, hanging toward Mars and reaching away from it.
+A tether built on Phobos, hanging toward Mars and reaching away from it. The
+card can leave it out of the design.
 Phobos outweighs any tether by many orders of magnitude, so its orbit is the
 tether's. The tether's own swinging left aside, it lies along the line from
 Mars's centre through Phobos's, and a point of it at distance `s` from
@@ -217,15 +219,66 @@ between the settled states, and comes back, sign reversed, on the way home.
 The ballast is not taken so far that the foot sinks below 115 km. The strain
 on the tether while the ballast is away from home is not checked.
 
-**Work out the sidesteps** goes through every pass of the date span. At the
+### Keeping clear of the space elevator
+
+The elevator's tether climbs through every height the hanging tether has,
+standing at latitudes that fall as it rises (3.9° to 13.2° N for the
+defaults). A tilt that keeps the hanging tether at least 3° nearer the
+equator than the lowest of those never meets it. Otherwise the tilt must be
+at least 10° more than the highest (and as far short of 180°), or it is
+refused: nearer, the tether stays beside the elevator's for too much of each
+orbit.
+
+Mars carries the elevator's tether through the plane of the hanging
+skyhook's orbit twice a **Mars day**, counted against the skyhook's node line
+(a solar day, for a sun-synchronous orbit). Each is a pass. The hanging
+tether sweeps round its orbit while the elevator's stretch crosses the plane,
+so starting an angle `D` apart they come no nearer than about
+
+    clearance ~ D * r * v_p / sqrt( v_h^2 + v_p^2 )
+
+- `D` — the angle round the orbit between the two at the crossing, less half
+  the angle the elevator's stretch spans
+- `r` — the distance from Mars's centre of the middle of that stretch
+- `v_h` — the hanging tether's speed there
+- `v_p` — the speed at which the elevator's stretch crosses the plane
+
+A pass within one and a half times the limit by that estimate is measured
+exactly: the least distance, over the minutes around their nearest, between
+the hanging tether and the elevator's stretch taken as 12 straight pieces
+(`elevatorDistance`), with the elevator's tether where its Deimos swing has
+it. With the default 200 km clearance about one pass in four is too near when
+the timing is left to chance.
+
+**In step with Mars's day.** With a whole number of orbits to one Mars day
+or two, the skyhook is at the same places round its orbit every time the
+elevator's tether comes through, so a start that is clear stays clear. The
+card lists the centres of mass that do it (13 a day at 309 km, 25 in 2 days
+at 407 km, 12 a day at 511 km, and so on); clicking one sets it exactly. Any
+other period is allowed, and the card says how far the skyhook's place at a
+pass moves from one day to the next.
+
+No period is in step with both Phobos and Mars's day: 4:1 with Phobos is
+12.88 orbits a Mars day. With the hanging tether sharing heights with both
+others, one of the two needs sidesteps every few days. At the default 200 km
+clearance the ballast cannot keep up and some passes are left too near; at 50
+km it can, with a sidestep about every 12 days. Raising the Phobos skyhook's
+foot above the hanging tether's top, or leaving one of the three out of the
+design, lets one resonance hold the timing with no sidesteps.
+
+### Working out the sidesteps
+
+**Work out the sidesteps** goes through every pass of the date span, of
+either tether. At the
 first closer than the least clearance it puts a sidestep just before, trying
 every slip from 1/24 of an orbit to a whole one, ahead and behind, and keeping
 the one that puts off the next close pass longest. The sidesteps appear as
 amber bars under both date sliders and move the skyhook in the scene; spells
 of close passes that no sidestep puts off are red. The card gives, for the
-sidestep at or after the date shown, the ballast's move, the times, the
-energy and peak power, and the orbit meanwhile. Changing the design clears the
-working. It stops at 400 sidesteps and says how far it got.
+sidestep at or after the date shown, which tether it avoids, the ballast's
+move, the times, the energy and peak power, and the orbit meanwhile. Changing
+the design clears the working. It stops at 400 sidesteps, at 60 spells of
+passes it cannot avoid, or after 25 seconds, and says how far it got.
 
 ## The space elevator
 

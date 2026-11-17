@@ -50,6 +50,12 @@
  * and timed to fall midway between them, the Phobos tether is never nearer
  * than `gap` round Mars from a pass.
  *
+ * A space elevator's tether is carried through the plane of the orbit twice
+ * for each turn of Mars against the skyhook's node line (a Mars day, where
+ * the plane keeps pace with the Sun). With a whole number of orbits to one
+ * or two of those turns, the skyhook is at the same few places round its
+ * orbit every time the elevator's tether comes through.
+ *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  */
 
@@ -68,12 +74,18 @@ var MARS = systems.get("Mars"), SUN = systems.get("Sun"), PHOBOS = systems.get("
 var GM = MARS.GM, R = +MARS.radius, J2 = MARS.J2;
 var N_SUN = Math.sqrt(SUN.GM / Math.pow(Number(MARS.orbit.a), 3));    // the Sun's mean rate round Mars's sky, rad/s
 var N_PHOBOS = TWO_PI / ME.moonFigures("Phobos").period;
+var N_MARS = TWO_PI / ME.SIDEREAL_DAY;                                // Mars's turning against the stars, rad/s
 var FLOOR = footFloor("Mars") * 1e3;                                  // lowest a tether's foot may hang, m
 // The top stays below Phobos itself at its nearest.
 var TOP_MAX = PHOBOS.orbit.periapsis - R - 50e3;
 // With the two tethers sharing altitudes, the least tilt to the equator (and
 // the most, measured the same way from the other side).
 export var MIN_TILT = 20 * DEG;
+// Beside a space elevator, a tilt that takes the tether to within
+// ELEVATOR_BELOW of the lowest latitude the elevator's tether has at the
+// heights they share is one that meets it, and it must then be at least
+// ELEVATOR_ABOVE more than the highest.
+var ELEVATOR_BELOW = 3 * DEG, ELEVATOR_ABOVE = 10 * DEG;
 
 // What the tether carries besides its anchor station and its ballast, kg, and
 // its material: best lunar silica at a safety factor of 3.
@@ -175,11 +187,23 @@ export var RATIOS = (function () {
 	return out.sort(function (a, b) { return b.ratio - a.ratio; });
 })();
 
+// The orbits offered to each turn of Mars: whole numbers to one turn or to two.
+export var DAY_RATIOS = (function () {
+	var out = [];
+	for (var q = 1; q <= 2; q++) {
+		for (var p = 3 * q; p <= 14 * q; p++) {
+			if (gcd(p, q) === 1) { out.push({ p: p, q: q, ratio: p / q }); }
+		}
+	}
+	return out.sort(function (a, b) { return b.ratio - a.ratio; });
+})();
+
 // The C.o.M. radius at which the skyhook makes `ratio` orbits per turn of
-// Phobos against its node line, the node turning at nodeRate(w) rad/s.
-function resonantRadius(ratio, nodeRate) {
-	var w = ratio * N_PHOBOS;
-	for (var k = 0; k < 4; k++) { w = ratio * (N_PHOBOS - nodeRate(w)); }
+// Phobos (or of Mars, with `rate` N_MARS) against its node line, the node
+// turning at nodeRate(w) rad/s.
+function resonantRadius(ratio, nodeRate, rate) {
+	var n = rate || N_PHOBOS, w = ratio * n;
+	for (var k = 0; k < 4; k++) { w = ratio * (n - nodeRate(w)); }
 	return Math.cbrt(GM / (w * w));
 }
 
@@ -195,12 +219,18 @@ function resonantRadius(ratio, nodeRate) {
 //   sFoot, sTop, sRel    foot, top and release point as distances from the C.o.M., m
 //   ratio                orbits per turn of Phobos, against the node line
 //   resonances           [{ p, q, ratio, D, gap, comAlt }] with the C.o.M. on this tether
+//   dayRatio             orbits per turn of Mars, against the node line
+//   dayResonances        [{ p, q, ratio, comAlt }] with the C.o.M. on this tether
 //   share                the altitudes shared with the Phobos tether { lo, hi } (m), or null
+//   shareElevator        what is shared with the space elevator's tether, or
+//                        null where the two cannot meet: { lo, hi } (m), and
+//                        latLo, latHi, the least and greatest latitude (rad,
+//                        north or south alike) that tether has between them
 //   ballast              { speed, lower, upper, responses } — each lot as
 //                        { which, mass, home, up, down }; responses is every
 //                        ballast.js response either lot has
 //   total, tetherMass    kg
-export function hangingFigures(params, phobos) {
+export function hangingFigures(params, phobos, elevator) {
 	var p = Object.assign({}, HANGING_DEFAULTS, params || {}), vals = { footAlt: p.footAlt, comAlt: p.comAlt, topAlt: p.topAlt };
 	var nums = [p.footAlt, p.comAlt, p.topAlt, p.relAlt, p.tilt, p.anchorMass, p.ballastMass, p.ballastHome,
 	            p.upperBallastMass, p.upperBallastHome, p.ballastSpeed];
@@ -254,11 +284,36 @@ export function hangingFigures(params, phobos) {
 			+ Math.round(180 - MIN_TILT / DEG) + "°. Nearer the equator it stays beside the plane of Phobos's orbit for too much of each orbit for timing to keep the tethers apart. "
 			+ "Raise the tilt, or shorten a tether until they share no altitude.", vals);
 	}
+	// The space elevator's tether climbs through every height this one has,
+	// at latitudes that fall as it rises. A tilt that never takes this tether
+	// to those latitudes keeps the two apart for good.
+	var shareElevator = null;
+	if (elevator && elevator.ok) {
+		var c = elevator.curve, latLo = Infinity, latHi = -Infinity;
+		for (var j = 0; j < c.r.length; j++) {
+			if (c.r[j] < R + p.footAlt || c.r[j] > R + p.topAlt) { continue; }
+			var lat = Math.atan2(c.z[j], c.x[j]);
+			latLo = Math.min(latLo, lat); latHi = Math.max(latHi, lat);
+		}
+		var reach = Math.min(tilt, Math.PI - tilt);
+		if (latHi >= latLo && reach > latLo - ELEVATOR_BELOW) {
+			if (reach < latHi + ELEVATOR_ABOVE) {
+				var least = Math.ceil((latHi + ELEVATOR_ABOVE) / DEG), under = (latLo - ELEVATOR_BELOW) / DEG;
+				return fail("tilt-elevator", "At these heights the space elevator's tether stands between " + (latLo / DEG).toFixed(1) + "° and "
+					+ (latHi / DEG).toFixed(1) + "° from the equator. A tilt this near those latitudes keeps this tether beside it for too much of each orbit for timing to keep them apart: set the tilt between "
+					+ least + "° and " + (180 - least) + "°" + (under >= 0.1 ? ", or under " + (Math.floor(under * 10) / 10) + "° so that it never comes that far from the equator" : "") + ".", vals);
+			}
+			shareElevator = { lo: p.footAlt, hi: p.topAlt, latLo: latLo, latHi: latHi };
+		}
+	}
 	var nodeRate = -k * Math.cos(tilt);
 	// The node's rate at another turning rate, the masses spread as they are now.
 	function nodeRateAt(w) { return -(k / kPoint) * O.j2NodeCoefficient(GM, J2.value, J2.radius, w) * Math.cos(tilt); }
 	var resonances = RATIOS.map(function (x) {
 		return Object.assign({ comAlt: resonantRadius(x.ratio, nodeRateAt) - R }, x);
+	}).filter(function (x) { return x.comAlt > p.footAlt + 1e3 && x.comAlt < p.topAlt - 1e3; });
+	var dayResonances = DAY_RATIOS.map(function (x) {
+		return Object.assign({ comAlt: resonantRadius(x.ratio, nodeRateAt, N_MARS) - R }, x);
 	}).filter(function (x) { return x.comAlt > p.footAlt + 1e3 && x.comAlt < p.topAlt - 1e3; });
 
 	// Where the plane starts: face-on to the Sun at CLOCK_EPOCH.
@@ -272,7 +327,8 @@ export function hangingFigures(params, phobos) {
 		sFoot: p.footAlt - p.comAlt, sTop: p.topAlt - p.comAlt, sRel: p.relAlt - p.comAlt,
 		vFoot: omega * (R + p.footAlt), vCom: omega * rCom, vTop: omega * (R + p.topAlt), vRel: omega * (R + p.relAlt),
 		tilt: tilt, sunSync: !!p.sunSync, sunSyncTilt: sunSyncTilt, nodeRate: nodeRate, node0: node0,
-		ratio: omega / (N_PHOBOS - nodeRate), resonances: resonances, share: share,
+		ratio: omega / (N_PHOBOS - nodeRate), resonances: resonances, share: share, shareElevator: shareElevator,
+		dayRatio: omega / (N_MARS - nodeRate), dayResonances: dayResonances,
 		ballast: { speed: p.ballastSpeed, lower: st.lower, upper: st.upper,
 		           responses: [st.lower.up, st.lower.down, st.upper.up, st.upper.down].filter(Boolean) },
 		total: st.total, tetherMass: st.tetherMass, floor: FLOOR, topMax: TOP_MAX,
@@ -282,16 +338,19 @@ export function hangingFigures(params, phobos) {
 
 // The C.o.M. altitude (m) that puts the skyhook of `params` exactly on the
 // resonance `ratio`, its own masses and tilt settling the node's rate. Null
-// when the search leaves the tether.
-export function resonantComAlt(params, phobos, ratio) {
+// when the search leaves the tether. opts: { elevator (the space elevator's
+// figures, when one is in the design), mars (true: `ratio` is orbits per
+// turn of Mars, not of Phobos) }.
+export function resonantComAlt(params, phobos, ratio, opts) {
+	var o = opts || {}, n = o.mars ? N_MARS : N_PHOBOS;
 	var p = Object.assign({}, HANGING_DEFAULTS, params || {}), alt = null;
-	var fig = hangingFigures(p, phobos);
+	var fig = hangingFigures(p, phobos, o.elevator);
 	if (!fig.ok) { return null; }
 	for (var k = 0; k < 6; k++) {
-		// Aim the turning rate at ratio * (Phobos's rate against the node line as it is now).
-		var w = ratio * (N_PHOBOS - fig.nodeRate);
+		// Aim the turning rate at ratio * (the other's rate against the node line as it is now).
+		var w = ratio * (n - fig.nodeRate);
 		alt = Math.cbrt(GM / (w * w)) - R;
-		fig = hangingFigures(Object.assign({}, p, { comAlt: alt }), phobos);
+		fig = hangingFigures(Object.assign({}, p, { comAlt: alt }), phobos, o.elevator);
 		if (!fig.ok) { return null; }
 	}
 	return alt;

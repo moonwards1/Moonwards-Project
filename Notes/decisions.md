@@ -742,3 +742,16 @@ from one rule.
 The elevator's sizing is `MarsElevator.sizeStructure` (`Calculators/Mars-Elevator/`),
 the workbench card's rule without its stations; the pull multiples it is held to
 (`MULT_FLOOR`, `MULT_ADVISED`) live in `Shared/radial-tether.js`.
+
+### The hanging skyhook at Mars is timed against the space elevator's tether too
+
+The elevator's tether passes through the plane of the hanging skyhook's orbit twice a
+Mars day (counted against the skyhook's node line), and each is a pass like one of the
+Phobos tether's: `core/clearance.js` walks both, and a sidestep is chosen for how long
+it puts off the next close pass of either. A period with a whole number of orbits to
+one Mars day or two holds the timing against the elevator as a Phobos resonance does
+against Phobos; no period does both, so a hanging tether sharing heights with both
+needs sidesteps for one of them. A tilt within 10° above the elevator tether's
+latitudes at the shared heights is refused; one at least 3° below them never meets it
+and needs no timing. Every facility has an "In the design" tick, the Phobos skyhook
+included, so any two can be modelled without the third.
