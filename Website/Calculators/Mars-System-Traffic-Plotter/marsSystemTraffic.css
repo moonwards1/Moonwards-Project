@@ -32,12 +32,16 @@ html, body {
 .mst-slider-line { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
 .mst-slider-line input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
 .mst-track { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
-/* The hanging skyhook's sidesteps: a strip just under a date slider's track,
-   inset by half a thumb so a mark's edges line up with the thumb's centre. */
-.mst-marks { position: absolute; left: 8px; right: 8px; bottom: -3px; height: 4px; pointer-events: none; }
-.mst-mark { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 1px; }
+/* What is timed: a strip just under a date slider's track, inset by half a
+   thumb so a mark's edges line up with the thumb's centre. Upper row: the
+   hanging skyhook's sidesteps. Lower row: the space elevator's Deimos dodges. */
+.mst-track { padding-bottom: 4px; }
+.mst-marks { position: absolute; left: 8px; right: 8px; bottom: -4px; height: 9px; pointer-events: none; }
+.mst-mark { position: absolute; top: 0; height: 4px; min-width: 2px; border-radius: 1px; }
 .mst-mark-step { background: #e8b24a; }
 .mst-mark-close { background: #ff5a4d; z-index: 1; }
+.mst-mark-dodge { top: 5px; background: #4f8fe0; }
+.mst-mark-cross { top: 5px; min-width: 1px; background: #e6f0ff; z-index: 1; }
 .mst-slider-end { flex: 0 0 auto; width: 104px; font-size: 11px; color: #8b94a7; }
 .mst-slider-line .mst-slider-end:first-child { text-align: right; }
 .mst-line-release .mst-slider-end { color: #ff9fe2; }
@@ -132,7 +136,8 @@ html, body {
 .mst-fieldpair { display: flex; gap: 10px; margin-bottom: 8px; }
 .mst-field { flex: 1; min-width: 0; }
 .mst-field label { display: block; font-size: 11px; color: #8b94a7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }
-.mst-field input[type="number"] { width: 100%; min-width: 0; }
+.mst-field input[type="number"], .mst-field select { width: 100%; min-width: 0; }
+.mst-field-wide { flex: 1.6; }
 .mst-bad { border-color: #d0604f !important; }
 .mst-error { color: #ff9a8a; font-size: 12px; margin: 6px 0 2px; }
 .mst-error:empty { display: none; }

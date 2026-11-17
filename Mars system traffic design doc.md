@@ -16,9 +16,9 @@ The Mars system could have a wide variety of facilities. Only the ones selected 
 
   - Users can also define the altitude of the top, CoM, and foot, though guidance is needed as to what complies with a synchronous orbit, if there is tether overlap.
 
-- Space elevator, in Layout A or Layout B from the session 'Mars space elevator dimensions'. User is free to chose where on Mars' equator to place it, aside from the suggested default
+- Space elevator. We are now favoring a simpler approach where there is a single anchor up to 20 ° away from the equator. Cards have been made in the workbench for Mars, Off-Equator Elevator, in the Architecture tab. The space elevator cards and readout for the Mars traffic app can be based on those. 
 
-- A mass driver on the surface that sends traffic to other facilities, user is free to place it anywhere with the available heightmapped terrain, Pavonis Mons is the default. Length, acceleration, and release speed can be chosen - any two, and the third figure is supplied. Elevation and track angle are derived from the heightmap. 
+- A mass driver on the surface that sends traffic to other facilities, user is free to place it anywhere with the available heightmapped terrain, Pavonis Mons is the default. Length, acceleration, and release speed can be chosen - any two, and the third figure is supplied. Elevation and track angle are derived from the heightmap.
 
 The parameters for these installations can be imported from their cards in the workbench by clicking a button. But the cards don't exist yet, so that happens later. We can set initial defaults.
 

@@ -5,7 +5,9 @@
  * core/facilities.js, the flight from core/flight.js, and both are put
  * through the axes of the current view (core/view-frames.js).
  *
- * A facility is drawn where it is at the scene's instant. The flight's path
+ * A facility is drawn where it is at the scene's instant: the space
+ * elevator's tether along its curve, swung north or south by however much
+ * of a Deimos dodge is under way. The flight's path
  * is drawn as the view sees it: in a turning view each point of the path goes
  * through the view's axes at ITS OWN instant, so the path is the ship's track
  * against whatever the view holds still.
@@ -17,13 +19,15 @@ import { makePoint } from "../../Shared/sim/body-renderer.js";
 import { makeShipSprite } from "../../Shared/sim/marker-card.js";
 import { viewBasis, toView } from "./core/view-frames.js";
 import { SKYHOOKS, facilityAt, pointState } from "./core/facilities.js";
+import { elevatorAt, elevatorPoint } from "./core/elevator.js";
 import { flightStateAt } from "./core/flight.js";
 import { U } from "./scene.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
 export var COLOR = { tether: 0xeaf0ff, top: 0x9fb6ff, foot: 0x8fd0c8, release: 0xff5fd0,
-                     com: 0xfff2b0, ballast: 0xe8b24a, pass: 0x3ddc84,
+                     com: 0xfff2b0, ballast: 0xe8b24a, pass: 0x3ddc84, limit: 0xff5a4d,
+                     elevator: 0xc8a8ff, anchor: 0xe0b890, counterweight: 0xb48cff, stretch: 0x5aa9ff,
                      orbit: 0x40d27f, escape: 0xff9a3c, entry: 0xff6f61 };
 var NAMES = { phobosSkyhook: "Phobos skyhook", hangingSkyhook: "hanging skyhook" };
 var TRACE_POINTS = 120;
@@ -41,7 +45,8 @@ function setPoint(attr, k, p) { attr.setXYZ(k, p[0] / U, p[1] / U, p[2] / U); }
 export function buildOverlay(scene) {
 	// ---- the skyhooks: a tether, its ends, its release point, and where the
 	// foot and the top go over one orbit. The hanging skyhook also shows its
-	// centre of mass and its two lots of ballast. ----
+	// centre of mass and its two lots of ballast; the Phobos skyhook, the
+	// highest its top may be set beside the space elevator. ----
 	var hooks = {}, markers = {};
 	SKYHOOKS.forEach(function (id) {
 		var hanging = id === "hangingSkyhook", group = new THREE.Group();
@@ -49,8 +54,9 @@ export function buildOverlay(scene) {
 			footTrace: movingLine(TRACE_POINTS + 1, COLOR.foot, 0.45), topTrace: movingLine(TRACE_POINTS + 1, COLOR.top, 0.45),
 			foot: makePoint(COLOR.foot, 6), top: makePoint(COLOR.top, 6), release: makePoint(COLOR.release, 10),
 			com: hanging ? makePoint(COLOR.com, 6) : null,
-			ballast: hanging ? { lower: makePoint(COLOR.ballast, 7), upper: makePoint(COLOR.ballast, 7) } : null };
-		[h.tether, h.footTrace, h.topTrace, h.foot, h.top, h.com, h.ballast && h.ballast.lower, h.ballast && h.ballast.upper, h.release]
+			ballast: hanging ? { lower: makePoint(COLOR.ballast, 7), upper: makePoint(COLOR.ballast, 7) } : null,
+			limit: hanging ? null : makePoint(COLOR.limit, 6) };
+		[h.tether, h.footTrace, h.topTrace, h.foot, h.top, h.limit, h.com, h.ballast && h.ballast.lower, h.ballast && h.ballast.upper, h.release]
 			.forEach(function (o) { if (o) { group.add(o); } });
 		h.release.renderOrder = 13;
 		scene.add(group);
@@ -61,6 +67,20 @@ export function buildOverlay(scene) {
 		markers[id + ":release"] = { pos: h.release.position, label: NAMES[id] + " release point" };
 		if (hanging) { markers[id + ":com"] = { pos: h.com.position, label: NAMES[id] + " centre of mass" }; }
 	});
+
+	// ---- the space elevator: its tether, the stretch climbers are held on
+	// to pump the dodge swing, its anchor and its counterweight ----
+	var elev = { group: new THREE.Group(), fig: null, line: null, stretch: null,
+		anchor: makePoint(COLOR.anchor, 7), counterweight: makePoint(COLOR.counterweight, 8) };
+	elev.group.add(elev.anchor); elev.group.add(elev.counterweight);
+	scene.add(elev.group);
+	markers["spaceElevator:anchor"] = { pos: elev.anchor.position, label: "space elevator anchor" };
+	markers["spaceElevator:counterweight"] = { pos: elev.counterweight.position, label: "space elevator counterweight" };
+	function elevatorLine(name, count, colorHex) {
+		if (elev[name]) { elev.group.remove(elev[name]); elev[name].geometry.dispose(); elev[name].material.dispose(); }
+		elev[name] = movingLine(count, colorHex, 0.95);
+		elev.group.add(elev[name]);
+	}
 
 	// ---- the flight ----
 	var path = null;
@@ -93,6 +113,10 @@ export function buildOverlay(scene) {
 			pos.needsUpdate = true;
 			h.release.visible = !!departure;
 			put(h.release, fig.sRel);
+			if (h.limit) {
+				h.limit.visible = fig.topCap != null;
+				if (h.limit.visible) { put(h.limit, fig.topCap + fig.R - fig.a); }
+			}
 			if (h.com) {
 				put(h.com, 0);
 				// Each lot of ballast: at home, or as far along as the sidestep under way has taken it.
@@ -112,6 +136,30 @@ export function buildOverlay(scene) {
 				setPoint(tp, k, toView(B, pointState(fig, atK, fig.sTop).r));
 			}
 			fp.needsUpdate = true; tp.needsUpdate = true;
+		},
+
+		// The space elevator with figures `fig` (core/elevator.js) as it is at
+		// jd; hidden when `shown` is false or its figures are missing or not ok.
+		drawElevator: function (fig, jd, viewId, shown) {
+			elev.group.visible = !!(shown && fig && fig.ok);
+			if (!elev.group.visible) { return; }
+			var n = fig.curve.r.length, s0 = fig.stretch[0], s1 = fig.stretch[1];
+			if (elev.fig !== fig) {
+				elev.fig = fig;
+				elevatorLine("line", n, COLOR.elevator);
+				elevatorLine("stretch", s1 - s0 + 1, COLOR.stretch);
+				elev.stretch.renderOrder = 5;
+			}
+			var B = viewBasis(viewId, jd), at = elevatorAt(fig, jd);
+			var pos = elev.line.geometry.attributes.position, sp = elev.stretch.geometry.attributes.position;
+			for (var k = 0; k < n; k++) {
+				var p = toView(B, elevatorPoint(fig, at, k));
+				setPoint(pos, k, p);
+				if (k >= s0 && k <= s1) { setPoint(sp, k - s0, p); }
+				if (k === 0) { elev.anchor.position.set(p[0] / U, p[1] / U, p[2] / U); }
+				if (k === n - 1) { elev.counterweight.position.set(p[0] / U, p[1] / U, p[2] / U); }
+			}
+			pos.needsUpdate = true; sp.needsUpdate = true;
 		},
 
 		// The flight's path, as the view sees it. `flight` is core/flight.js's

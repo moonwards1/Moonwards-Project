@@ -36,10 +36,9 @@
 // together as one JSON string under "<id>/Stations".
 
 import { ShellColors } from "./calc-shell.js";
-import { radiusAtForce, counterweightFor, pullBalance } from "./radial-tether.js";
+import { radiusAtForce, counterweightFor, pullBalance, MULT_FLOOR, MULT_ADVISED } from "./radial-tether.js";
 
-export const MULT_FLOOR = 1.5;
-export const MULT_ADVISED = 3;
+export { MULT_FLOOR, MULT_ADVISED };
 var LIMIT = { in: 1, bal: 1, out: 2 };
 var MAX_STATIONS = 3;
 var SIDES = ["in", "bal", "out"];

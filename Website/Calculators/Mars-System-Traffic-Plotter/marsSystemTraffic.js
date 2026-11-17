@@ -9,14 +9,17 @@
  * turning with Mars, turning with Phobos), the POV buttons and click-to-follow;
  * the Phobos skyhook and the hanging skyhook, with a release from any point of
  * either tether flown to its end — down to the air, round an orbit, or out of
- * Mars's sphere of influence; and the hanging skyhook's timing against the
+ * Mars's sphere of influence; the hanging skyhook's timing against the
  * Phobos tether, with the sidesteps that keep them apart marked on the date
- * sliders. The other facilities are listed in the sidebar and come next.
+ * sliders; and the space elevator, with the limit it puts on the Phobos
+ * skyhook's top and its dodges of Deimos marked on the date sliders. The mass
+ * driver is listed in the sidebar and comes next.
  *
  * The page computes nothing of its own: where things are comes from
  * Shared/mars-ephemeris.js and core/facilities.js, the flight from
- * core/flight.js, the timing from core/clearance.js, the view's axes from
- * core/view-frames.js, and the scene objects from scene.js and overlay.js.
+ * core/flight.js, the timing from core/clearance.js, the elevator from
+ * core/elevator.js, the view's axes from core/view-frames.js, and the scene
+ * objects from scene.js and overlay.js.
  */
 /* global THREE */
 
@@ -29,11 +32,12 @@ import { updateScales, updateLabels, projectedRadiusPx, worldSizeAtPointForPx }
 import { orientMarkerSprite } from "../../Shared/sim/marker-card.js";
 import { CLOCK_EPOCH, SPAN_DAYS } from "./core/clock.js";
 import { VIEW_FRAMES, viewBasis, toView } from "./core/view-frames.js";
-import { FACILITIES, SKYHOOKS, allFigures, facilityAt, pointState, centreRadius, altitudeOf, R_MARS, ENTRY_ALT }
+import { FACILITIES, SKYHOOKS, allFigures, facilityAt, pointState, centreRadius, altitudeOf, moonSkyhookLimits, R_MARS, ENTRY_ALT }
 	from "./core/facilities.js";
 import { HANGING_DEFAULTS, RATIOS, resonantComAlt } from "./core/hanging-skyhook.js";
 import { DEFAULT_LIMIT, bestStartAngle, closestPass, tetherDistance, workOutSidesteps, timingGuidance }
 	from "./core/clearance.js";
+import { ELEVATOR_DEFAULTS, ELEVATOR_MATERIALS, KEEP_CLEAR, DODGE, TRAFFIC, elevatorAt } from "./core/elevator.js";
 import { computeFlight, flightStateAt, groundRelative, SURFACE } from "./core/flight.js";
 import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
 import { buildMarsScene, R_STATIONARY, SOI_MARS, U } from "./scene.js";
@@ -45,7 +49,7 @@ var START_DAYS = 81;                   // opens on 2080-03-22
 // Slider drag speeds while a key is held.
 var SLOW_DRAG = { shift: 0.25, ctrl: 0.1 };
 var CHEVRON_PX = 24;
-var PHOBOS = "phobosSkyhook", HANGING = "hangingSkyhook";
+var PHOBOS = "phobosSkyhook", HANGING = "hangingSkyhook", ELEVATOR = "spaceElevator";
 
 // Camera presets behind the POV buttons: what the camera stays on and how far
 // back it sits (scene units, 1,000 km).
@@ -62,7 +66,6 @@ var BODIES = ["Phobos", "Deimos", "Mars"];     // small things first: they are p
 
 // The facilities still to be built, shown folded so the sidebar already has its shape.
 var STUBS = [
-	{ label: "Space elevator", sub: "Layout A (both moons pass between the legs) or B (Phobos only)" },
 	{ label: "Mass driver", sub: "Surface track on the equator; Pavonis Mons by default" }
 ];
 
@@ -82,16 +85,21 @@ var state = {
 };
 state.params[PHOBOS] = Object.assign({}, FACILITIES[PHOBOS].defaults);
 state.params[HANGING] = Object.assign({}, HANGING_DEFAULTS);
+state.params[ELEVATOR] = Object.assign({}, ELEVATOR_DEFAULTS);
 state.included[HANGING] = true;
+state.included[ELEVATOR] = true;
 state.open[PHOBOS] = true;
 state.open[HANGING] = true;
+state.open[ELEVATOR] = true;
 
+var FACILITIES_TOP_MAX = moonSkyhookLimits(PHOBOS).topMax;   // the Phobos skyhook's top with no elevator: short of Deimos
 var figs = {};                         // facility id -> its figures (core/facilities.js's allFigures)
 var flight = null;                     // core/flight.js's result for the current release, or { ok: false }
 // The hanging skyhook's timing belongs to one design: `timingKey` names it,
 // and `schedule` is core/clearance.js's workOutSidesteps result for it, or
 // null until the button is pressed.
 var timingKey = null, schedule = null;
+var marksFor = {};                     // what the whole-span marks were last drawn for
 
 function $(id) { return document.getElementById(id); }
 var holder = $("mst-canvas-holder");
@@ -111,9 +119,10 @@ function designParams() {
 	var p = {};
 	p[PHOBOS] = state.params[PHOBOS];
 	p[HANGING] = state.included[HANGING] ? state.params[HANGING] : null;
+	p[ELEVATOR] = state.included[ELEVATOR] ? state.params[ELEVATOR] : null;
 	return p;
 }
-// Every skyhook's figures. A change to anything the hanging skyhook's timing
+// Every facility's figures. A change to anything the hanging skyhook's timing
 // rests on starts that timing afresh: its place round its orbit at the start
 // of the clock is the one that keeps its first passes widest of the Phobos
 // tether, and no sidesteps are worked out.
@@ -126,7 +135,6 @@ function computeFigures() {
 	if (key !== timingKey) {
 		timingKey = key; schedule = null;
 		hp.timing = { a0: h.share ? bestStartAngle(h, p, state.limit) : 0, sidesteps: [] };
-		drawMarks($("mst-marks-coarse"), 0, SPAN_DAYS);
 	}
 	h.timing = hp.timing;
 }
@@ -490,6 +498,7 @@ function buildSkyhookCard() {
 	c.body.appendChild(el("div", "mst-muted", "Altitudes are with Phobos at its mean distance. Phobos moves 142 km nearer and farther each orbit, and the whole tether with it."));
 	var ro = c.body.appendChild(el("div", "mst-readouts"));
 	r.length = readout(ro, "Tether length");
+	r.cap = readout(ro, "Highest the top may be set");
 	r.footNow = readout(ro, "Foot now");
 	r.topNow = readout(ro, "Top now");
 	r.pullFoot = readout(ro, "Weight of 1 kg at the foot");
@@ -511,6 +520,9 @@ function fillSkyhookCard(opts) {
 	r.top.classList.toggle("mst-bad", code === "top-range");
 	r.rel.classList.toggle("mst-bad", code === "release-off-tether");
 	fillRelease(PHOBOS, r, opts);
+	// With a space elevator in the design, its tether sets the limit; otherwise Deimos does.
+	var ev = figs[ELEVATOR], cap = ev && ev.ok && ev.phobosTopCap != null && ev.phobosTopCap < FACILITIES_TOP_MAX ? ev.phobosTopCap : null;
+	r.cap.textContent = cap != null ? num(Math.floor(cap / 1e3)) + " km: beyond, too near the space elevator" : km(FACILITIES_TOP_MAX) + ": short of Deimos";
 	if (!fig.ok) {
 		[r.length, r.footNow, r.topNow, r.pullFoot, r.pullTop].forEach(function (x) { x.textContent = "—"; });
 		return;
@@ -674,7 +686,6 @@ function workOut() {
 	setTimeout(function () {
 		schedule = workOutSidesteps(h, p, { limit: state.limit });
 		state.params[HANGING].timing = { a0: schedule.a0, sidesteps: schedule.sidesteps };
-		drawMarks($("mst-marks-coarse"), 0, SPAN_DAYS);
 		refresh();
 	}, 30);
 }
@@ -778,11 +789,13 @@ function fillHangingCard(opts) {
 }
 
 // ---- marks on the date sliders ------------------------------------------------------------
-// The sidesteps (and the close passes the ballast cannot avoid) between two
-// days of the clock, as bars in a strip under a slider.
+// What is timed between two days of the clock, as bars in a strip under a
+// slider. Upper row: the hanging skyhook's sidesteps, and the close passes
+// the ballast cannot avoid. Lower row: the space elevator's spells of dodging
+// Deimos, from the first load timing to the swing at rest again, with a tick
+// at each crossing dodged.
 function drawMarks(strip, loDay, hiDay) {
 	strip.textContent = "";
-	if (!schedule || !state.included[HANGING]) { return; }
 	function bar(jdA, jdB, cls, title) {
 		var a = jdA - CLOCK_EPOCH, b = jdB - CLOCK_EPOCH;
 		if (b < loDay || a > hiDay) { return; }
@@ -791,12 +804,218 @@ function drawMarks(strip, loDay, hiDay) {
 		m.style.width = ((Math.min(hiDay, b) - Math.max(loDay, a)) / (hiDay - loDay) * 100) + "%";
 		m.title = title;
 	}
-	schedule.sidesteps.forEach(function (st) { bar(st.jdStart, st.jdEnd, "mst-mark-step", "Sidestep: " + dateTime(st.jdStart)); });
-	schedule.unavoided.forEach(function (u) { bar(u.jd, u.jdLast, "mst-mark-close", "Close passes the ballast cannot avoid"); });
+	if (schedule && state.included[HANGING]) {
+		schedule.sidesteps.forEach(function (st) { bar(st.jdStart, st.jdEnd, "mst-mark-step", "Sidestep: " + dateTime(st.jdStart)); });
+		schedule.unavoided.forEach(function (u) { bar(u.jd, u.jdLast, "mst-mark-close", "Close passes the ballast cannot avoid"); });
+	}
+	var ev = figs[ELEVATOR];
+	if (ev && ev.ok && ev.dodges) {
+		ev.dodges.spells.forEach(function (sp) {
+			bar(sp.jdStart, sp.jdEnd, "mst-mark-dodge", "Deimos dodge: load timing from " + dateTime(sp.jdStart));
+			sp.passes.forEach(function (ps) { bar(ps.jd, ps.jd, "mst-mark-cross", "Deimos crosses the tether's line: " + dateTime(ps.jd)); });
+		});
+	}
 }
 function syncCards() {
 	hookCard.el.classList.toggle("mst-open", !!state.open[PHOBOS]);
 	hangCard.el.classList.toggle("mst-open", !!state.open[HANGING]);
+	elevCard.el.classList.toggle("mst-open", !!state.open[ELEVATOR]);
+}
+
+// ---- the space elevator's card ------------------------------------------------------------
+var elevCard = null;
+function northSouth(m, zero) { return Math.abs(m) < 500 ? (zero || "on the tether") : km(Math.abs(m)) + (m > 0 ? " north" : " south"); }
+function tonnes(kg) { return kg >= 1e6 ? num(kg / 1e6, kg < 1e7 ? 1 : 0) + " kt" : num(kg / 1e3) + " t"; }
+function meganewtons(n) { return num(n / 1e6, 1) + " MN"; }
+function buildElevatorCard() {
+	var c = cardShell(FACILITIES[ELEVATOR].label, "One tether from an anchor off the equator, passing above Phobos and dodging Deimos"), r = {};
+	var P = state.params[ELEVATOR];
+	c.head.addEventListener("click", function () { state.open[ELEVATOR] = !state.open[ELEVATOR]; syncCards(); });
+	function set(key, scale) {
+		return function (v) { if (isFinite(v)) { P[key] = v * scale; refresh(); } };
+	}
+	var inRow = c.body.appendChild(el("div", "mst-row"));
+	r.included = checkBox(inRow, "mst-elev-in", "In the design", function (on) { state.included[ELEVATOR] = on; refresh(); });
+
+	var a1 = c.body.appendChild(el("div", "mst-fieldpair"));
+	r.lat = numberField(a1, "mst-elev-lat", "Anchor latitude (° N)", set("lat", 1));
+	r.lon = numberField(a1, "mst-elev-lon", "Longitude (° E)", set("lon", 1));
+	var a2 = c.body.appendChild(el("div", "mst-fieldpair"));
+	var mf = a2.appendChild(el("div", "mst-field mst-field-wide")), ml = mf.appendChild(el("label", null, "Cable"));
+	ml.htmlFor = "mst-elev-material";
+	r.material = mf.appendChild(el("select"));
+	r.material.id = "mst-elev-material";
+	Object.keys(ELEVATOR_MATERIALS).forEach(function (k) { r.material.appendChild(el("option", null, ELEVATOR_MATERIALS[k].label)).value = k; });
+	// A change of cable keeps the safety factor where the new cable allows it.
+	r.material.addEventListener("change", function () {
+		var range = ELEVATOR_MATERIALS[r.material.value].safety;
+		P.material = r.material.value;
+		if (isFinite(P.safety)) { P.safety = Math.max(range[0], Math.min(range[1], P.safety)); }
+		refresh();
+	});
+	r.safety = numberField(a2, "mst-elev-safety", "Safety factor", set("safety", 1));
+	r.safety.step = "0.1";
+	r.safetyLabel = r.safety.previousSibling;
+	var a3 = c.body.appendChild(el("div", "mst-fieldpair"));
+	r.rcw = numberField(a3, "mst-elev-rcw", "Counterweight at (km)", set("rCW", 1e3));
+	r.mass = numberField(a3, "mst-elev-mass", "Its mass (kt)", function (v) { P.cwMass = isFinite(v) && v > 0 ? v * 1e6 : null; refresh(); });
+	r.error = c.body.appendChild(el("div", "mst-error"));
+	c.body.appendChild(el("div", "mst-muted", "The anchor starts at the summit of Olympus Mons; the ground's own height is left out. The counterweight's distance is from Mars's centre. Leave its mass empty for the one that holds the cable and its track up three times over."));
+
+	var ro = c.body.appendChild(el("div", "mst-readouts"));
+	r.length = readout(ro, "Tether length");
+	r.peak = readout(ro, "Peak tension");
+	r.hold = readout(ro, "Tension at the anchor · at the counterweight");
+	r.cable = readout(ro, "Cable · its track");
+	r.cw = readout(ro, "Counterweight");
+	r.depart = readout(ro, "Leaves the anchor at");
+	r.cwOff = readout(ro, "Counterweight off the equatorial plane");
+	r.release = readout(ro, "A ship let go at the counterweight");
+
+	c.body.appendChild(el("div", "mst-subhead", "Keeping clear of Phobos"));
+	var pr = c.body.appendChild(el("div", "mst-readouts"));
+	r.zPhobos = readout(pr, "Off the plane at Phobos's distance");
+	r.phClear = readout(pr, "Passes Phobos's reach by");
+	r.cap = readout(pr, "A tether rising from Phobos may reach");
+	c.body.appendChild(el("div", "mst-muted", "Phobos's orbit is tilted 1.08° to the equator, so a tether built on it sweeps farther from the equatorial plane the farther out it reaches. Its top is held short of where it would come within "
+		+ num(KEEP_CLEAR / 1e3) + " km of this tether; the red marker on the Phobos tether's line shows that limit."));
+
+	c.body.appendChild(el("div", "mst-subhead", "Dodging Deimos"));
+	var dr = c.body.appendChild(el("div", "mst-readouts"));
+	r.zDeimos = readout(dr, "Off the plane at Deimos's distance");
+	r.count = readout(dr, "Crossings to " + shortDate(CLOCK_EPOCH + SPAN_DAYS) + " · dodged");
+	r.swing = readout(dr, "The dodge swing");
+	r.now = readout(dr, "The swing now");
+	r.closest = readout(dr, "Nearest Deimos comes, with the dodges");
+	var act = c.body.appendChild(el("div", "mst-row mst-work-row"));
+	r.prev = act.appendChild(el("button", "mst-action mst-action-small", "◂ Previous dodge"));
+	r.next = act.appendChild(el("button", "mst-action mst-action-small", "Next dodge ▸"));
+	r.prev.type = "button"; r.next.type = "button";
+	r.prev.title = "Move the date to the crossing dodged before"; r.next.title = "Move the date to the next crossing dodged";
+	r.prev.addEventListener("click", function () { jumpDodge(-1); });
+	r.next.addEventListener("click", function () { jumpDodge(1); });
+	r.status = c.body.appendChild(el("div", "mst-guide"));
+	r.stepBox = c.body.appendChild(el("div", "mst-readouts mst-step"));
+	r.stepHead = r.stepBox.appendChild(el("div", "mst-step-head"));
+	r.stepMiss = readout(r.stepBox, "Left alone, Deimos would pass");
+	r.stepSwing = readout(r.stepBox, "The tether stands, as it crosses");
+	r.stepActual = readout(r.stepBox, "So Deimos passes the tether by");
+	r.stepStart = readout(r.stepBox, "Climber load timing starts");
+	r.stepEnd = readout(r.stepBox, "The swing is at rest again");
+
+	c.body.appendChild(el("div", "mst-subhead", "Pumping the swing with climbers"));
+	var tr = c.body.appendChild(el("div", "mst-readouts"));
+	r.stretch = readout(tr, "Stretch, above the anchor");
+	r.load = readout(tr, "Cargo held on it, half of each swing");
+	r.build = readout(tr, "Build-up");
+	r.flow = readout(tr, "Cargo flow that keeps it there");
+	r.energy = readout(tr, "Energy in the full swing");
+	c.body.appendChild(el("div", "mst-muted", "Cargo on the slanted stretch (blue on the tether) pulls partly across it. Climbers are slowed there to "
+		+ num(TRAFFIC.vSlow) + " m/s for half of each swing and pass at " + num(TRAFFIC.vFull)
+		+ " m/s for the other half, which pumps the swing the way shifting weight pumps a playground swing; reversed, the same timing brings it to rest. The climbers' motors supply the energy and no propellant is used."));
+	elevCard = { el: c.el, refs: r, badge: c.badge };
+}
+// The hazard crossings inside the clock's span, in order.
+function dodgedCrossings(ev) {
+	if (!(ev && ev.ok && ev.dodges)) { return []; }
+	return ev.dodges.passes.filter(function (ps) { return ps.hazard && ps.jd >= CLOCK_EPOCH && ps.jd <= CLOCK_EPOCH + SPAN_DAYS; });
+}
+// Move the date to the crossing dodged before (-1) or after (+1) the scene's instant.
+function jumpDodge(dir) {
+	var list = dodgedCrossings(figs[ELEVATOR]), jd = sceneJd(), pick = null;
+	list.forEach(function (ps) {
+		if (dir > 0 ? (ps.jd > jd + 1e-6 && !pick) : ps.jd < jd - 1e-6) { pick = ps; }
+	});
+	if (!pick) { return; }
+	state.relFrac = 0; state.flightFrac = 0; relSlider.value = 0; flightSlider.value = 0;
+	dateBar.setJd(pick.jd);
+	refresh();
+}
+function fillElevatorCard() {
+	var r = elevCard.refs, P = state.params[ELEVATOR], fig = figs[ELEVATOR], on = !!state.included[ELEVATOR];
+	var ok = !!(fig && fig.ok), code = fig && !fig.ok ? fig.diagnostic.code : "";
+	var range = (ELEVATOR_MATERIALS[P.material] || ELEVATOR_MATERIALS.ecnt).safety;
+	r.included.checked = on;
+	elevCard.el.classList.toggle("mst-card-off", !on);
+	show(r.lat, String(P.lat)); show(r.lon, String(P.lon)); show(r.safety, String(P.safety));
+	show(r.rcw, kmField(P.rCW)); show(r.mass, P.cwMass == null ? "" : String(Math.round(P.cwMass / 1e3) / 1e3));
+	r.mass.placeholder = ok && P.cwMass == null ? num(fig.cwMass / 1e6, 1).replace(/,/g, "") : "";
+	r.material.value = P.material;
+	r.safety.min = range[0]; r.safety.max = range[1];
+	r.safetyLabel.textContent = "Safety factor (" + range[0] + " to " + range[1] + ")";
+	r.error.textContent = fig && !fig.ok ? fig.diagnostic.message : "";
+	r.lat.classList.toggle("mst-bad", code === "lat-range" || code === "phobos");
+	r.lon.classList.toggle("mst-bad", code === "lon-range");
+	r.safety.classList.toggle("mst-bad", code === "safety-range" || code === "phobos");
+	r.rcw.classList.toggle("mst-bad", code === "cw-range" || code === "no-landing");
+	r.mass.classList.toggle("mst-bad", code === "mass-range");
+	var all = [r.length, r.peak, r.hold, r.cable, r.cw, r.depart, r.cwOff, r.release, r.zPhobos, r.phClear, r.cap,
+	           r.zDeimos, r.count, r.swing, r.now, r.closest, r.stretch, r.load, r.build, r.flow, r.energy];
+	var list = dodgedCrossings(fig);
+	r.prev.disabled = r.next.disabled = !list.length;
+	if (!ok) {
+		all.forEach(function (x) { x.textContent = "—"; });
+		r.status.textContent = ""; r.stepBox.hidden = true;
+		return;
+	}
+	var jd = sceneJd(), away = fig.side > 0 ? " north" : " south";
+	r.length.textContent = km(fig.length);
+	r.peak.textContent = meganewtons(fig.Tpeak) + ", " + km(fig.rPeak - R_MARS) + " up";
+	r.hold.textContent = meganewtons(fig.T0) + " · " + meganewtons(fig.Tcw);
+	r.cable.textContent = tonnes(fig.cableMass) + " · " + tonnes(fig.trackMass);
+	r.cw.textContent = tonnes(fig.cwMass) + " · holds " + num(fig.mult, 2) + "×"
+		+ (fig.raised === "departure" ? " · raised so the tether leaves the ground 10° up" : fig.raised === "multiple" ? " · raised to hold 1.5×" : "");
+	r.depart.textContent = num(fig.departure * DEG, 1) + "° above level";
+	r.cwOff.textContent = km(fig.zCW) + away;
+	r.release.textContent = fig.release.bound ? "orbits Mars out to " + km(fig.release.rApo - R_MARS)
+		: "leaves Mars with " + num(fig.release.vInf / 1e3, 2) + " km/s";
+	r.zPhobos.textContent = km(fig.zPhobos) + away;
+	r.phClear.textContent = km(fig.phobosClear);
+	r.cap.textContent = fig.phobosTopCap != null && fig.phobosTopCap < FACILITIES_TOP_MAX
+		? num(Math.floor(fig.phobosTopCap / 1e3)) + " km altitude" : "as far as Deimos allows";
+
+	if (!fig.dodges) {
+		[r.count, r.swing, r.now, r.closest, r.stretch, r.load, r.build, r.flow, r.energy].forEach(function (x) { x.textContent = "—"; });
+		r.zDeimos.textContent = "ends short of Deimos";
+		r.status.textContent = "The tether ends inside Deimos's orbit, so Deimos never meets it and nothing needs dodging.";
+		r.stepBox.hidden = true;
+		return;
+	}
+	var d = fig.dodges, sw = elevatorAt(fig, jd).swing, pm = fig.pumping;
+	var inSpan = d.passes.filter(function (ps) { return ps.jd >= CLOCK_EPOCH && ps.jd <= CLOCK_EPOCH + SPAN_DAYS; });
+	r.zDeimos.textContent = km(fig.zDeimos) + away;
+	r.count.textContent = num(inSpan.length) + " · " + num(list.length);
+	r.swing.textContent = km(DODGE.swing) + " there · " + km(fig.swing.atPhobos) + " at Phobos's distance · every " + num(fig.swing.period / 3600, 1) + " h";
+	r.now.textContent = sw.size < 500 ? "at rest"
+		: (sw.size > 0.98 * DODGE.swing ? "full" : sw.trend > 0 ? "building up" : sw.trend < 0 ? "dying down" : "held") + " · " + km(sw.size) + " · tether " + northSouth(sw.d, "at its rest line");
+	var worst = inSpan.reduce(function (a, ps) { return !a || Math.abs(ps.actual) < Math.abs(a.actual) ? ps : a; }, null);
+	r.closest.textContent = worst ? km(Math.abs(worst.actual)) + " · " + shortDate(worst.jd) : "—";
+	r.closest.classList.toggle("mst-warn", !!worst && Math.abs(worst.actual) < DODGE.band / 2 - 1);
+	r.status.textContent = list.length
+		? "A crossing is dodged when Deimos would pass within " + num(DODGE.band / 2e3) + " km of the tether: " + list.length + " of its " + inSpan.length
+			+ " crossings to " + shortDate(CLOCK_EPOCH + SPAN_DAYS) + ", marked in blue under the date sliders."
+		: "No crossing in the date span brings Deimos within " + num(DODGE.band / 2e3) + " km of the tether.";
+
+	r.stretch.textContent = num(TRAFFIC.from / 1e3) + " to " + km(TRAFFIC.to) + " · " + km(pm.length) + " of tether";
+	r.load.textContent = tonnes(pm.dmOnOff);
+	r.build.textContent = TRAFFIC.cycles + " swings · " + span(TRAFFIC.cycles * fig.swing.period);
+	r.flow.textContent = num(pm.flowSlow * 3.6) + " t/h slowed · " + num(pm.flowFull * 3.6) + " t/h at full speed";
+	r.energy.textContent = num(fig.swing.energy / 1e9, 1) + " GJ";
+
+	// The crossing dodged at or after the date shown, else the last one.
+	var i = -1;
+	for (var k = 0; k < list.length; k++) { if (list[k].jd >= jd - 1e-6) { i = k; break; } }
+	if (i < 0) { i = list.length - 1; }
+	r.stepBox.hidden = i < 0;
+	if (i < 0) { return; }
+	var ps = list[i], spell = d.spells.filter(function (sp) { return sp.passes.indexOf(ps) >= 0; })[0];
+	r.stepHead.textContent = "Dodge " + (i + 1) + " of " + list.length + " · Deimos crosses " + dateTime(ps.jd)
+		+ (jd >= spell.jdStart && jd <= spell.jdEnd ? " · swing under way" : "");
+	r.stepMiss.textContent = northSouth(ps.miss) + (Math.abs(ps.miss) < 500 ? "" : " of the tether");
+	r.stepSwing.textContent = northSouth(ps.swing, "at its rest line") + (Math.abs(ps.swing) < 500 ? "" : " of its rest line");
+	r.stepActual.textContent = km(Math.abs(ps.actual));
+	r.stepStart.textContent = dateTime(spell.jdStart);
+	r.stepEnd.textContent = dateTime(spell.jdEnd) + (spell.passes.length > 1 ? " · " + spell.passes.length + " crossings in this spell" : "");
 }
 
 // The System card: the figures that do not change with the date, then those that do.
@@ -898,12 +1117,20 @@ function refresh(opts) {
 	frame.setShown({ orbits: showOrbits.checked, grid: showGrid.checked });
 	frame.place(jd, state.view);
 	SKYHOOKS.forEach(function (id) { overlay.drawSkyhook(id, figs[id], jd, state.view, showFac.checked, id === state.from); });
+	overlay.drawElevator(figs[ELEVATOR], jd, state.view, showFac.checked);
+	// The whole-span marks stand until the sidesteps or the elevator's dodges change.
+	var dodges = figs[ELEVATOR] && figs[ELEVATOR].ok ? figs[ELEVATOR].dodges : null;
+	if (marksFor.schedule !== schedule || marksFor.dodges !== dodges || marksFor.hanging !== !!state.included[HANGING]) {
+		marksFor = { schedule: schedule, dodges: dodges, hanging: !!state.included[HANGING] };
+		drawMarks($("mst-marks-coarse"), 0, SPAN_DAYS);
+	}
 	fillFlightNote();
 	overlay.placeShip(flight, t, state.view, showTraj.checked);
 	fillKeys();
 	fillSystemCard(jd);
 	fillSkyhookCard(opts);
 	fillHangingCard(opts);
+	fillElevatorCard();
 	var half = parseFloat($("mst-date-fine").max);
 	drawMarks($("mst-marks-fine"), state.baseDays - half, state.baseDays + half);
 
@@ -961,6 +1188,10 @@ function init() {
 	buildSystemCard();
 	buildSkyhookCard();
 	buildHangingCard();
+	buildElevatorCard();
+	// The Phobos skyhook starts with its top as high as the elevator allows, where that is under its own default.
+	var cap = allFigures(designParams())[ELEVATOR].phobosTopCap;
+	if (cap != null && cap < state.params[PHOBOS].topAlt) { state.params[PHOBOS].topAlt = Math.floor(cap / 100e3) * 100e3; }
 	// The hanging skyhook starts on its 4:1 resonance with Phobos, to the metre.
 	var onResonance = resonantComAlt(state.params[HANGING], allFigures(designParams())[PHOBOS], 4);
 	if (onResonance != null) { state.params[HANGING].comAlt = onResonance; }

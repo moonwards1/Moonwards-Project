@@ -28,6 +28,10 @@
  * equator: its figures and where it is on the clock are core/hanging-skyhook.js.
  * The functions at the end of this file read either skyhook the same way.
  *
+ * THE SPACE ELEVATOR is a tether from an anchor off the equator, turning with
+ * Mars: core/elevator.js. With one in the design, the Phobos skyhook's top is
+ * held short of where its tether would come too near the elevator's.
+ *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  */
 
@@ -36,6 +40,7 @@ import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { MarsEphemeris as ME } from "../../../Shared/mars-ephemeris.js";
 import { anchorConfig, BODY_PROFILES } from "../../../Shared/body-profiles.js";
 import { HANGING_DEFAULTS, hangingFigures, hangingAt, hangingPointState } from "./hanging-skyhook.js";
+import { ELEVATOR_DEFAULTS, KEEP_CLEAR, elevatorFigures } from "./elevator.js";
 
 var O = OrbitalMath;
 var MARS = systems.get("Mars");
@@ -57,6 +62,9 @@ export var FACILITIES = {
 	},
 	hangingSkyhook: {
 		id: "hangingSkyhook", kind: "hangingSkyhook", label: "Hanging skyhook", defaults: HANGING_DEFAULTS
+	},
+	spaceElevator: {
+		id: "spaceElevator", kind: "spaceElevator", label: "Space elevator", defaults: ELEVATOR_DEFAULTS
 	}
 };
 // The facilities a ship can be let go from, in the order they are listed.
@@ -92,7 +100,10 @@ export function moonSkyhookLimits(id) {
 }
 
 // A moon-anchored skyhook's fixed figures for one param set. Pure; returns
-// { ok: true, ...figures } (SI) or { ok: false, diagnostic }.
+// { ok: true, ...figures } (SI) or { ok: false, diagnostic }. `elevator` is
+// the space elevator's figures (core/elevator.js) when one is in the design:
+// its phobosTopCap, where it has one, is then the highest the top may be set,
+// and comes back as `topCap` (null where the elevator sets no limit).
 //
 //     omega   = 2 pi / P                  the moon's mean turning rate
 //     v(alt)  = omega * (R + alt)         mean speed of the tether at an altitude
@@ -104,8 +115,9 @@ export function moonSkyhookLimits(id) {
 //   vFoot, vTop, vRel   their mean speeds; the speed at an instant is skyhookAt's
 //   vEscRel, vInfRel    escape speed at the release point's mean radius, and the
 //                       speed a ship let go there keeps after leaving Mars (0 if bound)
-export function moonSkyhookFigures(id, params) {
+export function moonSkyhookFigures(id, params, elevator) {
 	var fac = facility(id), p = resolveParams(id, params), L = moonSkyhookLimits(id);
+	var topCap = elevator && elevator.ok && elevator.phobosTopCap != null && elevator.phobosTopCap < L.topMax ? elevator.phobosTopCap : null;
 	var vals = { footAlt: p.footAlt, topAlt: p.topAlt, relAlt: p.relAlt };
 	function kmText(m) { return Math.round(m / 1e3).toLocaleString("en-US") + " km"; }
 	if (!(isFinite(p.footAlt) && isFinite(p.topAlt) && isFinite(p.relAlt))) {
@@ -114,6 +126,15 @@ export function moonSkyhookFigures(id, params) {
 	if (!(p.footAlt >= L.footMin && p.footAlt <= L.footMax)) {
 		return fail("foot-range", "The foot must be between " + kmText(L.footMin) + " and " + kmText(L.footMax)
 			+ ": above the air when " + fac.moon + " is nearest Mars, and below " + fac.moon + ".", vals);
+	}
+	if (topCap != null && topCap < L.topMin) {
+		return fail("top-range", "No tether can rise from " + fac.moon + " beside this space elevator: it would come within "
+			+ kmText(KEEP_CLEAR) + " of the elevator's tether before it was " + kmText(MIN_ARM) + " long.", vals);
+	}
+	if (topCap != null && !(p.topAlt >= L.topMin && p.topAlt <= topCap)) {
+		return fail("top-range", "The top must be between " + kmText(L.topMin) + " and " + kmText(Math.floor(topCap / 1e3) * 1e3)
+			+ ": above " + fac.moon + ", and short of where the tether would come within " + kmText(KEEP_CLEAR)
+			+ " of the space elevator's.", vals);
 	}
 	if (!(p.topAlt >= L.topMin && p.topAlt <= L.topMax)) {
 		return fail("top-range", "The top must be between " + kmText(L.topMin) + " and " + kmText(L.topMax)
@@ -127,7 +148,7 @@ export function moonSkyhookFigures(id, params) {
 	function pull(r) { return omega * omega * r - GM_MARS / (r * r); }
 	return {
 		ok: true, id: id, kind: "moonSkyhook", moon: fac.moon, GM: GM_MARS, R: R_MARS,
-		a: f.a, omega: omega, period: f.period, limits: L,
+		a: f.a, omega: omega, period: f.period, limits: L, topCap: topCap,
 		footAlt: p.footAlt, topAlt: p.topAlt, relAlt: p.relAlt,
 		sFoot: rFoot - f.a, sTop: rTop - f.a, sRel: rRel - f.a,
 		vFoot: omega * rFoot, vTop: omega * rTop, vRel: omega * rRel,
@@ -155,13 +176,15 @@ export function tetherPointState(at, s) {
 
 // ---- either skyhook --------------------------------------------------------------
 
-// Every skyhook's figures for the plotter's params { <facility id>: params }.
-// The hanging skyhook is read against the Phobos skyhook, whose tether it must
-// keep clear of; a facility whose params are null is not in the design and
-// gets no entry.
+// Every facility's figures for the plotter's params { <facility id>: params }.
+// The Phobos skyhook is read against the space elevator, which limits its
+// top, and the hanging skyhook against the Phobos skyhook, whose tether it
+// must keep clear of. A skyhook whose params are null is not in the design
+// and gets no entry; nor does the space elevator unless it is given params.
 export function allFigures(params) {
 	var p = params || {}, out = {};
-	if (p.phobosSkyhook !== null) { out.phobosSkyhook = moonSkyhookFigures("phobosSkyhook", p.phobosSkyhook); }
+	if (p.spaceElevator) { out.spaceElevator = elevatorFigures(p.spaceElevator); }
+	if (p.phobosSkyhook !== null) { out.phobosSkyhook = moonSkyhookFigures("phobosSkyhook", p.phobosSkyhook, out.spaceElevator); }
 	if (p.hangingSkyhook !== null) { out.hangingSkyhook = hangingFigures(p.hangingSkyhook, out.phobosSkyhook || null); }
 	return out;
 }

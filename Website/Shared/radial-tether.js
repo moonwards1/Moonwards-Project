@@ -1,7 +1,7 @@
 // A tether along a straight radial line in a rotating frame, sized so its
 // stress is the working strength everywhere. Pure (no DOM). ES module:
 //   import { standardField, earthMoonField, tetherContext, tetherMetrics,
-//            pullBalance, counterweightFor, radiusAtForce } from "../../Shared/radial-tether.js";
+//            pullBalance, counterweightFor, radiusAtForce, MULT_FLOOR, MULT_ADVISED } from "../../Shared/radial-tether.js";
 //
 // Serves the workbench's radial space elevators: the standard one (a body's
 // equator past synchronous orbit) and the Moon's elevators through Earth–Moon
@@ -142,6 +142,12 @@ export function tetherContext(field, q) {
 		Epeak: Efn(rPeak), Cpeak: Cpeak, Cgpeak: Cgpeak, Esurf: Esurf, Csurf: Csurf, Cgsurf: Cgsurf,
 		rs: rs, Cs: Cs, Cgs: Cgs, Es: Es, N: N, stations: stations, Ptrack: Ptrack, McwMin: McwMin };
 }
+
+// The multiples an elevator's counterweight is held to: never under
+// MULT_FLOOR (the counterweight is raised to reach it), and MULT_ADVISED where
+// no mass is given, which leaves margin for cargo.
+export const MULT_FLOOR = 1.5;
+export const MULT_ADVISED = 3;
 
 // Surface pulls with a counterweight of Mcw kg: { up, down, mult, Pcw }.
 // up holds the structure up, down hangs on it (both ≥ 0); mult = up ÷ down,

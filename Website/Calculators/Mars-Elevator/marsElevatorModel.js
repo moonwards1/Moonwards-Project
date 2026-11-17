@@ -6,15 +6,27 @@
 // Mars system's figures, Phobos's and Deimos's reach above and below the
 // equatorial plane, how often Deimos needs a dodge, the dodge swing scaled
 // to its working size, pumping that swing with climber load timing, the
-// westward lean of one-way traffic, and the orbit after release.
+// westward lean of one-way traffic, the orbit after release, and the sizing
+// of the whole structure for a counterweight (sizeStructure), for pages that
+// have no Counterweight & stations card to do it.
 // README.md derives it.
 
 import { systems } from "../../Shared/orbit.js";
 import { ANCHORS } from "../../Shared/body-profiles.js";
 import { OrbitalMath } from "../../Shared/math-utils.js";
-import { oblateField, areoidRadius, stationaryRadius, heightAtRadius, northSouthModes } from "../../Shared/meridian-tether.js";
+import { oblateField, areoidRadius, stationaryRadius, heightAtRadius, northSouthModes, solveMeridianTether, trackPull }
+	from "../../Shared/meridian-tether.js";
+import { counterweightFor, pullBalance, MULT_FLOOR, MULT_ADVISED } from "../../Shared/radial-tether.js";
 
 var DEG = Math.PI / 180, YEAR = 365.25 * 86400;
+// The track every workbench elevator carries, kg/m: a minimum gauge
+// everywhere, plus traction reinforcement at the anchor that thins with the
+// local pull.
+var TRACK = { min: 0.4, grav: 1.2 };
+// The tether must leave the anchor at least this far above horizontal. A
+// lighter counterweight means less tension at the bottom, where the track's
+// weight then bends the tether down toward the ground.
+var MIN_DEPARTURE = 10 * DEG;
 
 // The Mars system, from Shared/orbit.js and Shared/body-profiles.js.
 function marsSystem() {
@@ -154,6 +166,67 @@ function releaseOrbit(sys, rCW) {
 	return out;
 }
 
-export const MarsElevator = { marsSystem: marsSystem, anchor: anchor, phobosReach: phobosReach, deimosHazard: deimosHazard,
+// The tether with its track, and the counterweight that holds it, with no
+// stations aboard. q: { lat (rad, north positive), rA (the anchor's distance
+// from the centre, m), rCW (m), density (kg/m³), sigmaEff (Pa), mass (the
+// counterweight asked for, kg; null or absent for the one that gives
+// MULT_ADVISED) }.
+//   The bare cable's shape doesn't depend on the counterweight, so it is
+//   solved first and the counterweight estimated from the track's pull along
+//   it; the track's share of the shape does depend on the counterweight, so
+//   the two are then settled together. A counterweight under MULT_FLOOR, or
+//   too light for the tether to leave the anchor MIN_DEPARTURE above
+//   horizontal, is raised.
+// Returns { ok: false, why: "inside" | "reach" | "landing" } or { ok: true,
+// sol (solveMeridianTether's), M (kg), mult, raised: null | "multiple" |
+// "departure", asked (kg or null) }.
+function sizeStructure(sys, q) {
+	var zGuess = NaN, asked = q.mass > 0 ? q.mass : null;
+	function solve(M, bare) {
+		var s = solveMeridianTether(sys.field, { latA: q.lat, rA: q.rA, rCW: q.rCW, M: M, rho: q.density, sigEff: q.sigmaEff,
+			lamMin: bare ? 0 : TRACK.min, lamGrav: bare ? 0 : TRACK.grav, stations: [], zGuess: zGuess });
+		if (s.ok) zGuess = s.zCW;
+		return s;
+	}
+	function lands(s) { return s.ok && s.departure >= MIN_DEPARTURE; }
+	// The least counterweight that leaves the anchor at MIN_DEPARTURE, from
+	// one that doesn't: grow until one does, then halve the gap.
+	function landingFloor(Mbad) {
+		var lo = Mbad, hi = Mbad * 1.5, s = null;
+		for (var i = 0; i < 14; i++) { s = solve(hi); if (lands(s)) break; lo = hi; hi *= 1.6; }
+		if (!s || !lands(s)) return null;
+		for (var j = 0; j < 16 && hi - lo > 0.002 * hi; j++) {
+			var mid = 0.5 * (lo + hi);
+			if (lands(solve(mid))) hi = mid; else lo = mid;
+		}
+		return hi;
+	}
+	if (!(q.rCW > sys.rStat)) return { ok: false, why: "inside" };
+	var sol = solve(1e8, true);
+	if (!sol.ok) return { ok: false, why: sol.why };
+	var M = asked || MULT_ADVISED * Math.abs(trackPull(sol, TRACK.min, TRACK.grav)) / (sol.gCW * sol.Esurf);
+	var floor = 0, raised = null;
+	for (var it = 0; it < 10; it++) {
+		sol = solve(M);
+		if (!lands(sol)) {
+			var Mf = landingFloor(M);
+			if (Mf == null) return { ok: false, why: "landing" };
+			floor = Mf;
+			sol = solve(Mf);
+			if (!sol.ok) return { ok: false, why: "landing" };
+		}
+		var req = counterweightFor(sol, MULT_FLOOR), want = asked || counterweightFor(sol, MULT_ADVISED);
+		var next = Math.max(want, req, floor);
+		raised = next > want * (1 + 1e-9) ? (floor > req ? "departure" : "multiple") : null;
+		var done = Math.abs(next - sol.M) <= 1e-5 * sol.M;
+		M = next;
+		if (done) break;
+	}
+	if (Math.abs(sol.M - M) > 1e-5 * M) sol = solve(M);
+	if (!sol.ok) return { ok: false, why: "landing" };
+	return { ok: true, sol: sol, M: M, mult: pullBalance(sol, M).mult, raised: raised, asked: asked };
+}
+
+export const MarsElevator = { TRACK: TRACK, MIN_DEPARTURE: MIN_DEPARTURE, sizeStructure: sizeStructure, marsSystem: marsSystem, anchor: anchor, phobosReach: phobosReach, deimosHazard: deimosHazard,
 	heightAtRadius: heightAtRadius, etaAt: etaAt, swings: swings, pumping: pumping, backupImpulse: backupImpulse,
 	westwardLean: westwardLean, releaseOrbit: releaseOrbit };

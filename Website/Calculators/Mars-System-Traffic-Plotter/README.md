@@ -2,18 +2,20 @@
 
 A to-scale 3-D view of the Mars system on a clock, for plotting cargo flights
 between the system's transport facilities: the Phobos skyhook, a hanging
-skyhook, a space elevator (Layout A or B) and a surface mass driver on the
-equator. Flights stay inside the system; it exchanges nothing with the Mission
+skyhook, a space elevator anchored off the equator and a surface mass driver
+on the equator. Flights stay inside the system; it exchanges nothing with the Mission
 Planner.
 
 **Built so far:** the scene and its clock — Mars turning, Phobos and Deimos on
 their orbits, the Sun — the three views, the POV buttons and click-to-follow;
 the Phobos skyhook and the hanging skyhook, with a release from any point of
 either tether flown to its end: down to the air, round an orbit, or out of
-Mars's sphere of influence; and the hanging skyhook's timing against the
+Mars's sphere of influence; the hanging skyhook's timing against the
 Phobos tether, with the sidesteps that keep the two apart marked on the date
-sliders. The space elevator and the mass driver are listed folded in the
-sidebar; flights from one skyhook to the other come next. The ground model for
+sliders; and the space elevator, with the limit it puts on the Phobos
+skyhook's top and its dodges of Deimos marked on the date sliders. The mass
+driver is listed folded in the sidebar; flights to and from the elevator, and
+the hanging skyhook's timing against it, come next. The ground model for
 the mass driver (terrain and the track profile) is in the core, not yet on the
 page.
 
@@ -23,7 +25,7 @@ page.
   view, key figures, sidebar. It computes nothing the core and
   `Shared/mars-ephemeris.js` could not.
 - `overlay.js` — what is drawn over the scene: each skyhook's tether and
-  markers, the flight's path and the ship.
+  markers, the space elevator's tether, the flight's path and the ship.
 - `scene.js` — the Three.js scene: Mars with its grid and spin arrows, the
   moons and their orbits, the areostationary ring, the sphere of influence,
   the Sun, and the stretch of Mars's orbit round the Sun it is on.
@@ -38,6 +40,9 @@ page.
   orbit, and the sidestep built from it. Pure.
 - `core/clearance.js` — the passes of the hanging tether through the plane of
   Phobos's orbit, their clearance, and the working-out of the sidesteps. Pure.
+- `core/elevator.js` — the space elevator: its figures, how far a Phobos
+  tether may reach beside it, Deimos's crossings and the dodges, and where its
+  tether is on the clock. Pure.
 - `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`: a
   release flown to its end, and what the page reads off it. Pure.
 - `core/arrival.js` — a flight's closest pass to the destination skyhook's
@@ -125,7 +130,9 @@ what they are at the instant shown.
 The foot may be set from 257 km (Mars's 115 km floor for a tether, plus the
 142 km the tether drops at Phobos's periapsis) to 50 km below Phobos; the top
 from 50 km above Phobos to 19,924 km, short of Deimos (`Shared/body-profiles.js`,
-`anchorConfig`). Defaults: foot 260 km, top 10,000 km. The release point is
+`anchorConfig`), or to the space elevator's limit where that is lower (see
+"Keeping clear of Phobos"). Defaults: foot 260 km, top 10,000 km; the page opens with the top at 6,800 km,
+under the default elevator's limit. The release point is
 anywhere between, set on the card or by dragging the pink marker.
 
 ## The hanging skyhook
@@ -220,6 +227,111 @@ sidestep at or after the date shown, the ballast's move, the times, the
 energy and peak power, and the orbit meanwhile. Changing the design clears the
 working. It stops at 400 sidesteps and says how far it got.
 
+## The space elevator
+
+One tether from an anchor off Mars's equator (the summit of Olympus Mons by
+default, 18.65° N, 226.2° E), bowing toward the equatorial plane and running
+out, a few hundred km off it, to a counterweight beyond areostationary orbit.
+The tether and its sizing are `Shared/meridian-tether.js` and
+`Calculators/Mars-Elevator/marsElevatorModel.js` (`sizeStructure`), derived in
+that folder's README; the figures match the workbench's Off-equator Mars
+Elevator cards for the same inputs, with the anchor on the areoid (the
+ground's own height is left out) and no stations.
+
+The card sets the anchor's latitude (within 20° of the equator) and longitude,
+the cable (early carbon nanotube at a safety factor of 1.5 to 3, or mature at
+1.5 to 4), and the counterweight's distance from Mars's centre and its mass.
+An empty mass takes the counterweight that holds the cable and its track up
+three times over; one too light to hold 1.5×, or to leave the anchor 10° above
+level, is raised. The card can leave the elevator out of the design.
+
+The tether lies in its anchor's meridian plane and turns with Mars. A point
+of it at distance `x` from the spin axis and height `z` above the equatorial
+plane is at
+
+    r = x * ( m cos(lon) + e sin(lon) ) + z * p
+
+- `m`, `e`, `p` — Mars's prime-meridian, 90°-east and pole directions at that
+  instant (`Shared/mars-ephemeris.js`)
+- `lon` — the anchor's east longitude
+
+### Keeping clear of Phobos
+
+A tether built on Phobos lies along the line from Mars's centre through
+Phobos, whose orbit is tilted 1.08° to the equator, so its point at distance
+`rho` from Mars's centre gets `rho * sin(1.08°)` from the equatorial plane, on
+either side. The Phobos skyhook's top may be set only as high as
+
+    z_e(rho) - swing(rho) - rho * sin(1.08°)  >=  50 km
+
+- `z_e(rho)` — the elevator tether's height above the plane at that distance
+- `swing(rho)` — the size of the Deimos-dodge swing there (zero for a tether
+  that ends short of Deimos)
+- `rho` — taken with Phobos at its apoapsis, 142 km beyond the card's altitude
+
+holds all the way up it. For the default elevator that is 6,838 km; the
+Phobos card gives the limit and a red marker on the Phobos tether's line
+shows it. An elevator that passes Phobos itself (at apoapsis, its radius
+added) by less than 50 km is refused. A stronger cable, a lower safety factor
+or a heavier counterweight all straighten the tether, which carries it
+farther off the plane and lets the Phobos tether reach farther.
+
+### Dodging Deimos
+
+Deimos crosses the tether's meridian plane every 131 h. Its **miss** at a
+crossing is its height above the equatorial plane less the tether's at the
+same distance, both from the clock. A crossing with a miss under 50 km (half
+the 100 km trigger band) is dodged with the tether's slowest north–south
+swing, built up to 60 km at Deimos's distance so that the tether stands at
+the far end of its swing, on the side away from Deimos, as Deimos crosses.
+The trigger band, the swing's size and the traffic figures below are fixed
+(`DODGE` and `TRAFFIC` in `core/elevator.js`).
+
+The swing is followed as a phasor `c`:
+
+    d(t) = Re( c(t) * exp(i W (t - t0)) )
+
+- `d` — the tether's displacement north at Deimos's distance
+- `W` — the swing's own angular frequency (its period is about 24.5 h)
+- `c` — the swing's size and phase; only the climber traffic changes it
+- `t0` — the start of the clock
+
+A dodge needs `c = D * dir * exp(-i W (t_pass - t0))` at the crossing, `D`
+being the 60 km and `dir` +1 for north or −1 for south. Timed traffic moves
+`c` by `D` in 6 swings at most, the build-up the pumping load is sized for. A
+**spell** of dodging builds the swing from rest over 6 swings, goes straight
+on to the phasor each further crossing needs while hazard crossings keep
+coming within 17.5 days (three crossings on, when Deimos is back near the
+same point of its orbit), then brings it to rest over 6 swings. Where two
+hazard crossings fall too close together for the traffic to turn the swing
+fully from one to the other, the phasors are chosen (over a grid on the disc
+of the full swing) to leave the lesser of the two misses as large as it can
+be. Every crossing's miss is then worked out with the tether where the swing
+has it, and the card gives the least of them.
+
+The spells appear as blue bars in the lower row under both date sliders, with
+a pale tick at each crossing dodged; the drawn tether shows the swing, each
+point moved by the swing's shape there (`northSouthModes`). **Previous dodge**
+and **Next dodge** move the date to a dodged crossing, and the card gives
+that crossing's miss, where the tether stands, and when the load timing
+starts and the swing is at rest again.
+
+In the 2080s Deimos's orbit is near the most tilted it gets (2.6° to the
+equator), so it is seldom at the tether's height when it crosses: about two
+crossings a year need a dodge, each on its own.
+
+### Pumping the swing
+
+Climbers are held on the slanted stretch 400 to 800 km above the anchor for
+half of each swing, slowed from 200 m/s to 20 m/s, to build the swing in 6
+swings (`MarsElevator.pumping`). The card gives the cargo that has to sit on
+the stretch during that half, the flow that keeps it there, and the swing's
+energy.
+
+Left out: the pull of the Sun and the moons on the tether, Mars's gravity
+beyond its equatorial bulge, the east–west sway and westward lean that
+climbing cargo causes, and how the swing changes the tension.
+
 ## A flight
 
 The **Flight** card at the top of the sidebar sets the flight: **From** one of
@@ -284,6 +396,7 @@ slow any slider.
 ## Dependencies
 
 `Shared/` (orbit, math-utils, mars-ephemeris, body-profiles, materials,
-body-leg, and the `sim/` scene kit), `Calculators/Hanging-skyhooks/skyhookModel.js`
-(the hanging skyhook's masses) and `MissionPlanner/scene-frames.js` (the star field). The
+body-leg, meridian-tether, radial-tether, and the `sim/` scene kit),
+`Calculators/Hanging-skyhooks/skyhookModel.js` (the hanging skyhook's masses),
+`Calculators/Mars-Elevator/marsElevatorModel.js` (the space elevator) and `MissionPlanner/scene-frames.js` (the star field). The
 folder breaks if moved without them.

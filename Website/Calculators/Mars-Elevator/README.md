@@ -16,7 +16,9 @@ design grid); an equatorial elevator at Mars stays blocked.
 - `marsElevatorModel.js`: what is Mars's own, pure (no DOM): the Mars system's
   figures, the anchor, Phobos's reach from the plane, Deimos's passes and
   dodges, the swing scaled to dodge size, pumping, the backup thrusters, the
-  westward lean, and the orbit after release
+  westward lean, the orbit after release, and `sizeStructure`: the cable, its
+  track and the counterweight settled together with no stations, for pages
+  without the Counterweight & stations card (the Mars System Traffic Plotter)
 - `marsElevatorModel.test.js`: Node test pinning the two design studies the
   cards were built from:
   `node --test Website/Calculators/Mars-Elevator/marsElevatorModel.test.js`

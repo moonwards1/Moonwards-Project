@@ -104,3 +104,17 @@ test("westward lean and release", function () {
 	assert.equal(rl.bound, true);
 	assert.ok(rl.rApo > 22820 * KM, "release is the periapsis");
 });
+
+test("sizing the structure: the track's counterweight, and the floors under it", function () {
+	var a = ME.anchor(sys, 18.65, 0), q = { lat: a.lat, rA: a.r, rCW: 51000 * KM, density: 1450, sigmaEff: 18e9 / 2.5 };
+	var s = ME.sizeStructure(sys, q);
+	assert.ok(s.ok); near(s.mult, 3, 1e-3, "multiple with no mass asked for"); assert.equal(s.raised, null);
+	near(s.M, 150.7e6, 0.01, "counterweight"); near(s.sol.departure / DEG, 16.8, 0.02, "departure");
+	// Asked for too little, it is raised until the tether leaves the anchor 10° up.
+	var light = ME.sizeStructure(sys, Object.assign({}, q, { mass: 50e6 }));
+	assert.equal(light.raised, "departure"); near(light.sol.departure, ME.MIN_DEPARTURE, 0.02, "departure at the floor");
+	// Asked for plenty, it is used as given.
+	var heavy = ME.sizeStructure(sys, Object.assign({}, q, { mass: 500e6 }));
+	assert.equal(heavy.raised, null); near(heavy.M, 500e6, 1e-9, "mass as asked"); assert.ok(heavy.mult > 9);
+	assert.equal(ME.sizeStructure(sys, Object.assign({}, q, { rCW: 20000 * KM })).why, "inside");
+});

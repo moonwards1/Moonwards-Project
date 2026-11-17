@@ -719,3 +719,26 @@ ballast does that without propellant.
 A tilt under 20° or over 160° is refused while the tethers share altitudes: that near
 the equator the tether stays beside Phobos's plane for too much of each orbit for timing
 to separate them. With no shared altitude any tilt is allowed.
+
+### In the Mars system, the space elevator limits the Phobos tether, and dodges Deimos on the clock
+
+With a space elevator in the Mars System Traffic Plotter's design, the Phobos
+skyhook's top is held short of where its tether, which sweeps ρ·sin(1.08°) from the
+equatorial plane at distance ρ, would come within 50 km of the elevator's tether
+(swung toward the plane by the dodge swing, Phobos at apoapsis): `KEEP_CLEAR` in
+`core/elevator.js`, applied by `moonSkyhookFigures` in `core/facilities.js`. An
+elevator that passes Phobos itself by less is refused. Why a hard limit and not
+timing: the elevator's tether stands still over the ground and the Phobos tether
+sweeps past it every 11 hours, at every height the two share.
+
+Deimos's crossings of the tether's meridian come from the ephemeris, not from the
+workbench card's chance-per-pass estimate; one with a miss under 50 km is dodged. The
+trigger band (100 km), the swing (60 km at Deimos's distance) and the climber traffic
+that pumps it (400–800 km stretch, 6 swings) are fixed in `core/elevator.js`, not
+inputs. The swing is carried as a phasor that timed traffic moves by one full swing
+in 6 cycles at most, so build-up, crossings close together and dying-down all come
+from one rule.
+
+The elevator's sizing is `MarsElevator.sizeStructure` (`Calculators/Mars-Elevator/`),
+the workbench card's rule without its stations; the pull multiples it is held to
+(`MULT_FLOOR`, `MULT_ADVISED`) live in `Shared/radial-tether.js`.
