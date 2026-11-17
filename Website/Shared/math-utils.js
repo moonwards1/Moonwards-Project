@@ -673,6 +673,30 @@ export const OrbitalMath = {
 			}
 			return s;
 		},
+		// Shortest distance between two straight segments in 3-D, a0–a1 and b0–b1
+		// (any units). With d1 = a1 − a0, d2 = b1 − b0 and w = a0 − b0, the points
+		// a0 + s·d1 and b0 + t·d2 are closest where
+		//   s = (b·f − c·e) / (a·e − b²),   t = (b·s + f) / e
+		//   a = d1·d1, e = d2·d2, b = d1·d2, c = d1·w, f = d2·w
+		// each held to 0..1, the other recomputed when one is held (parallel
+		// segments take s = 0). Returns { distance, s, t }.
+		segmentDistance: function (a0, a1, b0, b1) {
+			var M = OrbitalMath, d1 = M.vSub(a1, a0), d2 = M.vSub(b1, b0), w = M.vSub(a0, b0);
+			var a = M.vDot(d1, d1), e = M.vDot(d2, d2), f = M.vDot(d2, w);
+			function clamp(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+			var s = 0, t = 0;
+			if (a > 0 && e > 0) {
+				var b = M.vDot(d1, d2), c = M.vDot(d1, w), den = a * e - b * b;
+				s = den > 1e-12 * a * e ? clamp((b * f - c * e) / den) : 0;
+				t = (b * s + f) / e;
+				if (t < 0) { t = 0; s = clamp(-c / a); }
+				else if (t > 1) { t = 1; s = clamp((b - c) / a); }
+			} else if (a > 0) { s = clamp(-M.vDot(d1, w) / a); }
+			else if (e > 0) { t = clamp(f / e); }
+			var gap = M.vSub(M.vAdd(a0, M.vScale(d1, s)), M.vAdd(b0, M.vScale(d2, t)));
+			return { distance: M.vMag(gap), s: s, t: t };
+		},
+
 		// Shortest distance (m) from a 3-D point P (m, J2000 ecliptic, Sun-centred)
 		// to the ellipse a body traces — i.e. to its orbit *ring*, independent of
 		// where the body is on it. `orbit` carries {a, e, inclination, longitude

@@ -24,6 +24,10 @@
  * tether rises and falls by that much: a point's ALTITUDE is quoted at
  * Phobos's mean distance, and is up to 142 km more or less at any instant.
  *
+ * THE HANGING SKYHOOK is a tether on an orbit of its own, tilted to the
+ * equator: its figures and where it is on the clock are core/hanging-skyhook.js.
+ * The functions at the end of this file read either skyhook the same way.
+ *
  * Pure (no DOM, no THREE): Node-tested in core/tests/.
  */
 
@@ -31,6 +35,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { MarsEphemeris as ME } from "../../../Shared/mars-ephemeris.js";
 import { anchorConfig, BODY_PROFILES } from "../../../Shared/body-profiles.js";
+import { HANGING_DEFAULTS, hangingFigures, hangingAt, hangingPointState } from "./hanging-skyhook.js";
 
 var O = OrbitalMath;
 var MARS = systems.get("Mars");
@@ -49,8 +54,13 @@ export var FACILITIES = {
 	phobosSkyhook: {
 		id: "phobosSkyhook", kind: "moonSkyhook", label: "Phobos skyhook", moon: "Phobos",
 		defaults: { footAlt: 260e3, topAlt: 10000e3, relAlt: 260e3 }
+	},
+	hangingSkyhook: {
+		id: "hangingSkyhook", kind: "hangingSkyhook", label: "Hanging skyhook", defaults: HANGING_DEFAULTS
 	}
 };
+// The facilities a ship can be let go from, in the order they are listed.
+export var SKYHOOKS = ["phobosSkyhook", "hangingSkyhook"];
 
 export function facility(id) {
 	var f = FACILITIES[id];
@@ -143,14 +153,42 @@ export function tetherPointState(at, s) {
 	return { r: O.vAdd(at.rMoon, O.vScale(at.u, s)), v: O.vAdd(at.vMoon, O.vScale(at.uDot, s)) };
 }
 
-// A facility's figures, whatever its kind.
-export function facilityFigures(id, params) { return moonSkyhookFigures(id, params); }
+// ---- either skyhook --------------------------------------------------------------
 
-// The state a ship is let go with from the facility `fig` at Julian date jd:
+// Every skyhook's figures for the plotter's params { <facility id>: params }.
+// The hanging skyhook is read against the Phobos skyhook, whose tether it must
+// keep clear of; a facility whose params are null is not in the design and
+// gets no entry.
+export function allFigures(params) {
+	var p = params || {}, out = {};
+	if (p.phobosSkyhook !== null) { out.phobosSkyhook = moonSkyhookFigures("phobosSkyhook", p.phobosSkyhook); }
+	if (p.hangingSkyhook !== null) { out.hangingSkyhook = hangingFigures(p.hangingSkyhook, out.phobosSkyhook || null); }
+	return out;
+}
+
+// Where the skyhook `fig` is at Julian date jd: skyhookAt's result or
+// hanging-skyhook.js's hangingAt's. Both carry the tether's direction `u`.
+export function facilityAt(fig, jd) {
+	return fig.kind === "hangingSkyhook" ? hangingAt(fig, jd) : skyhookAt(fig, jd);
+}
+
+// State { r, v } of the point of the tether at distance s from its centre
+// (Phobos, or the hanging skyhook's centre of mass), positive away from Mars.
+export function pointState(fig, at, s) {
+	return fig.kind === "hangingSkyhook" ? hangingPointState(at, s) : tetherPointState(at, s);
+}
+
+// The centre's distance from Mars's centre at that instant, m.
+export function centreRadius(fig, at) { return fig.kind === "hangingSkyhook" ? at.rCom : at.dist; }
+
+// The altitude the card gives for the point at distance s from the centre, m.
+export function altitudeOf(fig, s) { return (fig.kind === "hangingSkyhook" ? fig.rCom : fig.a) + s - fig.R; }
+
+// The state a ship is let go with from the skyhook `fig` at Julian date jd:
 // { r, v } from Mars's centre, `radius` (m from Mars's centre) and `altitude`
 // (m above the mean radius) of the release point at that instant, and `at`,
-// skyhookAt's result.
+// facilityAt's result.
 export function releaseState(fig, jd) {
-	var at = skyhookAt(fig, jd), st = tetherPointState(at, fig.sRel);
-	return { r: st.r, v: st.v, radius: at.dist + fig.sRel, altitude: at.dist + fig.sRel - fig.R, at: at };
+	var at = facilityAt(fig, jd), st = pointState(fig, at, fig.sRel), radius = centreRadius(fig, at) + fig.sRel;
+	return { r: st.r, v: st.v, radius: radius, altitude: radius - fig.R, at: at };
 }

@@ -8,10 +8,12 @@ Planner.
 
 **Built so far:** the scene and its clock — Mars turning, Phobos and Deimos on
 their orbits, the Sun — the three views, the POV buttons and click-to-follow;
-and the Phobos skyhook, with a release from any point of its tether flown to
-its end: down to the air, round an orbit, or out of Mars's sphere of influence.
-The other facilities are listed folded in the sidebar; the hanging skyhook,
-with flights from one skyhook to the other, comes next. The ground model for
+the Phobos skyhook and the hanging skyhook, with a release from any point of
+either tether flown to its end: down to the air, round an orbit, or out of
+Mars's sphere of influence; and the hanging skyhook's timing against the
+Phobos tether, with the sidesteps that keep the two apart marked on the date
+sliders. The space elevator and the mass driver are listed folded in the
+sidebar; flights from one skyhook to the other come next. The ground model for
 the mass driver (terrain and the track profile) is in the core, not yet on the
 page.
 
@@ -20,7 +22,7 @@ page.
 - `marsSystemTraffic.html`, `.css` (`mst-` prefix), `.js` — the page: date bar,
   view, key figures, sidebar. It computes nothing the core and
   `Shared/mars-ephemeris.js` could not.
-- `overlay.js` — what is drawn over the scene: the skyhook's tether and
+- `overlay.js` — what is drawn over the scene: each skyhook's tether and
   markers, the flight's path and the ship.
 - `scene.js` — the Three.js scene: Mars with its grid and spin arrows, the
   moons and their orbits, the areostationary ring, the sphere of influence,
@@ -28,7 +30,14 @@ page.
   `place(jd, viewId)` puts everything where the clock has it.
 - `core/clock.js` — `CLOCK_EPOCH` (2080-01-01) and `SPAN_DAYS`. Pure.
 - `core/facilities.js` — the facilities as data, and their kinematics on the
-  clock: the Phobos skyhook's figures, limits and tether points. Pure.
+  clock: the Phobos skyhook's figures, limits and tether points, and the
+  functions that read either skyhook the same way. Pure.
+- `core/hanging-skyhook.js` — the hanging skyhook: its figures, its masses,
+  its resonances with Phobos, and where it is on the clock. Pure.
+- `core/ballast.js` — what moving ballast along a hanging skyhook does to its
+  orbit, and the sidestep built from it. Pure.
+- `core/clearance.js` — the passes of the hanging tether through the plane of
+  Phobos's orbit, their clearance, and the working-out of the sidesteps. Pure.
 - `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`: a
   release flown to its end, and what the page reads off it. Pure.
 - `core/view-frames.js` — `viewBasis(kind, jd)` and `toView`: the axes the view
@@ -115,11 +124,104 @@ from 50 km above Phobos to 19,924 km, short of Deimos (`Shared/body-profiles.js`
 `anchorConfig`). Defaults: foot 260 km, top 10,000 km. The release point is
 anywhere between, set on the card or by dragging the pink marker.
 
+## The hanging skyhook
+
+A tether held upright on a circular orbit of its own. It lies along the line
+from Mars's centre through its centre of mass (C.o.M.), which goes round at
+
+    w = sqrt( GM / r_c^3 )
+
+- `r_c` — the C.o.M.'s distance from Mars's centre
+- `GM` — Mars's gravitational parameter
+
+so a point at radius `r` moves at `w * r`. Mars's equatorial bulge turns the
+orbit's plane about Mars's spin axis:
+
+    dNode/dt = -k * cos(i)
+    k = (3/2) J2 GM Req^2 * sum( m / r^3 ) / ( w * sum( m r^2 ) )
+
+- `i` — the orbit's tilt to Mars's equator
+- `J2`, `Req` — the bulge's coefficient and its reference radius
+- `m`, `r` — every piece of the skyhook: stations, ballast, slices of tether
+
+**Sun-synchronous** is the tilt at which the plane turns once a Mars year
+(`cos(i) = -n_Sun / k`, about 93° for the default). The plane starts the clock
+face-on to the Sun. The bulge's small effect on the rate round the orbit is
+left out. The masses are the Hanging-skyhooks calculator's model
+(`computeSkyhook`): a tether of constant stress in best lunar silica at a
+safety factor of 3, a station at each end, an anchor station placed where it
+balances the two halves, and two lots of ballast at their homes: one that may
+ride anywhere on the tether (at the foot by default) and an upper one riding
+above the C.o.M. (at the top by default). A set of altitudes and masses the
+anchor station cannot balance is refused.
+
+The card can leave the hanging skyhook out of the design.
+
+### Keeping clear of the Phobos tether
+
+Both tethers lie along lines through Mars's centre, so they can touch only
+where those lines point the same way. The hanging tether passes through the
+plane of Phobos's orbit twice an orbit; the **clearance** of a pass is the
+least distance between the two tethers around it. Where the tethers share no
+altitude nothing needs timing. Where they do, a tilt under 20° or over 160°
+is refused: that near the equator the tether stays beside Phobos's plane for
+too much of each orbit.
+
+**Resonances.** With `p` orbits of the skyhook to `q` turns of Phobos, both
+counted against the skyhook's own node line, the passes find the Phobos tether
+in a fixed set of `D` directions as seen from the passing tether:
+
+    D = denominator of (p - q) / (2 p) in lowest terms
+    gap = 180° / D
+
+- `gap` — how far round Mars the Phobos tether stays from every pass, with
+  the passes timed midway between those directions
+
+4:1 gives 22.5°, 3:1 gives 60°, 2:1 gives 45°. The card lists the resonant
+C.o.M. altitudes on the tether; clicking one sets the C.o.M. to it exactly. A
+resonance has to be held closely: 1 km off the 4:1 altitude is a drift of half
+a degree a day. Any other period is allowed, and the card says how far it is
+from the nearest resonance, how often a sidestep is then needed and which way
+it must change the rate.
+
+**Sidesteps.** While ballast moves along the tether nothing pushes on the
+skyhook from outside, so two things hold:
+
+    L = w * sum( m r^2 )                          angular momentum, unchanged
+    w^2 = GM * sum( m / r^2 ) / sum( m r )        the rate at which it neither rises nor falls
+
+The whole skyhook settles higher or lower until both hold with the ballast in
+its new place, and the `w` that results is its new rate: ballast far from the
+C.o.M. makes it lower and faster, ballast near the C.o.M. higher and slower.
+Ballast at the foot, beside the C.o.M., can therefore only speed the skyhook
+up; the upper ballast, brought down toward the C.o.M., slows it. A sidestep is
+one lot of ballast out, held, and home again, whichever lot and direction slips
+the skyhook soonest; the skyhook has then slipped
+round its orbit and the orbit is as it was, so thrusters owe nothing. The work
+the ballast's drive does is the difference in
+
+    E = w^2 * sum( m r^2 ) / 2  -  GM * sum( m / r )
+
+between the settled states, and comes back, sign reversed, on the way home.
+The ballast is not taken so far that the foot sinks below 115 km. The strain
+on the tether while the ballast is away from home is not checked.
+
+**Work out the sidesteps** goes through every pass of the date span. At the
+first closer than the least clearance it puts a sidestep just before, trying
+every slip from 1/24 of an orbit to a whole one, ahead and behind, and keeping
+the one that puts off the next close pass longest. The sidesteps appear as
+amber bars under both date sliders and move the skyhook in the scene; spells
+of close passes that no sidestep puts off are red. The card gives, for the
+sidestep at or after the date shown, the ballast's move, the times, the
+energy and peak power, and the orbit meanwhile. Changing the design clears the
+working. It stops at 400 sidesteps and says how far it got.
+
 ## A flight
 
-A ship is let go with the position and velocity its release point has at the
-release instant: the date bar's date plus the **Release time** slider, which
-spans one orbit of Phobos. It then coasts under
+A ship is let go from the skyhook chosen under **Release from** (or the one
+whose pink marker was last dragged), with the position and velocity its
+release point has at the release instant: the date bar's date plus the
+**Release time** slider, which spans one orbit of that skyhook. It then coasts under
 
     a = -GM r / |r|^3  +  a_bulge(r)  +  a_Sun(r, t)
 
@@ -146,14 +248,15 @@ time. In a turning view the path is drawn as that view sees it.
 
 ## Pointing at the scene
 
-Clicking Mars, a moon, the ship or one of the skyhook's markers (foot, top,
-release point) makes the camera follow it; the label in the view's
+Clicking Mars, a moon, the ship or one of a skyhook's markers (foot, top,
+release point, the hanging skyhook's centre of mass) makes the camera follow it; the label in the view's
 corner names it, and its ✕ or a right-drag pan lets go. The POV buttons set
 what is followed and how far back the camera sits. Shift (¼) and Ctrl (1/10)
 slow any slider.
 
 ## Dependencies
 
-`Shared/` (orbit, math-utils, mars-ephemeris, body-profiles, body-leg, and the
-`sim/` scene kit) and `MissionPlanner/scene-frames.js` (the star field). The
+`Shared/` (orbit, math-utils, mars-ephemeris, body-profiles, materials,
+body-leg, and the `sim/` scene kit), `Calculators/Hanging-skyhooks/skyhookModel.js`
+(the hanging skyhook's masses) and `MissionPlanner/scene-frames.js` (the star field). The
 folder breaks if moved without them.

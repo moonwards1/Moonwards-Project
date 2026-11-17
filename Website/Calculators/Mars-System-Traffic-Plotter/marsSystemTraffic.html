@@ -26,11 +26,14 @@
 					<button type="button" data-pov="low">Low orbit &amp; surface</button>
 					<button type="button" data-pov="phobos">Phobos</button>
 				</div>
+				<label class="mst-date-caption mst-pov-caption" for="mst-from">Release from</label>
+				<select id="mst-from" aria-label="The skyhook the ship is let go from"></select>
 			</div>
 			<div class="mst-slider-line">
 				<span class="mst-slider-end">2080</span>
 				<div class="mst-track">
 					<input type="range" id="mst-date-coarse" min="0" max="2061" step="1" value="0" aria-label="Date, 2080 to 2085: three Mars years">
+					<div class="mst-marks" id="mst-marks-coarse"></div>
 				</div>
 				<span class="mst-slider-end">2085</span>
 			</div>
@@ -38,6 +41,7 @@
 				<span class="mst-slider-end" id="mst-fine-lo"></span>
 				<div class="mst-track">
 					<input type="range" id="mst-date-fine" min="-1.5" max="1.5" step="0.0002" value="0" aria-label="Time, three days around the slider above">
+					<div class="mst-marks" id="mst-marks-fine"></div>
 				</div>
 				<span class="mst-slider-end" id="mst-fine-hi"></span>
 			</div>
@@ -63,7 +67,7 @@
 					<div id="mst-frames" class="mst-buttons" role="group" aria-label="What the view is held still against"></div>
 					<div id="mst-view-hud">
 						<div class="mst-hud-line"><span class="mst-hud-key">drag</span> rotate &nbsp; <span class="mst-hud-key">wheel</span> zoom &nbsp; <span class="mst-hud-key">right-drag</span> pan &nbsp; <span class="mst-hud-key">click</span> anything to follow it</div>
-						<div class="mst-hud-line">Drag the pink marker along the tether to move the release point.</div>
+						<div class="mst-hud-line">Drag a pink marker along its tether to move the release point and let the ship go from that skyhook.</div>
 						<div class="mst-hud-line">On any slider: hold <span class="mst-hud-key">shift</span> to scrub at ¼ speed, <span class="mst-hud-key">ctrl</span> at 1/10.</div>
 					</div>
 				</div>
@@ -95,6 +99,13 @@
 						<span class="mst-swatch" style="background:#8fd0c8"></span> skyhook foot
 						<span class="mst-swatch" style="background:#9fb6ff"></span> skyhook top
 						<span class="mst-swatch" style="background:#ff5fd0"></span> release point
+						<span class="mst-swatch" style="background:#fff2b0"></span> centre of mass
+						<span class="mst-swatch" style="background:#e8b24a"></span> ballast
+					</div>
+					<div class="mst-row mst-legend">
+						On the date sliders:
+						<span class="mst-swatch" style="background:#e8b24a"></span> a sidestep
+						<span class="mst-swatch" style="background:#ff5a4d"></span> close passes the ballast cannot avoid
 					</div>
 					<div class="mst-row mst-legend">
 						Path:
@@ -140,9 +151,26 @@
 				round its orbit, or leaves Mars's sphere of influence. In a
 				turning view the path is the ship's track against whatever the
 				view holds still. The Release time slider spans one orbit of
-				Phobos; the Flight slider moves the whole scene to that time
-				after release. The other facilities and flights from one to
-				another are added in later steps.
+				the skyhook the ship leaves; the Flight slider moves the whole
+				scene to that time after release. The hanging skyhook is a
+				tether held upright on a circular orbit of its own, turning at
+				the rate of a free orbit at its centre of mass; Mars's
+				equatorial bulge turns that orbit's plane, and at the
+				sun-synchronous tilt it turns once a Mars year, keeping pace
+				with the Sun (which, on Mars's eccentric orbit, runs up to 11°
+				ahead of or behind that steady pace). Its tether passes
+				through the plane of Phobos's orbit twice an orbit; the
+				clearance of a pass is the least distance between the two
+				tethers around it. Moving ballast along the tether changes how
+				fast the skyhook goes round without changing its angular
+				momentum, so a sidestep — ballast out, held, and home again —
+				slips it round its orbit and leaves the orbit as it was, with
+				nothing for thrusters to make up. The tether's masses are the
+				Hanging skyhooks calculator's model with best lunar silica at
+				a safety factor of 3; the strain on the tether while the
+				ballast is away from home is not checked. The space elevator,
+				the mass driver and flights from one facility to another are
+				added in later steps.
 				</p>
 			</div>
 

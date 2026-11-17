@@ -676,3 +676,19 @@ test("j2Acceleration: matches the textbook components, in any axes", function ()
 	var b = O.j2Acceleration(GM_E, J2_E, RE, [p[2], p[1], p[0]], [1, 0, 0]);
 	assert.ok(Math.abs(b[0] - a[2]) < 1e-15 && Math.abs(b[2] - a[0]) < 1e-15);
 });
+
+test("segmentDistance: skew, end-limited and parallel segments", function () {
+	// Skew lines crossing 3 apart, nearest at each one's middle.
+	var a = O.segmentDistance([-1, 0, 0], [1, 0, 0], [0, -1, 3], [0, 1, 3]);
+	assert.ok(Math.abs(a.distance - 3) < 1e-12 && Math.abs(a.s - 0.5) < 1e-12 && Math.abs(a.t - 0.5) < 1e-12);
+	// Two stretches of rays from one point, 30° apart: nearest at the lower end of the higher one.
+	var c = Math.cos(Math.PI / 6), s = Math.sin(Math.PI / 6);
+	var b = O.segmentDistance([2, 0, 0], [10, 0, 0], [4 * c, 4 * s, 0], [9 * c, 9 * s, 0]);
+	assert.ok(Math.abs(b.distance - 4 * s) < 1e-12 && b.t === 0, "distance " + b.distance);
+	// The nearest point of the first lies past its end: held there.
+	var e = O.segmentDistance([2, 0, 0], [3, 0, 0], [4 * c, 4 * s, 0], [9 * c, 9 * s, 0]);
+	assert.ok(Math.abs(e.distance - Math.hypot(4 * c - 3, 4 * s)) < 1e-12 && e.s === 1);
+	// Parallel, and a segment of no length.
+	assert.ok(Math.abs(O.segmentDistance([0, 0, 0], [5, 0, 0], [1, 2, 0], [4, 2, 0]).distance - 2) < 1e-12);
+	assert.ok(Math.abs(O.segmentDistance([0, 0, 0], [0, 0, 0], [3, 4, 0], [3, 9, 0]).distance - 5) < 1e-12);
+});

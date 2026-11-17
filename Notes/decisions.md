@@ -701,3 +701,21 @@ at the sphere of influence.
 The Phobos skyhook's altitudes are stated with Phobos at its mean distance; the tether
 rides Phobos's eccentric orbit, 142 km up and down, along the line from Mars's centre
 through Phobos's.
+
+### The hanging skyhook at Mars keeps clear of the Phobos tether by timing, re-timed with ballast
+
+Where the two tethers share altitudes, the hanging skyhook's passes through the plane
+of Phobos's orbit are timed to miss the Phobos tether (`core/clearance.js`). A period in
+resonance with Phobos holds that timing by itself: with p orbits to q turns of Phobos
+against the skyhook's node line, the passes find the Phobos tether in D fixed
+directions, D the denominator of (p − q)/(2p) in lowest terms, and the gap is 180°/D
+(4:1 → 22.5°, 3:1 → 60°). Any other period is allowed and is re-timed by **sidesteps**:
+ballast out along the tether, held, and home again (`core/ballast.js`). Angular
+momentum is unchanged while ballast moves, so the skyhook only turns faster or slower
+while the ballast is away and the orbit returns with it: a sidestep owes thrusters
+nothing. Why not thrusters: the timing has to be changed within a day or two, and
+ballast does that without propellant.
+
+A tilt under 20° or over 160° is refused while the tethers share altitudes: that near
+the equator the tether stays beside Phobos's plane for too much of each orbit for timing
+to separate them. With no shared altitude any tilt is allowed.

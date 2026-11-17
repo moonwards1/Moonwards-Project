@@ -27,7 +27,7 @@ import { systems } from "../../../Shared/orbit.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 import { MarsEphemeris as ME } from "../../../Shared/mars-ephemeris.js";
 import { buildIntegratedLeg, bodySOI, stateAtLegTime } from "../../../Shared/body-leg.js";
-import { facilityFigures, releaseState, GM_MARS, R_MARS, ENTRY_ALT } from "./facilities.js";
+import { allFigures, releaseState, GM_MARS, R_MARS, ENTRY_ALT } from "./facilities.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -97,13 +97,14 @@ function summarize(leg, rel, jd) {
 //   input: { from, jd, params }
 //     from     facility id (core/facilities.js) the ship is released from
 //     jd       release Julian date
-//     params   optional { <facility id>: its params }
+//     params   optional { <facility id>: its params; null for one not in the design }
 // Returns { ok: true, from, jd, fig, release, leg, summary } or { ok: false, diagnostic }.
-//   fig      the origin's figures (facilities.js's facilityFigures)
+//   fig      the origin's figures (facilities.js's allFigures)
 //   release  facilities.js's releaseState at jd
 //   leg      the Shared/body-leg.js leg flown: Mars-centred { r, v, t } samples
 export function computeFlight(input) {
-	var fig = facilityFigures(input.from, input.params && input.params[input.from]);
+	var fig = allFigures(input.params)[input.from];
+	if (!fig) { return { ok: false, diagnostic: { code: "no-facility", message: "That facility is not in the design.", values: {} } }; }
 	if (!fig.ok) { return fig; }
 	var rel = releaseState(fig, input.jd);
 	var leg = buildIntegratedLeg("Mars", rel.r, rel.v, input.jd, LEG_OPTS);
