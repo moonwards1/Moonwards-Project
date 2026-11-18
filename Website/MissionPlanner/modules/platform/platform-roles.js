@@ -34,6 +34,8 @@ import { makeDiagnostic } from "../../core/diagnostics.js";
 import { releaseEpochFor } from "../../core/release-epoch.js";
 import { approachAt, approachFromPass, interceptWarning } from "../arrival-approach.js";
 import { passFor as arrivalPassFor } from "../arrival-leg/arrival-leg.js";
+import { WORKBENCH_STORE_KEY, importsFromWorkbench, readWorkbenchDesign, workbenchConfigs }
+	from "../../core/workbench-import.js";
 import { RELEASE, CATCH, validatePlatformSpec, resolvePlatformParams,
          paramsForRole, paramToDisplay, paramFromDisplay,
          createStageCache } from "./platform-spec.js";
@@ -515,8 +517,10 @@ function attachModifierStep(input, plainStep) {
 // ---- the shared card and draw plumbing ------------------------------------
 
 // The declared-parameter card: the platform's note, one control per param that
-// applies to this role, and its readouts. A platform adds a control by adding
-// a line to its `params` list. `hostCache` remembers the card's own content
+// applies to this role, its readouts, and — where the home page's workbench has
+// a calculator for the platform — the import button in the title row
+// (addWorkbenchImport). A platform adds a control by adding a line to its
+// `params` list. `hostCache` remembers the card's own content
 // host so drawPlatform can anchor the straddling readout box on it — every
 // platform's card gets the same anchor, no per-platform DOM needed.
 function buildPlatformCard(spec, ctx, role, cache, hostCache) {
@@ -546,6 +550,9 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 		var u = document.createElement("span"); u.className = "mp-unit"; u.textContent = text;
 		return u;
 	}
+	// Each control's way of showing the stage's current value again, for when
+	// the params change from outside the control (an import).
+	var syncs = [];
 
 	if (spec.note) {
 		var note = document.createElement("div"); note.className = "mp-muted mp-tech-note";
@@ -575,6 +582,10 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 			slider.value = paramToDisplay(p, fullParams()[p.name]);
 			sliderRow.appendChild(slider);
 			attachFineDrag(slider);
+			syncs.push(function () {
+				var shown = paramToDisplay(p, fullParams()[p.name]);
+				num.value = shown; slider.value = shown;
+			});
 
 			// Dragging the slider issues transient sets (live redraft, coalescible
 			// by a future undo); releasing the handle commits. The number field
@@ -621,6 +632,10 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 			var nudge = document.createElement("input");
 			nudge.type = "range"; nudge.min = -1; nudge.max = 1; nudge.step = 0.001; nudge.value = 0;
 			nudgeRow.appendChild(leftArrow); nudgeRow.appendChild(nudge); nudgeRow.appendChild(rightArrow);
+			syncs.push(function () {
+				current = fullParams()[p.name];
+				nNum.value = paramToDisplay(p, current);
+			});
 
 			nNum.addEventListener("change", function () {
 				var v = parseFloat(nNum.value);
@@ -644,6 +659,7 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 			var inp = document.createElement("input");
 			inp.type = "number"; inp.step = p.step;
 			inp.value = paramToDisplay(p, fullParams()[p.name]);
+			syncs.push(function () { inp.value = paramToDisplay(p, fullParams()[p.name]); });
 			wrap.appendChild(inp);
 			wrap.appendChild(unitSpan(p.unit || ""));
 			inp.addEventListener("change", function () {
@@ -654,6 +670,10 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 
 		el.appendChild(wrap);
 		host.appendChild(el);
+	});
+
+	addWorkbenchImport(spec, ctx, role, fullParams, function () {
+		syncs.forEach(function (fn) { fn(); });
 	});
 
 	if (spec.readouts) {
@@ -670,6 +690,77 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 			});
 		});
 	}
+}
+
+// The import button at the right of the card's title row: brings in the
+// settings of the matching facility on the home page's workbench, read from
+// the design saved there (core/workbench-import.js says which installation
+// fills which param, and how). Green when the saved design has one to import,
+// greyed with the reason in its tooltip when not. Several candidates (two
+// hanging skyhooks at one body) open a small menu to choose from. What is
+// available is read again whenever the saved design changes in another
+// window or frame (the storage event) and when this window regains focus.
+// `onImported` brings the card's controls up to the new values.
+function addWorkbenchImport(spec, ctx, role, fullParams, onImported) {
+	if (!ctx.headerHost || !importsFromWorkbench(spec.id)) { return; }
+	var wrap = document.createElement("span"); wrap.className = "mp-import-wrap";
+	var btn = document.createElement("button"); btn.type = "button"; btn.className = "mp-import";
+	btn.textContent = "import";
+	var menu = document.createElement("div"); menu.className = "mp-import-menu"; menu.hidden = true;
+	wrap.appendChild(btn); wrap.appendChild(menu);
+	ctx.headerHost.appendChild(wrap);
+
+	var offer = { configs: [], why: null };
+	function closeMenu() {
+		menu.hidden = true;
+		document.removeEventListener("pointerdown", onOutside, true);
+	}
+	function onOutside(e) { if (!wrap.contains(e.target)) { closeMenu(); } }
+	function apply(cfg) {
+		closeMenu();
+		ctx.world.set({ stage: ctx.stageId, params: cfg.params });
+		onImported();
+	}
+	function refresh() {
+		if (!btn.isConnected) {   // the card was removed
+			window.removeEventListener("storage", onStorage);
+			window.removeEventListener("focus", refresh);
+			return;
+		}
+		var text = null;
+		try { text = localStorage.getItem(WORKBENCH_STORE_KEY); } catch (e) { /* storage blocked: nothing saved */ }
+		offer = workbenchConfigs(readWorkbenchDesign(text), spec.id, role, fullParams().body);
+		var n = offer.configs.length;
+		btn.classList.toggle("mp-off", n === 0);
+		btn.setAttribute("aria-disabled", n === 0 ? "true" : "false");
+		btn.title = n === 0 ? offer.why
+			: n === 1 ? "Bring in the " + offer.configs[0].label + " from the workbench: " + offer.configs[0].detail + "."
+			: "Choose which of the workbench's " + n + " facilities here to bring in.";
+		if (n === 0) { closeMenu(); }
+	}
+	function onStorage(e) { if (e.key === null || e.key === WORKBENCH_STORE_KEY) { refresh(); } }
+
+	btn.addEventListener("click", function () {
+		refresh();
+		var n = offer.configs.length;
+		if (n === 0) { return; }
+		if (n === 1) { apply(offer.configs[0]); return; }
+		if (!menu.hidden) { closeMenu(); return; }
+		menu.innerHTML = "";
+		offer.configs.forEach(function (cfg) {
+			var item = document.createElement("button"); item.type = "button"; item.className = "mp-import-item";
+			var name = document.createElement("span"); name.textContent = cfg.label;
+			var detail = document.createElement("span"); detail.className = "mp-muted"; detail.textContent = cfg.detail;
+			item.appendChild(name); item.appendChild(detail);
+			item.addEventListener("click", function () { apply(cfg); });
+			menu.appendChild(item);
+		});
+		menu.hidden = false;
+		document.addEventListener("pointerdown", onOutside, true);
+	});
+	window.addEventListener("storage", onStorage);
+	window.addEventListener("focus", refresh);
+	refresh();
 }
 
 // The platform's own draw, given everything role-dependent already resolved:

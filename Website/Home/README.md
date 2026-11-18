@@ -116,7 +116,11 @@ is shown and kept hidden while the viewer looks elsewhere, so its settings
 survive moving around the design. Removing the installation removes it;
 importing a design replaces them all. Save and Export copy each calculator's
 `getState()` into its installation's `state`, which is handed back on the
-next mount.
+next mount. The Mission Planner reads the saved design too, to fill its
+skyhook and L1/L2 elevator cards (`MissionPlanner/core/workbench-import.js`):
+it reads the hanging skyhook's top, centre-of-mass and release-deck fields and
+the Lagrange elevators' counterweight distance by their saved keys, so keep
+those keys stable.
 
 ## Dependencies
 

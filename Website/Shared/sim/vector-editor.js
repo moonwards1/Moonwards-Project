@@ -6,27 +6,23 @@
  * a numeric-input row underneath. Values are m/s in and out; the widget
  * displays and edits in km/s (±15 km/s range, shift-drag for fine control).
  *
- * Two SVG layers, drawn independently:
- * - `world`: the isometric reference glyph, the faint axis guide rays, and
- *   the draggable arrows — the whole picture moves and scales together, so
- *   an arrow is always drawn on top of its own axis. Zoom/pan is user-
- *   controlled, so a small burn can be zoomed in until it's as easy to grab
- *   as a large one. The layer carries NO transform: every point is mapped
- *   world→screen in JS and written as plain coordinates on each redraw.
- *   A scale() transform on the group would let the browser stretch its
- *   cached bitmap of the layer and only repaint it sharp seconds later,
- *   which reads as a blurry picture after every zoom step.
- * - `overlay`: just the per-axis letter (P / R / N) at each axis's end.
- *   Never transforms, so the letters stay put (and legible) at any zoom/pan
- *   level. The values themselves are read from the number row, not the
- *   picture.
+ * The picture is one SVG layer, `world`: the isometric reference glyph, the
+ * faint axis guide rays, and the draggable arrows — it all moves and scales
+ * together, so an arrow is always drawn on top of its own axis. Zoom/pan is
+ * user-controlled, so a small burn can be zoomed in until it's as easy to
+ * grab as a large one. The layer carries NO transform: every point is mapped
+ * world→screen in JS and written as plain coordinates on each redraw. A
+ * scale() transform on the group would let the browser stretch its cached
+ * bitmap of the layer and only repaint it sharp seconds later, which reads
+ * as a blurry picture after every zoom step. The picture carries no text:
+ * the axes are told apart by colour, and the values are read from the
+ * number row, whose fields are named and coloured per axis.
  * Zoom only ever happens when the user asks for it — no auto-fit-on-load,
  * since a view that rescales itself is disorienting mid-drag and surprising
  * on open. The wheel zooms about the point under the cursor. The +/−
  * buttons zoom about the middle of the view. Zooming all the way back out
- * returns the view home (no pan). Clicking an axis's letter, or putting the
- * cursor in that axis's number field, zooms to that axis's arrowhead and
- * centres it — FOCUS ZOOM, the quick way to a precise drag on a long arrow.
+ * returns the view home (no pan). Putting the cursor in an axis's number
+ * field zooms to that axis's arrowhead and centres it — FOCUS ZOOM, the quick way to a precise drag on a long arrow.
  * Panning is right-drag or the pan-arrow buttons. A small control row
  * (Zoom −/+, pan arrows) makes the controls discoverable without cluttering
  * the widget. Left-drag on an arrow tracks the arrowhead 1:1
@@ -166,10 +162,8 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	host.appendChild(controls);
 	host.appendChild(vGroup);
 
-	// ---- SVG: world (zoom/pan) layer — glyph, guide rays, arrows — behind the
-	// fixed overlay letters, so they always read on top even at high zoom ----
+	// ---- SVG: the world (zoom/pan) layer — glyph, guide rays, arrows ----
 	var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, "class": "sst-vecwidget" });
-	var overlay = svgEl("g", { "class": "sst-vec-overlay" });
 	var world = svgEl("g", { "class": "sst-vec-world" });
 
 	// World-space geometry for the ship glyph and guide rays; redraw() maps it
@@ -198,14 +192,6 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		// while staying visually distinct from the bright, thick arrows.
 		a.ray = svgEl("line", { stroke: a.rayCol });
 		world.appendChild(a.ray);
-		var lx = OX + a.dx*(LEN+11), ly = OY + a.dy*(LEN+11);
-		var t = svgEl("text", { x: lx, y: ly + 4, fill: a.col, "text-anchor": "middle",
-			"font-size": 12, "font-weight": 700, "class": "sst-vec-axislabel" });
-		t.textContent = a.name.charAt(0).toUpperCase();
-		var tip = svgEl("title", {}); tip.textContent = "Zoom to the " + a.name + " arrowhead";
-		t.appendChild(tip);
-		overlay.appendChild(t);
-		a.label = t;
 	});
 
 	axes.forEach(function (a) {
@@ -222,7 +208,7 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		});
 	}
 
-	svg.appendChild(world); svg.appendChild(overlay);
+	svg.appendChild(world);
 	host.appendChild(svg);
 
 	var nums = {};
@@ -338,7 +324,7 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		});
 	}
 
-	// ---- zoom / pan state on the `world` layer only; `overlay` never transforms.
+	// ---- zoom / pan state of the `world` layer.
 	// setZoom keeps the world point under the screen point (ax, ay) fixed —
 	// the cursor for the wheel, the view's middle (OX, OY) for the buttons.
 	// At the minimum zoom the pan resets, so zooming fully out is always home. ----
@@ -372,12 +358,6 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		applyTransform();
 	}
 	axes.forEach(function (a) {
-		// The letter sits over the SVG, whose own pointerdown would treat the
-		// press as an arrow grab or a pan; stop it there.
-		a.label.addEventListener("pointerdown", function (e) {
-			e.stopPropagation(); e.preventDefault();
-			if (e.button === 0) { focusAxis(a); }
-		});
 		nums[a.key].addEventListener("focus", function () { focusAxis(a); });
 	});
 	function pan(dx, dy) { panX += dx; panY += dy; applyTransform(); }

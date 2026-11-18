@@ -1191,8 +1191,9 @@ export function createMissionView(opts) {
 
 		// `plainCard` (the legs): no title/status header — the module's own
 		// content IS the card. Diagnostics still render below it.
+		var h = null;
 		if (!desc || !desc.plainCard) {
-			var h = document.createElement("h3");
+			h = document.createElement("h3");
 			var titleSpan = document.createElement("span");
 			titleSpan.textContent = stageTitle(stage);
 			h.appendChild(titleSpan);
@@ -1213,6 +1214,7 @@ export function createMissionView(opts) {
 				world: world,
 				stageId: stage.id,
 				panelHost: host,
+				headerHost: h,   // the card's title row (null on a plainCard), for a control at its right
 				exchange: Exchange,
 				onResult: function (cb) { entry.callbacks.push(cb); }
 			});
