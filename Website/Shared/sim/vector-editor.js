@@ -16,17 +16,20 @@
  *   A scale() transform on the group would let the browser stretch its
  *   cached bitmap of the layer and only repaint it sharp seconds later,
  *   which reads as a blurry picture after every zoom step.
- * - `overlay`: just the per-axis letter+value legend. Never transforms, so
- *   the legend stays put (and legible) at any zoom/pan level — it's a fixed
- *   compass reading, not part of the "image" underneath that pans.
- * Zoom is deliberately manual only (wheel, or the +/- buttons) — no
- * auto-fit-on-load, since a view that rescales itself is disorienting mid-
- * drag and surprising on open. A small control row (Zoom −/+, pan arrows)
- * makes the zoom/pan controls discoverable without cluttering the widget.
- * Zoom always grows from the widget's centre (where the axes originate),
- * regardless of where the mouse is — panning is the only thing that ever
- * moves the view off-centre, and only when the user does it (right-drag or
- * the pan-arrow buttons). Left-drag on an arrow tracks the arrowhead 1:1
+ * - `overlay`: just the per-axis letter (P / R / N) at each axis's end.
+ *   Never transforms, so the letters stay put (and legible) at any zoom/pan
+ *   level. The values themselves are read from the number row, not the
+ *   picture.
+ * Zoom only ever happens when the user asks for it — no auto-fit-on-load,
+ * since a view that rescales itself is disorienting mid-drag and surprising
+ * on open. The wheel zooms about the point under the cursor. The +/−
+ * buttons zoom about the middle of the view. Zooming all the way back out
+ * returns the view home (no pan). Clicking an axis's letter, or putting the
+ * cursor in that axis's number field, zooms to that axis's arrowhead and
+ * centres it — FOCUS ZOOM, the quick way to a precise drag on a long arrow.
+ * Panning is right-drag or the pan-arrow buttons. A small control row
+ * (Zoom −/+, pan arrows) makes the controls discoverable without cluttering
+ * the widget. Left-drag on an arrow tracks the arrowhead 1:1
  * under the cursor at whatever the current zoom happens to be — no separate
  * amplification — so a plain drag always feels like it's moving the picture
  * itself; shift-drag applies its own extra divisor on top for fine control.
@@ -56,7 +59,7 @@
  *   literal zero, the full axis length spans ±opts.maxDeltaMps instead of
  *   ±15 km/s, and — unlike the default mode's drag-only clamp — TYPED entry
  *   is hard-clamped too, since the whole point of this mode is a real limit,
- *   not just a display range. The legend/number row shows the DELTA from
+ *   not just a display range. The number row shows the DELTA from
  *   baseline (signed), not the absolute value, formatted via opts.displayDiv
  *   (m/s-per-displayed-unit, e.g. 1 for m/s or 1000 for km/s), opts.decimals
  *   and opts.step. opts.unitLabel, if given, is appended to each axis's
@@ -64,20 +67,22 @@
  *   axis alone, with no unit stated. Omitting opts (or opts.maxDeltaMps)
  *   reproduces the original absolute-from-zero, drag-clamped/type-unclamped,
  *   km/s-display behavior exactly.
+ * - opts.showBaseline (delta-cap mode only) — PLAN-OVERLAY MODE, for
+ *   adjusting a burn that was authored elsewhere (the Coast phase's
+ *   waypoints, transfer-leg.js): the axes originate at literal zero rather
+ *   than at the baseline, and the baseline burn itself is drawn as the solid
+ *   per-axis arrows, unmoving. The LIVE burn is a white outline around each
+ *   axis's arrow, shaft and head; dragging an outlined arrowhead moves the
+ *   outline away from the solid arrow, which keeps showing the baseline.
+ *   One scale serves all three axes, sized so the largest |baseline| + cap
+ *   reaches the axis end. The number row stays the delta, as in plain
+ *   delta-cap mode. Focus zoom here zooms until the axis's ±cap span is
+ *   most of the view's width, so the allowed adjustment is comfortably
+ *   draggable however large the plan burn is.
  *
  * Styling comes from the page's own CSS (.sst-vecwidget, .sst-vec-controls,
  * .sst-vec-nums, .sst-vec-num, .sst-vec-num-row, .sst-vec-num-narrow —
  * MissionPlanner/planner.css carries them).
- *
- * renderVectorGlyph(host, values): a STATIC, read-only isometric burn glyph
- * — just the three arrows and their per-axis letter+value legend, drawn once
- * from a plain { pro, rad, nrm } (m/s) snapshot. No ship glyph, no
- * background axis rays, no zoom/pan, no numeric input row, no interaction —
- * for a context display of a burn nobody is dragging (Mission Planner's
- * read-only "plan waypoint" cards). Auto-scaled so the largest-magnitude
- * axis fills the view: unlike buildVectorEditor's fixed ±15 km/s / ±maxDelta
- * range (sized to leave room for dragging to any value), a read-only glyph
- * has no reason to reserve room the burn never uses.
  */
 
 var SVGNS = "http://www.w3.org/2000/svg";
@@ -92,7 +97,7 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	// Delta-cap mode (see header): a caller opts in by passing maxDeltaMps.
 	// All geometry below works in RAW m/s (matching `values` itself) with the
 	// baseline subtracted; displayDiv/decimals/step only affect the number
-	// row and legend text. AXIS_LEN is the fixed on-screen half-length a full
+	// row text. AXIS_LEN is the fixed on-screen half-length a full
 	// ±maxMps swing draws to (same pixels the original ±15 km/s used).
 	var capped = !!(opts && isFinite(opts.maxDeltaMps));
 	var baseline = (opts && opts.baseline) || { pro: 0, rad: 0, nrm: 0 };
@@ -101,12 +106,21 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	var decimals = (opts && isFinite(opts.decimals)) ? opts.decimals : 3;
 	var numStep = (opts && isFinite(opts.step)) ? opts.step : 0.001;
 	var unitLabel = (opts && opts.unitLabel) || null;   // appended to each axis's field name
+	var overlayMode = capped && !!opts.showBaseline;     // see header: plan-overlay mode
 	var HIDE_FRAC = 0.008;   // matches the original 0.12 km/s dead-zone at MAXV=15 km/s
 	// The dead zone never exceeds one number-field step (1 m/s in the km/s
 	// editors, 0.1 m/s in the waypoint course-correction editor), so any burn
 	// the field can express draws an arrow (tiny ones only become legible by zooming).
 	var hideMps = Math.min(maxMps * HIDE_FRAC, numStep * dispDiv);
-	var W = 278, H = 300, OX = 139, OY = 150, AXIS_LEN = 112.5, SCALE = AXIS_LEN / maxMps, LEN = AXIS_LEN;
+	// Overlay mode draws absolute values from zero, so the axis has to reach
+	// the furthest any axis can be dragged: |baseline| + cap.
+	var fitMps = maxMps;
+	if (overlayMode) {
+		["pro", "rad", "nrm"].forEach(function (k) {
+			fitMps = Math.max(fitMps, Math.abs(baseline[k] || 0) + maxMps);
+		});
+	}
+	var W = 278, H = 300, OX = 139, OY = 150, AXIS_LEN = 112.5, SCALE = AXIS_LEN / fitMps, LEN = AXIS_LEN;
 	var ZMIN = 1, ZSTEP = 1.4, ZMAX = 12 * Math.pow(ZSTEP, 4), PANSTEP = 40; // never smaller than the default view
 	// Line/arrowhead length always grows 1:1 with zoom (it's what you're aiming
 	// with), but thickness only grows as zoom^THICK_EXP — a lot slower — so a
@@ -153,7 +167,7 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	host.appendChild(vGroup);
 
 	// ---- SVG: world (zoom/pan) layer — glyph, guide rays, arrows — behind the
-	// fixed overlay legend, so the legend always reads on top even at high zoom ----
+	// fixed overlay letters, so they always read on top even at high zoom ----
 	var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, "class": "sst-vecwidget" });
 	var overlay = svgEl("g", { "class": "sst-vec-overlay" });
 	var world = svgEl("g", { "class": "sst-vec-world" });
@@ -185,13 +199,13 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		a.ray = svgEl("line", { stroke: a.rayCol });
 		world.appendChild(a.ray);
 		var lx = OX + a.dx*(LEN+11), ly = OY + a.dy*(LEN+11);
-		var t = svgEl("text", { x: lx, y: ly, fill: a.col, "text-anchor": "middle" });
-		var letter = svgEl("tspan", { x: lx, dy: 0, "font-size": 12, "font-weight": 700 });
-		letter.textContent = a.name.charAt(0).toUpperCase();
-		var val = svgEl("tspan", { x: lx, dy: 13, "font-size": 10, "font-weight": 400, "fill-opacity": 0.85 });
-		t.appendChild(letter); t.appendChild(val);
+		var t = svgEl("text", { x: lx, y: ly + 4, fill: a.col, "text-anchor": "middle",
+			"font-size": 12, "font-weight": 700, "class": "sst-vec-axislabel" });
+		t.textContent = a.name.charAt(0).toUpperCase();
+		var tip = svgEl("title", {}); tip.textContent = "Zoom to the " + a.name + " arrowhead";
+		t.appendChild(tip);
 		overlay.appendChild(t);
-		a.legendVal = val;
+		a.label = t;
 	});
 
 	axes.forEach(function (a) {
@@ -199,6 +213,14 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		a.head = svgEl("polygon", { fill: a.col });
 		world.appendChild(a.line); world.appendChild(a.head);
 	});
+	// Overlay mode: the live burn's white outline, one closed arrow shape per
+	// axis, drawn over every solid arrow.
+	if (overlayMode) {
+		axes.forEach(function (a) {
+			a.outline = svgEl("polygon", { fill: "none", stroke: "#ffffff", "stroke-linejoin": "round" });
+			world.appendChild(a.outline);
+		});
+	}
 
 	svg.appendChild(world); svg.appendChild(overlay);
 	host.appendChild(svg);
@@ -242,6 +264,27 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	// World → screen (viewBox units): the zoom/pan mapping, applied to every
 	// point at draw time rather than as a transform on the `world` group.
 	function sx(x) { return (panX + x * zoom).toFixed(2); }
+	// Overlay mode's live-burn outline for one axis: a closed arrow shape
+	// (shaft and head as one polygon) padded a little past the solid arrow's
+	// own size, so when the two agree the white line traces around the
+	// coloured arrow rather than over it. A near-zero value draws a small
+	// ring at the origin instead, so there is still something to grab.
+	function drawOutline(a, mps, strokeW, headLen, headHalf) {
+		var pad = 2 * Math.pow(zoom, THICK_EXP - 1);           // world units ≈ 2 screen px
+		a.outline.setAttribute("stroke-width", (1.3 * Math.pow(zoom, THICK_EXP)).toFixed(3));
+		var len = Math.abs(mps) * SCALE;
+		var s = mps < 0 ? -1 : 1, hx = s*a.dx, hy = s*a.dy, px = -hy, py = hx;
+		if (len <= hideMps * SCALE) { len = 0; }
+		var baseLen = Math.min(headLen, len), k = len > 0 ? baseLen / headLen : 0.35;
+		var sw = strokeW * Math.max(k, 0.3) / 2 + pad, hh = headHalf * k + pad;
+		var tipL = len + pad, bL = len - baseLen;
+		function P(along, across) {
+			return sx(OX + hx*along + px*across) + "," + sy(OY + hy*along + py*across);
+		}
+		a.outline.setAttribute("points", [
+			P(-pad, sw), P(bL, sw), P(bL, hh), P(tipL, 0), P(bL, -hh), P(bL, -sw), P(-pad, -sw)
+		].join(" "));
+	}
 	function sy(y) { return (panY + y * zoom).toFixed(2); }
 	function redraw() {
 		// Lengths below are in WORLD units (scaled by zoom when mapped to the
@@ -260,17 +303,20 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		axes.forEach(function (a) {
 			var raw = values[a.key] - baseline[a.key];
 			var vis = Math.max(-maxMps, Math.min(maxMps, raw));
-			var tx = OX + a.dx*vis*SCALE, ty = OY + a.dy*vis*SCALE;
-			var show = Math.abs(vis) > hideMps;
+			// What the solid arrow draws: the delta in plain delta-cap mode,
+			// the baseline itself (from zero) in overlay mode.
+			var solid = overlayMode ? (baseline[a.key] || 0) : vis;
+			var tx = OX + a.dx*solid*SCALE, ty = OY + a.dy*solid*SCALE;
+			var show = Math.abs(solid) > hideMps;
 			[a.line, a.head].forEach(function (n) { n.style.display = show ? "" : "none"; });
 			if (show) {
-				var s = vis < 0 ? -1 : 1, hx = s*a.dx, hy = s*a.dy, px = -hy, py = hx;
+				var s = solid < 0 ? -1 : 1, hx = s*a.dx, hy = s*a.dy, px = -hy, py = hx;
 				// The shaft stops where the arrowhead's base starts, not at the value
 				// point itself — the arrowhead sits past the end of the line, tip at
 				// the value point, as arrows usually look. A value shorter than the
 				// arrowhead shrinks the head (and stroke) in proportion, so a tiny
 				// arrow stays a narrow arrow rather than a flat wide wedge.
-				var baseLen = Math.min(headLen, Math.abs(vis) * SCALE);
+				var baseLen = Math.min(headLen, Math.abs(solid) * SCALE);
 				var k = baseLen / headLen;
 				a.line.setAttribute("stroke-width", (strokeW * Math.max(k, 0.3) * zoom).toFixed(3));
 				var hh = headHalf * k;
@@ -284,30 +330,56 @@ export function buildVectorEditor(host, values, onChange, opts) {
 			// showing the true typed value even past the drawn arrow's clamp. In
 			// capped mode this is moot — the stored value is hard-clamped at every
 			// mutation site, so raw already can't exceed vis.
+			// No leading "+" here: it is not a valid number-input value per the
+			// HTML spec, and setting one blanks the field instead of showing it.
 			var numStr = (raw / dispDiv).toFixed(decimals);
-			// The legend gets an explicit "+" for a positive delta (it's a plain
-			// text node); the <input type=number> must not — a leading "+" is not
-			// a valid number-input value per the HTML spec, so setting it blanks
-			// the field instead of showing it.
-			a.legendVal.textContent = (capped && raw > 0) ? "+" + numStr : numStr;
+			if (overlayMode) { drawOutline(a, baseline[a.key] + vis, strokeW, headLen, headHalf); }
 			if (document.activeElement !== nums[a.key]) { nums[a.key].value = numStr; }
 		});
 	}
 
 	// ---- zoom / pan state on the `world` layer only; `overlay` never transforms.
-	// Zoom always anchors on (OX,OY) — the point the axes originate from — so the
-	// picture grows in place from the centre; only explicit panning (drag or the
-	// pan buttons) ever moves it off-centre. ----
+	// setZoom keeps the world point under the screen point (ax, ay) fixed —
+	// the cursor for the wheel, the view's middle (OX, OY) for the buttons.
+	// At the minimum zoom the pan resets, so zooming fully out is always home. ----
 	var zoom = 1, panX = 0, panY = 0;
 	function applyTransform() { redraw(); }
-	function setZoom(next) {
+	function setZoom(next, ax, ay) {
+		if (ax == null) { ax = OX; ay = OY; }
 		next = Math.max(ZMIN, Math.min(ZMAX, next));
-		var wx = (OX - panX) / zoom, wy = (OY - panY) / zoom;
+		var wx = (ax - panX) / zoom, wy = (ay - panY) / zoom;
 		zoom = next;
+		panX = ax - wx * zoom;
+		panY = ay - wy * zoom;
+		if (zoom <= ZMIN) { panX = 0; panY = 0; }
+		applyTransform();
+	}
+	// Focus zoom (see header): centre the axis's current arrowhead in the view
+	// at a zoom where it can be dragged precisely. In overlay mode that is the
+	// zoom at which the axis's ±cap span covers FOCUS_SPAN of the view; in the
+	// other modes the arrow lives on a span the view already fits, so it only
+	// makes sure of a useful magnification. Never zooms OUT.
+	var FOCUS_SPAN = 170, FOCUS_MIN_ZOOM = 3;
+	function focusAxis(a) {
+		var target = overlayMode ? FOCUS_SPAN / (2 * maxMps * SCALE) : FOCUS_MIN_ZOOM;
+		zoom = Math.max(ZMIN, Math.min(ZMAX, Math.max(zoom, target)));
+		var tipMps = overlayMode
+			? values[a.key]
+			: Math.max(-maxMps, Math.min(maxMps, values[a.key] - baseline[a.key]));
+		var wx = OX + a.dx * tipMps * SCALE, wy = OY + a.dy * tipMps * SCALE;
 		panX = OX - wx * zoom;
 		panY = OY - wy * zoom;
 		applyTransform();
 	}
+	axes.forEach(function (a) {
+		// The letter sits over the SVG, whose own pointerdown would treat the
+		// press as an arrow grab or a pan; stop it there.
+		a.label.addEventListener("pointerdown", function (e) {
+			e.stopPropagation(); e.preventDefault();
+			if (e.button === 0) { focusAxis(a); }
+		});
+		nums[a.key].addEventListener("focus", function () { focusAxis(a); });
+	});
 	function pan(dx, dy) { panX += dx; panY += dy; applyTransform(); }
 
 	zoomOut.addEventListener("click", function () { setZoom(zoom / ZSTEP); });
@@ -322,7 +394,8 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		e.preventDefault();
 		var factor = Math.pow(1.15, -e.deltaY / 100);
 		factor = Math.max(0.5, Math.min(2, factor));
-		setZoom(zoom * factor);
+		var p = toVB(e);
+		setZoom(zoom * factor, p[0], p[1]);
 	}, { passive: false });
 
 	function toVB(e) {
@@ -357,7 +430,10 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	var BURN_SENS = 1 / SCALE;
 	function setAxisAbsolute(p, a) {
 		var proj = (p[0] - OX) * a.dx + (p[1] - OY) * a.dy;
-		var raw = Math.max(-maxMps, Math.min(maxMps, proj / SCALE));
+		// In overlay mode the axis is absolute (zero at the origin), so the
+		// point under the cursor is a burn value; otherwise it is a delta.
+		var raw = Math.max(-maxMps, Math.min(maxMps,
+			proj / SCALE - (overlayMode ? (baseline[a.key] || 0) : 0)));
 		values[a.key] = baseline[a.key] + raw;
 		redraw();
 		onChange(a.key, values[a.key]);
@@ -380,7 +456,9 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		var focused = document.activeElement;
 		if (focused === nums.pro || focused === nums.rad || focused === nums.nrm) { focused.blur(); }
 		dragIdx = idx; lastWorld = w;
-		setAxisAbsolute(w, axes[idx]);
+		// Overlay mode's arrows are long (the whole plan burn) while the
+		// reachable span is short, so a press only grabs; the drag moves it.
+		if (!overlayMode) { setAxisAbsolute(w, axes[idx]); }
 		try { svg.setPointerCapture(e.pointerId); } catch (err) {}
 		e.preventDefault();
 	});
@@ -408,113 +486,4 @@ export function buildVectorEditor(host, values, onChange, opts) {
 
 	host._sstRedraw = redraw;
 	redraw();
-}
-
-export function renderVectorGlyph(host, values) {
-	host.innerHTML = "";
-	var axes = [
-		{ key: "pro", name: "prograde", col: "#6fd49a", dx: Math.cos(-Math.PI / 6), dy: Math.sin(-Math.PI / 6) },
-		{ key: "rad", name: "radial",   col: "#ffb45a", dx: Math.cos(Math.PI / 6),  dy: Math.sin(Math.PI / 6) },
-		{ key: "nrm", name: "normal",   col: "#8ab4ff", dx: 0, dy: -1 }
-	];
-	// Auto-fit: AXIS_LEN is what the LARGEST-magnitude axis draws to, however
-	// small that burn is — the legend states the true value, so magnifying a
-	// small burn misleads no one. The smallest burn is 1 m/s: a negligible
-	// burn falls back to maxAbs=1 so the fit scale stays finite, and draws nothing.
-	var maxAbs = Math.max(1, Math.abs(values.pro || 0), Math.abs(values.rad || 0), Math.abs(values.nrm || 0));
-	var AXIS_LEN = 55;
-	var SCALE = AXIS_LEN / maxAbs;
-	var HIDE_FRAC = 0.008, hideMps = Math.max(maxAbs * HIDE_FRAC, 0.5);
-	// Below 1 km/s the legend reads in m/s (km/s at 2 decimals would show a
-	// small burn as 0.00).
-	var inMps = maxAbs < 1000;
-	var STROKE = 2.5, HEAD_LEN = 9, HEAD_HALF = 5;
-	// MIN_TIP_R keeps a near-zero axis's label a little out from the shared
-	// origin point (rather than sitting on top of the other two labels);
-	// LABEL_PAD is the gap from an arrow's own tip to its label.
-	var MIN_TIP_R = 14, LABEL_PAD = 12;
-	// Estimated half-extents of a two-line axis label (a bold 12px letter
-	// over a 10px value, e.g. "N" / "-2.73") — sized generously enough not
-	// to clip real text, only used to size the viewBox below.
-	var TEXT_HALF_W = inMps ? 27 : 17, TEXT_UP = 10, TEXT_DOWN = 21;
-
-	// Pass 1: work out each axis's geometry in a coordinate system centred
-	// on the arrows' shared origin (0,0), and grow a content bounding box
-	// around it — the origin itself, every drawn arrow's tip, and every
-	// label's estimated box. The origin needs no special treatment beyond
-	// being one of the points grown into the box: unlike the old fixed
-	// square canvas, nothing here forces it to sit at the centre of the
-	// final drawing — a burn that only ever points up-right, say, ends up
-	// with the origin down in a corner, and the viewBox is only as big as
-	// whatever got drawn.
-	var minX = 0, maxX = 0, minY = 0, maxY = 0;
-	function grow(x, y) {
-		minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-		minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-	}
-	var drawn = axes.map(function (a) {
-		var v = values[a.key] || 0;
-		var mag = Math.abs(v) * SCALE;
-		var sgn = v < 0 ? -1 : 1;
-		var arrow = null;
-		if (Math.abs(v) > hideMps) {
-			var tx = a.dx * v * SCALE, ty = a.dy * v * SCALE;
-			var hx = sgn * a.dx, hy = sgn * a.dy, px = -hy, py = hx;
-			// A burn shorter than the arrowhead shrinks head and stroke in proportion.
-			var baseLen = Math.min(HEAD_LEN, mag), k = baseLen / HEAD_LEN;
-			var bx = tx - hx * baseLen, by = ty - hy * baseLen;
-			arrow = { tx: tx, ty: ty, bx: bx, by: by, px: px, py: py, k: k };
-			grow(tx, ty);
-		}
-		// The label sits AT THE ARROW'S OWN TIP — its actual direction
-		// (sign included), not a fixed per-axis compass point — so the
-		// glyph only needs to be as big as the arrows themselves.
-		var tipR = Math.max(mag, MIN_TIP_R);
-		var lx = a.dx * (tipR + LABEL_PAD) * sgn, ly = a.dy * (tipR + LABEL_PAD) * sgn;
-		grow(lx - TEXT_HALF_W, ly - TEXT_UP);
-		grow(lx + TEXT_HALF_W, ly + TEXT_DOWN);
-		return { a: a, v: v, arrow: arrow, lx: lx, ly: ly };
-	});
-
-	// Pass 2: draw everything shifted by (OX,OY) = -min, so the tight box
-	// computed above becomes the viewBox exactly (plus a small pad).
-	var PAD = 4;
-	minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
-	var OX = -minX, OY = -minY;
-	var vbW = maxX - minX, vbH = maxY - minY;
-	// width/height (not just viewBox) fix the SVG's own on-screen size at
-	// exactly its content, 1 unit = 1 CSS px — unlike buildVectorEditor's
-	// .sst-vecwidget (width:100%; height:auto), which would stretch this
-	// tight, small viewBox to fill the card regardless, blowing up the
-	// "fixed-size" 12px/10px label text right along with it. This is what
-	// actually keeps the text at its stated size: a small burn's small
-	// viewBox now stays small on screen instead of being scaled up to fit.
-	var svg = svgEl("svg", { viewBox: "0 0 " + vbW + " " + vbH, width: vbW, height: vbH, "class": "sst-vecglyph" });
-
-	drawn.forEach(function (d) {
-		if (d.arrow) {
-			var ar = d.arrow;
-			svg.appendChild(svgEl("line", {
-				x1: OX, y1: OY, x2: OX + ar.bx, y2: OY + ar.by,
-				stroke: d.a.col, "stroke-width": STROKE * Math.max(ar.k, 0.3), "stroke-linecap": "round" }));
-			svg.appendChild(svgEl("polygon", { fill: d.a.col, points:
-				(OX + ar.tx) + "," + (OY + ar.ty) + " " +
-				(OX + ar.bx + ar.px * HEAD_HALF * ar.k) + "," + (OY + ar.by + ar.py * HEAD_HALF * ar.k) + " " +
-				(OX + ar.bx - ar.px * HEAD_HALF * ar.k) + "," + (OY + ar.by - ar.py * HEAD_HALF * ar.k) }));
-		}
-		var lx = OX + d.lx, ly = OY + d.ly;
-		// A precisely-zero axis (no burn on it at all, not just a small one)
-		// dims its whole label — an unused axis reads as background, not one
-		// more thing competing with the two that actually did something.
-		var t = svgEl("text", { x: lx, y: ly, fill: d.a.col, "text-anchor": "middle",
-			opacity: d.v === 0 ? 0.4 : 1 });
-		var letter = svgEl("tspan", { x: lx, dy: 0, "font-size": 12, "font-weight": 700 });
-		letter.textContent = d.a.name.charAt(0).toUpperCase();
-		var val = svgEl("tspan", { x: lx, dy: 13, "font-size": 10, "font-weight": 400, "fill-opacity": 0.85 });
-		val.textContent = inMps ? d.v.toFixed(1) + " m/s" : (d.v / 1000).toFixed(2);
-		t.appendChild(letter); t.appendChild(val);
-		svg.appendChild(t);
-	});
-
-	host.appendChild(svg);
 }

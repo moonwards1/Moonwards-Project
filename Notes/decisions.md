@@ -169,10 +169,10 @@ start is a free choice, and aiming it at the mark is that choice made.
 
 ### Each waypoint readout pane tracks ONE lever, live
 
-The **waypoint** section's pane reports the plan's own burn fired from
+The **location** section's pane reports the plan's own burn fired from
 wherever the waypoint now sits; it moves only when the location moves. The
 **impulse** section's pane reports only the edit on top of that baseline. The
-plan section's descriptive line always describes the plan's own day.
+plan's descriptive line always describes the plan's own day.
 
 Why: pro/rad/nrm components are read in the local frame of the ship's own
 day, so comparing a burn across two positions compares across two frames.

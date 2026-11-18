@@ -210,6 +210,7 @@ select:disabled { color: #8b94a7; }
 .sst-vec-pangroup-v .sst-vec-btn:first-child { border-bottom: none; }
 .sst-vec-pangroup-h .sst-vec-btn:first-child { border-right: none; }
 .sst-vecwidget { width: 100%; height: auto; display: block; margin: 2px 0; touch-action: none; cursor: crosshair; user-select: none; }
+.sst-vec-axislabel { cursor: pointer; }
 .sst-vec-nums { display: flex; gap: 6px; margin-top: 2px; }
 .sst-vec-num { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1; min-width: 0; font-size: 11px; font-weight: 600; }
 .sst-vec-num span { color: #cfd6e4; white-space: nowrap; }

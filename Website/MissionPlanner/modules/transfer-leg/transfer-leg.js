@@ -57,7 +57,7 @@ import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { computeArrivalSeam } from "../../core/arrival-seam.js";
 import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
-import { buildVectorEditor, renderVectorGlyph } from "../../../Shared/sim/vector-editor.js";
+import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
 import { planWaypointsFor } from "../adopted-plan/adopted-plan.js";
@@ -681,10 +681,11 @@ function rememberWpHosts(world, stageId, hosts) {
 	m.set(stageId, hosts);
 }
 
-// The read-only "plan waypoints" cards (init, below) — draw() needs each
-// one's info-line element and card (as the readout box's host) to refresh
-// them every recompute, the same split wpHostsFor/rememberWpHosts keeps for
-// the live course-correction cards. Same WeakMap-per-World pattern.
+// Each waypoint card's location section (init, below), for a waypoint with a
+// plan original — draw() needs its info-line element and the section itself
+// (as the readout box's host) to refresh them every recompute, the same split
+// wpHostsFor/rememberWpHosts keeps for the burn gizmos. Same WeakMap-per-World
+// pattern.
 var planWpRowsByWorld = new WeakMap();
 function planWpRowsFor(world, stageId) {
 	var m = planWpRowsByWorld.get(world);
@@ -792,20 +793,20 @@ export default {
 		}
 
 		var wpHost = document.createElement("div"); host.appendChild(wpHost);
-		// Each waypoint gets ONE outlined card, titled "waypoint N" once at the
-		// top, with two sections inside: the read-only PLAN section (what the
-		// mission plan, adopted at "Start Mission Plan" on the Ephemeris tab,
-		// authored — the info line plus Shared/sim/vector-editor.js's static
-		// renderVectorGlyph, present only when this index has a plan waypoint
-		// behind it — an index beyond the adopted list is a correction added
-		// after freezing, with no plan section) and the COURSE CORRECTION
-		// section (the editable part: reset/remove, the cap hint, the degree
-		// field, the draggable burn editor). Both sections get their own
-		// straddling Δv/plane-change readout box (Shared/sim/readout-panes.js)
-		// — the plan section's is filled in by draw() every recompute
-		// (planWpRowsFor/rememberPlanWpRows), since only the state AT a
-		// waypoint needs recomputing, not the plan itself, which never
-		// changes after freezing.
+		// Each waypoint gets ONE outlined card, titled "waypoint N", with two
+		// sections: LOCATION (the plan's info line, reset/remove, the degree
+		// field) and IMPULSE (reset, the cap hint, and one burn gizmo). The
+		// gizmo is the vector editor's plan-overlay mode: the plan's own burn
+		// as solid arrows, the live burn as a white outline dragged within
+		// ±WAYPOINT_AXIS_CAP_MPS of it — so the plan and the correction read
+		// in one picture. A waypoint added after freezing has a zero plan
+		// burn, so only the outline shows. Each section hosts its own
+		// straddling readout box (Shared/sim/readout-panes.js), filled by
+		// draw(): the location section's reports the plan's burn fired from
+		// where the waypoint now sits, the impulse section's the edit alone
+		// (Notes/decisions.md, "Each waypoint readout pane tracks ONE lever").
+		// The location section's box exists only when a plan waypoint stands
+		// behind this index.
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
@@ -818,21 +819,16 @@ export default {
 				var title = document.createElement("h3"); title.textContent = "waypoint " + (i + 1);
 				card.appendChild(title);
 
+				var locSection = document.createElement("div");
 				if (original) {
-					var planSection = document.createElement("div"); planSection.className = "mp-pane-host";
+					locSection.className = "mp-pane-host";
 					var info = document.createElement("div"); info.className = "mp-muted";
-					planSection.appendChild(info);
-					var glyphHost = document.createElement("div"); planSection.appendChild(glyphHost);
-					renderVectorGlyph(glyphHost, original.burn);
-					card.appendChild(planSection);
-					planRows.push({ info: info, host: planSection });
+					locSection.appendChild(info);
+					planRows.push({ info: info, host: locSection });
 				} else {
 					planRows.push(null);
 				}
-
-				var subHead = document.createElement("div"); subHead.className = "mp-wp-head";
-				subHead.textContent = "course correction";
-				card.appendChild(subHead);
+				card.appendChild(locSection);
 
 				// Location and impulse are separate levers on a waypoint (an
 				// added waypoint has no plan original, so it has no per-lever
@@ -845,7 +841,7 @@ export default {
 				var locBtn = document.createElement("button"); locBtn.className = "mp-btn";
 				locBtn.textContent = original ? "reset" : "remove";
 				locHead.appendChild(locBtn);
-				card.appendChild(locHead);
+				locSection.appendChild(locHead);
 
 				// One-shot placement helper for the FIRST added waypoint (no plan
 				// waypoint behind it): quick-place on whichever apsis the current
@@ -888,7 +884,7 @@ export default {
 									setAtBase(degAtDay(legFor(ctx.world, ctx.stageId), placeList[i].days));
 								});
 							});
-						card.appendChild(snapRow);
+						locSection.appendChild(snapRow);
 					}
 				}
 
@@ -913,7 +909,7 @@ export default {
 				var sliderMax = document.createElement("span"); sliderMax.className = "mp-wp-slider-end"; sliderMax.textContent = "+5";
 				sliderWrap.appendChild(sliderMin); sliderWrap.appendChild(atSlider); sliderWrap.appendChild(sliderMax);
 				atRow.appendChild(sliderWrap);
-				card.appendChild(atRow);
+				locSection.appendChild(atRow);
 
 				var atBaseDeg = 0;
 				function setAtBase(deg) {
@@ -942,7 +938,7 @@ export default {
 					dayInput.value = v.toFixed(2);
 					commitAtDeg(v);
 				});
-				var impHead = document.createElement("div"); impHead.className = "mp-wp-subhead";
+				var impHead = document.createElement("div"); impHead.className = "mp-wp-subhead mp-wp-subhead-sep";
 				var impBullet = document.createElement("span"); impBullet.className = "mp-wp-bullet"; impBullet.textContent = "•";
 				var impLabel = document.createElement("span"); impLabel.textContent = "impulse";
 				impHead.appendChild(impBullet); impHead.appendChild(impLabel);
@@ -966,7 +962,7 @@ export default {
 						var list = copyWaypoints(stageParams().waypoints);
 						list[i].burn[axis] = mps;
 						commitWaypoints(list);
-					}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS,
+					}, { baseline: burnBaseline, maxDeltaMps: WAYPOINT_AXIS_CAP_MPS, showBaseline: true,
 					     displayDiv: 1, decimals: 2, step: 0.1, unitLabel: "m/s" });
 				}
 				drawBurnEditor(wp.burn);
@@ -974,12 +970,11 @@ export default {
 				if (original) {
 					// Part of the committed plan: not removable, only
 					// resettable — location and impulse reset independently,
-					// each touching only its own half of THIS waypoint's
-					// course-correction section, in place, rather than
+					// each touching only its own section of THIS waypoint's
+					// card, in place, rather than
 					// rebuilding the whole card list (rebuildWaypointRows).
-					// The plan section above (and its own readout box's
-					// host) is a SEPARATE, untouched element, both here and
-					// on every other waypoint's card — a full rebuild would
+					// The readout boxes' hosts stay the same elements, both
+					// here and on every other waypoint's card — a full rebuild would
 					// tear down and recreate all of them, leaving every
 					// readout box on the page briefly anchored to a
 					// detached element until the next recompute happens to
@@ -1147,7 +1142,7 @@ export default {
 		// mission-view.js to render/position.
 		//
 		// planLeg — the adopted PLAN's own waypoints run through the same coast
-		// start — feeds the plan section's readouts further down (planLeg is
+		// start — feeds the location section's readouts further down (planLeg is
 		// resampled at each adopted waypoint's own day, which never changes).
 		var coastStart0 = stateAtElapsed(leg, 0);
 		var planWpsDraw = planWaypointsFor(snap.world);
@@ -1189,7 +1184,7 @@ export default {
 				// plan-relative diffing between them
 				// (Notes/decisions.md, 2026-08-19):
 				//
-				// The WAYPOINT section's pane (up top, beside the adopted
+				// The LOCATION section's pane (up top, beside the adopted
 				// plan's own info) reports the PLAN's own burn fired from
 				// wherever the waypoint currently sits — same fixed burn
 				// numbers every time, but read through whatever local frame
@@ -1199,7 +1194,7 @@ export default {
 				var baseEff = burnEffect(GM_SUN, wpState.r, wpState.v,
 					{ pro: baselineBurn.pro || 0, rad: baselineBurn.rad || 0, nrm: baselineBurn.nrm || 0 });
 				if (original && planRows[i]) {
-					view.readoutEntries.push({ host: planRows[i].host, data: baseEff });
+					view.readoutEntries.push({ host: planRows[i].host, data: baseEff, title: "plan Δv" });
 				}
 
 				// The IMPULSE section's pane reports only what's been added
@@ -1212,12 +1207,12 @@ export default {
 				};
 				var impulseEff = burnEffect(GM_SUN, wpState.r, wpState.v, deltaBurn);
 				if (wpHosts[i]) {
-					view.readoutEntries.push({ host: wpHosts[i], data: impulseEff });
+					view.readoutEntries.push({ host: wpHosts[i], data: impulseEff, title: "correction Δv" });
 				}
 			});
 		}
 
-		// The plan section's own descriptive line ("+475 d, 2.966 AU from
+		// The location section's plan info line ("+475 d, 2.966 AU from
 		// Sun...") always describes the adopted plan's own day — it never
 		// changes, unlike its readout pane's Δv box (now fed live, above,
 		// from wherever the waypoint currently sits).

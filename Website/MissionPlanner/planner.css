@@ -682,6 +682,9 @@ h3 > .mp-info { margin-right: auto; }
 	margin-top: 6px; font-size: 12px; color: var(--dim);
 }
 .mp-wp-subhead .mp-btn { margin-left: auto; }
+/* The impulse sub-label opens the card's second section (transfer-leg.js):
+   a dashed rule separates it from the location section above. */
+.mp-wp-subhead-sep { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line2); }
 .mp-wp-bullet { color: var(--dim); }
 /* Technology dropdowns (the departure and arrival technology selectors) —
    full-width, not paired with a label the way .mp-inrow's controls are. */
@@ -792,14 +795,8 @@ h3 > .mp-info { margin-right: auto; }
 	cursor: crosshair;
 	user-select: none;
 }
-/* renderVectorGlyph's static read-only glyph: explicit width/height (set by
-   the caller, matching its own tight viewBox 1:1) keep it at its true
-   content size on screen — no width:100% stretch, which would blow up its
-   "fixed-size" label text right along with a small burn's small viewBox. */
-.sst-vecglyph {
-	display: block;
-	margin: 2px auto;
-}
+/* The gizmo's axis letters (P / R / N): clicking one zooms to that arrowhead. */
+.sst-vec-axislabel { cursor: pointer; }
 .sst-vec-nums { display: flex; gap: 6px; margin-top: 2px; }
 .sst-vec-num { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1; min-width: 0; font-size: 11px; font-weight: 600; }
 .sst-vec-num span { color: var(--text); white-space: nowrap; }
