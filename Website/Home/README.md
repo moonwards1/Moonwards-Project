@@ -64,8 +64,8 @@ the **workbench**, and the **apps**.
   placeholder (skeleton) cards; the choice is kept in this browser. The
   outline mounts, hidden, any chosen calculator not yet shown.
 
-- **Apps** — tabs over the site's full-page apps (Mission Planner, Moon
-  Skyhook and Mars–Phobos Skyhook trajectory plotters), each shown in a frame
+- **Apps** — tabs over the site's full-page apps (Mission Planner, Earth–Moon
+  Traffic and Mars System Traffic), each shown in a frame
   of the same site so it shares its own page's saved work. Nothing loads with
   the home page: the Mission Planner tab is selected on arrival but shows an
   introduction until clicked, and each app loads the first time its tab is

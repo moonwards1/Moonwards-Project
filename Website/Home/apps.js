@@ -22,14 +22,6 @@ var APPS = [
 			"<p>It shows how permanent infrastructure cuts the propellant a ship must carry, and makes launch windows longer and more frequent. Rockets and space tugs are modelled alongside, for comparison and for supporting roles.</p>"
 	},
 	{
-		id: "moonhook", label: "Moon Skyhook", url: "Calculators/Moon-Skyhook-Trajectory-Plotter/moonSkyhookTrajectory.html",
-		intro: "<p>To-scale 3D Earth–Moon view with a lunar skyhook and the release physics for a ship let go from it.</p>"
-	},
-	{
-		id: "phobos", label: "Mars–Phobos Skyhook", url: "Calculators/Mars-Phobos-Skyhook-Trajectory-Plotter/marsPhobosSkyhookTrajectory.html",
-		intro: "<p>To-scale 3D Mars–Phobos system with a skyhook built onto Phobos, waypoint burns and atmospheric-entry readouts.</p>"
-	},
-	{
 		id: "emtraffic", label: "Earth–Moon Traffic", url: "Calculators/Earth-Moon-Traffic-Plotter/earthMoonTraffic.html",
 		intro: "<p>To-scale 3D Earth–Moon system with its skyhooks turning on one clock, and the path of a ship released from either. Flights between facilities are being added.</p>"
 	},
