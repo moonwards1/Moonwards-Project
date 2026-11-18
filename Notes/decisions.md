@@ -167,16 +167,15 @@ plane. Retrograde rotators need no special case, because `pole` is the spin
 pole. Aiming a catch costs nothing physically: the hook's phase at mission
 start is a free choice, and aiming it at the mark is that choice made.
 
-### Each waypoint readout pane tracks ONE lever, live
+### A Coast waypoint has one readout pane
 
-The **location** section's pane reports the plan's own burn fired from
-wherever the waypoint now sits; it moves only when the location moves. The
-**impulse** section's pane reports only the edit on top of that baseline. The
-plan's descriptive line always describes the plan's own day.
+Each Coast waypoint card carries a single Δv pane: the burn as it stands,
+fired where the waypoint now sits — the same burn the scene's arrows draw.
+The plan's own burn is shown in the gizmo (solid arrows), not as a second
+pane. The plan's descriptive line always describes the plan's own day.
 
 Why: pro/rad/nrm components are read in the local frame of the ship's own
-day, so comparing a burn across two positions compares across two frames.
-Splitting the levers means no pane ever has to.
+day, so a pane only ever reads one burn in one frame.
 
 ### The Ephemeris scene shows the timeline's date, never the marker's implied one
 

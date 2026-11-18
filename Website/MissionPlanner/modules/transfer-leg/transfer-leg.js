@@ -1,16 +1,14 @@
 ﻿/* MissionPlanner/modules/transfer-leg — the canonical transfer-leg module.
  *
- * The Coast phase: a ballistic arc between two ship states, with up to two
- * waypoint burns along the way — the compute core of the
+ * The Coast phase: a ballistic arc between two ship states, with the mission
+ * plan's waypoint burns along the way — the compute core of the
  * Solar-System-Trajectory-Plotter's `computeTrajectory()`, re-hosted behind
  * the module contract and extended with real SOI encounters: where the arc
  * dips inside any body's sphere of influence the flight switches to
  * Shared/body-leg.js's body+Sun integration and resumes Kepler at exit, so a
  * close pass genuinely bends and a rendezvous can be set up against the body's
- * own gravity (see the encounter block below). "Two" waypoints is this phase's
- * UI choice (how many waypoint cards fit the sidebar), not an architectural
- * ceiling — per ARCHITECTURE.md's "Phases are chains; compliance is a boundary
- * check, not a reconciliation", a phase is any length of ordinary stage chain.
+ * own gravity (see the encounter block below). The waypoints are the ones the
+ * Ephemeris tab authored with the plan; Coast trims them but never adds one.
  * The plotter's snap-to and Lambert targeting are not here: they live on the
  * Ephemeris tab (ephemeris-view.js), which authors a plan before it is adopted.
  *
@@ -21,7 +19,7 @@
  * of the delta-v needed to get somewhere comes from engine burns. Whatever put
  * the ship there — a departure tech's release physics, a chain of burns
  * upstream, anything — is that upstream stage's business; transfer-leg just
- * coasts from where it is handed off. The two WAYPOINT burns are real, though:
+ * coasts from where it is handed off. The WAYPOINT burns are real, though:
  * genuine mid-course corrections during Coast. By the same reasoning the ship's
  * heading and speed at the END of Coast is just the resultant of that starting
  * state plus whatever waypoint burns happened along the way, so nothing at the
@@ -77,8 +75,8 @@ export var DESTINATIONS = ["Venus", "Earth", "Mars", "Ceres", "Vesta", "Psyche",
 
 // A waypoint burn edited during Coast is a COURSE CORRECTION, not a fresh
 // injection: the sidebar card caps how far any single axis may move from its
-// baseline (the adopted plan's original burn for an existing waypoint, or
-// zero for one added after freezing — see rebuildWaypointRows). Exported so
+// baseline (the adopted plan's original burn for that waypoint, or zero for a
+// waypoint with no plan original — see rebuildWaypointRows). Exported so
 // the shell/tests can reference the same figure.
 export var WAYPOINT_AXIS_CAP_MPS = 100;
 
@@ -91,7 +89,7 @@ export var MISS_WARN_AU = 0.02;
 export var OVERRUN_POLYLINE_DENSITY = 3;
 
 export var defaultParams = {
-	waypoints: [],                       // up to 2: { days, burn: {pro,rad,nrm} }
+	waypoints: [],                       // the plan's: { days, burn: {pro,rad,nrm} }
 	legDays: 480,                        // duration from leg start to the emitted state
 	destination: ""                      // body name, or "" for none
 };
@@ -681,11 +679,9 @@ function rememberWpHosts(world, stageId, hosts) {
 	m.set(stageId, hosts);
 }
 
-// Each waypoint card's location section (init, below), for a waypoint with a
-// plan original — draw() needs its info-line element and the section itself
-// (as the readout box's host) to refresh them every recompute, the same split
-// wpHostsFor/rememberWpHosts keeps for the burn gizmos. Same WeakMap-per-World
-// pattern.
+// Each waypoint card's plan info line (init, below), for a waypoint with a
+// plan original — draw() refreshes it every recompute. Same WeakMap-per-World
+// pattern as wpHostsFor/rememberWpHosts.
 var planWpRowsByWorld = new WeakMap();
 function planWpRowsFor(world, stageId) {
 	var m = planWpRowsByWorld.get(world);
@@ -706,7 +702,7 @@ export default {
 	emits: ["ship-state"],
 	rendersIn: ["helio"],
 	// No title/status header on the sidebar card: the Coast sidebar shows just
-	// the waypoint cards + add button (see init). Warnings/diagnostics still
+	// the waypoint cards (see init). Warnings/diagnostics still
 	// render in the card via the shell's generic boxes.
 	plainCard: true,
 
@@ -755,8 +751,9 @@ export default {
 
 	// ---- view layer (shell-called; never runs in Node) --------------------
 
-	// Sidebar card: ONLY the waypoint burns live here — one small card per
-	// existing waypoint plus the add button (capped at 2). Leg duration,
+	// Sidebar card: ONLY the waypoint burns live here — one card per waypoint
+	// the plan brought. Coast offers no way to add one: a new waypoint is a
+	// change to the plan, made on the Ephemeris tab. Leg duration,
 	// destination and the departure injection are the adopted plan's business,
 	// not knobs on the coast, and its figures render in the phase bar's
 	// compliance readout instead. The stage opts out of the generic title/status
@@ -766,17 +763,16 @@ export default {
 	// An ORIGINAL plan waypoint (index-matched against planWaypointsFor's
 	// adopted reference copy) is a committed course correction, not a knob the
 	// user can delete outright: its card's button reads "reset" and restores
-	// the plan's own days/burn rather than removing the row. A waypoint added
-	// AFTER freezing (index beyond the adopted list) is a later course
-	// correction with no commitment behind it yet, so it keeps the ordinary
-	// "remove" button.
+	// the plan's own days/burn rather than removing the row. A waypoint with
+	// no plan original (index beyond the adopted list) can only come from a
+	// mission saved when Coast still allowed adding one; its card keeps a
+	// "remove" button so it can be cleared.
 	//
 	// Every waypoint's burn editor runs the vector-editor's delta-cap mode
 	// (WAYPOINT_AXIS_CAP_MPS, ±100 m/s per axis), baselined at the value the
-	// "reset" button would restore — the plan's original burn for an original
-	// waypoint, zero for one added later. Both cases read the same way: a
-	// waypoint on Coast is a bounded trim from wherever it started, never a
-	// fresh injection.
+	// "reset" button would restore — the plan's original burn, or zero for a
+	// waypoint with no plan original. A waypoint on Coast is a bounded trim
+	// from wherever it started, never a fresh injection.
 
 	init: function (ctx) {
 		var host = ctx.panelHost;
@@ -799,14 +795,10 @@ export default {
 		// gizmo is the vector editor's plan-overlay mode: the plan's own burn
 		// as solid arrows, the live burn as a white outline dragged within
 		// ±WAYPOINT_AXIS_CAP_MPS of it — so the plan and the correction read
-		// in one picture. A waypoint added after freezing has a zero plan
-		// burn, so only the outline shows. Each section hosts its own
-		// straddling readout box (Shared/sim/readout-panes.js), filled by
-		// draw(): the location section's reports the plan's burn fired from
-		// where the waypoint now sits, the impulse section's the edit alone
-		// (Notes/decisions.md, "Each waypoint readout pane tracks ONE lever").
-		// The location section's box exists only when a plan waypoint stands
-		// behind this index.
+		// in one picture. A waypoint with no plan original has a zero plan
+		// burn, so only the outline shows. The gizmo's host carries the
+		// card's one straddling readout box (Shared/sim/readout-panes.js),
+		// filled by draw() with the burn as it stands.
 		function rebuildWaypointRows() {
 			wpHost.innerHTML = "";
 			var wps = stageParams().waypoints.slice();
@@ -821,19 +813,17 @@ export default {
 
 				var locSection = document.createElement("div");
 				if (original) {
-					locSection.className = "mp-pane-host";
 					var info = document.createElement("div"); info.className = "mp-muted";
 					locSection.appendChild(info);
-					planRows.push({ info: info, host: locSection });
+					planRows.push({ info: info });
 				} else {
 					planRows.push(null);
 				}
 				card.appendChild(locSection);
 
-				// Location and impulse are separate levers on a waypoint (an
-				// added waypoint has no plan original, so it has no per-lever
-				// reset -- "remove" drops the whole waypoint instead, next to
-				// the location bullet since that's the lever that placed it).
+				// Location and impulse are separate levers on a waypoint. One
+				// with no plan original has no per-lever reset -- "remove"
+				// drops the whole waypoint instead, next to the location bullet.
 				var locHead = document.createElement("div"); locHead.className = "mp-wp-subhead";
 				var locBullet = document.createElement("span"); locBullet.className = "mp-wp-bullet"; locBullet.textContent = "•";
 				var locLabel = document.createElement("span"); locLabel.textContent = "location";
@@ -842,51 +832,6 @@ export default {
 				locBtn.textContent = original ? "reset" : "remove";
 				locHead.appendChild(locBtn);
 				locSection.appendChild(locHead);
-
-				// One-shot placement helper for the FIRST added waypoint (no plan
-				// waypoint behind it): quick-place on whichever apsis the current
-				// coast is headed toward, or a node against the ecliptic, same
-				// geometry as the Ephemeris tab's snap-to (Shared/math-utils.js's
-				// apsisFromBurn/nodeInfo/snapTau) but resolved once at click time
-				// against the coast's OWN start state (there is no launching burn
-				// within this leg to read a sense from — see the module header —
-				// so the apsis sense comes from the current radial velocity's sign
-				// instead: outbound heads to apoapsis next, inbound to periapsis).
-				// Unlike Ephemeris's live-tracking snap, this just sets `days` once;
-				// the waypoint is then an ordinary day/degree-edited waypoint.
-				if (i === 0 && !original) {
-					var leg0 = legFor(ctx.world, ctx.stageId);
-					var r0 = (leg0 && leg0.ok && leg0.segs.length) ? leg0.segs[0].r0 : null;
-					var v0 = (leg0 && leg0.ok && leg0.segs.length) ? leg0.segs[0].v0 : null;
-					if (r0 && v0) {
-						var synBurn = { pro: O.vDot(r0, v0) >= 0 ? 1 : -1 };
-						var ap0 = O.apsisFromBurn(synBurn);
-						var apsisOK = ap0.available &&
-							!(ap0.label === "apoapsis" && O.elementsFromState(GM_SUN, r0, v0).e >= 1);
-						var ni0 = O.nodeInfo(GM_SUN, r0, v0);
-						var snapRow = document.createElement("div"); snapRow.className = "mp-wp-snaps";
-						[["apsis", apsisOK ? ap0.label : null], ["asc", ni0.ascLabel], ["desc", ni0.descLabel]]
-							.forEach(function (d) {
-								if (!d[1]) { return; }
-								var lab = document.createElement("label"); lab.className = "mp-wp-snap";
-								var cb = document.createElement("input"); cb.type = "checkbox";
-								var txt = document.createElement("span"); txt.textContent = d[1];
-								lab.appendChild(cb); lab.appendChild(txt); snapRow.appendChild(lab);
-								cb.addEventListener("change", function () {
-									if (!cb.checked) { return; }
-									var tauS = O.snapTau(GM_SUN, r0, v0, synBurn, d[0], 0);
-									cb.checked = false;   // a placement action, not a persisted mode
-									if (tauS == null) { return; }
-									var placeList = copyWaypoints(stageParams().waypoints);
-									placeList[i].days = Math.max(0.01,
-										Math.min(stageParams().legDays - 0.01, tauS / DAY));
-									commitWaypoints(placeList);
-									setAtBase(degAtDay(legFor(ctx.world, ctx.stageId), placeList[i].days));
-								});
-							});
-						locSection.appendChild(snapRow);
-					}
-				}
 
 				// "at ... degrees": a number field (0.1°-stepped, shown to two
 				// decimals) plus a ±5° fine-tune slider, offset from wherever
@@ -1009,33 +954,6 @@ export default {
 			});
 			rememberWpHosts(ctx.world, ctx.stageId, burnHosts);
 			rememberPlanWpRows(ctx.world, ctx.stageId, planRows);
-			if (wps.length < 2) {
-				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
-				add.textContent = "+ add waypoint";
-				add.addEventListener("click", function () {
-					var list = copyWaypoints(stageParams().waypoints);
-					var legDays = stageParams().legDays;
-					var day;
-					if (!list.length) {
-						// First waypoint: defaults to the leg's midpoint; the card's
-						// apsis/node checkboxes above offer quick placement instead.
-						day = Math.round(legDays / 2);
-					} else {
-						// Second waypoint: placed at the chevron's current location,
-						// provided that falls after the first waypoint -- otherwise
-						// pushed just past it, same fallback as before this existed.
-						var leg = legFor(ctx.world, ctx.stageId);
-						var chevronDay = (leg && leg.ok) ? (ctx.world.jd - leg.jd0) : NaN;
-						day = (isFinite(chevronDay) && chevronDay > list[0].days)
-							? Math.min(chevronDay, legDays - 10)
-							: Math.min(list[0].days + 60, legDays - 10);
-					}
-					list.push({ days: day, burn: { pro: 0, rad: 0, nrm: 0 } });
-					commitWaypoints(list);
-					rebuildWaypointRows();
-				});
-				wpHost.appendChild(add);
-			}
 		}
 		rebuildWaypointRows();
 	},
@@ -1158,7 +1076,6 @@ export default {
 				var wpTimeS = (wp.days || 0) * DAY;
 				var wpState = stateAtElapsed(leg, wpTimeS);
 				if (!wpState) { return; }
-				var original = planWpsDraw[i] || null;
 
 				// Create the waypoint gizmo (three axes: prograde, radial, normal)
 				var gizPos = new THREE.Vector3(wpState.r[0] / U, wpState.r[1] / U, wpState.r[2] / U);
@@ -1180,34 +1097,12 @@ export default {
 					if (a) { view.group.add(a); view.pxScaled.push({ obj: a, px: GIZMO_PX }); }
 				});
 
-				// The two readout panes each track ONE lever, live, with no
-				// plan-relative diffing between them
-				// (Notes/decisions.md, 2026-08-19):
-				//
-				// The LOCATION section's pane (up top, beside the adopted
-				// plan's own info) reports the PLAN's own burn fired from
-				// wherever the waypoint currently sits — same fixed burn
-				// numbers every time, but read through whatever local frame
-				// the LIVE (possibly relocated) position puts them in. It
-				// only moves when the location moves.
-				var baselineBurn = original ? original.burn : { pro: 0, rad: 0, nrm: 0 };
-				var baseEff = burnEffect(GM_SUN, wpState.r, wpState.v,
-					{ pro: baselineBurn.pro || 0, rad: baselineBurn.rad || 0, nrm: baselineBurn.nrm || 0 });
-				if (original && planRows[i]) {
-					view.readoutEntries.push({ host: planRows[i].host, data: baseEff, title: "plan Δv" });
-				}
-
-				// The IMPULSE section's pane reports only what's been added
-				// on top of that baseline — the burn edit itself, isolated
-				// from the location the ship happens to be at when it fires.
-				var deltaBurn = {
-					pro: (wp.burn.pro || 0) - (baselineBurn.pro || 0),
-					rad: (wp.burn.rad || 0) - (baselineBurn.rad || 0),
-					nrm: (wp.burn.nrm || 0) - (baselineBurn.nrm || 0)
-				};
-				var impulseEff = burnEffect(GM_SUN, wpState.r, wpState.v, deltaBurn);
+				// The card's one readout box: the burn as it stands, fired
+				// where the waypoint now sits — the same figures the arrows
+				// above draw (Notes/decisions.md, "A Coast waypoint has one
+				// readout pane").
 				if (wpHosts[i]) {
-					view.readoutEntries.push({ host: wpHosts[i], data: impulseEff, title: "correction Δv" });
+					view.readoutEntries.push({ host: wpHosts[i], data: eff });
 				}
 			});
 		}

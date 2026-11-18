@@ -76,11 +76,12 @@
  *                              WORKING copy lives on the transfer-leg stage,
  *                              where the user edits them); the plan does not
  *                              recompute the coast from them. Also the line
- *                              between an original plan waypoint and a
- *                              later course correction: transfer-leg's
- *                              sidebar card reads this back through
- *                              planWaypointsFor to lock/reset the former
- *                              (index-matched) and freely remove the latter.
+ *                              between an original plan waypoint and one
+ *                              with no plan behind it (only in missions
+ *                              saved when Coast could add waypoints):
+ *                              transfer-leg's sidebar card reads this back
+ *                              through planWaypointsFor to lock/reset the
+ *                              former (index-matched) and remove the latter.
  *
  * The module declares `inputOptional: true` (a comply-mode carve-out in
  * recompute.js): a mission spawned with an empty tech slot still shows its
@@ -164,8 +165,9 @@ export function arrivalCommitmentFor(world) {
 // creation (core/adopt.js), read the same way arrivalCommitmentFor reads
 // its field. transfer-leg's sidebar card uses
 // this to tell an original plan waypoint (part of the committed mission,
-// not removable — only resettable to these values) from one added later as
-// a course correction during Coast (freely removable). Index-matched against
+// not removable — only resettable to these values) from one with no plan
+// behind it, which only a mission saved when Coast could still add waypoints
+// carries (removable). Index-matched against
 // the working copy on the transfer-leg stage: edits mutate waypoints in
 // place and never reorder them, so position i here is plan waypoint i there.
 // [] when the mission has no adopted plan.

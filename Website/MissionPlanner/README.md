@@ -395,7 +395,8 @@ never when it started.
 **Coast:**
 
 - **`modules/transfer-leg/`** — the canonical transfer-leg module: a ballistic
-  arc between two ship states with up to two waypoint burns, extended with
+  arc between two ship states with the plan's waypoint burns (trimmed on
+  Coast, never added there), extended with
   real SOI encounters (where the arc dips inside a body's SOI the flight
   switches to `Shared/body-leg.js`'s body+Sun integration and resumes Kepler
   at exit). Consumes the hand-off ship-state unmodified — no burn happens at
