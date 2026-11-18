@@ -75,6 +75,19 @@ export const Traffic = {
 		return { values: out, over: left < 0 ? -left : 0 };
 	},
 
+	// The surface share and the surface route are one quantity: the share of a year's
+	// arrivals, and the same flow as kt per route period.
+	//   amount = inYear · pct / 100 · periodSec / YEAR
+	//   pct    = 100 · amount · YEAR / (periodSec · inYear)
+	// inYear: kt per year arriving; pct: percent; amount: kt per period; periodSec: the
+	// period in seconds. Each returns null where it cannot be worked out (no arrivals).
+	surfaceAmount: function (inYear, pct, periodSec) {
+		return inYear > 0 && periodSec > 0 ? inYear * pct / 100 * periodSec / YEAR : null;
+	},
+	surfaceShare: function (inYear, amount, periodSec) {
+		return inYear > 0 && periodSec > 0 ? 100 * amount * YEAR / (periodSec * inYear) : null;
+	},
+
 	// What all the hauls add up to. hauls: [{ power, force }]. env: { period, climberEff,
 	// thrusterEff, vExhaust } — an efficiency left null gives null for what needs it.
 	//   Energy at the equipment: losses cost P / η, gains return |P| · η.

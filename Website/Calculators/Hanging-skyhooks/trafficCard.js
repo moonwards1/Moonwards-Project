@@ -408,7 +408,7 @@ export function addTrafficCard(shell, opts) {
 	sec = section(outG.body, "To surface", "tf-route", "to surface");
 	S.outSurf = { box: sec.box, per: periodRadios(sec.r, "To surface per", ["orbit", "day"], "orbit"), amount: amountIn(sec.r, "To surface amount", 0) };
 	S.outSurf.eq = equivalents(sec, ["orbit", "day", "year"]);
-	S.outFar.amount.value = S.outSurf.amount.value = "";   // filled on the first update unless saved settings give them
+	S.outFar.amount.value = "";   // filled on the first update unless saved settings give them
 	r = row(sec.body, "By shuttle");
 	bulkSurf.view(r.k, "out");
 	r = row(sec.body, "load per flight");
@@ -444,6 +444,13 @@ export function addTrafficCard(shell, opts) {
 		return { a: keepA ? val(a) : rest, b: keepA ? rest : val(b), over: left < 0 ? -left : 0 };
 	}
 	watchPair("capsule", S.outNear.fTon, S.outNear.cTon);
+
+	// The surface share (%) and the "To surface" amount are one quantity: whichever was edited
+	// last stays and the other follows (Traffic.surfaceAmount / surfaceShare). Changing the
+	// route's period or the arrivals keeps the share; only typing an amount makes the amount the fixed one.
+	var surfKeep = "share", surfPeriod = null;
+	S.surf.addEventListener("input", function () { surfKeep = "share"; });
+	S.outSurf.amount.addEventListener("input", function () { surfKeep = "amount"; });
 
 	// A flights line: on the bulk side "flights per <period>", on the other "load per flight".
 	function flightsLine(f, flights, unit, rateKg, list, bulk) {
@@ -522,18 +529,35 @@ export function addTrafficCard(shell, opts) {
 		var inYear = (rate(inSurf, uSurf) + rate(inNear, uNearIn)) * YEAR / 1e6 + inFar;   // kt/yr
 		S.total.set(ktText(inYear));
 
+		// The surface share and the surface route's amount are one quantity; whichever was edited
+		// last stays and the other follows. The kept one is used exactly, not as the rounded text shown.
+		var uNearOut = S.outNear.per.value, uSurfOut = S.outSurf.per.value;
+		if (surfPeriod !== null && uSurfOut !== surfPeriod) surfKeep = "share";
+		surfPeriod = uSurfOut;
+		var surfSec = secs(uSurfOut);
+		if (document.activeElement === S.surf) surfKeep = "share";
+		if (document.activeElement === S.outSurf.amount) surfKeep = "amount";
+		var pSurf = val(S.surf), aSurf = val(S.outSurf.amount);
+		if (surfKeep === "amount") {
+			var shareOfAmount = Traffic.surfaceShare(inYear, aSurf, surfSec);
+			if (shareOfAmount !== null) { pSurf = shareOfAmount; S.surf.value = String(+shareOfAmount.toPrecision(6)); }
+		} else {
+			var amountOfShare = Traffic.surfaceAmount(inYear, pSurf, surfSec);
+			if (amountOfShare !== null) { aSurf = amountOfShare; S.outSurf.amount.value = ktField(amountOfShare); }
+		}
+		S.surf.classList.toggle("tf-rem", surfKeep === "amount");
+		S.outSurf.amount.classList.toggle("tf-rem", surfKeep !== "amount");
+
 		// the shares of the year's arrivals that leave as products and go to the surface; the rest is waste and use on the anchor
-		var pWaste = 100 - val(S.prod) - val(S.surf);
+		var pWaste = 100 - val(S.prod) - pSurf;
 		S.waste.set(num(Math.max(0, pWaste), 1));
 		if (pWaste < 0) warnings.push("Traffic: products and surface shares come to more than 100%.");
-		var prodBudget = inYear * val(S.prod) / 100, surfBudget = inYear * val(S.surf) / 100;
+		var prodBudget = inYear * val(S.prod) / 100, surfBudget = inYear * pSurf / 100;
 
-		// A fresh card's outgoing amounts start at the shares' budgets.
-		var uNearOut = S.outNear.per.value, uSurfOut = S.outSurf.per.value;
+		// A fresh card's interplanetary amount starts at its share's budget.
 		if (!seeded) {
 			seeded = true;
 			if (S.outFar.amount.value === "") S.outFar.amount.value = ktField(prodBudget);
-			if (S.outSurf.amount.value === "") S.outSurf.amount.value = ktField(surfBudget * secs(uSurfOut) / YEAR);
 		}
 
 		// outgoing: every amount is typed. The near market's line is its total; where capsules
@@ -545,7 +569,7 @@ export function addTrafficCard(shell, opts) {
 			if (pc.over > 0) warnings.push("Traffic: freighters and capsules carry " + ktText(pc.over) + " kt more than the route.");
 			fOut = pc.a; cOut = pc.b; fShown = S.outNear.fTon.value;
 		}
-		var outFar = val(S.outFar.amount), outSurf = val(S.outSurf.amount);
+		var outFar = val(S.outFar.amount), outSurf = aSurf;
 		var prodYear = outNear * YEAR / secs(uNearOut) + outFar, surfYear = outSurf * YEAR / secs(uSurfOut);
 		S.outTotal.set(ktText(prodBudget));
 		S.outAccounted.set(ktText(prodYear));

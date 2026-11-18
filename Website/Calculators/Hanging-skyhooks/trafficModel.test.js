@@ -58,3 +58,13 @@ test("balance: efficiencies only where given", function () {
 	near(b.propFlow, 1.5 / 8000, 1e-12, "reboost propellant");
 	assert.equal(Traffic.balance(hs, { period: 10, climberEff: null }).supplied, null);
 });
+
+test("surface share and surface amount convert both ways", function () {
+	var day = 86400, inYear = 1000;
+	var amount = Traffic.surfaceAmount(inYear, 5, day);
+	near(amount, 1000 * 0.05 * day / YEAR, 1e-12, "5% of 1,000 kt/yr, per day");
+	near(Traffic.surfaceShare(inYear, amount, day), 5, 1e-12, "round trip");
+	near(Traffic.surfaceShare(inYear, amount, env.period), 5 * day / env.period, 1e-12, "the same amount in a shorter period is a larger share");
+	assert.equal(Traffic.surfaceAmount(0, 5, day), null);
+	assert.equal(Traffic.surfaceShare(0, 1, day), null);
+});

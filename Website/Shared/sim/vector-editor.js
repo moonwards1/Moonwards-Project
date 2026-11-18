@@ -6,12 +6,16 @@
  * a numeric-input row underneath. Values are m/s in and out; the widget
  * displays and edits in km/s (±15 km/s range, shift-drag for fine control).
  *
- * Two SVG layers, independently transformed:
+ * Two SVG layers, drawn independently:
  * - `world`: the isometric reference glyph, the faint axis guide rays, and
  *   the draggable arrows — the whole picture moves and scales together, so
- *   an arrow is always drawn on top of its own axis. Carries a
- *   user-controlled translate+scale (zoom/pan), so a small burn can be
- *   zoomed in until it's as easy to grab as a large one.
+ *   an arrow is always drawn on top of its own axis. Zoom/pan is user-
+ *   controlled, so a small burn can be zoomed in until it's as easy to grab
+ *   as a large one. The layer carries NO transform: every point is mapped
+ *   world→screen in JS and written as plain coordinates on each redraw.
+ *   A scale() transform on the group would let the browser stretch its
+ *   cached bitmap of the layer and only repaint it sharp seconds later,
+ *   which reads as a blurry picture after every zoom step.
  * - `overlay`: just the per-axis letter+value legend. Never transforms, so
  *   the legend stays put (and legible) at any zoom/pan level — it's a fixed
  *   compass reading, not part of the "image" underneath that pans.
@@ -154,6 +158,9 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	var overlay = svgEl("g", { "class": "sst-vec-overlay" });
 	var world = svgEl("g", { "class": "sst-vec-world" });
 
+	// World-space geometry for the ship glyph and guide rays; redraw() maps it
+	// to screen coordinates (see the `world` note in the header).
+	var glyphFaces = [];
 	(function () {
 		// Three-face ship glyph (yqnn-generated path), scaled so its footprint
 		// matches the old glyph's ~48-unit local length, centred on (5,6) — the
@@ -161,9 +168,9 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		var SHIP_SCALE = 3, SHIP_CX = 5, SHIP_CY = 6;
 		function P(lx, ly) { return [OX + (lx - SHIP_CX) * SHIP_SCALE, OY + (ly - SHIP_CY) * SHIP_SCALE]; }
 		function poly(pts, fill) {
-			return svgEl("polygon", {
-				points: pts.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" "),
-				fill: fill, "fill-opacity": 0.6 });
+			var el = svgEl("polygon", { fill: fill, "fill-opacity": 0.6 });
+			glyphFaces.push({ el: el, pts: pts });
+			return el;
 		}
 		var p0 = P(0, 4), p1 = P(5, 6), p2 = P(16, 0), p3 = P(11, 12), p4 = P(5, 10);
 		world.appendChild(poly([p0, p1, p2],     "#595d66")); // Face A — medium gray
@@ -175,9 +182,8 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		// Solid dark per-axis rays (own darker tint, not the bright impulse-
 		// arrow colour) — drawn after the glyph so they read clearly over it,
 		// while staying visually distinct from the bright, thick arrows.
-		world.appendChild(svgEl("line", {
-			x1: OX - a.dx*LEN, y1: OY - a.dy*LEN, x2: OX + a.dx*LEN, y2: OY + a.dy*LEN,
-			stroke: a.rayCol, "stroke-width": 1.5 }));
+		a.ray = svgEl("line", { stroke: a.rayCol });
+		world.appendChild(a.ray);
 		var lx = OX + a.dx*(LEN+11), ly = OY + a.dy*(LEN+11);
 		var t = svgEl("text", { x: lx, y: ly, fill: a.col, "text-anchor": "middle" });
 		var letter = svgEl("tspan", { x: lx, dy: 0, "font-size": 12, "font-weight": 700 });
@@ -233,12 +239,24 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	});
 	host.appendChild(row);
 
+	// World → screen (viewBox units): the zoom/pan mapping, applied to every
+	// point at draw time rather than as a transform on the `world` group.
+	function sx(x) { return (panX + x * zoom).toFixed(2); }
+	function sy(y) { return (panY + y * zoom).toFixed(2); }
 	function redraw() {
-		// Local-space compensation so that after the `world` group's scale(zoom)
-		// transform, the RENDERED stroke/arrowhead size ends up as
-		// base * zoom^THICK_EXP instead of base * zoom.
+		// Lengths below are in WORLD units (scaled by zoom when mapped to the
+		// screen); dividing the size constants by zoom^(1 - THICK_EXP) makes the
+		// RENDERED stroke/arrowhead size base * zoom^THICK_EXP instead of base * zoom.
 		var thickComp = Math.pow(zoom, THICK_EXP - 1);
 		var strokeW = BASE_STROKE * thickComp, headLen = BASE_HEAD_LEN * thickComp, headHalf = BASE_HEAD_HALF * thickComp;
+		glyphFaces.forEach(function (f) {
+			f.el.setAttribute("points", f.pts.map(function (p) { return sx(p[0]) + "," + sy(p[1]); }).join(" "));
+		});
+		axes.forEach(function (a) {
+			a.ray.setAttribute("x1", sx(OX - a.dx*LEN)); a.ray.setAttribute("y1", sy(OY - a.dy*LEN));
+			a.ray.setAttribute("x2", sx(OX + a.dx*LEN)); a.ray.setAttribute("y2", sy(OY + a.dy*LEN));
+			a.ray.setAttribute("stroke-width", (1.5 * zoom).toFixed(3)); // grows in full proportion with zoom
+		});
 		axes.forEach(function (a) {
 			var raw = values[a.key] - baseline[a.key];
 			var vis = Math.max(-maxMps, Math.min(maxMps, raw));
@@ -254,13 +272,13 @@ export function buildVectorEditor(host, values, onChange, opts) {
 				// arrow stays a narrow arrow rather than a flat wide wedge.
 				var baseLen = Math.min(headLen, Math.abs(vis) * SCALE);
 				var k = baseLen / headLen;
-				a.line.setAttribute("stroke-width", (strokeW * Math.max(k, 0.3)).toFixed(3));
+				a.line.setAttribute("stroke-width", (strokeW * Math.max(k, 0.3) * zoom).toFixed(3));
 				var hh = headHalf * k;
 				var bx = tx - hx*baseLen, by = ty - hy*baseLen;
-				a.line.setAttribute("x1", OX); a.line.setAttribute("y1", OY);
-				a.line.setAttribute("x2", bx); a.line.setAttribute("y2", by);
+				a.line.setAttribute("x1", sx(OX)); a.line.setAttribute("y1", sy(OY));
+				a.line.setAttribute("x2", sx(bx)); a.line.setAttribute("y2", sy(by));
 				a.head.setAttribute("points",
-					tx + "," + ty + " " + (bx+px*hh) + "," + (by+py*hh) + " " + (bx-px*hh) + "," + (by-py*hh));
+					sx(tx) + "," + sy(ty) + " " + sx(bx+px*hh) + "," + sy(by+py*hh) + " " + sx(bx-px*hh) + "," + sy(by-py*hh));
 			}
 			// Unclamped raw (not vis): matches the pre-cap widget's behavior of
 			// showing the true typed value even past the drawn arrow's clamp. In
@@ -281,9 +299,7 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	// picture grows in place from the centre; only explicit panning (drag or the
 	// pan buttons) ever moves it off-centre. ----
 	var zoom = 1, panX = 0, panY = 0;
-	function applyTransform() {
-		world.setAttribute("transform", "translate(" + panX + "," + panY + ") scale(" + zoom + ")");
-	}
+	function applyTransform() { redraw(); }
 	function setZoom(next) {
 		next = Math.max(ZMIN, Math.min(ZMAX, next));
 		var wx = (OX - panX) / zoom, wy = (OY - panY) / zoom;
@@ -291,7 +307,6 @@ export function buildVectorEditor(host, values, onChange, opts) {
 		panX = OX - wx * zoom;
 		panY = OY - wy * zoom;
 		applyTransform();
-		redraw(); // thickness/arrowhead size depend on zoom too, not just position
 	}
 	function pan(dx, dy) { panX += dx; panY += dy; applyTransform(); }
 
@@ -391,7 +406,6 @@ export function buildVectorEditor(host, values, onChange, opts) {
 	svg.addEventListener("pointerup", endDrag);
 	svg.addEventListener("pointercancel", endDrag);
 
-	applyTransform();
 	host._sstRedraw = redraw;
 	redraw();
 }
