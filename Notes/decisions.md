@@ -562,13 +562,15 @@ sum of the unsigned angles between successive path samples about the centre
 (Earth, or the Moon for a path drawn with the Moon; Mars), so it never
 decreases and keeps counting through a plane change. On that axis the ship
 holds its angle across any change to the flight; a held angle past the new
-path's end shows the ship at the end.
+path's end shows the ship at the end. The slider is laid out linearly in time
+on both axes; the axis sets only what the ship holds.
 
 Why: these flights are integrated (Earth + Moon + Sun, Mars's bulge), so the
 samples are the flight and there is no conic to solve analytically, unlike the
 Ephemeris marker's hold. An angle measured in a fixed plane doubles back where
 the Sun turns the path far out; a running maximum would then give the slider
-dead stretches.
+dead stretches. Laying the slider out by angle instead of time would hand most
+of it to the fast pass close to the planet.
 
 ### New calculators use the three-column calculator shell
 

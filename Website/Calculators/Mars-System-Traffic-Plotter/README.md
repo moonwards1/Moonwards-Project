@@ -539,7 +539,9 @@ release (`OrbitalMath.sweepTable`):
 
 On the radial axis the ship holds its angle while the flight changes, so it
 stays on the same ray from Mars and a change to the release or the date shows
-as the destination tether coming early or late. **Pin** keeps
+as the destination tether coming early or late. The slider itself stays
+linear in time on both axes, so a fast pass close to Mars gets no more of it
+than any other stretch of the same length in time. **Pin** keeps
 the ship at that pass instead, wherever it falls; moving the slider lets go.
 In a turning view the path is drawn as that view sees it.
 

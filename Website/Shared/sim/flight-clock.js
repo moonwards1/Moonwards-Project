@@ -14,6 +14,10 @@
  *             release or the date shows up as the destination arriving early
  *             or late against a ship that holds still.
  *
+ * The slider itself is linear in time on both axes: the axis decides what the
+ * ship holds when the flight changes, not how the slider is laid out. Laid out
+ * by angle, a fast pass close to a planet would take up most of the slider.
+ *
  * PIN puts the ship at the flight's closest pass to its destination, wherever
  * that falls as the flight changes; any move of the ship by hand lets go.
  * With no pass to pin to, the axis's held place stands.
@@ -53,20 +57,16 @@ export function clockDegrees(c, f) {
 	return f.table ? O.sweepDegAt(f.table, clockSeconds(c, f)) : null;
 }
 
-// The slider's thumb, 0..1 along its axis.
+// The slider's thumb, 0..1 of the span in time.
 export function clockSliderFrac(c, f) {
-	var t = clockSeconds(c, f);
-	if (radial(c, f)) {
-		var end = O.sweepDegAt(f.table, f.span);
-		return end > 0 ? Math.min(1, O.sweepDegAt(f.table, t) / end) : 0;
-	}
-	return f.span > 0 ? Math.min(1, t / f.span) : 0;
+	return f.span > 0 ? Math.min(1, clockSeconds(c, f) / f.span) : 0;
 }
 
-// The slider moved to frac (0..1 along its axis).
+// The slider moved to frac (0..1 of the span in time). On the radial axis the
+// ship then holds the angle it has reached there.
 export function clockSetFrac(c, f, frac) {
 	c.pin = false;
-	if (radial(c, f)) { c.deg = frac * O.sweepDegAt(f.table, f.span); return; }
+	if (radial(c, f)) { c.deg = O.sweepDegAt(f.table, frac * f.span); return; }
 	c.by = "frac"; c.frac = frac;
 }
 

@@ -81,8 +81,9 @@ the Moon (`OrbitalMath.sweepTable`):
 On the radial axis the ship holds its angle while the flight changes — a
 waypoint, the release, the date — so it stays on the same ray from Earth and
 only the time it gets there moves: the destination is then seen arriving early
-or late against a ship that holds still. Measured round Earth, a slow stretch
-near the Moon gets little of the slider and a fast perigee pass a lot.
+or late against a ship that holds still. The slider itself stays linear in
+time on both axes, so a fast pass close to Earth or the Moon gets no more of
+it than any other stretch of the same length in time.
 **Pin** keeps the ship at its closest pass to the destination
 tether, wherever that falls; moving the ship by hand lets go.
 

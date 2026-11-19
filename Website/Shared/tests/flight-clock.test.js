@@ -85,6 +85,21 @@ test("clock: radial axis holds the swept angle when the path changes", function 
 	assert.ok(Math.abs(clockSliderFrac(c, shape2) - 0.25) < 1e-9);
 });
 
+test("clock: the slider is linear in time on the radial axis too", function () {
+	// An ellipse sweeps most of its angle close to perigee; the slider still
+	// gives each hour the same length.
+	var rp = 7e6, ra = 4e8, a = (rp + ra) / 2, vp = Math.sqrt(GM_E * (2 / rp - 1 / a));
+	var T = 2 * Math.PI * Math.sqrt(a * a * a / GM_E);
+	var tb = O.sweepTable(path([rp, 0, 0], [0, vp, 0], T, 4000));
+	var ell = { span: T, duration: T, table: tb, pinT: null };
+	var c = flightClock();
+	clockSetAxis(c, ell, "radial");
+	clockSetFrac(c, ell, 0.25);
+	assert.ok(Math.abs(clockSeconds(c, ell) - T / 4) < T / 1000);
+	assert.ok(Math.abs(clockSliderFrac(c, ell) - 0.25) < 1e-3);
+	assert.ok(clockDegrees(c, ell) > 150);            // well past a quarter of the angle
+});
+
 test("clock: switching axis keeps the ship where it is", function () {
 	var c = flightClock();
 	clockSetFrac(c, SHAPE, 0.3);
