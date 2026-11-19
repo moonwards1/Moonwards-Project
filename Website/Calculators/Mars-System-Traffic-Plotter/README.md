@@ -548,8 +548,8 @@ In a turning view the path is drawn as that view sees it.
 ## Pointing at the scene
 
 Clicking Mars, a moon, the ship or one of a skyhook's markers (foot, top,
-release point, the hanging skyhook's centre of mass) makes the camera follow it; the label in the view's
-corner names it, and its ✕ or a right-drag pan lets go. The POV buttons set
+release point, the hanging skyhook's centre of mass) makes the camera follow it, and a
+right-drag pan lets go. The POV buttons set
 what is followed and how far back the camera sits. Shift (¼) and Ctrl (1/10)
 slow any slider.
 

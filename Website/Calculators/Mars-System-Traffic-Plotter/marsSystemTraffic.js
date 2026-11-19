@@ -211,7 +211,6 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 holder.appendChild(renderer.domElement);
 holder.appendChild(frame.labelLayer);
 
-var followEl = $("mst-follow");
 var glide = 0;                         // frames left of easing onto a new follow position
 
 // World position of a follow target, or null when it is not in the scene.
@@ -223,9 +222,6 @@ function targetPos(id) {
 		return showFac.checked && fig && fig.ok ? overlay.markers[id].pos : null;
 	}
 	return frame.bodyPosition(id);
-}
-function targetLabel(id) {
-	return id === "ship" ? "the ship" : (overlay.markers[id] ? overlay.markers[id].label : id);
 }
 function zoomMin() { return ZOOM_MIN[state.follow] || 0.02; }
 
@@ -254,8 +250,6 @@ function pressed(group, attr, value) {
 	});
 }
 function syncButtons() {
-	followEl.hidden = !state.follow;
-	followEl.firstChild.textContent = state.follow ? "Following: " + targetLabel(state.follow) : "";
 	pressed($("mst-pov"), "pov", state.pov);
 	pressed($("mst-frames"), "frame", state.view);
 	var f = VIEW_FRAMES.filter(function (v) { return v.id === state.view; })[0];
@@ -366,7 +360,6 @@ renderer.domElement.addEventListener("mousemove", function (e) {
 	if (e.buttons) { return; }
 	renderer.domElement.style.cursor = releaseMarkerAt(e) ? "grab" : (pickTarget(e) ? "pointer" : "");
 });
-followEl.addEventListener("click", function () { setFollow(null); });
 
 function resize() {
 	var w = holder.clientWidth || 600, h = holder.clientHeight || 400;

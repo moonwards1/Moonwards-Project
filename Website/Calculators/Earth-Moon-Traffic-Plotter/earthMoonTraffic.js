@@ -506,7 +506,6 @@ function placeShip() {
 // ---- camera ---------------------------------------------------------------------
 // ---- camera: following, picking, dragging ------------------------------------------
 var ORIGIN = new THREE.Vector3(0, 0, 0);
-var followEl = $("emt-follow");
 var glide = 0;                         // frames left of easing onto a new follow position
 var ring = (function () {              // the mark around whatever is followed
 	var cv = document.createElement("canvas");
@@ -528,9 +527,6 @@ function targetPos(id) {
 	if (id === "ship") { return chevron.visible ? chevron.position : null; }
 	return markers[id] ? markers[id].pos : null;
 }
-function targetLabel(id) {
-	return id === "ship" ? "the ship" : (markers[id] ? markers[id].label : id);
-}
 function zoomMin() { return state.follow === "Earth" ? 8 : (state.follow === "Moon" ? 2.2 : 0.3); }
 
 // Keep the camera on `id` from now on (null: let go). `pov` names the POV
@@ -543,8 +539,6 @@ function setFollow(id, pov) {
 	syncFollow();
 }
 function syncFollow() {
-	followEl.hidden = !state.follow;
-	followEl.firstChild.textContent = state.follow ? "Following: " + targetLabel(state.follow) : "";
 	Array.prototype.forEach.call($("emt-pov").children, function (btn) {
 		btn.setAttribute("aria-pressed", String(btn.dataset.pov === state.pov));
 	});
@@ -769,7 +763,6 @@ renderer.domElement.addEventListener("mousemove", function (e) {
 	if (e.buttons) { return; }
 	renderer.domElement.style.cursor = (hitShip(e) || hitHandle(e) || hitWaypoint(e) >= 0) ? "grab" : (pickTarget(e) ? "pointer" : "");
 });
-followEl.addEventListener("click", function () { setFollow(null); });
 
 function resize() {
 	var w = holder.clientWidth || 600, h = holder.clientHeight || 400;

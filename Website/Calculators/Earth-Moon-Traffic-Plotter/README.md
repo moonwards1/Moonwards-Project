@@ -288,8 +288,8 @@ core serve the releases still to come: the L1 elevator's and the mass driver's.
 
 A single click on anything — Earth, the Moon, the ship, a waypoint, a skyhook's
 centre of mass, top, release point or catch point, the elevator's L1 point,
-counterweight or either of its two markers — makes the camera follow it;
-the label in the view's corner names it, and its ✕ or a right-drag pan lets go.
+counterweight or either of its two markers — makes the camera follow it,
+and a right-drag pan lets go.
 Dragging the ship moves it along its path with the camera on it, the way a map is
 dragged: the ship stays centred and the scene scrolls. A waypoint's marker drags
 the same way, moving the burn along the path. Double-clicking the path
