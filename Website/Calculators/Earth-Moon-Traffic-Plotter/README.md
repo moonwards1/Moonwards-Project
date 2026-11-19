@@ -62,11 +62,29 @@ so two facilities shown at the same instant are where they would really be
 relative to each other. The date bar's two sliders (2080 to mid-2098, one
 18.6-year turn of the Moon's orbital plane against Earth's equator, then one
 lunar orbit) and the **Release time** slider (one orbit of the departure skyhook)
-together set the release instant; the **Flight** slider is time since release,
-and moves the whole scene — Moon, Sun, tethers, ship — to that time. With a
-destination it runs to half an hour past the flight's closest pass to the
-destination's body (`core/flight.js`'s `bodyPass`), so the ship can be watched
-coming up on the tether and going past it; otherwise over the whole drawn path.
+together set the release instant; the **Flight** slider moves the whole scene
+— Moon, Sun, tethers, ship — to a point of the flight. With a destination it
+runs to half an hour past the flight's closest pass to the destination's body
+(`core/flight.js`'s `bodyPass`), so the ship can be watched coming up on the
+tether and going past it; otherwise over the whole drawn path.
+
+The slider runs on one of two axes (`Shared/sim/flight-clock.js`), switched at
+the end of its line: **Time** since release, or **Radial**, the angle the ship
+has swept since release round Earth, or round the Moon for a path drawn with
+the Moon (`OrbitalMath.sweepTable`):
+
+    theta_k = theta_(k-1) + atan2(|r_(k-1) x r_k|, r_(k-1) . r_k)
+
+- `r_k` — the ship's position from the centre at path sample `k`
+- `theta_k` — the angle swept up to sample `k`, unwrapped past 360° on later laps
+
+On the radial axis the ship holds its angle while the flight changes — a
+waypoint, the release, the date — so it stays on the same ray from Earth and
+only the time it gets there moves: the destination is then seen arriving early
+or late against a ship that holds still. Measured round Earth, a slow stretch
+near the Moon gets little of the slider and a fast perigee pass a lot.
+**Pin** keeps the ship at its closest pass to the destination
+tether, wherever that falls; moving the ship by hand lets go.
 
 ## The L1 elevator
 
@@ -274,7 +292,7 @@ the label in the view's corner names it, and its ✕ or a right-drag pan lets go
 Dragging the ship moves it along its path with the camera on it, the way a map is
 dragged: the ship stays centred and the scene scrolls. A waypoint's marker drags
 the same way, moving the burn along the path. Double-clicking the path
-puts the ship at that point. The Flight slider is linear in time. **Hold skyhook
+puts the ship at that point. **Hold skyhook
 phase** keeps the departure tether's angle to the Earth direction fixed while the
 date changes. Shift (¼) and Ctrl (1/10) slow any slider and both drags.
 

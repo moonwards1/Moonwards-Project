@@ -48,7 +48,26 @@ html, body {
 .mst-line-release input[type="range"] { accent-color: #ff5fd0; }
 .mst-line-flight .mst-slider-end { color: #8fe3b4; }
 .mst-line-flight input[type="range"] { accent-color: #40d27f; }
-#mst-release-time-val, #mst-flight-time-val { width: 168px; }
+#mst-release-time-val { width: 168px; }
+#mst-flight-time-val { width: 72px; }
+/* The Flight slider's axis switch and pin, at the end of its line. */
+/* In a narrow window they wrap under the slider rather than crush it. */
+.mst-line-flight { flex-wrap: wrap; row-gap: 6px; }
+.mst-slider-line.mst-line-flight input[type="range"] { min-width: 180px; }
+.mst-axis { display: flex; flex: 0 0 auto; }
+.mst-axis button {
+	font: inherit; font-size: 11px; padding: 3px 8px; cursor: pointer;
+	background: #131826; color: #cfd6e4; border: 1px solid #2a3142; border-radius: 0;
+}
+.mst-axis button:first-child { border-radius: 5px 0 0 5px; }
+.mst-axis button:last-child { border-radius: 0 5px 5px 0; }
+.mst-axis button + button { border-left: 0; }
+.mst-axis button:hover { background: #1b2336; }
+.mst-axis button[aria-pressed="true"] { background: #1d4a33; border-color: #40d27f; color: #ffffff; }
+.mst-check.mst-pin { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; border: 1px solid #2a3142; border-radius: 5px; background: #131826; }
+.mst-pin:has(input:checked) { border-color: #40d27f; color: #c9f5dc; }
+.mst-pin:has(input:disabled) { opacity: 0.45; cursor: default; }
+.mst-check.mst-pin input { accent-color: #40d27f; }
 
 /* ---- 3D view ---- */
 #mst-view { position: relative; flex: 1 1 0; min-height: 0; background: #05060a; }

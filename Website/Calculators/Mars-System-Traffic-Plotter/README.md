@@ -524,11 +524,24 @@ The closest pass is the least `miss` of the whole flight; where Mars lies
 between the ship and the tether at that moment, the page says so. The ship is
 caught if `miss` is within 1 km and `trim` is no more than 800 m/s, the most a
 catcher moving along the tether absorbs. The pass is marked in green, and
-**Show the closest pass** moves the Flight slider to it. Nothing yet searches
-for a release that ends in a catch.
+**Pin**, at the end of the Flight slider's line, keeps the ship
+there. Nothing yet searches for a release that ends in a catch.
 
-The **Flight** slider is time since release and moves the whole scene to that
-time. In a turning view the path is drawn as that view sees it.
+The **Flight** slider moves the whole scene to a point of the flight. It spans
+the whole flight on one of two axes (`Shared/sim/flight-clock.js`): **Time**
+since release, or **Radial**, the angle the ship has swept round Mars since
+release (`OrbitalMath.sweepTable`):
+
+    theta_k = theta_(k-1) + atan2(|r_(k-1) x r_k|, r_(k-1) . r_k)
+
+- `r_k` — the ship's position from Mars's centre at path sample `k`
+- `theta_k` — the angle swept up to sample `k`, unwrapped past 360° on later laps
+
+On the radial axis the ship holds its angle while the flight changes, so it
+stays on the same ray from Mars and a change to the release or the date shows
+as the destination tether coming early or late. **Pin** keeps
+the ship at that pass instead, wherever it falls; moving the slider lets go.
+In a turning view the path is drawn as that view sees it.
 
 ## Pointing at the scene
 

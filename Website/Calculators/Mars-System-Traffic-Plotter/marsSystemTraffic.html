@@ -52,6 +52,13 @@
 				<span class="mst-slider-end">Flight</span>
 				<input type="range" id="mst-flight-time" min="0" max="1" step="any" value="0" aria-label="Time since release">
 				<span class="mst-slider-end" id="mst-flight-time-val"></span>
+				<div class="mst-axis" id="mst-flight-axis" role="group" aria-label="What the Flight slider runs on">
+					<button type="button" data-axis="radial" title="The slider runs on the angle the ship has swept round Mars since release. The ship holds that angle while the flight changes: move the release or the date and it stays on the same ray from Mars, and only the time it gets there moves.">Radial</button>
+					<button type="button" data-axis="time" title="The slider runs on time since release.">Time</button>
+				</div>
+				<label class="mst-check mst-pin" title="Keep the ship at its closest pass to the destination skyhook's tether, wherever that falls as the flight changes. Moving the Flight slider lets go.">
+					<input type="checkbox" id="mst-flight-pin"> Pin
+				</label>
 			</div>
 		</div>
 
@@ -91,9 +98,6 @@
 						</div>
 					</div>
 					<div class="mst-guide" id="mst-flight-note" aria-live="polite"></div>
-					<div class="mst-row">
-						<button type="button" class="mst-action mst-action-small" id="mst-show-pass" title="Move the Flight slider to the ship's closest pass to the destination's tether">Show the closest pass</button>
-					</div>
 					<div class="mst-muted">Every facility follows the clock: the date and the release time decide where the departure skyhook's release point is, and how it is moving, when it lets the ship go. A ship bound for the other skyhook can be caught anywhere along that tether, by a catcher that moves along it and absorbs up to 800 m/s of relative motion.</div>
 				</section>
 

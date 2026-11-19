@@ -55,6 +55,13 @@
 				<span class="emt-slider-end" id="emt-flight-label">Flight</span>
 				<input type="range" id="emt-flight-time" min="0" max="1" step="any" value="0" aria-label="Time since release">
 				<span class="emt-slider-end" id="emt-flight-time-val"></span>
+				<div class="emt-axis" id="emt-flight-axis" role="group" aria-label="What the Flight slider runs on">
+					<button type="button" data-axis="radial" title="The slider runs on the angle the ship has swept round Earth since release (round the Moon, for a path drawn with the Moon). The ship holds that angle while the flight changes: edit a waypoint, the release or the date and it stays on the same ray, and only the time it gets there moves.">Radial</button>
+					<button type="button" data-axis="time" title="The slider runs on time since release.">Time</button>
+				</div>
+				<label class="emt-check emt-pin" title="Keep the ship at its closest pass to the destination tether, wherever that falls as the flight changes. Moving the ship by hand lets go.">
+					<input type="checkbox" id="emt-flight-pin"> Pin
+				</label>
 			</div>
 		</div>
 

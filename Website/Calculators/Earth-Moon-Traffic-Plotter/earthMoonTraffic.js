@@ -30,8 +30,13 @@
  * ship, a skyhook's markers — makes the camera follow it; a right-drag pan
  * lets go. Dragging the ship moves it along its path with the camera on it,
  * the way a map is dragged: the scene scrolls and the ship stays centred.
- * Double-clicking the path puts the ship there. The Flight slider is plain
- * linear time, for scrubbing while the camera stays on something else.
+ * Double-clicking the path puts the ship there. The Flight slider scrubs the
+ * flight while the camera stays on something else, on either of two axes
+ * (Shared/sim/flight-clock.js): TIME since release, or RADIAL, the angle swept
+ * round Earth since release, on which the ship holds its angle while the
+ * flight changes, so an edit shows as the destination coming early or late
+ * to a ship that stays put. PIN keeps the ship at its closest
+ * pass to the destination tether.
  *
  * HOLD SKYHOOK PHASE keeps the departure tether's angle to the Earth
  * direction fixed while the date changes: the release time is moved to the
@@ -81,6 +86,8 @@ import { createDateBar, bindFineDrag } from "../../Shared/sim/date-bar.js";
 import { makePoint, updateScales, updateLabels, worldSizeAtPointForPx, projectedRadiusPx }
 	from "../../Shared/sim/body-renderer.js";
 import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card.js";
+import { flightClock, clockSeconds, clockDegrees, clockSliderFrac, clockSetFrac, clockSetTime,
+         clockSetAxis, clockSetPin, clockReset } from "../../Shared/sim/flight-clock.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../../Shared/sim/burn-widget.js";
 import { buildVectorEditor } from "../../Shared/sim/vector-editor.js";
 import { buildEarthMoonFrame, U } from "../../MissionPlanner/scene-frames.js";
@@ -150,9 +157,7 @@ function isOffworld(id) { return FACILITIES[id].kind === "offworld"; }
 var state = {
 	jd: JD0, baseDays: 0,              // the date bar's own fields (Shared/sim/date-bar.js)
 	relFrac: 0,                        // release time, as a fraction of the release slider's span: one orbit of a departure skyhook, a day for the elevator
-	flightBy: "frac",                  // what holds the flight clock: the slider's "frac", or a "time" set in the view
-	flightFrac: 0,                     // flight slider position, 0..1 (flightBy "frac")
-	flightT: 0,                        // seconds since release (flightBy "time": a drag or a double-click)
+	clock: flightClock(),              // the Flight timeline: its axis, what holds the ship, the pin (Shared/sim/flight-clock.js)
 	follow: "Earth",                   // what the camera stays on: "Earth" | "Moon" | "ship" | "<facility>:<marker>" | null
 	from: "moonSkyhook",
 	to: null,                          // destination facility id, or null for an open path
@@ -183,7 +188,7 @@ var figs = {};                         // facility id -> core/facilities.js's fa
 function $(id) { return document.getElementById(id); }
 var holder = $("emt-canvas-holder");
 var relSlider = $("emt-release-time"), relVal = $("emt-release-time-val");
-var flightSlider = $("emt-flight-time"), flightVal = $("emt-flight-time-val");
+var flightSlider = $("emt-flight-time"), flightVal = $("emt-flight-time-val"), pinBox = $("emt-flight-pin");
 var keysEl = $("emt-keys"), cardsEl = $("emt-cards");
 var showSoi = $("emt-show-soi"), showFac = $("emt-show-facilities"), showTraj = $("emt-show-traj");
 
@@ -194,24 +199,33 @@ function releaseJd() {
 	return state.jd + (fig && fig.ok ? state.relFrac * fig.period / DAY : 0);
 }
 function arrival() { return flight && flight.ok && flight.arrival && flight.arrival.found ? flight.arrival : null; }
-// The flight clock, seconds since release. The slider is linear: from the
+// The flight clock, seconds since release. The Flight slider runs from the
 // release to PAST_PASS beyond the closest pass to the destination's body when
-// there is one (core/flight.js's bodyPass), else over the whole drawn path.
-// Held as the slider's fraction, it keeps its place in that span while the release is changed; a
-// drag or double-click in the view sets a time outright, and may go on past it.
+// there is one (core/flight.js's bodyPass), else over the whole drawn path,
+// on one of two axes (Shared/sim/flight-clock.js): linear time, or the angle
+// the ship has swept round Earth since release — round the Moon for a path
+// drawn with the Moon, the same centre the view draws it about. On the radial
+// axis the ship holds that angle while the flight changes; Pin puts it at the
+// closest pass to the destination tether.
 function flightSpan() {
 	if (!flight || !flight.ok) { return 0; }
 	var p = flight.bodyPass;
 	return p ? Math.min(flight.final.duration, p.t + PAST_PASS) : flight.final.duration;
 }
-function flightSeconds() {
-	if (!flight || !flight.ok) { return 0; }
-	if (state.flightBy === "time") { return Math.max(0, Math.min(flight.final.duration, state.flightT)); }
-	return flightSpan() * state.flightFrac;
+var NO_SHAPE = { span: 0, duration: 0, table: null, pinT: null };
+var shape = NO_SHAPE;                  // the flight as the Flight timeline reads it, rebuilt with each flight
+function updateShape() {
+	if (!flight || !flight.ok) { shape = NO_SHAPE; return; }
+	var leg = flight.final, aboutMoon = leg.kind !== "moonEllipse" && moonFramed();
+	var pts = leg.samples.map(function (s) {
+		return { t: s.t, r: aboutMoon ? O.vSub(s.r, moonGeoPos(leg.jde0 + s.t / DAY)) : s.r };
+	});
+	var a = arrival();
+	shape = { span: flightSpan(), duration: leg.duration, table: O.sweepTable(pts), pinT: a ? a.t : null };
 }
+function flightSeconds() { return clockSeconds(state.clock, shape); }
 function setFlightTime(t) {
-	state.flightBy = "time";
-	state.flightT = Math.max(0, Math.min(flight && flight.ok ? flight.final.duration : 0, t));
+	clockSetTime(state.clock, shape, t);
 	refresh({ sceneOnly: true });
 }
 function sceneJd() { return releaseJd() + flightSeconds() / DAY; }
@@ -1728,6 +1742,7 @@ function refresh(opts) {
 		applyHold(opts);
 		showWindows();
 		flight = computeFlight(flightInput(releaseJd()));
+		updateShape();
 		placeCatcher();
 		drawTrajectory();
 		// In Target mode any other change (date, hardware) is
@@ -1746,11 +1761,23 @@ function refresh(opts) {
 	var fig = figs[state.from];
 	relVal.textContent = fig.ok && fig.kind === "offworld" ? "set by the arrival" : clockTime(releaseJd()) + (!fig.ok ? ""
 		: (fig.kind === "skyhook" ? " · one orbit " : " · slider spans ") + num(fig.period / 3600, fig.kind === "skyhook" ? 2 : 0) + " h");
-	var t = flightSeconds(), fSpan = flightSpan();
-	flightSlider.value = fSpan > 0 ? Math.min(1, t / fSpan) : 0;
-	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd).slice(0, 5);
+	var t = flightSeconds(), deg = clockDegrees(state.clock, shape);
+	flightSlider.value = clockSliderFrac(state.clock, shape);
+	// Short, so the slider keeps its room: the swept angle on the radial axis, the time since release on the time axis.
+	flightVal.textContent = state.clock.axis === "radial" && deg != null ? num(deg, 1) + "°" : "T+ " + span(t);
+	syncClockControls();
 	$("emt-flight-label").textContent = flight && flight.ok && flight.bodyPass
 		? "Flight past " + flight.toFig.body : "Flight";
+}
+
+// The Flight timeline's axis buttons and pin, as the clock stands. The pin
+// needs a destination; with one, it stays ticked while the flight has no pass.
+function syncClockControls() {
+	$("emt-flight-axis").querySelectorAll("button[data-axis]").forEach(function (b) {
+		b.setAttribute("aria-pressed", String(b.dataset.axis === state.clock.axis));
+	});
+	pinBox.disabled = !state.to;
+	pinBox.checked = state.clock.pin && !!state.to;
 }
 
 // ---- wiring -------------------------------------------------------------------------
@@ -1773,10 +1800,19 @@ function init() {
 
 	function releaseMoved() { state.relFrac = parseFloat(relSlider.value); refresh({ userRelease: true }); }
 	function flightMoved() {
-		state.flightBy = "frac";
-		state.flightFrac = parseFloat(flightSlider.value);
+		clockSetFrac(state.clock, shape, parseFloat(flightSlider.value));
 		refresh({ sceneOnly: true });
 	}
+	$("emt-flight-axis").addEventListener("click", function (e) {
+		var btn = e.target.closest("button[data-axis]");
+		if (!btn) { return; }
+		clockSetAxis(state.clock, shape, btn.dataset.axis);
+		refresh({ sceneOnly: true });
+	});
+	pinBox.addEventListener("change", function () {
+		clockSetPin(state.clock, shape, pinBox.checked);
+		refresh({ sceneOnly: true });
+	});
 	relSlider.addEventListener("input", releaseMoved);
 	flightSlider.addEventListener("input", flightMoved);
 	bindFineDrag(relSlider, releaseMoved, null, SLOW_DRAG);
@@ -1792,7 +1828,7 @@ function init() {
 		var holdBox = $("emt-hold-phase");
 		holdBox.disabled = FACILITIES[state.from].kind !== "skyhook";
 		if (holdBox.disabled) { holdBox.checked = false; state.hold = false; }
-		state.flightBy = "frac"; state.flightFrac = 0; flightSlider.value = 0;
+		clockReset(state.clock); flightSlider.value = 0;
 		state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0;
 		syncCards();
 		lockDate();

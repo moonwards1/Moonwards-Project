@@ -555,6 +555,21 @@ An arrival is accepted, and Aim solves the entry trim, on the pass as flown
 (Earth + Moon + Sun), never the two-body conic: from the SOI edge the Sun and
 the Moon move the pass by hundreds to thousands of kilometres.
 
+### Traffic plotters: the Flight timeline's radial axis is the angle travelled, read off the flown path
+
+`Shared/sim/flight-clock.js`, `OrbitalMath.sweepTable`. The radial axis is the
+sum of the unsigned angles between successive path samples about the centre
+(Earth, or the Moon for a path drawn with the Moon; Mars), so it never
+decreases and keeps counting through a plane change. On that axis the ship
+holds its angle across any change to the flight; a held angle past the new
+path's end shows the ship at the end.
+
+Why: these flights are integrated (Earth + Moon + Sun, Mars's bulge), so the
+samples are the flight and there is no conic to solve analytically, unlike the
+Ephemeris marker's hold. An angle measured in a fixed plane doubles back where
+the Sun turns the path far out; a running maximum would then give the slider
+dead stretches.
+
 ### New calculators use the three-column calculator shell
 
 A calculator page is the shell in `Shared/calc-shell.*` + `Shared/zoom-view.js`:

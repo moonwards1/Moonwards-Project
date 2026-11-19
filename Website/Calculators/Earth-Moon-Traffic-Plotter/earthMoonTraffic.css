@@ -49,7 +49,26 @@ html, body {
 .emt-line-release input[type="range"] { accent-color: #ff5fd0; }
 .emt-line-flight .emt-slider-end { color: #8fe3b4; }
 .emt-line-flight input[type="range"] { accent-color: #40d27f; }
-#emt-release-time-val, #emt-flight-time-val { width: 168px; }
+#emt-release-time-val { width: 168px; }
+#emt-flight-time-val { width: 72px; }
+/* The Flight slider's axis switch and pin, at the end of its line. */
+/* In a narrow window they wrap under the slider rather than crush it. */
+.emt-line-flight { flex-wrap: wrap; row-gap: 6px; }
+.emt-slider-line.emt-line-flight input[type="range"] { min-width: 180px; }
+.emt-axis { display: flex; flex: 0 0 auto; }
+.emt-axis button {
+	font: inherit; font-size: 11px; padding: 3px 8px; cursor: pointer;
+	background: #131826; color: #cfd6e4; border: 1px solid #2a3142; border-radius: 0;
+}
+.emt-axis button:first-child { border-radius: 5px 0 0 5px; }
+.emt-axis button:last-child { border-radius: 0 5px 5px 0; }
+.emt-axis button + button { border-left: 0; }
+.emt-axis button:hover { background: #1b2336; }
+.emt-axis button[aria-pressed="true"] { background: #1d4a33; border-color: #40d27f; color: #ffffff; }
+.emt-check.emt-pin { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; border: 1px solid #2a3142; border-radius: 5px; background: #131826; }
+.emt-pin:has(input:checked) { border-color: #40d27f; color: #c9f5dc; }
+.emt-pin:has(input:disabled) { opacity: 0.45; cursor: default; }
+.emt-check.emt-pin input { accent-color: #40d27f; }
 
 /* ---- 3D view ---- */
 #emt-view { position: relative; flex: 1 1 0; min-height: 0; background: #05060a; }

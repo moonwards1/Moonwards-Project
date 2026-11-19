@@ -1126,6 +1126,63 @@ export const OrbitalMath = {
 			return ((Mw + k * TWO_PI) - M0) / n;
 		},
 
+		// SWEEP TABLE: the angle a sampled path has swept around a centre,
+		// summed sample to sample, for a timeline that runs on that angle
+		// rather than on time.
+		//
+		//     theta_k = theta_(k-1) + atan2(|r_(k-1) x r_k|, r_(k-1) . r_k)
+		//
+		//     r_k      the path's position at sample k, from the centre (m)
+		//     theta_k  the angle swept from the first sample to sample k, in
+		//              degrees here, unwrapped (it passes 360 on the next lap)
+		//
+		// Each step's angle is unsigned, so the total never decreases and an
+		// angle answers to one time (the first, where the path runs straight
+		// out or in). It is the angle travelled across the centre's sky, so a
+		// path whose plane turns (a normal burn, the Sun's pull far out) keeps
+		// counting instead of doubling back as it would against a fixed plane.
+		// A step must be under half a turn, which any drawn path's are.
+		//   points  [{ t, r }], t ascending (repeated t, as at a burn, is fine)
+		// Returns { t: [s], deg: [degrees] }, one entry per point.
+		sweepTable: function (points) {
+			var t = [], deg = [], total = 0;
+			for (var k = 0; k < points.length; k++) {
+				if (k > 0) {
+					var a = points[k - 1].r, b = points[k].r;
+					var cx = a[1] * b[2] - a[2] * b[1], cy = a[2] * b[0] - a[0] * b[2], cz = a[0] * b[1] - a[1] * b[0];
+					total += Math.atan2(Math.hypot(cx, cy, cz), a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) * 180 / Math.PI;
+				}
+				t.push(points[k].t); deg.push(total);
+			}
+			return { t: t, deg: deg };
+		},
+
+		// Swept degrees at time t on a sweepTable, read linearly between
+		// samples; clamped to the table's ends.
+		sweepDegAt: function (table, t) {
+			var T = table.t, D = table.deg, n = T.length;
+			if (!n) { return 0; }
+			if (t <= T[0]) { return D[0]; }
+			if (t >= T[n - 1]) { return D[n - 1]; }
+			var lo = 0, hi = n - 1;
+			while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (T[mid] <= t) { lo = mid; } else { hi = mid; } }
+			var span = T[hi] - T[lo];
+			return span > 0 ? D[lo] + (D[hi] - D[lo]) * (t - T[lo]) / span : D[hi];
+		},
+
+		// Inverse of sweepDegAt: the first time (s) the sweep reaches deg;
+		// clamped to the table's ends.
+		sweepTimeAt: function (table, deg) {
+			var T = table.t, D = table.deg, n = T.length;
+			if (!n) { return 0; }
+			if (deg <= D[0]) { return T[0]; }
+			if (deg >= D[n - 1]) { return T[n - 1]; }
+			var lo = 0, hi = n - 1;
+			while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (D[mid] < deg) { lo = mid; } else { hi = mid; } }
+			var span = D[hi] - D[lo];
+			return span > 0 ? T[lo] + (T[hi] - T[lo]) * (deg - D[lo]) / span : T[lo];
+		},
+
 		// Heliocentric state of a body at Julian date jd, given an orbit record
 		// carrying {a, e, inclination, longitude, argument, epoch, meanAnomaly}.
 		// gm is the central body's GM (Sun). Falls back to the orbit's own

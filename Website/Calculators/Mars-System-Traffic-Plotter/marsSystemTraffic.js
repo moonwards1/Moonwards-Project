@@ -30,6 +30,8 @@ import { createDateBar, bindFineDrag } from "../../Shared/sim/date-bar.js";
 import { updateScales, updateLabels, projectedRadiusPx, worldSizeAtPointForPx }
 	from "../../Shared/sim/body-renderer.js";
 import { orientMarkerSprite } from "../../Shared/sim/marker-card.js";
+import { flightClock, clockSeconds, clockDegrees, clockSliderFrac, clockSetFrac, clockSetAxis, clockSetPin, clockReset }
+	from "../../Shared/sim/flight-clock.js";
 import { CLOCK_EPOCH, SPAN_DAYS } from "./core/clock.js";
 import { VIEW_FRAMES, viewBasis, toView } from "./core/view-frames.js";
 import { FACILITIES, SKYHOOKS, allFigures, facilityAt, pointState, centreRadius, altitudeOf, moonSkyhookLimits, R_MARS, ENTRY_ALT }
@@ -72,7 +74,7 @@ var STUBS = [
 var state = {
 	jd: CLOCK_EPOCH, baseDays: 0,      // the date bar's own fields (Shared/sim/date-bar.js)
 	relFrac: 0,                        // release time, as a fraction of one orbit of the departure facility
-	flightFrac: 0,                     // flight slider position, 0..1 of the flight's span
+	clock: flightClock(),              // the Flight timeline: its axis, what holds the ship, the pin (Shared/sim/flight-clock.js)
 	follow: "Mars",                    // what the camera stays on: a body's name, "ship", "<facility>:<marker>", or null
 	pov: "system",
 	view: "sun",                       // core/view-frames.js: "sun" | "surface" | "phobos"
@@ -106,7 +108,7 @@ function $(id) { return document.getElementById(id); }
 var holder = $("mst-canvas-holder");
 var keysEl = $("mst-key-list"), groundSpeed = $("mst-ground-speed");
 var relSlider = $("mst-release-time"), relVal = $("mst-release-time-val");
-var flightSlider = $("mst-flight-time"), flightVal = $("mst-flight-time-val");
+var flightSlider = $("mst-flight-time"), flightVal = $("mst-flight-time-val"), pinBox = $("mst-flight-pin");
 var showSoi = $("mst-show-soi"), showOrbits = $("mst-show-orbits"), showGrid = $("mst-show-grid");
 var showFac = $("mst-show-facilities"), showTraj = $("mst-show-traj");
 
@@ -142,7 +144,20 @@ function computeFigures() {
 }
 // The tethers the hanging skyhook is timed against (core/clearance.js).
 function others() { return { phobos: figs[PHOBOS] || null, elevator: figs[ELEVATOR] || null }; }
-function flightSeconds() { return flight && flight.ok ? flight.leg.duration * state.flightFrac : 0; }
+// The flight clock, seconds since release. The Flight slider spans the whole
+// flight on one of two axes (Shared/sim/flight-clock.js): linear time, or the
+// angle the ship has swept round Mars since release, on which the ship holds
+// that angle while the flight changes. Pin puts it at the closest pass to the
+// destination tether.
+var NO_SHAPE = { span: 0, duration: 0, table: null, pinT: null };
+var shape = NO_SHAPE;                  // the flight as the Flight timeline reads it, rebuilt with each flight
+function updateShape() {
+	if (!flight || !flight.ok) { shape = NO_SHAPE; return; }
+	var leg = flight.leg, a = flight.arrival;
+	shape = { span: leg.duration, duration: leg.duration, table: O.sweepTable(leg.samples),
+	          pinT: a && a.found ? a.t : null };
+}
+function flightSeconds() { return clockSeconds(state.clock, shape); }
 function sceneJd() { return releaseJd() + flightSeconds() / DAY; }
 
 // ---- formatting -----------------------------------------------------------------
@@ -717,7 +732,7 @@ function jumpSidestep(dir) {
 		if (dir > 0 ? (st.jdStart > jd + 1e-6 && !pick) : st.jdStart < jd - 1e-6) { pick = st; }
 	});
 	if (!pick) { return; }
-	state.relFrac = 0; state.flightFrac = 0; relSlider.value = 0; flightSlider.value = 0;
+	state.relFrac = 0; clockReset(state.clock); relSlider.value = 0; flightSlider.value = 0;
 	dateBar.setJd(pick.jdStart);
 	refresh();
 }
@@ -1020,7 +1035,7 @@ function jumpDodge(dir) {
 		if (dir > 0 ? (ps.jd > jd + 1e-6 && !pick) : ps.jd < jd - 1e-6) { pick = ps; }
 	});
 	if (!pick) { return; }
-	state.relFrac = 0; state.flightFrac = 0; relSlider.value = 0; flightSlider.value = 0;
+	state.relFrac = 0; clockReset(state.clock); relSlider.value = 0; flightSlider.value = 0;
 	dateBar.setJd(pick.jd);
 	refresh();
 }
@@ -1225,6 +1240,7 @@ function refresh(opts) {
 		syncFlightCard();
 		flight = figs[state.from] ? computeFlight({ from: state.from, to: state.to, jd: releaseJd(), params: designParams() })
 			: { ok: false, diagnostic: { code: "no-skyhook", message: "No skyhook is in the design, so there is nothing to let a ship go from.", values: {} } };
+		updateShape();
 		overlay.drawFlight(flight, state.view, showTraj.checked);
 	}
 	var jd = sceneJd(), t = flightSeconds();
@@ -1250,11 +1266,24 @@ function refresh(opts) {
 
 	var fig = figs[state.from];
 	relVal.textContent = clockTime(releaseJd()) + (fig && fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
-	flightVal.textContent = "T+ " + span(t) + " · " + shortDate(jd) + " " + clockTime(jd);
+	var deg = clockDegrees(state.clock, shape);
+	flightSlider.value = clockSliderFrac(state.clock, shape);
+	// Short, so the slider keeps its room: the swept angle on the radial axis, the time since release on the time axis.
+	flightVal.textContent = state.clock.axis === "radial" && deg != null ? num(deg, 1) + "°" : "T+ " + span(t);
+	syncClockControls();
+}
+// The Flight timeline's axis buttons and pin, as the clock stands. The pin
+// needs a skyhook to arrive at.
+function syncClockControls() {
+	$("mst-flight-axis").querySelectorAll("button[data-axis]").forEach(function (b) {
+		b.setAttribute("aria-pressed", String(b.dataset.axis === state.clock.axis));
+	});
+	pinBox.disabled = state.to === SURFACE;
+	pinBox.checked = state.clock.pin && state.to !== SURFACE;
 }
 // The Flight card's lists: From holds the skyhooks in the design, To the
 // surface and every skyhook that is not the departure.
-var fromSelect = $("mst-from"), toSelect = $("mst-to"), showPass = $("mst-show-pass");
+var fromSelect = $("mst-from"), toSelect = $("mst-to");
 function fillList(select, items, value) {
 	var key = items.map(function (x) { return x[0]; }).join(",");
 	if (select.dataset.key !== key) {
@@ -1273,8 +1302,6 @@ function syncFlightCard() {
 // The flight in a sentence, under the lists.
 function fillFlightNote() {
 	var note = $("mst-flight-note"), a = flight && flight.ok ? flight.arrival : null;
-	showPass.disabled = !(a && a.found);
-	showPass.style.display = state.to === SURFACE ? "none" : "";
 	if (!flight || !flight.ok) { note.textContent = flight ? flight.diagnostic.message : ""; return; }
 	var s = flight.summary;
 	if (state.to === SURFACE) {
@@ -1322,7 +1349,7 @@ function init() {
 	dateBar.bind(function () { refresh(); });
 
 	function releaseMoved() { state.relFrac = parseFloat(relSlider.value); refresh(); }
-	function flightMoved() { state.flightFrac = parseFloat(flightSlider.value); refresh({ sceneOnly: true }); }
+	function flightMoved() { clockSetFrac(state.clock, shape, parseFloat(flightSlider.value)); refresh({ sceneOnly: true }); }
 	// Choosing the destination as the departure swaps the two.
 	fromSelect.addEventListener("change", function () {
 		var was = state.from;
@@ -1331,10 +1358,14 @@ function init() {
 		refresh();
 	});
 	toSelect.addEventListener("change", function () { state.to = toSelect.value; refresh(); });
-	showPass.addEventListener("click", function () {
-		var a = flight && flight.ok ? flight.arrival : null;
-		if (!(a && a.found)) { return; }
-		state.flightFrac = a.t / flight.leg.duration; flightSlider.value = state.flightFrac;
+	$("mst-flight-axis").addEventListener("click", function (e) {
+		var btn = e.target.closest("button[data-axis]");
+		if (!btn) { return; }
+		clockSetAxis(state.clock, shape, btn.dataset.axis);
+		refresh({ sceneOnly: true });
+	});
+	pinBox.addEventListener("change", function () {
+		clockSetPin(state.clock, shape, pinBox.checked);
 		refresh({ sceneOnly: true });
 	});
 	relSlider.addEventListener("input", releaseMoved);
