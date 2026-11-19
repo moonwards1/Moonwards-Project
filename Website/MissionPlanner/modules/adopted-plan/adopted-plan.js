@@ -77,8 +77,7 @@
  *                              where the user edits them); the plan does not
  *                              recompute the coast from them. Also the line
  *                              between an original plan waypoint and one
- *                              with no plan behind it (only in missions
- *                              saved when Coast could add waypoints):
+ *                              added on Coast with no plan behind it:
  *                              transfer-leg's sidebar card reads this back
  *                              through planWaypointsFor to lock/reset the
  *                              former (index-matched) and remove the latter.
@@ -165,9 +164,8 @@ export function arrivalCommitmentFor(world) {
 // creation (core/adopt.js), read the same way arrivalCommitmentFor reads
 // its field. transfer-leg's sidebar card uses
 // this to tell an original plan waypoint (part of the committed mission,
-// not removable — only resettable to these values) from one with no plan
-// behind it, which only a mission saved when Coast could still add waypoints
-// carries (removable). Index-matched against
+// not removable — only resettable to these values) from one added on Coast
+// with no plan behind it (removable). Index-matched against
 // the working copy on the transfer-leg stage: edits mutate waypoints in
 // place and never reorder them, so position i here is plan waypoint i there.
 // [] when the mission has no adopted plan.

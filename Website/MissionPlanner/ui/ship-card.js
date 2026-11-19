@@ -434,9 +434,9 @@ function makeLine(dir, len, colorHex, radius) {
 //   background  — gizmo clear colour; matches the card's own CSS background so
 //                 the scissored render is seamless with the DOM around it
 //
-// Returns { el, gizmoEl, refineBtn, setOnCourse, setGizmo, setContact,
-// showGizmo, showRefine, setComponents, setComponentRows, setNote, setSpeed,
-// setSubtitle, setBPlane, setApproach, setExtra, render, dispose }.
+// Returns { el, gizmoEl, setOnCourse, setGizmo, setContact, showGizmo,
+// flashLabel, setComponents, setComponentRows, setNote, setSpeed, setSubtitle,
+// setBPlane, setApproach, setExtra, render, dispose }.
 export function createShipCard(opts) {
 	opts = opts || {};
 	var host = opts.host;
@@ -461,14 +461,6 @@ export function createShipCard(opts) {
 	titleWrap.appendChild(subtitle);
 	var badge = el("span", "mp-ship-oncourse", "✓");
 	badge.title = "On course";
-	// Departure's own control: a three-way split with the title-and-readouts
-	// column on the left, the button centred, and the on-course checkmark's
-	// spot held on the right. Hidden for Coast, which has no re-solve.
-	var refineBtn = document.createElement("button");
-	refineBtn.type = "button";
-	refineBtn.className = "mp-btn mp-ship-refine";
-	refineBtn.textContent = "Refine";
-	refineBtn.style.display = "none";
 	// The approach square is Coast's; it stays out of the layout until a
 	// caller fills it (setBPlane). Shown, it takes all the head's width beside
 	// the title as a square, making the band above the speed bar two columns:
@@ -482,7 +474,6 @@ export function createShipCard(opts) {
 	leftCol.appendChild(titleWrap);
 	leftCol.appendChild(approachEl);
 	head.appendChild(leftCol);
-	head.appendChild(refineBtn);
 	head.appendChild(badge);
 	head.appendChild(bPlaneEl);
 	top.appendChild(head);
@@ -498,12 +489,15 @@ export function createShipCard(opts) {
 	alignLabel.title = "Match the main pane's viewing angle. Off, the gizmo " +
 		"rotates and zooms on its own so the vectors are easier to compare.";
 	leftCol.insertBefore(alignLabel, approachEl);
-	// Inside the drag handle, like Refine: a press here is a click.
+	// Inside the drag handle: a press here is a click, not a drag.
 	alignLabel.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
 	root.appendChild(top);
 
 	var gizmoEl = el("div", "mp-ship-gizmo");
 	root.appendChild(gizmoEl);
+	// A brief note in the gizmo's bottom-left corner (flashLabel).
+	var flashEl = el("div", "mp-ship-flash", "");
+	gizmoEl.appendChild(flashEl);
 
 	var bodyEl = el("div", "mp-ship-body");
 	root.appendChild(bodyEl);
@@ -629,16 +623,19 @@ export function createShipCard(opts) {
 		alignLabel.style.display = on ? "" : "none";
 	}
 
-	// Whether Departure's Refine control shows at all — Coast has nothing to
-	// re-solve. The caller (mission-view.js) owns the button's click, disabled
-	// state and title, same as it owns every other reading behind this card.
-	function showRefine(on) {
-		refineBtn.style.display = on ? "" : "none";
-		root.classList.toggle("has-refine", !!on);
+	// Shows `text` in the gizmo's bottom-left corner for a few seconds, then
+	// fades it. A new call replaces any note still showing.
+	var FLASH_MS = 3500;
+	var flashTimer = null;
+	function flashLabel(text) {
+		flashEl.textContent = text;
+		flashEl.classList.add("show");
+		if (flashTimer) { clearTimeout(flashTimer); }
+		flashTimer = setTimeout(function () {
+			flashEl.classList.remove("show");
+			flashTimer = null;
+		}, FLASH_MS);
 	}
-	// The head doubles as a drag handle (see bindCardDrag); without this a
-	// press on the button starts dragging the card instead of clicking it.
-	refineBtn.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
 
 	// ---- readouts---------------------------------------------------------
 
@@ -930,6 +927,7 @@ export function createShipCard(opts) {
 	}
 
 	function dispose() {
+		if (flashTimer) { clearTimeout(flashTimer); }
 		unbindCamera();
 		clearGroups([neededGroup, currentGroup]);
 		root.remove();
@@ -938,11 +936,10 @@ export function createShipCard(opts) {
 	return {
 		el: root,
 		gizmoEl: gizmoEl,
-		refineBtn: refineBtn,
 		setOnCourse: setOnCourse,
 		setGizmo: setGizmo,
 		showGizmo: showGizmo,
-		showRefine: showRefine,
+		flashLabel: flashLabel,
 		setComponents: setComponents,
 		setComponentRows: setComponentRows,
 		setNote: setNote,

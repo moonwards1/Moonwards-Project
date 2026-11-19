@@ -48,7 +48,7 @@ Pure ES modules, named exports, no DOM. One responsibility per file:
 | `arrival-seam.js`       | `computeArrivalSeam`                                                                           | The Coast→Arrival seam derivation: a window `[closest approach − Δt, closest approach + ~1 day]` around the coast's own closest-approach event, `Δt = clamp(R_SOI/v∞, 2 d, 5 d)`. Nothing is stored — recomputed live from `transfer-leg`'s emitted events every recompute, so the window moves as the coast is tuned. No encounter at all: the window collapses to a point at the coast's own end — there is no committed arrival date, the mission arriving at whatever closest approach it measures.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `proximity.js`          | `checkProximity`, `checkPassAltitude`, `checkCatch`, `arrivalDvBudget`                         | The arrival standards, in one place. `checkProximity` is the EPHEMERIS TAB's gate on "Start Mission Plan": the marker within `APPROACH_FAR` (0.004 AU) of the destination's orbit ELLIPSE, and the destination passing through that point within `TEMP_FAR` (30 d) — ring-scale tolerances, right for judging a scrubbable marker. `MAX_PASS_ALTITUDE` (30,000 km) is the stricter bound a FLOWN mission has to pass the body within, and `AIM_PASS_ALTITUDE` (15,000 km) is what a re-target aims for — deliberately inside the bound, so an iteration's residual has room to land. Both measured as altitude ABOVE THE SURFACE, at closest approach; both provisional until the arrival technology can state what it can actually catch. `checkCatch` is the CATCH standard: contact slower than `MAX_CATCH_SPEED` (250 m/s, a flat first cut) relative to the catching hardware. `arrivalDvBudget` splits the arrival for the mission report: total is the unburned speed at the catch radius (v∞ in plus the fall), fuel the arrival waypoints, tech the remainder. The ring tier TABLES stay with the views that draw them — those are colours and pixel sizes, not standards. Pure. |
 | `delivered-flight.js`   | `deliveredFlight`, `signatureOf`, `waypointDv`                                                 | The flight the ship is ACTUALLY on: flown from what the departure technology delivers, through the waypoints as they stand. The drawn coast now flies from that same delivered hand-off, so the two agree; and both now fly the coast's own `legDays`, no arrival date being committed. It stays the one place a hypothetical hand-off can be flown, which is what `core/retarget.js` verifies its solves with. One call yields every figure the mission bar shows (v∞ out, coast Δv, closest approach, v∞ in). The answer never depends on the clock, so `signatureOf` gives the view a key to memoize on across scrubbing; one call costs about one leg integration. Pure.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `retarget.js`           | `solveDepartureTarget`                                                                         | Re-states the departure REQUIREMENT at the point a technology actually leaves from: keep the real exit point and epoch, re-solve the velocity that reaches the plan's destination from there. A damped Newton differential correction across the coast's waypoint burns, aiming for a PASS at `AIM_PASS_ALTITUDE` above the destination's surface, on the side the flight already goes by — not the arrival POINT the plan was authored with, since a plan's own flyby offset stops being a commitment worth preserving once a real departure is flying the mission. Each solve is verified by flying it through `delivered-flight.js`, and the aim iterates on the altitude error it measures. The ASK is bounded by `WAYPOINT_AXIS_CAP_MPS` — a re-target that would demand more than normal course-correction scale is a new mission for the Ephemeris tab, not a plan to re-point. Feeds the Departure card's Refine and the mission bar's Update. Pure.                                                                                                                                                                                                                              |
+| `retarget.js`           | `solveDepartureTarget`                                                                         | Re-states the departure REQUIREMENT at the point a technology actually leaves from: keep the real exit point and epoch, re-solve the velocity that reaches the plan's destination from there. A damped Newton differential correction across the coast's waypoint burns, aiming for a PASS at `AIM_PASS_ALTITUDE` above the destination's surface, on the side the flight already goes by — not the arrival POINT the plan was authored with, since a plan's own flyby offset stops being a commitment worth preserving once a real departure is flying the mission. Each solve is verified by flying it through `delivered-flight.js`, and the aim iterates on the altitude error it measures. The ASK is bounded by `WAYPOINT_AXIS_CAP_MPS` — a re-target that would demand more than normal course-correction scale is a new mission for the Ephemeris tab, not a plan to re-point. Feeds the automatic Refine and the mission bar's Update. Pure.                                                                                                                                                                                                                              |
 | `ephemeris-pov-window.js`         | `originWindow`, `destinationWindow`, `soiEntryBefore`                                          | Which stretch of the flight an Ephemeris-tab POV shows, as times along the drawn leg (0 is the SOI exit): at the origin, from the release arc's start (before 0) to `POV_MIN_DAYS` (10 d) after the exit; at a destination, from SOI entry to `POV_AFTER_CA_DAYS` (1 d) past closest approach, never shorter than 10 d — so a giant planet's months-long approach is shown whole. Pure.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `workbench-import.js`   | `workbenchConfigs`, `readWorkbenchDesign`, `importsFromWorkbench`, `WORKBENCH_STORE_KEY` | What the design saved on the home page's workbench offers a technology card: per matching installation at the card's body, a label, a one-line description and the params to merge in. Reads the workbench calculators' saved field keys (`Home/design-model.js` format, `CalcShell.getState()` fields), so renaming one of those fields breaks the import here. Pure. |
 | `revisions.js`          | `createHistory`, `recordUpdate`, `markFinished`, `packSets`, `planSummaryOf`, `changesBetween` | The mission's PLAN HISTORY: the plan as `adopt.js` first wrote it, plus a whole serialized World per commit (never a diff — a World already is the complete description of a mission). Locally the full run of commits is kept; a share LINK carries exactly two sets, the original and the latest, because intermediate commits are the author's working record and a link has to fit in a chat message. `markFinished` compacts to those same two — the control that calls it belongs to the unbuilt arrival phase. `planSummaryOf` reads a plan's STORED values off a serialized World with no physics involved (the adopted-plan commitment, the coast horizon, the release epoch, and every technology stage's own dials, keyed by module and occurrence rather than chain position); `changesBetween` merges two summaries by key, which is what the mission report's "as adopted / now" table draws. Pure.                                                                                                                                                                                                                                                                         |
@@ -229,12 +229,13 @@ stage ids like "stg-2"; `legFor`/`physicsFor`-style lookups take
 `(world, stageId)`.
 
 Layout/camera state ("workspace") lives in `localStorage`
-(`mw-missionplanner-workspace`, `{ missions: { id -> { main, phase, cams, check } } }`,
+(`mw-missionplanner-workspace`, `{ missions: { id -> { main, phase, cams, check, refine } } }`,
 one slot per mission, read-modify-write so slots survive each other), never in
 World — a **separate key** from mission-content persistence. `check` is a
 standing Refine's target, so a reload keeps the Needed column where Refine put
 it; it is tied to the committed departure it was solved against and dropped on
-load if that no longer matches. Mission CONTENT
+load if that no longer matches. `refine` is the automatic Refine's run count.
+Mission CONTENT
 (title + `world.serialize()`) lives under its own key
 (`mw-missionplanner-missions`), owned by `planner.js` and saved on `pagehide`
 and immediately after any structural change (a mission added or closed).
@@ -282,17 +283,22 @@ button is a hard-fault light (error or blocked) and nothing softer; compliance
 is the colour of the figure beside it, where the number it grades can be read
 at the same time.
 
-**Refine and Update** drive the re-target loop. Refine (on the Departure ship
-card — it is only meaningful there, since Coast has no single correct answer
-to re-solve towards) re-solves the departure requirement at the point the
-technology actually leaves from, and new Needed figures are then generated
-that will lead to a closest approach of less than 30,000 km. Update stores the
-*current* delivery — for the mission report and the mission link. The loop
-closes because each pass asks for less than the last. Update is also offered
-without a Refine when the arrival technology **catches** the ship (contact
-slower than `core/proximity.js`'s `MAX_CATCH_SPEED` relative to the hardware)
-and the mission differs from its last commit: it then re-solves nothing, and
-records the mission as it stands as a new report line and plan-history step.
+**Refine** re-solves the departure requirement at the point the technology
+actually leaves from, producing new Needed figures that lead to a closest
+approach of less than 30,000 km. It has no button: it runs by itself, at most
+twice, as the delivered vector closes on Needed — once when the gap between the
+two vectors is within 3% of the Needed net speed, and once more within 0.3% of
+the Needed the first run produced. Each run flashes a brief note in the bottom
+left of the Departure card's gizmo; a run that finds no solution writes nothing
+and says so there. The count resets only when a ship that was on course stops
+being on course (a re-tuned or swapped technology), and is saved with the
+workspace.
+
+**Update** is available in the Departure phase once the ship is on course, and
+always in the Coast and Arrival phases, at the user's discretion. Every Update
+adds an "Update N" line to the mission report and a plan-history step. With a
+Refine target standing, it also re-solves from the current delivery and commits
+that into the plan as its requirement, moving the coast's waypoints with it.
 The report's Arrival columns are the arrival waypoints' burns (fuel) and
 whatever remains of the arrival's total for the catching hardware (tech);
 without a catch, tech and total are blank. **Mission data** opens
@@ -300,9 +306,8 @@ the per-iteration table: one line per Update, holding the figures and the
 whole World as they were at the click, plus a "now" line read live from the
 mission. Clicking an Update line rebuilds the mission from its stored World
 (the tab, plan history and report lines are kept; the lines are session-only).
-The mission link is a separate button. Update and
-Mission report write into the **message area** beside the flight timeline;
-Refine writes there too.
+The mission link is a separate button. Update and Mission report write into
+the **message area** beside the flight timeline.
 
 The Coast→Arrival seam has no such boundary and no commit step: a waypoint
 edit moves the coast, the arrival window and the Arrival phase in the same
@@ -397,7 +402,7 @@ never when it started.
 
 - **`modules/transfer-leg/`** — the canonical transfer-leg module: a ballistic
   arc between two ship states with the plan's waypoint burns (trimmed on
-  Coast, never added there), extended with
+  Coast; Coast adds one only when the plan has none), extended with
   real SOI encounters (where the arc dips inside a body's SOI the flight
   switches to `Shared/body-leg.js`'s body+Sun integration and resumes Kepler
   at exit). Consumes the hand-off ship-state unmodified — no burn happens at

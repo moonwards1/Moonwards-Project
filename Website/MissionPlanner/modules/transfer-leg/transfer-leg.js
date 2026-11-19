@@ -8,7 +8,8 @@
  * Shared/body-leg.js's body+Sun integration and resumes Kepler at exit, so a
  * close pass genuinely bends and a rendezvous can be set up against the body's
  * own gravity (see the encounter block below). The waypoints are the ones the
- * Ephemeris tab authored with the plan; Coast trims them but never adds one.
+ * Ephemeris tab authored with the plan; Coast trims them, and adds one only
+ * when the plan brought none.
  * The plotter's snap-to and Lambert targeting are not here: they live on the
  * Ephemeris tab (ephemeris-view.js), which authors a plan before it is adopted.
  *
@@ -54,7 +55,7 @@ import { PacketTypes } from "../../../Shared/exchange-types.js";
 import { Frames } from "../../../Shared/frames.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
 import { computeArrivalSeam } from "../../core/arrival-seam.js";
-import { makeShipSprite, sweepAngleFrom } from "../../../Shared/sim/marker-card.js";
+import { makeShipSprite, sweepAngleFrom, bindAbsoluteDragSlider } from "../../../Shared/sim/marker-card.js";
 import { buildVectorEditor } from "../../../Shared/sim/vector-editor.js";
 import { bodyConstants, integrateEncounter, stateAtLegTime, burnEffect } from "../../../Shared/body-leg.js";
 import { createWaypointGizmo, makeBurnArrowPair } from "../../../Shared/sim/burn-widget.js";
@@ -612,6 +613,39 @@ export function dayAtDeg(leg, legDays, dayGuess, targetDeg) {
 	return day;
 }
 
+// Whole-coast inverse of degAtDay, for a waypoint placed freely (one added on
+// Coast): the FIRST day in (0, legDays) at which the coast has swept
+// targetDeg, counting turns — 30 is the first time past 30°, 390 the second.
+// dayAtDeg's Newton search only finds the crossing nearest its guess, which
+// suits a nudge but not a jump across the coast. Samples the coast, unwraps
+// the angle, then bisects inside the first bracketing interval. A target the
+// coast never reaches lands at the nearer end.
+export function dayAtDegAnywhere(leg, legDays, targetDeg) {
+	var lo = 0.01, hi = legDays - 0.01;
+	if (!leg || !leg.ok || !leg.segs.length || !(hi > lo)) { return lo; }
+	var N = 240, prevDay = lo, prevRaw = degAtDay(leg, lo), prevU = prevRaw;
+	if (targetDeg <= prevU) { return lo; }
+	function unwrapped(day, refRaw, refU) {
+		var raw = degAtDay(leg, day), d = raw - refRaw;
+		d = ((d + 180) % 360 + 360) % 360 - 180;
+		return { raw: raw, u: refU + d };
+	}
+	for (var k = 1; k <= N; k++) {
+		var day = lo + (hi - lo) * k / N;
+		var cur = unwrapped(day, prevRaw, prevU);
+		if (cur.u >= targetDeg) {
+			var a = prevDay, b = day, aRaw = prevRaw, aU = prevU;
+			for (var it = 0; it < 40; it++) {
+				var m = (a + b) / 2, mid = unwrapped(m, aRaw, aU);
+				if (mid.u >= targetDeg) { b = m; } else { a = m; aRaw = mid.raw; aU = mid.u; }
+			}
+			return (a + b) / 2;
+		}
+		prevDay = day; prevRaw = cur.raw; prevU = cur.u;
+	}
+	return hi;
+}
+
 // ---- holding waypoints by swept angle --------------------------------------
 // When the trajectory beneath a waypoint moves — the departure technology
 // delivers a different hand-off, and Update commits it — the burn should stay
@@ -752,7 +786,9 @@ export default {
 	// ---- view layer (shell-called; never runs in Node) --------------------
 
 	// Sidebar card: ONLY the waypoint burns live here — one card per waypoint
-	// the plan brought. Coast offers no way to add one: a new waypoint is a
+	// the plan brought. A coast with NO waypoints offers "+ add waypoint" for
+	// exactly one, placed anywhere along the coast with the degree field; a
+	// coast that has any waypoint offers no add, since a further waypoint is a
 	// change to the plan, made on the Ephemeris tab. Leg duration,
 	// destination and the departure injection are the adopted plan's business,
 	// not knobs on the coast, and its figures render in the phase bar's
@@ -764,9 +800,8 @@ export default {
 	// adopted reference copy) is a committed course correction, not a knob the
 	// user can delete outright: its card's button reads "reset" and restores
 	// the plan's own days/burn rather than removing the row. A waypoint with
-	// no plan original (index beyond the adopted list) can only come from a
-	// mission saved when Coast still allowed adding one; its card keeps a
-	// "remove" button so it can be cleared.
+	// no plan original (index beyond the adopted list) was added on Coast; its
+	// card has a "remove" button instead.
 	//
 	// Every waypoint's burn editor runs the vector-editor's delta-cap mode
 	// (WAYPOINT_AXIS_CAP_MPS, ±100 m/s per axis), baselined at the value the
@@ -834,11 +869,18 @@ export default {
 				locSection.appendChild(locHead);
 
 				// "at ... degrees": a number field (0.1°-stepped, shown to two
-				// decimals) plus a ±5° fine-tune slider, offset from wherever
-				// the waypoint sits when this card is (re)built — its "initial
-				// location" for the slider's purposes. Slider and field stay
-				// in sync in both directions; setAtBase re-anchors both after
-				// a reset moves the waypoint back to the plan's own day.
+				// decimals) plus a slider, kept in sync both ways. The slider
+				// depends on whether a plan stands behind the waypoint:
+				// - A PLAN waypoint gets a ±5° fine-tune slider, offset from
+				//   wherever the waypoint sits when this card is (re)built;
+				//   setAtBase re-anchors it after a reset.
+				// - A waypoint ADDED on Coast is placed freely, so it gets the
+				//   Ephemeris tab's full-length waypoint slider (ephemeris-view.js)
+				//   spanning the whole coast, with the same absolute drag
+				//   (bindAbsoluteDragSlider: 1:1, Shift 1/3, Ctrl 1/12). It runs
+				//   in DAYS rather than degrees: the swept angle wraps at 360°
+				//   (sweepAngleFrom), so on a coast sweeping more than a turn
+				//   degrees would not order the coast end to end.
 				var atRow = document.createElement("div"); atRow.className = "mp-wp-at-row";
 				var atLab = document.createElement("label"); atLab.textContent = "at"; atRow.appendChild(atLab);
 				var dayInput = document.createElement("input");
@@ -846,42 +888,66 @@ export default {
 				atRow.appendChild(dayInput);
 				var atUnit = document.createElement("span"); atUnit.className = "mp-unit"; atUnit.textContent = "degrees";
 				atRow.appendChild(atUnit);
-				var sliderWrap = document.createElement("span"); sliderWrap.className = "mp-wp-slider-wrap";
-				var sliderMin = document.createElement("span"); sliderMin.className = "mp-wp-slider-end"; sliderMin.textContent = "-5";
-				var atSlider = document.createElement("input");
-				atSlider.type = "range"; atSlider.className = "mp-wp-at-slider";
-				atSlider.min = -5; atSlider.max = 5; atSlider.step = 0.1;
-				var sliderMax = document.createElement("span"); sliderMax.className = "mp-wp-slider-end"; sliderMax.textContent = "+5";
-				sliderWrap.appendChild(sliderMin); sliderWrap.appendChild(atSlider); sliderWrap.appendChild(sliderMax);
-				atRow.appendChild(sliderWrap);
 				locSection.appendChild(atRow);
 
-				var atBaseDeg = 0;
-				function setAtBase(deg) {
-					atBaseDeg = deg;
-					dayInput.value = deg.toFixed(2);
-					atSlider.value = 0;
-				}
 				function commitAtDeg(v) {
 					var list = copyWaypoints(stageParams().waypoints);
 					var leg = legFor(ctx.world, ctx.stageId);
-					list[i].days = dayAtDeg(leg, stageParams().legDays, list[i].days, v);
+					// A plan waypoint is nudged, so the crossing nearest where
+					// it sits is the right one; a free one may jump anywhere.
+					list[i].days = original
+						? dayAtDeg(leg, stageParams().legDays, list[i].days, v)
+						: dayAtDegAnywhere(leg, stageParams().legDays, v);
 					commitWaypoints(list);
+					return list[i].days;
+				}
+				var atBaseDeg = 0, atSlider = null, freeSlider = null;
+				function setAtBase(deg) {
+					atBaseDeg = deg;
+					dayInput.value = deg.toFixed(2);
+					if (atSlider) { atSlider.value = 0; }
+				}
+				if (original) {
+					var sliderWrap = document.createElement("span"); sliderWrap.className = "mp-wp-slider-wrap";
+					var sliderMin = document.createElement("span"); sliderMin.className = "mp-wp-slider-end"; sliderMin.textContent = "-5";
+					atSlider = document.createElement("input");
+					atSlider.type = "range"; atSlider.className = "mp-wp-at-slider";
+					atSlider.min = -5; atSlider.max = 5; atSlider.step = 0.1;
+					var sliderMax = document.createElement("span"); sliderMax.className = "mp-wp-slider-end"; sliderMax.textContent = "+5";
+					sliderWrap.appendChild(sliderMin); sliderWrap.appendChild(atSlider); sliderWrap.appendChild(sliderMax);
+					atRow.appendChild(sliderWrap);
+					atSlider.addEventListener("input", function () {
+						var off = parseFloat(atSlider.value);
+						if (!isFinite(off)) { return; }
+						var v = atBaseDeg + off;
+						dayInput.value = v.toFixed(2);
+						commitAtDeg(v);
+					});
+				} else {
+					var legDaysNow = stageParams().legDays;
+					freeSlider = document.createElement("input");
+					freeSlider.type = "range"; freeSlider.className = "mp-wp-slider";
+					freeSlider.min = 0.01; freeSlider.max = legDaysNow - 0.01; freeSlider.step = 0.01;
+					freeSlider.value = wp.days;
+					freeSlider.title = "drag the waypoint along the coast";
+					var setDay = function (d) {
+						var list = copyWaypoints(stageParams().waypoints);
+						list[i].days = Math.max(0.01, Math.min(stageParams().legDays - 0.01, d));
+						commitWaypoints(list);
+						dayInput.value = degAtDay(legFor(ctx.world, ctx.stageId), list[i].days).toFixed(2);
+					};
+					freeSlider.addEventListener("input", function () { setDay(parseFloat(freeSlider.value)); });
+					bindAbsoluteDragSlider(freeSlider, setDay);
+					locSection.appendChild(freeSlider);
 				}
 				setAtBase(degAtDay(legFor(ctx.world, ctx.stageId), wp.days));
 				dayInput.addEventListener("change", function () {
 					var v = parseFloat(dayInput.value);
 					if (!isFinite(v)) { return; }
-					commitAtDeg(v);
+					var day = commitAtDeg(v);
 					dayInput.value = v.toFixed(2);
-					atSlider.value = Math.max(-5, Math.min(5, v - atBaseDeg));
-				});
-				atSlider.addEventListener("input", function () {
-					var off = parseFloat(atSlider.value);
-					if (!isFinite(off)) { return; }
-					var v = atBaseDeg + off;
-					dayInput.value = v.toFixed(2);
-					commitAtDeg(v);
+					if (atSlider) { atSlider.value = Math.max(-5, Math.min(5, v - atBaseDeg)); }
+					if (freeSlider) { freeSlider.value = day; }
 				});
 				var impHead = document.createElement("div"); impHead.className = "mp-wp-subhead mp-wp-subhead-sep";
 				var impBullet = document.createElement("span"); impBullet.className = "mp-wp-bullet"; impBullet.textContent = "•";
@@ -954,6 +1020,17 @@ export default {
 			});
 			rememberWpHosts(ctx.world, ctx.stageId, burnHosts);
 			rememberPlanWpRows(ctx.world, ctx.stageId, planRows);
+			if (!wps.length) {
+				var add = document.createElement("button"); add.className = "mp-btn mp-ghost";
+				add.textContent = "+ add waypoint";
+				add.addEventListener("click", function () {
+					// Starts at the leg's midpoint with no burn; the card's
+					// degree field and slider then place it anywhere.
+					commitWaypoints([{ days: stageParams().legDays / 2, burn: { pro: 0, rad: 0, nrm: 0 } }]);
+					rebuildWaypointRows();
+				});
+				wpHost.appendChild(add);
+			}
 		}
 		rebuildWaypointRows();
 	},

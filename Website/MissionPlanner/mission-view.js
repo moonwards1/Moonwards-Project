@@ -262,6 +262,9 @@ export function createMissionView(opts) {
 	var approachChipEl = q(".mp-approach-chip");
 	var approachValueEl = q(".mp-approach-value");
 	var updateBtn = q(".mp-update");
+	// What renderComplianceBar last found Update may commit. Kept so a phase
+	// switch can re-gate the button without re-running the bar.
+	var updateGates = { onCourse: false };
 	var reportPopupEl = q(".mp-report-popup");
 
 	// Straddling burn-readout boxes (Shared/sim/readout-panes.js) — the same
@@ -351,11 +354,13 @@ export function createMissionView(opts) {
 	// never built. ------------------------------------------------------------
 	var initialMain = frames[opts.defaultMain] ? opts.defaultMain : "helio";
 	var workspace = { main: initialMain, phase: FRAME_PHASE[initialMain] || "departure", cams: {} };
-	var savedCheck = null;     // a standing Check, restored where `checked` is declared
+	var savedCheck = null;     // a standing Refine, restored where `checked` is declared
+	var savedRefine = null;    // the auto-Refine's state, restored with it
 	(function loadWorkspace() {
 		var saved = loadWorkspaceSlot(missionId);
 		if (!saved) { return; }
 		savedCheck = saved.check || null;
+		savedRefine = saved.refine || null;
 		if (saved.main && frames[saved.main]) { workspace.main = saved.main; }
 		workspace.phase = (typeof saved.phase === "string" && PHASES.indexOf(saved.phase) !== -1)
 			? saved.phase : (FRAME_PHASE[workspace.main] || workspace.phase);
@@ -377,12 +382,13 @@ export function createMissionView(opts) {
 			             target: f.cam.target.toArray(), focusBody: f.focusBody,
 			             focusChevron: f.focusChevron || null };
 		});
-		// Only the fields the views read from a standing Check are kept: Update
+		// Only the fields the views read from a standing Refine are kept: Update
 		// re-solves from the current delivery, so nothing else of it is needed.
 		var check = checked ? { plan: checked.plan, vInf: checked.vInf,
 		                        vInfVec: checked.vInfVec, withinTolerance: checked.withinTolerance } : null;
+		var refine = autoRefine ? { runs: autoRefine.runs, wasOnCourse: autoRefine.wasOnCourse } : savedRefine;
 		saveWorkspaceSlot(missionId, { main: workspace.main, phase: workspace.phase, cams: cams,
-		                               check: check });
+		                               check: check, refine: refine });
 	}
 	window.addEventListener("pagehide", saveWorkspace);
 
@@ -607,11 +613,6 @@ export function createMissionView(opts) {
 	shipCard.el.style.left = "12px";
 	shipCard.el.style.top = "56px";   // clear of the frame caption + events readout
 	bindCardDrag(shipCard.el, shipCard.el.querySelector(".mp-ship-head"));
-	// Re-solving what the departure has to deliver is Departure's own question
-	// — Coast has no single correct answer to check against — so the control
-	// lives on the card itself (showRefine, in updateShipCard) rather than the
-	// mission bar.
-	var refineBtn = shipCard.refineBtn;
 
 	function bindCardDrag(cardEl, handle) {
 		var startX, startY, startLeft, startTop;
@@ -706,6 +707,7 @@ export function createMissionView(opts) {
 		applyPhaseToCards();
 		syncSliderVisibility();
 		saveWorkspace();
+		syncUpdateBtn();   // Update's offer is per-phase
 		// Moving the clock redraws everything through the engine's clock pass.
 		if ((clockOutside || forceEntry) && entryJd !== world.jd) { setClock(entryJd); return; }
 		// Otherwise redraw everything against the new phase immediately: which
@@ -1604,7 +1606,7 @@ export function createMissionView(opts) {
 	}
 
 	// ---- the message area --------------------------------------------------
-	// Whatever the last of Check / Update / Mission report produced. Plain
+	// Whatever the last of Update / Mission report produced. Plain
 	// prose for the two buttons, a table for the report.
 	function showMessage(head, buildBody) {
 		messagesEl.innerHTML = "";
@@ -1626,7 +1628,7 @@ export function createMissionView(opts) {
 	}
 	// adopted-plan has no sidebar card, so its hard states (a diagnostic, or
 	// blocked-on-upstream) have no home of their own; they take the message
-	// area when they happen, marked so a later Check/Update/report can tell
+	// area when they happen, marked so a later Update/report can tell
 	// them apart from its own standing output and safely replace them.
 	function showPlanState(note) {
 		var cur = messagesEl.firstElementChild;
@@ -1640,24 +1642,21 @@ export function createMissionView(opts) {
 		});
 	}
 
-	// ---- Check and Update --------------------------------------------------
-	// CHECK reads. It re-solves the departure requirement at the point the
-	// technology actually leaves from (core/retarget.js) and reports what that
-	// would buy, WITHOUT touching the plan: the answer becomes a provisional
-	// target the Departure card's Needed column steers at, and nothing redraws.
+	// ---- Refine and Update -------------------------------------------------
+	// REFINE reads. It re-solves the departure requirement at the point the
+	// technology actually leaves from (core/retarget.js) WITHOUT touching the
+	// plan: the answer becomes a provisional target the Departure card's
+	// Needed column steers at, and nothing redraws. It runs by itself (see the
+	// automatic Refine block below).
 	//
-	// UPDATE writes. It re-solves from the CURRENT delivery — not from Check's
-	// stored answer, which is already stale the moment the technology is
-	// re-tuned — and commits it, so the drawn trajectory becomes the new one.
+	// UPDATE writes. With a Refine target standing it re-solves from the
+	// CURRENT delivery and commits that into the plan; either way it records
+	// the mission as a new report line and plan-history step.
 	//
-	// The loop closes because each pass is smaller than the last: committing
-	// moves the requirement, re-tuning towards it moves the exit point, and
-	// re-solving from the new exit point asks for less than it did before.
-	//
-	// A standing Check is saved with the workspace and restored on load, so a
+	// A standing Refine is saved with the workspace and restored on load, so a
 	// reload never silently swaps the Needed column back to the committed plan.
 	// It is tied to the plan it was solved against (`plan`, the committed
-	// departure as a string): a saved Check whose plan no longer matches is
+	// departure as a string): a saved one whose plan no longer matches is
 	// dropped, not shown against a requirement it was never solved for.
 	function planKeyOf(stage) {
 		return stage ? JSON.stringify(stage.params.departure || null) : null;
@@ -1762,41 +1761,22 @@ export function createMissionView(opts) {
 		}
 	}
 
-	// How a solve reads as prose. `verb` distinguishes what has happened from
-	// what would: Check proposes, Update reports.
-	function solveMessage(wrap, sol, destName, applied) {
-		// Where the flight goes today leads either way — a refusal that only
-		// says "no" leaves the reader without the number they came for.
+	// How a committed re-target reads as prose.
+	function solveMessage(wrap, sol, destName) {
 		if (isFinite(sol.passBefore)) {
-			msgPara(wrap, "As the departure stands, the flight passes <b>" +
+			msgPara(wrap, "As the departure stood, the flight passed <b>" +
 				cbarKm(sol.passBefore) + "</b> above " + escapeText(destName) + ".");
-		}
-		if (!sol.ok) {
-			msgPara(wrap, "<span class='warn'>" + escapeText(sol.reason) + "</span>");
-			return;
 		}
 		msgPara(wrap, "Re-solved at the point it actually leaves from: v∞ <b>" +
 			cbarKms(sol.vInf) + "</b>, a " + sol.turnDeg.toFixed(2) + "° turn and " +
 			(sol.dSpeed >= 0 ? "+" : "−") + Math.abs(Math.round(sol.dSpeed)) +
-			" m/s from now, " + (applied ? "bringing" : "which would bring") +
-			" the pass to <b class='" + (sol.withinTolerance ? "ok" : "warn") + "'>" +
-			cbarKm(sol.passAfter) + "</b>.");
-		if (!sol.withinTolerance) {
-			msgPara(wrap, "<span class='warn'>" + escapeText(sol.reason) + "</span>");
-		}
+			" m/s from before, bringing the pass to <b class='ok'>" + cbarKm(sol.passAfter) + "</b>.");
 		// The drawn coast flies what the TECHNOLOGY delivers, and an Update does
 		// not touch the technology — so this does not move the trajectory. It
 		// moves the requirement the trajectory is steered towards, and the
 		// waypoints and dates that hang off it.
-		msgPara(wrap, applied
-			? "The Needed column now states this, and the coast's waypoints have " +
-				"moved with it. The trajectory changes when you re-tune the technology " +
-				"towards those figures — then Refine again, and each pass asks less " +
-				"than the last."
-			: (sol.withinTolerance
-				? "Nothing written. Re-tune towards the new Needed figures, then Update."
-				: "Nothing written. The Needed column states this even though Update " +
-					"can't commit it yet."));
+		msgPara(wrap, "The plan's requirement now states this, and the coast's waypoints have " +
+			"moved with it. Recorded as a new line in the mission report.");
 	}
 
 	function escapeText(s) {
@@ -1805,66 +1785,157 @@ export function createMissionView(opts) {
 		return d.innerHTML;
 	}
 
-	refineBtn.addEventListener("click", function () {
+	// ---- the automatic Refine ------------------------------------------------
+	// Refine runs by itself, at most twice, as the delivery closes on Needed:
+	// once when the gap between the two vectors' tips falls within 3% of the
+	// Needed net speed, and once more within 0.3% of the Needed that first run
+	// produced. Each run re-solves the requirement at the exit point the
+	// technology actually delivers (retargetSolveNow) and becomes the new
+	// Needed; the Ship card's gizmo flashes a note in its corner. Two runs take
+	// the exit point's error from tens of thousands of km at arrival to a few
+	// thousand, inside the pass tolerance.
+	//
+	// The count resets only when a ship that was on course stops being on
+	// course (a re-tuned or swapped technology), so the runs can follow it.
+	// A run that finds no solution writes nothing, and is retried only once the
+	// delivery has moved by more than the finer threshold since.
+	var REFINE_STEPS = [0.03, 0.003];
+	var autoRefine = {
+		runs: savedRefine && savedRefine.runs >= 0 ? Math.min(savedRefine.runs, REFINE_STEPS.length) : 0,
+		wasOnCourse: !!(savedRefine && savedRefine.wasOnCourse),
+		failedAt: null,       // the delivered v∞ vector a failed run solved from
+		suspended: false      // true while Update writes, so its mid-steps aren't read
+	};
+
+	// The delivered v∞ against the Needed one: { comp, wantVec, wantMag, gap },
+	// or null with no plan or no delivery. Needed is a standing Refine's
+	// target, else the plan's own requirement.
+	function deliveryVsNeeded() {
+		var planStage = adoptedPlanStage();
+		var desc = registry.get("adopted-plan");
+		var comp = (planStage && desc && typeof desc.complianceFor === "function")
+			? desc.complianceFor(world, planStage.id) : null;
+		if (!comp || !comp.ok || !comp.delivered || !comp.delivered.vInfVec) { return null; }
+		var wantVec = checked ? checked.vInfVec : comp.required.vInfVec;
+		var wantMag = checked ? checked.vInf : comp.required.vInf;
+		return { comp: comp, wantVec: wantVec, wantMag: wantMag,
+		         gap: O.vMag(O.vSub(comp.delivered.vInfVec, wantVec)) };
+	}
+
+	// ON COURSE needs two things: Current matches Needed, AND the flight
+	// flown from the delivery actually reaches the destination — the same
+	// closest-approach figure and standard as the mission bar's headline
+	// chip. Matching Needed alone is not enough, because the compliance
+	// tolerances are far coarser than the pass standard: 1° of aim on a
+	// Moon→Ceres departure is ~250,000 km at Ceres against a 30,000 km bound.
+	// Against a Refine target, speed and aim are measured live from the
+	// current delivery — the same two tests comp.rows applies to the plan.
+	function onCourseNow(d) {
+		if (d === undefined) { d = deliveryVsNeeded(); }
+		if (!d) { return false; }
+		var del = d.comp.delivered;
+		var matches = checked
+			? (Math.abs(O.vMag(del.vInfVec) - d.wantMag) <= VINF_TOL &&
+				O.angleBetweenDeg(del.vInfVec, d.wantVec) <= AIM_TOL_DEG)
+			: d.comp.rows.every(function (r) { return r.ok; });
+		var flown = flightAsDelivered();
+		return matches && checkPassAltitude(flown && flown.pass ? flown.pass.altitude : Infinity).ok;
+	}
+
+	// Called after every recompute, before the views read `checked`.
+	function runAutoRefine() {
+		if (autoRefine.suspended) { return; }
+		var planStage = adoptedPlanStage();
+		var hasDest = !!(planStage && (planStage.params.arrival || {}).body) &&
+			world.stages().some(function (x) { return x.moduleId === "transfer-leg"; });
+		var d = hasDest ? deliveryVsNeeded() : null;
+		if (!d) { return; }
+
+		var onCourse = onCourseNow(d);
+		if (autoRefine.wasOnCourse && !onCourse) {
+			autoRefine.runs = 0;
+			autoRefine.failedAt = null;
+		}
+		autoRefine.wasOnCourse = onCourse;
+
+		if (autoRefine.runs >= REFINE_STEPS.length) { return; }
+		if (!(d.gap <= REFINE_STEPS[autoRefine.runs] * d.wantMag)) { return; }
+		var vec = d.comp.delivered.vInfVec;
+		if (autoRefine.failedAt &&
+			O.vMag(O.vSub(vec, autoRefine.failedAt)) <= REFINE_STEPS[REFINE_STEPS.length - 1] * d.wantMag) {
+			return;
+		}
+
 		var sol = retargetSolveNow();
-		var dest = (adoptedPlanStage() && (adoptedPlanStage().params.arrival || {}).body) || "the destination";
-		checked = sol.ok ? Object.assign({ plan: planKeyOf(adoptedPlanStage()) }, sol) : null;
-		showMessage("Refine — nothing written", function (wrap) {
-			solveMessage(wrap, sol, dest, false);
-		});
-		// The Needed column and the buttons both read `checked`; nothing in the
-		// World moved, so ask for a view pass rather than a recompute.
-		refreshViews();
-	});
+		if (!sol.ok || !sol.withinTolerance) {
+			autoRefine.failedAt = vec.slice();
+			shipCard.flashLabel(sol.ok ? "Refine: pass out of reach" : "Refine: no solution");
+			return;
+		}
+		checked = Object.assign({ plan: planKeyOf(planStage) }, sol);
+		autoRefine.runs += 1;
+		autoRefine.failedAt = null;
+		// A run moves Needed, which can take a matched ship off course; that is
+		// not a re-tune, so it must not read as one on the next pass.
+		autoRefine.wasOnCourse = false;
+		shipCard.flashLabel("Refined " + autoRefine.runs + " of " + REFINE_STEPS.length);
+		saveWorkspace();
+	}
 
 	updateBtn.addEventListener("click", function () {
 		var planStage = adoptedPlanStage();
 		if (!planStage) { return; }
 		// A standing Refine within tolerance is a re-target to commit; without
-		// one, the only other thing Update offers is to record a catch.
-		if (!checked || !checked.withinTolerance) { recordCatch(); return; }
-		var sol = retargetSolveNow();           // from the CURRENT delivery, not Check's
+		// one, Update records the mission as it stands.
+		if (!checked || !checked.withinTolerance) { recordAsIs(); return; }
+		var sol = retargetSolveNow();           // from the CURRENT delivery, not Refine's
 		var dest = (planStage.params.arrival || {}).body || "the destination";
 		var applied = sol.ok && sol.withinTolerance;
-		if (applied) {
-			// The mission as it stands at the click — its live figures and its
-			// whole World — becomes a permanent "Update N" line, taken before
-			// the re-target moves anything.
-			history.push(reportLineNow());
-			applyRetarget(planStage.id, sol);   // this recomputes and redraws
-			planHistory = recordUpdate(planHistory, world.serialize());
-			if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
-			checked = null;
-		}
-		showMessage(applied ? "Update — the plan has changed" : "Update — nothing written",
-			function (wrap) { solveMessage(wrap, sol, dest, applied); });
+		// A re-solve that fails at the click still leaves a mission worth
+		// recording: Update was offered, so it writes a line either way.
+		if (!applied) { recordAsIs(); return; }
+		// The mission as it stands at the click — its live figures and its
+		// whole World — becomes a permanent "Update N" line, taken before the
+		// re-target moves anything. The auto-Refine sits out the re-target's
+		// intermediate recomputes, which are not re-tunes.
+		autoRefine.suspended = true;
+		history.push(reportLineNow());
+		applyRetarget(planStage.id, sol);   // this recomputes and redraws
+		planHistory = recordUpdate(planHistory, world.serialize());
+		if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
+		checked = null;
+		autoRefine.suspended = false;
+		autoRefine.wasOnCourse = onCourseNow();
+		saveWorkspace();
+		showMessage("Update " + history.length + " — the plan has changed",
+			function (wrap) { solveMessage(wrap, sol, dest); });
 		refreshViews();
 	});
 
-	// Update on a caught mission: nothing is re-solved, so nothing moves. The
+	// Update with no re-target: nothing is re-solved, so nothing moves. The
 	// mission as it stands is committed to the plan history and becomes a new
 	// report line, read fresh — the figures being committed are the arrival
 	// cards' own, which the report's "now" checkpoint may not yet have seen.
-	function recordCatch() {
+	// Offered whenever Update is (updateAvailable).
+	function recordAsIs() {
+		if (!updateAvailable()) { return; }
 		var c = catchNow();
-		if (!c.verdict.ok || committedAsNow()) { return; }
 		history.push(reportLineNow());
 		planHistory = recordUpdate(planHistory, world.serialize());
 		if (opts.onPlanRecorded) { opts.onPlanRecorded(); }
-		showMessage("Update " + history.length + " — caught at " + c.cap.body, function (wrap) {
-			msgPara(wrap, "The ship meets the " + escapeText(stageTitle(arrivalTechStage()).toLowerCase()) +
-				" at <b>" + Math.round(c.verdict.relSpeed) + " m/s</b> relative to it — inside the " +
-				MAX_CATCH_SPEED + " m/s a catch allows. Recorded as a new line in the mission report.");
-		});
+		if (c.verdict.ok) {
+			showMessage("Update " + history.length + " — caught at " + c.cap.body, function (wrap) {
+				msgPara(wrap, "The ship meets the " + escapeText(stageTitle(arrivalTechStage()).toLowerCase()) +
+					" at <b>" + Math.round(c.verdict.relSpeed) + " m/s</b> relative to it — inside the " +
+					MAX_CATCH_SPEED + " m/s a catch allows. Recorded as a new line in the mission report.");
+			});
+		} else {
+			showMessage("Update " + history.length + " — recorded", function (wrap) {
+				msgPara(wrap, "The mission as it stands is recorded as a new line in the mission report. " +
+					"Nothing was re-solved, so nothing has moved.");
+			});
+		}
 		refreshViews();
-	}
-
-	// Is the mission exactly what the plan history last committed? Compared
-	// on the stages alone: the clock is not part of what a commit states.
-	function committedAsNow() {
-		var steps = planHistory.steps;
-		var last = steps.length ? steps[steps.length - 1].world : planHistory.original;
-		return !!last && JSON.stringify(last.stages) === JSON.stringify(world.serialize().stages);
 	}
 
 	// ---- the mission report ------------------------------------------------
@@ -1938,7 +2009,7 @@ export function createMissionView(opts) {
 
 	// One row's worth of the live figures: what the departure/coast/arrival
 	// boundaries actually deliver right now. `sol` is unused today (kept so a
-	// future Check/Update tie-in has somewhere to plug a provisional figure
+	// future Refine/Update tie-in has somewhere to plug a provisional figure
 	// in) — every row reads the CURRENT world, which is why a row is only
 	// meaningful captured at the instant an Update commits (below) or read
 	// live for "now".
@@ -2101,8 +2172,8 @@ export function createMissionView(opts) {
 			setMetric(metricEls.vInfIn, "v∞ in", "—", null, null);
 			approachChipEl.className = "mp-approach-chip";
 			approachValueEl.textContent = "—";
-			refineBtn.disabled = true;
-			updateBtn.disabled = true;
+			updateGates = { onCourse: false };
+			syncUpdateBtn();
 		}
 		if (!planRes) { blankBar(); return; }       // this mission carries no adopted plan
 
@@ -2134,7 +2205,7 @@ export function createMissionView(opts) {
 
 		// v∞ OUT is the only graded figure: it is what the ship leaves with, and
 		// the plan states what it should be. Graded against the provisional
-		// target while a Check is standing, so the reader steers at the number
+		// target while a Refine is standing, so the reader steers at the number
 		// the Needed column is showing them rather than the superseded one.
 		var wantVInf = checked ? checked.vInf : comp.required.vInf;
 		var rV = (comp.rows || []).filter(function (r) { return r.key === "vinf"; })[0];
@@ -2166,31 +2237,28 @@ export function createMissionView(opts) {
 			? passAltitudeReason(checkPassAltitude(alt), destName)
 			: "This mission commits to no destination.";
 
-		// REFINE is read-only, so it is offered whenever there is a delivery to
-		// measure — its report is worth having even while the departure is still
-		// off course. UPDATE writes, so it waits until a Refine has shown what
-		// the write would do.
-		refineBtn.disabled = !destName;
-		refineBtn.title = destName
-			? "Re-calculate where the ship exits the origin system, according to departure setup. The more accurate this is, the truer the aim."
-			: "This mission commits to no destination, so there is nothing to re-target towards.";
-		// Two things are worth committing: a Refine's re-solved departure, and a
-		// mission the arrival technology catches — the latter only once it
-		// differs from what was last committed, so Update never writes the same
-		// line twice.
-		var canRetarget = !!checked && checked.withinTolerance;
-		var caught = catchNow();
-		var canRecordCatch = caught.verdict.ok && !committedAsNow();
-		updateBtn.disabled = !(canRetarget || canRecordCatch);
-		updateBtn.title = canRetarget
-			? "Commit the re-solved departure requirement and redraw the trajectory."
-			: canRecordCatch
-				? "Record this mission, caught at " + caught.cap.body + ", as a new line in the mission report."
-				: (checked
-					? "The departure technology isn't close enough to deliver this yet " +
-						"— see the Refine message for what to build up."
-					: "Press Refine first, or have the arrival technology catch the ship — " +
-						"Update commits what they find.");
+		updateGates = { onCourse: onCourseNow() };
+		syncUpdateBtn();
+	}
+
+	// Update in the Departure phase waits for the ship to be on course; in
+	// Coast and Arrival it is the user's call. Either way it records the
+	// mission as a new report line and plan-history step, and a standing
+	// Refine within tolerance is committed into the plan as it goes.
+	function updateAtDiscretion() {
+		return (workspace.phase === "coast" || workspace.phase === "arrival") && !!adoptedPlanStage();
+	}
+	function updateAvailable() {
+		return !!adoptedPlanStage() && (updateGates.onCourse || updateAtDiscretion());
+	}
+	function syncUpdateBtn() {
+		updateBtn.disabled = !updateAvailable();
+		var commits = !!checked && checked.withinTolerance;
+		updateBtn.title = updateBtn.disabled
+			? "Update becomes available once the ship is on course. In Coast and Arrival it is always available."
+			: commits
+				? "Commit the refined departure requirement and record the mission as a new line in the mission report."
+				: "Record the mission as it stands as a new line in the mission report.";
 	}
 	// The readout's "active" event is the latest one at or before the clock
 	// (the one whose date the mission is currently living in); before the
@@ -2604,7 +2672,6 @@ export function createMissionView(opts) {
 		shipCard.setOnCourse(false);
 		shipCard.setGizmo(null);
 		shipCard.showGizmo(false);
-		shipCard.showRefine(false);
 
 		var stage = coastStage();
 		var desc = registry.get("transfer-leg");
@@ -2726,7 +2793,6 @@ export function createMissionView(opts) {
 	// technology at all the card is the speed bar alone.
 	function updateArrivalCard() {
 		shipCard.setSubtitle("Arrival");
-		shipCard.showRefine(false);
 		shipCard.setOnCourse(false);
 		shipCard.setBPlane(null);
 		shipCard.setApproach(null);
@@ -2795,7 +2861,6 @@ export function createMissionView(opts) {
 		if (workspace.phase === "arrival") { updateArrivalCard(); return; }
 		shipCard.setSubtitle("Departure");
 		shipCard.showGizmo(true);
-		shipCard.showRefine(true);
 		shipCard.setBPlane(null);
 		shipCard.setApproach(null);
 		shipCard.setNote("");
@@ -2814,11 +2879,10 @@ export function createMissionView(opts) {
 			return;
 		}
 
-		// NEEDED is the provisional target while a Check is standing, and the
-		// plan{A}s own requirement otherwise. Check writes nothing to the plan,
-		// so this column is the only place its answer lands — which is the
-		// point: it is the figure the user tunes towards before Update commits
-		// it. See the Check/Update block above.
+		// NEEDED is the standing Refine's target, and the plan's own
+		// requirement otherwise. Refine writes nothing to the plan, so this
+		// column is the only place its answer lands — the figure the user tunes
+		// towards before Update commits it. See the automatic Refine block.
 		var wantVec = checked ? checked.vInfVec : comp.required.vInfVec;
 		var wantMag = checked ? checked.vInf : comp.required.vInf;
 		var needed = vInfComponents(dep.r, dep.v, wantVec);
@@ -2831,22 +2895,7 @@ export function createMissionView(opts) {
 			currentDir: comp.delivered ? unitOf(comp.delivered.vInfVec) : null
 		});
 		shipCard.setComponents(needed, current);
-		// ON COURSE needs two things: Current matches Needed, AND the flight
-		// flown from the delivery actually reaches the destination — the same
-		// closest-approach figure and standard as the mission bar's headline
-		// chip. Matching Needed alone is not enough, because the compliance
-		// tolerances are far coarser than the pass standard: 1° of aim on a
-		// Moon→Ceres departure is ~250,000 km at Ceres against a 30,000 km bound.
-		// Against a Check target, speed and aim are measured live from the
-		// current delivery — the same two tests comp.rows applies to the plan —
-		// so the badge follows the technology as it is re-tuned towards Needed.
-		var matches = !!comp.delivered && (checked
-			? (Math.abs(O.vMag(comp.delivered.vInfVec) - wantMag) <= VINF_TOL &&
-				O.angleBetweenDeg(comp.delivered.vInfVec, wantVec) <= AIM_TOL_DEG)
-			: comp.rows.every(function (r) { return r.ok; }));
-		var flown = flightAsDelivered();
-		shipCard.setOnCourse(matches &&
-			checkPassAltitude(flown && flown.pass ? flown.pass.altitude : Infinity).ok);
+		shipCard.setOnCourse(onCourseNow());
 
 		// The speed section reads the flown arc, not the hand-off packet: the
 		// bar's right edge is the flight's own peak speed, so it rescales with
@@ -2893,7 +2942,7 @@ export function createMissionView(opts) {
 		return Math.max(arr.start, Math.min(arr.end, arr.zero));
 	}
 
-	// A view pass with no recompute behind it: Check writes nothing to the
+	// A view pass with no recompute behind it: Refine writes nothing to the
 	// World, so there is no chain to re-run — only the bar and the Departure
 	// card's Needed column, both of which read the provisional target.
 	function refreshViews() {
@@ -2903,6 +2952,7 @@ export function createMissionView(opts) {
 	}
 
 	var unRecompute = engine.onRecompute(function (results) {
+		runAutoRefine();
 		var span = coastSpan(results);
 		var dep = departureSpan(results);
 		var arr = arrivalSpan(results);

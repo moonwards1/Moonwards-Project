@@ -154,7 +154,7 @@ is tuned, and is also the Arrival timeline's zero and where Δθ is taken (Δθ
 is null when the mark is closest approach). A mark over the pole keeps the
 retrograde 0°.
 
-CONTACT (2026-09-24, `tetherContact`) is at the mark too: the ship touches
+CONTACT (tetherContact`) is at the mark too: the ship touches
 the tether if its crossing lies on the arm, within `CATCH_REACH` (1 km) to one
 side and anywhere from the arm's base to the catch point, not only the tip.
 Otherwise there is no catch solution yet. The Arrival ship card's frame is the
@@ -247,7 +247,7 @@ change drops the pin, so the next scrub pins wherever the thumb is then.
 
 ### Recalculate the departure requirement once the real exit point is known
 
-Once departure technology has been set up and the figures in the Ship card Needed row have been matched, the Check button becomes available. Once it has been clicked, the full flight of the ship is recalculated based on the now known precise location of release and the exact impulse events. This is used to calculate new Needed figures, ones that will yield an arc that passes around 15,000 km from the destination.
+Refine runs automatically, at most twice: when the gap between the delivered and Needed v∞ vectors falls within 3% of the Needed net speed, and again within 0.3% of the Needed the first run produced. Each run recalculates the flight from the now known precise location of release and the exact impulse events, and yields new Needed figures for an arc that passes around 15,000 km from the destination. Two runs bring the exit point's error at arrival down to a few thousand km. The count resets only when a ship that was on course stops being on course.
 
 ### A re-target aims for a pass; the pass is the only gate
 
@@ -306,15 +306,15 @@ Sun-only Kepler instead puts them off the drawn line by hundreds of thousands
 of km past any flyby — the line bends, the conic does not. Waypoint SNAPS
 (apsis, node) stay conic: they have no other definition.
 
-### Check and Update
+### Refine and Update
 
-**Check reads.** It re-solves at the real departure exit point, writes nothing to the
+**Refine reads.** It re-solves at the real departure exit point, writes nothing to the
 World, and revises the Ship card's Needed column. 
 
 **Update writes.** It populates the columns in the mission report, and writes to the serialized world.
-It is offered after a Refine within tolerance (a re-target), or on a successful catch — contact
-under `MAX_CATCH_SPEED`, 250 m/s, relative to the arrival hardware — when the mission differs from
-its last commit (a record of the mission as it stands, nothing re-solved).
+It is offered in the Departure phase once the ship is on course, and always in the Coast and
+Arrival phases. Every Update adds an "Update N" line to the mission report; with a Refine target
+standing it also commits the re-target into the plan.
 
 **Arrival Δv in the report**: total is the ship's unburned speed at the catch radius (v∞ in plus
 the fall), counted to rest relative to the destination — the mirror of departure tech, which counts
