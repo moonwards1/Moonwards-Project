@@ -139,13 +139,44 @@ export function fitSphere(points) {
 	return { center: center, radius: Math.max(radius, 0.05) };
 }
 
-// How far back a camera with vertical field of view `fovDeg` and `aspect`
-// (width / height) sits so a sphere of `radius` spans `fill` of the narrower
-// side of the view.
-export function fitDistance(radius, fovDeg, aspect, fill) {
-	var halfV = fovDeg * Math.PI / 360;
-	var halfH = Math.atan(Math.tan(halfV) * aspect);
-	return radius / Math.sin(Math.min(halfV, halfH)) / fill;
+// Frames `points` ([[x, y, z], ...]) for a perspective camera looking from
+// spherical angles `theta`, `phi` (camera-controller's convention, +Z up) with
+// vertical field of view `fovDeg` and `aspect` (width / height). Returns
+// { target: [x, y, z], distance }: the drawing's on-screen extent spans `fill`
+// of the view in whichever direction is tighter, centred both ways. It fits
+// the drawing's own outline as seen from that angle, not a sphere around it,
+// so a long, flat drawing fills a wide strip instead of floating in the middle.
+// Each point must sit no closer than `distance - w` to the camera, where w is
+// its depth toward the camera, so the distance is exact for every point; the
+// centring uses the outline's midpoint, which perspective shifts only slightly.
+export function fitView(points, theta, phi, fovDeg, aspect, fill) {
+	var sp = Math.sin(phi);
+	var back = [sp * Math.cos(theta), sp * Math.sin(theta), Math.cos(phi)];
+	// three.js lookAt with +Z up: x = up × back, y = back × x.
+	var right = O.vUnit([-back[1], back[0], 0]);
+	if (!(O.vMag(right) > 0.5)) { right = [1, 0, 0]; }
+	var up = O.vCross(back, right);
+	var pts = (points && points.length) ? points : [[0, 0, 0]];
+	var lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
+	pts.forEach(function (p) {
+		var u = O.vDot(p, right), v = O.vDot(p, up);
+		lo[0] = Math.min(lo[0], u); hi[0] = Math.max(hi[0], u);
+		lo[1] = Math.min(lo[1], v); hi[1] = Math.max(hi[1], v);
+	});
+	var cu = (lo[0] + hi[0]) / 2, cv = (lo[1] + hi[1]) / 2;
+	var tanV = Math.tan(fovDeg * Math.PI / 360) * fill;
+	var tanH = Math.tan(fovDeg * Math.PI / 360) * aspect * fill;
+	var distance = 0;
+	pts.forEach(function (p) {
+		var w = O.vDot(p, back);
+		distance = Math.max(distance,
+			w + Math.abs(O.vDot(p, right) - cu) / tanH,
+			w + Math.abs(O.vDot(p, up) - cv) / tanV);
+	});
+	return {
+		target: [cu * right[0] + cv * up[0], cu * right[1] + cv * up[1], cu * right[2] + cv * up[2]],
+		distance: distance
+	};
 }
 
 // The speed bar's model, km/s. Peak pins the right edge and is recomputed with
@@ -396,8 +427,14 @@ var LINE_RADIUS = { dim: 0.032, bright: 0.014 };
 // The gizmo camera's starting distance, before its first fit.
 var GIZMO_REF_RADIUS = 3.4;
 
-// How much of the gizmo's narrower side the fitted lines span.
-var GIZMO_FILL = 0.92;
+// The gizmo's default viewing angle: isometric, looking down the (1, 1, 1)
+// diagonal, so all three axes read at equal length.
+var GIZMO_THETA = Math.PI / 4;
+var GIZMO_PHI = Math.acos(1 / Math.sqrt(3));
+
+// How much of the gizmo's height or width (whichever binds) the fitted lines
+// span; the rest is the gap at the edges, split evenly.
+var GIZMO_FILL = 0.9;
 var GIZMO_FOV = 38;
 
 // A unit cylinder (radius 1, height 1, centred on the origin, running up +Y)
@@ -483,7 +520,7 @@ export function createShipCard(opts) {
 	var alignLabel = el("label", "mp-ship-align");
 	var alignBox = document.createElement("input");
 	alignBox.type = "checkbox";
-	alignBox.checked = true;
+	alignBox.checked = false;
 	alignLabel.appendChild(alignBox);
 	alignLabel.appendChild(el("span", null, "Align to view"));
 	alignLabel.title = "Match the main pane's viewing angle. Off, the gizmo " +
@@ -518,10 +555,12 @@ export function createShipCard(opts) {
 	var bgColor = new THREE.Color(bg);
 	scene.background = bgColor;
 	var camera = new THREE.PerspectiveCamera(GIZMO_FOV, 1, 0.01, 200);
-	// The camera frames the lines whenever they change shape (refit, below),
-	// and is otherwise the user's to rotate and zoom: a rebuild that draws the
-	// same lines, as every clock move does, leaves their view alone.
-	var cam = createCam(GIZMO_REF_RADIUS, Math.PI * 0.25, Math.PI * 0.42, new THREE.Vector3(0, 0, 0));
+	// The camera frames the lines on their own (refit, below) only until the
+	// user rotates, pans or zooms the gizmo; from then on the view is theirs,
+	// and no rebuild — a clock move or an edit elsewhere — moves it. A
+	// double-click hands framing back.
+	var cam = createCam(GIZMO_REF_RADIUS, GIZMO_THETA, GIZMO_PHI, new THREE.Vector3(0, 0, 0));
+	function isometric() { cam.theta = GIZMO_THETA; cam.phi = GIZMO_PHI; }
 	// The two layers live in their own groups so render can draw them as
 	// separate depth passes.
 	var neededGroup = new THREE.Group();
@@ -530,24 +569,66 @@ export function createShipCard(opts) {
 	scene.add(currentGroup);
 
 	var unbindCamera = bindCameraControls(gizmoEl, function () {
-		return { cam: cam, camera: camera, zoomMin: 0.4, zoomMax: 12 };
+		return { cam: cam, camera: camera, zoomMin: 0.4, zoomMax: 12,
+			onDoubleClick: reframe };
 	});
 
-	// The sphere last framed, and one waiting for render to frame it (it
-	// needs the strip's aspect, which only render knows).
+	// Whether the user has placed the view by hand. Set by any press or wheel
+	// on the gizmo, cleared by a double-click.
+	var userView = false;
+	function onUserView() { userView = true; }
+	gizmoEl.addEventListener("mousedown", onUserView);
+	gizmoEl.addEventListener("wheel", onUserView, { passive: true });
+
+	// Departure's comparison and Arrival's contact are different drawings, so
+	// each keeps its own hand-placed view across a switch between them.
+	var gizmoKind = null, heldViews = {};
+	function switchKind(next) {
+		if (next === gizmoKind) { return; }
+		if (gizmoKind && userView) {
+			heldViews[gizmoKind] = { radius: cam.radius, theta: cam.theta, phi: cam.phi,
+				target: cam.target.clone() };
+		}
+		gizmoKind = next;
+		fitted = null;
+		pendingFit = null;
+		var held = heldViews[next];
+		userView = !!held;
+		if (held) {
+			cam.radius = held.radius;
+			cam.theta = held.theta;
+			cam.phi = held.phi;
+			cam.target.copy(held.target);
+		} else {
+			isometric();
+		}
+	}
+
+	// The sphere last framed (only to notice when the drawing changes shape),
+	// and the points waiting for render to frame them (it needs the strip's
+	// aspect, which only render knows).
 	var fitted = null, pendingFit = null;
 	function refit() {
-		var pts = [];
+		if (userView) { return; }
+		var pts = [[0, 0, 0]];
 		[neededGroup, currentGroup].forEach(function (g) {
 			// Each line is centred on its own midpoint, so its far end is twice that.
 			g.children.forEach(function (m) { pts.push([m.position.x * 2, m.position.y * 2, m.position.z * 2]); });
 		});
-		if (!pts.length) { return; }
+		if (pts.length < 2) { return; }
 		var sph = fitSphere(pts);
 		if (fitted && Math.abs(sph.radius - fitted.radius) <= 0.01 * fitted.radius &&
 			O.vMag(O.vSub(sph.center, fitted.center)) <= 0.01 * fitted.radius) { return; }
 		fitted = sph;
-		pendingFit = sph;
+		pendingFit = pts;
+	}
+
+	function reframe() {
+		userView = false;
+		if (gizmoKind) { delete heldViews[gizmoKind]; }
+		isometric();
+		fitted = null;
+		refit();
 	}
 
 	// MATERIALS ONLY. Every line shares the module-level cylinder geometry, so
@@ -572,6 +653,7 @@ export function createShipCard(opts) {
 	// Departure passes both layers with `axes`, drawing the needed/current
 	// comparison: each layer's three components plus its net.
 	function setGizmo(spec) {
+		switchKind("departure");
 		clearGroup();
 		if (!spec) { return; }
 		var scale = gizmoScale(spec.needed, spec.current);
@@ -608,6 +690,7 @@ export function createShipCard(opts) {
 	// trajectory into it (contactLines). One layer, so it all draws in a
 	// single pass. null clears it.
 	function setContact(spec) {
+		switchKind("contact");
 		clearGroup();
 		contactLines(spec).forEach(function (l) {
 			var m = makeLine(l.dir, l.len, l.color, LINE_RADIUS.bright);
@@ -886,8 +969,9 @@ export function createShipCard(opts) {
 		camera.aspect = w / h;
 		camera.updateProjectionMatrix();
 		if (pendingFit) {
-			cam.target.set(pendingFit.center[0], pendingFit.center[1], pendingFit.center[2]);
-			cam.radius = fitDistance(pendingFit.radius, GIZMO_FOV, camera.aspect, GIZMO_FILL);
+			var fit = fitView(pendingFit, cam.theta, cam.phi, GIZMO_FOV, camera.aspect, GIZMO_FILL);
+			cam.target.set(fit.target[0], fit.target[1], fit.target[2]);
+			cam.radius = Math.max(0.4, Math.min(12, fit.distance));
 			pendingFit = null;
 		}
 		updateCamera(camera, cam);
@@ -929,6 +1013,8 @@ export function createShipCard(opts) {
 	function dispose() {
 		if (flashTimer) { clearTimeout(flashTimer); }
 		unbindCamera();
+		gizmoEl.removeEventListener("mousedown", onUserView);
+		gizmoEl.removeEventListener("wheel", onUserView);
 		clearGroups([neededGroup, currentGroup]);
 		root.remove();
 	}

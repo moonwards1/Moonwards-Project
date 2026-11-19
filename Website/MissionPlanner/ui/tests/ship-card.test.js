@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { vInfComponents, gizmoScale, contactLines, AXIS_SPEED, fitSphere, fitDistance, SHIP_COLORS, speedModel, speedAlong, peakSpeed, speedRange,
+import { vInfComponents, gizmoScale, contactLines, AXIS_SPEED, fitSphere, fitView, SHIP_COLORS, speedModel, speedAlong, peakSpeed, speedRange,
 	bearingPoint, altitudeRadius, bPlaneLayout, BPLANE_SCALE, approachRows, spinLayout } from "../ship-card.js";
 import { OrbitalMath } from "../../../Shared/math-utils.js";
 
@@ -317,9 +317,41 @@ test("fitSphere: frames the line ends and the origin they start from", function 
 	assert.equal(one.radius, 1);
 });
 
-test("fitDistance: the sphere spans `fill` of the narrower side", function () {
-	var d = fitDistance(1, 60, 1, 1);
-	assert.ok(Math.abs(d - 2) < 1e-12, "sin 30° = 1/2");
-	assert.ok(fitDistance(1, 60, 0.5, 1) > d, "a tall, narrow view is limited by its width");
-	assert.ok(Math.abs(fitDistance(1, 60, 2, 1) - d) < 1e-12, "a wide view is limited by its height");
+// Projects `points` through the camera fitView describes, returning the
+// on-screen extent as fractions of the half-view: [uMin, uMax, vMin, vMax].
+function screenExtent(points, fit, theta, phi, fovDeg, aspect) {
+	var sp = Math.sin(phi);
+	var back = [sp * Math.cos(theta), sp * Math.sin(theta), Math.cos(phi)];
+	var right = O.vUnit([-back[1], back[0], 0]);
+	var up = O.vCross(back, right);
+	var eye = O.vAdd(fit.target, O.vScale(back, fit.distance));
+	var tanV = Math.tan(fovDeg * Math.PI / 360), tanH = tanV * aspect;
+	var ext = [Infinity, -Infinity, Infinity, -Infinity];
+	points.forEach(function (p) {
+		var d = O.vSub(p, eye);
+		var depth = -O.vDot(d, back);
+		var u = O.vDot(d, right) / depth / tanH, v = O.vDot(d, up) / depth / tanV;
+		ext[0] = Math.min(ext[0], u); ext[1] = Math.max(ext[1], u);
+		ext[2] = Math.min(ext[2], v); ext[3] = Math.max(ext[3], v);
+	});
+	return ext;
+}
+
+test("fitView: the drawing fills `fill` of the tighter direction and stays inside the other", function () {
+	var th = Math.PI / 4, ph = Math.acos(1 / Math.sqrt(3));
+	var pts = [[0, 0, 0], [1, 0, 0], [0, 0.3, 0], [0, 0, -0.5], [0.7, 0.2, 0.1]];
+	[0.5, 1, 2.5].forEach(function (aspect) {
+		var fit = fitView(pts, th, ph, 38, aspect, 0.9);
+		var e = screenExtent(pts, fit, th, ph, 38, aspect);
+		var inside = e.every(function (x) { return Math.abs(x) <= 0.9 + 1e-9; });
+		assert.ok(inside, "every point is inside the fill at aspect " + aspect);
+		var touches = Math.max(Math.abs(e[0]), e[1], Math.abs(e[2]), e[3]);
+		assert.ok(Math.abs(touches - 0.9) < 1e-9, "some point reaches the fill edge at aspect " + aspect);
+	});
+});
+
+test("fitView: a lone point at the origin is framed without blowing up", function () {
+	var fit = fitView([], Math.PI / 4, 1, 38, 2, 0.9);
+	assert.ok(isFinite(fit.distance));
+	assert.deepEqual(fit.target.map(function (x) { return Math.abs(x); }), [0, 0, 0]);
 });
