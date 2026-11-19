@@ -348,7 +348,11 @@ never when it started.
   from one folder. `skyhook.js` holds the substance: a gravity-gradient
   (radial) tether whose centre of mass rides a circular orbit in its `body`'s
   equatorial plane, turning the way the body spins, its parameters, its release gate and rotor element, its catch figures,
-  and its drawing. `skyhook-departure.js` registers it as the carrier module
+  and its drawing. A release may instead orbit sun-synchronously (the card's
+  "orbit plane" choice, with the ascending node's local solar time), offered
+  only at bodies where such an orbit exists — Earth, Mars, Ceres, Vesta, the
+  giant planets; never a moon — and gated on the CoM lying below the highest
+  sun-synchronous altitude, which the card shows with the inclination. `skyhook-departure.js` registers it as the carrier module
   `orbital-skyhook`; `skyhook-arrival.js` registers it as the terminal module
   `arrival-skyhook`. As a carrier it optionally rides an upstream base platform
   (`inputOptional`) — for the Moon, `moon-platform`; for any other body it

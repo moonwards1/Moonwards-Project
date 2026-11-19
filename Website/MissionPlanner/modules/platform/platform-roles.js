@@ -535,6 +535,17 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 	function setParam(name, value, setOpts) {
 		var patch = {}; patch[name] = value;
 		ctx.world.set({ stage: ctx.stageId, params: patch }, setOpts);
+		refreshVisibility();
+	}
+	// The DOM rows each control occupies, so a param's `showWhen` can hide
+	// them all (a "slider" or "nudge" takes two).
+	var controlRows = [];
+	function refreshVisibility() {
+		var full = fullParams();
+		controlRows.forEach(function (c) {
+			var shown = !c.p.showWhen || !!c.p.showWhen(full);
+			c.els.forEach(function (el) { el.style.display = shown ? "" : "none"; });
+		});
 	}
 	// mp-tech-row (planner.css) indents the label ~20px off the card's left
 	// edge — every param row on every technology card, present and future,
@@ -561,10 +572,30 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 	}
 
 	paramsForRole(spec, role).forEach(function (p) {
+		var before = host.children.length;
+		addControl(p);
+		controlRows.push({ p: p, els: Array.prototype.slice.call(host.children, before) });
+	});
+	refreshVisibility();
+	ctx.onResult(refreshVisibility);
+
+	function addControl(p) {
 		var el = row(p.label);
 		var wrap = document.createElement("span");
 
-		if (p.kind === "slider") {
+		if (p.kind === "choice") {
+			// A dropdown of fixed values, stored as given (no scale).
+			var sel = document.createElement("select");
+			p.options.forEach(function (o) {
+				var opt = document.createElement("option");
+				opt.value = o.value; opt.textContent = o.label;
+				sel.appendChild(opt);
+			});
+			sel.value = fullParams()[p.name];
+			syncs.push(function () { sel.value = fullParams()[p.name]; });
+			sel.addEventListener("change", function () { setParam(p.name, sel.value); });
+			wrap.appendChild(sel);
+		} else if (p.kind === "slider") {
 			// Two-line control: the label's row carries a number field for
 			// precise entry; a second, full-width row underneath carries the
 			// slider for coarse aiming by eye.
@@ -670,10 +701,11 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 
 		el.appendChild(wrap);
 		host.appendChild(el);
-	});
+	}
 
 	addWorkbenchImport(spec, ctx, role, fullParams, function () {
 		syncs.forEach(function (fn) { fn(); });
+		refreshVisibility();
 	});
 
 	if (spec.readouts) {

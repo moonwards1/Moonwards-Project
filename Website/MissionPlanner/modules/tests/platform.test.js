@@ -14,7 +14,8 @@ import { makeCarrier, makeTerminal, computeCapture,
          carrierReadout, captureReadout } from "../platform/platform-roles.js";
 import { fmtPrograde } from "../../../Shared/sim/readout-panes.js";
 import { SKYHOOK, tetherGeometry, catchFigures, equatorPlane, retrogradeDirection,
-         tetherContact, TETHER_BASE_ALT } from "../skyhook/skyhook.js";
+         tetherContact, TETHER_BASE_ALT, sunSyncSupport, sunSyncFigures, sunSyncPlane,
+         releasePlane, tetherKinematics, rotorFor } from "../skyhook/skyhook.js";
 import { arrivalMark } from "../arrival-approach.js";
 import { systems } from "../../../Shared/orbit.js";
 import skyhookDeparture from "../skyhook/skyhook-departure.js";
@@ -110,8 +111,9 @@ test("canRideOn: the add-on rule set — base-only, free, and must-ride platform
 test("paramsForRole: role filtering and per-role labels", function () {
 	var release = paramsForRole(SKYHOOK, RELEASE).map(function (p) { return p.name; });
 	var catchRole = paramsForRole(SKYHOOK, CATCH).map(function (p) { return p.name; });
-	assert.deepEqual(release, ["comAlt", "relAlt", "releasePhaseDeg"]);
-	assert.deepEqual(catchRole, release, "a catch has the same three controls as a release");
+	assert.deepEqual(release, ["comAlt", "relAlt", "releasePhaseDeg", "orbitPlane", "ltanHours"]);
+	assert.deepEqual(catchRole, ["comAlt", "relAlt", "releasePhaseDeg"],
+		"a catch has the three tether controls, and stays equatorial");
 
 	function labelOf(role, name) {
 		return paramsForRole(SKYHOOK, role).filter(function (p) { return p.name === name; })[0];
@@ -571,4 +573,99 @@ test("contact: none without a mark, or when the mark is closest approach", funct
 	assert.equal(tetherContact(geo, arrivalMark("Mars", far, JD_ANCHOR)).reason, "no-crossing");
 	assert.equal(catchFigures(geo, approachOn(arcThroughEquator(25))).contact.ok, true,
 		"the catch's figures carry it");
+});
+
+
+// ---- the sun-synchronous release plane ------------------------------------
+
+test("sunSyncSupport: workable at Earth, Mars, Ceres and Vesta; not at Mercury, Venus or any moon", function () {
+	["Earth", "Mars", "Ceres", "Vesta"].forEach(function (b) {
+		var s = sunSyncSupport(b);
+		assert.ok(s.ok, b + " should hold a sun-synchronous orbit");
+		assert.ok(s.maxComAlt > 1000e3, b + " max CoM " + Math.round(s.maxComAlt / 1e3) + " km");
+	});
+	assert.equal(sunSyncSupport("Mercury").reason, "too-weak");
+	assert.equal(sunSyncSupport("Venus").reason, "too-weak");
+	["Moon", "Phobos", "Io", "Titan"].forEach(function (b) {
+		if (systems.get(b)) { assert.equal(sunSyncSupport(b).reason, "moon", b); }
+	});
+	assert.equal(sunSyncSupport("Psyche").ok, false, "no J2 published");
+});
+
+test("sunSyncFigures: Mars at 400 km is ~92.7° from the spin pole, and past the ceiling it fails", function () {
+	var R = +systems.get("Mars").radius;
+	var f = sunSyncFigures("Mars", R + 400e3);
+	assert.ok(f.ok && Math.abs(f.inclinationDeg - 92.7) < 0.3, "got " + f.inclinationDeg);
+	var high = sunSyncFigures("Mars", R + f.maxComAlt + 10e3);
+	assert.equal(high.ok, false);
+	assert.equal(high.reason, "too-high");
+});
+
+test("sunSyncPlane: the normal sits at the inclination from the spin pole; the node at the local time", function () {
+	var inc = 92.7;
+	var pl = sunSyncPlane("Mars", inc, 12, JD_ANCHOR);
+	var pole = equatorPlane("Mars").normal;
+	var angle = Math.acos(O.vDot(O.vUnit(pl.normal), pole)) * 180 / Math.PI;
+	assert.ok(Math.abs(angle - inc) < 1e-9);
+	assert.ok(Math.abs(O.vDot(pl.node, pole)) < 1e-12, "the node lies in the equator");
+	assert.ok(Math.abs(O.vDot(pl.node, pl.normal)) < 1e-12, "the node lies in the orbit's plane");
+	// 12 h: the node faces the Sun.
+	var sys = systems.get("Mars");
+	var toSun = O.vScale(O.bodyStateAtJD(systems.get("Sun").GM, sys.orbit, JD_ANCHOR).r, -1);
+	var sEq = O.vUnit(O.vSub(toSun, O.vScale(pole, O.vDot(pole, toSun))));
+	assert.ok(O.vDot(pl.node, sEq) > 0.999999);
+	// 18 h: a quarter turn the way Mars spins.
+	var dusk = sunSyncPlane("Mars", inc, 18, JD_ANCHOR);
+	assert.ok(Math.abs(O.vDot(dusk.node, sEq)) < 1e-9);
+	assert.ok(O.vDot(O.vCross(sEq, dusk.node), pole) > 0.999);
+	// Ascending: the orbit's motion at the node heads toward the spin pole.
+	assert.ok(O.vDot(O.vCross(pl.normal, pl.node), pole) > 0);
+});
+
+test("sunSyncPlane: the dawn–dusk plane keeps facing the Sun across the year", function () {
+	var pole = equatorPlane("Earth").normal;
+	var sys = systems.get("Earth");
+	[0, 91, 182, 273].forEach(function (d) {
+		var jd = JD_ANCHOR + d;
+		var pl = sunSyncPlane("Earth", 98, 18, jd);
+		var toSun = O.vUnit(O.vScale(O.bodyStateAtJD(systems.get("Sun").GM, sys.orbit, jd).r, -1));
+		var tilt = Math.abs(O.vDot(O.vUnit(pl.normal), toSun));
+		assert.ok(tilt > 0.85, "day " + d + ": the orbit's normal points near the Sun (" + tilt.toFixed(3) + ")");
+	});
+	void pole;
+});
+
+test("release: a sun-synchronous skyhook rotates in its own plane; equatorial by default", function () {
+	var base = { body: "Mars", comAlt: 2000e3, relAlt: 5000e3, releasePhaseDeg: 0 };
+	var eq = tetherKinematics(base);
+	assert.ok(eq.ok);
+	assert.deepEqual(rotorFor(eq, JD_ANCHOR).normal, equatorPlane("Mars").normal);
+	var ss = tetherKinematics(Object.assign({}, base, { orbitPlane: "sun-sync", ltanHours: 6 }));
+	assert.ok(ss.ok);
+	var n = rotorFor(ss, JD_ANCHOR).normal;
+	var tilt = Math.acos(O.vDot(O.vUnit(n), equatorPlane("Mars").normal)) * 180 / Math.PI;
+	assert.ok(Math.abs(tilt - ss.sunSync.inclinationDeg) < 1e-9);
+	assert.deepEqual(n, releasePlane(ss, JD_ANCHOR).normal);
+	// Same tether figures either way: only the plane differs.
+	assert.equal(ss.vRel, eq.vRel);
+});
+
+test("release gate: sun-synchronous where none exists is a diagnostic", function () {
+	var moon = tetherKinematics({ body: "Moon", comAlt: 100e3, relAlt: 5000e3, orbitPlane: "sun-sync" });
+	assert.equal(moon.ok, false);
+	assert.equal(moon.diagnostic.code, "sun-sync-unavailable");
+	var high = tetherKinematics({ body: "Mars", comAlt: 8000e3, relAlt: 20000e3, orbitPlane: "sun-sync" });
+	assert.equal(high.ok, false);
+	assert.equal(high.diagnostic.code, "sun-sync-too-high");
+});
+
+test("orbit-plane control: offered only where sun-synchronous is workable", function () {
+	var ctl = SKYHOOK.params.filter(function (p) { return p.name === "orbitPlane"; })[0];
+	var ltan = SKYHOOK.params.filter(function (p) { return p.name === "ltanHours"; })[0];
+	assert.equal(ctl.showWhen({ body: "Mars", orbitPlane: "equatorial" }), true);
+	assert.equal(ctl.showWhen({ body: "Moon", orbitPlane: "equatorial" }), false);
+	assert.equal(ctl.showWhen({ body: "Moon", orbitPlane: "sun-sync" }), true, "shown so it can be switched back");
+	assert.equal(ltan.showWhen({ orbitPlane: "equatorial" }), false);
+	assert.equal(ltan.showWhen({ orbitPlane: "sun-sync" }), true);
+	assert.equal(validatePlatformSpec(SKYHOOK).ok, true);
 });

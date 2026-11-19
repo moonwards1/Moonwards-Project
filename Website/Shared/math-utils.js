@@ -473,6 +473,28 @@ export const OrbitalMath = {
 			];
 		},
 
+		// ---- sun-synchronous orbits -------------------------------------------
+
+		// A circular orbit's nodal precession from its body's equatorial bulge
+		// (first order in J2), turning about the body's spin pole:
+		//   dΩ/dt = -(3/2) · n · J2 · (Re/a)² · cos i,   n = sqrt(GM/a³)
+		// SUN-SYNCHRONOUS is the inclination at which dΩ/dt equals `nodeRate`, the
+		// rate the Sun moves around the pole (one turn per year, signed by the
+		// spin pole's sense against the orbit). This returns that cos i, which
+		// lies outside [-1, 1] — no such orbit — when the bulge is too weak at `a`.
+		// Re is the radius J2 is referred to.
+		sunSyncCosInclination: function (GM, J2, Re, a, nodeRate) {
+			var n = Math.sqrt(GM / (a * a * a));
+			return -nodeRate / (1.5 * n * J2 * (Re / a) * (Re / a));
+		},
+
+		// The largest circular-orbit radius with a sun-synchronous inclination:
+		// where |cos i| reaches 1 above, a^(7/2) = (3/2) · sqrt(GM) · J2 · Re² / |nodeRate|.
+		// Every orbit inside it has one (sunSyncCosInclination falls with a).
+		sunSyncMaxRadius: function (GM, J2, Re, nodeRate) {
+			return Math.pow(1.5 * Math.sqrt(GM) * J2 * Re * Re / Math.abs(nodeRate), 2 / 7);
+		},
+
 		// ---- Lagrange points ---------------------------------------------------
 
 		// Where L1 lies between two bodies in orbit about each other, as a

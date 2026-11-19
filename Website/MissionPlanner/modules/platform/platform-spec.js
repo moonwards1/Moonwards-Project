@@ -129,9 +129,11 @@
  *
  * ---- PARAM SPEC -----------------------------------------------------------
  *
- *   { name, label, unit, kind, step, spinStep, scale, decimals, min, max, roles, labelFor }
+ *   { name, label, unit, kind, step, spinStep, scale, decimals, min, max, roles, labelFor,
+ *     options, showWhen }
  *
- *   kind      "number" (a numeric field); "slider" (a range control whose
+ *   kind      "number" (a numeric field); "choice" (a dropdown of `options`,
+ *             [{ value, label }], storing the value as given); "slider" (a range control whose
  *             position IS the value, issuing transient sets while dragging
  *             and committing on release); or "nudge" (a centred range whose
  *             position is a signed, log-scaled RATE — the handle springs
@@ -151,6 +153,9 @@
  *   decimals  digits shown. Default 0.
  *   roles     which roles show this control, e.g. ["release"]. Default both.
  *   labelFor  per-role label override, e.g. { catch: "catch altitude" }.
+ *   showWhen  optional fn(params) -> bool: the control shows only while it
+ *             holds (the skyhook's sun-synchronous controls). Re-asked after
+ *             every change to the stage.
  *
  * Pure (no DOM, no THREE): Node-testable, and imported by ui/tech-options.js
  * for the dropdowns' body filtering.

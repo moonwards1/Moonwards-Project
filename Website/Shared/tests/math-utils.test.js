@@ -692,3 +692,34 @@ test("segmentDistance: skew, end-limited and parallel segments", function () {
 	assert.ok(Math.abs(O.segmentDistance([0, 0, 0], [5, 0, 0], [1, 2, 0], [4, 2, 0]).distance - 2) < 1e-12);
 	assert.ok(Math.abs(O.segmentDistance([0, 0, 0], [0, 0, 0], [3, 4, 0], [3, 9, 0]).distance - 5) < 1e-12);
 });
+
+// ---- sun-synchronous orbits ------------------------------------------------
+
+var GM_EARTH = 3.986004418e14, J2_EARTH = 1.08262668e-3, RE_EARTH = 6378137;
+var SUN_RATE = 2 * Math.PI / (365.2422 * DAY);   // the Sun's motion round Earth's pole
+
+test("sunSyncCosInclination: Earth at 700 km is the familiar ~98.2°", function () {
+	var c = O.sunSyncCosInclination(GM_EARTH, J2_EARTH, RE_EARTH, RE_EARTH + 700e3, SUN_RATE);
+	var i = Math.acos(c) * 180 / Math.PI;
+	assert.ok(Math.abs(i - 98.19) < 0.05, "got " + i.toFixed(3) + "°");
+});
+
+test("sunSyncCosInclination: the precession it implies is the Sun's rate", function () {
+	var a = RE_EARTH + 1500e3;
+	var c = O.sunSyncCosInclination(GM_EARTH, J2_EARTH, RE_EARTH, a, SUN_RATE);
+	var n = Math.sqrt(GM_EARTH / (a * a * a));
+	var rate = -1.5 * n * J2_EARTH * Math.pow(RE_EARTH / a, 2) * c;
+	assert.ok(Math.abs(rate / SUN_RATE - 1) < 1e-12);
+});
+
+test("sunSyncMaxRadius: cos i is exactly -1 there, and out of range beyond it", function () {
+	var aMax = O.sunSyncMaxRadius(GM_EARTH, J2_EARTH, RE_EARTH, SUN_RATE);
+	assert.ok(Math.abs(O.sunSyncCosInclination(GM_EARTH, J2_EARTH, RE_EARTH, aMax, SUN_RATE) + 1) < 1e-9);
+	assert.ok(O.sunSyncCosInclination(GM_EARTH, J2_EARTH, RE_EARTH, aMax * 1.01, SUN_RATE) < -1);
+	assert.ok(O.sunSyncCosInclination(GM_EARTH, J2_EARTH, RE_EARTH, aMax * 0.99, SUN_RATE) > -1);
+});
+
+test("sunSyncCosInclination: a retrograde-sensed node rate gives a prograde inclination", function () {
+	var c = O.sunSyncCosInclination(GM_EARTH, J2_EARTH, RE_EARTH, RE_EARTH + 700e3, -SUN_RATE);
+	assert.ok(c > 0 && c < 1);
+});

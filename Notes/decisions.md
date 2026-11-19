@@ -136,13 +136,25 @@ tech stages by those types. A platform with one real role ships one adapter.
 A platform's card is built from its declared params, so adding a control is a
 data change, not new DOM code.
 
-### Every skyhook orbits its primary's equator, turning with its spin
+### A skyhook orbits its primary's equator, or (release only) sun-synchronously
 
-The skyhook's rotor normal is its body's spin pole (`sys.pole`), in both
-roles and at every body. A body with no published pole falls back to the
-ecliptic. A RELEASE's phase is pinned at the release epoch, 0° being the
+By default the skyhook's rotor normal is its body's spin pole (`sys.pole`),
+in both roles and at every body. A body with no published pole falls back to
+the ecliptic. A RELEASE's phase is pinned at the release epoch, 0° being the
 body's heliocentric retrograde direction (the Moon's: Earth's) on that date,
-projected into the equator.
+projected into the skyhook's plane.
+
+A RELEASE may instead orbit sun-synchronously: inclined so J2 turns its
+plane about the spin pole once per year, with its ascending node at a chosen
+local solar time (12 h toward the Sun). The inclination comes from the CoM
+radius (first-order J2 on the CoM's circular orbit; the tether's spread is
+not modelled), and the plane is taken on the pin date. It is offered only
+where a sun-synchronous orbit exists above the surface: a body with J2, a
+pole and its own heliocentric orbit — never a moon, whose planet's tide
+governs a low orbit's plane. Today that is Earth, Mars, Ceres, Vesta and the
+giant planets; not Mercury or Venus. A CoM above the highest sun-synchronous
+altitude fails the release gate. A CATCH stays equatorial (the arrival mark
+below is the equatorial crossing).
 
 A CATCH has the same three controls, but its phase is pinned at the
 approach's **arrival mark** (`arrivalMark`, `modules/arrival-approach.js`),
@@ -163,7 +175,9 @@ normal along the spin pole, radial down the arm. That point moves at ω·r,
 because the tether turns rigidly at its CoM's orbital rate.
 
 Why: one geometry for every skyhook until a real case calls for another
-plane. Retrograde rotators need no special case, because `pole` is the spin
+plane; the sun-synchronous release is the first such case, holding the
+plane's aspect to the Sun (and so to the body's heliocentric motion) fixed
+through the year. Retrograde rotators need no special case, because `pole` is the spin
 pole. Aiming a catch costs nothing physically: the hook's phase at mission
 start is a free choice, and aiming it at the mark is that choice made.
 

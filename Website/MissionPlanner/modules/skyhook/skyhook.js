@@ -36,15 +36,31 @@
  * The ESCAPE physics lives downstream in the headless departure legs, never
  * here. The AIMING control (release phase) is this platform's own slider.
  *
- * THE PLANE: every skyhook orbits in its body's EQUATORIAL plane, turning the
- * way the body spins — the rotor's normal is the body's spin pole
+ * THE PLANE: by default a skyhook orbits in its body's EQUATORIAL plane,
+ * turning the way the body spins — the rotor's normal is the body's spin pole
  * (Shared/orbit.js `pole`, the right-hand-rule spin pole, so a retrograde
- * rotator's hook turns retrograde with no special case). Phase 0 is the
+ * rotator's skyhook turns retrograde with no special case). Phase 0 is the
  * RETROGRADE direction of the body's heliocentric orbit (the Moon takes
  * Earth's), taken on the pin date and projected into that plane — the
  * direction opposite the body's motion around the Sun. A body with no
  * published pole falls back to the ecliptic plane; with no orbit or no date,
  * phase 0 falls back to the ecliptic +X (equinox) direction.
+ *
+ * A RELEASE may instead orbit SUN-SYNCHRONOUSLY (`orbitPlane: "sun-sync"`):
+ * inclined so the body's equatorial bulge (J2) turns the orbit's plane about
+ * the spin pole once per year, keeping it fixed against the Sun. Its node sits
+ * at the chosen local solar time (`ltanHours`, the local time of the
+ * ascending node: 12 h faces the Sun, 6 h and 18 h are the dawn–dusk plane).
+ * The inclination follows from the CoM radius (sunSyncPlane); the plane is
+ * taken on the pin date, and phase 0 is the same retrograde direction,
+ * projected into it. Offered only where it is a workable design
+ * (sunSyncSupport): a body with a published J2 and pole, a heliocentric
+ * orbit of its own, and a bulge strong enough to turn an orbit that fast
+ * somewhere above its surface — and the CoM must lie below the highest such
+ * altitude (the release gate). A moon is never offered it: its planet's tide,
+ * not its own bulge, governs how a low orbit's plane turns. The bulge acts on
+ * the CoM's orbit: the tether's spread along its length is not modelled. A
+ * CATCH stays equatorial.
  *
  * THE CATCH is the same tether run in reverse, with the same three controls:
  * CoM altitude, catch altitude (the release altitude's role) and catch phase
@@ -111,7 +127,9 @@ export var defaultParams = {
 	body: null,
 	comAlt: 2000e3,
 	relAlt: 5000e3,
-	releasePhaseDeg: 0
+	releasePhaseDeg: 0,
+	orbitPlane: "equatorial",   // or "sun-sync" (release only; see THE PLANE above)
+	ltanHours: 18               // a sun-synchronous orbit's ascending node, local solar time
 };
 
 // The body's own physical numbers (GM, radius) — coercing radius the way
@@ -162,7 +180,10 @@ export function tetherGeometry(params) {
 		omega: omega, period: 2 * Math.PI / omega,
 		rCom: rCom, rRel: rRel,
 		vRel: vRel, vEscBody: vEscBody, vInfBody: vInfBody,
-		releasePhaseDeg: phaseDeg
+		releasePhaseDeg: phaseDeg,
+		orbitPlane: p.orbitPlane === "sun-sync" ? "sun-sync" : "equatorial",
+		ltanHours: isFinite(p.ltanHours) ? p.ltanHours : defaultParams.ltanHours,
+		sunSync: p.orbitPlane === "sun-sync" ? sunSyncFigures(p.body, rCom) : null
 	};
 }
 
@@ -182,14 +203,42 @@ export function escapeGate(geo) {
 		       " km (or lower the CoM to spin the tether faster)." });
 }
 
+// The SUN-SYNCHRONOUS gate: a release asked to orbit sun-synchronously where
+// no such orbit exists — at a body that cannot hold one, or with its CoM above
+// the highest altitude that can. Returns a diagnostic, or null.
+export function sunSyncGate(geo) {
+	var ss = geo.sunSync;
+	if (!ss || ss.ok) { return null; }
+	if (ss.reason === "too-high") {
+		return makeDiagnostic("sun-sync-too-high",
+			"No sun-synchronous orbit exists at a CoM altitude of " + kmText(geo.rCom - geo.R) +
+			" at " + geo.body + " — " + geo.body + "'s equatorial bulge turns an orbit's plane once a year only below about " +
+			kmText(ss.maxComAlt) + ".",
+			{ values: { comAlt_km: (geo.rCom - geo.R) / 1e3, maxComAlt_km: ss.maxComAlt / 1e3 },
+			  fix: "Lower the CoM altitude below " + kmText(ss.maxComAlt) + ", or choose the equatorial plane." });
+	}
+	return makeDiagnostic("sun-sync-unavailable",
+		"A sun-synchronous orbit is not a workable design at " + geo.body + ": " + ss.why + ".",
+		{ values: { body: geo.body, reason: ss.reason },
+		  fix: "Choose the equatorial plane." });
+}
+
+// Everything a RELEASE demands beyond the tether existing: a sun-synchronous
+// orbit that exists, then a tip past escape.
+export function releaseGate(geo) {
+	return sunSyncGate(geo) || escapeGate(geo);
+}
+
 // tetherGeometry plus the release gate, in one call — the departure side's
 // whole physical check. Same signature and returns as tetherGeometry.
 export function tetherKinematics(params) {
 	var geo = tetherGeometry(params);
 	if (!geo.ok) { return geo; }
-	var gated = escapeGate(geo);
+	var gated = releaseGate(geo);
 	return gated ? { ok: false, diagnostic: gated } : geo;
 }
+
+function kmText(m) { return Math.round(m / 1e3).toLocaleString("en-US") + " km"; }
 
 // The direction phase 0 points along, before projection into the plane: the
 // retrograde of the body's heliocentric velocity at `jd` (the Moon rides
@@ -219,11 +268,93 @@ export function equatorPlane(body, jd, aim) {
 	return { normal: n, ref: projectable(ref) ? ref : [0, 1, 0] };
 }
 
+// ---- the sun-synchronous plane ---------------------------------------------
+
+var J2000 = 2451545.0;
+
+// Can `body` hold a sun-synchronous orbit, and how high? Pure. Returns
+// { ok: true, nodeRate, maxComAlt } — nodeRate (rad/s, about the spin pole)
+// the Sun's own turn round the pole, once per year, signed by the pole's
+// sense against the body's orbit; maxComAlt the highest CoM altitude with a
+// sun-synchronous inclination — or { ok: false, reason, why }.
+export function sunSyncSupport(body) {
+	var sys = systems.get(body);
+	if (!sys) { return { ok: false, reason: "no-body", why: "it is not a known body" }; }
+	if (sys.properties.type === "moon") {
+		return { ok: false, reason: "moon",
+			why: "it is a moon, and its planet's tide, not its own equatorial bulge, governs how a low orbit's plane turns" };
+	}
+	var j2 = sys.J2, pole = sys.pole;
+	if (!j2 || !pole || !sys.orbit) {
+		return { ok: false, reason: "no-data",
+			why: "there is no published equatorial bulge (J2) and spin pole to turn an orbit's plane by" };
+	}
+	var st = O.bodyStateAtJD(GM_SUN, sys.orbit, J2000);
+	var r = O.vMag(st.r), v = O.vMag(st.v);
+	var aSun = 1 / (2 / r - v * v / GM_SUN);
+	var n = O.poleVectorEcliptic(pole.ra, pole.dec);
+	var sense = O.vDot(O.vCross(st.r, st.v), n) >= 0 ? 1 : -1;
+	var nodeRate = sense * Math.sqrt(GM_SUN / (aSun * aSun * aSun));
+	var R = +sys.radius;
+	var maxComAlt = O.sunSyncMaxRadius(sys.GM, j2.value, j2.radius, nodeRate) - R;
+	if (!(maxComAlt > 0)) {
+		return { ok: false, reason: "too-weak",
+			why: "its equatorial bulge is too slight to turn an orbit's plane once a year at any altitude above its surface" };
+	}
+	return { ok: true, nodeRate: nodeRate, maxComAlt: maxComAlt };
+}
+
+// The sun-synchronous figures for a CoM at radius `rCom`, pure: { ok: true,
+// inclinationDeg, maxComAlt } (inclination from the spin pole), or { ok:
+// false, reason, why, maxComAlt? } — reason "too-high" when the body can hold
+// one but not that high, otherwise sunSyncSupport's own reason.
+export function sunSyncFigures(body, rCom) {
+	var sup = sunSyncSupport(body);
+	if (!sup.ok) { return sup; }
+	var sys = systems.get(body);
+	var c = O.sunSyncCosInclination(sys.GM, sys.J2.value, sys.J2.radius, rCom, sup.nodeRate);
+	if (!(c >= -1 && c <= 1)) {
+		return { ok: false, reason: "too-high", maxComAlt: sup.maxComAlt };
+	}
+	return { ok: true, inclinationDeg: Math.acos(c) * 180 / Math.PI, maxComAlt: sup.maxComAlt };
+}
+
+// The sun-synchronous orbit's plane at `jd`, as a rotor's { normal, ref }:
+// the ascending node lies `ltanHours` of local solar time round the equator
+// from the Sun's direction (12 h points at it; the hour angle grows the way
+// the body spins), and the orbit's normal is the spin pole tilted by
+// `inclinationDeg` about that node. Phase 0 is the retrograde direction
+// projected into the plane, as for the equator. Pure.
+export function sunSyncPlane(body, inclinationDeg, ltanHours, jd) {
+	var sys = systems.get(body);
+	var when = (jd === null || jd === undefined) ? J2000 : jd;
+	var pole = O.poleVectorEcliptic(sys.pole.ra, sys.pole.dec);
+	var toSun = O.vScale(O.bodyStateAtJD(GM_SUN, sys.orbit, when).r, -1);
+	var sEq = O.vUnit(O.vSub(toSun, O.vScale(pole, O.vDot(pole, toSun))));
+	var H = (ltanHours - 12) * Math.PI / 12;
+	var node = O.vAdd(O.vScale(sEq, Math.cos(H)), O.vScale(O.vCross(pole, sEq), Math.sin(H)));
+	var inc = inclinationDeg * Math.PI / 180;
+	var normal = O.vSub(O.vScale(pole, Math.cos(inc)), O.vScale(O.vCross(pole, node), Math.sin(inc)));
+	var ref = retrogradeDirection(body, when);
+	var projectable = Math.abs(O.vDot(normal, O.vUnit(ref))) <= 0.999;
+	return { normal: normal, ref: projectable ? ref : node, node: node };
+}
+
+// The plane a RELEASE turns in, for its geometry or kinematics `kin` (body,
+// orbitPlane, ltanHours, sunSync): sun-synchronous when chosen and it exists,
+// otherwise the equator. `jd` is the pin date.
+export function releasePlane(kin, jd) {
+	if (kin.orbitPlane === "sun-sync" && kin.sunSync && kin.sunSync.ok) {
+		return sunSyncPlane(kin.body, kin.sunSync.inclinationDeg, kin.ltanHours, jd);
+	}
+	return equatorPlane(kin.body, jd);
+}
+
 // The skyhook's rotor element for the given kinematics, pinned at `pinJd`
 // (the release anchor, or for a catch the mission's start) so evaluating it
 // there lands exactly on releasePhaseDeg — the release or catch phase.
 export function rotorFor(kin, pinJd) {
-	var plane = equatorPlane(kin.body, pinJd);
+	var plane = releasePlane(kin, pinJd);
 	return rotorElement(plane.normal, plane.ref, kin.rRel, kin.omega,
 		kin.releasePhaseDeg * Math.PI / 180, pinJd);
 }
@@ -355,13 +486,31 @@ export var SKYHOOK = {
 		// The aiming control: where the tip is at the release anchor, or at the
 		// mission's start for a catch.
 		{ name: "releasePhaseDeg", label: "release phase", labelFor: { catch: "catch phase" },
-		  unit: "°", kind: "slider", min: 0, max: 360, step: 0.1, spinStep: 1, decimals: 1 }
+		  unit: "°", kind: "slider", min: 0, max: 360, step: 0.1, spinStep: 1, decimals: 1 },
+		// The orbit's plane, offered only where a sun-synchronous orbit is a
+		// workable design (sunSyncSupport).
+		{ name: "orbitPlane", label: "orbit plane", kind: "choice", roles: ["release"],
+		  options: [{ value: "equatorial", label: "Equatorial" },
+		            { value: "sun-sync", label: "Sun-synchronous" }],
+		  showWhen: function (p) { return p.orbitPlane === "sun-sync" || sunSyncSupport(p.body).ok; } },
+		{ name: "ltanHours", label: "ascending node at", unit: "h local time", kind: "slider",
+		  roles: ["release"], min: 0, max: 24, step: 0.1, spinStep: 1, decimals: 1,
+		  showWhen: function (p) { return p.orbitPlane === "sun-sync"; } }
 	],
+
+	// The sun-synchronous orbit's own figures, under the controls.
+	readouts: function (geo, role) {
+		if (role !== "release" || !geo || !geo.ok || geo.orbitPlane !== "sun-sync" || !geo.sunSync) { return []; }
+		var ss = geo.sunSync;
+		if (!ss.ok) { return ss.maxComAlt > 0 ? [["sun-synchronous up to", "CoM " + kmText(ss.maxComAlt)]] : []; }
+		return [["inclination", ss.inclinationDeg.toFixed(2) + "° from the spin pole"],
+		        ["sun-synchronous up to", "CoM " + kmText(ss.maxComAlt)]];
+	},
 
 	geometry: tetherGeometry,
 
 	release: {
-		gate: escapeGate,
+		gate: releaseGate,
 		element: rotorFor
 	},
 
@@ -404,7 +553,11 @@ export var SKYHOOK = {
 		var rPoint = (R + params.relAlt) / U;
 		var rBase = (R + TETHER_BASE_ALT) / U;
 
-		var plane = equatorPlane(params.body, ctx.pinJd !== null ? ctx.pinJd : snap.jd, ctx.aim);
+		var pinOrNow = ctx.pinJd !== null ? ctx.pinJd : snap.jd;
+		var geoNow = ctx.role === "release" ? tetherGeometry(params) : null;
+		var plane = geoNow && geoNow.ok
+			? releasePlane(geoNow, pinOrNow)
+			: equatorPlane(params.body, pinOrNow, ctx.aim);
 		var basis = planeBasis(plane.normal, plane.ref);
 		view.group.add(circleLine(rPoint, basis, 0x9fb6ff, 0.8));
 		view.group.add(circleLine(rCom, basis, 0xffd24a, 0.8));
