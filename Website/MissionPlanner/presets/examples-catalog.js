@@ -29,6 +29,8 @@ import { ceresMars2041UnbuiltMission, ceresMars2041UnbuiltWorkspace } from "./ce
 import { ceresEarth2040UnbuiltMission, ceresEarth2040UnbuiltWorkspace } from "./ceres-earth-2040-unbuilt.js";
 import { marsJupiter2037UnbuiltMission, marsJupiter2037UnbuiltWorkspace } from "./mars-jupiter-2037-unbuilt.js";
 import { venusMercury2037UnbuiltMission, venusMercury2037UnbuiltWorkspace } from "./venus-mercury-2037-unbuilt.js";
+import { marsEarth2080UnbuiltMission, marsEarth2080UnbuiltWorkspace } from "./mars-earth-2080-unbuilt.js";
+import { marsEarth2080BuiltMission, marsEarth2080BuiltWorkspace } from "./mars-earth-2080-built.js";
 
 export var EXAMPLE_SECTIONS = [
 	{
@@ -96,12 +98,27 @@ export var EXAMPLE_SECTIONS = [
 				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
 				mission: venusMercury2037UnbuiltMission,
 				workspace: venusMercury2037UnbuiltWorkspace
+			},
+			{
+				id: "unbuilt-mars-earth-2080",
+				label: "Mars → Earth Feb 2080",
+				blurb: "As it arrives from the Ephemeris tab — no departure or arrival technology set up.",
+				mission: marsEarth2080UnbuiltMission,
+				workspace: marsEarth2080UnbuiltWorkspace
 			}
 		]
 	},
 	{
 		title: "Built",
-		missions: []
+		missions: [
+			{
+				id: "built-mars-earth-2080",
+				label: "Mars → Earth Feb 2080",
+				blurb: "The same mission, solved — technology and waypoints defined.",
+				mission: marsEarth2080BuiltMission,
+				workspace: marsEarth2080BuiltWorkspace
+			}
+		]
 	}
 ];
 
