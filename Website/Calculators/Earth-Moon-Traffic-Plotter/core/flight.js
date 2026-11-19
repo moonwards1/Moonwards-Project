@@ -56,7 +56,7 @@ function judge(leg, toFig) {
 	return toFig.kind === "elevator" ? evaluateElevatorArrival(leg, toFig) : evaluateArrival(leg, toFig);
 }
 import { cleanWaypoints, applyWaypointBurn, burnSize } from "./waypoints.js";
-import { brakingNeeds, passAt, defaultFreighter, ABOVE_AIR } from "./aerobrake.js";
+import { brakingNeeds, passAt, defaultFreighter, ABOVE_AIR, CORRIDOR_APO } from "./aerobrake.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -409,6 +409,13 @@ function flyArrival(input, fig, rel, wps, toFig) {
 	flown.resolved.forEach(function (w) { if (w.index >= 0) { wpOut[w.index] = w; } });
 	var summary = summarize(leg);
 	if (aero && !aero.pass.falls) { aero.loop = loopAfter(leg, aero.t); }
+	// In the corridor: the loop as flown reaches between the corridor's two
+	// apogees and comes back towards Earth.
+	if (aero) {
+		var lp = aero.loop;
+		aero.inCorridor = !!lp && lp.apo !== null && (lp.peri !== null || !!lp.impact)
+			&& lp.apo >= CORRIDOR_APO[0] && lp.apo <= CORRIDOR_APO[1];
+	}
 	if (aero && aero.pass.falls) { summary.impact = "Earth"; summary.falls = true; summary.impactSpeed = aero.pass.vAfter; }
 	var arrival = toFig && !input.skipArrival ? judge(leg, toFig) : null;
 	return { ok: true, from: input.from, to: input.to || null, jd: jd, fig: fig, toFig: toFig,

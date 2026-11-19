@@ -48,7 +48,7 @@ test("an arrival within 1,000 km of the corridor is taken, on a date in the span
 test("one further out, a wrong frame or an outbound ship is refused with the reason", function () {
 	var far = readArrival(packet(inbound(4000, CORRIDOR_ALT + ACCEPT_WITHIN + 2000e3)), CLOCK_EPOCH, JD1);
 	assert.equal(far.ok, false);
-	assert.match(far.reason, /closest pass is [0-9,]+ km (above Earth|below Earth.s surface), more than 1,000 km from the aerobrake corridor/);
+	assert.match(far.reason, /^Closest approach is (too far from Earth\. Please adjust to be less than 1,000 km\.|[0-9,]+ km below Earth's surface\.)/);
 	var p = packet(inbound(4000, 100e3)); p.data.frame = "helio";
 	assert.equal(readArrival(p, CLOCK_EPOCH, JD1).ok, false);
 	var s = inbound(4000, 100e3);

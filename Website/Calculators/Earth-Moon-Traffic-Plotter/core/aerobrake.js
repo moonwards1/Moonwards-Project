@@ -31,9 +31,11 @@
  * and dynamic pressure scale with the density, exp(-(h_p - h_0) / H); the heat
  * flux with its square root.
  *
- * THE CORRIDOR is the band of pass heights that leave the ship on a loop
- * worth flying: apoapsis between CORRIDOR_APO[0] and CORRIDOR_APO[1]. Its
- * edges are the heights whose shed gives those apoapses:
+ * THE CORRIDOR is the band of loops worth flying: apogee between
+ * CORRIDOR_APO[0] and CORRIDOR_APO[1]. Whether a pass is in it is judged on
+ * the loop as flown (core/flight.js), since far out the Sun moves the apogee
+ * by hundreds of thousands of km. Its edges as pass heights are the two-body
+ * estimate, the heights whose shed gives those apoapses on Earth's conic:
  *
  *     h(r_a) = h_0 - H ln( shed(r_a) / shed_0 ),   shed(r_a) = v_p - v_out(r_a)
  *
@@ -57,6 +59,11 @@ export var REF_APO = 0.9 * EARTH_SOI;
 // just inside Earth's Hill sphere (about 1.5 million km), past which the ship
 // leaves Earth. That far out the Sun's pull can lift the next perigee.
 export var CORRIDOR_APO = [450e6, 1.45e9];
+// The apogee Aim flies the loop out to, as flown (Earth + Moon + Sun): far
+// enough out for the Sun to lift the next perigee well clear, and still inside
+// the corridor. The Sun shortens or stretches a loop this long by a fifth or
+// more against its two-body apoapsis, so Aim solves on the flight itself.
+export var AIM_APO = 1.4e9;
 export var ABOVE_AIR = 300e3;
 // How full a freighter's tanks are when it arrives from another world: tanks
 // are sized for the worst route, and an arrival keeps only a reserve.
@@ -98,15 +105,30 @@ export function passAt(needs, hp, vp) {
 	var falls = !(vAfter > Math.sqrt(GM / rp));
 	var a = falls ? null : 1 / (2 / rp - vAfter * vAfter / GM);
 	var rApo = a && a > 0 ? 2 * a - rp : null;
-	function heightFor(ra) {
-		var v = Math.sqrt(2 * GM * ra / (rp * (ra + rp)));
-		return needs.hBrake - SCALE_H * Math.log((vp - v) / needs.shed);
-	}
+	function heightFor(ra) { return heightAt(needs, ra, rp, vp); }
 	var corridor = [heightFor(CORRIDOR_APO[0]), heightFor(CORRIDOR_APO[1])];
 	return { shed: shed, vAfter: vAfter, falls: falls, rApo: rApo, offBy: off, corridor: corridor,
 	         inCorridor: hp >= corridor[0] && hp <= corridor[1],
 	         gPeak: needs.gPeak * k, dynPressureAtm: needs.dynPressureAtm * k,
 	         heatFluxWcm2: needs.heatFluxWcm2 * Math.sqrt(k) };
+}
+
+// The pass height (m) whose shed leaves for apoapsis ra, for a pass at
+// radius rp coming in at vp (the corridor's edge formula in the header).
+function heightAt(needs, ra, rp, vp) {
+	var v = Math.sqrt(2 * GM * ra / (rp * (ra + rp)));
+	return needs.hBrake - SCALE_H * Math.log((vp - v) / needs.shed);
+}
+
+// The pass height (m) that leaves on a two-body loop out to apoapsis ra (m),
+// for a ship whose path moves at speed0 (m/s) at height alt0 (m): the pass's
+// own speed is taken at that height (speedAt), so the answer is settled by
+// repeating the step a few times — the height moves by metres, the speed by
+// millimetres a second.
+export function heightForApo(needs, ra, speed0, alt0) {
+	var h = needs.hBrake;
+	for (var i = 0; i < 4; i++) { h = heightAt(needs, ra, R_E + h, speedAt(h, speed0, alt0)); }
+	return h;
 }
 
 // The speed (m/s) the ship would have at height h (m) on the path through a

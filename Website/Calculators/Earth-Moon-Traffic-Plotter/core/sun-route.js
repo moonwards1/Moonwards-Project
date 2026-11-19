@@ -55,7 +55,7 @@ import { buildIntegratedLeg } from "../../../Shared/geo-leg.js";
 import { facilityFigures, elevatorAt, L1_FRACTION } from "./facilities.js";
 import { computeFlight, arrivalPass, FINE_STEP } from "./flight.js";
 import { evaluateElevatorArrival } from "./elevator-arrival.js";
-import { brakingNeeds, passAt, speedAt, NOMINAL_ALT, defaultFreighter, EARTH_SOI } from "./aerobrake.js";
+import { brakingNeeds, passAt, speedAt, NOMINAL_ALT, defaultFreighter, EARTH_SOI, CORRIDOR_APO } from "./aerobrake.js";
 import { burnBodyAt, MAX_AXIS_MPS } from "./waypoints.js";
 import { CATCH_REACH } from "./arrival.js";
 import { leastSquares } from "./least-squares.js";
@@ -166,7 +166,8 @@ export function solveRoute(input, mode) {
 	var ship = fig.ship || defaultFreighter();
 	var mid = (M.range[0] + M.range[1]) / 2;
 	var needs = brakingNeeds(ship, pass.speed, pass.alt, mid, fig.tankFill);
-	if (!passAt(needs, pass.alt, pass.speed).inCorridor) {
+	var at = passAt(needs, pass.alt, pass.speed);
+	if (at.falls || at.rApo === null || at.rApo < CORRIDOR_APO[0]) {
 		return fail("The pass is not in the aerobrake corridor. Use Aim at the corridor on the Offworld arrival card first.");
 	}
 

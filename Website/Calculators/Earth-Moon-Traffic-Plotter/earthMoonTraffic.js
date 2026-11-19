@@ -98,7 +98,7 @@ import { Exchange } from "../../Shared/exchange.js";
 import { createFleet, entryMass } from "../../Shared/ships.js";
 import { TRIM_MAX, capTrim } from "./core/flight.js";
 import { solveEntryTrim } from "./core/entry-trim.js";
-import { CORRIDOR_APO, REF_APO, EARTH_SOI, TANK_FILL } from "./core/aerobrake.js";
+import { CORRIDOR_APO, AIM_APO, EARTH_SOI, TANK_FILL } from "./core/aerobrake.js";
 
 var O = OrbitalMath;
 var DAY = 86400;
@@ -1061,7 +1061,7 @@ function buildOffworldCard(id) {
 	refs.aim = trim.appendChild(el("button", "emt-btn", "Aim at the corridor"));
 	refs.aim.type = "button";
 	refs.aim.title = "Change the trim as little as it takes to bring the pass to the height that leaves the ship on a loop out to "
-		+ Math.round(REF_APO / 1e6).toLocaleString("en-US") + " thousand km. Fine-tune the trim from there to choose the loop.";
+		+ num(AIM_APO / 1e9, 1) + " million km, as flown with the Sun's pull. Fine-tune the trim from there to choose the loop.";
 	refs.aim.addEventListener("click", aimTrim);
 	refs.aimNote = trim.appendChild(el("div", "emt-muted"));
 	refs.trim = trim;
@@ -1130,8 +1130,11 @@ function aimTrim() {
 		var t = state.params.offworld.trim;
 		t.pro = res.trim.pro; t.rad = res.trim.rad; t.nrm = res.trim.nrm;
 		buildTrimEditor();
-		aimNote = "Aimed: the pass is " + num(res.alt / 1e3, 3) + " km up, the height that leaves on a loop out to about "
-			+ Math.round(REF_APO / 1e6).toLocaleString("en-US") + " thousand km. A tenth of a mm/s of trim moves the pass by about 10 m.";
+		aimNote = "Aimed: the pass is " + num(res.alt / 1e3, 3) + " km up, "
+			+ (res.apo !== null ? "and the loop reaches out to " + km(res.apo) + " as flown."
+				: "the height that leaves on a loop out to " + num(AIM_APO / 1e9, 1) + " million km on Earth's pull alone; "
+				+ "no pass found one that comes back from that far as flown.")
+			+ " A tenth of a mm/s of trim moves the pass by about 10 m.";
 	} else {
 		aimNote = res.reason;
 	}
@@ -1171,7 +1174,7 @@ function buildAerobrakeCard() {
 	var ro = body.appendChild(el("div", "emt-readouts"));
 	refs.trim = readout(ro, "entry trim");
 	refs.beta = readout(ro, "ballistic coefficient β");
-	refs.hBrake = readout(ro, "the corridor: pass heights for loops out to " + num(CORRIDOR_APO[0] / 1e9, 2) + "–" + num(CORRIDOR_APO[1] / 1e9, 2) + " million km");
+	refs.hBrake = readout(ro, "the corridor: pass heights for loops out to " + num(CORRIDOR_APO[0] / 1e9, 2) + "–" + num(CORRIDOR_APO[1] / 1e9, 2) + " million km, on Earth's pull alone");
 	refs.hPass = readout(ro, "pass as flown");
 	refs.vp = readout(ro, "speed at the pass");
 	refs.shed = readout(ro, "speed taken off");
@@ -1214,12 +1217,14 @@ function fillAerobrakeCard(opts) {
 		return;
 	}
 	var n = ab.needs, at = ab.pass;
-	c.sub.textContent = at.inCorridor ? "in the corridor" : at.falls ? "falls into the air"
-		: (ab.alt > at.corridor[1] ? num((ab.alt - at.corridor[1]) / 1e3, 2) + " km above the corridor"
-			: num((at.corridor[0] - ab.alt) / 1e3, 2) + " km below the corridor");
-	c.verdict.textContent = at.inCorridor ? ""
+	// Judged on the loop as flown (core/flight.js): the Sun moves a long loop's apogee.
+	var lp0 = ab.loop, back = lp0 && lp0.apo !== null && (lp0.peri !== null || !!lp0.impact);
+	var tooHigh = !at.falls && (!back || lp0.apo > CORRIDOR_APO[1]);
+	c.sub.textContent = ab.inCorridor ? "in the corridor" : at.falls ? "falls into the air"
+		: tooHigh ? (back ? "loop too long" : "leaves Earth") : "loop too short";
+	c.verdict.textContent = ab.inCorridor ? ""
 		: at.falls ? "Too deep: the pass takes off so much speed that the ship cannot climb back out. It falls into the atmosphere."
-		: ab.alt > at.corridor[1] ? "Too high: the pass takes off too little" + (at.rApo === null ? ", and the ship leaves Earth." : ", and the loop goes out past Earth's Hill sphere.")
+		: tooHigh ? "Too high: the pass takes off too little" + (back ? ", and the loop goes out past Earth's Hill sphere." : ", and the ship leaves Earth.")
 		: "Too low: the pass takes off too much, and the loop does not reach past the Moon's orbit.";
 	c.verdict.style.display = c.verdict.textContent ? "" : "none";
 	c.beta.textContent = num(n.beta) + " kg/m²";
@@ -1492,8 +1497,8 @@ function key(label, value, warn) {
 function fillKeys() {
 	keysEl.textContent = "";
 	if (!flight || !flight.ok) {
-		keysEl.appendChild(el("span", "emt-key-error",
-			flight && flight.diagnostic ? flight.diagnostic.message : "No flight."));
+		var msg = flight && flight.diagnostic ? flight.diagnostic.message : "No flight.";
+		if (msg) { keysEl.appendChild(el("span", "emt-key-error", msg)); }
 		return;
 	}
 	var s = flight.summary, fig = flight.fig;
@@ -1501,7 +1506,7 @@ function fillKeys() {
 	// against the body the ship is headed for: the Moon from below L1, Earth from above.
 	if (fig.kind === "offworld") {
 		key("Entry trim", num(flight.trim.size, 2) + " m/s");
-		if (flight.aerobrake && !flight.aerobrake.pass.inCorridor) { key("Aerobrake", "off the corridor", true); }
+		if (flight.aerobrake && !flight.aerobrake.inCorridor) { key("Aerobrake", "off the corridor", true); }
 	} else if (fig.kind === "elevator") {
 		key("Released at", km(flight.release.radius - fig.R) + " above the Moon");
 		if (fig.relPoint === "low") { key("Release speed, relative to the Moon", num(O.vMag(flight.release.relV)) + " m/s"); }

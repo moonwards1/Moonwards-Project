@@ -351,8 +351,7 @@ export function elevatorPointState(fig, s, jd, at) {
 export function offworldFigures(id, params) {
 	var p = params || {};
 	if (!(Array.isArray(p.r) && Array.isArray(p.v) && isFinite(p.jd))) {
-		return fail("no-arrival", "No arrival has been received yet. Send one from the Mission Planner: "
-			+ "Send to Earth–Moon Traffic, on the arrival leg of a mission to Earth.");
+		return fail("no-arrival", "");
 	}
 	return { ok: true, id: id, kind: "offworld", body: "Earth", R: R_EARTH, r: p.r.slice(), v: p.v.slice(), jd: p.jd,
 	         trim: p.trim || null, ship: p.ship || null, tankFill: p.tankFill == null ? null : p.tankFill,

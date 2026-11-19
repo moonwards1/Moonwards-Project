@@ -40,8 +40,8 @@ arrivals at the elevator and the mass driver come next.
 - `core/aerobrake.js` — the single grazing pass: what it needs of the ship
   (`brakingNeeds`, from the Earth aerobrake model and the ship's ballistic
   coefficient) and what a pass at a given height does (`passAt`). Pure.
-- `core/entry-trim.js` — `solveEntryTrim`: Aim, the entry trim that brings the
-  pass to the reference height, the one that leaves for 90% of the SOI. Pure.
+- `core/entry-trim.js` — `solveEntryTrim`: Aim, the entry trim that leaves the
+  ship on a loop out to 1.4 million km as flown. Pure.
 - `core/arrival-date.js` — `arrivalDateInSpan`: the date inside the clock's span an
   arrival from another world is flown on, with the Sun within 10° of its real
   direction and the Moon as near its real place as the span allows. Pure.
@@ -184,12 +184,16 @@ aimed with a burn before the ship reaches Earth's sphere of influence.
 
 **The entry trim** is a burn at the SOI edge, at most 50 m/s in all, set on the
 Offworld arrival card with the burn editor. **Aim at the corridor** changes it
-as little as it can so the pass, flown under Earth + Moon + Sun, comes down to
-the reference height `h_0` (`core/entry-trim.js`). The trim moves the pass most per
-m/s along one direction, read off the two-body path about Earth; Aim adds to
-the trim along that direction and solves how far with the secant method on the
-flown pass. Moving an arrival to its flown date shifts its pass by a few tens
-of kilometres, which the trim takes up for well under 1 m/s.
+as little as it can so the loop the aerobrake leaves the ship on reaches out
+to 1.4 million km as flown, under Earth + Moon + Sun (`core/entry-trim.js`).
+The trim moves the pass most per m/s along one direction, read off the
+two-body path about Earth, and Aim only adds to the trim along that direction.
+It first brings the flown pass, by the secant method, to the height whose
+loop reaches 1.4 million km on Earth's pull alone; then, since the Sun moves
+an apogee that far out by a fifth or more, it solves again on the apogee of
+the whole flight, bracketing it first because just past the longest loop the
+ship does not come back. Moving an arrival to its flown date shifts its pass
+by a few tens of kilometres, which the trim takes up for well under 1 m/s.
 
 ## The aerobrake
 
@@ -214,11 +218,12 @@ mass the pass needs. A pass at any other height `h_p` takes off
 and the ship leaves on whatever orbit that gives. The orbit leaves only just
 below escape, so this is extremely sensitive: on the test arrival, 0.3 mm/s
 of trim moved the pass 25 m and the loop's apoapsis from 832,000 to
-626,000 km. The **corridor** is the band of pass heights that leave on a loop
-out to between 450,000 and 1,450,000 km: a few hundred metres wide, under
-100 m for a fast arrival. The trim is therefore edited to 0.1 mm/s, and Aim
-brings the pass to `h_0` to within half a metre. A pass that leaves slower
-than circular speed falls into the atmosphere.
+626,000 km. The **corridor** is the band of loops reaching out to between
+450,000 and 1,450,000 km, judged on the loop as flown; the card also gives its
+edges as pass heights on Earth's pull alone, a band a few hundred metres wide,
+under 100 m for a fast arrival. The trim is therefore edited to 0.1 mm/s, and
+Aim sets the apogee to within 1% (a few centimetres of pass height). A pass
+that leaves slower than circular speed falls into the atmosphere.
 
 A loop may go out to 1.45 million km, past the sphere of influence but inside
 Earth's Hill sphere (about 1.5 million km). Out there the

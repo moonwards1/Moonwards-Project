@@ -50,7 +50,8 @@ test("higher sheds less, deeper sheds more, and too deep falls", function () {
 import { OrbitalMath as O } from "../../../../Shared/math-utils.js";
 import { facilityFigures, CLOCK_EPOCH } from "../facilities.js";
 import { computeFlight, arrivalPass, TRIM_MAX } from "../flight.js";
-import { solveEntryTrim } from "../entry-trim.js";
+import { solveEntryTrim, APO_TOLERANCE } from "../entry-trim.js";
+import { AIM_APO } from "../aerobrake.js";
 import { SOI_EARTH } from "../offworld.js";
 
 var JD = CLOCK_EPOCH + 6000.3;
@@ -75,21 +76,22 @@ function inboundFlown(vInf, h, tilt) {
 }
 function arrivalParams(st, extra) { return { offworld: Object.assign({ r: st.r, v: st.v, jd: JD }, extra || {}) }; }
 
-test("Aim brings the pass to the braking altitude with a small trim, and the ship leaves on its long orbit", function () {
+test("Aim sets a small trim that leaves the ship on a loop out to its apogee as flown", function () {
 	var st = inboundState(4000, 400e3, 0.5);
 	var fig = facilityFigures("offworld", arrivalParams(st).offworld);
 	var s = solveEntryTrim(fig, JD, []);
 	assert.equal(s.ok, true, s.reason);
 	var size = Math.hypot(s.trim.pro, s.trim.rad, s.trim.nrm);
 	assert.ok(size > 0.5 && size < 10, "trim " + size);
-	assert.ok(Math.abs(s.alt - s.target) < 5);
+	assert.ok(Math.abs(s.alt - s.target) < 500, "within a few hundred metres of the two-body height: " + (s.alt - s.target));
 	var f = computeFlight({ from: "offworld", jd: JD, params: arrivalParams(st, { trim: s.trim }) });
 	assert.equal(f.ok, true);
-	assert.ok(f.aerobrake && f.aerobrake.pass.inCorridor, "in the corridor");
-	assert.ok(f.aerobrake.pass.rApo > 500e6 && f.aerobrake.pass.rApo < 1.45e9, "a loop in the corridor: " + f.aerobrake.pass.rApo);
+	assert.ok(f.aerobrake && f.aerobrake.inCorridor, "in the corridor");
+	var lp = f.aerobrake.loop;
+	assert.ok(Math.abs(lp.apo - AIM_APO) <= APO_TOLERANCE * AIM_APO, "apogee as flown " + lp.apo);
+	assert.ok(Math.abs(lp.apo - s.apo) < 1, "Aim reports the loop the flight flies");
+	assert.ok(lp.peri !== null && lp.peri > RE, "the loop comes back to a perigee above the ground");
 	assert.equal(f.summary.primary, "Earth", "bound to Earth after the pass");
-	assert.ok(f.summary.apoAlt > 500e6, "a long orbit: apogee " + f.summary.apoAlt);
-	assert.ok(f.aerobrake.loop && f.aerobrake.loop.apo > 700e6, "the loop's apogee is read off the flight");
 });
 
 test("a pass well below the corridor falls into the air; one far above it goes on by", function () {

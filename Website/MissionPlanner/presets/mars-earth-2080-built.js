@@ -7,7 +7,7 @@
 export var marsEarth2080BuiltMission = {
 	"kind": "moonwards-world",
 	"version": 5,
-	"jd": 2481081.278436642,
+	"jd": 2480821.8214487047,
 	"nextStage": 6,
 	"stages": [
 		{
@@ -16,8 +16,8 @@ export var marsEarth2080BuiltMission = {
 			"params": {
 				"body": "Mars",
 				"orbitPlane": "equatorial",
-				"releasePhaseDeg": 241.19,
-				"relAlt": 4580881.667467543
+				"releasePhaseDeg": 241.22,
+				"relAlt": 4580882
 			}
 		},
 		{
@@ -30,7 +30,7 @@ export var marsEarth2080BuiltMission = {
 						"burn": {
 							"pro": 1,
 							"rad": -43,
-							"nrm": -582
+							"nrm": -580
 						}
 					}
 				],
@@ -44,16 +44,16 @@ export var marsEarth2080BuiltMission = {
 				"origin": "Mars",
 				"departure": {
 					"r": [
-						-210562891601.69025,
-						-114357806009.63629,
-						2850175479.736669
+						-210564385738.2588,
+						-114345089380.1409,
+						2848798685.139185
 					],
 					"v": [
-						11443.143917318934,
-						-16914.50578006711,
-						-641.4431976787047
+						11443.309947534564,
+						-16915.9704501123,
+						-633.3129466979573
 					],
-					"jd": 2480821.8275318784
+					"jd": 2480821.8214487047
 				},
 				"arrival": {
 					"body": "Earth",
@@ -67,7 +67,16 @@ export var marsEarth2080BuiltMission = {
 			"id": "stg-3",
 			"moduleId": "transfer-leg",
 			"params": {
-				"waypoints": [],
+				"waypoints": [
+					{
+						"days": 37.513952351111065,
+						"burn": {
+							"pro": 0,
+							"rad": 0.10519046337777217,
+							"nrm": -3.0860815253492206
+						}
+					}
+				],
 				"legDays": 259.5376388733275,
 				"destination": "Earth"
 			}

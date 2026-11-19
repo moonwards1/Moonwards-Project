@@ -89,10 +89,9 @@ export function readArrival(packet, jd0, jd1, corridorAlt) {
 	var flown = arrivalPass(offworldFigures("offworld", { r: d.r, v: d.v, jd: date.jd }), date.jd, null, []);
 	if (flown) { pass.periAlt = flown.alt; }
 	if (Math.abs(pass.periAlt - hc) > ACCEPT_WITHIN) {
-		return { ok: false, pass: pass, reason: "The ship's closest pass is " + passText(pass.periAlt)
-			+ ", more than " + kmText(ACCEPT_WITHIN) + " from the aerobrake corridor at " + kmText(hc)
-			+ ". Aim the arrival closer in the Mission Planner, with a burn before the ship reaches Earth's "
-			+ "sphere of influence, and send it again." };
+		return { ok: false, pass: pass, reason: pass.periAlt > hc
+			? "Closest approach is too far from Earth. Please adjust to be less than " + kmText(ACCEPT_WITHIN) + "."
+			: "Closest approach is " + passText(pass.periAlt) + ". Please adjust to be above Earth's surface." };
 	}
 	return Object.assign({ ok: true, r: d.r.slice(), v: d.v.slice(), jd: date.jd, origJd: d.jd, moved: date.moved,
 	                       sunDeg: date.sunDeg, moonMiss: date.moonMiss,
