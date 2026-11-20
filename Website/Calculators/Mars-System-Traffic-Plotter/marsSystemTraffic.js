@@ -15,6 +15,11 @@
  * skyhook's top and its dodges of Deimos marked on the date sliders. The mass
  * driver is listed in the sidebar and comes next.
  *
+ * SAVED FLIGHTS (Shared/sim/save-panel.js) are kept in a list in the
+ * browser, put in a link or a file, and brought back from one. A saved flight
+ * is flightSnapshot()'s plain data: what was set, never what was worked out
+ * from it; applyFlight() sets the page up from one.
+ *
  * The page computes nothing of its own: where things are comes from
  * Shared/mars-ephemeris.js and core/facilities.js, the flight from
  * core/flight.js, the timing from core/clearance.js, the elevator from
@@ -45,6 +50,7 @@ import { computeFlight, flightStateAt, groundRelative, SURFACE } from "./core/fl
 import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
 import { buildMarsScene, R_STATIONARY, SOI_MARS, U } from "./scene.js";
 import { buildOverlay } from "./overlay.js";
+import { createSavePanel } from "../../Shared/sim/save-panel.js";
 
 var O = OrbitalMath;
 var DAY = 86400, DEG = 180 / Math.PI, TWO_PI = 2 * Math.PI;
@@ -1307,6 +1313,89 @@ function fillFlightNote() {
 			+ km(a.altitude) + " up" + (a.blocked ? ", with Mars between them" : "") + ", at " + speed(a.trim) + " relative to it. Not caught. Move the release time, the release point or the date to bring them together.";
 }
 
+// ---- saved flights (Shared/sim/save-panel.js) -----------------------------------------
+// The flight's format in a saved flight, a link or a file. Raise it when a
+// change means an older page would misread what a newer one writes.
+var FLIGHT_FORMAT = 1;
+
+// The flight as it stands, as plain data: what was set, never what was worked
+// out from it. The hanging skyhook's sidesteps are worked out again on load
+// when they had been (`timingWorkedOut`); its starting place round its orbit
+// follows from the design. `dateJd` and `relFrac` set the release exactly;
+// `releaseJd` and `alignment` state it as an instant and as where the
+// departure facility stands, so a later scenario can fly the same route each
+// time that comes round again: `groundLon`, the east longitude its centre is
+// over (rad), and, bound for the other skyhook, `partnerAngle`, the angle
+// round Mars's pole from its centre to that skyhook's (rad, eastward positive).
+function flightSnapshot() {
+	var params = JSON.parse(JSON.stringify(state.params));
+	if (params[HANGING]) { delete params[HANGING].timing; }
+	var rjd = releaseJd(), fig = figs[state.from], alignment = null;
+	if (fig && fig.ok) {
+		var c = pointState(fig, facilityAt(fig, rjd), 0).r, pole = ME.pole;
+		alignment = { groundLon: ME.groundPoint(c, rjd).lon, partnerAngle: null };
+		var dest = state.to !== SURFACE ? figs[state.to] : null;
+		if (dest && dest.ok) {
+			var d = pointState(dest, facilityAt(dest, rjd), 0).r;
+			alignment.partnerAngle = Math.atan2(O.vDot(pole, O.vCross(c, d)), O.vDot(c, d) - O.vDot(c, pole) * O.vDot(d, pole));
+		}
+	}
+	return {
+		from: state.from, to: state.to,
+		dateJd: state.jd, relFrac: state.relFrac, releaseJd: rjd, alignment: alignment,
+		included: Object.assign({}, state.included),
+		params: params, limit: state.limit,
+		timingWorkedOut: !!schedule,
+		clock: Object.assign({}, state.clock),
+		view: { frame: state.view, pov: state.pov, follow: state.follow }
+	};
+}
+// A name for a flight nobody has named: route and release date.
+function describeFlight(f) {
+	return FACILITIES[f.from].label + " → " + (f.to === SURFACE ? "the surface" : FACILITIES[f.to].label) + ", " + shortDate(f.releaseJd);
+}
+// A saved flight -> the page. Everything is checked before anything is
+// changed, so a flight that is refused leaves the page as it was.
+var DEFAULTS = {};
+DEFAULTS[PHOBOS] = FACILITIES[PHOBOS].defaults;
+DEFAULTS[HANGING] = HANGING_DEFAULTS;
+DEFAULTS[ELEVATOR] = ELEVATOR_DEFAULTS;
+function applyFlight(f) {
+	if (!f || SKYHOOKS.indexOf(f.from) < 0) { return { ok: false, reason: "it starts from a facility this page does not have." }; }
+	if (f.to !== SURFACE && (SKYHOOKS.indexOf(f.to) < 0 || f.to === f.from)) { return { ok: false, reason: "this page has no such destination." }; }
+	if (!(typeof f.dateJd === "number" && isFinite(f.dateJd))) { return { ok: false, reason: "it has no date." }; }
+	var inc = f.included || {};
+	if (inc[f.from] === false) { return { ok: false, reason: "its departure skyhook is left out of the design." }; }
+
+	[PHOBOS, HANGING, ELEVATOR].forEach(function (id) {
+		var saved = f.params && f.params[id] ? JSON.parse(JSON.stringify(f.params[id])) : {};
+		state.params[id] = Object.assign({}, DEFAULTS[id], saved);
+		state.included[id] = inc[id] !== false;
+	});
+	state.params[HANGING].timing = null;            // computeFigures starts it afresh
+	timingKey = null; schedule = null;
+	if (typeof f.limit === "number" && f.limit > 0) { state.limit = f.limit; }
+	state.from = f.from;
+	state.to = f.to;
+	dateBar.setJd(f.dateJd);
+	state.relFrac = Math.max(0, Math.min(1, +f.relFrac || 0));
+	relSlider.value = state.relFrac;
+	clockReset(state.clock);
+	var v = f.view || {};
+	if (VIEW_FRAMES.some(function (x) { return x.id === v.frame; })) { state.view = v.frame; }
+	syncButtons();
+	refresh();
+	if (f.clock) {
+		["axis", "by", "frac", "t", "deg", "pin"].forEach(function (k) {
+			if (f.clock[k] !== undefined) { state.clock[k] = f.clock[k]; }
+		});
+		refresh({ sceneOnly: true });
+	}
+	if (v.pov && POVS[v.pov]) { setPov(v.pov); } else if (v.follow) { setFollow(v.follow); } else { setPov("system"); }
+	if (f.timingWorkedOut) { workOut(); }
+	return { ok: true };
+}
+
 // ---- wiring ---------------------------------------------------------------------------
 var dateBar = createDateBar(state, {
 	coarseSlider: $("mst-date-coarse"), fineSlider: $("mst-date-fine"),
@@ -1383,6 +1472,11 @@ function init() {
 	refresh();
 	setPov("system");
 	animate();
+
+	createSavePanel($("mst-save"), {
+		app: "mars-system-traffic", version: FLIGHT_FORMAT, storageKey: "mw-mst-flights", filePrefix: "mars-system",
+		snapshot: flightSnapshot, apply: applyFlight, describe: describeFlight
+	}).restore();
 }
 
 init();

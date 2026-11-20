@@ -247,6 +247,23 @@ input[type="date"], select, input[type="number"] {
 }
 select:disabled { color: #8b94a7; }
 
+/* ---- saved flights (Shared/sim/save-panel.js builds the fsv-* elements) ---- */
+.fsv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
+.fsv-name, .fsv-paste {
+	flex: 1 1 140px; min-width: 0; background: #131826; color: #d8dde6; border: 1px solid #2a3142;
+	border-radius: 4px; padding: 5px 7px; font-size: 13px; font-family: inherit;
+}
+.fsv-paste { font-size: 12px; }
+.fsv-list { flex: 1 1 140px; min-width: 0; }
+.fsv-btn {
+	font: inherit; font-size: 12px; padding: 5px 10px; cursor: pointer;
+	background: #131826; color: #cfd6e4; border: 1px solid #2a3142; border-radius: 5px;
+}
+.fsv-btn:hover { background: #1b2336; }
+.fsv-btn:disabled { color: #5d6678; cursor: default; background: #131826; }
+.fsv-btn.fsv-armed { border-color: #c0584a; color: #ffb3a8; }
+.fsv-status { color: #8b94a7; font-size: 12px; line-height: 1.45; min-height: 1.45em; }
+
 .mst-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: #c7cedd; cursor: pointer; }
 .mst-check input { accent-color: #5aa9ff; margin: 0; }
 .mst-legend { font-size: 11px; color: #8b94a7; }

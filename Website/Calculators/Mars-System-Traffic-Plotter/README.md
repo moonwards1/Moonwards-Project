@@ -553,10 +553,30 @@ right-drag pan lets go. The POV buttons set
 what is followed and how far back the camera sits. Shift (¼) and Ctrl (1/10)
 slow any slider.
 
+## Saved flights
+
+The Saved flights card at the top of the sidebar (`Shared/sim/save-panel.js`,
+with the envelope in `Shared/flight-save.js`) works as in the Earth–Moon
+Traffic Plotter: a named list kept in the browser, **Copy link** (a compressed
+`#flight=` fragment that fits a Discord message), **Export** / **Import** of a
+`.json` file, the flight on screen kept between visits, and **Start fresh**.
+
+A saved flight holds what was set, never what was worked out: the route, the
+date and release time, which facilities are in the design and all their
+settings, the least clearance, the Flight timeline, the view and the point of
+view. The hanging skyhook's sidesteps are not stored: a flight saved after
+**Work out the sidesteps** works them out again when it is opened, and its
+starting place round its orbit follows from the design as it always does. Each
+flight also records its release as an instant and as where the departure
+skyhook stands (`alignment`): the east longitude its centre is over and, bound
+for the other skyhook, the angle round Mars's pole from one centre to the
+other, so a scenario can later fly the same route each time that comes round.
+
 ## Dependencies
 
 `Shared/` (orbit, math-utils, mars-ephemeris, body-profiles, materials,
-body-leg, meridian-tether, radial-tether, and the `sim/` scene kit),
+body-leg, meridian-tether, radial-tether, the `sim/` scene kit, and `exchange` and
+`flight-save` for links and saved flights),
 `Calculators/Hanging-skyhooks/skyhookModel.js` (the hanging skyhook's masses),
 `Calculators/Mars-Elevator/marsElevatorModel.js` (the space elevator) and `MissionPlanner/scene-frames.js` (the star field). The
 folder breaks if moved without them.
