@@ -31,17 +31,40 @@ html, body {
 
 .mst-slider-line { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
 .mst-slider-line input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
+/* A date slider draws its own track, so what is timed can sit on it: the
+   bar is the track, the marks are laid on the bar, and the thumb rides over
+   both. Bar and marks are inset by half a thumb so a mark's edges line up
+   with the thumb's centre. */
 .mst-track { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
-/* What is timed: a strip just under a date slider's track, inset by half a
-   thumb so a mark's edges line up with the thumb's centre. Upper row: the
-   hanging skyhook's sidesteps. Lower row: the space elevator's Deimos dodges. */
-.mst-track { padding-bottom: 4px; }
-.mst-marks { position: absolute; left: 8px; right: 8px; bottom: -4px; height: 9px; pointer-events: none; }
-.mst-mark { position: absolute; top: 0; height: 4px; min-width: 2px; border-radius: 1px; }
+.mst-track::before {
+	content: ""; position: absolute; left: 8px; right: 8px; top: 50%; height: 8px; margin-top: -4px;
+	border-radius: 4px; background: #2e3648; pointer-events: none;
+}
+.mst-track input[type="range"] {
+	position: relative; z-index: 2; margin: 0; height: 16px;
+	-webkit-appearance: none; appearance: none; background: transparent;
+}
+.mst-track input[type="range"]::-webkit-slider-runnable-track { height: 16px; background: transparent; }
+.mst-track input[type="range"]::-moz-range-track { height: 16px; background: transparent; }
+.mst-track input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%;
+	background: #5aa9ff; border: 2px solid #0e1320; box-sizing: border-box; cursor: pointer;
+}
+.mst-track input[type="range"]::-moz-range-thumb {
+	width: 16px; height: 16px; border-radius: 50%;
+	background: #5aa9ff; border: 2px solid #0e1320; box-sizing: border-box; cursor: pointer;
+}
+/* Upper half of the bar: the hanging skyhook's sidesteps. Lower half: the
+   space elevator's Deimos dodges. */
+.mst-marks {
+	position: absolute; left: 8px; right: 8px; top: 50%; height: 8px; margin-top: -4px; z-index: 1;
+	border-radius: 4px; overflow: hidden; pointer-events: none;
+}
+.mst-mark { position: absolute; top: 0; height: 4px; min-width: 2px; }
 .mst-mark-step { background: #e8b24a; }
 .mst-mark-close { background: #ff5a4d; z-index: 1; }
-.mst-mark-dodge { top: 5px; background: #4f8fe0; }
-.mst-mark-cross { top: 5px; min-width: 1px; background: #e6f0ff; z-index: 1; }
+.mst-mark-dodge { top: 4px; background: #4f8fe0; }
+.mst-mark-cross { top: 4px; min-width: 1px; background: #e6f0ff; z-index: 1; }
 .mst-slider-end { flex: 0 0 auto; width: 104px; font-size: 11px; color: #8b94a7; }
 .mst-slider-line .mst-slider-end:first-child { text-align: right; }
 .mst-line-release .mst-slider-end { color: #ff9fe2; }

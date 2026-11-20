@@ -34,15 +34,35 @@ html, body {
 
 .emt-slider-line { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
 .emt-slider-line input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
-/* A date slider with its release-window marks: a strip just under the track,
-   inset by half a thumb so a mark's edges line up with the thumb's centre. */
+/* A date slider draws its own track, so what is timed can sit on it: the
+   bar is the track, the marks are laid on the bar, and the thumb rides over
+   both. Bar and marks are inset by half a thumb so a mark's edges line up
+   with the thumb's centre. */
 .emt-track { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
-.emt-windows { position: absolute; left: 8px; right: 8px; bottom: -3px; height: 4px; pointer-events: none; }
-.emt-window { position: absolute; top: 0; bottom: 0; min-width: 2px; border-radius: 1px; background: #3ddc84; }
-.emt-window.emt-window-over { background: #c99a3a; opacity: 0.75; }
-#emt-window-note { margin: 5px 0 2px 116px; font-size: 11px; color: #8b94a7; min-height: 14px; }
-#emt-window-note b { font-weight: 600; color: #9af0c0; }
-#emt-window-note.emt-window-over b { color: #ffcf70; }
+.emt-track::before {
+	content: ""; position: absolute; left: 8px; right: 8px; top: 50%; height: 8px; margin-top: -4px;
+	border-radius: 4px; background: #2e3648; pointer-events: none;
+}
+.emt-track input[type="range"] {
+	position: relative; z-index: 2; margin: 0; height: 16px;
+	-webkit-appearance: none; appearance: none; background: transparent;
+}
+.emt-track input[type="range"]::-webkit-slider-runnable-track { height: 16px; background: transparent; }
+.emt-track input[type="range"]::-moz-range-track { height: 16px; background: transparent; }
+.emt-track input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%;
+	background: #5aa9ff; border: 2px solid #0e1320; box-sizing: border-box; cursor: pointer;
+}
+.emt-track input[type="range"]::-moz-range-thumb {
+	width: 16px; height: 16px; border-radius: 50%;
+	background: #5aa9ff; border: 2px solid #0e1320; box-sizing: border-box; cursor: pointer;
+}
+.emt-windows {
+	position: absolute; left: 8px; right: 8px; top: 50%; height: 8px; margin-top: -4px; z-index: 1;
+	border-radius: 4px; overflow: hidden; pointer-events: none;
+}
+.emt-window { position: absolute; top: 0; bottom: 0; min-width: 2px; background: #3ddc84; }
+.emt-window.emt-window-over { background: #c99a3a; }
 .emt-slider-end { flex: 0 0 auto; width: 104px; font-size: 11px; color: #8b94a7; }
 .emt-slider-line .emt-slider-end:first-child { text-align: right; }
 .emt-line-release .emt-slider-end { color: #ff9fe2; }

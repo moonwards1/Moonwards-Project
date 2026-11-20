@@ -870,8 +870,8 @@ function fillHangingCard(opts) {
 }
 
 // ---- marks on the date sliders ------------------------------------------------------------
-// What is timed between two days of the clock, as bars in a strip under a
-// slider. Upper row: the hanging skyhook's sidesteps, and the close passes
+// What is timed between two days of the clock, as marks on a date slider's
+// bar. Upper row: the hanging skyhook's sidesteps, and the close passes
 // the ballast cannot avoid. Lower row: the space elevator's spells of dodging
 // Deimos, from the first load timing to the swing at rest again, with a tick
 // at each crossing dodged.

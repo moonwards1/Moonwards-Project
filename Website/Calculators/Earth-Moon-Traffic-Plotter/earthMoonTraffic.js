@@ -1692,25 +1692,11 @@ function drawWindows(strip, lo, hi) {
 		mark.style.left = (a * 100) + "%"; mark.style.width = ((b - a) * 100) + "%";
 	});
 }
-// The fine slider's marks, and the line naming the window the date is in or
-// the next one to come.
+// The fine slider's marks.
 function showWindows() {
 	updateWindows();
 	var mid = JD0 + state.baseDays;
 	drawWindows($("emt-windows-fine"), mid - FINE_HALF, mid + FINE_HALF);
-	var note = $("emt-window-note"), w = null;
-	windows.forEach(function (x) { if (!w && x.end >= state.jd) { w = x; } });
-	note.textContent = "";
-	note.classList.toggle("emt-window-over", !!w && !w.within);
-	if (!w) { return; }
-	var toMoon = FACILITIES[state.from].body === "Earth";
-	function stamp(jd) { return shortDate(jd).replace(/ \d+$/, "") + " " + clockTime(jd).slice(0, 5); }
-	note.appendChild(document.createTextNode((w.start <= state.jd ? "In a release window" : "Next release window")
-		+ " for " + (toMoon ? "the Moon" : "the Earth skyhook") + ": "));
-	note.appendChild(el("b", null, stamp(w.start) + " to " + stamp(w.end)));
-	note.appendChild(document.createTextNode(" · relative motion at the catch about " + num(Math.round(w.speed / 10) * 10) + " m/s"
-		+ (w.within ? "" : ", over the catcher's " + num(CATCH_SPEED_LIMIT) + " m/s")
-		+ (toMoon ? " · the Moon crosses Earth's equatorial plane " : " · the Moon is in Earth's equatorial plane ") + stamp(w.crossing)));
 }
 
 // The mobile catcher goes to wherever along the destination tether the ship

@@ -297,7 +297,7 @@ either tether. At the
 first closer than the least clearance it puts a sidestep just before, trying
 every slip from 1/24 of an orbit to a whole one, ahead and behind, and keeping
 the one that puts off the next close pass longest. The sidesteps appear as
-amber bars under both date sliders and move the skyhook in the scene; spells
+amber marks on both date sliders and move the skyhook in the scene; spells
 of close passes that no sidestep puts off are red. The card gives, for the
 sidestep at or after the date shown, which tether it avoids, the ballast's
 move, the times, the energy and peak power, and the orbit meanwhile. Changing
@@ -454,7 +454,7 @@ of the full swing) to leave the lesser of the two misses as large as it can
 be. Every crossing's miss is then worked out with the tether where the swing
 has it, and the card gives the least of them.
 
-The spells appear as blue bars in the lower row under both date sliders, with
+The spells appear as blue marks in the lower half of both date sliders, with
 a pale tick at each crossing dodged; the drawn tether shows the swing, each
 point moved by the swing's shape there (`northSouthModes`). **Previous dodge**
 and **Next dodge** move the date to a dodged crossing, and the card gives
