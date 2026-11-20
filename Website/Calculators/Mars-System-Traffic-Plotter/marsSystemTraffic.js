@@ -1255,8 +1255,7 @@ function refresh(opts) {
 	var half = parseFloat($("mst-date-fine").max);
 	drawMarks($("mst-marks-fine"), state.baseDays - half, state.baseDays + half);
 
-	var fig = figs[state.from];
-	relVal.textContent = clockTime(releaseJd()) + (fig && fig.ok ? " · one orbit " + num(fig.period / 3600, 2) + " h" : "");
+	relVal.textContent = clockTime(releaseJd());
 	var deg = clockDegrees(state.clock, shape);
 	flightSlider.value = clockSliderFrac(state.clock, shape);
 	// Short, so the slider keeps its room: the swept angle on the radial axis, the time since release on the time axis.

@@ -21,15 +21,12 @@
 				<span id="emt-jd" class="emt-muted"></span>
 				<span class="emt-date-caption emt-pov-caption">POV</span>
 				<div id="emt-pov" role="group" aria-label="Point of view">
-					<button type="button" data-pov="system">Earth–Moon system</button>
-					<button type="button" data-pov="moonSurface">Moon surface ↔ skyhook</button>
-					<button type="button" data-pov="moonL1">Lunar orbit ↔ L1</button>
-					<button type="button" data-pov="earthHigh">High Earth orbit</button>
-					<button type="button" data-pov="earthLow">Earth skyhook &amp; entry</button>
+					<button type="button" data-pov="system">Earth system</button>
+					<button type="button" data-pov="moonSurface">Moon</button>
+					<button type="button" data-pov="moonL1">Moon ↔ L1</button>
+					<button type="button" data-pov="earthHigh" title="High Earth orbit">HEO</button>
+					<button type="button" data-pov="earthLow" title="Low Earth orbit">LEO</button>
 				</div>
-				<label class="emt-check emt-hold" title="Keep the departure skyhook's tether at the same angle to the Earth direction (the Moon direction, for the Earth skyhook) while the date changes: the release time jumps to the next moment the tether points that way. Moving the release time sets a new angle to hold.">
-					<input type="checkbox" id="emt-hold-phase"> Hold skyhook phase
-				</label>
 			</div>
 			<div class="emt-slider-line">
 				<span class="emt-slider-end">2080</span>
@@ -46,10 +43,13 @@
 				</div>
 				<span class="emt-slider-end" id="emt-fine-hi"></span>
 			</div>
-			<div class="emt-slider-line emt-line-release">
-				<span class="emt-slider-end">Release time</span>
+			<div class="emt-slider-line emt-line-release" id="emt-release-line">
+				<span class="emt-slider-end">Release</span>
 				<input type="range" id="emt-release-time" min="0" max="1" step="any" value="0" aria-label="Release time within one orbit of the departure skyhook">
 				<span class="emt-slider-end" id="emt-release-time-val"></span>
+				<label class="emt-check emt-hold" title="Keep the departure skyhook's tether at the same angle to the Earth direction (the Moon direction, for the Earth skyhook) while the date changes: the release time jumps to the next moment the tether points that way. Moving the release time sets a new angle to hold.">
+					<input type="checkbox" id="emt-hold-phase"> Hold phase
+				</label>
 			</div>
 			<div class="emt-slider-line emt-line-flight">
 				<span class="emt-slider-end" id="emt-flight-label">Flight</span>
@@ -82,6 +82,12 @@
 
 			<div id="emt-panel">
 				<h1>Earth–Moon Traffic Plotter</h1>
+
+				<!-- Saved flights: Shared/sim/save-panel.js builds the card's contents -->
+				<section class="emt-card emt-card-flight emt-card-save">
+					<h2>Saved flights</h2>
+					<div id="emt-save"></div>
+				</section>
 
 				<section class="emt-card emt-card-flight">
 					<h2>Flight</h2>

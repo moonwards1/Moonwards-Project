@@ -69,6 +69,11 @@
  * A path that stays with the Moon is drawn as the Moon sees it, carried along
  * with the Moon, so an orbit of the Moon looks like one.
  *
+ * SAVED FLIGHTS (Shared/sim/save-panel.js) are kept in a list in the
+ * browser, put in a link or a file, and brought back from one. A saved flight
+ * is flightSnapshot()'s plain data: what was set, never what was worked out
+ * from it; applyFlight() sets the page up from one.
+ *
  * Built so far: the two skyhooks and the L1 elevator as origins; an open
  * path, or a skyhook as the destination; waypoint burns. Target, the far-burn
  * solve and the release windows are for flights from one skyhook to the other.
@@ -103,6 +108,7 @@ import { MAX_AXIS_MPS, burnSize } from "./core/waypoints.js";
 import { releaseWindows } from "./core/windows.js";
 import { readArrival, OFFWORLD_TARGET, ACCEPT_WITHIN, CORRIDOR_ALT } from "./core/offworld.js";
 import { Exchange } from "../../Shared/exchange.js";
+import { createSavePanel } from "../../Shared/sim/save-panel.js";
 import { createFleet, entryMass } from "../../Shared/ships.js";
 import { TRIM_MAX, capTrim } from "./core/flight.js";
 import { solveEntryTrim } from "./core/entry-trim.js";
@@ -169,7 +175,8 @@ var state = {
 	waypoints: [],                     // [{ t (s since release), burn: { pro, rad, nrm } (m/s) }], core/waypoints.js
 	open: { waypoints: true },         // facility id (or "waypoints") -> card unfolded?
 	pov: "system",
-	arrivalIn: null                    // the last arrival received: core/offworld.js's readArrival result
+	arrivalIn: null,                   // the last arrival received: core/offworld.js's readArrival result
+	arrivalPacket: null                // the packet it came in, as sent: what a saved arrival keeps
 };
 CARD_ORDER.forEach(function (id) {
 	state.params[id] = Object.assign({}, FACILITIES[id].defaults);
@@ -1736,15 +1743,12 @@ function refresh(opts) {
 	placeShip();
 
 	var fig = figs[state.from];
-	relVal.textContent = fig.ok && fig.kind === "offworld" ? "set by the arrival" : clockTime(releaseJd()) + (!fig.ok ? ""
-		: (fig.kind === "skyhook" ? " · one orbit " : " · slider spans ") + num(fig.period / 3600, fig.kind === "skyhook" ? 2 : 0) + " h");
+	relVal.textContent = clockTime(releaseJd());
 	var t = flightSeconds(), deg = clockDegrees(state.clock, shape);
 	flightSlider.value = clockSliderFrac(state.clock, shape);
 	// Short, so the slider keeps its room: the swept angle on the radial axis, the time since release on the time axis.
 	flightVal.textContent = state.clock.axis === "radial" && deg != null ? num(deg, 1) + "°" : "T+ " + span(t);
 	syncClockControls();
-	$("emt-flight-label").textContent = flight && flight.ok && flight.bodyPass
-		? "Flight past " + flight.toFig.body : "Flight";
 }
 
 // The Flight timeline's axis buttons and pin, as the clock stands. The pin
@@ -1756,6 +1760,47 @@ function syncClockControls() {
 	pinBox.disabled = !state.to;
 	pinBox.checked = state.clock.pin && !!state.to;
 }
+
+// ---- saved flights (Shared/sim/save-panel.js) -----------------------------------------
+// The flight's format in a saved flight, a link or a file. Raise it when a
+// change means an older page would misread what a newer one writes.
+var FLIGHT_FORMAT = 1;
+
+// The flight as it stands, as plain data: what was set, never what was worked
+// out from it (core/flight.js does that again on load). `dateJd` and `relFrac`
+// set the release exactly; `releaseJd` and `alignment` state it as an instant
+// and as the departure tether's angle to its partner body, so a later scenario
+// can fly the same route at each time that angle comes round again. An
+// offworld arrival keeps the packet it came in: its date, place and speed at
+// Earth's sphere of influence, and the mission it was sent from.
+function flightSnapshot() {
+	var params = {};
+	CARD_ORDER.forEach(function (id) {
+		if (isOffworld(id) && state.from !== id) { return; }
+		var p = JSON.parse(JSON.stringify(state.params[id]));
+		delete p.ship;                     // the workbench's freighter, read afresh on load
+		params[id] = p;
+	});
+	var fig = figs[state.from], rjd = releaseJd();
+	var alignment = fig && fig.ok && FACILITIES[state.from].kind === "skyhook"
+		? { tetherAngle: relativePhase(fig, rjd), from: FACILITIES[state.from].body === "Moon" ? "Earth" : "Moon" } : null;
+	return {
+		from: state.from, to: state.to,
+		dateJd: state.jd, relFrac: state.relFrac, releaseJd: rjd, alignment: alignment,
+		hold: state.hold, heldAngle: state.heldAngle,
+		params: params,
+		waypoints: JSON.parse(JSON.stringify(state.waypoints)),
+		arrival: isOffworld(state.from) ? state.arrivalPacket : null,
+		clock: Object.assign({}, state.clock),
+		view: { pov: state.pov, follow: state.follow }
+	};
+}
+// A name for a flight nobody has named: route and release date.
+function describeFlight(f) {
+	var from = isOffworld(f.from) && state.arrivalIn && state.arrivalIn.ok ? state.arrivalIn.label : FACILITIES[f.from].label;
+	return from + " → " + (f.to ? FACILITIES[f.to].label : "open path") + ", " + shortDate(f.releaseJd);
+}
+var applyFlight = null;                // a saved flight -> the page (set up in init)
 
 // ---- wiring -------------------------------------------------------------------------
 var dateBar = createDateBar(state, {
@@ -1811,13 +1856,14 @@ function init() {
 		lockDate();
 		refresh();
 	}
-	// An offworld arrival brings its own date: the date bar shows it and the
-	// release-time controls stand still.
+	// An offworld arrival brings its own date: the date bar shows it and stands
+	// still, and the Release line, which has nothing to set, is hidden.
 	function lockDate() {
 		var fig = facilityFigures(state.from, state.params[state.from]);
 		var locked = isOffworld(state.from);
 		["emt-date-coarse", "emt-date-fine", "emt-date-field", "emt-date-cal"].forEach(function (i) { $(i).disabled = locked; });
 		relSlider.disabled = locked;
+		$("emt-release-line").hidden = locked;
 		if (locked && fig.ok) { dateBar.setJd(fig.jd); }
 	}
 	function fillDestinations() {
@@ -1854,6 +1900,7 @@ function init() {
 		state.arrivalIn = readArrival(packet, JD0, JD0 + SPAN_DAYS);
 		if (state.arrivalIn.ok) {
 			var a = state.arrivalIn;
+			state.arrivalPacket = packet;
 			var keepFill = state.params.offworld.tankFill;
 			state.params.offworld = { r: a.r, v: a.v, jd: a.jd, trim: { pro: 0, rad: 0, nrm: 0 },
 			                          tankFill: keepFill == null ? TANK_FILL : keepFill };
@@ -1870,6 +1917,71 @@ function init() {
 	var linked = Exchange.fromLocationFragment();
 	loading = false;
 	if (linked) { takeArrival(linked); }
+
+	// A saved flight -> the page. Everything is checked before anything is
+	// changed, so a flight that is refused leaves the page as it was.
+	applyFlight = function (f) {
+		if (!f || !FACILITIES[f.from]) { return { ok: false, reason: "it starts from a facility this page does not have." }; }
+		var to = f.to || null;
+		if (to && DESTINATIONS[f.from].indexOf(to) < 0) {
+			return { ok: false, reason: "this page has no route from " + FACILITIES[f.from].label + " to that destination." };
+		}
+		if (!(typeof f.dateJd === "number" && isFinite(f.dateJd))) { return { ok: false, reason: "it has no date." }; }
+		var arrivalIn = null;
+		if (isOffworld(f.from)) {
+			arrivalIn = readArrival(f.arrival, JD0, JD0 + SPAN_DAYS);
+			if (!arrivalIn.ok) { return { ok: false, reason: arrivalIn.reason }; }
+		}
+
+		CARD_ORDER.forEach(function (id) {
+			if (isOffworld(id) && !arrivalIn) { return; }      // the arrival on its card stays
+			var saved = f.params && f.params[id] ? JSON.parse(JSON.stringify(f.params[id])) : {};
+			state.params[id] = Object.assign({}, FACILITIES[id].defaults, saved);
+		});
+		if (arrivalIn) {
+			state.arrivalIn = arrivalIn;
+			state.arrivalPacket = f.arrival;
+			if (!state.params.offworld.r) {
+				state.params.offworld = { r: arrivalIn.r, v: arrivalIn.v, jd: arrivalIn.jd,
+				                          trim: { pro: 0, rad: 0, nrm: 0 }, tankFill: TANK_FILL };
+			}
+			buildTrimEditor();
+			aimNote = "";
+		}
+		state.waypoints = (Array.isArray(f.waypoints) ? f.waypoints : []).slice(0, MAX_WAYPOINTS).map(function (w) {
+			var b = (w && w.burn) || {};
+			return { t: +w.t || 0, burn: { pro: +b.pro || 0, rad: +b.rad || 0, nrm: +b.nrm || 0 } };
+		});
+
+		state.from = f.from;
+		$("emt-from").value = f.from;
+		state.to = to;
+		fillDestinations();
+		rebuildWaypointRows();
+		state.mode = "free"; clearTimeout(targetTimer); targetTimer = 0; targetNote = "";
+		var holdBox = $("emt-hold-phase");
+		holdBox.disabled = FACILITIES[state.from].kind !== "skyhook";
+		state.hold = !holdBox.disabled && !!f.hold;
+		state.heldAngle = state.hold && typeof f.heldAngle === "number" ? f.heldAngle : null;
+		holdBox.checked = state.hold;
+		CARD_ORDER.forEach(function (id) { state.open[id] = id === state.from || id === state.to; });
+		dateBar.setJd(f.dateJd);
+		state.relFrac = Math.max(0, Math.min(1, +f.relFrac || 0));
+		relSlider.value = state.relFrac;
+		clockReset(state.clock);
+		syncCards();
+		lockDate();
+		refresh();
+		if (f.clock) {
+			["axis", "by", "frac", "t", "deg", "pin"].forEach(function (k) {
+				if (f.clock[k] !== undefined) { state.clock[k] = f.clock[k]; }
+			});
+			refresh({ sceneOnly: true });
+		}
+		var v = f.view || {};
+		if (v.pov && POVS[v.pov]) { setPov(v.pov); } else if (v.follow) { setFollow(v.follow); } else { setPov("system"); }
+		return { ok: true };
+	};
 	$("emt-to").addEventListener("change", function (e) {
 		state.to = e.target.value || null;
 		// A flight to a facility starts from the release point meant for it.
@@ -1891,6 +2003,14 @@ function init() {
 	refresh();
 	setPov("system");
 	animate();
+
+	var savePanel = createSavePanel($("emt-save"), {
+		app: "earth-moon-traffic", version: FLIGHT_FORMAT, storageKey: "mw-emt-flights", filePrefix: "earth-moon",
+		snapshot: flightSnapshot, apply: applyFlight, describe: describeFlight
+	});
+	// An arrival linked from the Mission Planner is the flight to show; otherwise
+	// a flight link, or the flight from the last visit.
+	if (!linked) { savePanel.restore(); }
 }
 
 init();

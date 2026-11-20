@@ -555,6 +555,19 @@ An arrival is accepted, and Aim solves the entry trim, on the pass as flown
 (Earth + Moon + Sun), never the two-body conic: from the SOI edge the Sun and
 the Moon move the pass by hundreds to thousands of kilometres.
 
+### Traffic plotters: a saved flight holds inputs, never results
+
+A saved flight (list, `#flight=` link or file; `Shared/flight-save.js`) holds what
+was set — full facility settings, not changes from defaults — and the page works
+the rest out again on load. Results computed under an older version would stand
+beside physics that has since changed; settings stored as changes from defaults
+would quietly become a different flight when a default moves. A Target solution is
+saved as the release it found and opens in Free, so it reproduces even if the solver
+changes. A local flight also records its release alignment (the departure tether's
+angle to its partner body), the key a scenario will repeat the route on; an offworld
+arrival keeps its Mission Planner packet. Each plotter stamps its own format number,
+and a page refuses a newer one rather than guessing.
+
 ### Traffic plotters: the Flight timeline's radial axis is the angle travelled, read off the flown path
 
 `Shared/sim/flight-clock.js`, `OrbitalMath.sweepTable`. The radial axis is the

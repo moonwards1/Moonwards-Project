@@ -61,7 +61,7 @@ No facility has a phase dial. A skyhook's angle at any Julian date is
 so two facilities shown at the same instant are where they would really be
 relative to each other. The date bar's two sliders (2080 to mid-2098, one
 18.6-year turn of the Moon's orbital plane against Earth's equator, then one
-lunar orbit) and the **Release time** slider (one orbit of the departure skyhook)
+lunar orbit) and the **Release** slider (one orbit of the departure skyhook)
 together set the release instant; the **Flight** slider moves the whole scene
 — Moon, Sun, tethers, ship — to a point of the flight. With a destination it
 runs to half an hour past the flight's closest pass to the destination's body
@@ -293,9 +293,35 @@ and a right-drag pan lets go.
 Dragging the ship moves it along its path with the camera on it, the way a map is
 dragged: the ship stays centred and the scene scrolls. A waypoint's marker drags
 the same way, moving the burn along the path. Double-clicking the path
-puts the ship at that point. **Hold skyhook
-phase** keeps the departure tether's angle to the Earth direction fixed while the
+puts the ship at that point. **Hold phase**,
+at the right end of the Release slider, keeps the departure tether's angle to the Earth direction fixed while the
 date changes. Shift (¼) and Ctrl (1/10) slow any slider and both drags.
+
+## Saved flights
+
+The Saved flights card at the top of the sidebar (`Shared/sim/save-panel.js`,
+with the envelope in `Shared/flight-save.js`) keeps flights in a list in the
+browser, under a name; with no name typed, the route and release date are
+used. Saving under a name already in the list replaces that entry. **Copy
+link** puts the flight in a link (a compressed `#flight=` fragment, a few
+hundred characters, so it fits a Discord message); opening the link, or
+pasting it into the card, sets the flight up and adds it to the list.
+**Export** writes the whole list to a `.json` file and **Import** adds a
+file's flights to the list. The flight on screen is kept when the page is
+left and set up again on the next visit; **Start fresh** drops it and reloads
+the page with its starting flight.
+
+A saved flight holds what was set, never what was worked out: the route, the
+date and release time, every facility's settings, the waypoints, Hold phase,
+the Flight timeline and the point of view. A flight that Target solved is
+saved as the release Target found, and opens in Free. Each one also records its
+release as an instant and, from a skyhook, as the tether's angle to its partner
+body (`alignment`), so a scenario can later fly the same route each time that
+angle comes round. An offworld arrival keeps the packet it came in from the
+Mission Planner, with the mission's name and its date at Earth's sphere of
+influence; the workbench freighter is read afresh on load. A flight saved by
+another plotter, or in a newer format than the page reads, is refused with
+the reason.
 
 ## Defaults
 
@@ -313,6 +339,6 @@ may be set between 70,000 and 300,000 km.
 
 `Shared/` (orbit, math-utils, kinematic-chain, geo-leg, lunar-ephemeris — the
 Moon's position, and the way its body is turned — and the
-`sim/` scene kit), `MissionPlanner/scene-frames.js` (the geocentric Earth–Moon
+`sim/` scene kit, `exchange` and `flight-save` for links and saved flights), `MissionPlanner/scene-frames.js` (the geocentric Earth–Moon
 scene) and `MissionPlanner/modules/skyhook/skyhook.js` (the equatorial plane a
 skyhook orbits in). The folder breaks if moved without them.

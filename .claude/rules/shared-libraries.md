@@ -26,11 +26,13 @@ their conventions. All are ES modules with **named exports**.
 | `mars-ephemeris.js` | `MarsEphemeris` | the Mars system on a clock: Mars's orientation, Phobos and Deimos, the Sun, Mars-centred |
 | `frames.js` | `Frames` | converts ship-state VECTORS between frames (not to be confused with MissionPlanner's `scene-frames.js`, which builds renderable scenes) |
 | `exchange.js` / `exchange-types.js` | `Exchange` / `PacketTypes` | the calculator-to-calculator mailbox and its versioned payload registry |
+| `flight-save.js` | `packFlight`, `unpackFlights`, `fragmentFromText`, … | the traffic plotters' saved-flight envelope and list, and pasted-link cleanup |
 | `three.min.js` | global `THREE` | **the one classic-script exception** — vendored, loaded with a plain `<script src>` tag ahead of the page module |
 
 `Shared/sim/` holds the scene kit shared by the plotters: `camera-controller.js`,
 `date-bar.js`, `body-renderer.js`, `orbit-rings.js`, `approach-markers.js`,
-`burn-widget.js`, `readout-panes.js`, `marker-card.js`, `flight-clock.js`.
+`burn-widget.js`, `readout-panes.js`, `marker-card.js`, `flight-clock.js`,
+`save-panel.js`.
 
 ## Rules
 

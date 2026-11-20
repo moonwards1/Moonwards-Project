@@ -17,7 +17,7 @@ html, body {
 #mst-left { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
 
 /* ---- date bar ---- */
-#mst-datebar { flex: 0 0 auto; padding: 9px 18px 10px; background: #0c0f17; border-bottom: 1px solid #1b2030; }
+#mst-datebar { flex: 0 0 auto; padding: 9px 30px 10px; background: #0c0f17; border-bottom: 1px solid #1b2030; }
 #mst-date-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 6px; }
 .mst-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
 .mst-pov-caption { margin-left: 10px; }
@@ -84,13 +84,15 @@ html, body {
 .mst-mark-close { background: #ff5a4d; z-index: 1; }
 .mst-mark-dodge { top: 4px; background: #4f8fe0; }
 .mst-mark-cross { top: 4px; min-width: 1px; background: #e6f0ff; z-index: 1; }
-.mst-slider-end { flex: 0 0 auto; width: 104px; font-size: 11px; color: #8b94a7; }
+.mst-slider-end { flex: 0 0 auto; width: 64px; font-size: 11px; color: #8b94a7; }
 .mst-slider-line .mst-slider-end:first-child { text-align: right; }
+/* One width for each end of the date and release lines, so their tracks start and stop together. */
+.mst-slider-line:not(.mst-line-flight) > .mst-slider-end:last-of-type { width: 84px; }
 .mst-line-release .mst-slider-end { color: #ff9fe2; }
 .mst-line-release input[type="range"] { accent-color: #ff5fd0; }
 .mst-line-flight .mst-slider-end { color: #8fe3b4; }
 .mst-line-flight input[type="range"] { accent-color: #40d27f; }
-#mst-release-time-val { width: 168px; }
+#mst-release-time-val { width: 84px; }
 #mst-flight-time-val { width: 72px; }
 /* The Flight slider's axis switch and pin, at the end of its line. */
 /* In a narrow window they wrap under the slider rather than crush it. */

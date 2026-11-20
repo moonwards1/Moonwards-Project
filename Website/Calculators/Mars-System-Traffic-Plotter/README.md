@@ -486,7 +486,7 @@ the arrival's readouts.
 
 A ship is let go by the From skyhook with the position and velocity its
 release point has at the release instant: the date bar's date plus the
-**Release time** slider, which spans one orbit of that skyhook. It then coasts under
+**Release** slider, which spans one orbit of that skyhook. It then coasts under
 
     a = -GM r / |r|^3  +  a_bulge(r)  +  a_Sun(r, t)
 

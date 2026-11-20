@@ -17,7 +17,7 @@ html, body {
 #emt-left { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
 
 /* ---- date bar ---- */
-#emt-datebar { flex: 0 0 auto; padding: 9px 18px 10px; background: #0c0f17; border-bottom: 1px solid #1b2030; }
+#emt-datebar { flex: 0 0 auto; padding: 9px 30px 10px; background: #0c0f17; border-bottom: 1px solid #1b2030; }
 #emt-date-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 6px; }
 .emt-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
 .emt-pov-caption { margin-left: 10px; }
@@ -40,7 +40,7 @@ html, body {
 .emt-date-cal:hover { border-color: #5aa9ff; color: #ffffff; }
 .emt-date-cal:disabled { opacity: 0.45; cursor: not-allowed; }
 .emt-date-cal:disabled:hover { border-color: #2a3142; color: #cfd6e4; }
-.emt-hold { margin-left: auto; padding: 4px 9px; border: 1px solid #2a3142; border-radius: 5px; background: #131826; }
+.emt-check.emt-hold { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; border: 1px solid #2a3142; border-radius: 5px; background: #131826; }
 .emt-hold:has(input:checked) { border-color: #ff5fd0; color: #ffd0f1; }
 .emt-hold input { accent-color: #ff5fd0; }
 #emt-pov { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -52,6 +52,7 @@ html, body {
 #emt-pov button[aria-pressed="true"] { background: #24437a; border-color: #5aa9ff; color: #ffffff; }
 
 .emt-slider-line { display: flex; align-items: center; gap: 12px; margin: 4px 0; }
+.emt-slider-line[hidden] { display: none; }
 .emt-slider-line input[type="range"] { flex: 1 1 auto; width: auto; min-width: 0; }
 /* A date slider draws its own track, so what is timed can sit on it: the
    bar is the track, the marks are laid on the bar, and the thumb rides over
@@ -82,13 +83,15 @@ html, body {
 }
 .emt-window { position: absolute; top: 0; bottom: 0; min-width: 2px; background: #3ddc84; }
 .emt-window.emt-window-over { background: #c99a3a; }
-.emt-slider-end { flex: 0 0 auto; width: 104px; font-size: 11px; color: #8b94a7; }
+.emt-slider-end { flex: 0 0 auto; width: 64px; font-size: 11px; color: #8b94a7; }
 .emt-slider-line .emt-slider-end:first-child { text-align: right; }
+/* One width for each end of the date and release lines, so their tracks start and stop together. */
+.emt-slider-line:not(.emt-line-flight) > .emt-slider-end:last-of-type { width: 84px; }
 .emt-line-release .emt-slider-end { color: #ff9fe2; }
 .emt-line-release input[type="range"] { accent-color: #ff5fd0; }
 .emt-line-flight .emt-slider-end { color: #8fe3b4; }
 .emt-line-flight input[type="range"] { accent-color: #40d27f; }
-#emt-release-time-val { width: 168px; }
+#emt-release-time-val { width: 84px; }
 #emt-flight-time-val { width: 72px; }
 /* The Flight slider's axis switch and pin, at the end of its line. */
 /* In a narrow window they wrap under the slider rather than crush it. */
@@ -241,6 +244,23 @@ select:disabled { color: #8b94a7; }
 .emt-btn:hover { background: #1b2336; }
 .emt-btn[hidden] { display: none; }
 .emt-btn-small { font-size: 11px; padding: 2px 8px; }
+
+/* ---- saved flights (Shared/sim/save-panel.js builds the fsv-* elements) ---- */
+.fsv-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
+.fsv-name, .fsv-paste {
+	flex: 1 1 140px; min-width: 0; background: #131826; color: #d8dde6; border: 1px solid #2a3142;
+	border-radius: 4px; padding: 5px 7px; font-size: 13px; font-family: inherit;
+}
+.fsv-paste { font-size: 12px; }
+.fsv-list { flex: 1 1 140px; min-width: 0; }
+.fsv-btn {
+	font: inherit; font-size: 12px; padding: 5px 10px; cursor: pointer;
+	background: #131826; color: #cfd6e4; border: 1px solid #2a3142; border-radius: 5px;
+}
+.fsv-btn:hover { background: #1b2336; }
+.fsv-btn:disabled { color: #5d6678; cursor: default; background: #131826; }
+.fsv-btn.fsv-armed { border-color: #c0584a; color: #ffb3a8; }
+.fsv-status { color: #8b94a7; font-size: 12px; line-height: 1.45; min-height: 1.45em; }
 
 /* The burn-vector editor (Shared/sim/vector-editor.js) builds these classes;
    the rules follow MissionPlanner/planner.css, in this page's tones. */
