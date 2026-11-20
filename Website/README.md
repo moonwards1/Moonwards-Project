@@ -58,6 +58,7 @@ Website/
 │   ├── math-utils.js       # Orbital mechanics (`OrbitalMath`) — pure, Node-testable
 │   ├── lunar-ephemeris.js  # Meeus Moon/Sun positions (`LunarEphemeris`)
 │   ├── constants.js        # Physical/astronomical constants (`Const`)
+│   ├── date-format.js      # Dates year first: "2080/03/14 h7"
 │   ├── format-utils.js     # Number/unit formatting (`Fmt`)
 │   ├── ui-components.js    # DOM builder (`create`)
 │   ├── animation.js        # SVG reveal / viewBox-tween helpers (`SkyAnim`)

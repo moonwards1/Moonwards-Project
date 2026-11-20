@@ -49,6 +49,7 @@ import { createHistory, recordUpdate, packSets } from "./core/revisions.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { orientMarkerSprite } from "../Shared/sim/marker-card.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
+import { dateYM, dateYMDH } from "../Shared/date-format.js";
 import { updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName } from "../Shared/sim/body-renderer.js";
 import { createCoastSlider, createDepartureSlider, createArrivalSlider } from "./ui/phase-slider.js";
 import { createShipCard, vInfComponents, speedModel, speedAlong, peakSpeed, speedRange,
@@ -82,7 +83,6 @@ var READOUT_EDGE_OFFSET = 0;
 
 var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 var SPAN_DAYS = 36525;
-var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // A float shares its frame's cam (radius/theta/phi/target) with whatever
 // pane last had that frame as main, so left untouched it shows the exact same
@@ -2265,14 +2265,10 @@ export function createMissionView(opts) {
 	// first event it falls back to that first (upcoming) one so the readout
 	// never shows a blank selection.
 	// ---- the mission's clock: Shared/sim/date-bar.js writing world.set({jd})
-	function shortDate(jd) { var d = O.dateFromJulian(jd); return MONTHS[d.Mo - 1] + " " + d.Y; }
-	// A finer stamp for the departure slider — its flight milestones can sit
-	// hours apart, which a month-year label would collapse.
-	function pad2(n) { return String(n).padStart(2, "0"); }
-	function shortStamp(jd) {
-		var d = O.dateFromJulian(jd);
-		return MONTHS[d.Mo - 1] + " " + d.D + " " + pad2(d.h) + ":" + pad2(d.m);
-	}
+	function shortDate(jd) { return dateYM(jd); }   // "2030/01"
+	// A finer stamp for the departure and arrival sliders — their milestones
+	// can sit hours apart, which a year-month label would collapse.
+	function shortStamp(jd) { return dateYMDH(jd); }   // "2030/01/14 h7"
 
 	var dateState = { jd: world.jd, baseDays: 0 };
 	var dateBar = createDateBar(dateState, {
@@ -2281,6 +2277,7 @@ export function createMissionView(opts) {
 		fineLoLabel: q(".mp-fine-lo"),
 		fineHiLabel: q(".mp-fine-hi"),
 		dateField: q(".mp-date-field"),
+		calendarButton: q(".mp-date-cal"),
 		jdLabel: q(".mp-jd"),
 		jd0: JD0,
 		spanDays: SPAN_DAYS,

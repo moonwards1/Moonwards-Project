@@ -14,6 +14,7 @@ their conventions. All are ES modules with **named exports**.
 | `body-profiles.js` | `BODY_PROFILES`, `CONDITIONS`, `applies`, `specialsAt`, `footFloor`, `anchorConfig`, … | what is special about each body: per-body figures, the conditions body-specific cards declare as `where`, moon-anchored configurations |
 | `math-utils.js` | `OrbitalMath` | pure orbital mechanics — circular/escape/vis-viva speed, hyperbolic excess, period, Hohmann, SOI, Hill radius, synodic period, Tsiolkovsky, tether taper integral/ratio, … |
 | `format-utils.js` | `Fmt` (plus legacy aliases `fmtForce`, `myRound`, … as named exports) | number/unit formatting |
+| `date-format.js` | `dateYMD`, `dateYMDH`, `parseDateYMDH`, … | dates written and read year first, hour as h0–h23 |
 | `ui-components.js` | `create` | the DOM builder |
 | `calc-shell.css` / `calc-shell.js` | `CalcShell`, `ShellColors` | the three-column calculator page: cards, fields, result lines (see `rules/calculators.md`) |
 | `zoom-view.js` | `ZoomView`, `svgEl`, plus pure `niceNumber`, `fitRect`, `viewBoxOf`, `zoomAbout` | the pan-and-zoom drawing panel of the calculator shell |

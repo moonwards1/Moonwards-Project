@@ -27,6 +27,7 @@ import { OrbitalMath } from "../../Shared/math-utils.js";
 import { MarsEphemeris as ME } from "../../Shared/mars-ephemeris.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
 import { createDateBar, bindFineDrag } from "../../Shared/sim/date-bar.js";
+import { dateYMD } from "../../Shared/date-format.js";
 import { updateScales, updateLabels, projectedRadiusPx, worldSizeAtPointForPx }
 	from "../../Shared/sim/body-renderer.js";
 import { orientMarkerSprite } from "../../Shared/sim/marker-card.js";
@@ -161,12 +162,9 @@ function flightSeconds() { return clockSeconds(state.clock, shape); }
 function sceneJd() { return releaseJd() + flightSeconds() / DAY; }
 
 // ---- formatting -----------------------------------------------------------------
-var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function two(n) { return String(n).padStart(2, "0"); }
-function shortDate(jd) {
-	var d = O.dateFromJulian(jd);
-	return MONTHS[d.Mo - 1] + " " + d.D + " " + d.Y;
-}
+// Year first, as the date bar writes it: "2080/03/14".
+function shortDate(jd) { return dateYMD(jd); }
 function clockTime(jd) {
 	var s = Math.round((((jd + 0.5) % 1) + 1) % 1 * DAY) % DAY;
 	return two(Math.floor(s / 3600)) + ":" + two(Math.floor(s % 3600 / 60));
@@ -1314,7 +1312,7 @@ function fillFlightNote() {
 var dateBar = createDateBar(state, {
 	coarseSlider: $("mst-date-coarse"), fineSlider: $("mst-date-fine"),
 	fineLoLabel: $("mst-fine-lo"), fineHiLabel: $("mst-fine-hi"),
-	dateField: $("mst-date-field"), jdLabel: $("mst-jd"),
+	dateField: $("mst-date-field"), calendarButton: $("mst-date-cal"), jdLabel: $("mst-jd"),
 	jd0: CLOCK_EPOCH, spanDays: SPAN_DAYS, shortDate: shortDate, slowDrag: SLOW_DRAG, jdDecimals: 3
 });
 

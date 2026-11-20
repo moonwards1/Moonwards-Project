@@ -21,6 +21,25 @@ html, body {
 #mst-date-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 6px; }
 .mst-date-caption { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #c7cedd; }
 .mst-pov-caption { margin-left: 10px; }
+/* The date as text, year first ("2080/03/14 h7"), typed or set by the
+   sliders; the calendar button beside it opens a pop-up calendar
+   (Shared/sim/date-bar.js). */
+.mst-date-field {
+	box-sizing: content-box; width: 14ch; background: #131826; border: 1px solid #2a3142; color: #cfd6e4;
+	border-radius: 5px; padding: 3px 7px; font: inherit; font-size: 12.5px;
+	font-variant-numeric: tabular-nums; margin-left: -6px;
+}
+.mst-date-field:focus { outline: none; border-color: #5aa9ff; }
+.mst-date-field.is-invalid { border-color: #ff6b6b; color: #ff6b6b; }
+.mst-date-field:disabled { opacity: 0.5; }
+.mst-date-cal {
+	display: inline-flex; align-items: center; justify-content: center;
+	width: 24px; height: 24px; padding: 0; cursor: pointer;
+	background: #131826; border: 1px solid #2a3142; color: #cfd6e4; border-radius: 5px;
+}
+.mst-date-cal:hover { border-color: #5aa9ff; color: #ffffff; }
+.mst-date-cal:disabled { opacity: 0.45; cursor: not-allowed; }
+.mst-date-cal:disabled:hover { border-color: #2a3142; color: #cfd6e4; }
 .mst-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .mst-buttons button {
 	font: inherit; font-size: 12px; padding: 5px 10px; cursor: pointer;

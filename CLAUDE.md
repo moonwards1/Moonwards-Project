@@ -148,9 +148,12 @@ Two traps:
   for a line like `Serving HTTP on :: port 8000` to confirm the server is
   really up. The root URL renders blank while `index.html` is a stub — open a
   tool's URL instead.
-- **The browser caches ES modules, and this WILL produce false negatives.**
-  After editing a module a plain reload can keep running the old copy, because
-  the page's module graph comes from the HTTP cache. This once made a correct
+- **The browser caches ES modules, and this can produce false negatives.**
+  `serve.bat` runs `serve.py`, which sends `Cache-Control: no-cache` so a
+  plain reload revalidates every file; a page loaded from any other server
+  (the deployed site, `npx serve`, a bare `python -m http.server`) can keep
+  running an old copy after a plain reload, because the page's module graph
+  comes from the HTTP cache. This once made a correct
   change look inert for several rounds of debugging. Fetching the file and
   seeing the new content proves only what the *server* has, not what the page
   *loaded*; and `fetch(url, {cache: "no-store"})` deliberately does not update

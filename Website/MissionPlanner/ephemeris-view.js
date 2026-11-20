@@ -147,6 +147,7 @@ import { systems } from "../Shared/orbit.js";
 import { OrbitalMath } from "../Shared/math-utils.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../Shared/sim/camera-controller.js";
 import { createDateBar } from "../Shared/sim/date-bar.js";
+import { dateYM } from "../Shared/date-format.js";
 import {
 	updateLabels as brUpdateLabels, updateScales as brUpdateScales, worldSizeAtPointForPx, pickBodyName,
 	soiRadiusAU, projectedRadiusPx
@@ -200,7 +201,6 @@ var AU = 149597870700;
 var DAY = 86400;
 var JD0 = O.julianDate(2030, 1, 1, 0, 0, 0);
 var SPAN_DAYS = 36525;
-var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 var MAX_WAYPOINTS = 2;   // matches transfer-leg's own card and the SST's two "create waypoint" checkboxes
 
 // Waypoint gizmo / burn-arrow constant on-screen size: the prograde-speed
@@ -558,7 +558,7 @@ export function createEphemerisView(opts) {
 
 	// ==== the clock: same date-bar widget and epoch/span every plotter
 	// uses, its own plain state (no World to write jd into). ------------------
-	function shortDate(jd) { var d = O.dateFromJulian(jd); return MONTHS[d.Mo - 1] + " " + d.Y; }
+	function shortDate(jd) { return dateYM(jd); }   // "2030/01"
 	var dateState = { jd: JD0, baseDays: 0 };
 	var dateBar = createDateBar(dateState, {
 		coarseSlider: q(".mp-date-coarse"),
@@ -566,6 +566,7 @@ export function createEphemerisView(opts) {
 		fineLoLabel: q(".mp-fine-lo"),
 		fineHiLabel: q(".mp-fine-hi"),
 		dateField: q(".mp-date-field"),
+		calendarButton: q(".mp-date-cal"),
 		jdLabel: q(".mp-jd"),
 		jd0: JD0,
 		spanDays: SPAN_DAYS,

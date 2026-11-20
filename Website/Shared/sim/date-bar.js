@@ -5,7 +5,15 @@
  * coarse position, for scrubbing smoothly through whatever period matters at
  * that tool's scale — six months for the Solar System plotter, a lunar month
  * for Moon-Skyhook, one Phobos orbit for Mars-Phobos), a typed date field,
- * and a JD readout.
+ * an optional calendar button, and a JD readout.
+ *
+ * The date field is a text box in Shared/date-format.js's year-first form,
+ * "2080/03/14 h7", that the user can type into. It is not a native
+ * <input type="date">: that control's display order comes from the browser's
+ * locale and a page cannot change it. The calendar button opens a native
+ * date picker kept out of sight, so the pop-up calendar survives without its
+ * locale-ordered text. A page that still passes an <input type="date"> as
+ * the field gets that control's plain whole-day behaviour.
  *
  * Extracted from three near-duplicate copies (see Website/ARCHITECTURE.md,
  * "Step 1: scene kit", and the project decision recorded 2026-07-07): the
@@ -32,6 +40,7 @@
  */
 
 import { OrbitalMath } from "../math-utils.js";
+import { dateYMDH, dateISO, parseDateYMDH } from "../date-format.js";
 
 // Marker-style fine dragging for any range slider — the date bar's own two,
 // and exported for a tool's other timeline sliders so they all scrub alike.
@@ -104,7 +113,12 @@ export function bindFineDrag(slider, apply, onOverflow, slow) {
 //   coarseSlider, fineSlider   — required <input type="range"> elements.
 //   fineLoLabel, fineHiLabel   — required elements showing the fine span's
 //                                 current end dates (e.g. "Jan 2030").
-//   dateField                  — required <input type="date">.
+//   dateField                  — required <input type="text"> showing and
+//                                 taking the date as "2080/03/14 h7" (or a
+//                                 legacy <input type="date">).
+//   calendarButton             — optional <button>: opens a pop-up calendar;
+//                                 picking a day moves the clock to its h0.
+//                                 Disabled together with the field.
 //   jdLabel                    — required element for the "JD ######.#" readout.
 //   jd0                        — required: Julian Date at coarse slider position 0.
 //   spanDays                   — required: the coarse slider's day span (its
@@ -142,15 +156,27 @@ export function createDateBar(state, opts) {
 	var shortDate = opts.shortDate;
 	var jdDecimals = opts.jdDecimals == null ? 1 : opts.jdDecimals;
 	var fineHalf = parseFloat(fineSlider.max);   // fine slider is always a symmetric +/- range
+	var nativeField = dateField.type === "date";
+	var calendarButton = opts.calendarButton || null;
+	var picker = null;   // the calendar button's hidden native date input
 
 	// Sync the date field, JD readout and fine-span end labels to the current
 	// state.jd / state.baseDays.
 	function syncLabels() {
-		var d = OrbitalMath.dateFromJulian(state.jd);
-		dateField.value = d.Y + "-" + String(d.Mo).padStart(2, "0") + "-" + String(d.D).padStart(2, "0");
+		writeField();
 		jdLabel.textContent = "JD " + state.jd.toFixed(jdDecimals);
 		fineLoLabel.textContent = shortDate(jd0 + Math.max(0, state.baseDays - fineHalf));
 		fineHiLabel.textContent = shortDate(jd0 + Math.min(spanDays, state.baseDays + fineHalf));
+	}
+
+	// Show the clock in the date field — except while the user is typing in
+	// it, so a clock moving underneath doesn't overwrite a half-typed date;
+	// the field catches up when it loses focus.
+	function writeField() {
+		if (calendarButton) { calendarButton.disabled = dateField.disabled; }
+		if (nativeField) { dateField.value = dateISO(state.jd); return; }
+		dateField.classList.remove("is-invalid");
+		if (document.activeElement !== dateField) { dateField.value = dateYMDH(state.jd); }
 	}
 
 	// Recompute state.jd from the coarse base + fine offset, and sync the labels.
@@ -239,13 +265,80 @@ export function createDateBar(state, opts) {
 		});
 		enableShiftDrag(fineSlider, function () { applyDate(); onChange(); }, wrapFine);
 
-		dateField.addEventListener("change", function () {
-			var parts = dateField.value.split("-");
-			if (parts.length === 3) {
-				var jd = OrbitalMath.julianDate(+parts[0], +parts[1], +parts[2], 0, 0, 0);
-				setBaseDays(jd - jd0);
-				onChange();
+		if (nativeField) {
+			dateField.addEventListener("change", function () {
+				var parts = dateField.value.split("-");
+				if (parts.length === 3) {
+					var jd = OrbitalMath.julianDate(+parts[0], +parts[1], +parts[2], 0, 0, 0);
+					setBaseDays(jd - jd0);
+					onChange();
+				}
+			});
+		} else {
+			bindTextField(onChange);
+		}
+		if (calendarButton) { bindCalendar(onChange); }
+	}
+
+	// A typed date takes effect on Enter or on leaving the field. One that
+	// isn't a real date, or lies outside the tool's span, is marked and left
+	// for correcting; Escape puts back the clock's date.
+	function bindTextField(onChange) {
+		function commit() {
+			var jd = parseDateYMDH(dateField.value);
+			if (!isFinite(jd) || jd < jd0 || jd > jd0 + spanDays) {
+				dateField.classList.add("is-invalid");
+				return;
 			}
+			dateField.classList.remove("is-invalid");
+			if (jd === state.jd) { return; }   // already there (Enter, then the blur's change)
+			setJd(jd);
+			dateField.value = dateYMDH(state.jd);
+			onChange();
+		}
+		dateField.addEventListener("keydown", function (e) {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				commit();
+				if (!dateField.classList.contains("is-invalid")) { dateField.blur(); }
+			} else if (e.key === "Escape") {
+				dateField.classList.remove("is-invalid");
+				dateField.value = dateYMDH(state.jd);
+				dateField.blur();
+			}
+		});
+		dateField.addEventListener("change", commit);
+		dateField.addEventListener("blur", function () {
+			if (!dateField.classList.contains("is-invalid")) { writeField(); }
+		});
+	}
+
+	// The calendar button opens a native date picker that sits invisibly at
+	// the button's foot, so the pop-up opens there. Wrapped with the button
+	// in a span of its own (an <input> can't live inside a <button>).
+	function bindCalendar(onChange) {
+		var wrap = document.createElement("span");
+		wrap.style.cssText = "position:relative;display:inline-flex;";
+		calendarButton.parentNode.insertBefore(wrap, calendarButton);
+		wrap.appendChild(calendarButton);
+		picker = document.createElement("input");
+		picker.type = "date";
+		picker.tabIndex = -1;
+		picker.setAttribute("aria-hidden", "true");
+		picker.style.cssText = "position:absolute;left:0;bottom:0;width:1px;height:1px;"
+			+ "padding:0;border:0;margin:0;opacity:0;pointer-events:none;";
+		picker.min = dateISO(jd0);
+		picker.max = dateISO(jd0 + spanDays);
+		wrap.appendChild(picker);
+		calendarButton.addEventListener("click", function () {
+			picker.value = dateISO(state.jd);
+			try { picker.showPicker(); } catch (err) { picker.focus(); picker.click(); }
+		});
+		picker.addEventListener("change", function () {
+			var p = picker.value.split("-");
+			if (p.length !== 3) { return; }
+			setJd(OrbitalMath.julianDate(+p[0], +p[1], +p[2], 0, 0, 0));
+			onChange();
 		});
 	}
 

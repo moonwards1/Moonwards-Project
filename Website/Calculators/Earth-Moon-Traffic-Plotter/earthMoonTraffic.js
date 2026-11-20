@@ -83,6 +83,7 @@ import { planeBasis } from "../../Shared/kinematic-chain.js";
 import { moonGeoPos, moonGeoVel } from "../../Shared/geo-leg.js";
 import { updateCamera, bindCameraControls, raycastPickPoint } from "../../Shared/sim/camera-controller.js";
 import { createDateBar, bindFineDrag } from "../../Shared/sim/date-bar.js";
+import { dateYMD } from "../../Shared/date-format.js";
 import { makePoint, updateScales, updateLabels, worldSizeAtPointForPx, projectedRadiusPx }
 	from "../../Shared/sim/body-renderer.js";
 import { makeShipSprite, orientMarkerSprite } from "../../Shared/sim/marker-card.js";
@@ -231,11 +232,8 @@ function setFlightTime(t) {
 function sceneJd() { return releaseJd() + flightSeconds() / DAY; }
 
 // ---- formatting ---------------------------------------------------------------
-var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function shortDate(jd) {
-	var d = O.dateFromJulian(jd);
-	return MONTHS[d.Mo - 1] + " " + d.D + " " + d.Y;
-}
+// Year first, as the date bar writes it: "2080/03/14".
+function shortDate(jd) { return dateYMD(jd); }
 function clockTime(jd) {
 	var s = Math.round((((jd + 0.5) % 1) + 1) % 1 * DAY) % DAY;
 	function two(n) { return String(n).padStart(2, "0"); }
@@ -1763,7 +1761,7 @@ function syncClockControls() {
 var dateBar = createDateBar(state, {
 	coarseSlider: $("emt-date-coarse"), fineSlider: $("emt-date-fine"),
 	fineLoLabel: $("emt-fine-lo"), fineHiLabel: $("emt-fine-hi"),
-	dateField: $("emt-date-field"), jdLabel: $("emt-jd"),
+	dateField: $("emt-date-field"), calendarButton: $("emt-date-cal"), jdLabel: $("emt-jd"),
 	jd0: JD0, spanDays: SPAN_DAYS, shortDate: shortDate, slowDrag: SLOW_DRAG
 });
 
@@ -1818,7 +1816,7 @@ function init() {
 	function lockDate() {
 		var fig = facilityFigures(state.from, state.params[state.from]);
 		var locked = isOffworld(state.from);
-		["emt-date-coarse", "emt-date-fine", "emt-date-field"].forEach(function (i) { $(i).disabled = locked; });
+		["emt-date-coarse", "emt-date-fine", "emt-date-field", "emt-date-cal"].forEach(function (i) { $(i).disabled = locked; });
 		relSlider.disabled = locked;
 		if (locked && fig.ok) { dateBar.setJd(fig.jd); }
 	}
