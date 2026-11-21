@@ -165,8 +165,20 @@ export function mountHangingSkyhook(root, opts) {
 	var npCard = shell.addCard({ id: "np", tab: "arch", side: "in", title: "Nodal precession", short: "Precession", color: C.teal, focus: "tether" });
 	var tiltIn = shell.numberField(npCard, { label: "Tilt to the equator", hint: anc ? anc.name + "'s orbit" : "of the orbit plane", unit: "°", value: tilt0, min: 0, max: 180,
 		tip: "The angle between the plane the skyhook orbits in and the body's equator. 0° is equatorial; past 90° the skyhook orbits against the body's spin. It opens on the equator's own tilt to the ecliptic, so the plane lies in the ecliptic once each turn." });
-	var ssOpt = shell.optionalFields(npCard, { key: "Sun-synchronous", label: "Sun-synchronous", hint: "the plane keeps pace with the Sun", checked: false, fields: [],
-		tip: "Finds the tilt at which the bulge turns the plane eastward exactly once a year, so the plane keeps the same angle to the Sun all year." });
+	var ssOpt = shell.optionalFields(npCard, { key: "Sun-synchronous", label: "Sun-synchronous", checked: false, fields: [],
+		tip: "Finds the tilt at which the bulge turns the plane eastward exactly once a year, so the plane keeps the same angle to the body's orbit all year." });
+	// Where no tilt can make the plane Sun-synchronous, the item loses its tick and says so.
+	var ssHead = ssOpt.el.querySelector(".cs-opt-h"), ssTick = ssHead.querySelector(".cs-chk"),
+		ssTitle = ssHead.querySelector(".cs-opt-t"), ssHint = ssHead.querySelector(".cs-opt-d"), ssTip = ssHead.title;
+	function setSunSyncPossible(ok, tip) {
+		ssTick.hidden = !ok;
+		ssOpt.check.disabled = !ok || !!anc;
+		ssTitle.textContent = ok ? "Sun-synchronous" : "Sun-synchronous not possible";
+		if (ssHint) ssHint.hidden = !ok;
+		ssHead.title = ok ? ssTip : tip;
+		ssHead.style.cursor = ok ? "" : "default";
+		ssOpt.el.classList.toggle("cs-opt-off", !ok || !ssOpt.check.checked);
+	}
 	var rNpPeriod = shell.line(npCard, { label: "Precession period", unit: "days" });
 	var rNpRate = shell.line(npCard, { label: "Node drift", unit: "°/day" });
 	var rNpTilt = shell.line(npCard, { label: "Tilt needed", unit: "°" });
@@ -332,7 +344,17 @@ export function mountHangingSkyhook(root, opts) {
 		var here = theName(bodyIn.value), ss = ssOpt.check.checked && !anc;
 		if (anc) tiltIn.value = anc.inclination;
 		tiltIn.disabled = ss || !!anc;
-		var np = nodalPrecession(body, t, { inclination: field(tiltIn, 0) * Math.PI / 180, sunSync: ss, exclude: anc ? anc.name : null });
+		var npOpts = { inclination: field(tiltIn, 0) * Math.PI / 180, sunSync: ss, exclude: anc ? anc.name : null };
+		var np = nodalPrecession(body, t, npOpts);
+		// Whether any tilt reaches the Sun's pace depends on the body and the centre of mass,
+		// not on the tilt; where none does, the item is treated as unticked.
+		var ssPossible = !np || !!anc || np.sunSyncReach;
+		setSunSyncPossible(ssPossible, "Equatorial bulge won't turn the orbit enough for it to hold the same angle to the body's orbit.");
+		if (ss && !ssPossible) {
+			ss = false;
+			tiltIn.disabled = false;
+			np = nodalPrecession(body, t, Object.assign(npOpts, { sunSync: false }));
+		}
 		[rNpRate, rNpThird].forEach(function (l) { l.show(!!np); });
 		rNpTilt.show(!!np && ss);
 		if (!np) {
@@ -341,20 +363,16 @@ export function mountHangingSkyhook(root, opts) {
 			return;
 		}
 		var tiltDeg = np.inclination * 180 / Math.PI, f;
-		if (ss && !np.sunSyncReach) {
-			rNpPeriod.set("—", "out of reach", "days");
-			rNpRate.set("—", "");
-			rNpTilt.set("—", "no tilt gets there");
-			notes.push("Sun-synchronous is out of reach: " + here + "'s bulge turns this skyhook's plane at most " + degPerDay(np.coefficient) +
-				"°/day, and keeping pace with the Sun takes " + degPerDay(np.sunSyncRate) + "°/day.");
-		} else if (!isFinite(np.period)) {
+		var ssNote = ssPossible ? "" : "; Sun-synchronous needs " + degPerDay(np.sunSyncRate) + "°/day eastward, the bulge gives at most " + degPerDay(np.coefficient) + "°/day";
+		if (!isFinite(np.period)) {
 			rNpPeriod.set("—", "a polar plane (90°) does not turn", "days");
-			rNpRate.set("0", "");
+			rNpRate.set("0", ssNote.replace(/^; /, ""));
 		} else {
 			f = timeSpan(np.period);
 			var fp = isFinite(np.periodPoint) ? timeSpan(np.periodPoint) : null;
 			rNpPeriod.set(f[0], ss ? "one year at " + here : fp ? "with all the mass at the centre of mass: " + fp[0] + " " + fp[1] : "", f[1]);
-			rNpRate.set(degPerDay(np.rate), np.rate < 0 ? "westward, against the spin" : "eastward, with the spin");
+			rNpRate.set(degPerDay(np.rate), (np.rate < 0 ? "westward, against the spin" : "eastward, with the spin") +
+				ssNote);
 			if (ss) rNpTilt.set(num(tiltDeg, 2), "retrograde: the skyhook orbits against " + here + "'s spin");
 		}
 		var total = np.perturbers.reduce(function (a, p) { return a + p.ratio; }, 0);
@@ -362,7 +380,7 @@ export function mountHangingSkyhook(root, opts) {
 		var top = np.perturbers[0];
 		if (top && top.ratio > 0.1) notes.push("Nodal precession: " + top.name + "'s pull turns this skyhook's plane " + pct(top.ratio) +
 			"% as fast as " + here + "'s bulge does, and is not in the period shown, so treat that figure as rough.");
-		npCard.setSummary(ss ? (np.sunSyncReach ? "Sun-sync · " + num(tiltDeg, 1) + "°" : "Sun-sync out of reach")
+		npCard.setSummary(ss ? "Sun-sync · " + num(tiltDeg, 1) + "°"
 			: isFinite(np.period) ? (f = timeSpan(np.period))[0] + " " + f[1] + " · " + num(tiltDeg, 1) + "°" : "polar: no turn");
 	}
 

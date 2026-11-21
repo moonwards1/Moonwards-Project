@@ -240,7 +240,11 @@ With all the mass at the centre of mass this is the familiar −(3/2) J₂ (R_eq
 which the period line gives alongside for comparison. **Sun-synchronous** (the tick)
 finds the tilt at which the plane turns eastward once a year (the body's year, or its
 planet's for a moon): cos i = −n_☉ / k. That tilt is past 90° (retrograde). Where the
-bulge is too weak (k < n_☉) no tilt reaches it, and the warning says so.
+bulge is too weak (k < n_☉) no tilt reaches it: the tick goes, the item reads
+"Sun-synchronous not possible" (its tooltip says why, without figures), and the Node
+drift line adds the rate Sun-synchronous needs against the most the bulge gives. That depends on the
+body and the centre-of-mass altitude, so it can change as the design changes; a tick
+set earlier comes back when it is possible again.
 
 Other bodies also turn the plane, about their own orbit normals rather than the spin
 axis, at k₃ = (3/4) GM₃ / (d³ ω): the Sun, the planet a moon orbits, and the body's
