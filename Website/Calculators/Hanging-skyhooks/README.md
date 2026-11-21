@@ -99,13 +99,14 @@ as it passes each station. A station counts on whichever tether it lies on: abov
 the centre of mass it hangs from the upper one, below it from the lower one.
 
 The Tether materials card gives, for the lower and the upper tether, the taper ratio
-and then the tether's mass as a multiple of everything that tether holds up
-(tip, spread load and stations; the anchor station is left out), each as a
-small bar of figures, "load carried" under the mass. When the anchor station is off the centre of mass (C.o.M.), a
-third line gives the stretch from the anchor station to the C.o.M. as a mass
-multiple of everything on that tether including the station; the tether the
-anchor station lies on is then split in two parts, tip to anchor station
-(holding up what lies beyond it) and anchor station to C.o.M. The Loads
+and then the tether's mass, centre of mass to tip, as a multiple of everything that
+tether holds up (tip, spread load and stations; the anchor station is left out), each as
+a small bar of figures, "load carried" under the mass. When the anchor station is off
+the centre of mass (C.o.M.), a third line, "Extra tether from Anchor to C.o.M.", sets
+apart the tether its own pull adds: its tether swept again without it, the geometry as
+solved, the difference taken as a multiple of the station's mass. That share is left
+out of its tether's line, so the three add up to the whole tether. It grows with the
+square of the offset, so a heavy station near the centre of mass costs little. The Loads
 card gives the masses. A fold-out breaks the mass
 down by section: tip to first station, station to station, and last station to
 the centre of mass. The Stations card gives the tension at each station's level.

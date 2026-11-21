@@ -656,6 +656,16 @@ from above equals that from below. Peak tension is read along that one continuou
 Why: the cable is continuous through the centre of mass and nothing hangs there, so it is
 the physical dividing point and the one reference for every measurement.
 
+### A hanging skyhook's anchor station gets its own share of the tether mass
+
+Each tether's mass ratio runs from the centre of mass to its tip, against everything it
+holds up except the anchor station. The anchor station's share is the tether mass its own
+pull adds, found by sweeping its tether again without it at the solved geometry, and is
+given as a multiple of the station's mass. The three shares add up to the whole tether.
+Why: a station tens of thousands of kilotonnes heavy would swamp any ratio it joined, and
+this separates its effect, small because it scales with the square of its offset, from
+everything else.
+
 ### A hanging tether's foot has a floor at each atmosphere
 
 `footFloor` in `Shared/body-profiles.js`: Earth 120 km (about 2 × 10⁻⁸ kg/m³),

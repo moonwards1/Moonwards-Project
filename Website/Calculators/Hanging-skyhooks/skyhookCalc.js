@@ -127,7 +127,7 @@ export function mountHangingSkyhook(root, opts) {
 	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop"], focus: "tether", value: DEF.material || "silica", safety: 3 });
 	var rRatL = matCard.addRatioLine("Lower tether ratio");
 	var rRatU = matCard.addRatioLine("Upper tether ratio");
-	var rRatA = matCard.addRatioLine("Anchor to C.o.M. ratio");
+	var rRatA = matCard.addRatioLine("Extra tether from Anchor to C.o.M.");
 
 	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["prop"], side: "in", title: "Core Facilities", short: "Core", color: C.rust, focus: "tether" });
 	var topLoadIn = shell.numberField(payCard, { label: "Top station", key: "Top tip load", hint: "engines, release facilities", unit: "kt", value: DEF.topLoad, min: 0,
@@ -233,7 +233,6 @@ export function mountHangingSkyhook(root, opts) {
 	var rLoadL = shell.line(secL, { label: "Total load, lower tether", unit: "kt" });
 	var rML = shell.line(secL, { label: "Lower tether mass", unit: "kt" });
 	var rOff = shell.line(secA, { label: anc ? anc.name + "'s orbit shift" : "Anchor station offset", unit: anc ? "m" : "km" });
-	var rMA = shell.line(secA, { label: "Tether, anchor station → centre of mass", unit: "kt" });
 	var rMT = shell.line(secM, { label: "Tether mass, total", unit: "kt" });
 	var massFold = shell.fold(secM, { label: "Mass by section" });
 	var rTC = shell.line(secT, { label: "Tension at the centre of mass", unit: "kN" });
@@ -479,17 +478,13 @@ export function mountHangingSkyhook(root, opts) {
 		// tether masses (Loads card)
 		var f;
 		var ld = t.loads;
-		var tp = t.tetherParts, seg = tp.anchorSegment, ah = tp.anchorHalf;
+		var tp = t.tetherParts;
 		rRatL.set({ taper: "taper " + num(t.lowRatio, 2) + " ·", mass: "mass " + multipleNum(tp.low.multiple) + "×", massNote: "load carried" });
 		rRatU.set({ taper: "taper " + num(t.highRatio, 2) + " ·", mass: "mass " + multipleNum(tp.up.multiple) + "×", massNote: "load carried" });
-		rRatA.show(!!seg);
-		if (seg) rRatA.set({ mass: "mass " + multipleNum(seg.multiple) + "×", massNote: "load carried" });
-		f = scaled(tp.up.mass, MASS); rMU.set(f[0], null, f[1]);
-		f = scaled(tp.low.mass, MASS); rML.set(f[0], null, f[1]);
-		rMU.el.querySelector(".cs-k").textContent = ah === "up" ? "Upper tether, top → anchor station" : "Upper tether mass";
-		rML.el.querySelector(".cs-k").textContent = ah === "low" ? "Lower tether, foot → anchor station" : "Lower tether mass";
-		rMA.show(!!seg);
-		if (seg) { f = scaled(seg.mass, KT); rMA.set(f[0], null, f[1]); }
+		rRatA.show(!!tp.anchor);
+		if (tp.anchor) rRatA.set({ mass: "mass " + multipleNum(tp.anchor.multiple) + "×", massNote: "anchor station" });
+		f = scaled(t.tetherMassUpper, MASS); rMU.set(f[0], null, f[1]);
+		f = scaled(t.tetherMassLower, MASS); rML.set(f[0], null, f[1]);
 		f = scaled(t.tetherMass, MASS); rMT.set(f[0], "", f[1]);
 		["up", "low"].forEach(function (h) {
 			var secs = t.sections[h], g = massGroups[h];

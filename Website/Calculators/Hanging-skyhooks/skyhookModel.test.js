@@ -133,21 +133,24 @@ test("loads, balance and the anchor station", function () {
 	close(t.massMultiple, t.tetherMass / 600e6, "whole-tether multiple leaves out the anchor station");
 });
 
-test("the anchor station splits its tether into two parts, each with its own ratio", function () {
-	var p = t.tetherParts, seg = p.anchorSegment;
+test("the anchor station's own share of the tether is set apart, with its own ratio", function () {
+	var p = t.tetherParts, a = p.anchor;
 	assert.equal(p.anchorHalf, "low", "the default anchor station hangs below the centre of mass");
-	assert.ok(seg && seg.mass > 0);
+	assert.ok(a && a.mass > 0, "the station's pull adds tether");
 	// the parts add up to the whole tether
-	assert.ok(Math.abs(p.up.mass + p.low.mass + seg.mass - t.tetherMass) < 1e-6 * t.tetherMass);
-	// the stretch between the station and the centre of mass holds up the whole lower tether and the station
-	close(seg.held, t.loads.lowerTotal + t.loads.com, "stretch holds up everything on its tether");
-	close(seg.multiple, seg.mass / seg.held, "stretch ratio");
-	// the outer part holds up what lies beyond the station: tip, the spread load's share, no station here
-	assert.ok(p.low.held < t.loads.lowerTotal && p.low.held > t.loads.foot, "outer part holds less than the tether's loads");
-	assert.equal(p.up.mass, t.tetherMassUpper, "the other tether is a single part");
-	// no station mass, nothing to split
+	assert.ok(Math.abs(p.up.mass + p.low.mass + a.mass - t.tetherMass) < 1e-6 * t.tetherMass);
+	// the anchor's share is measured against the station itself; each tether's part against its other loads
+	close(a.held, t.loads.com, "anchor share is against the station's mass");
+	close(a.multiple, a.mass / a.held, "anchor ratio");
+	close(p.low.held, t.loads.lowerTotal, "lower part holds everything on the lower tether but the station");
+	assert.equal(p.up.mass, t.tetherMassUpper, "the other tether is whole");
+	assert.ok(a.mass < 0.1 * t.tetherMassLower, "a station near the centre of mass costs little tether");
+	// it grows with the square of the offset, roughly: 3ω²Δr² ρ/σ_eff
+	var dr = Math.abs(t.comOffset), est = 3 * t.angularVelocity * t.angularVelocity * dr * dr / t.strength;
+	assert.ok(a.multiple > 0.3 * est && a.multiple < 3 * est, "ratio " + a.multiple + " near the estimate " + est);
+	// no station mass, nothing to set apart
 	var none = computeSkyhook(moon, Object.assign({}, base(), { comMass: 0 }));
-	assert.equal(none.tetherParts.anchorSegment, null);
+	assert.equal(none.tetherParts.anchor, null);
 });
 
 test("the tension profile for the drawing", function () {
@@ -341,7 +344,7 @@ test("a tether anchored on Phobos needs no anchor station and nudges Phobos's or
 	assert.ok(p.balanced);
 	assert.equal(p.loads.com, 0, "Phobos takes the anchor station's place");
 	assert.ok(!p.warnings.some(function (w) { return /Out of balance/.test(w); }));
-	assert.equal(p.tetherParts.anchorSegment, null);
+	assert.equal(p.tetherParts.anchor, null);
 	// Δ = −F / (3ω²M): the pull and the shift have opposite signs, and the shift is tiny
 	var w = p.angularVelocity;
 	close(p.anchor.shift, -p.unbalance / (3 * w * w * phobos.mass), "orbit shift");

@@ -289,24 +289,25 @@ export function computeSkyhook(moon, inp) {
 	t.massMultipleLower = t.loads.lowerTotal > 0 ? t.tetherMassLower / t.loads.lowerTotal : NaN;
 	var carried = t.loads.upperTotal + t.loads.lowerTotal;
 	t.massMultiple = carried > 0 ? t.tetherMass / carried : NaN;
-	// The tether's mass in parts, each with the load it holds up. The anchor station splits its
-	// own tether into the stretch out to the tip (holding up what lies beyond the station) and
-	// the stretch between the station and the centre of mass (holding up everything on that
-	// tether, the station included). The other tether is a single part.
+	// The tether's mass in parts, each with the load it is there for. The anchor station's
+	// part is the tether mass its own pull adds: its tether swept again from the tip to the
+	// centre of mass without it, the geometry as solved, the difference taken. Only the stretch
+	// inboard of the station changes, since nothing beyond it feels the station's pull. Each
+	// tether's own part is its mass, centre of mass to tip, less that share, against
+	// everything else it holds up.
 	var part = function (mass, held) { return { mass: mass, held: held, multiple: held > 0 ? mass / held : NaN }; };
-	t.tetherParts = { up: part(t.tetherMassUpper, t.loads.upperTotal), low: part(t.tetherMassLower, t.loads.lowerTotal), anchorSegment: null, anchorHalf: null };
-	["up", "low"].forEach(function (key) {
-		var h = fin[key], at = h.stations.findIndex(function (x) { return x.anchor; });
-		if (at < 0) return;
-		var rTip = key === "up" ? rTop : rFoot, tip = key === "up" ? t.loads.top : t.loads.foot, spread = key === "up" ? t.loads.distUpper : t.loads.distLower;
-		var sum = function (list) { return list.reduce(function (a, x) { return a + x.mass; }, 0); };
-		var inner = sum(h.sections.slice(at + 1)), outer = sum(h.sections.slice(0, at + 1));
-		var share = Math.abs(h.stations[at].r - rTip) / Math.abs(rCentre - rTip);
-		var beyond = h.stations.slice(0, at).reduce(function (a, x) { return a + x.m; }, 0);
-		t.tetherParts[key] = part(outer, tip + spread * share + beyond);
-		t.tetherParts.anchorSegment = part(inner, key === "up" ? t.loads.upperTotal + t.loads.com : t.loads.lowerTotal + t.loads.com);
-		t.tetherParts.anchorHalf = key;
-	});
+	var anchorHalf = ["up", "low"].find(function (key) { return fin[key].stations.some(function (x) { return x.anchor; }); }) || null;
+	var extra = 0;
+	if (anchorHalf) {
+		var bare = halves(rs, 0, STEPS);
+		extra = Math.max(0, fin[anchorHalf].mass - bare[anchorHalf].mass);
+	}
+	t.tetherParts = {
+		up: part(t.tetherMassUpper - (anchorHalf === "up" ? extra : 0), t.loads.upperTotal),
+		low: part(t.tetherMassLower - (anchorHalf === "low" ? extra : 0), t.loads.lowerTotal),
+		anchor: anchorHalf ? part(extra, t.loads.com) : null,
+		anchorHalf: anchorHalf
+	};
 	if (t.foot < t.top && !t.balanced) {
 		var gap = Math.abs(t.unbalance), gapText = gap >= 1e12 ? (gap / 1e12).toFixed(gap >= 1e13 ? 0 : 1) + " TN" : gap >= 1e9 ? (gap / 1e9).toFixed(1) + " GN" : (gap / 1e6).toFixed(0) + " MN";
 		warnings.push("Out of balance: no position for the anchor station balances these loads. At the centre of mass the " +
