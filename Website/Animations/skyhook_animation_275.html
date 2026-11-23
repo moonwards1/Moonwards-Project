@@ -283,13 +283,13 @@ function drawSkyhook(ctx, t) {
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Center of mass dot
+  // Balance point dot
   ctx.beginPath();
   ctx.arc(com.x, com.y, 4, 0, Math.PI * 2);
   ctx.fillStyle = '#ccc';
   ctx.fill();
 
-  // Receiving deck dot (drawn last — sits in front of COM dot)
+  // Receiving deck dot (drawn last — sits in front of BP dot)
   ctx.beginPath();
   ctx.arc(rz.x, rz.y, 3, 0, Math.PI * 2);
   ctx.fillStyle = '#333';
@@ -465,13 +465,13 @@ function drawSkyhookLabels(ctx, t, alpha) {
   const rad = skyhookRad(t);
   const dx  = Math.cos(rad), dy = Math.sin(rad);
 
-  // "Skyhook" labels the tether body — anchor midway between COM and tip,
+  // "Skyhook" labels the tether body — anchor midway between BP and tip,
   // line goes diagonally up-right to the label
   const R_SH = R_COM + (R_TIP - R_COM) * 0.55;
   const shAnchor = px(R_SH * dx, R_SH * dy);
   const shLabel  = { x: shAnchor.x + 55, y: shAnchor.y - 26 };
 
-  // "Center of Mass" and "Receiving Deck" — horizontal lines from their dots
+  // "Balance Point" and "Receiving Deck" — horizontal lines from their dots
   const comPos = px(R_COM * dx, R_COM * dy);
   const rzPos  = px(R_RZ  * dx, R_RZ  * dy);
   const hLen = 46;
@@ -490,14 +490,14 @@ function drawSkyhookLabels(ctx, t, alpha) {
   ctx.font = 'bold 18px Courier New';
   ctx.fillText('Skyhook', shLabel.x + 4, shLabel.y);
 
-  // Center of Mass — horizontal line
+  // Balance Point — horizontal line
   ctx.font = '15px Courier New';
   ctx.beginPath();
   ctx.moveTo(comPos.x + 7, comPos.y);
   ctx.lineTo(comPos.x + 7 + hLen, comPos.y);
   ctx.stroke();
   ctx.fillStyle = '#ccc';
-  ctx.fillText('Center of Mass', comPos.x + 7 + hLen + 4, comPos.y);
+  ctx.fillText('Balance Point', comPos.x + 7 + hLen + 4, comPos.y);
 
   // Receiving Deck — horizontal line
   ctx.beginPath();

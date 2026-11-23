@@ -9,13 +9,13 @@ also serves the Phobos-anchored skyhook (below).
 Built on the calculator shell: inputs, a zoomable drawing and results in three
 columns. Every card is always there on its tab; each optional station is a
 ticked line in the Optional Stations card. Card titles glide the drawing to their
-part; the foot, centre-of-mass and top markers can be dragged.
+part; the foot, balance-point and top markers can be dragged.
 
 The drawing's text fades out once the body spans less than half the drawing's
 width (gone at 0.4), leaving the glyphs; zooming in brings it back. In the home
 workbench each card's eye button shows that card alone, and its labels then
 stay at any zoom. The structure stays as context: the tether, the core-facility
-markers (top, anchor station, foot) and the centre-of-mass orbit, without their
+markers (top, anchor station, foot) and the balance-point orbit, without their
 labels.
 
 The Basics card owns three dashed paths, one for each point in its list: what an
@@ -44,7 +44,7 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   settings (`state`), or in a moon-anchored configuration (`anchor`); the
   header comment lists the options. A new workbench skyhook (not anchored)
   opens on round figures that work at every workbench body: foot 1,000 km,
-  centre of mass 2,000 km, top 3,000 km; 10 kt for each Core Facilities load
+  balance point 2,000 km, top 3,000 km; 10 kt for each Core Facilities load
   except the anchor station, 1,000 kt. Every optional station starts unticked, at 2,500 km (release deck),
   1,250 km (outer docks) and 1,500 km (receiving deck), 10 kt each. The
   standalone page opens on the Moon design. Each card
@@ -80,8 +80,8 @@ it.**
 
 ## Core facilities, optional stations and the anchor station
 
-The centre of mass divides the upper tether (top → centre of mass) from the lower
-(foot → centre of mass). The Core Facilities card takes five masses: the top and
+The balance point divides the upper tether (top → balance point) from the lower
+(foot → balance point). The Core Facilities card takes five masses: the top and
 foot stations at the tips, a load spread evenly along each tether (tracks, power
 lines, equipment), and the anchor station. The Optional Stations card lists three
 stations (each with a tick), each with an altitude and a peak mass: the facility
@@ -96,36 +96,36 @@ every load it passes, and the tether's own mass follows from the tension. A
 station adds its mass times the net pull where it sits (m·|ω²r − GM/r²|) as a step
 in tension, and the taper carries on from there, so the tether thickens in steps
 as it passes each station. A station counts on whichever tether it lies on: above
-the centre of mass it hangs from the upper one, below it from the lower one.
+the balance point it hangs from the upper one, below it from the lower one.
 
 The Tether materials card gives, for the lower and the upper tether, the taper ratio
-and then the tether's mass, centre of mass to tip, as a multiple of everything that
+and then the tether's mass, balance point to tip, as a multiple of everything that
 tether holds up (tip, spread load and stations; the anchor station is left out), each as
 a small bar of figures, "load carried" under the mass. When the anchor station is off
-the centre of mass (C.o.M.), a third line, "Extra tether from Anchor to C.o.M.", sets
+the balance point (BP), a third line, "Extra tether from Anchor to BP", sets
 apart the tether its own pull adds: its tether swept again without it, the geometry as
 solved, the difference taken as a multiple of the station's mass. That share is left
 out of its tether's line, so the three add up to the whole tether. It grows with the
-square of the offset, so a heavy station near the centre of mass costs little. The Loads
+square of the offset, so a heavy station near the balance point costs little. The Loads
 card gives the masses. A fold-out breaks the mass
 down by section: tip to first station, station to station, and last station to
-the centre of mass. The Stations card gives the tension at each station's level.
+the balance point. The Stations card gives the tension at each station's level.
 
-The cable is continuous through the centre of mass and nothing hangs there, so the
+The cable is continuous through the balance point and nothing hangs there, so the
 tension arriving from above equals the tension arriving from below. The anchor
 station sits at the altitude where that holds, so the installation's true centre
-of mass stays at the centre-of-mass altitude set in Basics, which is
+of mass stays at the balance-point altitude set in Basics, which is
 what fixes the orbit; the more the two tethers' loads differ, the farther from
 that altitude it sits. It is treated like the other stations: it adds its mass
 times the net pull it feels at that altitude, on the tether it lies on. It may sit
 anywhere along the tether the loads demand, down to the foot's altitude or up
 toward the top, as long as the tether material can carry the tension; where
-several positions balance, the one nearest the centre of mass is used, and a
+several positions balance, the one nearest the balance point is used, and a
 position where the tether would go slack does not count. If no position balances
 (too light an anchor for the loads), the anchor station is drawn at the centre of
 mass and the Loads card shows both tensions and says how far out of balance
 they are. The Loads card reports the total load on each tether, the anchor station's
-offset from the centre of mass, and the tension at the centre of mass (the peak). The drawing marks the
+offset from the balance point, and the tension at the balance point (the peak). The drawing marks the
 anchor station with a square and its altitude.
 
 ## Traffic
@@ -236,14 +236,14 @@ k = (3/2) J₂ GM R_eq² · Σ(m/r³) / (ω Σ m r²),  Ω̇ = −k cos i,  P = 
 - **Ω̇** — rate of the node (rad/s); negative is westward, against the spin
 - **P** — the precession period
 
-With all the mass at the centre of mass this is the familiar −(3/2) J₂ (R_eq/r)² n cos i,
+With all the mass at the balance point this is the familiar −(3/2) J₂ (R_eq/r)² n cos i,
 which the period line gives alongside for comparison. **Sun-synchronous** (the tick)
 finds the tilt at which the plane turns eastward once a year (the body's year, or its
 planet's for a moon): cos i = −n_☉ / k. That tilt is past 90° (retrograde). Where the
 bulge is too weak (k < n_☉) no tilt reaches it: the tick goes, the item reads
 "Sun-synchronous not possible" (its tooltip says why, without figures), and the Node
 drift line adds the rate Sun-synchronous needs against the most the bulge gives. That depends on the
-body and the centre-of-mass altitude, so it can change as the design changes; a tick
+body and the balance-point altitude, so it can change as the design changes; a tick
 set earlier comes back when it is possible again.
 
 Other bodies also turn the plane, about their own orbit normals rather than the spin
@@ -306,9 +306,9 @@ the difference, and its orbit settles lower or higher by
 - **M** — Phobos's mass (kg)
 
 which the Loads card reports in place of the anchor station's offset (a few
-metres for the opening design). So the centre-of-mass altitude is fixed at
+metres for the opening design). So the balance-point altitude is fixed at
 Phobos's orbit (shown, not editable), there is no anchor-station mass to set, and
-the drawing marks Phobos at the centre of mass. Two limits come from Phobos's
+the drawing marks Phobos at the balance point. Two limits come from Phobos's
 eccentric orbit, which carries the whole tether ±142 km each orbit: the foot
 may not go below Mars's floor plus that swing (257 km), and the top may not reach
 above Deimos's periapsis less the swing (19,924 km). Both are rejected the same way
@@ -321,8 +321,8 @@ lower tethers are each drawn to their own scale, so each shape shows that
 tether's own taper ratio. Widths are not comparable between the two: the one
 holding the heavier load is not drawn thicker, because how heavy a tether looks
 should come from its taper, not from the load it holds. The two meet at the
-anchor station (at the centre of mass when there is none). The cable between
-the anchor station and the centre of mass carries the same tension as the
+anchor station (at the balance point when there is none). The cable between
+the anchor station and the balance point carries the same tension as the
 tether it continues, so it is drawn as part of that tether.
 
 Within each tether the width at a point is its diameter, √(T/T_ref): T is the

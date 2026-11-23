@@ -137,7 +137,7 @@ html, body {
 .msk-muted { color: #8b94a7; font-size: 12px; }
 .msk-fineprint { color: #6b7589; font-size: 11px; line-height: 1.5; margin-top: 18px; }
 
-/* paired altitude inputs (CoM / top) */
+/* paired altitude inputs (BP / top) */
 .msk-fieldpair { display: flex; gap: 14px; }
 .msk-field { flex: 1; min-width: 0; }
 .msk-field label { display: block; font-size: 11px; color: #8b94a7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }

@@ -12,7 +12,7 @@
  * Which installation fills which card, and how:
  *
  *   skyhook (release)   the body's hanging skyhooks, and at Mars the Phobos
- *                       skyhook. comAlt is the centre of mass (for Phobos, the
+ *                       skyhook. comAlt is the balance point (for Phobos, the
  *                       moon's own orbit, Shared/body-profiles.js anchorConfig);
  *                       relAlt is the release deck when it is ticked, the top
  *                       otherwise.
@@ -87,7 +87,7 @@ function paramsFrom(platformId, inst, role) {
 		if (!(centre > 0 && rel > 0)) { return null; }
 		return {
 			params: { comAlt: centre * 1e3, relAlt: rel * 1e3 },
-			detail: "centre of mass " + km(centre) + ", " + (role === "catch" ? "catch" : "release") +
+			detail: "balance point " + km(centre) + ", " + (role === "catch" ? "catch" : "release") +
 				" altitude " + km(rel) + (useDeck ? " (release deck)" : " (top)")
 		};
 	}

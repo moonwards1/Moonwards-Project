@@ -13,7 +13,7 @@ import { systems } from "../orbit.js";
 
 test("Moon+skyhook chain reproduces the tether release kinematics exactly", () => {
 	// The worked-example skyhook geometry (the lunar-skyhook module's own
-	// defaults), computed inline: CoM on a circular lunar orbit sets the
+	// defaults), computed inline: BP on a circular lunar orbit sets the
 	// rotation rate; the release point at rRel moves at omega * rRel. (This
 	// test used to import the module's pre-I3 computeRelease for these
 	// figures; since I3 the module composes exactly this rotor itself, so

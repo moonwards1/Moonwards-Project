@@ -25,7 +25,7 @@ test("only the skyhook and the Lagrange elevators import", function () {
 	assert.ok(!importsFromWorkbench("moon-platform"));
 });
 
-test("hanging skyhook: centre of mass, and the top as the release point", function () {
+test("hanging skyhook: balance point, and the top as the release point", function () {
 	var d = readWorkbenchDesign(design([{ body: "Earth", inst: [hook("a", HOOK)] }]));
 	var r = workbenchConfigs(d, "skyhook", "release", "Earth");
 	assert.equal(r.configs.length, 1);
@@ -50,7 +50,7 @@ test("unsaved settings are skipped; repeated names are numbered", function () {
 	assert.match(workbenchConfigs(only, "skyhook", "release", "Earth").why, /aren't saved/);
 });
 
-test("Phobos skyhook: its centre of mass is Phobos's orbit", function () {
+test("Phobos skyhook: its balance point is Phobos's orbit", function () {
 	var d = readWorkbenchDesign(design([{ body: "Mars", inst: [hook("p", HOOK, "phobos")] }]));
 	var c = workbenchConfigs(d, "skyhook", "release", "Mars").configs[0];
 	assert.equal(c.label, "Phobos skyhook");

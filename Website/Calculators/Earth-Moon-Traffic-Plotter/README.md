@@ -55,7 +55,7 @@ No facility has a phase dial. A skyhook's angle at any Julian date is
     phase(jd) = phase0 + omega * (jd - CLOCK_EPOCH) * 86400
 
 - `phase0` — its angle at `CLOCK_EPOCH` (2080-01-01 00:00), fixed per facility
-- `omega` — its rotation rate, rad/s: the circular orbital rate of its centre of mass
+- `omega` — its rotation rate, rad/s: the circular orbital rate of its balance point
 - `jd` — Julian date
 
 so two facilities shown at the same instant are where they would really be
@@ -287,7 +287,7 @@ core serve the releases still to come: the L1 elevator's and the mass driver's.
 ## Pointing at the scene
 
 A single click on anything — Earth, the Moon, the ship, a waypoint, a skyhook's
-centre of mass, top, release point or catch point, the elevator's L1 point,
+balance point, top, release point or catch point, the elevator's L1 point,
 counterweight or either of its two markers — makes the camera follow it,
 and a right-drag pan lets go.
 Dragging the ship moves it along its path with the camera on it, the way a map is
@@ -326,8 +326,8 @@ the reason.
 ## Defaults
 
 The skyhooks' default altitudes are the example design exported from the home
-workbench on 2026-11-10 (Moon: foot 1 km, CoM 275 km, top 2,000 km, release
-deck 949.4 km; Earth: foot 120 km, CoM 2,900 km, top 6,200 km). The Earth
+workbench on 2026-11-10 (Moon: foot 1 km, BP 275 km, top 2,000 km, release
+deck 949.4 km; Earth: foot 120 km, BP 2,900 km, top 6,200 km). The Earth
 skyhook's 5,200 km point is this plotter's own figure, not the workbench's. The tests pin
 the resulting speeds, periods and v∞ to the workbench's own figures.
 

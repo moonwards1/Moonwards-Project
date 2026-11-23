@@ -75,7 +75,7 @@ function makeChain(skyhookParams, legParams, anchorJd) {
 test("tetherKinematics: the lunar skyhook geometry spins clear of lunar escape", function () {
 	var kin = tetherKinematics(MOON_SKYHOOK);
 	assert.equal(kin.ok, true);
-	// omega * rRel with CoM at 275 km, release from the top at 6000 km
+	// omega * rRel with BP at 275 km, release from the top at 6000 km
 	assert.ok(kin.vRel > 5900 && kin.vRel < 6100, "release speed ~6.0 km/s, got " + kin.vRel);
 	assert.ok(kin.vInfBody > 5700 && kin.vInfBody < 6100, "lunar v-inf ~5.9 km/s, got " + kin.vInfBody);
 	assert.ok(kin.period > 0 && kin.period < 24 * 3600, "rotation period under a day");

@@ -31,7 +31,7 @@ The page opens on a design for heavy traffic, all three facilities in it:
 - **Phobos skyhook:** foot 260 km, top 6,800 km (the elevator allows up to
   9,298 km).
 - **Hanging skyhook:** sun-synchronous, foot 220 km, top 5,000 km, 200 kt of
-  upper ballast at 4,000 km, the centre of mass set at the page's start to
+  upper ballast at 4,000 km, the balance point set at the page's start to
   the 3:1 resonance with Phobos (1,118 km). It is then 9.66 orbits a Mars
   day, out of step with the elevator.
 
@@ -164,11 +164,11 @@ anywhere between, set on the card or by dragging the pink marker.
 ## The hanging skyhook
 
 A tether held upright on a circular orbit of its own. It lies along the line
-from Mars's centre through its centre of mass (C.o.M.), which goes round at
+from Mars's centre through its balance point (BP), which goes round at
 
     w = sqrt( GM / r_c^3 )
 
-- `r_c` — the C.o.M.'s distance from Mars's centre
+- `r_c` — the BP's distance from Mars's centre
 - `GM` — Mars's gravitational parameter
 
 so a point at radius `r` moves at `w * r`. Mars's equatorial bulge turns the
@@ -189,7 +189,7 @@ left out. The masses are the Hanging-skyhooks calculator's model
 safety factor of 3, a station at each end, an anchor station placed where it
 balances the two halves, and two lots of ballast at their homes: one that may
 ride anywhere on the tether (at the foot by default) and an upper one riding
-above the C.o.M. (at the top by default). A set of altitudes and masses the
+above the BP (at the top by default). A set of altitudes and masses the
 anchor station cannot balance is refused.
 
 The card can leave the hanging skyhook out of the design.
@@ -215,7 +215,7 @@ in a fixed set of `D` directions as seen from the passing tether:
   the passes timed midway between those directions
 
 4:1 gives 22.5°, 3:1 gives 60°, 2:1 gives 45°. The card lists the resonant
-C.o.M. altitudes on the tether; clicking one sets the C.o.M. to it exactly. A
+BP altitudes on the tether; clicking one sets the BP to it exactly. A
 resonance has to be held closely: 1 km off the 4:1 altitude is a drift of half
 a degree a day. Any other period is allowed, and the card says how far it is
 from the nearest resonance, how often a sidestep is then needed and which way
@@ -229,9 +229,9 @@ skyhook from outside, so two things hold:
 
 The whole skyhook settles higher or lower until both hold with the ballast in
 its new place, and the `w` that results is its new rate: ballast far from the
-C.o.M. makes it lower and faster, ballast near the C.o.M. higher and slower.
-Ballast at the foot, beside the C.o.M., can therefore only speed the skyhook
-up; the upper ballast, brought down toward the C.o.M., slows it. A sidestep is
+BP makes it lower and faster, ballast near the BP higher and slower.
+Ballast at the foot, beside the BP, can therefore only speed the skyhook
+up; the upper ballast, brought down toward the BP, slows it. A sidestep is
 one lot of ballast out, held, and home again, whichever lot and direction slips
 the skyhook soonest; the skyhook has then slipped
 round its orbit and the orbit is as it was, so thrusters owe nothing. The work
@@ -548,7 +548,7 @@ In a turning view the path is drawn as that view sees it.
 ## Pointing at the scene
 
 Clicking Mars, a moon, the ship or one of a skyhook's markers (foot, top,
-release point, the hanging skyhook's centre of mass) makes the camera follow it, and a
+release point, the hanging skyhook's balance point) makes the camera follow it, and a
 right-drag pan lets go. The POV buttons set
 what is followed and how far back the camera sits. Shift (¼) and Ctrl (1/10)
 slow any slider.

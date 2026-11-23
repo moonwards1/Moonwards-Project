@@ -65,7 +65,7 @@ test("the passes found are the close approaches a plain search of every few seco
 
 test("in step with Mars's day, a skyhook that starts clear of the elevator stays clear", function () {
 	var d = design(null, {}, { ratio: 13, mars: true }), h = d.h;
-	near(h.dayRatio, 13, 2e-5, "orbits a Mars day"); near(h.comAlt, 309e3, 2e3, "centre of mass (m)");
+	near(h.dayRatio, 13, 2e-5, "orbits a Mars day"); near(h.comAlt, 309e3, 2e3, "balance point (m)");
 	var g = elevatorGuidance(h, d.others.elevator, DAY_RATIOS, LIMIT);
 	assert.ok(g.held); assert.equal(g.near.p, 13);
 	var res = workOutSidesteps(h, d.others, { limit: LIMIT, days: 300 });

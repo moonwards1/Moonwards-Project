@@ -569,7 +569,7 @@ function buildHangingCard() {
 
 	var trio = c.body.appendChild(el("div", "mst-fieldpair"));
 	r.foot = numberField(trio, "mst-hang-foot", "Foot (km)", set("footAlt", 1e3));
-	r.com = numberField(trio, "mst-hang-com", "C.o.M. (km)", set("comAlt", 1e3));
+	r.com = numberField(trio, "mst-hang-com", "BP (km)", set("comAlt", 1e3));
 	r.top = numberField(trio, "mst-hang-top", "Top (km)", set("topAlt", 1e3));
 	var tiltRow = c.body.appendChild(el("div", "mst-fieldpair mst-tilt-line"));
 	r.tilt = numberField(tiltRow, "mst-hang-tilt", "Tilt to the equator (°)", set("tilt", 1));
@@ -579,7 +579,7 @@ function buildHangingCard() {
 	var ro = c.body.appendChild(el("div", "mst-readouts"));
 	r.period = readout(ro, "One orbit");
 	r.footNow = readout(ro, "Foot now");
-	r.comNow = readout(ro, "Centre of mass now");
+	r.comNow = readout(ro, "Balance point now");
 	r.topNow = readout(ro, "Top now");
 	r.plane = readout(ro, "Its plane turns once in");
 	r.mass = readout(ro, "Mass, tether and all");
@@ -611,7 +611,7 @@ function buildHangingCard() {
 	var b2 = c.body.appendChild(el("div", "mst-fieldpair"));
 	r.upper = numberField(b2, "mst-hang-upper", "Upper ballast (kt)", set("upperBallastMass", 1e6));
 	r.upperHome = numberField(b2, "mst-hang-upper-home", "Its home (km)", set("upperBallastHome", 1e3));
-	c.body.appendChild(el("div", "mst-muted", "Ballast speeds the skyhook up by moving away from the centre of mass and slows it by moving toward it. The upper ballast rides above the centre of mass, so bringing it down slows the skyhook."));
+	c.body.appendChild(el("div", "mst-muted", "Ballast speeds the skyhook up by moving away from the balance point and slows it by moving toward it. The upper ballast rides above the balance point, so bringing it down slows the skyhook."));
 	var b3 = c.body.appendChild(el("div", "mst-fieldpair mst-ballast-rest"));
 	r.anchor = numberField(b3, "mst-hang-anchor", "Anchor station (kt)", set("anchorMass", 1e6));
 	r.bspeed = numberField(b3, "mst-hang-bspeed", "Ballast speed (km/h)", set("ballastSpeed", 1 / 3.6));
@@ -669,8 +669,8 @@ function guidanceText(h) {
 	if (can < 0.002) {
 		text += (can > 1e-5 ? " The ballast can do that by only " + pct(can) + ", too little to be of use. " : " The ballast cannot do that. ")
 			+ (faster
-				? "Ballast speeds a skyhook up by moving away from the centre of mass: give some a home near the centre of mass."
-				: "Ballast slows a skyhook by moving toward the centre of mass: add upper ballast, or give it a home higher up the tether.");
+				? "Ballast speeds a skyhook up by moving away from the balance point: give some a home near the balance point."
+				: "Ballast slows a skyhook by moving toward the balance point: add upper ballast, or give it a home higher up the tether.");
 	}
 	return text;
 }

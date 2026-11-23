@@ -28,7 +28,7 @@ test("Moon skyhook figures match the workbench design", function () {
 	assert.ok(g.ok);
 	within(g.period / 3600, 2.25, 0.005, "period, h");
 	within(g.vFoot, 1350, 5, "foot speed");
-	within(g.vCom, 1560, 5, "CoM speed");
+	within(g.vCom, 1560, 5, "BP speed");
 	within(g.vTop, 2900, 5, "top speed");
 	within(g.vInfBody, 833, 2, "v-infinity from the release deck");
 	within(g.pullTop, 1.90, 0.005, "pull felt at the top");
@@ -40,7 +40,7 @@ test("Earth skyhook figures match the workbench design", function () {
 	assert.ok(g.ok);
 	within(g.period / 3600, 2.47, 0.005, "period, h");
 	within(g.vFoot, 4590, 5, "foot speed");
-	within(g.vCom, 6560, 5, "CoM speed");
+	within(g.vCom, 6560, 5, "BP speed");
 	within(g.vTop, 8890, 5, "top speed");
 	within(g.vInfBody, 3954, 2, "v-infinity from the top");
 	within(g.pullTop, 3.77, 0.005, "pull felt at the top");
@@ -113,7 +113,7 @@ test("the release time within one tether orbit decides where the ship goes", fun
 	assert.notEqual(a.summary.primary + a.summary.periAlt, b.summary.primary + b.summary.periAlt);
 });
 
-test("a release just above the centre of mass stays in lunar orbit", function () {
+test("a release just above the balance point stays in lunar orbit", function () {
 	var f = computeFlight({ from: "moonSkyhook", jd: JD, params: { moonSkyhook: { relAlt: 400e3 } } });
 	assert.equal(f.final.kind, "moonEllipse");
 	assert.equal(f.summary.primary, "Moon");

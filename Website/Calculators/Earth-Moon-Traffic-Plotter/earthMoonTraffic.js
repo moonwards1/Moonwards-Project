@@ -290,7 +290,7 @@ function lineOf(points, colorHex, opacity) {
 }
 
 // One skyhook, as the Moon-Skyhook-Trajectory-Plotter draws it: the circles its
-// centre of mass and top trace, the tether from foot to top at its clock angle,
+// balance point and top trace, the tether from foot to top at its clock angle,
 // and — on the flight's origin — a triangle at the release point, pointing the
 // way the tether moves.
 function drawFacility(id) {
@@ -370,7 +370,7 @@ function drawSkyhook(id, fig, node, grp) {
 		                             label: FACILITIES[id].label + " · " + label };
 	}
 	if (showFac.checked) {
-		mark("com", "centre of mass", fig.rCom); mark("top", "top", fig.rTop);
+		mark("com", "balance point", fig.rCom); mark("top", "top", fig.rTop);
 		if (id === state.from) { mark("release", "release point", fig.rRel); }
 		if (id === state.to) { mark("catch", "catch point", fig.rCatch); }
 	}
@@ -980,10 +980,10 @@ function buildCard(id) {
 			refresh({ keepInputs: true });
 		});
 	}
-	altField("footAlt", "Foot (km)"); altField("comAlt", "CoM (km)"); altField("topAlt", "Top (km)");
+	altField("footAlt", "Foot (km)"); altField("comAlt", "BP (km)"); altField("topAlt", "Top (km)");
 	refs.error = body.appendChild(el("div", "emt-error"));
 	var ro = body.appendChild(el("div", "emt-readouts"));
-	refs.vCom = readout(ro, "orbital speed (centre of mass)");
+	refs.vCom = readout(ro, "orbital speed (balance point)");
 	refs.vTop = readout(ro, "tether top speed");
 	refs.vFoot = readout(ro, "tether foot speed");
 	refs.period = readout(ro, "orbit and rotation period");
@@ -1446,7 +1446,7 @@ function fillCard(id, opts) {
 			c[k].value = +(p[k] / 1e3).toFixed(1);
 		});
 	}
-	c.sub.textContent = "foot " + num(p.footAlt / 1e3) + " km · CoM " + num(p.comAlt / 1e3) + " km · top " + num(p.topAlt / 1e3) + " km";
+	c.sub.textContent = "foot " + num(p.footAlt / 1e3) + " km · BP " + num(p.comAlt / 1e3) + " km · top " + num(p.topAlt / 1e3) + " km";
 	c.relSlider.min = p.footAlt / 1e3; c.relSlider.max = p.topAlt / 1e3; c.relSlider.value = p.relAlt / 1e3;
 	if (id === state.to) { fillArrival(c); }
 	c.error.textContent = fig.ok ? "" : fig.diagnostic.message;

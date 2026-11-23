@@ -69,7 +69,7 @@ export const PacketTypes = {
 
 		// Geometry + material of one vertical (gravity-gradient) or spun tether.
 		// footAlt/centreAlt/topAlt are altitudes above the body's surface (m);
-		// centreAlt is the centre-of-mass point that sets the orbit. material is
+		// centreAlt is the balance point that sets the orbit. material is
 		// { sigma, rho } (tensile strength Pa, density kg/m^3) — the raw physical
 		// properties, not a safety-margined combination, so a receiver can apply
 		// its own safety factor. period/tipSpeed/taperRatio are derived figures

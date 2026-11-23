@@ -643,7 +643,7 @@ test("j2NodeCoefficient: one mass on its own orbit matches the point formula", f
 	var r = RE + 1000e3, n = Math.sqrt(GM_E / (r * r * r));
 	var a = O.j2NodeCoefficient(GM_E, J2_E, RE, n), b = O.j2NodeCoefficient(GM_E, J2_E, RE, n, [{ r: r, m: 5e9 }]);
 	assert.ok(Math.abs(a - b) / a < 1e-12);
-	// mass spread outward turns the plane more slowly than mass at the centre of mass
+	// mass spread outward turns the plane more slowly than mass at the balance point
 	var c = O.j2NodeCoefficient(GM_E, J2_E, RE, n, [{ r: r - 500e3, m: 1 }, { r: r + 500e3, m: 1 }]);
 	assert.ok(c > 0 && c !== a);
 });

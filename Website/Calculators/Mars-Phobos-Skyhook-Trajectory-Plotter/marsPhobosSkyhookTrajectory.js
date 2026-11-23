@@ -3,13 +3,13 @@
  * A navigable, to-scale 3-D view of the Mars-Phobos system (Three.js), lit by
  * the off-screen Sun, with Mars placed from its Keplerian heliocentric
  * elements (Shared/orbit.js). A gravity-gradient skyhook rides on Phobos
- * itself: Phobos IS the tether's centre of mass (not a separate synthetic
+ * itself: Phobos IS the tether's balance point (not a separate synthetic
  * altitude), so the whole rigid, co-rotating structure -- lower tether end,
  * Phobos, upper tether end -- traces concentric circles around MARS, not
  * around Phobos. This collapses the two-tier hierarchy the sister tool
  * (Moon-Skyhook-Trajectory-Plotter) needs (hook-around-Moon, Moon-around-
  * Earth) into one tier, since Phobos' own orbit around Mars already IS the
- * hook's CoM orbit.
+ * skyhook's BP orbit.
  *
  * Release points are chosen above Phobos (outbound: boosted past local
  * circular speed, can escape Mars' SOI onto a heliocentric transfer) or below
@@ -341,7 +341,7 @@ import {
 	var scene, camera, renderer;
 	var marsMesh, marsPoint, marsSOI, sunMesh, marsOrbitLine;
 	var phobosPosGroup, phobosSpinGroup, phobosMesh, phobosPoint;
-	var phobosOrbitGroup = null;     // Phobos' (= the hook's CoM) orbit ring
+	var phobosOrbitGroup = null;     // Phobos' (= the skyhook's BP) orbit ring
 	var hookGroup = null;            // skyhook geometry (rebuilt on change)
 	var releaseMesh = null;          // draggable release-point triangle (in-plane)
 	var trajectoryGroup = null;      // released-ship trajectory (child of scene)
@@ -583,7 +583,7 @@ import {
 	}
 
 	// =======================================================================
-	//  Phobos orbit ring (= the hook's CoM ring -- see file header)
+	//  Phobos orbit ring (= the skyhook's BP ring -- see file header)
 	// =======================================================================
 	function buildPhobosOrbit() {
 		if (phobosOrbitGroup) { scene.remove(phobosOrbitGroup); disposeGroup(phobosOrbitGroup); }
@@ -609,7 +609,7 @@ import {
 	}
 
 	// =======================================================================
-	//  Skyhook geometry -- lower tether end, Phobos (CoM), upper tether end,
+	//  Skyhook geometry -- lower tether end, Phobos (BP), upper tether end,
 	//  all concentric circles around MARS (see file header). Everything here
 	//  is drawn directly under `scene` in absolute Mars-centred coordinates --
 	//  there is no nested "Phobos-local" frame the way the sister tool nests
@@ -645,7 +645,7 @@ import {
 		}
 		grp.add(ring(rTop, 0x9fb6ff, 0.85));                // upper tether end
 		grp.add(ring(rBot, 0xff9a6a, 0.85));                // lower tether end
-		// (Phobos/CoM ring is the same circle as buildPhobosOrbit(), toggled
+		// (Phobos/BP ring is the same circle as buildPhobosOrbit(), toggled
 		// separately by the "Phobos orbit" checkbox -- not redrawn here.)
 
 		// radial tether line: bottom -> top, through Phobos
@@ -653,7 +653,7 @@ import {
 			dir.clone().multiplyScalar(rBot), dir.clone().multiplyScalar(rTop)]);
 		grp.add(new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xeaf0ff })));
 
-		// small world-sized dots at bottom / Phobos(CoM) / top
+		// small world-sized dots at bottom / Phobos(BP) / top
 		var dotU = kmToU(150);
 		[[rBot, 0xff9a6a], [kmToU(A_PHOBOS / 1e3), 0xffd24a], [rTop, 0x9fb6ff]].forEach(function (d) {
 			var dot = makeWorldDot(d[1], dotU);

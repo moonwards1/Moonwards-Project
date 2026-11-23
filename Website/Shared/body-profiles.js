@@ -76,7 +76,7 @@ export function parentName(name) {
 }
 
 // ---- configurations anchored on a moon ---------------------------------------
-// A hanging skyhook whose centre of mass is a moon. The moon's mass dwarfs the
+// A hanging skyhook whose balance point is a moon. The moon's mass dwarfs the
 // tether's, so the moon is the anchor station and its orbit fixes the centre of
 // mass; uneven loads only nudge that orbit. The tether rises and falls with the
 // moon's eccentric orbit, so the foot's floor is the primary's floor plus that

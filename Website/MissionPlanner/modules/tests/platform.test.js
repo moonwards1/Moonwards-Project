@@ -582,7 +582,7 @@ test("sunSyncSupport: workable at Earth, Mars, Ceres and Vesta; not at Mercury, 
 	["Earth", "Mars", "Ceres", "Vesta"].forEach(function (b) {
 		var s = sunSyncSupport(b);
 		assert.ok(s.ok, b + " should hold a sun-synchronous orbit");
-		assert.ok(s.maxComAlt > 1000e3, b + " max CoM " + Math.round(s.maxComAlt / 1e3) + " km");
+		assert.ok(s.maxComAlt > 1000e3, b + " max BP " + Math.round(s.maxComAlt / 1e3) + " km");
 	});
 	assert.equal(sunSyncSupport("Mercury").reason, "too-weak");
 	assert.equal(sunSyncSupport("Venus").reason, "too-weak");

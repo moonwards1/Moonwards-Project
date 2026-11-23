@@ -178,7 +178,7 @@ html, body {
 .mps-muted { color: #8b94a7; font-size: 12px; }
 .mps-fineprint { color: #6b7589; font-size: 11px; line-height: 1.5; margin-top: 18px; }
 
-/* paired altitude inputs (CoM / top / bottom) */
+/* paired altitude inputs (BP / top / bottom) */
 .mps-fieldpair { display: flex; gap: 14px; }
 .mps-field { flex: 1; min-width: 0; }
 .mps-field label { display: block; font-size: 11px; color: #8b94a7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.03em; }

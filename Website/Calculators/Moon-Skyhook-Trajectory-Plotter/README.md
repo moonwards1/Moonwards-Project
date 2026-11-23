@@ -37,18 +37,18 @@ the Earth from 30 000 km; double-click empty space to release.
 
 The **skyhook** (gravity-gradient, radial, rotating once per orbit) is drawn to
 scale at the Moon: the circle traced by its **top**, the circle traced by its
-**centre of mass**, a **radial line** (tether base 20 km above the surface, out
-through the CoM and top), and a draggable **arrow** at the release point.
+**balance point**, a **radial line** (tether base 20 km above the surface, out
+through the BP and top), and a draggable **arrow** at the release point.
 
 **Sidebar (right).**
-- CoM altitude → orbital velocity.
+- BP altitude → orbital velocity.
 - Top altitude → angular velocity and tip centrifugal load.
-- Release-point altitude (between CoM and top, or drag the arrow) → speed on
+- Release-point altitude (between BP and top, or drag the arrow) → speed on
   release, v∞ at the Moon's SOI, and a first-cut v∞ at Earth's SOI.
 
 ## The physics (Phase 1)
 
-The tether is gravity-gradient: it stays radial and rotates at the CoM's
+The tether is gravity-gradient: it stays radial and rotates at the BP's
 circular orbital rate
 
 $$
@@ -57,11 +57,11 @@ $$
 
 - $\omega$ — the skyhook's angular rotation rate
 - $GM_\text{moon}$ — the Moon's gravitational parameter
-- $r_\text{com}$ — orbital radius of the skyhook's centre of mass
+- $r_\text{com}$ — orbital radius of the skyhook's balance point
 
 so a point at radius $r$ moves at $v = \omega\cdot r$.
 
-- Orbital velocity of the CoM: $v_\text{com} = \sqrt{GM_\text{moon} / r_\text{com}}$.
+- Orbital velocity of the BP: $v_\text{com} = \sqrt{GM_\text{moon} / r_\text{com}}$.
 - Centrifugal acceleration at the top: $a = \omega^2\cdot r_\text{top}$, where $r_\text{top}$ is the tether-top radius.
 - Release speed (inertial, Moon frame): $v_\text{rel} = \omega\cdot r_\text{rel}$, where $r_\text{rel}$ is the release-point radius.
 - Hyperbolic excess vs the Moon: $v_\infty = \sqrt{v_\text{rel}^2 - 2\cdot GM_\text{moon}/r_\text{rel}}$
@@ -82,7 +82,7 @@ so a point at radius $r$ moves at $v = \omega\cdot r$.
   This is a placeholder until the Phase-2 trajectory model supplies the real release
   geometry.
 
-Defaults: CoM 275 km, top 6000 km, release 950 km → period 2.25 h,
+Defaults: BP 275 km, top 6000 km, release 950 km → period 2.25 h,
 $v_\text{com}$ 1561 m/s, tip 4.66 m/s² (0.48 g), $v_\text{rel}$ 2085 m/s, $v_\infty$(Moon) 835 m/s,
 $v_\infty$(Earth, first-cut) ≈ 1.2 km/s.
 

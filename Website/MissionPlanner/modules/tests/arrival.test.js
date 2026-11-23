@@ -50,7 +50,7 @@ test("computeCatch: trim Δv is the gap between hyperbolic periapsis speed and t
 	var vInf = 3776;
 	var cat = computeCatch({ body: "Mars" }, arrivingAt("Mars", vInf, 0));
 	assert.equal(cat.ok, true, cat.ok ? "" : cat.diagnostic.message);
-	// Mars defaults seed the CoM at Phobos's orbit radius
+	// Mars defaults seed the BP at Phobos's orbit radius
 	var geo = tetherGeometry(resolveSkyhookParams({ body: "Mars" }));
 	assert.ok(Math.abs(cat.geo.rCom - geo.rCom) < 1e-6);
 	var vShip = Math.sqrt(vInf * vInf + 2 * geo.GM / geo.rRel);
@@ -61,7 +61,7 @@ test("computeCatch: trim Δv is the gap between hyperbolic periapsis speed and t
 });
 
 test("computeCatch: a sub-escape tip is a legitimate catch (only a RELEASE demands escape)", function () {
-	// Tip barely above the CoM: far below escape speed — the departure module
+	// Tip barely above the BP: far below escape speed — the departure module
 	// refuses this geometry, the catch accepts it.
 	var phys = bodyPhysics("Mars");
 	var comAlt = 9376e3 - phys.R;

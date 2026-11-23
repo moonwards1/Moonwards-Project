@@ -26,11 +26,11 @@ test("the default design: a heavy-traffic elevator, the Phobos skyhook under its
 	assert.ok(f.phobosSkyhook.ok, f.phobosSkyhook.ok ? "" : f.phobosSkyhook.diagnostic.message);
 
 	var com = resonantComAlt(h, f.phobosSkyhook, 3, { elevator: e });
-	assert.ok(com > 1000e3 && com < 1250e3, "3:1 centre of mass: " + com);
+	assert.ok(com > 1000e3 && com < 1250e3, "3:1 balance point: " + com);
 	var g = allFigures(Object.assign({}, base, { hangingSkyhook: Object.assign({}, h, { comAlt: com }) })).hangingSkyhook;
 	assert.ok(g.ok, g.ok ? "" : g.diagnostic.message);
 	assert.ok(Math.abs(g.ratio - 3) < 1e-5, "orbits per turn of Phobos: " + g.ratio);
 	assert.ok(g.share && g.shareElevator, "it shares heights with both other tethers");
-	assert.ok(Math.abs(Math.abs(g.comAlt - h.comAlt)) < 30e3, "the default centre of mass is near the resonance");
+	assert.ok(Math.abs(Math.abs(g.comAlt - h.comAlt)) < 30e3, "the default balance point is near the resonance");
 	assert.ok(g.tilt > 90 * DEG && g.tilt < 100 * DEG, "sun-synchronous");
 });

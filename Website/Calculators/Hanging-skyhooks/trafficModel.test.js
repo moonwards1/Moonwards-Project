@@ -5,22 +5,22 @@ import { Traffic, YEAR } from "./trafficModel.js";
 
 function near(a, b, rel, msg) { assert.ok(Math.abs(a - b) <= Math.abs(b) * rel, msg + ": " + a + " vs " + b); }
 
-// The default workbench skyhook at the Moon: foot 1,000 km, centre of mass 2,000 km.
+// The default workbench skyhook at the Moon: foot 1,000 km, balance point 2,000 km.
 var GM = 4.9048695e12, R = 1737.4e3;
 var rF = R + 1000e3, rC = R + 2000e3, rT = R + 3000e3;
 var w = Math.sqrt(GM / Math.pow(rC, 3));
 var env = { GM: GM, omega: w, rMount: rT, period: 2 * Math.PI / w };
 var KT_PER_ORBIT = 1e6 / env.period;   // 1 kt each orbit, kg/s
 
-test("hauling 1 kt per orbit from the foot to the centre of mass", function () {
+test("hauling 1 kt per orbit from the foot to the balance point", function () {
 	var h = Traffic.haul(env, rF, rC, KT_PER_ORBIT);
 	near(h.power * env.period / 1e9, 175.25, 1e-3, "energy per orbit, GJ");
 	near(h.torque * env.period, 1.9847e15, 1e-3, "angular momentum per orbit, kg·m²/s");
 	near(h.force * rT, h.torque, 1e-12, "thrust at the mount times its lever arm is the torque");
-	assert.ok(h.power > 0 && h.torque > 0, "climbing toward the centre of mass costs energy and orbit");
+	assert.ok(h.power > 0 && h.torque > 0, "climbing toward the balance point costs energy and orbit");
 });
 
-test("signs follow the side of the centre of mass and the direction", function () {
+test("signs follow the side of the balance point and the direction", function () {
 	var up = Traffic.haul(env, rC, rT, 1), down = Traffic.haul(env, rT, rC, 1), lowDown = Traffic.haul(env, rC, rF, 1);
 	assert.ok(up.power < 0 && up.torque > 0, "outward above the centre: energy gain, orbit loss");
 	assert.ok(down.power > 0 && down.torque < 0, "inward above the centre: energy loss, orbit gain");

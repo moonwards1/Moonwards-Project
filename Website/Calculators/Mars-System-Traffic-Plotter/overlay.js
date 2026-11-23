@@ -45,7 +45,7 @@ function setPoint(attr, k, p) { attr.setXYZ(k, p[0] / U, p[1] / U, p[2] / U); }
 export function buildOverlay(scene) {
 	// ---- the skyhooks: a tether, its ends, its release point, and where the
 	// foot and the top go over one orbit. The hanging skyhook also shows its
-	// centre of mass and its two lots of ballast; the Phobos skyhook, the
+	// balance point and its two lots of ballast; the Phobos skyhook, the
 	// highest its top may be set beside the space elevator. ----
 	var hooks = {}, markers = {};
 	SKYHOOKS.forEach(function (id) {
@@ -65,7 +65,7 @@ export function buildOverlay(scene) {
 		markers[id + ":foot"] = { pos: h.foot.position, label: NAMES[id] + " foot" };
 		markers[id + ":top"] = { pos: h.top.position, label: NAMES[id] + " top" };
 		markers[id + ":release"] = { pos: h.release.position, label: NAMES[id] + " release point" };
-		if (hanging) { markers[id + ":com"] = { pos: h.com.position, label: NAMES[id] + " centre of mass" }; }
+		if (hanging) { markers[id + ":com"] = { pos: h.com.position, label: NAMES[id] + " balance point" }; }
 	});
 
 	// ---- the space elevator: its tether, the stretch climbers are held on

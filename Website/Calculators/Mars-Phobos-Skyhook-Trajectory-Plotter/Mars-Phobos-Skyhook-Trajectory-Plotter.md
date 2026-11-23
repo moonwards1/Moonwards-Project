@@ -17,10 +17,10 @@ system with skyhook, sidebar with input fields/sliders and read-outs.
 
 ### Key structural difference from the sister tool
 
-Phobos **is** the skyhook's centre of mass — a tether descends from Phobos
+Phobos **is** the skyhook's balance point — a tether descends from Phobos
 down to just above the atmosphere (150 km above Mars' surface by default),
 and another tether ascends from Phobos to 25 000 km altitude. Because
-Phobos' own orbit around Mars already **is** the hook's CoM orbit, this
+Phobos' own orbit around Mars already **is** the skyhook's BP orbit, this
 collapses the sister tool's two-tier hierarchy (hook-around-Moon,
 Moon-around-Earth) into one tier (hook-around-Mars, with Phobos as a fixed
 point on that same orbit). There is no separate "skyhook phase" slider as a
@@ -45,7 +45,7 @@ structure.
   of its own — it works out smaller than Phobos itself — so none is drawn).
 - Skyhook drawn to scale: the circle traced by the lower tether end, the
   circle traced by the upper tether end (Phobos' own orbit ring doubles as
-  the CoM circle), a radial line through bottom/CoM/top, and a draggable
+  the BP circle), a radial line through bottom/BP/top, and a draggable
   triangle marker at the release point.
 - Skyhook default: bottom tether end 150 km above Mars' surface, top tether
   end 25 000 km above Mars' surface.
@@ -58,7 +58,7 @@ structure.
 ### Sidebar
 
 - **Skyhook**: paired fields for the bottom and top tether-end altitudes,
-  with read-outs of CoM orbital velocity below the (fixed) CoM altitude, and
+  with read-outs of BP orbital velocity below the (fixed) BP altitude, and
   each end's angular velocity / centrifugal load.
 - **Release point**: a toggle choosing release **above** Phobos (outbound,
   can exceed local circular speed and escape Mars' SOI onto a heliocentric

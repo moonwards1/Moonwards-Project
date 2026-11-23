@@ -196,7 +196,7 @@ export function facilityAt(fig, jd) {
 }
 
 // State { r, v } of the point of the tether at distance s from its centre
-// (Phobos, or the hanging skyhook's centre of mass), positive away from Mars.
+// (Phobos, or the hanging skyhook's balance point), positive away from Mars.
 export function pointState(fig, at, s) {
 	return fig.kind === "hangingSkyhook" ? hangingPointState(at, s) : tetherPointState(at, s);
 }

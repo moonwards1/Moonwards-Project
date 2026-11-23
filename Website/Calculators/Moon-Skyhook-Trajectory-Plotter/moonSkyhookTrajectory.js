@@ -454,7 +454,7 @@ import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPos
 			return new THREE.Line(g, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op }));
 		}
 		grp.add(circle(rTop, 0x9fb6ff, 0.85));              // top orbit
-		grp.add(circle(rCom, 0xffd24a, 0.85));              // CoM orbit
+		grp.add(circle(rCom, 0xffd24a, 0.85));              // BP orbit
 
 		// radial line (tether): from base out to top, along the phase direction
 		var dir = hookDir(state.hookPhase);
@@ -462,7 +462,7 @@ import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPos
 			dir.clone().multiplyScalar(rBase), dir.clone().multiplyScalar(rTop)]);
 		grp.add(new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xeaf0ff })));
 
-		// small dots at CoM and top along the tether — sized in world units so
+		// small dots at BP and top along the tether — sized in world units so
 		// they shrink to nothing as the view zooms away (like the markers).
 		var dotU = 0.10 * mToU(R_M);
 		[[rCom, 0xffd24a], [rTop, 0x9fb6ff]].forEach(function (d) {
@@ -1347,7 +1347,7 @@ import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPos
 		var denom = 1 - b * b;
 		if (Math.abs(denom) < 1e-9) { return; }
 		var t = (ee - b * dd) / denom;                     // scene units along tether
-		// clamp to [CoM, top] in altitude
+		// clamp to [BP, top] in altitude
 		var altKm = (t * U / 1e3) - (R_M / 1e3);
 		var comKm = state.comAlt / 1e3, topKm = state.topAlt / 1e3;
 		altKm = Math.max(comKm, Math.min(topKm, altKm));
@@ -1528,7 +1528,7 @@ import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPos
 		var rTop = R_M + state.topAlt;
 		var rRel = R_M + state.relAlt;
 
-		// Gravity-gradient tether: rotates at the CoM's circular orbital rate.
+		// Gravity-gradient tether: rotates at the BP's circular orbital rate.
 		var omega = O.angularVelocity(GM_M, rCom);         // rad/s
 		var vCom  = O.circularVelocity(GM_M, rCom);        // m/s
 		var period = 2 * Math.PI / omega;                  // s
@@ -1680,7 +1680,7 @@ import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPos
 		if (!isFinite(top) || top <= com) { top = com + 10; ok = false; }
 		state.comAlt = com * 1e3;
 		state.topAlt = top * 1e3;
-		// release must sit between CoM and top
+		// release must sit between BP and top
 		var bad = (!isFinite(rel) || rel < com || rel > top);
 		if (bad) { rel = Math.max(com, Math.min(top, isFinite(rel) ? rel : (com + top) / 2)); }
 		relInput.classList.toggle("msk-bad", bad);
@@ -1705,7 +1705,7 @@ import { renderReadoutBoxes as readoutRender, positionReadoutBoxes as readoutPos
 
 	// The release-altitude slider. A plain native drag would jump the handle
 	// straight under the cursor (1 px of mouse = 1 px of travel along the
-	// full CoM..top span), which is too coarse for picking a precise release
+	// full BP..top span), which is too coarse for picking a precise release
 	// point on a wide-range hook. So dragging is handled by hand: the initial
 	// mousedown still jumps to the clicked spot (normal slider feel), but the
 	// drag that follows moves the value by the cursor's *relative* motion,

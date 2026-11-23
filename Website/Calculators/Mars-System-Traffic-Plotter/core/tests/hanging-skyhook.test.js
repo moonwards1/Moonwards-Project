@@ -61,13 +61,13 @@ test("a sidestep slips the angle asked for and leaves the orbit as it was", func
 	var end = sidestepState(plan, plan.duration + 1), mid = sidestepState(plan, plan.tMove + plan.tHold / 2);
 	near(end.psi, Math.PI / 2, 1e-9); assert.equal(end.rate, 0); assert.equal(end.shift, 0);
 	assert.ok(mid.rate > 0.01 && mid.shift < 0, "faster and lower while the ballast is out");
-	// Passing the centre of mass on its way out and back, the ballast slows the
+	// Passing the balance point on its way out and back, the ballast slows the
 	// skyhook a little; the angle stays between where it began and where it ends.
 	for (var k = 1; k <= 60; k++) {
 		var s = sidestepState(plan, plan.duration * k / 60);
 		assert.ok(s.psi > -0.01 && s.psi < Math.PI / 2 + 0.01, "angle " + s.psi + " at step " + k);
 	}
-	// The lower ballast rides at the foot, beside the centre of mass: it can speed the skyhook up but hardly slow it.
+	// The lower ballast rides at the foot, beside the balance point: it can speed the skyhook up but hardly slow it.
 	assert.equal(planSidestep(lower.up, h.omega, -Math.PI / 2, h.ballast.speed), null);
 	// The upper ballast rides at the top: brought down, it slows the skyhook and lifts it.
 	var back = planSidestep(h.ballast.upper.down, h.omega, -Math.PI / 2, h.ballast.speed);
@@ -202,12 +202,12 @@ test("a slanting pass comes closer than it is at the crossing", function () {
 	}
 });
 
-test("ships let go by the hanging skyhook: the foot falls, the centre of mass orbits, the top is thrown high", function () {
+test("ships let go by the hanging skyhook: the foot falls, the balance point orbits, the top is thrown high", function () {
 	function fly(relAlt) { return computeFlight({ from: "hangingSkyhook", jd: JD, params: { hangingSkyhook: { relAlt: relAlt } } }); }
 	var h = hanging(), foot = fly(h.footAlt), com = fly(h.comAlt), top = fly(h.topAlt);
 	assert.equal(foot.summary.outcome, "entry");
 	assert.equal(com.summary.outcome, "orbit");
-	near(com.summary.period, h.period, 60, "period at the centre of mass (s)");
+	near(com.summary.period, h.period, 60, "period at the balance point (s)");
 	near(com.summary.tilt * DEG, h.tilt * DEG, 0.2);
 	assert.ok(top.summary.outcome === "escape" || top.summary.apoAlt > 20000e3, "top: " + top.summary.outcome);
 	near(releaseState(h, JD).altitude, h.relAlt, 1e-3);

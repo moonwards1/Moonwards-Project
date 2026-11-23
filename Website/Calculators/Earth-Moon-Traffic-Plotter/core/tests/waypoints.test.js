@@ -94,7 +94,7 @@ test("a waypoint after the flight has ended is not reached", function () {
 });
 
 test("a Moon-bound release with a burn is flown integrated, its burn measured against the Moon", function () {
-	// Released just above the CoM: a lunar orbit, drawn as the ellipse without burns.
+	// Released just above the BP: a lunar orbit, drawn as the ellipse without burns.
 	var input = { from: "moonSkyhook", jd: JD, params: { moonSkyhook: { relAlt: 400e3 } } };
 	assert.equal(computeFlight(input).final.kind, "moonEllipse");
 	var f = computeFlight(Object.assign({ waypoints: [{ t: 600, burn: { pro: 50 } }] }, input));

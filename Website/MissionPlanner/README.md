@@ -346,12 +346,12 @@ never when it started.
 - **`modules/skyhook/`** — the skyhook TECHNOLOGY PLATFORM (see
   `modules/platform/` below), serving every body and both ends of a mission
   from one folder. `skyhook.js` holds the substance: a gravity-gradient
-  (radial) tether whose centre of mass rides a circular orbit in its `body`'s
+  (radial) tether whose balance point rides a circular orbit in its `body`'s
   equatorial plane, turning the way the body spins, its parameters, its release gate and rotor element, its catch figures,
   and its drawing. A release may instead orbit sun-synchronously (the card's
   "orbit plane" choice, with the ascending node's local solar time), offered
   only at bodies where such an orbit exists — Earth, Mars, Ceres, Vesta, the
-  giant planets; never a moon — and gated on the CoM lying below the highest
+  giant planets; never a moon — and gated on the BP lying below the highest
   sun-synchronous altitude, which the card shows with the inclination. `skyhook-departure.js` registers it as the carrier module
   `orbital-skyhook`; `skyhook-arrival.js` registers it as the terminal module
   `arrival-skyhook`. As a carrier it optionally rides an upstream base platform
@@ -435,7 +435,7 @@ never when it started.
   fires inside the SOI blocks the send: burns from there on are the plotter's.
 - **`modules/skyhook/skyhook-arrival.js`** — the same skyhook platform in its
   terminal role: a CATCH at the destination, the very same tether geometry run
-  in reverse, with the same card: CoM altitude, catch altitude and catch
+  in reverse, with the same card: BP altitude, catch altitude and catch
   phase, the phase pinned at the approach's arrival mark with 0° pointing at
   the ship's position there, turning at ω from it. Its readout box
   gives the tip's speed and Δθ, the angle the ship's drawn arc meets the
@@ -475,7 +475,7 @@ never when it started.
   has a matching installation, with its settings saved, at the card's body;
   greyed otherwise, the reason in its tooltip. Several matches open a menu.
   `core/workbench-import.js` says which workbench field fills which param:
-  a skyhook's centre of mass, and its release deck (when ticked) or top as the
+  a skyhook's balance point, and its release deck (when ticked) or top as the
   release altitude, the top as a catch altitude; an elevator's counterweight,
   released from there. The release or catch phase is never imported. The
   button's state is read again when the saved design changes in another

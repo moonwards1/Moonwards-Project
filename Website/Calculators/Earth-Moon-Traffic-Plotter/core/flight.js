@@ -17,7 +17,7 @@
  *   - "moonEllipse": the exact two-body ellipse of a release that stays bound
  *     inside the Moon's sphere of influence, as MOON-RELATIVE samples (the
  *     same split the Moon-Skyhook-Trajectory-Plotter makes). Unlike that
- *     plotter, a release from below the centre of mass is allowed here, so
+ *     plotter, a release from below the balance point is allowed here, so
  *     the ellipse can meet the ground: such a leg is cut at the impact and
  *     carries impact "Moon". Only a skyhook's release is ever drawn this way.
  *     One from the elevator starts tens of thousands of kilometres out, where

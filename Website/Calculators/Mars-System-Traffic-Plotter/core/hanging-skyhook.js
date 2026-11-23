@@ -2,15 +2,15 @@
  * tether held upright on its own orbit of Mars, tilted to the equator.
  *
  * ITS ORBIT. The tether lies along the line from Mars's centre through its
- * centre of mass (C.o.M.), which goes round a circle at
+ * balance point (BP), which goes round a circle at
  *
  *     w = sqrt( GM / r_c^3 )
  *
- *     r_c   the C.o.M.'s distance from Mars's centre
+ *     r_c   the BP's distance from Mars's centre
  *     GM    Mars's gravitational parameter
  *
  * so a point at radius r moves at w * r: slower than a free orbit below the
- * C.o.M., faster above it. Mars's equatorial bulge turns the orbit's plane
+ * BP, faster above it. Mars's equatorial bulge turns the orbit's plane
  * about Mars's spin axis, the tilt staying as it is:
  *
  *     dNode/dt = -k * cos(i)
@@ -37,7 +37,7 @@
  * ITS MASSES are the Hanging-skyhooks calculator's model of a tether of
  * constant stress with a station at each end, an anchor station placed where
  * it balances the two halves, and two lots of ballast riding at their home
- * altitudes: one that may be anywhere on the tether, one above the C.o.M.
+ * altitudes: one that may be anywhere on the tether, one above the BP
  *
  * RESONANCES. The tether passes through the plane of Phobos's orbit twice an
  * orbit. With p orbits of the skyhook to q turns of Phobos (both counted
@@ -100,7 +100,7 @@ export var STRUCTURE = {
 //   ballastMass   kg of ballast free to move along the tether
 //   ballastHome   the altitude it rides at
 //   upperBallastMass, upperBallastHome   a second lot of ballast, riding above
-//                 the centre of mass: brought down toward it, it slows the skyhook
+//                 the balance point: brought down toward it, it slows the skyhook
 //   ballastSpeed  how fast ballast moves along the tether, m/s
 //   timing        { a0, sidesteps } — where round its orbit the skyhook is at
 //                 CLOCK_EPOCH (rad from the rising node), and the sidesteps
@@ -198,7 +198,7 @@ export var DAY_RATIOS = (function () {
 	return out.sort(function (a, b) { return b.ratio - a.ratio; });
 })();
 
-// The C.o.M. radius at which the skyhook makes `ratio` orbits per turn of
+// The BP radius at which the skyhook makes `ratio` orbits per turn of
 // Phobos (or of Mars, with `rate` N_MARS) against its node line, the node
 // turning at nodeRate(w) rad/s.
 function resonantRadius(ratio, nodeRate, rate) {
@@ -216,11 +216,11 @@ function resonantRadius(ratio, nodeRate, rate) {
 //   tilt, nodeRate       to Mars's equator; the plane's turning, rad/s (+ eastward)
 //   sunSyncTilt          the tilt that keeps pace with the Sun (NaN if none does)
 //   node0                the rising node's angle at CLOCK_EPOCH, in Mars's equator from ME.equinox
-//   sFoot, sTop, sRel    foot, top and release point as distances from the C.o.M., m
+//   sFoot, sTop, sRel    foot, top and release point as distances from the BP, m
 //   ratio                orbits per turn of Phobos, against the node line
-//   resonances           [{ p, q, ratio, D, gap, comAlt }] with the C.o.M. on this tether
+//   resonances           [{ p, q, ratio, D, gap, comAlt }] with the BP on this tether
 //   dayRatio             orbits per turn of Mars, against the node line
-//   dayResonances        [{ p, q, ratio, comAlt }] with the C.o.M. on this tether
+//   dayResonances        [{ p, q, ratio, comAlt }] with the BP on this tether
 //   share                the altitudes shared with the Phobos tether { lo, hi } (m), or null
 //   shareElevator        what is shared with the space elevator's tether, or
 //                        null where the two cannot meet: { lo, hi } (m), and
@@ -239,7 +239,7 @@ export function hangingFigures(params, phobos, elevator) {
 		return fail("foot-range", "The foot must be at least " + kmText(FLOOR) + " up, clear of the air.", vals);
 	}
 	if (!(p.comAlt > p.footAlt + 1e3 && p.comAlt < p.topAlt - 1e3)) {
-		return fail("com-range", "The centre of mass must lie between the foot and the top.", vals);
+		return fail("com-range", "The balance point must lie between the foot and the top.", vals);
 	}
 	if (!(p.topAlt <= TOP_MAX)) {
 		return fail("top-range", "The top must be no higher than " + kmText(TOP_MAX) + ", below Phobos at its nearest.", vals);
@@ -255,11 +255,11 @@ export function hangingFigures(params, phobos, elevator) {
 		return fail("ballast-home", "The ballast's home must lie on the tether, between the foot and the top.", vals);
 	}
 	if (!(p.upperBallastHome >= p.comAlt && p.upperBallastHome <= p.topAlt)) {
-		return fail("upper-ballast-home", "The upper ballast's home must lie between the centre of mass and the top.", vals);
+		return fail("upper-ballast-home", "The upper ballast's home must lie between the balance point and the top.", vals);
 	}
 	var st = structure(p);
 	if (!st.balanced) {
-		return fail("unbalanced", "These altitudes do not balance: no place for the anchor station puts the centre of mass there. Make the anchor station heavier or the upper ballast lighter, or move the centre of mass or a ballast's home.", vals);
+		return fail("unbalanced", "These altitudes do not balance: no place for the anchor station puts the balance point there. Make the anchor station heavier or the upper ballast lighter, or move the balance point or a ballast's home.", vals);
 	}
 	var rCom = R + p.comAlt, omega = Math.sqrt(GM / Math.pow(rCom, 3));
 	var all = st.fixed.concat([{ r: R + p.ballastHome, m: p.ballastMass }, { r: R + p.upperBallastHome, m: p.upperBallastMass }]);
@@ -336,7 +336,7 @@ export function hangingFigures(params, phobos, elevator) {
 	};
 }
 
-// The C.o.M. altitude (m) that puts the skyhook of `params` exactly on the
+// The BP altitude (m) that puts the skyhook of `params` exactly on the
 // resonance `ratio`, its own masses and tilt settling the node's rate. Null
 // when the search leaves the tether. opts: { elevator (the space elevator's
 // figures, when one is in the design), mars (true: `ratio` is orbits per
@@ -345,7 +345,7 @@ export function resonantComAlt(params, phobos, ratio, opts) {
 	var o = opts || {}, n = o.mars ? N_MARS : N_PHOBOS;
 	var p = Object.assign({}, HANGING_DEFAULTS, params || {}), alt = null;
 	var fig = hangingFigures(p, phobos, o.elevator);
-	// Where the centre of mass is now may not balance; start from the
+	// Where the balance point is now may not balance; start from the
 	// resonance's own height, the node's turning left out at first.
 	if (!fig.ok) { fig = hangingFigures(Object.assign({}, p, { comAlt: Math.cbrt(GM / (ratio * ratio * n * n)) - R }), phobos, o.elevator); }
 	if (!fig.ok) { return null; }
@@ -388,7 +388,7 @@ export function planeAt(fig, jd) {
 // Where the hanging skyhook is at jd:
 //   angle       round its orbit from the rising node, rad
 //   u, uDot     the tether's direction and its rate of turning (1/s)
-//   rCom        the C.o.M.'s distance from Mars's centre then, m (a sidestep under way shifts it)
+//   rCom        the BP's distance from Mars's centre then, m (a sidestep under way shifts it)
 //   plane       planeAt's axes
 //   slip        timingAt's result
 export function hangingAt(fig, jd, timing) {
@@ -400,7 +400,7 @@ export function hangingAt(fig, jd, timing) {
 	return { angle: a, u: u, uDot: uDot, rCom: fig.rCom + slip.shift, plane: pl, slip: slip };
 }
 
-// State { r, v } of the point of the tether at distance s from the C.o.M.
+// State { r, v } of the point of the tether at distance s from the BP
 export function hangingPointState(at, s) {
 	return { r: O.vScale(at.u, at.rCom + s), v: O.vScale(at.uDot, at.rCom + s) };
 }

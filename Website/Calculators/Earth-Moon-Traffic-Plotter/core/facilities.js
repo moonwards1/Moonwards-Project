@@ -10,7 +10,7 @@
  *     phase(jd) = phase0 + omega * (jd - CLOCK_EPOCH) * 86400
  *
  *     phase0   the tether's angle at CLOCK_EPOCH, rad (per facility, fixed)
- *     omega    its rotation rate, rad/s — the CoM's circular orbital rate
+ *     omega    its rotation rate, rad/s — the BP's circular orbital rate
  *     jd       Julian date
  *
  * A skyhook here is the design's HANGING skyhook: a gravity-gradient tether
@@ -139,10 +139,10 @@ function fail(code, message, values) {
 // A skyhook's geometry and rotation figures for one param set. Pure; returns
 // { ok: true, ...figures } (SI: m, m/s, rad/s, s) or { ok: false, diagnostic }.
 //
-//     omega = sqrt(GM / rCom^3)          the CoM's circular orbital rate
+//     omega = sqrt(GM / rCom^3)          the BP's circular orbital rate
 //     v(r)  = omega * r                  speed of the tether at radius r
 //     pull(r) = omega^2 * r - GM / r^2   what a mass on the tether feels,
-//                                        outward positive (zero at the CoM)
+//                                        outward positive (zero at the BP)
 export function skyhookFigures(id, params) {
 	var fac = facility(id);
 	var p = resolveParams(id, params);
@@ -153,7 +153,7 @@ export function skyhookFigures(id, params) {
 		return fail("bad-params", "The " + fac.label + " needs a number for every altitude.", vals);
 	}
 	if (!(p.footAlt > 0 && p.footAlt < p.comAlt && p.comAlt < p.topAlt)) {
-		return fail("bad-order", "The " + fac.label + "'s foot must be above the ground and below its centre of mass, and its top above that.", vals);
+		return fail("bad-order", "The " + fac.label + "'s foot must be above the ground and below its balance point, and its top above that.", vals);
 	}
 	if (!(p.relAlt >= p.footAlt && p.relAlt <= p.topAlt)) {
 		return fail("release-off-tether", "The release point must lie on the tether, between the foot and the top.", vals);

@@ -22,9 +22,9 @@
 //   distUpper, distLower       masses spread evenly along the upper / lower tether, kg
 //                              (climbers, power, fuel, tracks; stations are stationMass)
 //   comMass                    the anchor station, kg: the principal station, placed where the
-//                              tension arriving at the centre of mass from above equals the
+//                              tension arriving at the balance point from above equals the
 //                              tension arriving from below
-//   anchorMass                 optional, kg: a moon at the centre of mass that the tether hangs
+//   anchorMass                 optional, kg: a moon at the balance point that the tether hangs
 //                              from (Shared/body-profiles.js ANCHORS). It takes the anchor
 //                              station's place: the two halves need not balance, since the moon
 //                              holds the difference, and comMass is ignored
@@ -129,7 +129,7 @@ export function computeSkyhook(moon, inp) {
 
 	if (t.foot < 0) warnings.push("The tether foot is inside the body.");
 	if (t.foot > t.top) warnings.push("The tether foot can not be higher than the top.");
-	else if (t.centre < t.foot || t.centre > t.top) warnings.push("The centre of mass must be between the foot and the top.");
+	else if (t.centre < t.foot || t.centre > t.top) warnings.push("The balance point must be between the foot and the top.");
 	if (inp.receivingDeck != null && (t.receivingDeck < t.foot || t.receivingDeck > t.top)) warnings.push("The receiving deck must be between the foot and the top.");
 	if (inp.outerDocks != null && (t.outerDocks < t.foot || t.outerDocks > t.top)) warnings.push("The outer docks must be between the foot and the top.");
 	if (inp.releaseDeck != null && (t.releaseDeck < t.foot || t.releaseDeck > t.top)) warnings.push("The release deck must be between the foot and the top.");
@@ -174,13 +174,13 @@ export function computeSkyhook(moon, inp) {
 	t.highRatio = Math.exp(t.highIntegral / t.strength);
 
 	// ---- loads and forces ----
-	// Constant-stress cable: T(r) = σ·A(r). The centre of mass divides the upper tether
-	// (top → centre of mass) from the lower (foot → centre of mass). Each half is swept
-	// from its tip inward to the centre of mass (sweepTether), picking up its tip load, its
+	// Constant-stress cable: T(r) = σ·A(r). The balance point divides the upper tether
+	// (top → balance point) from the lower (foot → balance point). Each half is swept
+	// from its tip inward to the balance point (sweepTether), picking up its tip load, its
 	// evenly spread load and every station on its side, the anchor station among them.
-	// The cable is continuous through the centre of mass and nothing hangs there, so the
+	// The cable is continuous through the balance point and nothing hangs there, so the
 	// tension arriving from above equals the tension arriving from below. That condition
-	// fixes where the anchor station sits; it puts the installation's true centre of mass
+	// fixes where the anchor station sits; it puts the installation's true balance point
 	// on the nominal one, which is what fixes the orbit.
 	var rFoot = t.foot + R, rTop = t.top + R, rCentre = t.centre + R, w = t.angularVelocity;
 	t.loads = { top: inp.loadTop, foot: inp.loadFoot, distUpper: inp.distUpper, distLower: inp.distLower, com: inp.comMass };
@@ -189,7 +189,7 @@ export function computeSkyhook(moon, inp) {
 		var m = Number(sm[st[0]]) || 0;
 		if (inp[st[0]] != null && m > 0) points.push({ key: st[0], name: st[1], r: inp[st[0]] + R, m: m });
 	});
-	// Both halves swept to the centre of mass with the anchor station (mass mAnchor) at rs.
+	// Both halves swept to the balance point with the anchor station (mass mAnchor) at rs.
 	var halves = function (rs, mAnchor, steps, rec) {
 		var pts = mAnchor > 0 ? points.concat([{ name: "Anchor station", r: rs, m: mAnchor, anchor: true }]) : points;
 		return {
@@ -205,9 +205,9 @@ export function computeSkyhook(moon, inp) {
 	};
 	// The station may sit anywhere on the tether. The balance can have more than one
 	// solution, so the tether is scanned from end to end and the sign change nearest the
-	// centre of mass is refined. If the loads cannot be balanced anywhere, the station is
-	// left at the centre of mass and the leftover is reported (t.unbalance): the
-	// installation's true centre of mass is then not where the nominal one says.
+	// balance point is refined. If the loads cannot be balanced anywhere, the station is
+	// left at the balance point and the leftover is reported (t.unbalance): the
+	// installation's true balance point is then not where the nominal one says.
 	var rs = rCentre;
 	var anchored = inp.anchorMass > 0;
 	if (anchored) t.loads.com = 0;
@@ -234,8 +234,8 @@ export function computeSkyhook(moon, inp) {
 	}
 	t.profile = { up: { r: [], T: [] }, low: { r: [], T: [] } };
 	var fin = halves(rs, t.loads.com, STEPS, t.profile);
-	t.comOffset = rs - rCentre;   // the anchor station's altitude above (+) or below (−) the centre of mass
-	t.tensionUpper = fin.up.tension;   // N, arriving at the centre of mass from above
+	t.comOffset = rs - rCentre;   // the anchor station's altitude above (+) or below (−) the balance point
+	t.tensionUpper = fin.up.tension;   // N, arriving at the balance point from above
 	t.tensionLower = fin.low.tension;  // N, arriving from below; equal to the above when balanced
 	t.unbalance = t.tensionLower - t.tensionUpper;   // N; 0 when balanced
 	// An anchoring moon takes the difference as a net pull toward the primary (unbalance > 0)
@@ -249,7 +249,7 @@ export function computeSkyhook(moon, inp) {
 	t.tetherMassLower = fin.low.mass;
 	t.tetherMass = t.tetherMassUpper + t.tetherMassLower;
 	// Each half carries its tip load, its spread load and the stations on its side of the
-	// centre of mass. The anchor station's own mass is left out of these totals; it has its own
+	// balance point. The anchor station's own mass is left out of these totals; it has its own
 	// line (t.tetherParts) for the stretch of cable that carries it.
 	var stationSum = function (h) { return h.stations.reduce(function (a, x) { return a + (x.anchor ? 0 : x.m); }, 0); };
 	t.sections = { up: fin.up.sections, low: fin.low.sections };
@@ -291,9 +291,9 @@ export function computeSkyhook(moon, inp) {
 	t.massMultiple = carried > 0 ? t.tetherMass / carried : NaN;
 	// The tether's mass in parts, each with the load it is there for. The anchor station's
 	// part is the tether mass its own pull adds: its tether swept again from the tip to the
-	// centre of mass without it, the geometry as solved, the difference taken. Only the stretch
+	// balance point without it, the geometry as solved, the difference taken. Only the stretch
 	// inboard of the station changes, since nothing beyond it feels the station's pull. Each
-	// tether's own part is its mass, centre of mass to tip, less that share, against
+	// tether's own part is its mass, balance point to tip, less that share, against
 	// everything else it holds up.
 	var part = function (mass, held) { return { mass: mass, held: held, multiple: held > 0 ? mass / held : NaN }; };
 	var anchorHalf = ["up", "low"].find(function (key) { return fin[key].stations.some(function (x) { return x.anchor; }); }) || null;
@@ -310,9 +310,9 @@ export function computeSkyhook(moon, inp) {
 	};
 	if (t.foot < t.top && !t.balanced) {
 		var gap = Math.abs(t.unbalance), gapText = gap >= 1e12 ? (gap / 1e12).toFixed(gap >= 1e13 ? 0 : 1) + " TN" : gap >= 1e9 ? (gap / 1e9).toFixed(1) + " GN" : (gap / 1e6).toFixed(0) + " MN";
-		warnings.push("Out of balance: no position for the anchor station balances these loads. At the centre of mass the " +
+		warnings.push("Out of balance: no position for the anchor station balances these loads. At the balance point the " +
 			(t.unbalance < 0 ? "upper tether outweighs the lower" : "lower tether outweighs the upper") + " by " + gapText +
-			", so the true centre of mass is not where you set it. Add mass to the anchor station, or load to the lighter side.");
+			", so the true balance point is not where you set it. Add mass to the anchor station, or load to the lighter side.");
 	}
 
 	// ---- release points: altitude where a release reaches each neighbour ----
@@ -351,7 +351,7 @@ export function stationKeeping(b, env) {
 
 // Every mass in the installation as points [{ r, m }] (r from the body's centre, m; kg):
 // the tether itself from the tension profile (dm = T/s · dr), the spread loads in even
-// slices from each tip to the centre of mass, every station, and an anchoring moon.
+// slices from each tip to the balance point, every station, and an anchoring moon.
 export function massPoints(moon, t) {
 	var R = Number(moon.radius), rCentre = t.centre + R, pts = [];
 	["up", "low"].forEach(function (h) {
@@ -381,7 +381,7 @@ export function massPoints(moon, t) {
 //            sunSync (true: find the tilt at which the plane keeps pace with the Sun),
 //            exclude (name of a moon that is part of the installation, never a third body) }
 // Returns null where the body has no measured J2; otherwise
-//   { coefficient k (rad/s; Ω̇ = −k cos i), coefficientPoint (all mass at the centre of mass),
+//   { coefficient k (rad/s; Ω̇ = −k cos i), coefficientPoint (all mass at the balance point),
 //     inclination (rad; NaN when sun-synchronous is out of reach), rate (rad/s, + eastward),
 //     period (s; Infinity for a polar plane), periodPoint, year (s, the body's or its
 //     planet's turn about the Sun), sunSyncRate (rad/s), sunSyncReach (true if some tilt

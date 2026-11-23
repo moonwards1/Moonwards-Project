@@ -110,19 +110,19 @@ test("loads, balance and the anchor station", function () {
 	assert.ok(t.balanced);
 	near(t.loads.upperTotal / 1e6, 100, 2, "upper total kt");
 	near(t.loads.lowerTotal / 1e6, 500, 2, "lower total kt, anchor station left out");
-	// the cable is continuous through the centre of mass: the tension arriving from above
+	// the cable is continuous through the balance point: the tension arriving from above
 	// equals the tension arriving from below
 	var gap = t.tensionLower - t.tensionUpper;
-	assert.ok(Math.abs(gap) / t.tensionPeak < 1e-6, "tensions match at the centre of mass: " + gap);
-	near(t.comOffset / 1e3, -13, 1, "station offset km (below the centre of mass)");
+	assert.ok(Math.abs(gap) / t.tensionPeak < 1e-6, "tensions match at the balance point: " + gap);
+	near(t.comOffset / 1e3, -13, 1, "station offset km (below the balance point)");
 	// the station sits on the lower half and adds its net pull there, as a station does
 	var rs = R + t.centre + t.comOffset;
 	var pull = w * w * rs - moon.GM / (rs * rs);
 	var anchor = t.stations.low.find(function (x) { return x.anchor; });
 	assert.ok(anchor && !t.stations.up.some(function (x) { return x.anchor; }), "the anchor station is on the lower half only");
 	assert.ok(Math.abs(anchor.pull - t.loads.com * Math.abs(pull)) < 1e-6 * anchor.pull, "it adds its mass times its net pull");
-	assert.equal(t.tensionPeak, t.tensionUpper, "the peak tension is the tension at the centre of mass");
-	// below the centre of mass the upper tether never sees the anchor station
+	assert.equal(t.tensionPeak, t.tensionUpper, "the peak tension is the tension at the balance point");
+	// below the balance point the upper tether never sees the anchor station
 	var lighter = computeSkyhook(moon, Object.assign({}, base(), { comMass: 500e6 }));
 	assert.ok(Math.abs(lighter.tensionUpper - t.tensionUpper) < 1e-9 * t.tensionUpper, "upper tension does not depend on a lower anchor station's mass");
 	assert.equal(lighter.tetherMassUpper, t.tetherMassUpper);
@@ -135,7 +135,7 @@ test("loads, balance and the anchor station", function () {
 
 test("the anchor station's own share of the tether is set apart, with its own ratio", function () {
 	var p = t.tetherParts, a = p.anchor;
-	assert.equal(p.anchorHalf, "low", "the default anchor station hangs below the centre of mass");
+	assert.equal(p.anchorHalf, "low", "the default anchor station hangs below the balance point");
 	assert.ok(a && a.mass > 0, "the station's pull adds tether");
 	// the parts add up to the whole tether
 	assert.ok(Math.abs(p.up.mass + p.low.mass + a.mass - t.tetherMass) < 1e-6 * t.tetherMass);
@@ -144,7 +144,7 @@ test("the anchor station's own share of the tether is set apart, with its own ra
 	close(a.multiple, a.mass / a.held, "anchor ratio");
 	close(p.low.held, t.loads.lowerTotal, "lower part holds everything on the lower tether but the station");
 	assert.equal(p.up.mass, t.tetherMassUpper, "the other tether is whole");
-	assert.ok(a.mass < 0.1 * t.tetherMassLower, "a station near the centre of mass costs little tether");
+	assert.ok(a.mass < 0.1 * t.tetherMassLower, "a station near the balance point costs little tether");
 	// it grows with the square of the offset, roughly: 3ω²Δr² ρ/σ_eff
 	var dr = Math.abs(t.comOffset), est = 3 * t.angularVelocity * t.angularVelocity * dr * dr / t.strength;
 	assert.ok(a.multiple > 0.3 * est && a.multiple < 3 * est, "ratio " + a.multiple + " near the estimate " + est);
@@ -158,7 +158,7 @@ test("the tension profile for the drawing", function () {
 	assert.equal(P.up.r.length, P.up.T.length);
 	assert.ok(P.up.r.length > 100 && P.low.r.length > 100);
 	assert.ok(Math.abs(P.up.T[0] - 40e6 * t.highAcceleration) < 1e-6 * P.up.T[0], "top tip tension is the tip load's weight");
-	assert.equal(P.up.T[P.up.T.length - 1], t.tensionUpper, "the upper sweep ends at the centre of mass with the upper tension");
+	assert.equal(P.up.T[P.up.T.length - 1], t.tensionUpper, "the upper sweep ends at the balance point with the upper tension");
 	assert.equal(P.low.T[P.low.T.length - 1], t.tensionLower, "...and the lower sweep with the lower tension");
 	var rCentre = Number(moon.radius) + 275e3;
 	for (var i = 1; i < P.up.T.length && P.up.r[i] >= rCentre; i++) assert.ok(P.up.T[i] >= P.up.T[i - 1], "tension never falls toward the centre until past it");
@@ -267,7 +267,7 @@ test("stations: masses held at a point step the tension up", function () {
 	assert.equal(all.length, 3);
 	all.forEach(function (x) { assert.ok(Math.abs(Math.abs(x.pull) - x.m * Math.abs(pull(x.r))) < 1e-6 * Math.abs(x.pull), x.name); });
 	near(u.loads.stationsUpper + u.loads.stationsLower, 750e6, 0, "station mass is all counted");
-	// the receiving deck is below the centre of mass, so it hangs on the lower half and adds to it
+	// the receiving deck is below the balance point, so it hangs on the lower half and adds to it
 	var recv = u.stations.low.find(function (x) { return x.name === "Receiving deck"; });
 	assert.ok(recv && recv.pull > 0);
 	assert.ok(u.stations.low.concat(u.stations.up).every(function (x) { return x.pull > 0; }), "every station adds to its half");
@@ -286,7 +286,7 @@ test("stations: masses held at a point step the tension up", function () {
 	// more held up means more tether, and the multiples count every load
 	assert.ok(u.tetherMassUpper > t.tetherMassUpper);
 	close(u.massMultipleUpper, u.tetherMassUpper / u.loads.upperTotal, "upper multiple");
-	near(u.loads.upperTotal / 1e6, 100 + 700, 2, "upper total: its loads plus the two stations above the centre of mass, kt");
+	near(u.loads.upperTotal / 1e6, 100 + 700, 2, "upper total: its loads plus the two stations above the balance point, kt");
 	// the drawn profile carries the step: two entries at the release deck's radius
 	var rL = 950e3 + R, P = u.profile.up, at = [];
 	P.r.forEach(function (r, i) { if (r === rL) at.push(P.T[i]); });
@@ -317,7 +317,7 @@ test("station figures: tension at each level, pull, and the outcome of a release
 	close(F[1].tension, up[i].tFrom, "release deck tension");
 	close(F[1].tension, up[i - 1].tTo + F[1].pull, "arriving tension plus its own pull");
 	close(F[1].acceleration, Math.abs(u.angularVelocity * u.angularVelocity * (950e3 + moon.radius) - moon.GM / Math.pow(950e3 + moon.radius, 2)), "net pull per kg");
-	// a release at the release deck escapes; at the receiving deck, just below the centre of mass, it
+	// a release at the release deck escapes; at the receiving deck, just below the balance point, it
 	// is bound with its lowest point a few km above the surface; a lower deck would drop to the surface
 	assert.equal(F[1].release.outcome, "escape");
 	near(F[1].release.vInf, 835, 0, "v_inf at the release deck");

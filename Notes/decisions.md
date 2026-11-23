@@ -146,13 +146,13 @@ projected into the skyhook's plane.
 
 A RELEASE may instead orbit sun-synchronously: inclined so J2 turns its
 plane about the spin pole once per year, with its ascending node at a chosen
-local solar time (12 h toward the Sun). The inclination comes from the CoM
-radius (first-order J2 on the CoM's circular orbit; the tether's spread is
+local solar time (12 h toward the Sun). The inclination comes from the BP
+radius (first-order J2 on the BP's circular orbit; the tether's spread is
 not modelled), and the plane is taken on the pin date. It is offered only
 where a sun-synchronous orbit exists above the surface: a body with J2, a
 pole and its own heliocentric orbit — never a moon, whose planet's tide
 governs a low orbit's plane. Today that is Earth, Mars, Ceres, Vesta and the
-giant planets; not Mercury or Venus. A CoM above the highest sun-synchronous
+giant planets; not Mercury or Venus. A BP above the highest sun-synchronous
 altitude fails the release gate. A CATCH stays equatorial (the arrival mark
 below is the equatorial crossing).
 
@@ -172,7 +172,7 @@ side and anywhere from the arm's base to the catch point, not only the tip.
 Otherwise there is no catch solution yet. The Arrival ship card's frame is the
 tether point's own, on the burn-frame convention: prograde along its motion,
 normal along the spin pole, radial down the arm. That point moves at ω·r,
-because the tether turns rigidly at its CoM's orbital rate.
+because the tether turns rigidly at its BP's orbital rate.
 
 Why: one geometry for every skyhook until a real case calls for another
 plane; the sun-synchronous release is the first such case, holding the
@@ -646,19 +646,19 @@ horizontal. Why: a lighter counterweight leaves less tension at the bottom, wher
 track's weight bends the tether down toward the ground, and below some mass it no
 longer lands at the anchor at all.
 
-### A hanging skyhook's tethers are split at its centre of mass
+### A hanging skyhook's tethers are split at its balance point
 
-The upper tether runs from the top to the centre of mass and the lower from the foot
+The upper tether runs from the top to the balance point and the lower from the foot
 to it; each tether's spread load is spread over that length. The anchor station is a
 mass on whichever tether it lies on, adding its mass times its net pull like any other
-station, and its altitude is the one at which the tension arriving at the centre of mass
+station, and its altitude is the one at which the tension arriving at the balance point
 from above equals that from below. Peak tension is read along that one continuous cable.
-Why: the cable is continuous through the centre of mass and nothing hangs there, so it is
+Why: the cable is continuous through the balance point and nothing hangs there, so it is
 the physical dividing point and the one reference for every measurement.
 
 ### A hanging skyhook's anchor station gets its own share of the tether mass
 
-Each tether's mass ratio runs from the centre of mass to its tip, against everything it
+Each tether's mass ratio runs from the balance point to its tip, against everything it
 holds up except the anchor station. The anchor station's share is the tether mass its own
 pull adds, found by sweeping its tether again without it at the solved geometry, and is
 given as a multiple of the station's mass. The three shares add up to the whole tether.
@@ -692,7 +692,7 @@ no separate climber-throughput model.
 ### A moon-anchored skyhook: the moon is the anchor station
 
 A skyhook anchored on a moon (`ANCHORS`, today Phobos) is the hanging-skyhook model
-with the moon as the anchor: the centre of mass is the moon's orbit, the two halves
+with the moon as the anchor: the balance point is the moon's orbit, the two halves
 need not balance, and the moon's orbit shifts by Δ = F / (3ω²M) under the net pull.
 The tether rides the moon's eccentric orbit, so the foot floor is the primary's floor
 plus that swing, and the top stays below the next moon out at its periapsis, less
@@ -828,3 +828,16 @@ the Phobos cap, Deimos's crossings and the hanging skyhook's passes are found ag
 The most flow (`mostFlow`) is where it either passes Phobos's reach by under 50 km or
 is drawn down to the ground; a flow past it is refused. The workbench card's
 single-angle lean formula is the small-flow limit at the anchor.
+
+### The tether's balance point is called the balance point (BP), never the centre of mass
+
+The point on a hanging skyhook where gravity and the outward pull cancel, which
+moves at local circular speed and where the tension peaks, is the **balance point**,
+shortened to **BP** where the interface needs it. This covers UI text, docs and
+comments.
+
+Why: in a field that weakens with height this point is not the centre of mass. It
+lies between the centre of gravity and the centre of mass (r₀³ = r_cm · r_cg²), so
+"centre of mass" names a different point. Code identifiers (`comAlt`, `rCom`) and
+saved-settings keys ("Centre of mass altitude", "Centre-of-mass station") keep their
+old names, because renaming them would break saved designs and the workbench import.

@@ -23,7 +23,7 @@
 //                  ([{ fam, v }]): the Traffic card offers their surface launchers
 //   opts.anchor    a moon the tether hangs from (Shared/body-profiles.js ANCHORS,
 //                  e.g. "Phobos"): the moon is the anchor station, its orbit fixes
-//                  the centre of mass, and the body is the moon's primary
+//                  the balance point, and the body is the moon's primary
 //
 // Body-specific parts come from Shared/body-profiles.js: cards carry `where`
 // (shell.setConditions), the foot may not go below the body's foot floor, and an
@@ -67,7 +67,7 @@ export function mountHangingSkyhook(root, opts) {
 
 	// Opening figures: altitudes in km, loads in kt; `ticked` is whether the optional
 	// stations open in use. An anchored tether opens on figures that fit around its moon
-	// (the centre of mass is the moon's orbit). A workbench tether opens on its body's own
+	// (the balance point is the moon's orbit). A workbench tether opens on its body's own
 	// design where it has one, and otherwise on round figures that suit every workbench body.
 	var LOADS = { topLoad: 40, upperLoad: 60, anchorLoad: 25000, lowerLoad: 300, footLoad: 200, ticked: true, releaseMass: 10, outerMass: 200, recvMass: 100 };
 	var BENCH = {
@@ -117,7 +117,7 @@ export function mountHangingSkyhook(root, opts) {
 	}
 	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "site of boost engines", unit: "km", value: DEF.top });
 	var topSp = speedsUnder(topIn, [{ label: "speed", unit: "km/s" }, { label: "free orbit speed", unit: "km/s", plain: true }, { label: "multiple", unit: "×" }]);
-	var centreIn = shell.numberField(geoCard, { label: "Centre of mass (C.o.M) altitude", key: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "determines orbital speed", unit: "km", value: DEF.centre });
+	var centreIn = shell.numberField(geoCard, { label: "Balance point (BP) altitude", key: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "determines orbital speed", unit: "km", value: DEF.centre });
 	var centreSp = speedsUnder(centreIn, [{ label: "Period", unit: "h" }, { label: "speed", unit: "km/s" }]);
 	if (anc) centreIn.disabled = true;
 	var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: DEF.foot });
@@ -127,7 +127,7 @@ export function mountHangingSkyhook(root, opts) {
 	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop"], focus: "tether", value: DEF.material || "silica", safety: 3 });
 	var rRatL = matCard.addRatioLine("Lower tether ratio");
 	var rRatU = matCard.addRatioLine("Upper tether ratio");
-	var rRatA = matCard.addRatioLine("Extra tether from Anchor to C.o.M.");
+	var rRatA = matCard.addRatioLine("Extra tether from Anchor to BP");
 
 	var payCard = shell.addCard({ id: "pay", tab: "arch", feeds: ["prop"], side: "in", title: "Core Facilities", short: "Core", color: C.rust, focus: "tether" });
 	var topLoadIn = shell.numberField(payCard, { label: "Top station", key: "Top tip load", hint: "engines, release facilities", unit: "kt", value: DEF.topLoad, min: 0,
@@ -135,7 +135,7 @@ export function mountHangingSkyhook(root, opts) {
 	var upperDistIn = shell.numberField(payCard, { label: "Upper tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.upperLoad, min: 0,
 		tip: "Everything carried along the upper tether apart from the stations (climbers, power, fuel, tracks), treated as spread evenly over its length. The stations' masses are on the Optional Stations card." });
 	var comIn = shell.numberField(payCard, { label: "Anchor station", key: "Centre-of-mass station", hint: "production, docks, load balance", unit: "kt", value: DEF.anchorLoad, min: 0,
-		tip: "The skyhook orbits at the altitude where the outward and inward pulls balance - at the center of mass. Above there, the tether is pulled outwards, below there, it is pulled inwards. Because the loads on the upper and lower tethers are very different, and they are very different lengths, the anchor station is to one side of the center of mass. If the loads other than the anchor station are extremely different on the upper and lower tethers, the anchor station might even need to be at the foot. The heavier the anchor station, the closer it can sit to the centre of mass, and the less that point moves as loads change." });
+		tip: "The skyhook orbits at the altitude where the outward and inward pulls balance - at the balance point. Above there, the tether is pulled outwards, below there, it is pulled inwards. Because the loads on the upper and lower tethers are very different, and they are very different lengths, the anchor station is to one side of the balance point. If the loads other than the anchor station are extremely different on the upper and lower tethers, the anchor station might even need to be at the foot. The heavier the anchor station, the closer it can sit to the balance point, and the less that point moves as loads change." });
 	var lowerDistIn = shell.numberField(payCard, { label: "Lower tether load", hint: "tracks, power lines, equipment", unit: "kt", value: DEF.lowerLoad, min: 0,
 		tip: "Everything carried along the lower tether apart from the stations, treated as spread evenly over its length." });
 	if (anc) {
@@ -247,8 +247,8 @@ export function mountHangingSkyhook(root, opts) {
 	var rOff = shell.line(secA, { label: anc ? anc.name + "'s orbit shift" : "Anchor station offset", unit: anc ? "m" : "km" });
 	var rMT = shell.line(secM, { label: "Tether mass, total", unit: "kt" });
 	var massFold = shell.fold(secM, { label: "Mass by section" });
-	var rTC = shell.line(secT, { label: "Tension at the centre of mass", unit: "kN" });
-	var massGroups = { up: group(massFold, "Upper tether, top → centre of mass"), low: group(massFold, "Lower tether, foot → centre of mass") };
+	var rTC = shell.line(secT, { label: "Tension at the balance point", unit: "kN" });
+	var massGroups = { up: group(massFold, "Upper tether, top → balance point"), low: group(massFold, "Lower tether, foot → balance point") };
 
 	var clmCard = shell.addCard({ id: "clm", tab: "log", side: "out", title: "Climber energy", short: "Climber", color: C.core, focus: "tether" });
 	var rClL = shell.line(clmCard, { label: "Foot → centre (uphill)", unit: "kJ/kg" });
@@ -322,10 +322,10 @@ export function mountHangingSkyhook(root, opts) {
 		stations.forEach(function (p) { parts.push(p.name.toLowerCase() + " " + num(p.m / 1e6, 0) + " kt"); });
 		return parts.join(" + ");
 	}
-	// "Top → release deck", "Outer docks → centre of mass"
+	// "Top → release deck", "Outer docks → balance point"
 	function sectionName(half, x) {
 		var from = x.from === "tip" ? (half === "up" ? "Top" : "Foot") : x.from;
-		return from + " → " + (x.to ? x.to.toLowerCase() : "centre of mass");
+		return from + " → " + (x.to ? x.to.toLowerCase() : "balance point");
 	}
 
 	// ---------- nodal precession ----------
@@ -346,7 +346,7 @@ export function mountHangingSkyhook(root, opts) {
 		tiltIn.disabled = ss || !!anc;
 		var npOpts = { inclination: field(tiltIn, 0) * Math.PI / 180, sunSync: ss, exclude: anc ? anc.name : null };
 		var np = nodalPrecession(body, t, npOpts);
-		// Whether any tilt reaches the Sun's pace depends on the body and the centre of mass,
+		// Whether any tilt reaches the Sun's pace depends on the body and the balance point,
 		// not on the tilt; where none does, the item is treated as unticked.
 		var ssPossible = !np || !!anc || np.sunSyncReach;
 		setSunSyncPossible(ssPossible, "Equatorial bulge won't turn the orbit enough for it to hold the same angle to the body's orbit.");
@@ -370,7 +370,7 @@ export function mountHangingSkyhook(root, opts) {
 		} else {
 			f = timeSpan(np.period);
 			var fp = isFinite(np.periodPoint) ? timeSpan(np.periodPoint) : null;
-			rNpPeriod.set(f[0], ss ? "one year at " + here : fp ? "with all the mass at the centre of mass: " + fp[0] + " " + fp[1] : "", f[1]);
+			rNpPeriod.set(f[0], ss ? "one year at " + here : fp ? "with all the mass at the balance point: " + fp[0] + " " + fp[1] : "", f[1]);
 			rNpRate.set(degPerDay(np.rate), (np.rate < 0 ? "westward, against the spin" : "eastward, with the spin") +
 				ssNote);
 			if (ss) rNpTilt.set(num(tiltDeg, 2), "retrograde: the skyhook orbits against " + here + "'s spin");
@@ -544,8 +544,8 @@ export function mountHangingSkyhook(root, opts) {
 		var gapF = scaled(Math.abs(t.unbalance), FORCE);
 		if (anc) rOff.set(num(Math.abs(t.anchor.shift), Math.abs(t.anchor.shift) < 10 ? 2 : 0), (t.anchor.shift < 0 ? "lower" : "higher") + ", from the net pull of " + gapF[0] + " " + gapF[1] +
 			(t.anchor.pull > 0 ? " toward " : " away from ") + anc.primary + " · Δ = F / (3ω²M)", "m");
-		else rOff.set(num(Math.abs(t.comOffset) / 1e3, 1), t.balanced ? (Math.abs(t.comOffset) < 50 ? "essentially at the centre of mass" : (t.comOffset < 0 ? "below" : "above") + " the centre of mass")
-			: "no position balances these loads · out of balance by " + gapF[0] + " " + gapF[1] + " at the centre of mass", "km");
+		else rOff.set(num(Math.abs(t.comOffset) / 1e3, 1), t.balanced ? (Math.abs(t.comOffset) < 50 ? "essentially at the balance point" : (t.comOffset < 0 ? "below" : "above") + " the balance point")
+			: "no position balances these loads · out of balance by " + gapF[0] + " " + gapF[1] + " at the balance point", "km");
 
 		// station-keeping
 		var sk = t.keeping, tq = scaled(sk.torque, TORQUE);
@@ -645,7 +645,7 @@ export function mountHangingSkyhook(root, opts) {
 	function A(base, extra) { return Object.assign({}, base, NS, extra || {}); }
 
 	var gAxis = g("path", A({ stroke: C.sky.draw, "stroke-opacity": 0.35, "stroke-width": 1, "stroke-dasharray": "2 5" }));
-	// the paths a release from the top, centre of mass and foot takes: one dashed look for all three
+	// the paths a release from the top, balance point and foot takes: one dashed look for all three
 	var ARC = { fill: "none", stroke: "#EADFCF", "stroke-opacity": 0.7, "stroke-width": 1.3, "stroke-dasharray": "5 4" };
 	var gCom = g("circle", A(ARC, { cx: 0, cy: 0 }));
 	var gAtm = g("circle", A({ cx: 0, cy: 0, fill: "#EADFCF", "fill-opacity": 0.05, stroke: "#EADFCF", "stroke-opacity": 0.2, "stroke-width": 1 }));
@@ -726,7 +726,7 @@ export function mountHangingSkyhook(root, opts) {
 		var u = vw.u, t = S.t, R = S.R, fs = 12 * u, fsS = 11 * u;
 		// A mark is drawn while one of the cards that own it is ticked.
 		var any = function () { return Array.prototype.some.call(arguments, function (id) { return shell.isShown(id); }); };
-		// The structure — tether, core facilities, centre-of-mass orbit — stays as context while
+		// The structure — tether, core facilities, balance-point orbit — stays as context while
 		// another card is shown alone: these marks ignore solo, though not the cards' ticks.
 		var base = function () { return Array.prototype.some.call(arguments, function (id) { return shell.isShown(id, true); }); };
 		// Text, with the leader lines pointing at it, fades once the body spans less than half
@@ -753,8 +753,8 @@ export function mountHangingSkyhook(root, opts) {
 
 		// taper: the upper and lower tethers are each drawn to their own scale, so each shape shows
 		// that tether's own taper ratio; widths are not comparable between them. The two meet at the
-		// anchor station (at the centre of mass when there is none): the cable between the anchor
-		// station and the centre of mass carries the same tension as the tether it continues, so it
+		// anchor station (at the balance point when there is none): the cable between the anchor
+		// station and the balance point carries the same tension as the tether it continues, so it
 		// is drawn with that tether. Within a tether the drawn width follows its diameter,
 		// sqrt(T/T_ref), where T is the tension from the load sweep (cross-section = T/σ) and T_ref
 		// that tether's thinnest point carrying a real tension. Its thin end is tipPx wide until its
@@ -785,7 +785,7 @@ export function mountHangingSkyhook(root, opts) {
 
 		// markers and their labels (left)
 		[[mTop, rT, 7], [mCom, rC, 8.5], [mFoot, rF, 7]].forEach(function (m) { m[0].setAttribute("cy", -m[1]); m[0].setAttribute("r", m[2] * u); show(m[0], base("geo", "pay", "stO")); });
-		// an anchoring moon is drawn at the centre of mass, at true size once it is larger than the marker
+		// an anchoring moon is drawn at the balance point, at true size once it is larger than the marker
 		if (anc) { mCom.setAttribute("r", Math.max(Number(systems.get(anc.name).radius) / 1e3, 8.5 * u)); show(mCom, true); }
 		// Each line ends with the tip load held there, drawn while the Core Facilities card is ticked;
 		// the name and altitude before it while the Tether geometry card is. The Stations card
@@ -836,7 +836,7 @@ export function mountHangingSkyhook(root, opts) {
 		gArrows.setAttribute("d", ar); gHeads.setAttribute("d", hd); gNotches.setAttribute("d", nt);
 		[gArrows, gHeads, gNotches].forEach(function (el) { show(el, any("geo")); });
 
-		// where a release from the top and from the foot goes (the centre of mass's is its orbit, above).
+		// where a release from the top and from the foot goes (the balance point's is its orbit, above).
 		// Each is drawn on both sides of the tether axis: the half an object released there flies,
 		// and its mirror, the path that would bring it to the same point at the tether's speed.
 		gTopArc.setAttribute("d", S.arcD.top); show(gTopArc, any("geo") && !!S.arcD.top);
@@ -990,7 +990,7 @@ export function mountHangingSkyhook(root, opts) {
 	view.addTarget("foot", { label: "Foot & impact", color: "#EADFCF", pad: 1.15, rect: function () {
 		var dr = S.t.hitsSurface ? S.t.impactAround * S.R : 100, drop = S.R - Math.cos(dr / S.R) * S.R;
 		return [-0.35 * Math.max(dr, 60), -(S.R + S.foot) - Math.max(30, S.foot * 2.5), dr * 1.4, -S.R + drop + 8]; } });
-	view.addTarget("centre", { label: "Centre of mass", color: C.core.draw, rect: function () { return rectAround(S.centre, Math.max(120, 0.22 * span()), -0.7, 0.9); } });
+	view.addTarget("centre", { label: "Balance point", color: C.core.draw, rect: function () { return rectAround(S.centre, Math.max(120, 0.22 * span()), -0.7, 0.9); } });
 	view.addTarget("top", { label: "Top", color: C.rust.draw, rect: function () { var d = Math.max(140, 0.22 * span()); var r = rectAround(S.top, d, -0.85, 0.85); r[1] -= 0.1 * d; return r; } });
 	view.addTarget("stations", { label: "Stations", color: C.ochre.draw, rect: function () {
 		var d = Math.max(80, S.release - S.recv); return [-0.5 * d, -(S.R + S.release) - 0.08 * d, 0.65 * d, -(S.R + S.recv) + 0.08 * d]; } });

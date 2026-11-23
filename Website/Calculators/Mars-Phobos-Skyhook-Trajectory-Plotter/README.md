@@ -27,7 +27,7 @@ atmospheric-entry read-outs for a vessel released from it.
    essentially arbitrary phase (Phobos completes over 3 orbits per day).
 2. **One Phobos orbit** centred on slider 1 — Phobos (and the skyhook it
    carries) sweeps exactly 360° end to end. There is no separate "skyhook
-   phase" slider: because Phobos *is* the tether's centre of mass, sweeping
+   phase" slider: because Phobos *is* the tether's balance point, sweeping
    Phobos around its orbit already sweeps the whole rigid structure.
 
 **3-D view (centre).** Mars at the origin (textured if available), Phobos at
@@ -38,7 +38,7 @@ two arcs (bright "north" half / dim "south" half). Navigate with drag
 from 130 km, or Mars from 16 000 km; double-click empty space to release.
 
 The **skyhook** is drawn to scale: circles traced by the lower tether end,
-Phobos (the centre of mass), and the upper tether end; a radial line through
+Phobos (the balance point), and the upper tether end; a radial line through
 all three; and a draggable **triangle marker** at the release point. A
 top-left button swaps to a **solar-system context view** (all the planets,
 Mars' true heliocentric orbit, and the released trajectory patched into true
@@ -47,7 +47,7 @@ are placed and drawn, since a flyby of Mars itself isn't a useful place for
 one.
 
 **Sidebar (right).**
-- **Skyhook** — top/bottom tether-end altitude fields, with read-outs of CoM
+- **Skyhook** — top/bottom tether-end altitude fields, with read-outs of BP
   orbital velocity, tether rotation period, and each end's speed and
   centrifugal load.
 - **Release point** — a toggle between releasing **above** Phobos (outbound)
@@ -78,14 +78,14 @@ $$
 
 - $\omega$ — the skyhook's (and Phobos') angular rotation rate
 - $GM_\text{mars}$ — Mars' gravitational parameter
-- $r_\text{com}$ — Phobos' orbital radius (the skyhook's fixed centre of mass)
+- $r_\text{com}$ — Phobos' orbital radius (the skyhook's fixed balance point)
 
 so a point at radius $r$ on the tether moves at $v = \omega\cdot r$, and
-because Phobos already traces this same circle, the hook's CoM ring **is**
+because Phobos already traces this same circle, the skyhook's BP ring **is**
 Phobos' orbit — there is no separate "hook around a moon around a planet"
 hierarchy the way the sister tool needs for Earth's Moon.
 
-- CoM orbital velocity: $v_\text{com} = \sqrt{GM_\text{mars} / r_\text{com}}$.
+- BP orbital velocity: $v_\text{com} = \sqrt{GM_\text{mars} / r_\text{com}}$.
 - Centrifugal acceleration at either tether end: $a = \omega^2\cdot r$, for
   that end's radius $r$.
 - Release speed (inertial, Mars frame): $v_\text{rel} = \omega\cdot r_\text{rel}$,
@@ -93,7 +93,7 @@ hierarchy the way the sister tool needs for Earth's Moon.
 - Hyperbolic excess vs Mars: $v_\infty = \sqrt{v_\text{rel}^2 - 2\cdot GM_\text{mars}/r_\text{rel}}$
   (shown as "bound" if the release is sub-escape — always true for releases
   below Phobos, since the tether's fixed angular rate is sub-circular at any
-  radius under the CoM).
+  radius under the BP).
 
 **Trajectory (full integration, not a first-cut estimate).** From the
 release state, the ship is integrated (RK4, adaptive step) under Mars **and**

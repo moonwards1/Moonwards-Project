@@ -36,10 +36,10 @@ function marsChain(params, anchor) {
 
 // ---- defaults & geometry ---------------------------------------------------
 
-test("defaults: CoM 2000 km and release 5000 km at every body, regardless of satellites", function () {
+test("defaults: BP 2000 km and release 5000 km at every body, regardless of satellites", function () {
 	["Earth", "Mars", "Ceres", "Saturn"].forEach(function (body) {
 		var p = resolveParams({ body: body });
-		assert.equal(p.comAlt, 2000e3, body + " CoM altitude");
+		assert.equal(p.comAlt, 2000e3, body + " BP altitude");
 		assert.equal(p.relAlt, 5000e3, body + " release altitude");
 	});
 });

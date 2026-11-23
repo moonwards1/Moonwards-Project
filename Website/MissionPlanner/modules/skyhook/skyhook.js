@@ -1,6 +1,6 @@
 /* MissionPlanner/modules/skyhook — the skyhook platform's substance.
  *
- * A gravity-gradient (radial) tether whose centre of mass rides a circular
+ * A gravity-gradient (radial) tether whose balance point rides a circular
  * orbit around its `body`, rotating at that orbit's rate. Ported from the
  * Mars-Phobos-Skyhook-Trajectory-Plotter's skyhook and generalized onto any
  * body via its own GM/radius. ONE skyhook serves every body and both ends of a
@@ -51,19 +51,19 @@
  * the spin pole once per year, keeping it fixed against the Sun. Its node sits
  * at the chosen local solar time (`ltanHours`, the local time of the
  * ascending node: 12 h faces the Sun, 6 h and 18 h are the dawn–dusk plane).
- * The inclination follows from the CoM radius (sunSyncPlane); the plane is
+ * The inclination follows from the BP radius (sunSyncPlane); the plane is
  * taken on the pin date, and phase 0 is the same retrograde direction,
  * projected into it. Offered only where it is a workable design
  * (sunSyncSupport): a body with a published J2 and pole, a heliocentric
  * orbit of its own, and a bulge strong enough to turn an orbit that fast
- * somewhere above its surface — and the CoM must lie below the highest such
+ * somewhere above its surface — and the BP must lie below the highest such
  * altitude (the release gate). A moon is never offered it: its planet's tide,
  * not its own bulge, governs how a low orbit's plane turns. The bulge acts on
- * the CoM's orbit: the tether's spread along its length is not modelled. A
+ * the BP's orbit: the tether's spread along its length is not modelled. A
  * CATCH stays equatorial.
  *
  * THE CATCH is the same tether run in reverse, with the same three controls:
- * CoM altitude, catch altitude (the release altitude's role) and catch phase
+ * BP altitude, catch altitude (the release altitude's role) and catch phase
  * (the release phase's). The phase is pinned at the approach's ARRIVAL MARK
  * (arrival-approach.js's arrivalMark — the arc's first equatorial crossing
  * within reach, else closest approach) and 0° points AT the mark, projected
@@ -100,7 +100,7 @@
  * burn off. Hence the escape gate belongs to the release half alone. NOT
  * modelled: the post-catch unload down the tether.
  *
- * DEFAULT GEOMETRY (defaultParams): CoM altitude 2000 km, release altitude
+ * DEFAULT GEOMETRY (defaultParams): BP altitude 2000 km, release altitude
  * 5000 km, at every body. The mission view seeds `body` when it adds the stage
  * (mission-view.js's addCarrier); the mission then persists the geometry
  * explicitly.
@@ -120,7 +120,7 @@ import { resolvePlatformParams } from "../platform/platform-spec.js";
 var O = OrbitalMath;
 var DAY = 86400;
 
-// Static defaults, the same at every body: CoM 2000 km above the surface, tip
+// Static defaults, the same at every body: BP 2000 km above the surface, tip
 // (release point) 5000 km above it. A stage always carries `body` + explicit
 // altitudes once created; these fill any gap.
 export var defaultParams = {
@@ -163,7 +163,7 @@ export function tetherGeometry(params) {
 
 	if (!(isFinite(comAlt) && comAlt > 0 && isFinite(relAlt) && relAlt > 0 && isFinite(phaseDeg))) {
 		return { ok: false, diagnostic: makeDiagnostic("bad-params",
-			"The skyhook needs finite CoM / release altitudes and a release phase.",
+			"The skyhook needs finite BP / release altitudes and a release phase.",
 			{ values: { comAlt: comAlt, relAlt: relAlt, releasePhaseDeg: p.releasePhaseDeg } }) };
 	}
 
@@ -200,22 +200,22 @@ export function escapeGate(geo) {
 		Math.round(geo.vEscBody) + " m/s at that altitude) — the payload stays bound to " + geo.body + ".",
 		{ values: { vRel: geo.vRel, vEscBody: geo.vEscBody, relAlt_km: (geo.rRel - geo.R) / 1e3 },
 		  fix: "Raise the release altitude to at least ~" + Math.round((rEsc - geo.R) / 1e3) +
-		       " km (or lower the CoM to spin the tether faster)." });
+		       " km (or lower the BP to spin the tether faster)." });
 }
 
 // The SUN-SYNCHRONOUS gate: a release asked to orbit sun-synchronously where
-// no such orbit exists — at a body that cannot hold one, or with its CoM above
+// no such orbit exists — at a body that cannot hold one, or with its BP above
 // the highest altitude that can. Returns a diagnostic, or null.
 export function sunSyncGate(geo) {
 	var ss = geo.sunSync;
 	if (!ss || ss.ok) { return null; }
 	if (ss.reason === "too-high") {
 		return makeDiagnostic("sun-sync-too-high",
-			"No sun-synchronous orbit exists at a CoM altitude of " + kmText(geo.rCom - geo.R) +
+			"No sun-synchronous orbit exists at a BP altitude of " + kmText(geo.rCom - geo.R) +
 			" at " + geo.body + " — " + geo.body + "'s equatorial bulge turns an orbit's plane once a year only below about " +
 			kmText(ss.maxComAlt) + ".",
 			{ values: { comAlt_km: (geo.rCom - geo.R) / 1e3, maxComAlt_km: ss.maxComAlt / 1e3 },
-			  fix: "Lower the CoM altitude below " + kmText(ss.maxComAlt) + ", or choose the equatorial plane." });
+			  fix: "Lower the BP altitude below " + kmText(ss.maxComAlt) + ", or choose the equatorial plane." });
 	}
 	return makeDiagnostic("sun-sync-unavailable",
 		"A sun-synchronous orbit is not a workable design at " + geo.body + ": " + ss.why + ".",
@@ -275,7 +275,7 @@ var J2000 = 2451545.0;
 // Can `body` hold a sun-synchronous orbit, and how high? Pure. Returns
 // { ok: true, nodeRate, maxComAlt } — nodeRate (rad/s, about the spin pole)
 // the Sun's own turn round the pole, once per year, signed by the pole's
-// sense against the body's orbit; maxComAlt the highest CoM altitude with a
+// sense against the body's orbit; maxComAlt the highest BP altitude with a
 // sun-synchronous inclination — or { ok: false, reason, why }.
 export function sunSyncSupport(body) {
 	var sys = systems.get(body);
@@ -304,7 +304,7 @@ export function sunSyncSupport(body) {
 	return { ok: true, nodeRate: nodeRate, maxComAlt: maxComAlt };
 }
 
-// The sun-synchronous figures for a CoM at radius `rCom`, pure: { ok: true,
+// The sun-synchronous figures for a BP at radius `rCom`, pure: { ok: true,
 // inclinationDeg, maxComAlt } (inclination from the spin pole), or { ok:
 // false, reason, why, maxComAlt? } — reason "too-high" when the body can hold
 // one but not that high, otherwise sunSyncSupport's own reason.
@@ -376,7 +376,7 @@ export var CATCH_REACH = 1e3;
 // The frame is the tether's own at the contact point, on the app's burn-frame
 // convention: prograde along the point's motion, normal along the spin pole
 // the tether turns about, radial = normal × prograde, straight down the arm.
-// The tether turns rigidly at its CoM's orbital rate, so the point under the
+// The tether turns rigidly at its BP's orbital rate, so the point under the
 // ship moves at ω·r there, slower than the tip when the ship meets it lower.
 //
 // Returns { ok: true, jd, altitude, belowTip, pointSpeed, axes, vRel,
@@ -475,7 +475,7 @@ export var SKYHOOK = {
 	defaultParams: defaultParams,
 
 	params: [
-		{ name: "comAlt", label: "CoM altitude", unit: "km", scale: 1e3, step: 25 },
+		{ name: "comAlt", label: "BP altitude", unit: "km", scale: 1e3, step: 25 },
 		// Release/catch altitude is stored in metres but shown in km like every
 		// other altitude here. The nudge control (platform-roles.js) works
 		// directly on the stored SI value regardless of display scale, so the
@@ -502,9 +502,9 @@ export var SKYHOOK = {
 	readouts: function (geo, role) {
 		if (role !== "release" || !geo || !geo.ok || geo.orbitPlane !== "sun-sync" || !geo.sunSync) { return []; }
 		var ss = geo.sunSync;
-		if (!ss.ok) { return ss.maxComAlt > 0 ? [["sun-synchronous up to", "CoM " + kmText(ss.maxComAlt)]] : []; }
+		if (!ss.ok) { return ss.maxComAlt > 0 ? [["sun-synchronous up to", "BP " + kmText(ss.maxComAlt)]] : []; }
 		return [["inclination", ss.inclinationDeg.toFixed(2) + "° from the spin pole"],
-		        ["sun-synchronous up to", "CoM " + kmText(ss.maxComAlt)]];
+		        ["sun-synchronous up to", "BP " + kmText(ss.maxComAlt)]];
 	},
 
 	geometry: tetherGeometry,
@@ -535,7 +535,7 @@ export var SKYHOOK = {
 	},
 
 	// Tether hardware in the role's own body-centric frame, in the body's
-	// equatorial plane: the CoM and release circles, the arm at its phase, and
+	// equatorial plane: the BP and release circles, the arm at its phase, and
 	// a constant-pixel dot at the release or catch point. The arm sits at the
 	// platform's chosen phase on `pinJd` (the release anchor, or for a catch its
 	// arrival mark) and turns at ω away from it, so scrubbing the clock winds

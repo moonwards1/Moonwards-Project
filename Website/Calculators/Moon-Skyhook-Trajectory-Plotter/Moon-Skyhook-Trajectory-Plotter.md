@@ -30,12 +30,12 @@ In three panes: Ephemeris date section, 3D simulation of the Earth-moon system w
   
   - The circlular orbit traced by the top of the skyhook is drawn as a line
   
-  - As is the orbit of the center of mass
+  - As is the orbit of the balance point
   
-  - A radial line starting 20 km above the surface of the moon, from the moon's center through the CoM and top, indicates the current position of the skyhook
+  - A radial line starting 20 km above the surface of the moon, from the moon's center through the BP and top, indicates the current position of the skyhook
   
   - A small arrow pointing at the radial line indicates the location of the release point from the skyhook to be used in calculations
-- Skyhook preset is: CoM at 275 km, release point 950 km, top 6000 km
+- Skyhook preset is: BP at 275 km, release point 950 km, top 6000 km
 - Moon and Earth start at their position at midnight on Jan 1, 2030, and the skyhook is orbiting the moon's equator, and starts at 0° longitude of the ecliptic 
 - The sphere for the moon has the image '2k_moon-Wrap' on its surface, and the Earth has 'NASA-Earth-world.200407.3x5400x2700'
 - Zoom function: 
@@ -44,12 +44,12 @@ In three panes: Ephemeris date section, 3D simulation of the Earth-moon system w
 
 ### Sidebar
 
-- at top, side by side, a field for setting the altitude of the CoM, and one for setting the altitude of the top
+- at top, side by side, a field for setting the altitude of the BP, and one for setting the altitude of the top
   
-  - below the CoM field is the read-out of its orbital velocity
+  - below the BP field is the read-out of its orbital velocity
   
   - below the top field is the read-out of its angular velocity and the centrifugal force felt there
-- Below that, the next row is for setting the altitude of the release point, between the altitudes of CoM and top
+- Below that, the next row is for setting the altitude of the release point, between the altitudes of BP and top
   - or, the user can drag the triangle indicator on the drawing of the skyhook instead
   - Once set, the read-out below it shows the speed on release - at the release point, the v_inf at the edge of the moon's SOI, and the v_inf at the edge of the Earth's SOI (assuming perfectly spherical SOIs). 
 
