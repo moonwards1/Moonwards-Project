@@ -98,6 +98,7 @@
 
 import { create } from "./ui-components.js";
 import { readCard } from "./card-outline.js";
+import { initLore } from "./lore.js";
 
 // Accent pairs: `card` reads on the paper columns, `draw` on the dark drawing panel.
 export const ShellColors = {
@@ -171,6 +172,7 @@ export class CalcShell {
 	constructor(root, opts) {
 		var o = opts || {};
 		this.root = root;
+		initLore();   // info tiers on a standalone calculator page; no-op if the page started them
 		root.classList.add("cs-app");
 		if (o.embedded) root.classList.add("cs-embedded");
 		this.fields = {};       // key → input/select (getState / setState)

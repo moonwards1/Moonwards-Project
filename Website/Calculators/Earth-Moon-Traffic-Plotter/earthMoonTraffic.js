@@ -113,6 +113,10 @@ import { createFleet, entryMass } from "../../Shared/ships.js";
 import { TRIM_MAX, capTrim } from "./core/flight.js";
 import { solveEntryTrim } from "./core/entry-trim.js";
 import { CORRIDOR_APO, AIM_APO, EARTH_SOI, TANK_FILL } from "./core/aerobrake.js";
+import { initLore } from "../../Shared/lore.js";
+
+// The info tiers: marked words, tooltips and Lore dialogs (Shared/lore.js).
+initLore();
 
 var O = OrbitalMath;
 var DAY = 86400;

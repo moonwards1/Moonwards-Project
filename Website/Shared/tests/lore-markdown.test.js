@@ -1,0 +1,92 @@
+// Node tests for Shared/lore-markdown.js. Run from the repo root:
+//   node --test Website/Shared/tests/lore-markdown.test.js
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { parseLore, renderMarkdown, loreSlug, loreRefs } from "../lore-markdown.js";
+
+var SAMPLE = [
+	"<!-- a comment with ## Not an entry {#nope tier=1} -->",
+	"# Tethers",
+	"## Balance point (BP) {#balance-point tier=1}",
+	"The point where the tether's pulls cancel.",
+	"",
+	"## Hanging skyhook {tier=2 #hanging-skyhook}",
+	"",
+	"# Places",
+	"## L1 station {#l1-station tier=3}",
+	"Para one, see [the BP](#balance-point).",
+	"",
+	"$$",
+	"## not a heading",
+	"$$",
+].join("\n");
+
+test("parses chapters, entries, tiers and stubs", function () {
+	var L = parseLore(SAMPLE);
+	assert.deepEqual(L.order, ["balance-point", "hanging-skyhook", "l1-station"]);
+	assert.deepEqual(L.chapters.map(function (c) { return [c.title, c.ids]; }),
+		[["Tethers", ["balance-point", "hanging-skyhook"]], ["Places", ["l1-station"]]]);
+	assert.equal(L.entries["balance-point"].tier, 1);
+	assert.equal(L.entries["balance-point"].title, "Balance point (BP)");
+	assert.equal(L.entries["hanging-skyhook"].pending, true);
+	assert.equal(L.entries["l1-station"].tier, 3);
+	assert.match(L.entries["l1-station"].body, /## not a heading/);
+	assert.equal(L.entries.nope, undefined);
+	assert.deepEqual(L.problems, []);
+});
+
+test("reports a missing tier and a duplicate id", function () {
+	var L = parseLore("## A\n\n## B {#a tier=1}\nx");
+	assert.equal(L.problems.length, 2);
+	assert.deepEqual(L.order, ["a"]);
+	assert.equal(L.entries.a.tier, 1);
+});
+
+test("slugs titles", function () {
+	assert.equal(loreSlug("Balance point (BP)"), "balance-point-bp");
+	assert.equal(loreSlug("  Pátzcuaro—L1  "), "patzcuaro-l1");
+});
+
+test("renders blocks and inline marks", function () {
+	var h = renderMarkdown("### Sub\nOne **bold** and *it* line\ncontinued.\n\n- a\n- b `x<y`\n\n1. n\n\n> q");
+	assert.match(h, /<h3>Sub<\/h3>/);
+	assert.match(h, /<p>One <strong>bold<\/strong> and <em>it<\/em> line continued\.<\/p>/);
+	assert.match(h, /<ul><li>a<\/li><li>b <code>x&lt;y<\/code><\/li><\/ul>/);
+	assert.match(h, /<ol><li>n<\/li><\/ol>/);
+	assert.match(h, /<blockquote><p>q<\/p><\/blockquote>/);
+});
+
+test("entry links expand; outside links open a new tab", function () {
+	var h = renderMarkdown("See [the BP](#balance-point) and [NASA](https://nasa.gov).");
+	assert.match(h, /<a class="lore-link" href="#balance-point" data-lore-ref="balance-point">the BP<\/a>/);
+	assert.match(h, /<a href="https:\/\/nasa.gov" target="_blank" rel="noopener">NASA<\/a>/);
+	assert.deepEqual(loreRefs("[a](#x) [b](#y) [c](#x)"), ["x", "y"]);
+});
+
+test("media resolve against the entries file", function () {
+	var base = "https://example.org/Website/Lore/entries.md";
+	var h = renderMarkdown("![A tether](images/t.png)\n\n![Spin](media/s.mp4)", { base: base });
+	assert.match(h, /<figure class="lore-figure"><img src="https:\/\/example.org\/Website\/Lore\/images\/t.png" alt="A tether"/);
+	assert.match(h, /<figcaption>A tether<\/figcaption>/);
+	assert.match(h, /<video src="https:\/\/example.org\/Website\/Lore\/media\/s.mp4"/);
+});
+
+test("maths is kept literal for KaTeX; stray < is escaped", function () {
+	var h = renderMarkdown("Speed $v = \\sqrt{GM/r}$ when r < R and *x*\n\n$$\na_b < c\n$$");
+	assert.match(h, /<span class="lore-math" data-tex="v = \\sqrt\{GM\/r\}">/);
+	assert.match(h, /r &lt; R/);
+	assert.match(h, /<div class="lore-math lore-math-display" data-tex="a_b &lt; c">/);
+	assert.doesNotMatch(h, /<em>b <\/em>/);
+});
+
+test("raw HTML lines pass through", function () {
+	assert.equal(renderMarkdown('<iframe src="x"></iframe>'), '<iframe src="x"></iframe>');
+});
+
+test("the site's entries file parses cleanly", function () {
+	var L = parseLore(readFileSync(new URL("../../Lore/entries.md", import.meta.url), "utf8"));
+	assert.deepEqual(L.problems, []);
+});

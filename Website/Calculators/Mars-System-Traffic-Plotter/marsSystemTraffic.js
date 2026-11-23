@@ -51,6 +51,10 @@ import { CATCH_SPEED_LIMIT } from "./core/arrival.js";
 import { buildMarsScene, R_STATIONARY, SOI_MARS, U } from "./scene.js";
 import { buildOverlay } from "./overlay.js";
 import { createSavePanel } from "../../Shared/sim/save-panel.js";
+import { initLore } from "../../Shared/lore.js";
+
+// The info tiers: marked words, tooltips and Lore dialogs (Shared/lore.js).
+initLore();
 
 var O = OrbitalMath;
 var DAY = 86400, DEG = 180 / Math.PI, TWO_PI = 2 * Math.PI;

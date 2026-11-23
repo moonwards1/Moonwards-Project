@@ -39,6 +39,10 @@ import { confirmDialog } from "./ui/confirm-dialog.js";
 import { readHistory, readSets } from "./core/revisions.js";
 import { createMissionView, deleteWorkspaceSlot } from "./mission-view.js";
 import { createEphemerisView } from "./ephemeris-view.js";
+import { initLore } from "../Shared/lore.js";
+
+// The info tiers: marked words, tooltips and Lore dialogs (Shared/lore.js).
+initLore();
 
 // ---- modules: dynamic-imported per the architecture (a technology's code is
 // fetched rather than bundled). Every built module is eager-loaded here, so

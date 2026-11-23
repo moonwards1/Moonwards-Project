@@ -841,3 +841,13 @@ lies between the centre of gravity and the centre of mass (r₀³ = r_cm · r_cg
 "centre of mass" names a different point. Code identifiers (`comAlt`, `rCom`) and
 saved-settings keys ("Centre of mass altitude", "Centre-of-mass station") keep their
 old names, because renaming them would break saved designs and the workbench import.
+
+### Info-tier text lives in one Markdown file that is also the Lore page
+
+Every tooltip, dialog and ⓘ note is an entry in `Website/Lore/entries.md`
+(`## Title {#id tier=N}`), and the Lore page renders that same file, so the two
+never drift. A mark in a page names only the entry id; the tier is a property of
+the entry. Nested expansion between entries is done by `Shared/lore.js` itself
+rather than by vendoring Nutshell: the entries are Markdown, not HTML pages with
+headings for Nutshell to fetch, and the runtime styles marks by id so content
+built after load needs no rescan.

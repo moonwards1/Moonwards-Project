@@ -26,6 +26,7 @@ their conventions. All are ES modules with **named exports**.
 | `mars-ephemeris.js` | `MarsEphemeris` | the Mars system on a clock: Mars's orientation, Phobos and Deimos, the Sun, Mars-centred |
 | `frames.js` | `Frames` | converts ship-state VECTORS between frames (not to be confused with MissionPlanner's `scene-frames.js`, which builds renderable scenes) |
 | `exchange.js` / `exchange-types.js` | `Exchange` / `PacketTypes` | the calculator-to-calculator mailbox and its versioned payload registry |
+| `lore-markdown.js` / `lore.js` | `parseLore`, `renderMarkdown` / `initLore`, `loreMark`, `loreHTML`, … | the info tiers and Lore entries (`Website/Lore/entries.md`): parsing, rendering, tooltips, dialogs, nested expansion |
 | `flight-save.js` | `packFlight`, `unpackFlights`, `fragmentFromText`, … | the traffic plotters' saved-flight envelope and list, and pasted-link cleanup |
 | `three.min.js` | global `THREE` | **the one classic-script exception** — vendored, loaded with a plain `<script src>` tag ahead of the page module |
 

@@ -42,6 +42,10 @@ import { designOutline } from "./design-outline.js";
 import { createFleet } from "../Shared/ships.js";
 import { addShipCards } from "../Shared/ship-card.js";
 import { mountApps } from "./apps.js";
+import { initLore } from "../Shared/lore.js";
+
+// The info tiers: marked words, tooltips and Lore dialogs (Shared/lore.js).
+initLore();
 
 var STORE_KEY = "mw-design";
 var PICK_KEY = "mw-outline-pick";   // the outline dialog's last choice
