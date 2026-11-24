@@ -221,7 +221,9 @@ to the body's equator and gives the period over which the body's equatorial bulg
 turns that plane once round the spin axis. The tilt to the equator holds while the
 plane turns, so its tilt to the ecliptic runs from the difference of the two tilts
 to their sum and back once per period. The tilt opens at 0° (equatorial); an
-anchoring moon's orbit sets it instead. The installation turns as one rigid structure, so the bulge's torque on
+anchoring moon's orbit sets it instead. An equatorial plane has no node to turn, so
+at 0° the card shows only the tilt and its two ticks: the period, drift and
+other-bodies lines, the card's note and the other-bodies warning are hidden. The installation turns as one rigid structure, so the bulge's torque on
 every piece is set against the angular momentum of every piece:
 
 k = (3/2) J₂ GM R_eq² · Σ(m/r³) / (ω Σ m r²),  Ω̇ = −k cos i,  P = 2π / |Ω̇|

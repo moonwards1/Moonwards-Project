@@ -191,7 +191,7 @@ export function mountHangingSkyhook(root, opts) {
 	var rNpRate = shell.line(npCard, { label: "Node drift", unit: "°/day" });
 	var rNpTilt = shell.line(npCard, { label: "Tilt needed", unit: "°" });
 	var rNpThird = shell.line(npCard, { label: "Other bodies' pull, left out", unit: "%" });
-	shell.note(npCard, anc ? anc.name + "'s orbit sets the plane, and the tether turns with it."
+	var npNote = shell.note(npCard, anc ? anc.name + "'s orbit sets the plane, and the tether turns with it."
 		: "The equatorial bulge turns the orbit plane about the spin axis while its tilt to the equator holds. Over one period the plane's tilt to the ecliptic runs from the difference of the two tilts to their sum and back.");
 	if (anc) { tiltIn.disabled = true; ssOpt.check.disabled = true; ecOpt.check.disabled = true; }
 
@@ -370,6 +370,15 @@ export function mountHangingSkyhook(root, opts) {
 			tiltIn.disabled = false;
 			np = nodalPrecession(body, t, Object.assign(npOpts, { sunSync: false }));
 		}
+		// An equatorial plane has no node to turn, so the card shows only its inputs.
+		var flat = !ss && field(tiltIn, 0) === 0;
+		npNote.hidden = flat;
+		if (flat) {
+			[rNpPeriod, rNpRate, rNpTilt, rNpThird].forEach(function (l) { l.show(false); });
+			npCard.setSummary("0° · equatorial");
+			return;
+		}
+		rNpPeriod.show(true);
 		[rNpRate, rNpThird].forEach(function (l) { l.show(!!np); });
 		rNpTilt.show(!!np && ss);
 		if (!np) {
