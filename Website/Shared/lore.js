@@ -5,10 +5,15 @@
 //           focus or tap — what a word means or how a control works
 //   tier 2  heavy orange underline; opens a dialog with the entry, whose
 //           links to other entries expand in place (Nutshell-style)
-//   tier 3  an orange ⓘ; opens the same dialog, for central information
+//   tier 3  an orange ⓘ after the word (or alone); opens the same dialog,
+//           for central information
 //
-// A page calls initLore() once. Text is marked with loreMark / loreHTML, or
-// by hand in HTML:  <span class="lore" data-lore="entry-id" tabindex="0">word</span>
+// Pop-ups show the entry's text with no heading: the marked word is the
+// context. The Lore page shows the title and any "::: lore" additions.
+//
+// A page calls initLore() once. Text is marked with loreMark / loreHTML,
+// loreMarkPhrase (wraps a phrase inside text already on the page), or by
+// hand in HTML:  <span class="lore" data-lore="entry-id" tabindex="0">word</span>
 // (a tier-3 mark is usually empty: the ⓘ is drawn for it). The tier comes from
 // the entry, so a mark names only the id. Marks may be added at any time —
 // styling is by attribute selector and events are delegated from the document.
@@ -72,6 +77,45 @@ export function loreMark(id, text, parent) {
 	return el;
 }
 
+// Mark the first occurrence of `phrase` (any letter case) in the text under
+// `root` — a label, a card title — for entry `id`, leaving the rest of the
+// text as it is. Does nothing if `root` already holds a mark for `id`.
+// Returns the mark, or null (logged) if the phrase is not there.
+export function loreMarkPhrase(root, phrase, id) {
+	if (!root) return null;
+	var have = root.querySelector('[data-lore="' + CSS.escape(id) + '"]');
+	if (have) return have;
+	var want = String(phrase).toLowerCase();
+	var walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+		acceptNode: function (n) {
+			return n.parentElement.closest("[data-lore], select, option, textarea, script, style") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+		}
+	});
+	for (var node = walk.nextNode(); node; node = walk.nextNode()) {
+		var i = node.data.toLowerCase().indexOf(want);
+		if (i < 0) continue;
+		var hit = node.splitText(i);
+		hit.splitText(phrase.length);
+		var el = document.createElement("span");
+		el.className = "lore";
+		el.dataset.lore = id;
+		// Inside a button the button takes the focus; elsewhere the mark does.
+		if (!hit.parentElement.closest("button")) { el.tabIndex = 0; el.setAttribute("role", "button"); }
+		hit.replaceWith(el);
+		el.appendChild(hit);
+		return el;
+	}
+	console.warn("Lore: “" + phrase + "” not found for “" + id + "”.");
+	return null;
+}
+
+// Take the marks out of `root`, keeping their text.
+export function loreUnmark(root) {
+	if (!root) return;
+	root.querySelectorAll("[data-lore]").forEach(function (m) { m.replaceWith(document.createTextNode(m.textContent)); });
+	root.normalize();
+}
+
 // The same mark as an HTML string, for pages built with innerHTML. `text` is
 // inserted as HTML.
 export function loreHTML(id, text) {
@@ -80,11 +124,13 @@ export function loreHTML(id, text) {
 
 // ── Rendering an entry ───────────────────────────────────────────────────────
 
-// HTML for an entry's body (or the pending note for a stub).
-export function loreBodyHTML(entry) {
+// HTML for an entry's pop-up text, or with `onPage` its Lore page text (the
+// pending note when there is none yet).
+export function loreBodyHTML(entry, onPage) {
 	if (!entry) return '<p class="lore-pending-note">No entry with this id.</p>';
-	if (entry.pending) return '<p class="lore-pending-note">Note not written yet.</p>';
-	return renderMarkdown(entry.body, { base: LORE_ENTRIES_URL });
+	var md = onPage ? entry.page : entry.popup;
+	if (!md) return '<p class="lore-pending-note">Note not written yet.</p>';
+	return renderMarkdown(md, { base: LORE_ENTRIES_URL });
 }
 
 // Typeset any $maths$ inside `root` with KaTeX, loaded from the CDN on first
@@ -180,9 +226,7 @@ export function openLoreDialog(id) {
 	var e = loreEntry(id);
 	if (!dialogEl) {
 		dialogEl = create("dialog", "lore-dialog", false, document.body);
-		var head = create("header", "lore-dialog-head", false, dialogEl);
-		create("h2", "lore-dialog-title", false, head);
-		var x = create("button", "lore-dialog-close", "×", head);
+		var x = create("button", "lore-dialog-close", "×", dialogEl);
 		x.type = "button";
 		x.setAttribute("aria-label", "Close");
 		x.addEventListener("click", function () { dialogEl.close(); });
@@ -193,7 +237,7 @@ export function openLoreDialog(id) {
 		a.rel = "noopener";
 		dialogEl.addEventListener("click", function (ev) { if (ev.target === dialogEl) dialogEl.close(); });
 	}
-	dialogEl.querySelector(".lore-dialog-title").textContent = e ? e.title : id;
+	dialogEl.setAttribute("aria-label", e ? e.title : id);
 	fill(dialogEl.querySelector(".lore-dialog-body"), loreBodyHTML(e));
 	dialogEl.querySelector(".lore-dialog-more").href = loreEntryUrl(id);
 	dialogEl.querySelector(".lore-dialog-body").scrollTop = 0;
@@ -218,9 +262,7 @@ function toggleExpansion(link) {
 	var box = document.createElement("div");
 	box.className = "lore-expansion";
 	box.dataset.depth = depth;
-	var head = create("div", "lore-expansion-head", false, box);
-	create("span", "lore-expansion-title", e ? e.title : id, head);
-	var more = create("a", "lore-expansion-more", "Lore page ↗", head);
+	var more = create("a", "lore-expansion-more", "Lore page ↗", box);
 	more.href = loreEntryUrl(id);
 	more.target = "_blank";
 	more.rel = "noopener";
@@ -241,9 +283,12 @@ function markOf(target) { return target && target.closest ? target.closest("[dat
 function activate(el, ev) {
 	var id = el.dataset.lore, e = loreEntry(id);
 	if (!e) { if (!warned[id]) { warned[id] = 1; console.warn("Lore: no entry with id “" + id + "”."); } return; }
+	// A tier-1 click still reaches the label or button around the word (ticking
+	// a box, focusing a field); a dialog click goes no further than the card.
+	if (e.tier === 1) { showTip(el); return; }
 	if (ev) ev.preventDefault();
-	if (e.tier === 1) showTip(el);
-	else { hideTip(); openLoreDialog(id); }
+	hideTip();
+	openLoreDialog(id);
 }
 
 // Start the info tiers on this page. Safe to call more than once.

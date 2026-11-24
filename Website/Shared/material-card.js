@@ -21,6 +21,7 @@
 
 import { ShellColors } from "./calc-shell.js";
 import { MATERIALS, breakingLength } from "./materials.js";
+import { create } from "./ui-components.js";
 
 export function addMaterialCard(shell, opts) {
 	var o = opts || {};
@@ -37,7 +38,9 @@ export function addMaterialCard(shell, opts) {
 	var rhoIn = shell.numberField(card, { label: "Density", unit: "kg/m³", value: 2300, min: 1, parent: customBox });
 	var blLine = shell.line(card, { label: "Breaking length at 1 g₀", unit: "km" });
 	var blLocal = shell.line(card, { label: "Breaking length at local g", unit: "km" });
-	var blLocalLabel = blLocal.el.querySelector(".cs-k");
+	// The body's g is a span of its own after the label, so the label text (and any
+	// info-tier mark in it) stays put as the figure changes.
+	var blLocalLabel = create("span", false, false, blLocal.el.querySelector(".cs-k"));
 	var safetyIn = shell.numberField(card, { label: "Safety factor", unit: "×", value: o.safety || 3, step: "0.1", min: 1 });
 
 	function field(input, fallback) { var v = parseFloat(input.value); return isFinite(v) ? v : fallback; }
@@ -86,7 +89,7 @@ export function addMaterialCard(shell, opts) {
 		var safety = Math.max(1, field(safetyIn, o.safety || 3));
 		blLine.set(km(breakingLength(m.strength, m.density)));
 		var hasG = gLocal > 0;
-		blLocalLabel.textContent = "Breaking length at local g of " + (hasG ? Number(gLocal.toPrecision(2)) : "—") + " m/s²";
+		blLocalLabel.textContent = " of " + (hasG ? Number(gLocal.toPrecision(2)) : "—") + " m/s²";
 		blLocal.set(hasG ? km(breakingLength(m.strength, m.density, gLocal)) : "—");
 		card.setSummary(m.name + " · ×" + safety);
 		var sigmaEff = m.strength / safety;

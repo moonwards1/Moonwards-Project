@@ -30,6 +30,7 @@ import { systems } from "../../Shared/orbit.js";
 import { ShellColors as C } from "../../Shared/calc-shell.js";
 import { createFleet, versionName, shieldMass } from "../../Shared/ships.js";
 import { Traffic, YEAR } from "./trafficModel.js";
+import { loreMarkPhrase } from "../../Shared/lore.js";
 
 var PLACE = { foot: "Foot", recv: "Receiving deck", outer: "Outer docks", release: "Release deck", top: "Top", anchor: "Anchor" };
 // The body's near market, where it has one: the other half of the Earth–Moon system.
@@ -424,6 +425,12 @@ export function addTrafficCard(shell, opts) {
 	r = row(bal, "Orbit balance"); el("span", "tf-lab tf-per", r.k, "per orbit"); S.oOrbit = out(r, "");
 	r = row(bal, "\u00a0"); el("span", "tf-lab tf-per", r.k, "per year"); S.oYear = out(r, "");
 	r = row(bal, "Thruster efficiency"); S.tEff = out(r, "%");
+
+	// info-tier marks (their text is in Lore/entries.md)
+	loreMarkPhrase(card.el.querySelector(".cs-nm"), "Traffic", "traffic");
+	loreMarkPhrase(balCard.el.querySelector(".cs-nm"), "Energy and orbit balance", "energy-orbit-balance");
+	loreMarkPhrase(bal, "Climber efficiency", "climber-efficiency");
+	loreMarkPhrase(bal, "Thruster efficiency", "thruster-efficiency");
 
 	// Two amounts that make a total between them: the one edited last stays, the other
 	// takes the rest. Each converts to the total's unit by its own factor. Returns both

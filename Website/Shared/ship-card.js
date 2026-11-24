@@ -29,6 +29,7 @@
 // stay current.
 
 import { ShellColors as C } from "./calc-shell.js";
+import { loreMarkPhrase } from "./lore.js";
 import { SHIP_ROLES, PROPELLANTS, SHIELDS, shield, shieldKey, shipDv, shieldMass, ballisticCoefficient, shipTitle, versionName, isLocalRole, MAX_VERSIONS } from "./ships.js";
 
 function num(x, d) { return isFinite(x) ? x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—"; }
@@ -127,6 +128,15 @@ export function addShipCards(shell, opts) {
 			var shieldDRow = f.shieldD.closest(".cs-row");
 			var shieldNote = shell.note(card, "", body);
 			var hero = shell.hero({ body: body }, [{ label: "Δv, loaded", unit: "km/s" }, { label: "Δv, empty", unit: "km/s" }]);
+			// Info-tier marks (text in Lore/entries.md): the same notes on every ship card,
+			// except Propellant, which each role explains in its own way.
+			[[f.prop, "Propellant", "propellant-" + role], [f.prop, "vacuum Isp", "vacuum-isp"],
+				[f.dry, "Dry mass", "dry-mass"], [f.payload, "Payload", "payload"],
+				[f.tank, "Propellant capacity", "propellant-capacity"], [f.shield, "Heat shield", "heat-shield"]].forEach(function (m) {
+				loreMarkPhrase(m[0].closest(".cs-row"), m[1], m[2]);
+			});
+			loreMarkPhrase(hero[0].el, "Δv, loaded", "delta-v-loaded");
+			loreMarkPhrase(hero[1].el, "Δv, empty", "delta-v-empty");
 
 			function edit(patch) { fleet.update(id, patch); }
 			f.prop.addEventListener("change", function () { edit({ propellant: f.prop.value }); });
@@ -197,10 +207,12 @@ export function addShipCards(shell, opts) {
 			var std = fleet.isStandard(c), title = local ? shipTitle(c, std) : def.label;
 			var tag = local ? (std ? "standard" : "local") : count === 1 ? "standard" : "";
 			card.setTitle(title);
+			loreMarkPhrase(card.el.querySelector(".cs-nm"), def.label, role);
 			card.setTag(tag);
 			shared.textContent = count > 1 ? "" : std ? "Same design used across facilities. Edits change all standard " + def.label.toLowerCase() + "s." : "";
 			shared.style.display = shared.textContent ? "" : "none";
 			if (local) choice.set("", std ? [{ label: "Make a local version", onClick: makeCopy }] : []);
+			if (local && std) loreMarkPhrase(choice.el, "Make a local version", "make-local-version");
 			else choice.set("", count < MAX_VERSIONS ? [{ label: "Make another version", onClick: makeCopy }] : []);
 			choice.el.hidden = !choice.el.children.length;
 			var dv = shipDv(c);

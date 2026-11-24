@@ -1,6 +1,8 @@
 // The Lore page: every entry in entries.md as a section, grouped by chapter,
-// in file order. The same entries back the info tiers across the site, and
-// links between entries expand in place here exactly as they do in dialogs.
+// in file order — its title (unless `notitle`), then its pop-up text with any
+// "::: lore" additions around it. The same entries back the info tiers across
+// the site, and links between entries expand in place here exactly as they
+// do in dialogs. "Pending" means the pop-up text is not written yet.
 
 import { initLore, loreBodyHTML, typesetLore } from "../Shared/lore.js";
 import { create } from "../Shared/ui-components.js";
@@ -29,13 +31,13 @@ initLore().then(function (lore) {
 			art.id = id;
 			if (e.pending) art.classList.add("lp-pending");
 			var head = create("header", "lp-entry-head", false, art);
-			var h = create("h3", "lp-entry-title", e.title, head);
+			var h = create("h3", e.notitle ? ["lp-entry-title", "lp-notitle"] : "lp-entry-title", e.title, head);
 			var anchor = create("a", "lp-anchor", "#", h);
 			anchor.href = "#" + id;
 			anchor.setAttribute("aria-label", "Link to this entry");
 			create("span", "lp-tier", TIER_NAME[e.tier], head);
 			var body = create("div", "lore-body", false, art);
-			body.innerHTML = loreBodyHTML(e);
+			body.innerHTML = loreBodyHTML(e, true);
 			var li = create("li", e.pending ? "lp-pending" : false, false, ul);
 			var la = create("a", false, e.title, li);
 			la.href = "#" + id;

@@ -212,7 +212,8 @@ export class CalcShell {
 
 	// ---- tabs ----
 	setTab(tab) { this.tab = tab || null; this._refresh(); }
-	setOverline(text) { this.overEl.textContent = text; }
+	// Setters leave text that has not changed alone, so info-tier marks in it stay.
+	setOverline(text) { if (this.overEl.textContent !== text) this.overEl.textContent = text; }
 	_tabOf(def) { return def.tab || this.firstTab; }
 	_onTab(def) { return !this.tab || this._tabOf(def) === this.tab; }
 	// Tabs that hold at least one card that applies here.
@@ -289,7 +290,8 @@ export class CalcShell {
 			el: el, body: body, collapsed: false, chev: chev, chk: chk, solo: solo, shown: true,
 			setSummary: function (text) { sum.textContent = text; },
 			setTitle: function (title, short) {
-				nm.textContent = title; nmS.textContent = short || title;
+				if (nm.textContent !== title) nm.textContent = title;
+				if (nmS.textContent !== (short || title)) nmS.textContent = short || title;
 				if (chk) chk.setAttribute("aria-label", "Show " + title + " in the drawing");
 			},
 			setTag: function (text) { tag.textContent = text || ""; }
@@ -619,7 +621,7 @@ export class CalcShell {
 				el: cell,
 				set: function (value, label, unit) {
 					n.textContent = value;
-					if (label != null) lab.textContent = label;
+					if (label != null && lab.textContent !== label) lab.textContent = label;
 					if (unit != null) { un.textContent = unit; timesMark(un); }
 				},
 				show: function (on) { cell.hidden = !on; }

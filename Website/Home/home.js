@@ -42,7 +42,7 @@ import { designOutline } from "./design-outline.js";
 import { createFleet } from "../Shared/ships.js";
 import { addShipCards } from "../Shared/ship-card.js";
 import { mountApps } from "./apps.js";
-import { initLore } from "../Shared/lore.js";
+import { initLore, loreHTML } from "../Shared/lore.js";
 
 // The info tiers: marked words, tooltips and Lore dialogs (Shared/lore.js).
 initLore();
@@ -189,13 +189,19 @@ function renderStrip() {
 	el.vtog.setAttribute("aria-pressed", String(ui.compact));
 }
 
+// Info-tier notes on the facts panel (text in Lore/entries.md): row labels, which
+// read the same for every body, and the Moon's "tidally locked".
+var FACT_NOTES = { dist: "orbital-distance", speed: "orbital-speed", diam: "diameter", g: "surface-gravity", esc: "escape-velocity" };
+
 function renderFacts() {
 	var f = BODY_FACTS[ui.body];
 	if (!f || !findBody(design, ui.body)) { el.facts.innerHTML = '<h3>No body selected</h3>'; return; }
 	el.facts.innerHTML = '<h3>' + ui.body + '<small>' + esc(f.note) + '</small></h3><dl>' + FACT_ROWS.map(function (r) {
 		var v = esc(f[r[1]]);
-		if (r[1] === "rotation" && f.rotationNote) v += '<small>' + esc(f.rotationNote) + '</small>';
-		return '<dt>' + r[0] + '</dt><dd>' + v + '</dd>';
+		if (r[1] === "rotation" && f.rotationNote) {
+			v += '<small>' + (ui.body === "Moon" && f.rotationNote === "tidally locked" ? loreHTML("tidally-locked", "tidally locked") : esc(f.rotationNote)) + '</small>';
+		}
+		return '<dt>' + (FACT_NOTES[r[1]] ? loreHTML(FACT_NOTES[r[1]], r[0]) : r[0]) + '</dt><dd>' + v + '</dd>';
 	}).join("") + '</dl>';
 }
 

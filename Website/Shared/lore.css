@@ -29,9 +29,8 @@ a.lore-link::after { content: "+"; color: var(--lore-accent); font-weight: 700; 
 a.lore-link.lore-open::after { content: "\2212"; }
 .lore-expansion { margin: 0.2em 0 0.9em; padding: 0.6em 0.8em 0.7em; border-left: 3px solid var(--lore-accent); background: rgba(217, 71, 31, 0.06); border-radius: 0 6px 6px 0; }
 .lore-expansion .lore-expansion { background: rgba(217, 71, 31, 0.05); }
-.lore-expansion-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1em; margin-bottom: 0.35em; }
-.lore-expansion-title { font-weight: 700; }
-.lore-expansion-more { font-size: 0.8em; color: var(--lore-accent); white-space: nowrap; }
+.lore-expansion-more { float: right; margin: 0 0 0.2em 1em; font-size: 0.75em; color: var(--lore-accent); white-space: nowrap; }
+.lore-expansion::after { content: ""; display: block; clear: both; }
 
 /* Tier 1 tooltip. */
 .lore-tip { position: fixed; z-index: 10000; max-width: min(340px, calc(100vw - 16px)); padding: 0.55em 0.75em; border-radius: 6px; background: var(--lore-ink); color: #FFF6EE; font: 400 13px/1.45 "Instrument Sans", system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.25); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 0.12s; }
@@ -42,11 +41,9 @@ a.lore-link.lore-open::after { content: "\2212"; }
 
 /* Tier 2/3 dialog. */
 .lore-dialog { width: min(640px, calc(100vw - 32px)); max-height: min(80vh, 760px); padding: 0; border: 1px solid var(--lore-rule); border-radius: 12px; background: var(--lore-paper); color: var(--lore-ink); font: 400 15px/1.5 "Instrument Sans", system-ui, sans-serif; box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
-.lore-dialog[open] { display: flex; flex-direction: column; }
+.lore-dialog[open] { display: flex; flex-direction: column; border-top: 4px solid var(--lore-accent); }
 .lore-dialog::backdrop { background: rgba(36, 28, 22, 0.35); }
-.lore-dialog-head { display: flex; align-items: flex-start; gap: 1em; padding: 16px 18px 8px; border-bottom: 3px solid var(--lore-accent); }
-.lore-dialog-title { flex: 1; margin: 0; font: 700 20px/1.2 "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif; }
-.lore-dialog-close { border: 0; background: none; font-size: 24px; line-height: 1; cursor: pointer; color: inherit; padding: 0 4px; }
-.lore-dialog-body { padding: 14px 18px; overflow-y: auto; }
+.lore-dialog-close { position: absolute; top: 6px; right: 8px; z-index: 1; border: 0; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: inherit; padding: 2px 6px; }
+.lore-dialog-body { padding: 18px 40px 14px 18px; overflow-y: auto; }
 .lore-dialog-foot { padding: 8px 18px 14px; border-top: 1px solid var(--lore-rule); text-align: right; font-size: 13px; }
 .lore-dialog-more { color: var(--lore-accent); }

@@ -40,6 +40,8 @@ import { addMaterialCard } from "../../Shared/material-card.js";
 import { applies, footFloor, profileOf, parentName, anchorConfig } from "../../Shared/body-profiles.js";
 import { computeSkyhook, stationKeeping, nodalPrecession, exhaustSpeed, PROPELLANT_MAX } from "./skyhookModel.js";
 import { addTrafficCard } from "./trafficCard.js";
+import { loreMarkPhrase, loreUnmark } from "../../Shared/lore.js";
+import { loreSlug } from "../../Shared/lore-markdown.js";
 
 // Link a stylesheet (path relative to this file) unless the document has it.
 function ensureStylesheet(path) {
@@ -151,10 +153,10 @@ export function mountHangingSkyhook(root, opts) {
 	function station(key, label, hint, tip, alt, mass) {
 		var st = shell.optionalFields(stCard, { key: key + " used", label: label, hint: hint, tip: tip, checked: DEF.ticked,
 			fields: [{ label: "altitude", unit: "km", value: alt, key: key }, { label: "peak mass", unit: "kt", value: mass, min: 0, key: key + " mass", narrow: true }] });
-		return { use: st.check, alt: st.inputs[0], mass: st.inputs[1] };
+		return { use: st.check, alt: st.inputs[0], mass: st.inputs[1], head: st.el.querySelector(".cs-opt-h") };
 	}
 	var releaseSt = station("Release deck", "Release deck", "for alternate destination", "Where ships bound for an alternate destination are released; released cargo leaves at this deck's speed.", DEF.release, DEF.releaseMass);
-	var outerSt = station("Outer docks", "Outer docks", "arrival from holding orbit", "Where incoming ships arriving from holding orbit dock.", DEF.outer, DEF.outerMass);
+	var outerSt = station("Outer docks", "Outer docks", "arrival from parking orbit", "Where incoming ships arriving from parking orbit dock.", DEF.outer, DEF.outerMass);
 	var recvSt = station("Receiving deck", "Receiving deck", "shuttles from the surface", "Where shuttles from the surface join the tether.", DEF.recv, DEF.recvMass);
 	var releaseIn = releaseSt.alt, releaseMassIn = releaseSt.mass, outerIn = outerSt.alt, outerMassIn = outerSt.mass, recvIn = recvSt.alt, recvMassIn = recvSt.mass;
 	shell.note(stCard, "Each station's mass is the facility plus its maximum load of ships, cargo and supplies.");
@@ -168,13 +170,18 @@ export function mountHangingSkyhook(root, opts) {
 		tip: "Finds the tilt at which the bulge turns the plane eastward exactly once a year, so the plane keeps the same angle to the body's orbit all year." });
 	// Where no tilt can make the plane Sun-synchronous, the item loses its tick and says so.
 	var ssHead = ssOpt.el.querySelector(".cs-opt-h"), ssTick = ssHead.querySelector(".cs-chk"),
-		ssTitle = ssHead.querySelector(".cs-opt-t"), ssHint = ssHead.querySelector(".cs-opt-d"), ssTip = ssHead.title;
+		ssTitle = ssHead.querySelector(".cs-opt-t"), ssHint = ssHead.querySelector(".cs-opt-d");
+	// The name keeps its info mark; "not possible" is a separate span after it, and the
+	// reason why is the only hover tip the item has.
+	var ssNot = document.createElement("span");
+	ssNot.textContent = " not possible";
+	ssTitle.appendChild(ssNot);
 	function setSunSyncPossible(ok, tip) {
 		ssTick.hidden = !ok;
 		ssOpt.check.disabled = !ok || !!anc;
-		ssTitle.textContent = ok ? "Sun-synchronous" : "Sun-synchronous not possible";
+		ssNot.hidden = ok;
 		if (ssHint) ssHint.hidden = !ok;
-		ssHead.title = ok ? ssTip : tip;
+		if (ok) ssHead.removeAttribute("title"); else ssHead.title = tip;
 		ssHead.style.cursor = ok ? "" : "default";
 		ssOpt.el.classList.toggle("cs-opt-off", !ok || !ssOpt.check.checked);
 	}
@@ -298,6 +305,58 @@ export function mountHangingSkyhook(root, opts) {
 	var rpCard = shell.addCard({ id: "rp", tab: "arch", side: "out", title: "Release points", short: "Release", color: C.sky, focus: "release" });
 	var rpNote = shell.note(rpCard, "Altitude on the tether where a release leaves with the v∞ for a transfer to each body.");
 	var rpLines = [];
+
+	// ---------- info-tier marks (their text is in Lore/entries.md) ----------
+	// A marked row loses its old hover tip, which would show alongside the mark's own.
+	function mark(root, phrase, id) { return loreMarkPhrase(root, phrase, id); }
+	function markTitle(card, phrase, id) { return mark(card.el.querySelector(".cs-nm"), phrase, id); }
+	function rowOf(input) { return input.closest(".cs-row"); }
+	function untip(el) {
+		el.removeAttribute("title");
+		el.classList.remove("cs-tipped");
+		el.querySelectorAll(".cs-tipped").forEach(function (x) { x.classList.remove("cs-tipped"); });
+	}
+	if (o.overline) {
+		mark(shell.overEl, bodyValue, "body-" + loreSlug(bodyValue));
+		mark(shell.overEl, "Hanging skyhook", "hanging-skyhook");
+	}
+	markTitle(geoCard, "Basics", "basics");
+	mark(rowOf(topIn), "boost engines", "boost-engines");
+	mark(topSp[1].el, "free orbit speed", "free-orbit-speed");
+	mark(rowOf(centreIn), "Balance point", "balance-point");
+	mark(rowOf(footIn), "Foot altitude", "foot-altitude");
+	markTitle(matCard.card, "Tether materials", "tether-materials");
+	[["Breaking length at 1 g₀", "breaking-length-1g"], ["Breaking length at local g", "breaking-length-local-g"],
+		["Safety factor", "safety-factor"], ["Lower tether ratio", "lower-tether-ratio"],
+		["Upper tether ratio", "upper-tether-ratio"], ["Extra tether", "extra-tether"]].forEach(function (p) { mark(matCard.card.body, p[0], p[1]); });
+	markTitle(payCard, "Core Facilities", "core-facilities");
+	[[topLoadIn, "Top station", "top-station"], [upperDistIn, "Upper tether load", "upper-tether-load"],
+		[comIn, "Anchor station", "anchor-station"], [footLoadIn, "Foot station", "foot-station"]].forEach(function (p) {
+		mark(rowOf(p[0]), p[1], p[2]);
+		untip(rowOf(p[0]));
+	});
+	// On the Moon the release deck has a note of its own (set in update()).
+	var releaseMark = mark(releaseSt.head, "Release deck", "release-deck");
+	mark(outerSt.head, "Outer docks", "outer-docks");
+	mark(recvSt.head, "Receiving deck", "receiving-deck");
+	[releaseSt, outerSt, recvSt].forEach(function (st) { untip(st.head); });
+	markTitle(npCard, "Orbit tilt", "orbit-tilt");
+	mark(ssTitle, "Sun-synchronous", "sun-synchronous");
+	ssTitle.classList.remove("cs-tipped");
+	mark(ecOpt.el.querySelector(".cs-opt-t"), "periodic ecliptic alignment", "periodic-ecliptic-alignment");
+	untip(ecOpt.el.querySelector(".cs-opt-h"));
+	mark(rNpPeriod.el, "Nodal precession period", "nodal-precession-period");
+	mark(rNpRate.el, "Node drift", "node-drift");
+	mark(rNpThird.el, "Other bodies' pull", "other-bodies-pull");
+	markTitle(relCard, "Foot ↔ Ground trips", "foot-ground-trips");
+	markTitle(propCard, "Loads", "loads");
+	if (!anc) mark(rOff.el, "Anchor station offset", "anchor-station-offset");
+	mark(rTC.el, "Tension at the balance point", "tension-at-balance-point");
+	// Stations: the figures are marked in the first block; "Escape v∞" in the first
+	// block that shows it (update()).
+	mark(stBlocks[0].cells[0].el, "Total strain", "total-strain");
+	mark(stBlocks[0].cells[2].el, "Pull felt", "pull-felt");
+	markTitle(rpCard, "Release", "release");
 
 	// ---------- formatting ----------
 	function num(x, d) { return isFinite(x) ? x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "—"; }
@@ -549,7 +608,7 @@ export function mountHangingSkyhook(root, opts) {
 		rTC.set(f[0], anc ? "from above; " + fBelow[0] + " " + fBelow[1] + " from below. " + anc.name + " holds the difference."
 			: t.balanced ? "the same from above and from below" : "from above; " + fBelow[0] + " " + fBelow[1] + " from below, so the two do not balance", f[1]);
 		// stations: total tension at each level, what a release there comes to, and the pull felt
-		var figs = t.stationFigures;
+		var figs = t.stationFigures, escMarked = false;
 		stBlocks.forEach(function (b, i) {
 			var x = figs[i];
 			b.box.hidden = !x;
@@ -559,12 +618,17 @@ export function mountHangingSkyhook(root, opts) {
 			b.cells[0].set(sf[0], "Total strain", sf[1]);
 			b.cells[1].show(!!rel);
 			if (rel) {
-				if (rel.outcome === "escape") b.cells[1].set(num(rel.vInf, 0), "Escape v∞", "m/s");
+				if (rel.outcome === "escape") {
+					b.cells[1].set(num(rel.vInf, 0), "Escape v∞", "m/s");
+					var escLab = b.cells[1].el.querySelector(".cs-hl");
+					if (escMarked) loreUnmark(escLab);
+					else escMarked = !!mark(escLab, "Escape v∞", "escape-v-inf");
+				}
 				else if (rel.outcome === "impact") b.cells[1].set(num(rel.impactSpeed, 0), "Impact speed", "m/s");
 				else b.cells[1].set(num((rel.radius - R) / 1e3, 0), rel.apsis === "apoapsis" ? "Apoapsis" : "Periapsis", "km");
 			}
 			b.cells[2].set(num(x.acceleration, 2), "Pull felt", "m/s²");
-			b.cells[2].el.title = num(100 * x.acceleration / t.surfaceGravity, 1) + "% of surface gravity, " + (x.outward ? "outward" : "inward");
+			b.cells[2].el.querySelector(".cs-hv").title = num(100 * x.acceleration / t.surfaceGravity, 1) + "% of surface gravity, " + (x.outward ? "outward" : "inward");
 		});
 		var gapF = scaled(Math.abs(t.unbalance), FORCE);
 		if (anc) rOff.set(num(Math.abs(t.anchor.shift), Math.abs(t.anchor.shift) < 10 ? 2 : 0), (t.anchor.shift < 0 ? "lower" : "higher") + ", from the net pull of " + gapF[0] + " " + gapF[1] +
@@ -616,6 +680,7 @@ export function mountHangingSkyhook(root, opts) {
 
 		// summaries
 		if (bodyCard) bodyCard.setSummary(bodyIn.value);
+		if (releaseMark) releaseMark.dataset.lore = bodyIn.value === "Moon" ? "release-deck-moon" : "release-deck";
 		geoCard.setSummary(num(S.foot, 0) + " → " + num(S.centre, 0) + " → " + num(S.top, 0) + " km\n" + num(t.footVel / 1e3, 2) + " → " + num(t.centreVel / 1e3, 2) + " → " + num(t.topVel / 1e3, 2) + " km/s");
 		var stUsed = [[recvSt, num(S.recv, 0)], [outerSt, num(S.outer, 1)], [releaseSt, num(S.release, 0)]].filter(function (x) { return x[0].use.checked; });
 		stCard.setSummary(stUsed.length ? stUsed.map(function (x) { return x[1]; }).join(" · ") + " km · " + num((ld.stationsUpper + ld.stationsLower) / 1e6, 0) + " kt" : "none");

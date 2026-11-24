@@ -33,9 +33,36 @@ test("parses chapters, entries, tiers and stubs", function () {
 	assert.equal(L.entries["balance-point"].title, "Balance point (BP)");
 	assert.equal(L.entries["hanging-skyhook"].pending, true);
 	assert.equal(L.entries["l1-station"].tier, 3);
-	assert.match(L.entries["l1-station"].body, /## not a heading/);
+	assert.match(L.entries["l1-station"].popup, /## not a heading/);
 	assert.equal(L.entries.nope, undefined);
 	assert.deepEqual(L.problems, []);
+});
+
+test("lore blocks show on the Lore page only; notitle is read", function () {
+	var L = parseLore([
+		"## Basics {#basics tier=2 notitle}",
+		"::: lore",
+		"Page intro.",
+		":::",
+		"Pop-up text.",
+		"",
+		"::: lore",
+		"Page outro.",
+		":::",
+		"## Only page {#only-page tier=3}",
+		"::: lore",
+		"Background.",
+		":::"
+	].join("\n"));
+	var b = L.entries.basics;
+	assert.equal(b.notitle, true);
+	assert.equal(b.popup, "Pop-up text.");
+	assert.equal(b.page, "Page intro.\n\nPop-up text.\n\nPage outro.");
+	assert.equal(b.pending, false);
+	assert.equal(L.entries["only-page"].pending, true);
+	assert.equal(L.entries["only-page"].page, "Background.");
+	assert.deepEqual(L.problems, []);
+	assert.equal(parseLore("## A {#a tier=1}\n::: lore\nx").problems.length, 1);
 });
 
 test("reports a missing tier and a duplicate id", function () {

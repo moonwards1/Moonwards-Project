@@ -4,8 +4,13 @@
 //
 // File format (written by hand; see the comment at the top of entries.md):
 //   # Chapter title                      groups entries on the Lore page
-//   ## Entry title {#entry-id tier=2}    starts an entry; tier is 1, 2 or 3
-//   body text in Markdown                an empty body is a stub (pending)
+//   ## Entry title {#entry-id tier=2}    starts an entry; tier is 1, 2 or 3;
+//                                        the title heads it on the Lore page
+//                                        only (`notitle` hides it there too)
+//   body text in Markdown                the pop-up text; empty = a stub
+//   ::: lore                             a block shown only on the Lore page,
+//   …                                    before, after or between the
+//   :::                                  pop-up text
 //
 // Body Markdown: paragraphs, ### / #### subheadings, - and 1. lists,
 // > quotes, **bold**, *italic*, `code`, [text](url), [text](#entry-id) for a
@@ -26,10 +31,11 @@ export function loreSlug(text) {
 }
 
 function readAttrs(attrText) {
-	var out = { id: null, tier: null };
+	var out = { id: null, tier: null, notitle: false };
 	String(attrText || "").split(/\s+/).forEach(function (tok) {
 		if (!tok) return;
 		if (tok[0] === "#") out.id = tok.slice(1);
+		if (tok === "notitle") out.notitle = true;
 		var m = /^tier\s*=\s*(\d)$/.exec(tok);
 		if (m) out.tier = +m[1];
 	});
@@ -37,7 +43,10 @@ function readAttrs(attrText) {
 }
 
 // parseLore(text) → {
-//   entries:  { id → { id, title, tier, body, chapter, pending } },
+//   entries:  { id → { id, title, notitle, tier, chapter,
+//                      popup,      the pop-up text (Markdown), lore blocks dropped
+//                      page,       the Lore page text, lore blocks included
+//                      pending } } (true while the pop-up text is empty)
 //   order:    [id, …] in file order,
 //   chapters: [{ title, ids: [id, …] }, …]   (title "" for entries before any chapter),
 //   problems: [string, …]                    (duplicate ids, bad tiers)
@@ -50,8 +59,11 @@ export function parseLore(text) {
 
 	function close() {
 		if (!cur) return;
-		cur.body = cur.lines.join("\n").replace(/^\s+|\s+$/g, "");
-		cur.pending = cur.body === "";
+		var parts = splitLoreBlocks(cur.lines);
+		cur.popup = parts.popup;
+		cur.page = parts.page;
+		cur.pending = cur.popup === "";
+		if (parts.open) problems.push("“" + cur.title + "” has a “::: lore” block with no closing “:::”.");
 		delete cur.lines;
 		cur = null;
 	}
@@ -75,7 +87,7 @@ export function parseLore(text) {
 			else order.push(id);
 			if (!chapter) chapter = chapterNamed("");
 			if (chapter.ids.indexOf(id) < 0) chapter.ids.push(id);
-			cur = { id: id, title: m[1], tier: tier, chapter: chapter.title, lines: [] };
+			cur = { id: id, title: m[1], notitle: a.notitle, tier: tier, chapter: chapter.title, lines: [] };
 			entries[id] = cur;
 			return;
 		}
@@ -85,6 +97,20 @@ export function parseLore(text) {
 	});
 	close();
 	return { entries: entries, order: order, chapters: chapters.filter(function (c) { return c.ids.length || c.title; }), problems: problems };
+}
+
+// An entry's lines split into its pop-up text (outside "::: lore" blocks) and
+// its Lore page text (everything, the block markers removed).
+function splitLoreBlocks(lines) {
+	var popup = [], page = [], inLore = false;
+	lines.forEach(function (line) {
+		if (!inLore && /^\s*:::\s*lore\s*$/i.test(line)) { inLore = true; page.push(""); return; }
+		if (inLore && /^\s*:::\s*$/.test(line)) { inLore = false; page.push(""); return; }
+		page.push(line);
+		if (!inLore) popup.push(line);
+	});
+	function trim(a) { return a.join("\n").replace(/^\s+|\s+$/g, "").replace(/\n{3,}/g, "\n\n"); }
+	return { popup: trim(popup), page: trim(page), open: inLore };
 }
 
 // ── Rendering a body ─────────────────────────────────────────────────────────
