@@ -16,8 +16,8 @@ ENTRIES
   - entry-id: the site's marks point at this id, so leave it as it is
     (ask Claude to change one). The title can change freely.
   - tier=1  tooltip: short, plain text — meaning or how-to
-    tier=2  orange-underlined word, opens a dialog
-    tier=3  word with an orange ⓘ, opens a dialog — central information
+    tier=2  orange dotted underline, opens a pop-up beside the word
+    tier=3  word with an orange ⓘ, opens the same pop-up — central information
   - An entry with no text yet is a stub: its mark works, and shows
     "Note not written yet". Add ?lore=pending to any page's address to
     outline the marks still waiting for text; the Lore page has a

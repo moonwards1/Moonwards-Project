@@ -7,7 +7,7 @@
 html.lore-ready [data-lore] { text-decoration: underline dashed #C0201A 1.5px; text-underline-offset: 0.2em; }
 [data-lore]:focus-visible { outline: 2px solid var(--lore-accent); outline-offset: 2px; border-radius: 2px; }
 
-/* Shared look of rendered entry text (dialog, expansion, Lore page). */
+/* Shared look of rendered entry text (pop-up, expansion, Lore page). */
 .lore-body { line-height: 1.5; }
 .lore-body > :first-child { margin-top: 0; }
 .lore-body > :last-child { margin-bottom: 0; }
@@ -39,11 +39,23 @@ a.lore-link.lore-open::after { content: "\2212"; }
 .lore-tip p:last-child { margin: 0; }
 .lore-tip .lore-pending-note { color: #C9B9A8; }
 
-/* Tier 2/3 dialog. */
-.lore-dialog { width: min(640px, calc(100vw - 32px)); max-height: min(80vh, 760px); padding: 0; border: 1px solid var(--lore-rule); border-radius: 12px; background: var(--lore-paper); color: var(--lore-ink); font: 400 15px/1.5 "Instrument Sans", system-ui, sans-serif; box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
-.lore-dialog[open] { display: flex; flex-direction: column; border-top: 4px solid var(--lore-accent); }
-.lore-dialog::backdrop { background: rgba(36, 28, 22, 0.35); }
-.lore-dialog-close { position: absolute; top: 6px; right: 8px; z-index: 1; border: 0; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: inherit; padding: 2px 6px; }
-.lore-dialog-body { padding: 18px 40px 14px 18px; overflow-y: auto; }
-.lore-dialog-foot { padding: 8px 18px 14px; border-top: 1px solid var(--lore-rule); text-align: right; font-size: 13px; }
-.lore-dialog-more { color: var(--lore-accent); }
+/* Tier 2/3 pop-up: a speech bubble beside the word. The drop shadow is a
+   filter on the whole bubble, so the pointer casts it too. */
+.lore-pop { position: fixed; z-index: 9999; box-sizing: border-box; color: var(--lore-ink); font: 400 15px/1.5 "Instrument Sans", system-ui, sans-serif;
+	filter: drop-shadow(0 8px 20px rgba(36, 28, 22, 0.28)) drop-shadow(0 1px 3px rgba(36, 28, 22, 0.22)); }
+.lore-pop:focus { outline: none; }
+.lore-pop[hidden] { display: none; }
+.lore-pop-box { position: relative; display: flex; flex-direction: column; background: var(--lore-paper); border-radius: 10px; overflow: hidden; }
+.lore-pop-close { position: absolute; top: 4px; right: 6px; z-index: 1; border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: #8A7A6B; padding: 2px 6px; }
+.lore-pop-close:hover { color: var(--lore-ink); }
+.lore-pop-body { padding: 14px 36px 10px 16px; overflow-y: auto; min-height: 0; }
+.lore-pop-foot { padding: 6px 16px 10px; text-align: right; font-size: 12.5px; }
+.lore-pop-more { color: var(--lore-accent); }
+
+/* The pointer: a triangle on the side facing the word, at the word's centre. */
+.lore-pop-arrow { position: absolute; width: 0; height: 0; border: 10px solid transparent; }
+.lore-pop[data-side="bottom"] .lore-pop-arrow { top: -19px; margin-left: -10px; border-bottom-color: var(--lore-paper); }
+.lore-pop[data-side="top"] .lore-pop-arrow { bottom: -19px; margin-left: -10px; border-top-color: var(--lore-paper); }
+.lore-pop[data-side="right"] .lore-pop-arrow { left: -19px; margin-top: -10px; border-right-color: var(--lore-paper); }
+.lore-pop[data-side="left"] .lore-pop-arrow { right: -19px; margin-top: -10px; border-left-color: var(--lore-paper); }
+.lore-pop[data-side="none"] .lore-pop-arrow { display: none; }

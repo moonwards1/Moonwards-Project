@@ -3,13 +3,14 @@
 //
 //   tier 1  dotted underline in the text's own colour; a tooltip on hover,
 //           focus or tap — what a word means or how a control works
-//   tier 2  heavy orange underline; opens a dialog with the entry, whose
-//           links to other entries expand in place (Nutshell-style)
-//   tier 3  an orange ⓘ after the word (or alone); opens the same dialog,
+//   tier 2  orange dotted underline; opens a pop-up beside the word, a speech
+//           bubble pointing at it, whose links to other entries expand in
+//           place (Nutshell-style)
+//   tier 3  an orange ⓘ after the word (or alone); opens the same pop-up,
 //           for central information
 //
-// Pop-ups show the entry's text with no heading: the marked word is the
-// context. The Lore page shows the title and any "::: lore" additions.
+// Every mark shows the help cursor (arrow and question mark). Pop-ups show
+// the entry's text with no heading: the marked word is the context. The Lore page shows the title and any "::: lore" additions.
 //
 // A page calls initLore() once. Text is marked with loreMark / loreHTML,
 // loreMarkPhrase (wraps a phrase inside text already on the page), or by
@@ -34,7 +35,7 @@ const MAX_DEPTH = 2;   // nested expansions; a deeper link opens the Lore page
 var started = false;
 var lore = null;        // parsed entries, once loaded
 var loading = null;     // Promise of `lore`
-var styleEl = null, tipEl = null, tipFor = null, dialogEl = null, katexP = null;
+var styleEl = null, tipEl = null, tipFor = null, popEl = null, popFor = null, katexP = null;
 var warned = {};
 
 // ── Loading ──────────────────────────────────────────────────────────────────
@@ -134,10 +135,11 @@ export function loreBodyHTML(entry, onPage) {
 }
 
 // Typeset any $maths$ inside `root` with KaTeX, loaded from the CDN on first
-// use. Without it the TeX source stays visible.
+// use. Without it the TeX source stays visible. Returns a Promise, settled
+// once the maths is drawn.
 export function typesetLore(root) {
 	var els = root.querySelectorAll(".lore-math:not([data-done])");
-	if (!els.length) return;
+	if (!els.length) return Promise.resolve();
 	if (!katexP) {
 		var link = document.createElement("link");
 		link.rel = "stylesheet";
@@ -146,7 +148,7 @@ export function typesetLore(root) {
 		katexP = import(KATEX + "katex.mjs").then(function (m) { return m.default || m; })
 			.catch(function (e) { console.warn("Lore: KaTeX did not load — " + e.message); return null; });
 	}
-	katexP.then(function (katex) {
+	return katexP.then(function (katex) {
 		if (!katex) return;
 		els.forEach(function (el) {
 			try {
@@ -157,7 +159,7 @@ export function typesetLore(root) {
 	});
 }
 
-function fill(el, html) { el.innerHTML = html; typesetLore(el); }
+function fill(el, html) { el.innerHTML = html; return typesetLore(el); }
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 
@@ -187,8 +189,8 @@ function applyStyles() {
 	document.documentElement.classList.add("lore-ready");
 }
 var TIER1 = "cursor:help;text-decoration:underline dotted currentColor 1.5px;text-underline-offset:0.2em;";
-var TIER2 = "cursor:pointer;text-decoration:underline solid var(--lore-accent) 2.5px;text-underline-offset:0.18em;text-decoration-skip-ink:none;";
-var TIER3 = "cursor:pointer;text-decoration:none;";
+var TIER2 = "cursor:help;text-decoration:underline dotted var(--lore-accent) 2.5px;text-underline-offset:0.2em;text-decoration-skip-ink:none;";
+var TIER3 = "cursor:help;text-decoration:none;";
 var TIER3_ICON = "content:'\\24D8';color:var(--lore-accent);font-weight:700;font-size:1.05em;margin-left:0.15em;";
 var PENDING = "outline:1.5px dashed var(--lore-accent);outline-offset:2px;";
 
@@ -220,28 +222,104 @@ function hideTip() {
 	if (tipEl) tipEl.classList.remove("lore-on");
 }
 
-// ── Dialog (tiers 2 and 3) ───────────────────────────────────────────────────
+// ── Pop-up (tiers 2 and 3) ───────────────────────────────────────────────────
+// A speech bubble beside the marked word, its pointer on the word, placed on
+// the side where it fits best. The page stays live behind it: a click
+// elsewhere, Esc or the × closes it, and it follows the word as the page
+// scrolls (closing if the word scrolls out of view).
 
-export function openLoreDialog(id) {
+var POP_W = 440, POP_GAP = 12, POP_EDGE = 8, POP_MIN_W = 260;
+
+function buildPop() {
+	popEl = create("div", "lore-pop", false, document.body);
+	popEl.setAttribute("role", "dialog");
+	popEl.tabIndex = -1;
+	popEl.hidden = true;
+	create("div", "lore-pop-arrow", false, popEl);
+	var box = create("div", "lore-pop-box", false, popEl);
+	var x = create("button", "lore-pop-close", "×", box);
+	x.type = "button";
+	x.setAttribute("aria-label", "Close");
+	x.addEventListener("click", function () { closeLorePop(true); });
+	create("div", ["lore-body", "lore-pop-body"], false, box);
+	var foot = create("div", "lore-pop-foot", false, box);
+	var a = create("a", "lore-pop-more", "Open on the Lore page →", foot);
+	a.target = "_blank";
+	a.rel = "noopener";
+}
+
+// Open entry `id`'s pop-up at `anchor` (the mark); without one it sits mid-window.
+export function openLoreDialog(id, anchor) {
 	var e = loreEntry(id);
-	if (!dialogEl) {
-		dialogEl = create("dialog", "lore-dialog", false, document.body);
-		var x = create("button", "lore-dialog-close", "×", dialogEl);
-		x.type = "button";
-		x.setAttribute("aria-label", "Close");
-		x.addEventListener("click", function () { dialogEl.close(); });
-		create("div", ["lore-body", "lore-dialog-body"], false, dialogEl);
-		var foot = create("footer", "lore-dialog-foot", false, dialogEl);
-		var a = create("a", "lore-dialog-more", "Open on the Lore page →", foot);
-		a.target = "_blank";
-		a.rel = "noopener";
-		dialogEl.addEventListener("click", function (ev) { if (ev.target === dialogEl) dialogEl.close(); });
+	if (!popEl) buildPop();
+	popFor = anchor || null;
+	popEl.setAttribute("aria-label", e ? e.title : id);
+	var body = popEl.querySelector(".lore-pop-body");
+	var drawn = fill(body, loreBodyHTML(e));
+	popEl.querySelector(".lore-pop-more").href = loreEntryUrl(id);
+	body.scrollTop = 0;
+	popEl.hidden = false;
+	placePop();
+	drawn.then(placePop);
+	popEl.focus({ preventScroll: true });
+}
+
+export function closeLorePop(refocus) {
+	if (!popEl || popEl.hidden) return;
+	popEl.hidden = true;
+	if (refocus && popFor && popFor.isConnected && popFor.tabIndex >= 0) popFor.focus({ preventScroll: true });
+	popFor = null;
+}
+
+function clamp(x, lo, hi) { return Math.max(lo, Math.min(x, hi)); }
+
+function placePop() {
+	if (!popEl || popEl.hidden) return;
+	var box = popEl.querySelector(".lore-pop-box"), arrow = popEl.querySelector(".lore-pop-arrow");
+	var vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+	var W = Math.min(POP_W, vw - 2 * POP_EDGE);
+	box.style.maxHeight = "";
+	popEl.style.width = W + "px";
+	if (!popFor || !popFor.isConnected) {
+		box.style.maxHeight = (vh - 2 * POP_EDGE) + "px";
+		popEl.dataset.side = "none";
+		popEl.style.left = (vw - W) / 2 + "px";
+		popEl.style.top = Math.max(POP_EDGE, (vh - box.offsetHeight) / 2) + "px";
+		return;
 	}
-	dialogEl.setAttribute("aria-label", e ? e.title : id);
-	fill(dialogEl.querySelector(".lore-dialog-body"), loreBodyHTML(e));
-	dialogEl.querySelector(".lore-dialog-more").href = loreEntryUrl(id);
-	dialogEl.querySelector(".lore-dialog-body").scrollTop = 0;
-	if (!dialogEl.open) dialogEl.showModal();
+	var r = popFor.getBoundingClientRect();
+	if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) { closeLorePop(false); return; }
+	var H = box.offsetHeight;   // its natural height at full width
+	var room = {
+		bottom: vh - r.bottom - POP_GAP - POP_EDGE, top: r.top - POP_GAP - POP_EDGE,
+		right: vw - r.right - POP_GAP - POP_EDGE, left: r.left - POP_GAP - POP_EDGE
+	};
+	// How well each side holds it: above and below by height, beside by width
+	// (a side narrower than POP_MIN_W can't be used). Below wins a tie.
+	var fit = { bottom: room.bottom / H, top: room.top / H,
+		right: room.right >= POP_MIN_W ? room.right / W : 0, left: room.left >= POP_MIN_W ? room.left / W : 0 };
+	var side = ["bottom", "top", "right", "left"].reduce(function (best, k) { return fit[k] > fit[best] ? k : best; }, "bottom");
+	popEl.dataset.side = side;
+	var cx = r.left + r.width / 2, cy = r.top + r.height / 2, left, top, w = W, h;
+	if (side === "bottom" || side === "top") {
+		box.style.maxHeight = Math.max(80, room[side]) + "px";
+		h = box.offsetHeight;
+		left = clamp(cx - w / 2, POP_EDGE, vw - w - POP_EDGE);
+		top = side === "bottom" ? r.bottom + POP_GAP : r.top - POP_GAP - h;
+		arrow.style.left = clamp(cx - left, 18, w - 18) + "px";
+		arrow.style.top = "";
+	} else {
+		w = Math.min(W, room[side]);
+		popEl.style.width = w + "px";
+		box.style.maxHeight = (vh - 2 * POP_EDGE) + "px";
+		h = box.offsetHeight;
+		left = side === "right" ? r.right + POP_GAP : r.left - POP_GAP - w;
+		top = clamp(cy - h / 2, POP_EDGE, vh - h - POP_EDGE);
+		arrow.style.top = clamp(cy - top, 18, h - 18) + "px";
+		arrow.style.left = "";
+	}
+	popEl.style.left = left + "px";
+	popEl.style.top = top + "px";
 }
 
 // ── Nested expansion (links between entries) ─────────────────────────────────
@@ -252,6 +330,7 @@ function toggleExpansion(link) {
 		link._loreExp.remove();
 		link._loreExp = null;
 		link.classList.remove("lore-open");
+		if (popEl && popEl.contains(link)) placePop();
 		return;
 	}
 	var host = link.closest(".lore-expansion");
@@ -267,13 +346,14 @@ function toggleExpansion(link) {
 	more.target = "_blank";
 	more.rel = "noopener";
 	var body = create("div", ["lore-body", "lore-expansion-body"], false, box);
-	fill(body, loreBodyHTML(e));
+	var drawn = fill(body, loreBodyHTML(e));
 	// After the block, and after any expansions already opened from it.
 	var after = block;
 	while (after.nextElementSibling && after.nextElementSibling.classList.contains("lore-expansion")) after = after.nextElementSibling;
 	after.after(box);
 	link._loreExp = box;
 	link.classList.add("lore-open");
+	if (popEl && popEl.contains(link)) { placePop(); drawn.then(placePop); }
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────
@@ -284,11 +364,12 @@ function activate(el, ev) {
 	var id = el.dataset.lore, e = loreEntry(id);
 	if (!e) { if (!warned[id]) { warned[id] = 1; console.warn("Lore: no entry with id “" + id + "”."); } return; }
 	// A tier-1 click still reaches the label or button around the word (ticking
-	// a box, focusing a field); a dialog click goes no further than the card.
+	// a box, focusing a field); a pop-up click goes no further than the card.
 	if (e.tier === 1) { showTip(el); return; }
 	if (ev) ev.preventDefault();
 	hideTip();
-	openLoreDialog(id);
+	if (popEl && !popEl.hidden && popFor === el) closeLorePop(false);
+	else openLoreDialog(id, el);
 }
 
 // Start the info tiers on this page. Safe to call more than once.
@@ -323,14 +404,20 @@ export function initLore() {
 		var el = markOf(ev.target);
 		if (el) { activate(el, ev); return; }
 		if (tipFor) hideTip();
+		if (popEl && !popEl.hidden && !popEl.contains(ev.target)) closeLorePop(false);
 	});
 	document.addEventListener("keydown", function (ev) {
+		if (ev.key === "Escape" && popEl && !popEl.hidden) { closeLorePop(true); return; }
 		if (ev.key === "Escape" && tipFor) { hideTip(); return; }
 		if (ev.key !== "Enter" && ev.key !== " ") return;
 		var el = markOf(ev.target);
 		if (el && el === ev.target) activate(el, ev);
 	});
-	window.addEventListener("scroll", hideTip, { passive: true, capture: true });
+	window.addEventListener("scroll", function (ev) {
+		hideTip();
+		if (popEl && !popEl.contains(ev.target)) placePop();
+	}, { passive: true, capture: true });
+	window.addEventListener("resize", placePop);
 
 	if (lore) applyStyles();
 	return getLore();

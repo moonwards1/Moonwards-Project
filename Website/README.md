@@ -87,7 +87,7 @@ Calculators in `Calculators/` are self-contained ES-module pages that run standa
 
 ## Info tiers and the Lore page
 
-Explanations are layered in three tiers so plain text stays to a minimum: a **dotted underline** gives a tooltip (what a word means, how a control works); a **heavy orange underline** opens a dialog with a fuller entry; an **orange ⓘ** opens a dialog for central information. Inside an entry, links to other entries expand in place, **[Nutshell](https://ncase.me/nutshell/)**-style, at most two levels deep.
+Explanations are layered in three tiers so plain text stays to a minimum: a **dotted underline** gives a tooltip (what a word means, how a control works); an **orange dotted underline** opens a pop-up beside the word, a speech bubble pointing at it, with a fuller entry; an **orange ⓘ** opens the same pop-up for central information. Every mark shows the help cursor. Inside an entry, links to other entries expand in place, **[Nutshell](https://ncase.me/nutshell/)**-style, at most two levels deep.
 
 Pop-ups show only the entry's text; the Lore page adds its title and any Lore-page-only blocks. All the text lives in one hand-written Markdown file, `Lore/entries.md`, and the same entries make up the **Lore page** (`Lore/index.html`), grouped by the file's chapters. A mark on any page names only an entry's id; the tier belongs to the entry. The runtime is `Shared/lore.js` (parsing and rendering in `Shared/lore-markdown.js`); each page calls `initLore()` once. Nutshell-style annotations inside 3D model viewers are a later goal for the same entries.
 

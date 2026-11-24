@@ -2,12 +2,12 @@
 // in file order — its title (unless `notitle`), then its pop-up text with any
 // "::: lore" additions around it. The same entries back the info tiers across
 // the site, and links between entries expand in place here exactly as they
-// do in dialogs. "Pending" means the pop-up text is not written yet.
+// do in pop-ups. "Pending" means the pop-up text is not written yet.
 
 import { initLore, loreBodyHTML, typesetLore } from "../Shared/lore.js";
 import { create } from "../Shared/ui-components.js";
 
-var TIER_NAME = { 1: "Tier 1 · tooltip", 2: "Tier 2 · dialog", 3: "Tier 3 · ⓘ" };
+var TIER_NAME = { 1: "Tier 1 · tooltip", 2: "Tier 2 · pop-up", 3: "Tier 3 · ⓘ" };
 
 initLore().then(function (lore) {
 	var main = document.getElementById("main");
