@@ -524,8 +524,9 @@ export class CalcShell {
 		var box = create("div", "cs-fold", false, card.body);
 		var tg = button("cs-fold-t", false, box);
 		tg.appendChild(icon(ICON.chev, 14, 1.6, "cs-chev"));
-		create("span", false, opts.label, tg);
+		var label = create("span", false, opts.label, tg);
 		var body = create("div", "cs-fold-b", false, box);
+		var self = this;
 		var fold = {
 			el: box, body: body, open: false,
 			setOpen: function (value) {
@@ -533,10 +534,12 @@ export class CalcShell {
 				box.classList.toggle("cs-open", fold.open);
 				body.hidden = !fold.open;
 				tg.setAttribute("aria-expanded", String(fold.open));
+				self._paintAlerts();
 			}
 		};
 		tg.onclick = function () { fold.setOpen(!fold.open); };
 		fold.setOpen(!!opts.open);
+		this.alertFold(body, label);
 		this.folds[card.id + "/" + (opts.key || opts.label)] = fold;
 		return fold;
 	}
@@ -636,7 +639,8 @@ export class CalcShell {
 	// sits after its label), a card (on its title), or an element in a card.
 	// Several at one place share a symbol. A symbol that stays from one call to
 	// the next keeps still; a new one flashes. A collapsed card shows its body's
-	// alerts on its title; onAlerts listeners hear which tabs have any.
+	// alerts on its title, and a folded fold (shell.fold, or one registered
+	// with alertFold) on its own title; onAlerts listeners hear which tabs have any.
 	setAlerts(list) {
 		var self = this, groups = new Map();
 		(list || []).forEach(function (a) {
@@ -671,6 +675,13 @@ export class CalcShell {
 		this._alerts.forEach(function (sym) { out.push(loreAlertText(sym)); });
 		return out;
 	}
+	// A fold a card builds itself: while `body` is hidden, the alerts inside it
+	// show on a symbol after `title`. Call refreshAlerts() when it opens or closes.
+	alertFold(body, title) {
+		(this._alertFolds || (this._alertFolds = [])).push({ body: body, title: title, sym: null });
+		this._paintAlerts();
+	}
+	refreshAlerts() { this._paintAlerts(); }
 	// The tabs with alerts on cards that apply here (a Set of tab ids).
 	alertTabs() { return this._alertTabs || new Set(); }
 	onAlerts(fn) { this.listeners.alerts.push(fn); }
@@ -686,6 +697,15 @@ export class CalcShell {
 	_paintAlerts() {
 		if (!this._alerts) return;
 		var self = this, tabs = new Set();
+		// One symbol standing for `texts` (hidden when there are none), placed by
+		// `put` when first needed; it flashes again each time it reappears.
+		function summary(sym, texts, put) {
+			if (!texts.length) { if (sym) sym.hidden = true; return sym; }
+			if (!sym || !sym.isConnected) { sym = loreAlertSymbol(false); put(sym); }
+			else if (sym.hidden) { sym.hidden = false; sym.classList.add("lore-alert-flash"); }
+			setLoreAlertText(sym, texts.join("\n\n"));
+			return sym;
+		}
 		this.cardOrder.forEach(function (id) {
 			var c = self.cards[id], texts = [];
 			self._alerts.forEach(function (sym, at) {
@@ -693,12 +713,12 @@ export class CalcShell {
 				if (self._cardApplies(c)) tabs.add(self._tabOf(c));
 				if (c.body.contains(at)) texts.push(loreAlertText(sym));
 			});
-			var sum = c._alertSum;
-			if (texts.length && c.collapsed) {
-				if (!sum) { sum = c._alertSum = loreAlertSymbol(false); c.el.querySelector(".cs-nm-s").after(sum); }
-				setLoreAlertText(sum, texts.join("\n\n"));
-				sum.hidden = false;
-			} else if (sum) sum.hidden = true;
+			c._alertSum = summary(c._alertSum, c.collapsed ? texts : [], function (sym) { c.el.querySelector(".cs-nm-s").after(sym); });
+		});
+		(this._alertFolds || []).forEach(function (f) {
+			var texts = [];
+			if (f.body.hidden) self._alerts.forEach(function (sym, at) { if (f.body.contains(at)) texts.push(loreAlertText(sym)); });
+			f.sym = summary(f.sym, texts, function (sym) { f.title.after(sym); });
 		});
 		var was = this._alertTabs, same = was && was.size === tabs.size && Array.from(tabs).every(function (t) { return was.has(t); });
 		this._alertTabs = tabs;

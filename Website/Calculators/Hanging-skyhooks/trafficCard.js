@@ -301,10 +301,11 @@ export function addTrafficCard(shell, opts) {
 		body.dataset.fold = "";   // read by the design outline, folded or not
 		var fold = {
 			get value() { return body.hidden ? "1" : "0"; },
-			set value(v) { body.hidden = v === "1"; chev.classList.toggle("tf-folded", body.hidden); }
+			set value(v) { body.hidden = v === "1"; chev.classList.toggle("tf-folded", body.hidden); shell.refreshAlerts(); }
 		};
 		chev.addEventListener("click", function () { fold.value = body.hidden ? "0" : "1"; });
 		shell.control(card, fold, { key: "Fold " + key });
+		shell.alertFold(body, r.k.querySelector(".tf-lab"));   // folded, its alerts show after its title
 		return { box: sec, r: r, body: body };
 	}
 	var S = {}, sec, r;
