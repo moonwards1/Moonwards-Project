@@ -98,7 +98,7 @@
 
 import { create } from "./ui-components.js";
 import { readCard } from "./card-outline.js";
-import { initLore } from "./lore.js";
+import { initLore, loreAlertSymbol, setLoreAlertText, loreAlertText } from "./lore.js";
 
 // Accent pairs: `card` reads on the paper columns, `draw` on the dark drawing panel.
 export const ShellColors = {
@@ -184,7 +184,8 @@ export class CalcShell {
 		this.conditions = null;   // fn(where) → bool, or null: everything applies
 		this.tab = null;        // null: show every tab's cards (standalone page)
 		this.firstTab = o.firstTab || "arch";
-		this.listeners = { input: [], focus: [], shown: [] };
+		this.listeners = { input: [], focus: [], shown: [], alerts: [] };
+		this._alerts = new Map();   // place element → its alert symbol
 		this.toggles = o.cardToggles != null ? !!o.cardToggles : !!o.embedded;
 
 		// A page gets a header (overline over the title). An embedded
@@ -203,9 +204,6 @@ export class CalcShell {
 		this.stage.setAttribute("aria-label", o.stageLabel || "Drawing");
 		this.columns.out = this._column(cols, "Results", "cs-col-out");
 		if (o.embedded) cols.insertBefore(brand, cols.firstChild);
-		this.warning = create("div", "cs-warn", false, false);
-		this.warning.hidden = true;
-		this.columns.out.list.appendChild(this.warning);
 		this.columns.in.empty = create("p", "cs-empty", false, this.columns.in.list);
 		this.columns.out.empty = create("p", "cs-empty", false, this.columns.out.list);
 	}
@@ -310,6 +308,7 @@ export class CalcShell {
 		c.el.classList.toggle("cs-collapsed", c.collapsed);
 		c.body.hidden = c.collapsed;
 		c.chev.setAttribute("aria-expanded", String(!c.collapsed));
+		this._paintAlerts();
 	}
 
 	collapseAll(side, value) {
@@ -631,10 +630,79 @@ export class CalcShell {
 		return cells;
 	}
 
-	// Warning text at the top of the results column; empty hides it.
+	// ---- alerts ----
+	// setAlerts(list): the problems with the current inputs, replacing the last
+	// call's. Each is { at, text }: `at` a field (input or select: the alert
+	// sits after its label), a card (on its title), or an element in a card.
+	// Several at one place share a symbol. A symbol that stays from one call to
+	// the next keeps still; a new one flashes. A collapsed card shows its body's
+	// alerts on its title; onAlerts listeners hear which tabs have any.
+	setAlerts(list) {
+		var self = this, groups = new Map();
+		(list || []).forEach(function (a) {
+			var at = a && a.text ? self._alertPlace(a.at) : null;
+			if (at) groups.set(at, groups.has(at) ? groups.get(at) + "\n\n" + a.text : a.text);
+		});
+		this._alerts.forEach(function (sym, at) { if (!groups.has(at)) sym.remove(); });
+		var now = new Map();
+		groups.forEach(function (text, at) {
+			var sym = self._alerts.get(at);
+			if (!sym || !sym.isConnected) {
+				sym = loreAlertSymbol(false);
+				var hint = at.querySelector(":scope > .cs-hint");
+				if (at.classList.contains("cs-nm")) at.after(sym);
+				else if (hint) at.insertBefore(sym, hint);
+				else at.appendChild(sym);
+			}
+			setLoreAlertText(sym, text);
+			now.set(at, sym);
+		});
+		this._alerts = now;
+		this._paintAlerts();
+	}
+	// One problem with no better place: on the first results card's title. Empty clears.
 	warn(text) {
-		this.warning.textContent = text || "";
-		this.warning.hidden = !text;
+		var self = this, id = this.cardOrder.find(function (k) { return self.cards[k].side === "out"; }) || this.cardOrder[0];
+		this.setAlerts(text && id ? [{ at: this.cards[id], text: text }] : []);
+	}
+	// The texts of the alerts now showing, in card order.
+	alertTexts() {
+		var out = [];
+		this._alerts.forEach(function (sym) { out.push(loreAlertText(sym)); });
+		return out;
+	}
+	// The tabs with alerts on cards that apply here (a Set of tab ids).
+	alertTabs() { return this._alertTabs || new Set(); }
+	onAlerts(fn) { this.listeners.alerts.push(fn); }
+	_alertPlace(at) {
+		if (!at) return null;
+		if (at.el && at.body) return at.el.querySelector(".cs-nm");   // a card
+		if (/^(INPUT|SELECT|TEXTAREA)$/.test(at.tagName)) {
+			var row = at.closest(".cs-row");
+			return row ? row.querySelector(".cs-lbl") || row : at.parentNode;
+		}
+		return at;
+	}
+	_paintAlerts() {
+		if (!this._alerts) return;
+		var self = this, tabs = new Set();
+		this.cardOrder.forEach(function (id) {
+			var c = self.cards[id], texts = [];
+			self._alerts.forEach(function (sym, at) {
+				if (!c.el.contains(at)) return;
+				if (self._cardApplies(c)) tabs.add(self._tabOf(c));
+				if (c.body.contains(at)) texts.push(loreAlertText(sym));
+			});
+			var sum = c._alertSum;
+			if (texts.length && c.collapsed) {
+				if (!sum) { sum = c._alertSum = loreAlertSymbol(false); c.el.querySelector(".cs-nm-s").after(sum); }
+				setLoreAlertText(sum, texts.join("\n\n"));
+				sum.hidden = false;
+			} else if (sum) sum.hidden = true;
+		});
+		var was = this._alertTabs, same = was && was.size === tabs.size && Array.from(tabs).every(function (t) { return was.has(t); });
+		this._alertTabs = tabs;
+		if (!same) this.listeners.alerts.forEach(function (fn) { fn(tabs); });
 	}
 
 	// ---- saved settings ----
@@ -686,7 +754,7 @@ export class CalcShell {
 	outline() {
 		var self = this;
 		return {
-			warning: this.warning.hidden ? "" : this.warning.textContent,
+			warning: this.alertTexts().join(" "),
 			cards: this.cardOrder.filter(function (id) { return self._cardApplies(self.cards[id]); }).map(function (id) {
 				var c = self.cards[id];
 				return {

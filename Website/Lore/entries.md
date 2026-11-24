@@ -180,7 +180,11 @@ WRITING THE TEXT
 
 ## Node drift {#node-drift tier=1}
 
+
+
 ## Other bodies' pull {#other-bodies-pull tier=1}
+
+The real precession rate can sometimes be significantly different than that shown, in the case of moons. Though they are far away, bodies that are far more massive than the moon can still have a large enough influence to measurably change precesssion. This would take further modelling to account for. 
 
 <!-- Foot ↔ Ground trips card (results) -->
 

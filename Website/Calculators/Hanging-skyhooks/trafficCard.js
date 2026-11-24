@@ -5,7 +5,8 @@
 //   import { addTrafficCard } from "./trafficCard.js";
 //   var traffic = addTrafficCard(shell, { fleet, instId, neighbours });
 //   var result = traffic.update(env);   // from the calculator's calc()
-//   // result: { warnings, balance (Traffic.balance), releasedFlow (kg/s, all that leaves the tether) }
+//   // result: { warnings, balance (Traffic.balance), releasedFlow (kg/s, all that leaves the tether) };
+//   //   warnings are [{ at, text }], `at` the line label they concern (for CalcShell.setAlerts)
 //
 // opts.fleet       the design's ship classes (Shared/ships.js createFleet); a
 //                  standalone calculator passes none and gets the standard classes
@@ -93,6 +94,8 @@ export function addTrafficCard(shell, opts) {
 		r.dataset.ol = ""; k.dataset.olK = ""; v.dataset.olV = "";
 		return { el: r, k: k, v: v };
 	}
+	// The label side of the line holding `input`, where an alert about it sits.
+	function kOf(input) { return input.closest(".tf-r").querySelector(".tf-k"); }
 	// A figure on the right of a line: set(text, unit).
 	function out(r, unit) {
 		var n = el("span", "tf-n", r.v), u = el("span", "tf-u", r.v, unit || "");
@@ -251,7 +254,7 @@ export function addTrafficCard(shell, opts) {
 				sel[rem].input.value = ktField(sp.values[rem]);
 				sel[rem].input.classList.add("tf-rem");
 				if (sel[rem].at === "anchor") sel[rem].input.disabled = true;
-				if (sp.over > 0) warnings.push(what + ": the amounts come to " + ktText(sp.over) + " kt more than the total.");
+				if (sp.over > 0) warnings.push({ at: sel[rem].row.k, text: what + ": the amounts come to " + ktText(sp.over) + " kt more than the total." });
 				return sel.map(function (it, j) { return { at: it.at, amount: sp.values[j] }; });
 			},
 			// The cargo hauls for these shares, added to `hauls` and shown under each point.
@@ -470,7 +473,7 @@ export function addTrafficCard(shell, opts) {
 		f.o.set(ktText(load / 1e6), "kt");
 		if (load > Math.min.apply(null, list.map(function (c) { return c.payload * 1000; })) * (1 + 1e-9)) {
 			f.o.el.classList.add("tf-loss");
-			warnings.push("Traffic: a return load is more than a ship carries; make that direction the bulk one.");
+			warnings.push({ at: f.r.k, text: "A return load is more than a ship carries; make that direction the bulk one." });
 		}
 	}
 	function payloads(list) { return list.map(function (c) { return c.payload * 1000; }); }
@@ -558,7 +561,7 @@ export function addTrafficCard(shell, opts) {
 		// the shares of the year's arrivals that leave as products and go to the surface; the rest is waste and use on the anchor
 		var pWaste = 100 - val(S.prod) - pSurf;
 		S.waste.set(num(Math.max(0, pWaste), 1));
-		if (pWaste < 0) warnings.push("Traffic: products and surface shares come to more than 100%.");
+		if (pWaste < 0) warnings.push({ at: kOf(S.prod), text: "Products and surface shares come to more than 100%." });
 		var prodBudget = inYear * val(S.prod) / 100, surfBudget = inYear * pSurf / 100;
 
 		// A fresh card's interplanetary amount starts at its share's budget.
@@ -573,7 +576,7 @@ export function addTrafficCard(shell, opts) {
 		var outNear = near ? val(S.outNear.amount) : 0, fOut = outNear, cOut = 0, fShown = S.outNear.amount.value;
 		if (capsule) {
 			var pc = pair("capsule", S.outNear.fTon, S.outNear.cTon, outNear, 1, 1);
-			if (pc.over > 0) warnings.push("Traffic: freighters and capsules carry " + ktText(pc.over) + " kt more than the route.");
+			if (pc.over > 0) warnings.push({ at: kOf(S.outNear.cTon), text: "Freighters and capsules carry " + ktText(pc.over) + " kt more than the route." });
 			fOut = pc.a; cOut = pc.b; fShown = S.outNear.fTon.value;
 		}
 		var outFar = val(S.outFar.amount), outSurf = aSurf;
@@ -582,8 +585,8 @@ export function addTrafficCard(shell, opts) {
 		S.outAccounted.set(ktText(prodYear));
 		// the routes should add up to their share's budget, to within what the fields show
 		var off = function (got, want) { return Math.abs(got - want) > Math.max(0.005 * want, 1e-6); };
-		if (off(prodYear, prodBudget)) warnings.push("Traffic: the products routes come to " + ktText(prodYear) + " kt a year; the products share is " + ktText(prodBudget) + " kt.");
-		if (off(surfYear, surfBudget)) warnings.push("Traffic: the surface route comes to " + ktText(surfYear) + " kt a year; the surface share is " + ktText(surfBudget) + " kt.");
+		if (off(prodYear, prodBudget)) warnings.push({ at: kOf(S.prod), text: "The products routes come to " + ktText(prodYear) + " kt a year; the products share is " + ktText(prodBudget) + " kt." });
+		if (off(surfYear, surfBudget)) warnings.push({ at: kOf(S.surf), text: "The surface route comes to " + ktText(surfYear) + " kt a year; the surface share is " + ktText(surfBudget) + " kt." });
 
 		S.inSurf.eq.set(inSurf, uSurf); S.inNear.eq.set(inNear, uNearIn); S.inFar.eq.set(inFar, "year");
 		S.outNear.eq.set(outNear, uNearOut); S.outFar.eq.set(outFar, "year"); S.outSurf.eq.set(outSurf, uSurfOut);
@@ -594,9 +597,9 @@ export function addTrafficCard(shell, opts) {
 		var nS = Traffic.flights(surfIn ? rIn : rOut, payloads([shuttle]));
 		flightsLine(S.inSurf.flights, nS, uSurf, rIn, [shuttle], surfIn);
 		flightsLine(S.outSurf.flights, nS, uSurfOut, rOut, [shuttle], !surfIn);
-		var dS = S.inSurf.docks.resolve(inSurf, avail, "Traffic, from surface", S.inSurf.amount.value);
+		var dS = S.inSurf.docks.resolve(inSurf, avail, "From surface", S.inSurf.amount.value);
 		S.inSurf.docks.haul(env, dS, uSurf, hauls);
-		var rS = S.outSurf.rel.resolve(outSurf, avail, "Traffic, to surface", ktField(outSurf));
+		var rS = S.outSurf.rel.resolve(outSurf, avail, "To surface", ktField(outSurf));
 		S.outSurf.rel.haul(env, rS, uSurfOut, hauls);
 		S.outSurf.ferry.set(ferry(env, "shuttle", nS, emptyKg(shuttle), dS, inSurf, rS, outSurf, hauls));
 
@@ -607,16 +610,16 @@ export function addTrafficCard(shell, opts) {
 			var nN = Traffic.flights(nearIn ? rNi : rNo, payloads(nearF));
 			flightsLine(S.inNear.flights, nN, uNearIn, rNi, nearF, nearIn);
 			flightsLine(S.outNear.flights, nN, uNearOut, rNo, nearF, !nearIn);
-			var dN = S.inNear.docks.resolve(inNear, avail, "Traffic, " + near.from.toLowerCase(), S.inNear.amount.value);
+			var dN = S.inNear.docks.resolve(inNear, avail, near.from, S.inNear.amount.value);
 			S.inNear.docks.haul(env, dN, uNearIn, hauls);
-			var rN = S.outNear.rel.resolve(fOut, avail, "Traffic, " + near.to.toLowerCase(), fShown);
+			var rN = S.outNear.rel.resolve(fOut, avail, near.to, fShown);
 			S.outNear.rel.haul(env, rN, uNearOut, hauls);
 			S.outNear.ferry.set(ferry(env, "freighter", nN, avgEmpty(nearF), dN, inNear, rN, fOut, hauls));
 			if (capC) {
 				S.outNear.cap.set(num(capC.payload, 1));
 				var rC = rate(cOut, uNearOut);
 				flightsLine(S.outNear.cFlights, Traffic.flights(rC, payloads([capC])), uNearOut, rC, [capC], true);
-				var rCap = S.outNear.cRel.resolve(cOut, avail, "Traffic, capsules", S.outNear.cTon.value);
+				var rCap = S.outNear.cRel.resolve(cOut, avail, "Capsules", S.outNear.cTon.value);
 				S.outNear.cRel.haul(env, rCap, uNearOut, hauls);
 			}
 		}
@@ -627,9 +630,9 @@ export function addTrafficCard(shell, opts) {
 		var nF = Traffic.flights(farIn ? rFi : rFo, payloads(farF));
 		flightsLine(S.inFar.flights, nF, "year", rFi, farF, farIn);
 		flightsLine(S.outFar.flights, nF, "year", rFo, farF, !farIn);
-		var dF = S.inFar.docks.resolve(inFar, avail, "Traffic, from interplanetary", S.inFar.amount.value);
+		var dF = S.inFar.docks.resolve(inFar, avail, "From interplanetary", S.inFar.amount.value);
 		S.inFar.docks.haul(env, dF, "year", hauls);
-		var rF = S.outFar.rel.resolve(outFar, avail, "Traffic, to interplanetary", S.outFar.amount.value);
+		var rF = S.outFar.rel.resolve(outFar, avail, "To interplanetary", S.outFar.amount.value);
 		S.outFar.rel.haul(env, rF, "year", hauls);
 		S.outFar.ferry.set(ferry(env, "freighter", nF, avgEmpty(farF), dF, inFar, rF, outFar, hauls));
 

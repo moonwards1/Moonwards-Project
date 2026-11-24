@@ -42,7 +42,7 @@ import { designOutline } from "./design-outline.js";
 import { createFleet } from "../Shared/ships.js";
 import { addShipCards } from "../Shared/ship-card.js";
 import { mountApps } from "./apps.js";
-import { initLore, loreHTML } from "../Shared/lore.js";
+import { initLore, loreHTML, loreAlertSymbol } from "../Shared/lore.js";
 
 // The info tiers: marked words, tooltips and Lore dialogs (Shared/lore.js).
 initLore();
@@ -283,6 +283,20 @@ function renderBench() {
 function showTab(entry) {
 	if (!entry.handle) return;   // still loading; applied once mounted
 	entry.handle.shell.setTab(ui.tab);
+	paintTabAlerts();
+}
+
+// An alert indicator on each other tab whose cards have a problem, for the
+// installation showing (its symbols beside the fields are its own).
+function paintTabAlerts() {
+	var inst = findBody(design, ui.body) ? currentInst() : null;
+	var entry = inst && mounted[inst.id];
+	var tabs = entry && entry.handle ? entry.handle.shell.alertTabs() : new Set();
+	el.tabs.querySelectorAll(".hm-tab").forEach(function (b) {
+		var want = tabs.has(b.dataset.tab) && b.dataset.tab !== ui.tab, sym = b.querySelector(".lore-alert");
+		if (want && !sym) b.appendChild(loreAlertSymbol(true));
+		else if (!want && sym) sym.remove();
+	});
 }
 
 // `hidden`: mount out of sight (the outline mounts every installation).
@@ -319,6 +333,7 @@ function mountCalculator(inst, body, hidden) {
 		entry.ships = addShipCards(h.shell, { fleet: fleet, instId: inst.id, roles: ctx.shipRoles });
 		if (inst.state) h.shell.setState(inst.state);
 		entry.handle = h;
+		h.shell.onAlerts(function () { if (!box.hidden) paintTabAlerts(); });
 		if (!box.hidden) showTab(entry);
 		return entry;
 	}).catch(function (err) {

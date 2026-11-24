@@ -117,7 +117,10 @@ export function sweepTether(GM, omega, s, rTip, rEnd, tipLoad, distLoad, steps, 
 export function computeSkyhook(moon, inp) {
 	var R = Number(moon.radius), GM = moon.GM;
 	var t = {};
-	var warnings = [];
+	// warnings[i] is the text; warningAt[i] the input it concerns ("foot", "top",
+	// "centre", "receivingDeck", "outerDocks", "releaseDeck", "anchor").
+	var warnings = [], warningAt = [];
+	function warn(at, text) { warnings.push(text); warningAt.push(at); }
 	var integral = function (a, b) { return OrbitalMath.taperIntegral(GM, t.angularVelocity, a, b); };
 
 	t.foot = inp.foot; t.top = inp.top; t.centre = inp.centre;
@@ -127,12 +130,12 @@ export function computeSkyhook(moon, inp) {
 	t.Length = t.top - t.foot;
 	t.surfaceGravity = GM / (R * R);
 
-	if (t.foot < 0) warnings.push("The tether foot is inside the body.");
-	if (t.foot > t.top) warnings.push("The tether foot can not be higher than the top.");
-	else if (t.centre < t.foot || t.centre > t.top) warnings.push("The balance point must be between the foot and the top.");
-	if (inp.receivingDeck != null && (t.receivingDeck < t.foot || t.receivingDeck > t.top)) warnings.push("The receiving deck must be between the foot and the top.");
-	if (inp.outerDocks != null && (t.outerDocks < t.foot || t.outerDocks > t.top)) warnings.push("The outer docks must be between the foot and the top.");
-	if (inp.releaseDeck != null && (t.releaseDeck < t.foot || t.releaseDeck > t.top)) warnings.push("The release deck must be between the foot and the top.");
+	if (t.foot < 0) warn("foot", "The tether foot is inside the body.");
+	if (t.foot > t.top) warn("foot", "The tether foot can not be higher than the top.");
+	else if (t.centre < t.foot || t.centre > t.top) warn("centre", "The balance point must be between the foot and the top.");
+	if (inp.receivingDeck != null && (t.receivingDeck < t.foot || t.receivingDeck > t.top)) warn("receivingDeck", "The receiving deck must be between the foot and the top.");
+	if (inp.outerDocks != null && (t.outerDocks < t.foot || t.outerDocks > t.top)) warn("outerDocks", "The outer docks must be between the foot and the top.");
+	if (inp.releaseDeck != null && (t.releaseDeck < t.foot || t.releaseDeck > t.top)) warn("releaseDeck", "The release deck must be between the foot and the top.");
 
 	// ---- orbit and speeds ----
 	t.time = 2 * Math.PI * Math.sqrt(Math.pow(t.centre + R, 3) / GM);
@@ -310,7 +313,7 @@ export function computeSkyhook(moon, inp) {
 	};
 	if (t.foot < t.top && !t.balanced) {
 		var gap = Math.abs(t.unbalance), gapText = gap >= 1e12 ? (gap / 1e12).toFixed(gap >= 1e13 ? 0 : 1) + " TN" : gap >= 1e9 ? (gap / 1e9).toFixed(1) + " GN" : (gap / 1e6).toFixed(0) + " MN";
-		warnings.push("Out of balance: no position for the anchor station balances these loads. At the balance point the " +
+		warn("anchor", "Out of balance: no position for the anchor station balances these loads. At the balance point the " +
 			(t.unbalance < 0 ? "upper tether outweighs the lower" : "lower tether outweighs the upper") + " by " + gapText +
 			", so the true balance point is not where you set it. Add mass to the anchor station, or load to the lighter side.");
 	}
@@ -322,6 +325,7 @@ export function computeSkyhook(moon, inp) {
 	t.reentry = reentry(moon, t, inp);
 
 	t.warnings = warnings;
+	t.warningAt = warningAt;
 	return t;
 }
 

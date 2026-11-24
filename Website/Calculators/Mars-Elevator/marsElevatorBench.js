@@ -223,8 +223,9 @@ export function mountMarsElevator(root, opts) {
 		if (ro.bound) { lOut.set(num(ro.rApo / 1e3, 0), "from Mars's centre; period " + num(ro.period / 3600, 1) + " h", "km"); orbCard.setSummary("apoapsis " + num(ro.rApo / 1e3, 0) + " km"); }
 		else { lOut.set(num(ro.vInf, 0), "Escapes Mars: hyperbolic excess speed.", "m/s"); orbCard.setSummary("escapes · " + num(ro.vInf / 1e3, 2) + " km/s"); }
 
-		function fail(text) {
-			shell.warn(text); cw.blank(); blank(tetherLines.concat(dodgeLines, pumpLines, lModes, [lLean]));
+		// A design that can't be solved: the alert sits at `at` (the counterweight position by default).
+		function fail(text, at) {
+			shell.setAlerts([{ at: at || cw.posIn, text: text }]); cw.blank(); blank(tetherLines.concat(dodgeLines, pumpLines, lModes, [lLean]));
 			[propCard, frcCard, geoCard, hazCard, swgCard, pmpCard, leanCard].forEach(function (c) { c.setSummary("—"); });
 		}
 		if (!(rCW > sys.rStat)) { fail("The counterweight must sit beyond areostationary orbit, " + num(sys.rStat / 1e3, 0) + " km from Mars's centre, to pull the structure up."); return; }
@@ -241,7 +242,7 @@ export function mountMarsElevator(root, opts) {
 			sol = solve(a, m, rCW, M);
 		}
 		if (!sol.ok) {
-			fail("No tether from this counterweight lands at " + num(Math.abs(a.lat / DEG), 2) + "° " + (a.lat >= 0 ? "N" : "S") + ": it swings past the pole instead. Move the anchor nearer the equator or the counterweight farther out.");
+			fail("No tether from this counterweight lands at " + num(Math.abs(a.lat / DEG), 2) + "° " + (a.lat >= 0 ? "N" : "S") + ": it swings past the pole instead. Move the anchor nearer the equator or the counterweight farther out.", latIn);
 			return;
 		}
 		lastZ = sol.zCW;
@@ -304,7 +305,7 @@ export function mountMarsElevator(root, opts) {
 		if (below) lZde.set("—", "The tether ends " + num((de.a - rCW) / 1e3, 0) + " km inside Deimos's orbit: Deimos never meets it.");
 		else lZde.set(num(Math.abs(zDe) / 1e3, 0), "Deimos crosses the tether's line; some passes need a dodge.");
 		geoCard.setSummary("Phobos " + (phClear >= 0 ? "+" : "−") + num(Math.abs(phClear) / 1e3, 0) + " km · " + (below ? "below Deimos" : "dodges Deimos"));
-		shell.warn(phClear < 0 ? "The tether passes within Phobos's reach: " + num(Math.abs(zPh) / 1e3, 0) + " km from the plane at Phobos's orbit, " + num(phReach / 1e3, 0) + " km needed. Move the anchor farther from the equator." : "");
+		shell.setAlerts(phClear < 0 ? [{ at: latIn, text: "The tether passes within Phobos's reach: " + num(Math.abs(zPh) / 1e3, 0) + " km from the plane at Phobos's orbit, " + num(phReach / 1e3, 0) + " km needed. Move the anchor farther from the equator." }] : []);
 
 		// ---------- Deimos ----------
 		var tilt = field_(tiltIn, DEFAULT.tilt) * DEG, band = field_(bandIn, DEFAULT.band) * 1e3, dodge = field_(dodgeIn, DEFAULT.dodge) * 1e3;

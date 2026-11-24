@@ -408,8 +408,8 @@ export function mountHangingSkyhook(root, opts) {
 	function pct(x) { var p = x * 100; return p >= 10 ? num(p, 0) : p >= 1 ? num(p, 1) : Number(p.toPrecision(2)).toString(); }
 	// The tilt typed in before the ecliptic tick filled the field, put back when it is cleared.
 	var ecWas = false, tiltTyped = null;
-	// Fills the Orbit tilt card; warnings go to `notes`.
-	function fillPrecession(body, t, notes) {
+	// Fills the Orbit tilt card.
+	function fillPrecession(body, t) {
 		var here = theName(bodyIn.value), ss = ssOpt.check.checked && !anc;
 		var ec = ecOpt.check.checked && !anc && !ss;
 		if (ec && !ecWas) tiltTyped = tiltIn.value;
@@ -460,9 +460,6 @@ export function mountHangingSkyhook(root, opts) {
 		}
 		var total = np.perturbers.reduce(function (a, p) { return a + p.ratio; }, 0);
 		rNpThird.set(pct(total), np.perturbers.slice(0, 2).map(function (p) { return p.name + " " + pct(p.ratio) + "%"; }).join(" · ") + " of the bulge's turning");
-		var top = np.perturbers[0];
-		if (top && top.ratio > 0.1) notes.push("Nodal precession: " + top.name + "'s pull turns this skyhook's plane " + pct(top.ratio) +
-			"% as fast as " + here + "'s bulge does, and is not in the period shown, so treat that figure as rough.");
 		npCard.setSummary(ss ? "Sun-sync · " + num(tiltDeg, 1) + "°"
 			: ec && isFinite(np.period) ? "Ecliptic · " + (f = timeSpan(np.period))[0] + " " + f[1] + " · " + num(tiltDeg, 1) + "°"
 			: isFinite(np.period) ? (f = timeSpan(np.period))[0] + " " + f[1] + " · " + num(tiltDeg, 1) + "°" : "polar: no turn");
@@ -487,14 +484,15 @@ export function mountHangingSkyhook(root, opts) {
 		return "The top can't reach above " + num(ceiling, 0) + " km: at " + anc.name + "'s farthest it rises " + num(anc.swing, 0) + " km higher, and " + anc.ceiling + "'s orbit lies just beyond.";
 	}
 	// A value past a limit is rejected: the field is set back to the limit, with the reason
-	// shown until the value next changes. While it is being typed it is only flagged.
+	// shown as an alert beside it until the value next changes. While it is being typed it
+	// is only flagged.
 	var rejected = { foot: null, top: null };   // { at: km the field was set to, why }
 	function enforce(input, key, limit, below, why, notes) {
 		var v = field(input, NaN), past = limit != null && isFinite(v) && (below ? v < limit : v > limit);
 		if (past && document.activeElement !== input) { input.value = limit; rejected[key] = { at: limit, why: why(limit) }; v = limit; }
-		else if (past) notes.push(why(limit));
+		else if (past) notes.push({ at: input, text: why(limit) });
 		if (rejected[key] && field(input, NaN) !== rejected[key].at) rejected[key] = null;
-		if (rejected[key]) notes.push(rejected[key].why);
+		if (rejected[key]) notes.push({ at: input, text: rejected[key].why });
 		return past ? limit : v;
 	}
 	function applyBody() {
@@ -558,10 +556,14 @@ export function mountHangingSkyhook(root, opts) {
 		t.keeping = stationKeeping(tr.balance, { omega: t.angularVelocity, rMount: R + t.top, releasedFlow: tr.releasedFlow,
 			vExhaust: vExhaust, effThruster: effThruster, effSupply: field(effSupIn, 90) / 100 });
 
-		fillPrecession(body, t, notes);
+		fillPrecession(body, t);
 
 		bodyNote.textContent = "Radius " + num(R / 1e3, 1) + " km · surface gravity " + num(t.surfaceGravity, 2) + " m/s²";
-		shell.warn(notes.concat(t.warnings, tr.warnings).join(" "));
+		// Alerts beside the inputs they concern (the model names them by key).
+		var place = { foot: footIn, top: topIn, centre: centreIn, anchor: comIn,
+			receivingDeck: recvSt.head.querySelector(".cs-opt-t"), outerDocks: outerSt.head.querySelector(".cs-opt-t"),
+			releaseDeck: releaseSt.head.querySelector(".cs-opt-t") };
+		shell.setAlerts(notes.concat(t.warnings.map(function (text, i) { return { at: place[t.warningAt[i]], text: text }; }), tr.warnings));
 
 		// orbit & speeds, under the altitude fields
 		centreSp[0].set(num(t.time / 3600, 2)); centreSp[1].set(num(t.centreVel / 1e3, 2));

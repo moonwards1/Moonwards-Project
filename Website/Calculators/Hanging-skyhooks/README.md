@@ -154,7 +154,7 @@ routes, Total annual resources (not part of Incoming) its three shares. Folds ar
   what goes to the surface, with waste and use on the anchor taking the rest.
   The shares are the budget the typed routes should add up to (the near market
   and interplanetary to the products; the surface route to the surface share); a
-  warning says when they do not. A new card starts with its routes at the budgets.
+  alert beside the share says when they do not. A new card starts with its routes at the budgets.
   Under the Outgoing title (the products budget) an "accounted for" line totals
   the tonnage of the products routes (the near market and interplanetary) per
   year, so the typed routes can be balanced against the stated outflow.
@@ -223,7 +223,7 @@ plane turns, so its tilt to the ecliptic runs from the difference of the two til
 to their sum and back once per period. The tilt opens at 0° (equatorial); an
 anchoring moon's orbit sets it instead. An equatorial plane has no node to turn, so
 at 0° the card shows only the tilt and its two ticks: the period, drift and
-other-bodies lines, the card's note and the other-bodies warning are hidden. The installation turns as one rigid structure, so the bulge's torque on
+other-bodies lines and the card's note are hidden. The installation turns as one rigid structure, so the bulge's torque on
 every piece is set against the angular momentum of every piece:
 
 k = (3/2) J₂ GM R_eq² · Σ(m/r³) / (ω Σ m r²),  Ω̇ = −k cos i,  P = 2π / |Ω̇|
@@ -257,8 +257,8 @@ Other bodies also turn the plane, about their own orbit normals rather than the 
 axis, at k₃ = (3/4) GM₃ / (d³ ω): the Sun, the planet a moon orbits, and the body's
 own moons beyond twice the top's radius (an anchoring moon is part of the
 installation, not one of these). They are not in the period; the card gives each
-one's k₃ as a share of k, and the warning flags any above 10%, where the period is
-only rough (the Moon: Earth's pull is comparable to the Moon's small bulge). A body
+one's k₃ as a share of k; above about 10% the period is only rough (the Moon:
+Earth's pull is comparable to the Moon's small bulge). A body
 with no measured J₂ (Psyche, Pluto) shows "—". A Phobos-anchored skyhook's plane is
 Phobos's orbit (`anchorConfig("Phobos").inclination`, 1.08° to Mars's equator), and
 its period is Phobos's own, about 2.26 years.
@@ -293,7 +293,7 @@ checks in this calculator:
   body (patched conics).
 - **The foot floor.** At a body with an atmosphere the foot may not hang below
   that body's `footFloor` (Earth 120 km, Venus 140, Mars 115, Titan 860). A lower
-  value is rejected: the field is set back to the floor and a warning says why
+  value is rejected: the field is set back to the floor and an alert beside it says why
   until the value next changes; while it is being typed it is only flagged. The
   foot marker stops at the floor, which the drawing shows as a dashed circle.
 

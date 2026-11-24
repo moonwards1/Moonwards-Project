@@ -59,3 +59,17 @@ a.lore-link.lore-open::after { content: "\2212"; }
 .lore-pop[data-side="right"] .lore-pop-arrow { left: -19px; margin-top: -10px; border-right-color: var(--lore-paper); }
 .lore-pop[data-side="left"] .lore-pop-arrow { right: -19px; margin-top: -10px; border-left-color: var(--lore-paper); }
 .lore-pop[data-side="none"] .lore-pop-arrow { display: none; }
+
+/* Alerts: a solid red-orange circle with a white "i", beside the field with
+   the problem. It flashes slowly for a few seconds when it appears. The "i"
+   is drawn by CSS, so the label's text is unchanged. */
+.lore-alert { display: inline-block; box-sizing: border-box; width: 15px; height: 15px; margin: 0 0.25em; border-radius: 50%; background: #C2310E; color: #FFF;
+	font: italic 700 11px/15px Georgia, "Times New Roman", serif; text-align: center; vertical-align: -2px; cursor: help; text-decoration: none; flex: none; }
+.lore-alert::before { content: "i"; }
+.lore-alert[hidden] { display: none; }
+.lore-alert[data-passive] { cursor: inherit; }
+.lore-alert:focus-visible { outline: 2px solid #C2310E; outline-offset: 2px; }
+.lore-alert-flash { animation: lore-alert-flash 1.3s ease-in-out 3; }
+@keyframes lore-alert-flash { 50% { opacity: 0.2; } }
+@media (prefers-reduced-motion: reduce) { .lore-alert-flash { animation: none; } }
+.lore-pop-alert .lore-pop-body { padding-top: 12px; padding-bottom: 12px; }

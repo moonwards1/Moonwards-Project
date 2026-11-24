@@ -152,14 +152,14 @@ export function mountMoonLagrangeElevator(root, opts) {
 		var cableLines = [lTaperS, lTaperC, lCable, lTotal, lTpk, lTsurf, lAnet];
 		var ok = rCW > field.rBalance && (!near || rCW < D - Rearth) && field.g(rCW) > 0;
 		if (!ok) {
-			shell.warn(rCW > field.rBalance
+			shell.setAlerts([{ at: cw.posIn, text: rCW > field.rBalance
 				? "The counterweight must sit between L1 and Earth, where the net force on it points toward Earth."
-				: "The counterweight must sit beyond " + side + ", " + num(rBkm, 0) + " km from the Moon's centre, to pull the structure up.");
+				: "The counterweight must sit beyond " + side + ", " + num(rBkm, 0) + " km from the Moon's centre, to pull the structure up." }]);
 			cw.blank(); blank(cableLines);
 			propCard.setSummary("—"); frcCard.setSummary("—");
 			return;
 		}
-		shell.warn("");
+		shell.setAlerts([]);
 
 		var stations = cw.resolve({ field: field, rCW: rCW });
 		var ctx = tetherContext(field, { rCW: rCW, rho: m.density, sigEff: m.sigmaEff, lamMin: TRACK_MIN, lamGrav: TRACK_GRAV, stations: stations });

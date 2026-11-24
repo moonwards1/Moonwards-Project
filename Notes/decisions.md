@@ -854,3 +854,13 @@ note and still focuses the card, since the click reaches the title button too. N
 rather than by vendoring Nutshell: the entries are Markdown, not HTML pages with
 headings for Nutshell to fetch, and the runtime styles marks by id so content
 built after load needs no rescan.
+
+### Problems with the inputs show as alerts beside what they concern
+
+A calculator reports its problems with `shell.setAlerts([{ at, text }])`, `at` the
+field, card or element the problem is about, and each shows as a solid red-orange
+"i" beside it (flashing a few seconds when new) that opens its text in the info
+pop-up. A collapsed card carries its body's alerts on its title, and the workbench
+marks any other tab whose cards have one, so no alert is out of sight. There is no
+warnings block. Why: one block joined every message, from every tab, into a run of
+text that said what was wrong but not where.

@@ -9,6 +9,11 @@
 //   tier 3  an orange ⓘ after the word (or alone); opens the same pop-up,
 //           for central information
 //
+// Alerts — problems with the current inputs — are a solid red-orange circle
+// with a white "i" beside the field concerned (loreAlertSymbol; placed by
+// CalcShell.setAlerts). One flashes slowly for a few seconds when it appears,
+// then stays steady; clicking it opens its text in the same pop-up.
+//
 // Every mark shows the help cursor (arrow and question mark). Pop-ups show
 // the entry's text with no heading: the marked word is the context. The Lore page shows the title and any "::: lore" additions.
 //
@@ -251,12 +256,20 @@ function buildPop() {
 // Open entry `id`'s pop-up at `anchor` (the mark); without one it sits mid-window.
 export function openLoreDialog(id, anchor) {
 	var e = loreEntry(id);
+	showPop(anchor, loreBodyHTML(e), e ? e.title : id, loreEntryUrl(id));
+}
+
+// The pop-up at `anchor` holding `html`; `more`, if given, is its Lore page link.
+function showPop(anchor, html, label, more) {
 	if (!popEl) buildPop();
 	popFor = anchor || null;
-	popEl.setAttribute("aria-label", e ? e.title : id);
+	popEl.setAttribute("aria-label", label);
+	popEl.classList.toggle("lore-pop-alert", !more);
 	var body = popEl.querySelector(".lore-pop-body");
-	var drawn = fill(body, loreBodyHTML(e));
-	popEl.querySelector(".lore-pop-more").href = loreEntryUrl(id);
+	var drawn = fill(body, html);
+	var foot = popEl.querySelector(".lore-pop-foot");
+	foot.hidden = !more;
+	if (more) popEl.querySelector(".lore-pop-more").href = more;
 	body.scrollTop = 0;
 	popEl.hidden = false;
 	placePop();
@@ -320,6 +333,33 @@ function placePop() {
 	}
 	popEl.style.left = left + "px";
 	popEl.style.top = top + "px";
+}
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+
+// A new alert symbol (not yet placed). `passive`: only an indicator, as on a
+// tab label — clicks pass through to what holds it.
+export function loreAlertSymbol(passive) {
+	var el = document.createElement("span");
+	el.className = "lore-alert lore-alert-flash";
+	el.addEventListener("animationend", function () { el.classList.remove("lore-alert-flash"); });
+	if (passive) { el.dataset.passive = ""; el.setAttribute("aria-hidden", "true"); return el; }
+	el.tabIndex = 0;
+	el.setAttribute("role", "button");
+	return el;
+}
+
+// The text an alert symbol opens: paragraphs separated by a blank line.
+export function setLoreAlertText(el, text) {
+	el._loreAlert = text;
+	if (!("passive" in el.dataset)) el.setAttribute("aria-label", "Alert: " + text.replace(/\n+/g, " "));
+}
+export function loreAlertText(el) { return el._loreAlert || ""; }
+
+function alertHTML(text) {
+	return text.split(/\n{2,}/).map(function (p) {
+		return "<p>" + p.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</p>";
+	}).join("");
 }
 
 // ── Nested expansion (links between entries) ─────────────────────────────────
@@ -399,6 +439,14 @@ export function initLore() {
 	});
 	document.addEventListener("focusout", function (ev) { if (markOf(ev.target) === tipFor) hideTip(); });
 	document.addEventListener("click", function (ev) {
+		var al = ev.target.closest && ev.target.closest(".lore-alert:not([data-passive])");
+		if (al) {
+			ev.preventDefault();
+			hideTip();
+			if (popEl && !popEl.hidden && popFor === al) closeLorePop(false);
+			else showPop(al, alertHTML(loreAlertText(al)), "Alert");
+			return;
+		}
 		var link = ev.target.closest && ev.target.closest("a.lore-link[data-lore-ref]");
 		if (link) { ev.preventDefault(); toggleExpansion(link); return; }
 		var el = markOf(ev.target);
@@ -410,6 +458,11 @@ export function initLore() {
 		if (ev.key === "Escape" && popEl && !popEl.hidden) { closeLorePop(true); return; }
 		if (ev.key === "Escape" && tipFor) { hideTip(); return; }
 		if (ev.key !== "Enter" && ev.key !== " ") return;
+		if (ev.target.classList && ev.target.classList.contains("lore-alert") && !("passive" in ev.target.dataset)) {
+			ev.preventDefault();
+			ev.target.click();
+			return;
+		}
 		var el = markOf(ev.target);
 		if (el && el === ev.target) activate(el, ev);
 	});

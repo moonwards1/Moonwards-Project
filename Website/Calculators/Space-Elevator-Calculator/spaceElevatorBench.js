@@ -114,14 +114,14 @@ export function mountSpaceElevator(root, opts) {
 
 		var lines = [lTaperS, lTaperC, lCable, lTotal, lTpk, lTsurf, lVtip, lAtip, lVesc, lEsc, lRetro, lPro, lApo];
 		if (!(se.rTip > se.rSync)) {
-			shell.warn("The counterweight must sit above synchronous orbit (" + num(se.hSync / 1e3, 0) + " km) for its outward pull to hold the cable up.");
+			shell.setAlerts([{ at: cw.posIn, text: "The counterweight must sit above synchronous orbit (" + num(se.hSync / 1e3, 0) + " km) for its outward pull to hold the cable up." }]);
 			lines.forEach(function (l) { l.set("—"); });
 			[lRetro, lPro].forEach(function (l) { l.show(false); });
 			cw.blank();
 			cabCard.setSummary("—"); frcCard.setSummary("—"); tipCard.setSummary("—"); relCard.setSummary("—");
 			return;
 		}
-		shell.warn("");
+		shell.setAlerts([]);
 
 		var stations = cw.resolve({ field: field, rCW: se.rTip });
 		var ctx = tetherContext(field, { rCW: se.rTip, rho: m.density, sigEff: m.sigmaEff, lamMin: TRACK_MIN, lamGrav: TRACK_GRAV, stations: stations });

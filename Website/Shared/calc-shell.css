@@ -51,7 +51,7 @@
  *   cs-btns              a row of buttons (buttonRow), led by an optional cs-btns-l label;
  *                        cs-split joins a button to its cs-btn-x remove button
  *   cs-text              a text field (input.cs-text)
- *   cs-note / cs-warn   a small note / a warning block
+ *   cs-note             a small note
  *   cs-opt              an optional item: tick, title, description, and a row of compact fields
  *   cs-stage      the drawing panel (ZoomView fills it); cs-pill (not when
  *                 embedded), cs-zb, cs-mini, cs-legend, cs-lg, cs-sb are its overlays
@@ -337,8 +337,6 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 .cs-btns .cs-btn-x { display: grid; place-items: center; padding: 0 3px; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; color: var(--cs-ink2); }
 .cs-btns .cs-btn-x:hover { color: var(--cs-ink); }
 .cs-note { margin: 1px 0 0; font-size: 12px; line-height: 1.45; color: var(--cs-ink2); }
-.cs-warn { flex: none; border-radius: 12px; padding: 10px 12px; background: #FBE3D4; color: #7A2410; font-size: 12.5px; line-height: 1.4; }
-.cs-warn[hidden] { display: none; }
 
 /* ---------- result lines ---------- */
 .cs-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 12px; padding: 4px 0; border-top: 1px solid rgba(150, 125, 95, .18); }
