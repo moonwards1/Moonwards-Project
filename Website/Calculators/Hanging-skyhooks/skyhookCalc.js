@@ -159,12 +159,11 @@ export function mountHangingSkyhook(root, opts) {
 	var releaseIn = releaseSt.alt, releaseMassIn = releaseSt.mass, outerIn = outerSt.alt, outerMassIn = outerSt.mass, recvIn = recvSt.alt, recvMassIn = recvSt.mass;
 	shell.note(stCard, "Each station's mass is the facility plus its maximum load of ships, cargo and supplies.");
 
-	// The orbit plane's tilt opens on the tilt of the body's equator to the ecliptic, so the
-	// plane lies in the ecliptic at one point of its turn. An anchoring moon's orbit fixes it.
-	var tilt0 = anc ? anc.inclination : Math.round(systems.get(bodyValue).axialTiltEcliptic * 18000 / Math.PI) / 100;
-	var npCard = shell.addCard({ id: "np", tab: "arch", side: "in", title: "Nodal precession", short: "Precession", color: C.teal, focus: "tether" });
+	// The orbit plane's tilt opens equatorial (0°). An anchoring moon's orbit fixes it.
+	var tilt0 = anc ? anc.inclination : 0;
+	var npCard = shell.addCard({ id: "np", tab: "arch", side: "in", title: "Orbit tilt", short: "Tilt", color: C.teal, focus: "tether" });
 	var tiltIn = shell.numberField(npCard, { label: "Tilt to the equator", hint: anc ? anc.name + "'s orbit" : "of the orbit plane", unit: "°", value: tilt0, min: 0, max: 180,
-		tip: "The angle between the plane the skyhook orbits in and the body's equator. 0° is equatorial; past 90° the skyhook orbits against the body's spin. It opens on the equator's own tilt to the ecliptic, so the plane lies in the ecliptic once each turn." });
+		tip: "The angle between the plane the skyhook orbits in and the body's equator. 0° is equatorial; past 90° the skyhook orbits against the body's spin." });
 	var ssOpt = shell.optionalFields(npCard, { key: "Sun-synchronous", label: "Sun-synchronous", checked: false, fields: [],
 		tip: "Finds the tilt at which the bulge turns the plane eastward exactly once a year, so the plane keeps the same angle to the body's orbit all year." });
 	// Where no tilt can make the plane Sun-synchronous, the item loses its tick and says so.
@@ -179,13 +178,22 @@ export function mountHangingSkyhook(root, opts) {
 		ssHead.style.cursor = ok ? "" : "default";
 		ssOpt.el.classList.toggle("cs-opt-off", !ok || !ssOpt.check.checked);
 	}
-	var rNpPeriod = shell.line(npCard, { label: "Precession period", unit: "days" });
+	var ecOpt = shell.optionalFields(npCard, { key: "Ecliptic alignment", label: "Tilt for periodic ecliptic alignment", checked: false, fields: [],
+		tip: "Sets the tilt to the equator's own tilt to the ecliptic, so as the bulge turns the plane, it lies in the ecliptic once each period." });
+	// The two ticks each set the tilt, so ticking one clears the other. `click` comes
+	// before `change`, so the other tick is cleared before the card recomputes.
+	[[ssOpt, ecOpt], [ecOpt, ssOpt]].forEach(function (pair) {
+		pair[0].check.addEventListener("click", function () {
+			if (pair[0].check.checked && pair[1].check.checked) { pair[1].check.checked = false; pair[1].check._sync(); }
+		});
+	});
+	var rNpPeriod = shell.line(npCard, { label: "Nodal precession period", unit: "days" });
 	var rNpRate = shell.line(npCard, { label: "Node drift", unit: "°/day" });
 	var rNpTilt = shell.line(npCard, { label: "Tilt needed", unit: "°" });
 	var rNpThird = shell.line(npCard, { label: "Other bodies' pull, left out", unit: "%" });
 	shell.note(npCard, anc ? anc.name + "'s orbit sets the plane, and the tether turns with it."
 		: "The equatorial bulge turns the orbit plane about the spin axis while its tilt to the equator holds. Over one period the plane's tilt to the ecliptic runs from the difference of the two tilts to their sum and back.");
-	if (anc) { tiltIn.disabled = true; ssOpt.check.disabled = true; }
+	if (anc) { tiltIn.disabled = true; ssOpt.check.disabled = true; ecOpt.check.disabled = true; }
 
 	var traffic = addTrafficCard(shell, { fleet: o.fleet, instId: o.instId, neighbours: o.neighbours });
 
@@ -339,11 +347,18 @@ export function mountHangingSkyhook(root, opts) {
 		return num(x, x >= 1 ? 2 : x >= 0.01 ? 3 : 5);
 	}
 	function pct(x) { var p = x * 100; return p >= 10 ? num(p, 0) : p >= 1 ? num(p, 1) : Number(p.toPrecision(2)).toString(); }
-	// Fills the Nodal precession card; warnings go to `notes`.
+	// The tilt typed in before the ecliptic tick filled the field, put back when it is cleared.
+	var ecWas = false, tiltTyped = null;
+	// Fills the Orbit tilt card; warnings go to `notes`.
 	function fillPrecession(body, t, notes) {
 		var here = theName(bodyIn.value), ss = ssOpt.check.checked && !anc;
+		var ec = ecOpt.check.checked && !anc && !ss;
+		if (ec && !ecWas) tiltTyped = tiltIn.value;
+		if (!ec && ecWas && tiltTyped !== null) tiltIn.value = tiltTyped;
+		ecWas = ec;
+		if (ec) tiltIn.value = Math.round(body.axialTiltEcliptic * 18000 / Math.PI) / 100;
 		if (anc) tiltIn.value = anc.inclination;
-		tiltIn.disabled = ss || !!anc;
+		tiltIn.disabled = ss || ec || !!anc;
 		var npOpts = { inclination: field(tiltIn, 0) * Math.PI / 180, sunSync: ss, exclude: anc ? anc.name : null };
 		var np = nodalPrecession(body, t, npOpts);
 		// Whether any tilt reaches the Sun's pace depends on the body and the balance point,
@@ -370,7 +385,7 @@ export function mountHangingSkyhook(root, opts) {
 		} else {
 			f = timeSpan(np.period);
 			var fp = isFinite(np.periodPoint) ? timeSpan(np.periodPoint) : null;
-			rNpPeriod.set(f[0], ss ? "one year at " + here : fp ? "with all the mass at the balance point: " + fp[0] + " " + fp[1] : "", f[1]);
+			rNpPeriod.set(f[0], ss ? "one year at " + here : ec ? "the plane lies in the ecliptic once each period" : fp ? "with all the mass at the balance point: " + fp[0] + " " + fp[1] : "", f[1]);
 			rNpRate.set(degPerDay(np.rate), (np.rate < 0 ? "westward, against the spin" : "eastward, with the spin") +
 				ssNote);
 			if (ss) rNpTilt.set(num(tiltDeg, 2), "retrograde: the skyhook orbits against " + here + "'s spin");
@@ -381,6 +396,7 @@ export function mountHangingSkyhook(root, opts) {
 		if (top && top.ratio > 0.1) notes.push("Nodal precession: " + top.name + "'s pull turns this skyhook's plane " + pct(top.ratio) +
 			"% as fast as " + here + "'s bulge does, and is not in the period shown, so treat that figure as rough.");
 		npCard.setSummary(ss ? "Sun-sync · " + num(tiltDeg, 1) + "°"
+			: ec && isFinite(np.period) ? "Ecliptic · " + (f = timeSpan(np.period))[0] + " " + f[1] + " · " + num(tiltDeg, 1) + "°"
 			: isFinite(np.period) ? (f = timeSpan(np.period))[0] + " " + f[1] + " · " + num(tiltDeg, 1) + "°" : "polar: no turn");
 	}
 

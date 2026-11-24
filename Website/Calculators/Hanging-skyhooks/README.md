@@ -50,7 +50,7 @@ The triangle and its labels appear once the impact is more than 220 px from the 
   standalone page opens on the Moon design. Each card
   names its workbench tab: basics (the three altitudes with their speeds), material, loads,
   the foot ↔ ground trips, release points, loads and
-  stations (inputs and results), and nodal precession on Architecture; traffic, climber energy and
+  stations (inputs and results), and orbit tilt on Architecture; traffic, climber energy and
   entry at the parent planet on Logistics; station-keeping on Engineering
 - `skyhookModel.js` — the physics, pure (no DOM): `computeSkyhook(body, inputs)`,
   and `nodalPrecession(body, t, opts)` over `massPoints(body, t)`
@@ -214,15 +214,14 @@ them into the Station-keeping figures:
 Everything is an average over each route's period, so the thrust is the mean
 reboost, not the peak.
 
-## Nodal precession
+## Orbit tilt
 
-The Nodal precession card (Architecture, inputs) takes the tilt of the orbit plane
+The Orbit tilt card (Architecture, inputs) takes the tilt of the orbit plane
 to the body's equator and gives the period over which the body's equatorial bulge
 turns that plane once round the spin axis. The tilt to the equator holds while the
 plane turns, so its tilt to the ecliptic runs from the difference of the two tilts
-to their sum and back once per period. The tilt opens on the equator's own tilt to
-the ecliptic (Earth 23.44°), where the plane lies in the ecliptic at one end of the
-cycle. The installation turns as one rigid structure, so the bulge's torque on
+to their sum and back once per period. The tilt opens at 0° (equatorial); an
+anchoring moon's orbit sets it instead. The installation turns as one rigid structure, so the bulge's torque on
 every piece is set against the angular momentum of every piece:
 
 k = (3/2) J₂ GM R_eq² · Σ(m/r³) / (ω Σ m r²),  Ω̇ = −k cos i,  P = 2π / |Ω̇|
@@ -234,7 +233,7 @@ k = (3/2) J₂ GM R_eq² · Σ(m/r³) / (ω Σ m r²),  Ω̇ = −k cos i,  P = 
 - **ω** — the tether's angular rate (rad/s)
 - **i** — tilt of the orbit plane to the equator
 - **Ω̇** — rate of the node (rad/s); negative is westward, against the spin
-- **P** — the precession period
+- **P** — the nodal precession period
 
 With all the mass at the balance point this is the familiar −(3/2) J₂ (R_eq/r)² n cos i,
 which the period line gives alongside for comparison. **Sun-synchronous** (the tick)
@@ -245,6 +244,12 @@ bulge is too weak (k < n_☉) no tilt reaches it: the tick goes, the item reads
 drift line adds the rate Sun-synchronous needs against the most the bulge gives. That depends on the
 body and the balance-point altitude, so it can change as the design changes; a tick
 set earlier comes back when it is possible again.
+
+**Tilt for periodic ecliptic alignment** (the second tick) sets the tilt to the
+equator's own tilt to the ecliptic (Earth 23.44°), so the plane lies in the ecliptic
+once each period, at one end of the cycle. The field is filled and locked while it is
+ticked, and the typed tilt comes back when it is cleared. Each tick sets the tilt, so
+ticking one clears the other.
 
 Other bodies also turn the plane, about their own orbit normals rather than the spin
 axis, at k₃ = (3/4) GM₃ / (d³ ω): the Sun, the planet a moon orbits, and the body's
