@@ -24,10 +24,10 @@ html.lore-ready [data-lore] { text-decoration: underline dashed #C0201A 1.5px; t
 .lore-pending-note { font-style: italic; color: #8A7A6B; }
 
 /* Links between entries: Nutshell-style, expand in place. */
-a.lore-link { color: inherit; text-decoration: underline solid var(--lore-accent) 2px; text-underline-offset: 0.18em; cursor: pointer; }
+a.lore-link { color: inherit; text-decoration: underline dotted currentColor 1.5px; text-underline-offset: 0.2em; cursor: pointer; }
 a.lore-link::after { content: "+"; color: var(--lore-accent); font-weight: 700; font-size: 0.8em; vertical-align: super; margin-left: 1px; }
 a.lore-link.lore-open::after { content: "\2212"; }
-.lore-expansion { margin: 0.2em 0 0.9em; padding: 0.6em 0.8em 0.7em; border-left: 3px solid var(--lore-accent); background: rgba(217, 71, 31, 0.06); border-radius: 0 6px 6px 0; }
+.lore-expansion { display: block; margin: 0.35em 0 0.45em; padding: 0.6em 0.8em 0.7em; border-left: 3px solid var(--lore-accent); background: rgba(217, 71, 31, 0.06); border-radius: 0 6px 6px 0; }
 .lore-expansion .lore-expansion { background: rgba(217, 71, 31, 0.05); }
 .lore-expansion-more { float: right; margin: 0 0 0.2em 1em; font-size: 0.75em; color: var(--lore-accent); white-space: nowrap; }
 .lore-expansion::after { content: ""; display: block; clear: both; }

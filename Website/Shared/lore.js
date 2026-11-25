@@ -377,8 +377,9 @@ function toggleExpansion(link) {
 	var depth = host ? +host.dataset.depth + 1 : 1;
 	if (depth > MAX_DEPTH) { window.open(loreEntryUrl(id), "_blank", "noopener"); return; }
 	var e = loreEntry(id);
-	var block = link.closest("p, li, blockquote, h3, h4, h5, figcaption, .lore-expansion-body > *") || link.parentElement;
-	var box = document.createElement("div");
+	// Opened right after the link, inside its paragraph (Nutshell-style); the
+	// paragraph's text carries on after it.
+	var box = document.createElement("span");
 	box.className = "lore-expansion";
 	box.dataset.depth = depth;
 	var more = create("a", "lore-expansion-more", "Lore page ↗", box);
@@ -387,10 +388,7 @@ function toggleExpansion(link) {
 	more.rel = "noopener";
 	var body = create("div", ["lore-body", "lore-expansion-body"], false, box);
 	var drawn = fill(body, loreBodyHTML(e));
-	// After the block, and after any expansions already opened from it.
-	var after = block;
-	while (after.nextElementSibling && after.nextElementSibling.classList.contains("lore-expansion")) after = after.nextElementSibling;
-	after.after(box);
+	link.after(box);
 	link._loreExp = box;
 	link.classList.add("lore-open");
 	if (popEl && popEl.contains(link)) { placePop(); drawn.then(placePop); }
