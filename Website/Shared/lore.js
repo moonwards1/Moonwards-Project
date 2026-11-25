@@ -179,7 +179,7 @@ function applyStyles() {
 	var by = { 1: [], 2: [], 3: [] }, pending = [];
 	lore.order.forEach(function (id) {
 		var e = lore.entries[id];
-		by[e.tier].push(id);
+		if (by[e.tier]) by[e.tier].push(id);
 		if (e.pending) pending.push(id);
 	});
 	var css = [];

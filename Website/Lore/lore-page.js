@@ -35,7 +35,7 @@ initLore().then(function (lore) {
 			var anchor = create("a", "lp-anchor", "#", h);
 			anchor.href = "#" + id;
 			anchor.setAttribute("aria-label", "Link to this entry");
-			create("span", "lp-tier", TIER_NAME[e.tier], head);
+			create("span", "lp-tier", TIER_NAME[e.tier] || "Linked note", head);
 			var body = create("div", "lore-body", false, art);
 			body.innerHTML = loreBodyHTML(e, true);
 			var li = create("li", e.pending ? "lp-pending" : false, false, ul);

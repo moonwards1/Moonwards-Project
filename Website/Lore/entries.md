@@ -18,6 +18,7 @@ ENTRIES
   - tier=1  tooltip: short, plain text — meaning or how-to
     tier=2  orange dotted underline, opens a pop-up beside the word
     tier=3  word with an orange ⓘ, opens the same pop-up — central information
+    no tier a note reached only through links in other notes: {#entry-id}
   - An entry with no text yet is a stub: its mark works, and shows
     "Note not written yet". Add ?lore=pending to any page's address to
     outline the marks still waiting for text; the Lore page has a

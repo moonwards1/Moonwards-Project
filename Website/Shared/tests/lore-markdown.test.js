@@ -65,11 +65,20 @@ test("lore blocks show on the Lore page only; notitle is read", function () {
 	assert.equal(parseLore("## A {#a tier=1}\n::: lore\nx").problems.length, 1);
 });
 
-test("reports a missing tier and a duplicate id", function () {
-	var L = parseLore("## A\n\n## B {#a tier=1}\nx");
-	assert.equal(L.problems.length, 2);
-	assert.deepEqual(L.order, ["a"]);
+test("a missing tier is a linked-only note; a duplicate id is reported", function () {
+	var L = parseLore("## Linked {#linked}\nx\n## A {#a tier=4}\n## B {#a tier=1}\ny");
+	assert.equal(L.entries.linked.tier, null);
+	assert.equal(L.problems.length, 2);   // tier 4, and the duplicate
+	assert.deepEqual(L.order, ["linked", "a"]);
 	assert.equal(L.entries.a.tier, 1);
+});
+
+test("display maths on one line, as its own paragraph or inside one", function () {
+	var h = renderMarkdown("$$\\tau = F\\,r$$\n\nSo $$E = 2\\pi\\tau$$ holds, and $v$ too.");
+	assert.match(h, /^<div class="lore-math lore-math-display" data-tex="\\tau = F\\,r">/);
+	assert.match(h, /So <span class="lore-math lore-math-display" data-tex="E = 2\\pi\\tau">/);
+	assert.match(h, /<span class="lore-math" data-tex="v">/);
+	assert.doesNotMatch(h, /\$/);
 });
 
 test("slugs titles", function () {

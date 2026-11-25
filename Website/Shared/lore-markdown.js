@@ -4,7 +4,8 @@
 //
 // File format (written by hand; see the comment at the top of entries.md):
 //   # Chapter title                      groups entries on the Lore page
-//   ## Entry title {#entry-id tier=2}    starts an entry; tier is 1, 2 or 3;
+//   ## Entry title {#entry-id tier=2}    starts an entry; tier is 1, 2 or 3, or
+//                                        none for a note reached only by links;
 //                                        the title heads it on the Lore page
 //                                        only (`notitle` hides it there too)
 //   body text in Markdown                the pop-up text; empty = a stub
@@ -14,8 +15,9 @@
 //
 // Body Markdown: paragraphs, ### / #### subheadings, - and 1. lists,
 // > quotes, **bold**, *italic*, `code`, [text](url), [text](#entry-id) for a
-// nested expansion of another entry, ![caption](image-or-video), $tex$ and
-// $$ display maths $$, and raw HTML lines (a line that starts with "<").
+// nested expansion of another entry, ![caption](image-or-video), $tex$, and
+// display maths as $$tex$$ (on one line, or with each $$ on a line of its
+// own), and raw HTML lines (a line that starts with "<").
 // HTML comments are dropped everywhere.
 
 // ── Parsing the file ─────────────────────────────────────────────────────────
@@ -80,9 +82,8 @@ export function parseLore(text) {
 			close();
 			var a = readAttrs(m[2]);
 			var id = a.id || loreSlug(m[1]);
-			var tier = a.tier;
-			if (tier == null) { tier = 2; problems.push("“" + m[1] + "” has no tier; using tier 2."); }
-			else if (tier < 1 || tier > 3) { problems.push("“" + m[1] + "” has tier " + tier + "; tiers are 1, 2 or 3."); tier = 2; }
+			var tier = a.tier;   // null: reached only through links from other entries
+			if (tier != null && (tier < 1 || tier > 3)) { problems.push("“" + m[1] + "” has tier " + tier + "; tiers are 1, 2 or 3."); tier = 2; }
 			if (entries[id]) { problems.push("Two entries use the id “" + id + "”; the later one wins."); }
 			else order.push(id);
 			if (!chapter) chapter = chapterNamed("");
@@ -148,6 +149,9 @@ function inline(text, base, already) {
 	function stash(html) { keep.push(html); return "\u0000" + (keep.length - 1) + "\u0000"; }
 	var s = String(text);
 	s = s.replace(/`([^`]+)`/g, function (_, c) { return stash("<code>" + escAttr(c) + "</code>"); });
+	s = s.replace(/\$\$([^$]+?)\$\$/g, function (_, t) {
+		return stash('<span class="lore-math lore-math-display" data-tex="' + escAttr(t.trim()) + '">' + escAttr(t.trim()) + "</span>");
+	});
 	s = s.replace(/\$([^$\n]+?)\$/g, function (_, t) {
 		return stash('<span class="lore-math" data-tex="' + escAttr(t) + '">' + escAttr(t) + "</span>");
 	});
@@ -180,6 +184,12 @@ export function renderMarkdown(md, opts) {
 		para = [];
 		var m = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/.exec(text);
 		if (m) { out.push(media(m[2], m[3] || m[1], base)); return; }
+		m = /^\$\$([^$]+)\$\$$/.exec(text);
+		if (m) {
+			var t = m[1].trim();
+			out.push('<div class="lore-math lore-math-display" data-tex="' + escAttr(t) + '">' + escAttr(t) + "</div>");
+			return;
+		}
 		out.push("<p>" + inline(text, base) + "</p>");
 	}
 	function flushList() {
