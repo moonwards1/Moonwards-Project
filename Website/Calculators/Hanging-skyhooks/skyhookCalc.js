@@ -921,7 +921,10 @@ export function mountHangingSkyhook(root, opts) {
 			hd += "M" + xb + " " + y + "L" + (xb - 8 * u) + " " + (y - 4 * u) + "L" + (xb - 8 * u) + " " + (y + 4 * u) + "Z";
 			nt += "M" + xn + " " + (y - 6 * u) + "L" + xn + " " + (y + 6 * u);
 			var tx = tSpeed[i];
-			tx.setAttribute("x", xb + 6 * u); tx.setAttribute("y", y + 4 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
+			// the foot always moves slower than a free orbit there, so its notch lies past the
+			// arrowhead; its figure starts after the notch so the notch stays visible
+			var xl = i === 2 ? Math.max(xb, xn) : xb;
+			tx.setAttribute("x", xl + 6 * u); tx.setAttribute("y", y + 4 * u); tx.setAttribute("font-size", fsS); tx.setAttribute("stroke-width", 4 * u);
 			tx.textContent = num(s[1] / 1e3, 2) + " km/s";
 			show(tx, any("geo"));
 		});
