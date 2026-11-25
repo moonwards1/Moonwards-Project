@@ -52,7 +52,11 @@ WRITING THE TEXT
 
 ## Orbital distance {#orbital-distance tier=1}
 
+This is the average distance. Orbits of planets and moons are slightly elliptical (oval), putting the body closer to its primary on one side of its orbit, and farther away on the other. During real operations, this must be considered. Sometimes it has a significant impact on the length of a flight and the fuel it requires. Some asteroids have very elliptical orbits and the effect is big.
+
 ## Orbital speed {#orbital-speed tier=1}
+
+This is the average speed. The closer a body is to its primary, the faster it moves. As orbits are slightly elliptical (oval), the difference in body speed has an impact on flight planning in real operations. 
 
 ## Diameter {#diameter tier=1}
 
@@ -98,13 +102,48 @@ WRITING THE TEXT
 
 ## Hanging skyhook {#hanging-skyhook tier=3}
 
+A hanging skyhook is a tether thousands of kilometers long, hanging in orbit around a planet or moon. The skyhook is held vertical and taut because its foot feels a pull towards the ground, and its top feels a pull outwards towards space. The point where those pulls are balanced is in orbit - it's moving at exactly orbital speed for its altitude. Everything below moves too slowly for its height, so gravity wins and the lower tether hangs. Everything above moves too fast for its height, so it's flung outward and the upper tether is pulled up. 
+
+That's what makes a skyhook useful. Its foot moves far slower than orbital speed, so a vessel from the surface needs much less speed to reach it than to reach orbit. Its top moves faster than orbital speed, so a ship released there goes into a higher orbit, or escapes the body altogether, using no propellant of its own. And various other tricks save fuel needed by ships that come and go. But each arrival or departure changes the orbit of the whole skyhook by either removing or adding momentum. Ships arriving from offworld raise momentum and thus raise the orbit, ships departing lower momentum and lower the orbit. Ideally this can be balanced, but traffic is never that smooth.
+
+Boost engines at the skyhook top add or remove momentum as needed. Since it's fine if these engines are very heavy, and they don't need to have high thrust, they can be built to be a lot more efficient than rocket engines. VASIMR engines are the top choice. In Moonwards' world, most skyhooks orbit bodies that host other transport facilities, that can toss mass between them solely to provide momentum. This is used where it makes sense.
+
+Rotating skyhooks are different. They are stretched taut by spinning in orbit.
+
 <!-- Basics card -->
 
 ## Basics {#basics tier=2}
 
-## Boost engines {#boost-engines tier=1}
+## Boost engines {#boost-engines tier=2}
+
+The engines sit at the top because that is the farthest point from the Moon, and so it moves around in the biggest circle each orbit. [The same job spread over a longer path takes less force](#boost-engine-torque). That means the engines don't need to push as hard, and they need less propellant.
+
+## Boost engine torque {#boost-engine-torque}
+
+$$\tau = F\,r_{mount} \quad\Rightarrow\quad F = \frac{\tau}{r_{mount}}$$
+
+- $\tau$ = angular momentum the engines must restore per second (N·m)
+- $F$ = steady push along the direction of travel (N)
+- $r_{mount}$ = distance of the engines from the body's center (m)
+
+The path view gives the same result:
+
+1. Over one orbit of period $T$, the engines must restore the energy $E = \omega\,\tau\,T$, where $\omega$ is the orbital angular speed (rad/s).
+2. Since $\omega T = 2\pi$, this is $E = 2\pi\tau$.
+3. Work is force times distance, and the engines travel $2\pi r_{mount}$ per orbit, so $E = F \cdot 2\pi r_{mount}$.
+4. Setting the two equal gives $F = \tau / r_{mount}$ again.
+
+The savings follow from $F$:
+
+$$\dot m_{prop} = \frac{F}{v_e} = \frac{\tau}{r_{mount}\,v_e} \qquad P_{jet} = \tfrac12 F v_e$$
+
+- $\dot m_{prop}$ = propellant flow (kg/s)
+- $v_e$ = exhaust velocity (m/s)
+- $P_{jet}$ = jet power (W)
 
 ## Free orbit speed {#free-orbit-speed tier=1}
+
+The speed an object would move at if it was in a circular orbit at this altitude. (Things in circular orbits move at a constant speed.)
 
 ## Balance point {#balance-point tier=2}
 
@@ -113,6 +152,14 @@ WRITING THE TEXT
 <!-- Tether materials card -->
 
 ## Tether materials {#tether-materials tier=3}
+
+Skyhooks are so long it's necessary to taper their tethers, thickest at the balance point and thinnest at the tips. On Earth cables are almost never long enough for this to matter. The similar situation is how a tower can be much taller if it gets narrower as it gets higher. So imagine the Eiffel Tower, except two stuck together, ten thousand times longer, hanging in space, made of cable.&#32;
+
+So they are sufficient to support everything on them safely without adding any more weight than necessary, there are fewer and thinner cables in a skyhook tether as it gets farther from the balance point. Even so, to function safely at lengths of thousands of kilometers, cables must be of very light and strong material.&#32;
+
+The list of materials shows the best ones for this task. The first figure is the force it takes to snap them - tensile strength - in gigapascals (GPa). The best fishing line has a tensile strength of about 1 GPa. The second figure is their density, which is just as important. Notice how much longer a cable can be before it breaks under its own weight (breaking length) when a material is less dense (fewer grams per cubic centimeter). [Lunar silica](#lunar-silica) and [carbon nanotube](#carbon-nanotube) are both on the list because manufacturing in deep space unlocks their potential. [Early lunar glass](#early-lunar-glass) enables useful skyhooks even when local manufacturing is at an early stage.
+
+Play with the figures in the Basics card, the material choice and safety factor, and you will discover how the tethers balloon in shape once any property starts getting close to its limit. For instance, with the default figures, just switch the material to Early lunar glass.
 
 ## Breaking length at 1 g {#breaking-length-1g tier=1}
 
@@ -180,11 +227,9 @@ WRITING THE TEXT
 
 ## Node drift {#node-drift tier=1}
 
-
-
 ## Other bodies' pull {#other-bodies-pull tier=1}
 
-The real precession rate can sometimes be significantly different than that shown, in the case of moons. Though they are far away, bodies that are far more massive than the moon can still have a large enough influence to measurably change precesssion. This would take further modelling to account for. 
+The real precession rate can sometimes be significantly different than that shown. Other bodies far more massive than the host body can have a large enough influence to change precesssion, if they are nearby. This is here so you notice when that is true.
 
 <!-- Foot ↔ Ground trips card (results) -->
 
