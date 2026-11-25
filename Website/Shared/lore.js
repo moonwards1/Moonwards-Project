@@ -382,10 +382,6 @@ function toggleExpansion(link) {
 	var box = document.createElement("span");
 	box.className = "lore-expansion";
 	box.dataset.depth = depth;
-	var more = create("a", "lore-expansion-more", "Lore page ↗", box);
-	more.href = loreEntryUrl(id);
-	more.target = "_blank";
-	more.rel = "noopener";
 	var body = create("div", ["lore-body", "lore-expansion-body"], false, box);
 	var drawn = fill(body, loreBodyHTML(e));
 	link.after(box);
