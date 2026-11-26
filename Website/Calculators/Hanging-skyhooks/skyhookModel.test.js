@@ -2,7 +2,7 @@
 //   node --test Website/Calculators/Hanging-skyhooks/skyhookModel.test.js
 //
 // Pins a reference design (Moon; foot 10, centre 275, top 2000 km;
-// decks 233 / 606.5 / 950 km; lunar silica ×3; loads 40 / 60 / 5000 / 300 / 200 kt (top tip, upper
+// decks 233 / 606.5 / 950 km; a 13 GPa, 2300 kg/m³ cable ×3; loads 40 / 60 / 5000 / 300 / 200 kt (top tip, upper
 // tether, anchor station, lower tether, foot tip); 1000 t/day
 // in 100 t climbers at 200 m/s, 70 %; oxygen at 8 km/s, 60 % / 90 %; entry
 // interface 122 km; the stations carry no mass), then checks what station
@@ -19,7 +19,7 @@ import { Traffic, YEAR } from "./trafficModel.js";
 import { MATERIALS } from "../../Shared/materials.js";
 
 var moon = systems.get("Moon");
-var m = MATERIALS.silica;
+var m = { strength: 13e9, density: 2300 };   // the reference cable, independent of the presets
 var R0 = Number(moon.radius);
 function base() {
 	return {
@@ -353,7 +353,7 @@ test("a tether anchored on Phobos needs no anchor station and nudges Phobos's or
 });
 
 // ---- nodal precession -------------------------------------------------------------
-// The Earth workbench design: foot 120, centre 2900, top 6200 km; best lunar silica ×3;
+// A reference Earth design: foot 120, centre 2900, top 6200 km; best lunar silica ×3;
 // loads 60 / 20 / 8000 / 50 / 20 kt; no optional stations.
 function earthDesign() {
 	var b = MATERIALS.bestsilica;

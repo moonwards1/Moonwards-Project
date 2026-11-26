@@ -186,7 +186,7 @@ orbit's plane about Mars's spin axis:
 face-on to the Sun. The bulge's small effect on the rate round the orbit is
 left out. The masses are the Hanging-skyhooks calculator's model
 (`computeSkyhook`): a tether of constant stress in best lunar silica at a
-safety factor of 3, a station at each end, an anchor station placed where it
+safety factor of 2.5, a station at each end, an anchor station placed where it
 balances the two halves, and two lots of ballast at their homes: one that may
 ride anywhere on the tether (at the foot by default) and an upper one riding
 above the BP (at the top by default). A set of altitudes and masses the

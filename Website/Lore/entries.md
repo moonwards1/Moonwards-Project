@@ -148,7 +148,11 @@ The speed an object would move at if it was in a circular orbit at this altitude
 
 ## Balance point {#balance-point tier=2}
 
+This is the point along the tethers that is moving at exactly orbital speed for its altitude. The farther away something on a tether is from this point, the bigger the force it feels pulling it away from that point. So, the tethers are thickest here, because they have to support all the pull upwards and downwards of everything else. At the same time, because it is the point in free orbit, no gravity and no angular momentum is felt here.
+
 ## Foot altitude {#foot-altitude tier=1}
+
+For bodies with atmospheres, the minimum feasible altitude is shown. Any lower and the foot feels enough drag to be a problem. It probably would cost more fuel to compensate for that drag than is worth it. Skyhooks that are traffic hubs, or have more traffic going down that coming up, get a bit of leeway. That's the case for Earth and Mars in Moonwards. 
 
 <!-- Tether materials card -->
 
@@ -162,17 +166,35 @@ The list of materials shows the best ones for this task. The first figure is the
 
 Play with the figures in the Basics card, the material choice and safety factor, and you will discover how the tethers balloon in shape once any property starts getting close to its limit. For instance, with the default figures, just switch the material to Early lunar glass.
 
+## Lunar Silica {#lunar-silica tier=2}
+
+Silica is 
+
+## Carbon Nanotube {#carbon-nanotube tier=2}
+
 ## Breaking length at 1 g {#breaking-length-1g tier=1}
+
+How long a cable made of this can be before its own weight makes it snap. This is a common engineering term. Since it's always been done on Earth, 1 Earth gravity is the standard in the formula (which is specific strength divided by gravity, and specific strength is tensile strength divided by density - the two values in the list above).
 
 ## Breaking length at local g {#breaking-length-local-g tier=1}
 
+How long a cable made of this can be before its own weight makes it snap, in local gravity. This is a good way to get across how other places in the solar system are much easier places to make a useful hanging skyhook.
+
 ## Safety factor {#safety-factor tier=1}
+
+Take the amount of tether material that would just barely support the loads on it, then multiply it by this number, and that's how much material is actually used.
 
 ## Lower tether ratio {#lower-tether-ratio tier=1}
 
+From the balance point to the foot. The taper number is the area at the balance point compared to the area at the foot, the mass number is the mass of the tether itself compared to everything on it that isn't tether. 
+
 ## Upper tether ratio {#upper-tether-ratio tier=1}
 
+From the balance point to the top. The taper number is the area at the balance point compared to the area at the top, the mass number is the mass of the tether itself compared to everything on it that isn't tether. The upper tether also bears the pull of the engines at the top, but that force is small compared to the pull of the structures themselves.
+
 ## Extra tether {#extra-tether tier=1}
+
+The anchor station is used to balance the upper and lower tethers so that the balance point is at the desired altitude. It is rarely exactly at the balance point. This is the extra tether needed to support its mass against the pull it feels at its distance from the actual balance point. 
 
 <!-- Core Facilities card -->
 
@@ -235,6 +257,10 @@ The real precession rate can sometimes be significantly different than that show
 <!-- Foot ↔ Ground trips card (results) -->
 
 ## Foot ↔ Ground trips {#foot-ground-trips tier=3}
+
+There are a number of things to consider when choosing an altitude for the foot. This spells out the tradeoffs. An object dropped from the foot hits the surface at the speed and angle shown. An object launched with the same speed and angle will appear at rest when it reaches the foot, from the foot's perspective. The two paths are mirror images.  
+On airless bodies, the closer the foot is to the ground when a ship drops off, the closer to horizontal its flight will be when it meets the ground. This makes it much easier for the ship to brake to a stop on a runway, or be caught by something that then brings it to a stop. But, other points the skyhook passes over are very probably going to be higher. In that case the foot has to be adjustable, probably by an altitude of 10 to 20 km, and the mechanism has to not alter the overall mass distribution along the skyhook. On bodies with atmospheres, entry into the atmosphere at a shallow angle makes the drag milder, which reduces the peak forces the ship must endure and lowers the heat of entry.
+A foot at a higher altitude might be worth it for the lighter tether, simpler foot platform, or to allow other orbital facilities to pass beneath the foot without risk of collision. 
 
 <!-- Loads card (results) -->
 

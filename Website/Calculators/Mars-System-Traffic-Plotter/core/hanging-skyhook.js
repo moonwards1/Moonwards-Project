@@ -88,10 +88,10 @@ export var MIN_TILT = 20 * DEG;
 var ELEVATOR_BELOW = 3 * DEG, ELEVATOR_ABOVE = 10 * DEG;
 
 // What the tether carries besides its anchor station and its ballast, kg, and
-// its material: best lunar silica at a safety factor of 3.
+// its material: best lunar silica at a safety factor of 2.5.
 export var STRUCTURE = {
 	topStation: 60e6, footStation: 150e6, upperLoad: 20e6, lowerLoad: 10e6,
-	strength: MATERIALS.bestsilica.strength / MATERIALS.bestsilica.density / 3
+	strength: MATERIALS.bestsilica.strength / MATERIALS.bestsilica.density / 2.5
 };
 
 // Altitudes in metres above Mars's mean radius; tilt in degrees.

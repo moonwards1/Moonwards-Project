@@ -34,8 +34,8 @@ export function addMaterialCard(shell, opts) {
 		}).concat([{ value: "custom", label: "Custom material…" }]) });
 	var customBox = document.createElement("div");
 	card.body.appendChild(customBox);
-	var sigmaIn = shell.numberField(card, { label: "Tensile strength", unit: "GPa", value: 13, min: 0.01, parent: customBox });
-	var rhoIn = shell.numberField(card, { label: "Density", unit: "kg/m³", value: 2300, min: 1, parent: customBox });
+	var sigmaIn = shell.numberField(card, { label: "Tensile strength", unit: "GPa", value: MATERIALS.silica.strength / 1e9, min: 0.01, parent: customBox });
+	var rhoIn = shell.numberField(card, { label: "Density", unit: "kg/m³", value: MATERIALS.silica.density, min: 1, parent: customBox });
 	var blLine = shell.line(card, { label: "Breaking length at 1 g₀", unit: "km" });
 	var blLocal = shell.line(card, { label: "Breaking length at local g", unit: "km" });
 	// The body's g is a span of its own after the label, so the label text (and any
@@ -84,7 +84,7 @@ export function addMaterialCard(shell, opts) {
 		customBox.hidden = !custom;
 		var preset = MATERIALS[sel.value] || MATERIALS.silica;
 		var m = custom
-			? { name: "Custom", strength: field(sigmaIn, 13) * 1e9, density: field(rhoIn, 2300) }
+			? { name: "Custom", strength: field(sigmaIn, MATERIALS.silica.strength / 1e9) * 1e9, density: field(rhoIn, MATERIALS.silica.density) }
 			: preset;
 		var safety = Math.max(1, field(safetyIn, o.safety || 3));
 		blLine.set(km(breakingLength(m.strength, m.density)));

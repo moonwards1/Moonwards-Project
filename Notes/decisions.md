@@ -611,6 +611,14 @@ their material from `Shared/material-card.js` over the presets in
 factor. Why: one list of materials, so a material reads the same wherever a
 design uses it.
 
+### Silica preset strengths are built-cable strengths; skyhooks default to safety factor 2.5
+
+The lunar silica figures (9 and 12 GPa at 2.3 g/cm³) already allow for flaws
+over long lengths, bundling and mass that carries no load, so a safety factor
+applied to them is margin alone. Skyhooks use 2.5, covering long-term loading,
+strand damage before replacement and load swings. Why: it follows engineering
+convention, and the strengths shown stay within what measured fibre supports.
+
 ### The workbench's elevators are sized by one tether model, against a 1.5× pull multiple
 
 The standard, L1 and L2 elevators on the workbench are the same tether in three

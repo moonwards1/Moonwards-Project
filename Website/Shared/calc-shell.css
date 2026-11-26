@@ -139,7 +139,6 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	overscroll-behavior: contain;
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
@@ -149,6 +148,10 @@ body:has(> .cs-app) { margin: 0; background: #E7DECF; }
 	-webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
 	mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 28px), transparent 100%);
 }
+/* a column that has more than it can show keeps the wheel when it reaches
+   its end; one that fits passes the wheel to the page (calc-shell.js,
+   trackOverflow) */
+.cs-scroller.cs-overflows { overscroll-behavior: contain; }
 .cs-scroller:hover { scrollbar-color: #BCAA90 transparent; }
 .cs-scroller::-webkit-scrollbar { width: 6px; }
 .cs-scroller::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; }

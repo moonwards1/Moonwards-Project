@@ -119,14 +119,14 @@ export function mountHangingSkyhook(root, opts) {
 	}
 	var topIn = shell.numberField(geoCard, { label: "Top altitude", hint: "site of boost engines", unit: "km", value: DEF.top });
 	var topSp = speedsUnder(topIn, [{ label: "speed", unit: "km/s" }, { label: "free orbit speed", unit: "km/s", plain: true }, { label: "multiple", unit: "×" }]);
-	var centreIn = shell.numberField(geoCard, { label: "Balance point (BP) altitude", key: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "determines orbital speed", unit: "km", value: DEF.centre });
+	var centreIn = shell.numberField(geoCard, { label: "Balance point (BP) altitude", key: "Centre of mass altitude", hint: anc ? anc.name + "'s orbit" : "going at orbital speed", unit: "km", value: DEF.centre });
 	var centreSp = speedsUnder(centreIn, [{ label: "Period", unit: "h" }, { label: "speed", unit: "km/s" }]);
 	if (anc) centreIn.disabled = true;
 	var footIn = shell.numberField(geoCard, { label: "Foot altitude", unit: "km", value: DEF.foot });
 	var footSp = speedsUnder(footIn, [{ label: "speed", unit: "km/s" }, { label: "free orbit speed", unit: "km/s", plain: true }, { label: "multiple", unit: "×" }]);
 	shell.note(geoCard, "Or drag the markers on the drawing.");
 
-	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop"], focus: "tether", value: DEF.material || "silica", safety: 3 });
+	var matCard = addMaterialCard(shell, { id: "mat", tab: "arch", feeds: ["prop"], focus: "tether", value: DEF.material || "silica", safety: 2.5 });
 	var rRatL = matCard.addRatioLine("Lower tether ratio");
 	var rRatU = matCard.addRatioLine("Upper tether ratio");
 	var rRatA = matCard.addRatioLine("Extra tether from Anchor to BP");

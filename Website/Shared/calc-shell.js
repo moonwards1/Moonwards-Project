@@ -168,6 +168,28 @@ function button(cls, label, parent) {
 	return b;
 }
 
+// Marks a column's scroller `cs-overflows` while its cards are taller than it.
+// Only then does the column hold the wheel to itself (overscroll-behavior:
+// contain, in the CSS): a column with nothing to scroll must pass the wheel on
+// to the page, and `contain` on a scroll container blocks that even when it
+// has no overflow. Re-measured whenever the scroller or any card in it
+// changes size, and when cards are added.
+function trackOverflow(list) {
+	if (typeof ResizeObserver === "undefined") return;
+	function update() {
+		list.classList.toggle("cs-overflows", list.scrollHeight > list.clientHeight + 1);
+	}
+	var ro = new ResizeObserver(update);
+	ro.observe(list);
+	new MutationObserver(function (records) {
+		records.forEach(function (r) {
+			r.addedNodes.forEach(function (n) { if (n.nodeType === 1) ro.observe(n); });
+			r.removedNodes.forEach(function (n) { if (n.nodeType === 1) ro.unobserve(n); });
+		});
+		update();
+	}).observe(list, { childList: true });
+}
+
 export class CalcShell {
 	constructor(root, opts) {
 		var o = opts || {};
@@ -233,6 +255,7 @@ export class CalcShell {
 		button("cs-ib", "Expand all", h).appendChild(icon(ICON.expand, 16));
 		h.lastChild.onclick = function () { self.collapseAll(side, false); };
 		var list = create("div", "cs-scroller", false, col);
+		trackOverflow(list);
 		return { el: col, list: list, count: cnt };
 	}
 

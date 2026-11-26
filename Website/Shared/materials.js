@@ -4,12 +4,16 @@
 // The presets every tether calculator on the calculator shell offers, through
 // the shared Material card (material-card.js). strength in Pa, density in
 // kg/m³. A calculator applies its own safety factor.
+//
+// The lunar silica strengths are those of the built cable: flaws over long
+// lengths, bundling and mass that carries no load are already allowed for, so
+// the safety factor is margin alone.
 
 import { Const } from "./constants.js";
 
 export const MATERIALS = {
-	silica:          { name: "Lunar silica",           strength: 13e9,    density: 2300 },
-	bestsilica:      { name: "Best lunar silica",      strength: 17e9,    density: 2300 },
+	silica:          { name: "Lunar silica",           strength: 9e9,     density: 2300 },
+	bestsilica:      { name: "Best lunar silica",      strength: 12e9,    density: 2300 },
 	earlylunarglass: { name: "Early lunar glass",      strength: 3e9,     density: 2700 },
 	ecnt:            { name: "Early carbon nanotube",  strength: 18e9,    density: 1450 },
 	mwcnt:           { name: "Mature carbon nanotube", strength: 42e9,    density: 1400 },
