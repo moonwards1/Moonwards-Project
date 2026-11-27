@@ -164,7 +164,7 @@ import {
 	bindAbsoluteDragSlider, fmtKm, fmtTof, fmtDate
 } from "../Shared/sim/marker-card.js";
 import { confirmDialog } from "./ui/confirm-dialog.js";
-import { createInfoButton } from "./ui/info-button.js";
+import { loreMarkPhrase } from "../Shared/lore.js";
 import { makeRingSprite, applyTierToSprite, scaleApproachMark, pickProximityTier } from "../Shared/sim/approach-markers.js";
 import {
 	buildHelioFrame, ORIGIN_BODIES, DESTINATION_BODIES,
@@ -193,6 +193,7 @@ import { readSets, latestOf } from "./core/revisions.js";
 import { originWindow, destinationWindow } from "./core/ephemeris-pov-window.js";
 import { equatorNormal, arrivalMark } from "./modules/arrival-approach.js";
 import { createPovScenes, drawPov as drawPovScene, setPovChevron, scalePovOverlays } from "./ephemeris-pov.js";
+import { createEphemerisGuide, setAttention } from "./ui/ephemeris-guide.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -357,6 +358,9 @@ export function createEphemerisView(opts) {
 	function legStartJd() { return legStart == null ? dateState.jd : legStart; }
 
 	var trajLine = null, endDots = [], wpMarkers = [], burnArrows = [];
+	var TRAJ_COLOR = 0x66f0ff;
+	var GLOW_WHITE = new THREE.Color(0xffffff);
+	var guide = null;          // the date bar's getting-started tips (ui/ephemeris-guide.js)
 	var depBurnHost = null;             // wraps the departure burn's vector editor (readout anchor)
 	var wpRows = [];                    // [{ card, degInput, snapBoxes, slider, info, host }]
 
@@ -738,12 +742,11 @@ export function createEphemerisView(opts) {
 	// The impulse editor closes the card: origin and destination first, then
 	// the velocity that connects them.
 	var depTitle = document.createElement("h3"); depTitle.innerHTML = "<span>Departure impulse</span>";
-	depTitle.appendChild(createInfoButton("Departure impulse"));
 	depHost.appendChild(depTitle);
-	var wpTitle = document.querySelector(".mp-eph-waypoints").parentNode.querySelector("h3");
-	if (wpTitle) { wpTitle.appendChild(createInfoButton("Waypoints")); }
-	var ephTab = document.getElementById("mp-tab-eph");
-	if (ephTab && !ephTab.querySelector(".mp-info")) { ephTab.appendChild(createInfoButton("Ephemeris")); }
+	// Info-tier marks; their text is in Lore/entries.md, "Mission Planner".
+	loreMarkPhrase(depTitle, "Departure impulse", "mp-departure-impulse");
+	loreMarkPhrase(document.querySelector(".mp-eph-waypoints").parentNode.querySelector("h3"), "Waypoints", "mp-waypoints");
+	loreMarkPhrase(document.getElementById("mp-tab-eph"), "Ephemeris", "mp-ephemeris");
 	depBurnHost = document.createElement("div"); depHost.appendChild(depBurnHost);
 	buildVectorEditor(depBurnHost, state.leg.burn, function (axis, mps) {
 		state.leg.burn[axis] = mps; refresh();
@@ -1811,9 +1814,7 @@ export function createEphemerisView(opts) {
 			onModeClick: function (mode, e) { setMarkerMode(mode, !!(e && e.shiftKey)); },
 			onBudgetChange: function (dvBudget) { if (state.marker) { state.marker.dvBudget = dvBudget; refresh(); } }
 		});
-		// Head bar is space-between, so a third child lands midway between the
-		// title and the Reset button.
-		mk.el.querySelector(".mp-marker-title").after(createInfoButton("Ship marker"));
+		loreMarkPhrase(mk.el.querySelector(".mp-marker-title"), "Ship marker", "mp-ship-marker");
 		mk.el.classList.add("mp-card");   // card look; .mp-eph-marker (planner.css) floats it over the pane
 		buildSoiTimeline();
 
@@ -2428,13 +2429,17 @@ export function createEphemerisView(opts) {
 		var isTarget = state.marker.mode === "target";
 		mk.budgetRow.style.display = isTarget ? "" : "none";
 		mk.tdvRow.style.display = isTarget ? "" : "none";
+		// A solve that needs more than the budget allows: the budget row is
+		// outlined until it is raised enough for the solve to hold.
+		var overBudget = isTarget && state.marker._targetDv != null && !!state.marker._released;
+		if (overBudget !== mk.budgetRow.classList.contains("mp-attn")) { setAttention(mk.budgetRow, overBudget); }
 		if (isTarget) {
 			if (document.activeElement !== mk.budgetInput) {
 				mk.budgetInput.value = ((state.marker.dvBudget || 0) / 1000).toFixed(1);
 			}
 			if (state.marker._targetDv != null) {
 				mk.valTdv.textContent = (state.marker._targetDv / 1000).toFixed(2) + " km/s"
-					+ (state.marker._released ? " — released" : "");
+					+ (state.marker._released ? " — increase Δv" : "");
 				mk.valTdv.style.color = state.marker._released ? "#ff8a8a" : "#9fe0ff";
 			} else {
 				mk.valTdv.textContent = state.marker._targetMsg || "—";
@@ -2487,6 +2492,7 @@ export function createEphemerisView(opts) {
 			setHint(HINT_DEFAULT);
 			rebuildWaypointRows();
 			refresh();
+			if (guide) { guide.resetProgress(); }
 		});
 	}
 
@@ -2861,9 +2867,15 @@ export function createEphemerisView(opts) {
 		// That absolute-time-of-flight hold is state.marker.holdMode "tof". The
 		// other mode, "deg" (the default — the marker card's radio next to
 		// "radial from origin"), holds the marker's SWEPT ANGLE fixed instead:
-		// snapshot degAtTime(markerAbsTof) now, under the OLD leg's start state,
-		// and re-solve timeAtDeg(markerDeg) once the new leg's start state is in
-		// place (below) to override the tof-based f0. degAtTime/timeAtDeg are
+		// snapshot degAtTime(markerAbsTof, SOI_NATURAL) now, under the OLD leg's
+		// start state, and re-solve timeAtDeg(markerDeg, SOI_NATURAL) once the
+		// new leg's start state is in place (below) to override the tof-based
+		// f0. The angle is the slider's own Sun-centred one, where an SOI pass
+		// counts only the heliocentric angle it covers: body-centred degrees
+		// can run to thousands across a capture loop or impact spiral, and an
+		// edit that removes the encounter (leaving Target, or changing a burn)
+		// would read them as heliocentric and throw the marker to the far end
+		// of the new leg. degAtTime/timeAtDeg are
 		// exact for any degree (Notes/decisions.md, 2026-08-28), so this can
 		// only land beyond the CURRENT trajTotalT — handled by the same f0
 		// clamp a "tof" hold past the end already needs. These holds govern
@@ -2873,7 +2885,7 @@ export function createEphemerisView(opts) {
 		var markerAbsTof = (state.marker && prevTotalT > 0)
 			? mcMarkerFraction(state.marker.f0, state.marker.angle) * prevTotalT : null;
 		var markerDeg = (state.marker && state.marker.holdMode === "deg" && markerAbsTof != null)
-			? degAtTime(markerAbsTof) : null;
+			? degAtTime(markerAbsTof, SOI_NATURAL) : null;
 
 		// Target mode re-solves the terminal vector before anything is drawn or
 		// read out; the card fields then re-sync to what's in force, and the
@@ -3030,7 +3042,7 @@ export function createEphemerisView(opts) {
 			// only land beyond trajTotalT when the leg is genuinely too short
 			// to have gotten there yet, which the f0 clamp below handles.
 			if (state.marker && markerDeg != null && trajTotalT > 0) {
-				state.marker.f0 = Math.max(0, Math.min(1, timeAtDeg(markerDeg) / trajTotalT));
+				state.marker.f0 = Math.max(0, Math.min(1, timeAtDeg(markerDeg, SOI_NATURAL) / trajTotalT));
 				state.marker.angle = 0;
 			}
 			applyDatePin();
@@ -3041,7 +3053,7 @@ export function createEphemerisView(opts) {
 			});
 			trajLine = new THREE.Line(
 				new THREE.BufferGeometry().setFromPoints(pts),
-				new THREE.LineBasicMaterial({ color: 0x66f0ff }));
+				new THREE.LineBasicMaterial({ color: TRAJ_COLOR }));
 			frame.scene.add(trajLine);
 
 			// Just the flight's own start, at the SOI edge — no "arrival" dot:
@@ -3086,6 +3098,7 @@ export function createEphemerisView(opts) {
 		updatePovButtons();
 
 		updateMoonWidgets(dep, depEst, hand);
+		if (guide) { guide.sync(); }
 	}
 
 	// Feed the Moon widgets from the CURRENT refresh's numbers. Departing FROM
@@ -3365,6 +3378,9 @@ export function createEphemerisView(opts) {
 		tempRings.forEach(function (sp) { scaleApproachMark(frame.camera, paneMainEl, sp); });
 		orbitApproachMarks.forEach(function (sp) { scaleApproachMark(frame.camera, paneMainEl, sp); });
 		positionReadoutBoxes(readoutBoxes, mainEl, panelEl, 15);
+		if (trajLine) {
+			trajLine.material.color.setHex(TRAJ_COLOR).lerp(GLOW_WHITE, guide ? guide.trajectoryGlow() : 0);
+		}
 
 		renderer.setViewport(x, y, w, h);
 		renderer.setScissor(x, y, w, h);
@@ -3392,6 +3408,28 @@ export function createEphemerisView(opts) {
 	// marker is placed), place the frame, and compute the first leg before the
 	// first show().
 	buildCard();
+	// The getting-started tips, and what each one outlines.
+	guide = createEphemerisGuide({
+		hostEl: q(".mp-eph-guide"),
+		getStatus: function () {
+			var b = state.leg.burn;
+			return { destination: state.leg.destination, burnSet: !!(b.pro || b.rad || b.nrm),
+				marker: !!state.marker };
+		},
+		sliders: { coarse: q(".mp-date-coarse"), fine: q(".mp-date-fine"), marker: mk.slider },
+		targetButton: mk.modeBtns.target,
+		targets: function (step) {
+			switch (step) {
+				case 1: return [originRow, destRow];
+				case 2: return [depBurnHost];
+				case 4: return [q(".mp-date-coarse").parentNode, q(".mp-date-fine").parentNode, mk.slider];
+				case 5: return [mk.modeBtns.target];
+				case 6: return [mk.startBtn, mk.el.querySelector(".mp-marker-x")];
+				default: return [];   // step 3 lightens the trajectory itself (render)
+			}
+		}
+	});
+
 	dateBar.setBaseDays(0);
 	frame.place(dateState.jd);
 	refresh();

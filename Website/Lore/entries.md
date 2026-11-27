@@ -333,3 +333,15 @@ A foot at a higher altitude might be worth it for the lighter tether, simpler fo
 ## Δv, empty {#delta-v-empty tier=1}
 
 ## Make a local version {#make-local-version tier=1}
+
+# Mission Planner
+
+<!-- Ephemeris tab -->
+
+## Ephemeris {#mp-ephemeris tier=2}
+
+## Ship marker {#mp-ship-marker tier=2}
+
+## Departure impulse {#mp-departure-impulse tier=3}
+
+## Waypoints {#mp-waypoints tier=3}

@@ -304,13 +304,18 @@ Why the sampled version fails silently: its usable range is however far the
 leg happens to be drawn, and a clamped out-of-range hold snaps the marker to
 the arc's end and leaves it stuck there.
 
-**Inside an SOI the angle is measured around the BODY**, off that
-encounter's own integrated trail, and the segments' degrees accumulate. A
-capture loop's heliocentric sweep doubles back, so a Sun-measured domain has
-several times answering to one degree and the marker jumps between them; around
-the body the same loop is a monotone 360° and gets slider room in proportion to
-its turning. Steps are accumulated with the running maximum, so a perturbed
-trail cannot hand back a domain that dips.
+**The marker's angle is the slider's own Sun-centred one** (`SOI_NATURAL`):
+an SOI pass counts only the heliocentric angle it covers, spread evenly over
+its duration, so the domain stays monotone without the doubling-back of a raw
+heliocentric sweep. The hold must use this same measure, not body-centred
+degrees: a capture loop or impact spiral can turn thousands of degrees around
+the body, and an edit that removes the encounter (leaving Target, changing a
+burn) would read them as heliocentric and throw the marker to the end of the
+new leg.
+
+**The waypoint controls measure inside an SOI around the BODY**, off that
+encounter's own integrated trail, accumulated with the running maximum so a
+perturbed trail cannot hand back a domain that dips.
 
 ### The Ephemeris marker and waypoints ride the flown leg, not a conic
 

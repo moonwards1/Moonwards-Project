@@ -152,6 +152,37 @@ body {
 .mp-pov { display: inline-flex; align-items: baseline; gap: 6px; border-left: 1px solid #24406b; padding-left: 6px;}
 .mp-pov-btn { padding: 2px 9px; }
 .mp-pov-btn.active { background: #24406b; border-color: #3c5f9b; color: #dceafc; }
+/* Getting-started tips (ui/ephemeris-guide.js): up to two lines of text
+   beside the POV buttons, reaching into the date bar's top padding and the
+   row gap below so a wrap doesn't grow the bar, with small inline controls.
+   Closed, only the "Tutorial" button shows. */
+.mp-guide {
+	flex: 1; min-width: 0; align-self: center; display: flex; align-items: center; gap: 8px;
+	margin: -6px 0 -4px;
+}
+.mp-guide-text { flex: 1; min-width: 0; color: var(--dim); font-size: 12px; line-height: 1.2; }
+.mp-guide-ctl { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+.mp-guide-count { color: var(--dim); font-size: 11px; min-width: 2.6em; text-align: center; }
+.mp-guide-btn {
+	background: none; border: 1px solid transparent; border-radius: 4px; color: var(--dim);
+	font: inherit; font-size: 12px; line-height: 1; padding: 2px 5px; cursor: pointer;
+}
+.mp-guide-btn:hover:not(:disabled) { color: var(--bright); border-color: var(--line2); }
+.mp-guide-btn:disabled { opacity: 0.35; cursor: default; }
+.mp-guide-open { display: none; border-color: var(--line2); }
+.mp-guide.mp-guide-closed .mp-guide-text,
+.mp-guide.mp-guide-closed .mp-guide-ctl { display: none; }
+.mp-guide.mp-guide-closed .mp-guide-open { display: inline-block; }
+/* "Look here": a few flashes, then a steady outline until it is dealt with.
+   Set by the guide's tips and by the marker card's over-budget Target. */
+.mp-attn {
+	outline: 2px solid #ffd35a; outline-offset: 2px; border-radius: 6px;
+	animation: mp-attn-flash 0.7s ease-in-out 3;
+}
+@keyframes mp-attn-flash {
+	50% { outline-color: rgba(255, 211, 90, 0.15); background-color: rgba(255, 211, 90, 0.18); }
+}
+@media (prefers-reduced-motion: reduce) { .mp-attn { animation: none; } }
 /* The date as text, year first ("2080/03/14 h7"), typed or set by the
    sliders; the calendar button beside it opens a pop-up calendar
    (Shared/sim/date-bar.js). */
@@ -615,16 +646,6 @@ body {
 	display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
 .mp-eph-departure > h3 { margin-top: 10px; }
-/* Help "i" beside a component title (ui/info-button.js) */
-.mp-info {
-	flex: none; width: 15px; height: 15px; padding: 0; border: 0; border-radius: 50%;
-	background: #e8501e; color: #fff; cursor: pointer;
-	font: italic 700 11px/15px Georgia, "Times New Roman", serif; text-align: center;
-	text-transform: none; letter-spacing: 0;
-}
-.mp-info:hover { background: #ff6a36; }
-.mp-info:focus-visible { outline: 2px solid var(--bright); outline-offset: 1px; }
-h3 > .mp-info { margin-right: auto; }
 .mp-chip {
 	font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid;
 	font-weight: 400; white-space: nowrap;
