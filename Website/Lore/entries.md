@@ -18,6 +18,7 @@ ENTRIES
   - tier=1  tooltip: short, plain text — meaning or how-to
     tier=2  orange dotted underline, opens a pop-up beside the word
     tier=3  word with an orange ⓘ, opens the same pop-up — central information
+            (only the ⓘ is clickable; the word stays plain)
     no tier a note reached only through links in other notes: {#entry-id}
   - An entry with no text yet is a stub: its mark works, and shows
     "Note not written yet". Add ?lore=pending to any page's address to
@@ -348,7 +349,9 @@ A foot at a higher altitude might be worth it for the lighter tether, simpler fo
 
 <!-- Ephemeris tab -->
 
-## Ephemeris {#mp-ephemeris tier=2}
+## Ephemeris {#mp-ephemeris tier=3}
+
+Ta;l
 
 ## Ship marker {#mp-ship-marker tier=2}
 

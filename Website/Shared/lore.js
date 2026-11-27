@@ -7,7 +7,10 @@
 //           bubble pointing at it, whose links to other entries expand in
 //           place (Nutshell-style)
 //   tier 3  an orange ⓘ after the word (or alone); opens the same pop-up,
-//           for central information
+//           for central information. Only the ⓘ takes the mouse: the word
+//           is click-through, so a click on it does whatever it would do
+//           unmarked (focus its card, pick its tab). Keyboard focus and
+//           Enter on the mark still open the note.
 //
 // Alerts — problems with the current inputs — are a solid red-orange circle
 // with a white "i" beside the field concerned (loreAlertSymbol; placed by
@@ -195,8 +198,10 @@ function applyStyles() {
 }
 var TIER1 = "cursor:help;text-decoration:underline dotted currentColor 1.5px;text-underline-offset:0.2em;";
 var TIER2 = "cursor:help;text-decoration:underline dotted var(--lore-accent) 2.5px;text-underline-offset:0.2em;text-decoration-skip-ink:none;";
-var TIER3 = "cursor:help;text-decoration:none;";
-var TIER3_ICON = "content:'\\24D8';color:var(--lore-accent);font-weight:700;font-size:1.05em;margin-left:0.15em;";
+// A click on the ::after icon is delivered to the mark itself, so the mark can
+// ignore the pointer while its icon takes it.
+var TIER3 = "text-decoration:none;pointer-events:none;";
+var TIER3_ICON = "content:'\\24D8';color:var(--lore-accent);font-weight:700;font-size:1.05em;margin-left:0.15em;cursor:help;pointer-events:auto;";
 var PENDING = "outline:1.5px dashed var(--lore-accent);outline-offset:2px;";
 
 // ── Tooltip (tier 1) ─────────────────────────────────────────────────────────

@@ -887,7 +887,9 @@ never drift. A mark in a page names only the entry id; the tier is a property of
 the entry, so one term marked at two tiers is two entries. Pop-ups show the
 entry's text with no heading (the marked word is the context); the title and any
 `::: lore` blocks appear only on the Lore page. A mark on a card title opens its
-note and still focuses the card, since the click reaches the title button too. Nested expansion between entries is done by `Shared/lore.js` itself
+note and still focuses the card, since the click reaches the title button too.
+A tier-3 mark answers the mouse only on its ⓘ (the word is click-through), so
+marking a title or tab never changes what clicking its name does. Nested expansion between entries is done by `Shared/lore.js` itself
 rather than by vendoring Nutshell: the entries are Markdown, not HTML pages with
 headings for Nutshell to fetch, and the runtime styles marks by id so content
 built after load needs no rescan.
