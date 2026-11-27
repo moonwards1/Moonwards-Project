@@ -194,6 +194,7 @@ import { originWindow, destinationWindow } from "./core/ephemeris-pov-window.js"
 import { equatorNormal, arrivalMark } from "./modules/arrival-approach.js";
 import { createPovScenes, drawPov as drawPovScene, setPovChevron, scalePovOverlays } from "./ephemeris-pov.js";
 import { createEphemerisGuide, setAttention } from "./ui/ephemeris-guide.js";
+import { makeScreenLine } from "../Shared/sim/screen-line.js";
 
 var O = OrbitalMath;
 var SUN = systems.get("Sun");
@@ -359,7 +360,12 @@ export function createEphemerisView(opts) {
 
 	var trajLine = null, endDots = [], wpMarkers = [], burnArrows = [];
 	var TRAJ_COLOR = 0x66f0ff;
-	var GLOW_WHITE = new THREE.Color(0xffffff);
+	// The tutorial's marker step flashes the trajectory: a wide yellow band
+	// under the line (built on first use, dropped with the line), with the
+	// line itself tinted toward the same yellow.
+	var TRAJ_FLASH_COLOR = 0xffd35a, TRAJ_FLASH_PX = 7;
+	var trajFlashTint = new THREE.Color(TRAJ_FLASH_COLOR);
+	var trajFlash = null;
 	var guide = null;          // the date bar's getting-started tips (ui/ephemeris-guide.js)
 	var depBurnHost = null;             // wraps the departure burn's vector editor (readout anchor)
 	var wpRows = [];                    // [{ card, degInput, snapBoxes, slider, info, host }]
@@ -685,6 +691,10 @@ export function createEphemerisView(opts) {
 
 	// ==== Departure card: origin, burn, destination. No duration field — the
 	// drawn arc's length is physics-derived (finalCoastDays). ----------------
+	// Origin and destination, with their notes, form one section (the
+	// tutorial outlines it as a whole).
+	var bodiesSec = document.createElement("div"); bodiesSec.className = "mp-eph-bodies";
+	depHost.appendChild(bodiesSec);
 	var originRow = document.createElement("div"); originRow.className = "mp-inrow";
 	var originLab = document.createElement("label"); originLab.textContent = "origin"; originLab.className = "mp-keylabel";originRow.appendChild(originLab);
 	var originSel = document.createElement("select");
@@ -693,9 +703,9 @@ export function createEphemerisView(opts) {
 		if (name === state.origin) { opt.selected = true; }
 		originSel.appendChild(opt);
 	});
-	originRow.appendChild(originSel); depHost.appendChild(originRow);
-	var originInfo = muted(depHost, "");
-	var depMoon = buildMoonWidget(depHost, "Moon phase at launch");
+	originRow.appendChild(originSel); bodiesSec.appendChild(originRow);
+	var originInfo = muted(bodiesSec, "");
+	var depMoon = buildMoonWidget(bodiesSec, "Moon phase at launch");
 
 	// The destination list narrows with the origin.
 	originSel.addEventListener("change", function () {
@@ -734,9 +744,9 @@ export function createEphemerisView(opts) {
 		});
 	}
 	rebuildDestinationOptions();
-	destRow.appendChild(destSel); depHost.appendChild(destRow);
-	var destInfo = muted(depHost, "");
-	var arrMoon = buildMoonWidget(depHost, "Moon phase at arrival");
+	destRow.appendChild(destSel); bodiesSec.appendChild(destRow);
+	var destInfo = muted(bodiesSec, "");
+	var arrMoon = buildMoonWidget(bodiesSec, "Moon phase at arrival");
 	destSel.addEventListener("change", function () { state.leg.destination = destSel.value; refresh(); });
 
 	// The impulse editor closes the card: origin and destination first, then
@@ -1056,6 +1066,7 @@ export function createEphemerisView(opts) {
 
 	function clearDrawn() {
 		if (trajLine) { frame.scene.remove(trajLine); trajLine.geometry.dispose(); trajLine.material.dispose(); trajLine = null; }
+		if (trajFlash) { frame.scene.remove(trajFlash); trajFlash.geometry.dispose(); trajFlash.material.dispose(); trajFlash = null; }
 		endDots.forEach(function (p) { frame.scene.remove(p); p.geometry.dispose(); p.material.dispose(); });
 		endDots = [];
 		wpMarkers.forEach(function (m) { frame.scene.remove(m); });
@@ -1363,7 +1374,7 @@ export function createEphemerisView(opts) {
 		var r1 = f.r1, v1 = f.v1, t1g = f.t1g, ref = f.ref;
 
 		var tof = (m.targetArrJd - legStartJd()) * DAY - t1g;
-		if (!(tof > DAY)) { hardFail("arrival ≤ burn"); return; }
+		if (!(tof > DAY)) { hardFail("too far apart to solve"); return; }
 		var target = O.bodyStateAtJD(GM_SUN, destOrbit, m.targetArrJd).r;
 		var sol = O.lambert(GM_SUN, r1, target, tof, true);
 		if (!sol) { hardFail("no solution"); return; }
@@ -3054,6 +3065,7 @@ export function createEphemerisView(opts) {
 			trajLine = new THREE.Line(
 				new THREE.BufferGeometry().setFromPoints(pts),
 				new THREE.LineBasicMaterial({ color: TRAJ_COLOR }));
+			trajLine.renderOrder = 1;   // above the tutorial's flash band
 			frame.scene.add(trajLine);
 
 			// Just the flight's own start, at the SOI edge — no "arrival" dot:
@@ -3379,7 +3391,19 @@ export function createEphemerisView(opts) {
 		orbitApproachMarks.forEach(function (sp) { scaleApproachMark(frame.camera, paneMainEl, sp); });
 		positionReadoutBoxes(readoutBoxes, mainEl, panelEl, 15);
 		if (trajLine) {
-			trajLine.material.color.setHex(TRAJ_COLOR).lerp(GLOW_WHITE, guide ? guide.trajectoryGlow() : 0);
+			var flash = guide ? guide.trajectoryGlow() : 0;
+			trajLine.material.color.setHex(TRAJ_COLOR).lerp(trajFlashTint, flash);
+			if (flash > 0 && !trajFlash) {
+				var tp = trajLine.geometry.attributes.position.array, pts = [];
+				for (var k = 0; k < tp.length; k += 3) { pts.push([tp[k], tp[k + 1], tp[k + 2]]); }
+				trajFlash = makeScreenLine(pts, { color: TRAJ_FLASH_COLOR, widthPx: TRAJ_FLASH_PX });
+				frame.scene.add(trajFlash);
+			}
+			if (trajFlash) {
+				trajFlash.visible = flash > 0;
+				trajFlash.material.uniforms.opacity.value = flash;
+				trajFlash.setResolution(w, h);
+			}
 		}
 
 		renderer.setViewport(x, y, w, h);
@@ -3420,12 +3444,12 @@ export function createEphemerisView(opts) {
 		targetButton: mk.modeBtns.target,
 		targets: function (step) {
 			switch (step) {
-				case 1: return [originRow, destRow];
+				case 1: return [bodiesSec];
 				case 2: return [depBurnHost];
-				case 4: return [q(".mp-date-coarse").parentNode, q(".mp-date-fine").parentNode, mk.slider];
+				case 4: return [q(".mp-date-sliders"), mk.slider];
 				case 5: return [mk.modeBtns.target];
 				case 6: return [mk.startBtn, mk.el.querySelector(".mp-marker-x")];
-				default: return [];   // step 3 lightens the trajectory itself (render)
+				default: return [];   // step 3 flashes the trajectory itself (render)
 			}
 		}
 	});

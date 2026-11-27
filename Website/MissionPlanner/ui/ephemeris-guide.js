@@ -19,7 +19,7 @@ export var GUIDE_MESSAGES = [
 	"Pick an origin and a destination from the menus at the top of the sidebar.",
 	"Click on the axes of the Departure impulse gizmo to begin making a trajectory. " +
 		"Drag the arrows or use the fields underneath.",
-	"Click on the trajectory to place a chevron marking the location of the ship. " +
+	"Click on the trajectory to place a ship marker. " +
 		"The × shows where the destination will be when the ship is in that spot.",
 	"Use the date and flight time sliders to find a spot where the ship and the " +
 		"destination are close to each other.",
@@ -41,10 +41,10 @@ export function guideStep(status) {
 	return 6;
 }
 
-// Trajectory highlight for step 3, 0..1 (how far to lighten the line):
-// three pulses, then a steady partial glow until the step is done. ms is the
+// Trajectory flash for step 3, 0..1 (how strongly to draw it yellow):
+// three pulses, then a steady partial strength until the step is done. ms is the
 // time since the step was first shown; reduced motion skips the pulses.
-export var PULSE_MS = 700, PULSE_COUNT = 3, STEADY_GLOW = 0.35;
+export var PULSE_MS = 700, PULSE_COUNT = 3, STEADY_GLOW = 0.5;
 export function trajectoryGlow(ms, reducedMotion) {
 	if (reducedMotion || ms >= PULSE_MS * PULSE_COUNT) { return STEADY_GLOW; }
 	return 0.5 - 0.5 * Math.cos(2 * Math.PI * ms / PULSE_MS);
@@ -76,6 +76,7 @@ export function setAttention(el, on) {
 //   getStatus()           — { destination, burnSet, marker } from the tab
 //   targets(step)         — the elements to outline for that step (array)
 //   sliders: { coarse, fine, marker } — the three sliders step 4 asks for
+//                           (the date bar's two are outlined together)
 //   targetButton          — the marker card's Target mode button
 // }
 // Returns { sync, resetProgress, trajectoryGlow }.

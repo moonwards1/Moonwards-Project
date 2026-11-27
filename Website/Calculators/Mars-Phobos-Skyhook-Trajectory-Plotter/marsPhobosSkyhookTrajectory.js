@@ -1981,7 +1981,7 @@ import {
 		if (!p) { hardFail("no leg"); return; }
 
 		var tof = (m.targetArrJd - chain.jdeEscape) * DAY - p.tGlobal;
-		if (!(tof > DAY)) { hardFail("arrival ≤ burn"); return; }
+		if (!(tof > DAY)) { hardFail("too far apart to solve"); return; }
 		var target = O.bodyStateAtJD(GM_S, destOrbit, m.targetArrJd).r;
 		var sol = O.lambert(GM_S, p.r, target, tof, true);
 		if (!sol) { hardFail("no solution"); return; }

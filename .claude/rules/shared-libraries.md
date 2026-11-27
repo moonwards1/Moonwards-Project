@@ -34,7 +34,7 @@ their conventions. All are ES modules with **named exports**.
 `Shared/sim/` holds the scene kit shared by the plotters: `camera-controller.js`,
 `date-bar.js`, `body-renderer.js`, `orbit-rings.js`, `approach-markers.js`,
 `burn-widget.js`, `readout-panes.js`, `marker-card.js`, `flight-clock.js`,
-`save-panel.js`.
+`save-panel.js`, `screen-line.js`.
 
 ## Rules
 
