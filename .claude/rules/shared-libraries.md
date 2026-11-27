@@ -21,6 +21,7 @@ their conventions. All are ES modules with **named exports**.
 | `animation.js` | `SkyAnim` | SVG reveal / viewBox-tween helpers |
 | `kinematic-chain.js` / `lagrange-elevator.js` | `evaluateChain`, `lineElement`, … / `lagrangeLineAt`, `lineElementFor`, … | a departure platform stack composed into a release state; the L1/L2 elevators' kinematics, used by the traffic plotter and the planner's elevator platform |
 | `radial-tether.js` | `standardField`, `earthMoonField`, `tetherContext`, `tetherMetrics`, `pullBalance`, `counterweightFor`, … | the tether sizing the radial space elevators on the workbench share (standard, L1, L2), stations included |
+| `mars-elevator.js` | `elevatorShape`, `elevatorAt`, `pointAt`, … | the off-equator Mars elevator's shape, lean and Phobos check, and its points on the clock; used by the Mars traffic plotter (which adds the Deimos dodges) and the planner's space elevator platform |
 | `meridian-tether.js` | `oblateField`, `solveMeridianTether`, `heightAtRadius`, `northSouthModes`, … | a tether anchored off a spinning body's equator, bowing toward the equatorial plane (the off-equator Mars elevator): shape, tensions, pulls, north–south swings |
 | `material-card.js` / `counterweight-card.js` | `addMaterialCard` / `addCounterweightCard` | the tether calculators' shared cards |
 | `mars-ephemeris.js` | `MarsEphemeris` | the Mars system on a clock: Mars's orientation, Phobos and Deimos, the Sun, Mars-centred |

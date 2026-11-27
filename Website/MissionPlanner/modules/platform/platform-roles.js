@@ -31,7 +31,7 @@ import { Frames } from "../../../Shared/frames.js";
 import { emptyChain, appendElement, applyElement, evaluateChain, elementCount } from "../../../Shared/kinematic-chain.js";
 import { stateDeltaEffect } from "../../../Shared/geo-leg.js";
 import { makeDiagnostic } from "../../core/diagnostics.js";
-import { releaseEpochFor } from "../../core/release-epoch.js";
+import { releaseEpochFor, releaseLegFor } from "../../core/release-epoch.js";
 import { approachAt, approachFromPass, interceptWarning } from "../arrival-approach.js";
 import { passFor as arrivalPassFor } from "../arrival-leg/arrival-leg.js";
 import { WORKBENCH_STORE_KEY, importsFromWorkbench, readWorkbenchDesign, workbenchConfigs }
@@ -534,8 +534,25 @@ function buildPlatformCard(spec, ctx, role, cache, hostCache) {
 	}
 	function setParam(name, value, setOpts) {
 		var patch = {}; patch[name] = value;
+		moveEpoch(patch, setOpts);
 		ctx.world.set({ stage: ctx.stageId, params: patch }, setOpts);
 		refreshVisibility();
+	}
+	// A carrier aimed by when it lets go (the spec's release.epoch): the
+	// departure leg's release epoch goes first, so the stage's own set after
+	// it recomputes the chain from this carrier down with the epoch in place.
+	var epochHook = role === RELEASE && spec.release && typeof spec.release.epoch === "function";
+	function moveEpoch(patch, setOpts) {
+		if (!epochHook) { return; }
+		var leg = releaseLegFor(ctx.world);
+		var jd = spec.release.epoch(Object.assign({}, fullParams(), patch));
+		if (leg && typeof jd === "number" && isFinite(jd) && jd !== leg.params.releaseJd) {
+			ctx.world.set({ stage: leg.id, params: { releaseJd: jd } }, setOpts);
+		}
+	}
+	if (epochHook && typeof spec.release.epochSeed === "function") {
+		var seed = spec.release.epochSeed(fullParams(), releaseEpochFor(ctx.world));
+		if (seed) { ctx.world.set({ stage: ctx.stageId, params: seed }); }
 	}
 	// The DOM rows each control occupies, so a param's `showWhen` can hide
 	// them all (a "slider" or "nudge" takes two).

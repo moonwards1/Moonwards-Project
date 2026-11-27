@@ -92,6 +92,19 @@
  *                          against). A platform riding its body's equatorial
  *                          plane (the skyhook: rotorFor's normal is the spin
  *                          pole) reads that equator's real tilt.
+ *     epoch(params)        optional, for hardware aimed by WHEN it lets go
+ *                          (fixed to a spinning body's ground, so the release
+ *                          direction turns with the body): the release epoch
+ *                          (JD) these params ask for, or null to leave it.
+ *                          When a control on the card changes, the departure
+ *                          leg's `releaseJd` is set to it first
+ *                          (core/release-epoch.js's releaseLegFor), then the
+ *                          stage's own params, so the chain recomputes from
+ *                          this carrier down with the new epoch in place.
+ *     epochSeed(params, releaseJd)  optional, with epoch: the params to add
+ *                          when the card is built, given the leg's release
+ *                          epoch then (the base an epoch control measures
+ *                          from), or null when nothing is missing.
  *
  *   capture              the arrival half, or null:
  *     kind                 "rendezvous" — the ship meets moving hardware and

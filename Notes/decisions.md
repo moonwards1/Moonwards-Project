@@ -736,7 +736,31 @@ second technology beside it. Why: chain elements compose by plain vector sum, so
 a skyhook rotor after the elevator's line element would describe a tether turning
 about a point of the elevator at a rate set by the Moon's gravity, which is no
 hardware; a launcher built to ride an elevator would replace this rule with a
-`ridesOn` check.
+`ridesOn` check. The Mars space elevator lets go on its own for the same reason.
+
+### The Mars space elevator is aimed by its release time
+
+The Mission Planner's space elevator (`modules/space-elevator/`) is the Mars System
+Traffic Plotter's off-equator elevator, one shape for both (`Shared/mars-elevator.js`);
+the Deimos dodge schedule stays in the plotter, so in the planner the tether stands at
+rest. Mars only: elsewhere the "Space elevator" option stays future.
+
+Being fixed to the ground, its release point's motion turns once a sidereal day, so
+the hour of release is its aiming control. The card's release time moves the
+departure leg's `releaseJd` up to half a sidereal day either side of the epoch it
+stood at when the elevator was added (`releaseBaseJd`), through the platform's
+`release.epoch` hook: the leg's epoch is set first, then the elevator's own params,
+so the chain recomputes from the carrier down with the epoch in place. This is the
+one control that moves the release epoch after adopt; the free release phase of the
+other carriers is unchanged. Why: a free phase here would put the anchor at a
+longitude it is not at.
+
+In the chain the release point is a rotor about Mars's pole, of radius its distance
+from the spin axis, turning at Mars's rate, its circle stood off the equator by its
+height (`kinematic-chain.js`'s rotor `offset`). A release below escape speed is
+refused (about 25,700 km from Mars's centre). A catch may meet the tether anywhere,
+anchor to counterweight: the arc is followed in the tether's turning frame for its
+nearest pass, a catch within 1 km.
 
 ### The Mars system is computed in ecliptic axes and drawn with Mars's pole up
 
@@ -790,7 +814,7 @@ With a space elevator in the Mars System Traffic Plotter's design, the Phobos
 skyhook's top is held short of where its tether, which sweeps ρ·sin(1.08°) from the
 equatorial plane at distance ρ, would come within 50 km of the elevator's tether
 (swung toward the plane by the dodge swing, Phobos at apoapsis): `KEEP_CLEAR` in
-`core/elevator.js`, applied by `moonSkyhookFigures` in `core/facilities.js`. An
+`Shared/mars-elevator.js`, applied by `moonSkyhookFigures` in `core/facilities.js`. An
 elevator that passes Phobos itself by less is refused. Why a hard limit and not
 timing: the elevator's tether stands still over the ground and the Phobos tether
 sweeps past it every 11 hours, at every height the two share.
@@ -798,7 +822,7 @@ sweeps past it every 11 hours, at every height the two share.
 Deimos's crossings of the tether's meridian come from the ephemeris, not from the
 workbench card's chance-per-pass estimate; one with a miss under 50 km is dodged. The
 trigger band (100 km), the swing (60 km at Deimos's distance) and the climber traffic
-that pumps it (400–800 km stretch, 6 swings) are fixed in `core/elevator.js`, not
+that pumps it (400–800 km stretch, 6 swings) are fixed in `Shared/mars-elevator.js`, not
 inputs. The swing is carried as a phasor that timed traffic moves by one full swing
 in 6 cycles at most, so build-up, crossings close together and dying-down all come
 from one rule.

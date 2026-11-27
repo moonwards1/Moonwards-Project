@@ -259,10 +259,11 @@ test("arrival-leg stateAtElapsed: a malformed/missing leg returns null", functio
 
 // ---- the arrival-tech catalog (ui/tech-options.js) --------------------------
 
-test("arrivalTechOptionsFor: the skyhook plus the future techs, at any body", function () {
+test("arrivalTechOptionsFor: the skyhook plus the future techs at any body, the Mars elevator at Mars", function () {
 	var ids = ["arrival-skyhook", "space-elevator-catch", "ring-mass-driver", "tugs"];
 	assert.deepEqual(arrivalTechOptionsFor("Ceres").map(function (o) { return o.id; }), ids);
-	assert.deepEqual(arrivalTechOptionsFor("Mars").map(function (o) { return o.id; }), ids);
+	assert.deepEqual(arrivalTechOptionsFor("Mars").map(function (o) { return o.id; }),
+		["arrival-skyhook", "arrival-space-elevator", "ring-mass-driver", "tugs"]);
 	assert.deepEqual(arrivalTechOptionsFor(""), []);
 	assert.deepEqual(arrivalTechOptionsFor(null), []);
 	// built entries carry a moduleId + moduleUrl; future ones carry neither

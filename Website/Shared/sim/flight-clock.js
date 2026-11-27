@@ -4,9 +4,12 @@
  *
  * The timeline runs on one of two AXES, chosen by the viewer:
  *
- *   "time"    linear time since release. Moved by the slider, the ship keeps
- *             its place in the slider's span when the flight changes; set in
- *             the view (a drag, a double-click), it keeps that time.
+ *   "time"    linear time since release. However it was set — the slider, a
+ *             drag or a double-click in the view — the ship keeps that time
+ *             when the flight changes, so the scene's clock stands still under
+ *             an edit and the slider's thumb moves instead. Holding a place in
+ *             the slider's span would not do: the span follows the closest
+ *             pass, so every edit would move the scene's time.
  *   "radial"  the angle the ship has swept around the flight's centre since
  *             release (OrbitalMath.sweepTable). The ship keeps that ANGLE when
  *             the flight changes, so it stays on the same ray from the centre
@@ -36,7 +39,7 @@
 import { OrbitalMath as O } from "../math-utils.js";
 
 export function flightClock() {
-	return { axis: "time", by: "frac", frac: 0, t: 0, deg: 0, pin: false };
+	return { axis: "time", t: 0, deg: 0, pin: false };
 }
 
 function radial(c, f) { return c.axis === "radial" && !!f.table; }
@@ -47,8 +50,7 @@ export function clockSeconds(c, f) {
 	var t;
 	if (c.pin && f.pinT != null) { t = f.pinT; }
 	else if (radial(c, f)) { t = O.sweepTimeAt(f.table, c.deg); }
-	else if (c.by === "time") { t = c.t; }
-	else { t = f.span * c.frac; }
+	else { t = c.t; }
 	return Math.max(0, Math.min(f.duration, t));
 }
 
@@ -62,12 +64,11 @@ export function clockSliderFrac(c, f) {
 	return f.span > 0 ? Math.min(1, clockSeconds(c, f) / f.span) : 0;
 }
 
-// The slider moved to frac (0..1 of the span in time). On the radial axis the
-// ship then holds the angle it has reached there.
+// The slider moved to frac (0..1 of the span in time). The ship then holds
+// the time, or on the radial axis the angle, it has reached there.
 export function clockSetFrac(c, f, frac) {
 	c.pin = false;
-	if (radial(c, f)) { c.deg = O.sweepDegAt(f.table, frac * f.span); return; }
-	c.by = "frac"; c.frac = frac;
+	hold(c, f, frac * f.span);
 }
 
 // The ship set to t seconds since release in the view.
@@ -78,7 +79,7 @@ export function clockSetTime(c, f, t) {
 
 function hold(c, f, t) {
 	if (radial(c, f)) { c.deg = O.sweepDegAt(f.table, t); return; }
-	c.by = "time"; c.t = t;
+	c.t = t;
 }
 
 // Switch axis, keeping the ship where it is.
@@ -86,8 +87,7 @@ export function clockSetAxis(c, f, axis) {
 	var t = clockSeconds(c, f);
 	c.axis = axis;
 	if (c.pin) { return; }
-	if (radial(c, f)) { c.deg = O.sweepDegAt(f.table, t); return; }
-	if (f.span > 0 && t <= f.span) { c.by = "frac"; c.frac = t / f.span; } else { c.by = "time"; c.t = t; }
+	hold(c, f, t);
 }
 
 // Pin on or off. Let go, the ship stays at the pass it was pinned to.
@@ -98,5 +98,5 @@ export function clockSetPin(c, f, on) {
 
 // Back to the release (a new route). The axis and the pin stay as chosen.
 export function clockReset(c) {
-	c.by = "frac"; c.frac = 0; c.t = 0; c.deg = 0;
+	c.t = 0; c.deg = 0;
 }

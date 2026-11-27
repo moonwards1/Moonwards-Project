@@ -2762,8 +2762,10 @@ export function createMissionView(opts) {
 	}
 
 	// Why the catching technology has no contact yet, in a line — the reasons
-	// tetherContact (modules/skyhook/skyhook.js) returns.
+	// tetherContact (modules/skyhook/skyhook.js) returns. A technology whose
+	// contact carries its own `note` says it in its own words.
 	function noContactNote(contact, body) {
+		if (contact.note) { return contact.note; }
 		var km = function (m) { return Math.round(m / 1000).toLocaleString("en-US") + " km"; };
 		switch (contact.reason) {
 		case "no-crossing":
@@ -2811,8 +2813,9 @@ export function createMissionView(opts) {
 				comp: c ? { pro: c.pro / 1000, rad: c.rad / 1000, nrm: c.nrm / 1000, net: c.net / 1000 } : null }]);
 			// Meeting the arm below its tip is still contact, and says so, to
 			// the kilometre: the point it meets moves slower than the tip does.
-			var belowKm = contact.ok ? Math.round(contact.belowTip / 1000) : 0;
+			var belowKm = contact.ok && isFinite(contact.belowTip) ? Math.round(contact.belowTip / 1000) : 0;
 			shipCard.setNote(!contact.ok ? noContactNote(contact, cap.body)
+				: contact.note ? contact.note
 				: (belowKm >= 1
 					? "Meets the tether " + belowKm.toLocaleString("en-US") + " km below the tip."
 					: ""));

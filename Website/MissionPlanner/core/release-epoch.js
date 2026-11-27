@@ -16,18 +16,31 @@
  * leg or its leg records no epoch; each caller reports that as its own
  * diagnostic.
  *
+ * One control moves it after adopt: the card of a carrier aimed by WHEN it
+ * lets go — one fixed to a spinning body's ground, whose release direction
+ * turns with the body (a platform's release.epoch,
+ * modules/platform/platform-spec.js). It writes the leg's `releaseJd`
+ * through releaseLegFor.
+ *
  * Pure, no DOM — Node-testable.
  */
 
 var LEG_MODULES = ["departure-leg", "body-departure-leg"];
 
 export function releaseEpochFor(world) {
+	var leg = releaseLegFor(world);
+	return leg ? leg.params.releaseJd : null;
+}
+
+// The departure leg stage that holds the release epoch, or null — for the
+// one control that moves the epoch: a carrier aimed by WHEN it lets go
+// (a platform's release.epoch, modules/platform/platform-spec.js).
+export function releaseLegFor(world) {
 	if (!world || typeof world.stages !== "function") { return null; }
 	var stages = world.stages();
 	for (var i = 0; i < stages.length; i++) {
 		if (LEG_MODULES.indexOf(stages[i].moduleId) < 0) { continue; }
-		var jd = (stages[i].params || {}).releaseJd;
-		if (isFinite(jd)) { return jd; }
+		if (isFinite((stages[i].params || {}).releaseJd)) { return stages[i]; }
 	}
 	return null;
 }

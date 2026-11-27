@@ -201,3 +201,19 @@ test("a line element: the point a fixed distance along the Moon–Earth line, ca
 	var days = 2 * Math.PI / f.turnRate / 86400;
 	assert.ok(days > 23.5 && days < 31.5, "turning period " + days + " d");
 });
+
+test("a rotor with an axial offset turns on a circle stood off its plane, with the same motion", () => {
+	var jd = 2463220.75, n = [0, 0.6, 0.8];
+	var flat = rotorElement(n, [1, 0, 0], 2e7, 7e-5, 0.3, jd);
+	var raised = rotorElement(n, [1, 0, 0], 2e7, 7e-5, 0.3, jd, 4e6);
+	assert.equal(flat.offset, undefined, "no offset, no field: older chains are unchanged");
+	[jd, jd + 0.37].forEach(function (t) {
+		var a = evaluateChain(appendElement(emptyChain("Mars"), flat), t);
+		var b = evaluateChain(appendElement(emptyChain("Mars"), raised), t);
+		assert.ok(O.vMag(O.vSub(O.vSub(b.r, a.r), O.vScale(n, 4e6))) < 1e-6, "moved along the normal only");
+		assert.ok(O.vMag(O.vSub(b.v, a.v)) < 1e-12, "same velocity");
+		// The velocity is the spin crossed with the position, offset and all.
+		var spin = O.vScale(n, 7e-5);
+		assert.ok(O.vMag(O.vSub(b.v, O.vCross(spin, b.r))) < 1e-6);
+	});
+});

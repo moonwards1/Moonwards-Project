@@ -64,9 +64,11 @@ counterweight at 51,000 km of the mass that holds it up three times over
 - `core/clearance.js` — the passes of the hanging tether by the Phobos tether
   and by the space elevator's, their clearance, and the working-out of the
   sidesteps. Pure.
-- `core/elevator.js` — the space elevator: its figures, how far a Phobos
-  tether may reach beside it, Deimos's crossings and the dodges, and where its
-  tether is on the clock. Pure.
+- `core/elevator.js` — the space elevator on this page's clock: Deimos's
+  crossings and the dodges, added to its shape from
+  `Shared/mars-elevator.js` (its figures, lean, how far a Phobos tether may
+  reach beside it, where its tether is), which the Mission Planner's space
+  elevator uses too. Pure.
 - `core/flight.js` — `computeFlight(input)` and `flightStateAt(flight, t)`: a
   release flown to its end, and what the page reads off it. Pure.
 - `core/arrival.js` — a flight's closest pass to the destination skyhook's
@@ -430,7 +432,7 @@ the 100 km trigger band) is dodged with the tether's slowest north–south
 swing, built up to 60 km at Deimos's distance so that the tether stands at
 the far end of its swing, on the side away from Deimos, as Deimos crosses.
 The trigger band, the swing's size and the traffic figures below are fixed
-(`DODGE` and `TRAFFIC` in `core/elevator.js`).
+(`DODGE` and `TRAFFIC` in `Shared/mars-elevator.js`).
 
 The swing is followed as a phasor `c`:
 

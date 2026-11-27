@@ -63,12 +63,13 @@ test("sweepTable: a plane change keeps counting forward", function () {
 var ORB = circle(7e6, 3, 1200);
 var SHAPE = { span: 2 * ORB.T, duration: 3 * ORB.T, table: O.sweepTable(ORB.pts), pinT: null };
 
-test("clock: time axis holds its slider fraction, or a time set in the view", function () {
+test("clock: time axis holds its time when the span changes, however it was set", function () {
 	var c = flightClock();
 	clockSetFrac(c, SHAPE, 0.5);
 	assert.ok(Math.abs(clockSeconds(c, SHAPE) - ORB.T) < 1e-6);
 	var longer = Object.assign({}, SHAPE, { span: 4 * ORB.T });
-	assert.ok(Math.abs(clockSeconds(c, longer) - 2 * ORB.T) < 1e-6);
+	assert.ok(Math.abs(clockSeconds(c, longer) - ORB.T) < 1e-6);
+	assert.ok(Math.abs(clockSliderFrac(c, longer) - 0.25) < 1e-9);   // the thumb moves instead
 	clockSetTime(c, SHAPE, 100);
 	assert.equal(clockSeconds(c, longer), 100);
 });

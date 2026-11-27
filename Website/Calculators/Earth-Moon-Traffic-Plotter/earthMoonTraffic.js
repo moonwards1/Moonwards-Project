@@ -32,11 +32,14 @@
  * the way a map is dragged: the scene scrolls and the ship stays centred.
  * Double-clicking the path puts the ship there. The Flight slider scrubs the
  * flight while the camera stays on something else, on either of two axes
- * (Shared/sim/flight-clock.js): TIME since release, or RADIAL, the angle swept
- * round Earth since release, on which the ship holds its angle while the
- * flight changes, so an edit shows as the destination coming early or late
- * to a ship that stays put. PIN keeps the ship at its closest
- * pass to the destination tether.
+ * (Shared/sim/flight-clock.js): TIME since release, on which the ship holds
+ * its time while the flight changes, so an edit to the release or the
+ * hardware leaves the scene's clock — and the Moon and Earth — where they
+ * were; or RADIAL, the angle swept round Earth since release, on which the
+ * ship holds its angle, so an edit shows as the destination coming early or
+ * late to a ship that stays put. PIN keeps the ship at its closest
+ * pass to the destination tether. A pink release marker is grabbed anywhere
+ * on its triangle.
  *
  * HOLD SKYHOOK PHASE keeps the departure tether's angle to the Earth
  * direction fixed while the date changes: the release time is moved to the
@@ -616,17 +619,41 @@ function cursorRay(e) {
 		.unproject(frame.camera).sub(frame.camera.position).normalize();
 	return { o: frame.camera.position.clone(), d: dir };
 }
-// The draggable marker under the cursor (one of `handles`), or null: the
-// nearest within 16 px, the flight's own release point first where two overlap.
+// The draggable marker under the cursor (one of `handles`), or null. Each
+// triangle is hit anywhere on its area as drawn on screen, or within HANDLE_PX
+// of it, so a small one still has a grip; the nearest wins, and where two
+// overlap the flight's own release point comes first.
+var HANDLE_PX = 8;
 function hitHandle(e) {
 	if (!showFac.checked) { return null; }
-	var c = cursorOf(e), wp = new THREE.Vector3(), best = null, bestD = 16;
+	var c = cursorOf(e), best = null, bestD = HANDLE_PX;
 	handles.forEach(function (h) {
-		h.mesh.getWorldPosition(wp);
-		var d = pxBetween(wp, c) - (isReleaseHandle(h) ? 0.5 : 0);
+		var d = pxToTriangle(h.mesh, c) - (isReleaseHandle(h) ? 0.5 : 0);
 		if (d < bestD) { bestD = d; best = h; }
 	});
 	return best;
+}
+// Distance on screen (px) from the cursor to a triangle mesh as drawn: 0
+// inside it, Infinity when any corner is behind the camera.
+var _tv = new THREE.Vector3();
+function pxToTriangle(mesh, c) {
+	var pos = mesh.geometry.attributes.position, s = [];
+	mesh.updateWorldMatrix(true, false);
+	for (var k = 0; k < 3; k++) {
+		_tv.fromBufferAttribute(pos, k).applyMatrix4(mesh.matrixWorld);
+		var p = screenOf(_tv);
+		if (p.z > 1) { return Infinity; }
+		s.push(p);
+	}
+	function cross(a, b, q) { return (b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x); }
+	var d1 = cross(s[0], s[1], c), d2 = cross(s[1], s[2], c), d3 = cross(s[2], s[0], c);
+	if ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0)) { return 0; }
+	function seg(a, b) {
+		var ex = b.x - a.x, ey = b.y - a.y, L2 = ex * ex + ey * ey;
+		var f = L2 > 0 ? Math.max(0, Math.min(1, ((c.x - a.x) * ex + (c.y - a.y) * ey) / L2)) : 0;
+		return Math.hypot(a.x + f * ex - c.x, a.y + f * ey - c.y);
+	}
+	return Math.min(seg(s[0], s[1]), seg(s[1], s[2]), seg(s[2], s[0]));
 }
 function isReleaseHandle(h) {
 	return h.id === state.from && (h.name === "release" || h.name === figs[h.id].relPoint);
@@ -646,19 +673,35 @@ function hitWaypoint(e) {
 	});
 	return best;
 }
-// Drag a marker along its tether: the point of the tether's line nearest the
-// cursor ray sets its altitude, which the marker's own `set` keeps in range.
-// The marker is looked up afresh each time, since every refresh redraws it.
-function dragHandle(e, id, name) {
-	var h = findHandle(id, name);
-	if (!h) { return; }
+// Where along its tether (scene units from the body's centre) the cursor ray
+// passes closest to the tether's line, or null where the two are parallel.
+function alongTether(e, h) {
 	var ray = cursorRay(e), A = new THREE.Vector3();
 	h.node.getWorldPosition(A);
 	var u = h.along, w0 = ray.o.clone().sub(A);
 	var b = ray.d.dot(u), denom = 1 - b * b;
-	if (Math.abs(denom) < 1e-9) { return; }
-	var t = (u.dot(w0) - b * ray.d.dot(w0)) / denom;       // scene units along the tether
-	h.set(t * U - h.R);
+	if (Math.abs(denom) < 1e-9) { return null; }
+	return (u.dot(w0) - b * ray.d.dot(w0)) / denom;
+}
+// Drag a marker along its tether: the point of the tether's line nearest the
+// cursor ray sets its altitude, less the `offset` (scene units) between that
+// point and the marker where it was grabbed, so a triangle taken by its side
+// moves with the cursor rather than jumping its tip to it. The marker's own
+// `set` keeps the altitude in range. The marker is looked up afresh each
+// time, since every refresh redraws it.
+function dragHandle(e, id, name, offset) {
+	var h = findHandle(id, name);
+	if (!h) { return; }
+	var t = alongTether(e, h);
+	if (t === null) { return; }
+	h.set((t - offset) * U - h.R);
+}
+// That offset, at the press.
+function grabOffset(e, h) {
+	var t = alongTether(e, h), M = new THREE.Vector3(), A = new THREE.Vector3();
+	if (t === null) { return 0; }
+	h.mesh.getWorldPosition(M); h.node.getWorldPosition(A);
+	return t - M.sub(A).dot(h.along);
 }
 // Drag something along the path: the ship, or a waypoint. The camera is on
 // it, so it stays at the centre and the scene scrolls, as a dragged map does:
@@ -735,14 +778,15 @@ bindCameraControls(renderer.domElement, function () {
 			if (!onRelease && !onShip && onWp < 0) { return null; }
 			var kind = onRelease && (!onShip || flightSeconds() === 0) ? "release" : (onWp >= 0 ? "wp" : "ship");
 			return { kind: kind, wp: onWp, x: e.clientX, y: e.clientY, travel: 0,
-			         id: onRelease ? onRelease.id : null, name: onRelease ? onRelease.name : null };
+			         id: onRelease ? onRelease.id : null, name: onRelease ? onRelease.name : null,
+			         offset: onRelease ? grabOffset(e, onRelease) : 0 };
 		},
 		onCapturedMove: function (e, tok) {
 			var dx = e.clientX - tok.x, dy = e.clientY - tok.y;
 			tok.x = e.clientX; tok.y = e.clientY;
 			tok.travel += Math.abs(dx) + Math.abs(dy);
 			if (tok.travel < 3) { return; }
-			if (tok.kind === "release") { dragHandle(e, tok.id, tok.name); return; }
+			if (tok.kind === "release") { dragHandle(e, tok.id, tok.name, tok.offset); return; }
 			if (tok.kind === "wp") {
 				if (state.follow !== "wp:" + tok.wp) { setFollow("wp:" + tok.wp); }
 				dragWaypoint(e, dx, dy, tok.wp);
@@ -860,9 +904,11 @@ function buildElevatorCard(id) {
 	refs.head = head;
 
 	var body = card.appendChild(el("div", "emt-card-body"));
-	var p = state.params[id];
+	// The handlers look the params up as they run: loading a saved flight
+	// replaces the object, and one held from here would no longer be read.
 	var alts = body.appendChild(el("div", "emt-fieldpair"));
 	refs.cwAlt = numberField(alts, "emt-" + id + "-cwAlt", "Counterweight altitude (km)", function () {
+		var p = state.params[id];
 		var atTop = p.highAlt >= p.cwAlt;          // an upper point at the counterweight stays there
 		p.cwAlt = parseFloat(refs.cwAlt.value) * 1e3;
 		if (isFinite(p.cwAlt) && (atTop || p.highAlt > p.cwAlt)) { p.highAlt = p.cwAlt; }
@@ -880,6 +926,7 @@ function buildElevatorCard(id) {
 	var pts = body.appendChild(el("div", "emt-release emt-points"));
 	function point(key, label) {
 		function moved(alt, opts) {
+			var p = state.params[id];
 			p[key] = alt;
 			if (id === state.from) { p.relPoint = key === "lowAlt" ? "low" : "high"; }
 			refresh(Object.assign({ userRelease: id === state.from }, opts));
@@ -903,7 +950,7 @@ function buildElevatorCard(id) {
 	[["low", "Lower point"], ["high", "Upper point"]].forEach(function (m) {
 		var b = refs.pick[m[0]] = group.appendChild(el("button", null, m[1]));
 		b.type = "button";
-		b.addEventListener("click", function () { p.relPoint = m[0]; refresh({ userRelease: true }); });
+		b.addEventListener("click", function () { state.params[id].relPoint = m[0]; refresh({ userRelease: true }); });
 	});
 	var rro = rel.appendChild(el("div", "emt-readouts"));
 	refs.relAt = readout(rro, "release point, above the Moon");

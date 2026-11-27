@@ -10,7 +10,10 @@
  *     reference direction), with a radius, a rotation rate and a phase at an
  *     epoch. This is hardware that carries the payload around and lets go:
  *     a skyhook, a synchronous space elevator (turning at its body's own
- *     rate), a ring mass driver, a tip spin launcher.
+ *     rate), a ring mass driver, a tip spin launcher. Its circle may stand
+ *     `offset` metres along the normal from the parent instead of round it —
+ *     a point of hardware fixed to a spinning body away from its equatorial
+ *     plane (the off-equator Mars elevator) turns on such a circle.
  *   - a LINE — a point at a fixed distance from a body's centre on the line
  *     to its partner (the Moon's to Earth), carried round with that line.
  *     This is hardware that hangs through a Lagrange point: the L1 and L2
@@ -34,7 +37,7 @@
  *
  * Chain shape (plain, serializable data):
  *   { base: "Moon" | "Earth" | <any origin body>,
- *     rotors:   [ { normal: [x,y,z], ref: [x,y,z], radius, rate, phase0, epoch }
+ *     rotors:   [ { normal: [x,y,z], ref: [x,y,z], radius, rate, phase0, epoch, offset? }
  *                 | { kind: "line", body, partner, distance }, ... ],
  *     impulses: [ { dv: [x,y,z] }, ... ] }
  * `rotors` holds every element that places the payload — rotors and lines —
@@ -103,14 +106,22 @@ export function planeBasis(normal, ref) {
 }
 
 // Position + velocity (geocentric, m / m/s) contributed by one rotor at
-// Julian date jd, added onto its parent's already-composed state.
+// Julian date jd, added onto its parent's already-composed state:
+//
+//     r = offset * n + radius * dir(phase)      v = radius * rate * tan(phase)
+//
+//     n      the unit normal;  offset 0 when the rotor has none
+//
+// The offset moves the circle along its axis and adds no motion.
 function addRotor(parent, rotor, jd) {
 	var basis = planeBasis(rotor.normal, rotor.ref);
 	var phase = rotor.phase0 + rotor.rate * (jd - rotor.epoch) * DAY;
 	var dir = O.vAdd(O.vScale(basis.e1, Math.cos(phase)), O.vScale(basis.e2, Math.sin(phase)));
 	var tan = O.vAdd(O.vScale(basis.e1, -Math.sin(phase)), O.vScale(basis.e2, Math.cos(phase)));
+	var r = O.vScale(dir, rotor.radius);
+	if (rotor.offset) { r = O.vAdd(r, O.vScale(O.vUnit(rotor.normal), rotor.offset)); }
 	return {
-		r: O.vAdd(parent.r, O.vScale(dir, rotor.radius)),
+		r: O.vAdd(parent.r, r),
 		v: O.vAdd(parent.v, O.vScale(tan, rotor.radius * rotor.rate))
 	};
 }
@@ -186,9 +197,12 @@ export function emptyChain(base) {
 }
 
 // A rotor element. `phase0` is its phase (rad) at `epoch` — see the header.
-export function rotorElement(normal, ref, radius, rate, phase0, epoch) {
-	return { kind: "rotor", normal: normal, ref: ref, radius: radius,
-	         rate: rate, phase0: phase0, epoch: epoch };
+// `offset` (m, optional) stands its circle that far along the normal.
+export function rotorElement(normal, ref, radius, rate, phase0, epoch, offset) {
+	var el = { kind: "rotor", normal: normal, ref: ref, radius: radius,
+	           rate: rate, phase0: phase0, epoch: epoch };
+	if (offset) { el.offset = offset; }
+	return el;
 }
 
 // A line element: the point `distance` metres from `body`'s centre along the

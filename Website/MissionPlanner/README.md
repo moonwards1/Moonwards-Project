@@ -333,7 +333,9 @@ origin or destination `body` explicitly — the project's "body" convention
 the released flight with restricted N-body gravity. The release **epoch**
 belongs to this phase: it is the departure leg's own `releaseJd`, seeded at
 mission creation from `core/departure-phase-estimate.js` and read back by everything
-upstream through `core/release-epoch.js`'s `releaseEpochFor`. The adopted plan
+upstream through `core/release-epoch.js`'s `releaseEpochFor`. A carrier fixed to a
+spinning body's ground (the Mars space elevator) moves it from its card, its
+release time being its aim (`release.epoch` on its platform spec). The adopted plan
 does not own it — the plan states where the ship must be when this phase ENDS,
 never when it started.
 
@@ -375,6 +377,22 @@ never when it started.
   and states whether that release leaves Earth by itself; there is no escape
   gate, since a bound release is still a departure a waypoint can finish. It
   shares its chain with no other carrier (the platform's `alone`).
+- **`modules/space-elevator/`** — the Mars space elevator TECHNOLOGY
+  PLATFORM, both roles, Mars only: the off-equator tether the Mars System
+  Traffic Plotter draws (`Shared/mars-elevator.js`), with its design controls
+  (anchor latitude and longitude, cable and safety factor, counterweight
+  distance and mass, cargo flow up, which leans it west), standing at rest
+  (the Deimos dodges are the plotter's). `space-elevator-departure.js`
+  registers the carrier `space-elevator`: a point of the tether, a rotor about
+  Mars's pole stood off the equator, let go at its release altitude (refused
+  below escape speed). It turns with Mars, so its **release time** is its aim:
+  the card moves the departure leg's release epoch up to half a sidereal day
+  either side of where it stood when the elevator was added, and the whole
+  departure moves with it. It lets go on its own (`alone`).
+  `space-elevator-arrival.js` registers the terminal `arrival-space-elevator`:
+  the arrival arc followed in the tether's turning frame for its nearest pass,
+  a catch within 1 km anywhere along the tether, at that point's speed; a miss
+  says how far, where and how fast in the ship card's note.
 - **`modules/departure-leg/`** — HEADLESS (`plainCard`): the integrated
   geocentric flight (Earth + Moon + Sun, real ephemerides, RK4) from carrier
   release to Earth-SOI exit, for Earth-origin missions. Applies up to 2
@@ -489,7 +507,7 @@ never when it started.
 | `phase-slider.js`   | `createSegmentedSlider`, `coastSliderState`, `departureSliderState`, `arrivalSliderState`, …               | The segmented-timeline widget behind each phase's slider: a DOM primitive (a track of flex-sized segments plus a playhead, `.mp-` classes styled in `planner.css`) plus three pure state functions (segments + playhead fraction + pinned flag + marks from a span, a jd, a tick count and a formatter) that `mission-view.js`'s `departureSpan`/`coastSpan`/`arrivalSpan` feed.                                                                                                                                                                                                                                                                                                |
 | `ship-card.js`      | `createShipCard`, `SHIP_COLORS`, `vInfComponents`, `speedModel`, `bearingPoint`, …                         | The floating card that reports on the ship the chevron marks: a scissored three.js gizmo off the shared renderer, a numeric summary, a speed bar, and — only where a phase fills it — a B-plane square. Phase-agnostic: every section renders nothing until its setter is called, so Departure takes the plan-vs-delivered comparison gizmo and on-course state, Coast takes the speed bar and B-plane square with the gizmo hidden, and Arrival takes the contact gizmo (the catching tether's axes at the point the ship meets it, and the ship's trajectory into it), one Incoming row, and a speed bar ticked at the tip's speed. The pure model functions are Node-tested. |
 | `share-link.js`     | `MISSION_LINK_KIND`, `MISSION_LINK_VERSION`, `packMissionLink`, `unpackMissionLink`, `missionFragmentFrom` | The mission-link envelope (v2) wrapping `{ title, world, plan }` under its own kind stamp — a bare serialized World has no title, and `plan` is `core/revisions.js`'s two sets: the mission as first adopted, plus its latest commit when it has one. `world` is what opens in a tab; `plan.original` is what the Ephemeris tab reconstructs. v1 envelopes and bare Worlds still load, with no plan. Read by `planner.js`'s initial-load path and the Ephemeris tab's "Paste mission link…"; written by the mission view's share button, through `Shared/exchange.js`'s **compressed** `encodeFragmentZ` — two sets don't fit in a Discord message otherwise.                   |
-| `tech-options.js`   | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                           | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add a stage; unbuilt entries show disabled with a "(future)" label.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `tech-options.js`   | `DEPARTURE_TECH_OPTIONS`, `ARRIVAL_TECH_OPTIONS`                                                           | The departure/arrival "technology" dropdowns' own small catalog — what's *offerable* and to which body, distinct from `core/registry.js` (what's *loaded*). Built entries add a stage; unbuilt entries show disabled with a "(future)" label, and a technology built at some bodies only (the Mars space elevator) keeps a future entry for the rest (`untilBuilt`).                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ## presets/ — the example catalog
 

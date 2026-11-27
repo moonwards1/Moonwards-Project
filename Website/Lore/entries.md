@@ -158,19 +158,25 @@ For bodies with atmospheres, the minimum feasible altitude is shown. Any lower a
 
 ## Tether materials {#tether-materials tier=3}
 
-Skyhooks are so long it's necessary to taper their tethers, thickest at the balance point and thinnest at the tips. On Earth cables are almost never long enough for this to matter. The similar situation is how a tower can be much taller if it gets narrower as it gets higher. So imagine the Eiffel Tower, except two stuck together, ten thousand times longer, hanging in space, made of cable.&#32;
+Skyhooks are so long it's necessary to taper their tethers, thickest at the balance point and thinnest at the tips. On Earth cables are almost never long enough for this to matter. The similar situation is how a tower can be much taller if it gets narrower as it gets higher. Each extra floor puts a greater load on every floor below it, and so each floor has to have more and thicker columns to support the cumulative weight of everything above. Imagine the Eiffel Tower. Now imagine two stuck together, ten thousand times longer, hanging in space, made of cable, being pulled towards their tips instead of being compressed towards the ground.&#32;
 
-So they are sufficient to support everything on them safely without adding any more weight than necessary, there are fewer and thinner cables in a skyhook tether as it gets farther from the balance point. Even so, to function safely at lengths of thousands of kilometers, cables must be of very light and strong material.&#32;
+For a tether to be sufficient to support everything on it safely while being as light as possible, it has fewer and thinner cables as it gets farther from the balance point. Even so, to be practical at lengths of thousands of kilometers, cables must be of the lightest and strongest materials known. Better material properties provide an exponential reduction in tether mass needed. Development of the right material will suddenly make skyhooks and space elevators feasible. &#32;
 
-The list of materials shows the best ones for this task. The first figure is the force it takes to snap them - tensile strength - in gigapascals (GPa). The best fishing line has a tensile strength of about 1 GPa. The second figure is their density, which is just as important. Notice how much longer a cable can be before it breaks under its own weight (breaking length) when a material is less dense (fewer grams per cubic centimeter). [Lunar silica](#lunar-silica) and [carbon nanotube](#carbon-nanotube) are both on the list because manufacturing in deep space unlocks their potential. [Early lunar glass](#early-lunar-glass) enables useful skyhooks even when local manufacturing is at an early stage.
+The listed materials are the best ones for this task. The first figure is the force it takes to snap them - tensile strength - in gigapascals (GPa). The best fishing line has a tensile strength of about 1 GPa. The second figure is their density, which is just as important, otherwise the needed mass balloons beyond all practicality. Playing with material choice, especially a custom material, will show the effect dramatically in the drawing at right.
 
-Play with the figures in the Basics card, the material choice and safety factor, and you will discover how the tethers balloon in shape once any property starts getting close to its limit. For instance, with the default figures, just switch the material to Early lunar glass.
+[Lunar silica](#lunar-silica) and [carbon nanotube](#carbon-nanotube) are both on the list because manufacturing in deep space unlocks their potential. [Early lunar glass](#early-lunar-glass) enables useful skyhooks even when local manufacturing is at an early stage.
 
 ## Lunar Silica {#lunar-silica tier=2}
 
-Silica is 
+Silica molecules are bonded together quite strongly, but on Earth are  weakened by the presence of water, which is just everywhere and beyond control. Any tiny surface flaw grows through interaction with water molecules.  Moon dirt starts extremely dry, and silica in it can then be purified to an extreme level. The hard vacuum is quite helpful here, lowering boiling temperatures, making heat easy to hold in, preventing contamination and dispersing vapors instantly. Rods of pure silica glass can then be heated and drawn into fibers in an orbital facility. Drawing is at the ideal rate and temperature - no sagging, no contact, no exposure to gasses.
+
+In theory, silica glass can reach strengths of [around 20](https://vbn.aau.dk/ws/files/467355538/Advancing_the_Mechanical_Performance_of_Glasses_Perspectives_and_Challenges.pdfhttps://vbn.aau.dk/ws/files/467355538/Advancing_the_Mechanical_Performance_of_Glasses_Perspectives_and_Challenges.pdf) or maybe 25 GPa. The highest measured strengths are a bit over [14 GPa](https://www.osti.gov/servlets/purl/10110576). The figures here are a tad lower even for the perfected process. 
 
 ## Carbon Nanotube {#carbon-nanotube tier=2}
+
+A carbon nanotube (CNT) is a tube of carbon atoms each bonded to three others such that they make a continuous sheet of hexagons. The bonds holding the carbon atoms together in that sheet are among the strongest in nature, and a nanotube is almost nothing but those bonds. A single flawless nanotube is about a hundred times stronger than the best fishing line - [100 GPa](https://doi.org/10.1038/nnano.2008.211) - at about half the density of aluminium. One research effort published in Nature has achieved a genuine, tiny bundle a few cm long that had a measured strength of 43 GPa - [Bai et al., 2018](https://www.nature.com/articles/s41565-018-0141-z).
+
+In this world, CNT cable is made in installations orbiting the Moon. [On Earth today](https://en.wikipedia.org/wiki/Synthesis_of_carbon_nanotubes), CNT production is done by creating a gas rich in carbon and precisely exposing it to a carefully made substrate of metal particles. The particles catalyze the carbon atoms to bond together in rings around them, over and over, sort of knitting a tube of them. In the lunar facilities, the hard vacuum and weightlessness mean that gas cloud naturally stays in place and remains pure, no convection, no need to mix in another gas to support the process. Your reactor can be as large as you like and have any shape. Using lasers or electron beams in that reactor is easy. Intense energy use is no concern.
 
 ## Breaking length at 1 g {#breaking-length-1g tier=1}
 
@@ -178,11 +184,11 @@ How long a cable made of this can be before its own weight makes it snap. This i
 
 ## Breaking length at local g {#breaking-length-local-g tier=1}
 
-How long a cable made of this can be before its own weight makes it snap, in local gravity. This is a good way to get across how other places in the solar system are much easier places to make a useful hanging skyhook.
+How long a cable made of this can be before its own weight makes it snap, in local gravity. This is a good way to get across how other places in the solar system are much easier sites to make a useful hanging skyhook.
 
-## Safety factor {#safety-factor tier=1}
+## Safety factor {#safety-factor tier=2}
 
-Take the amount of tether material that would just barely support the loads on it, then multiply it by this number, and that's how much material is actually used.
+Take the amount of tether material that would just barely support the load it must bear, multiply it by this number, and that's how much material is actually used. Note that reduced strength due to manufacturing flaws, imperfect fiber bundling, and a fraction of fibers not actually bearing load, is already accounted for in the listed strength. Tethers are also sets of cables, each set woven into a lattice that passes the load of a failed cable to its neighbors. Cables are also replaced on a schedule well before they are likely to fail.
 
 ## Lower tether ratio {#lower-tether-ratio tier=1}
 

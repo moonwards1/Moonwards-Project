@@ -57,6 +57,9 @@ var MODULE_URLS = [
 	// The L1 and L2 elevators, Moon-origin carriers riding moon-platform's base.
 	"./modules/elevator/l1-elevator-departure.js",
 	"./modules/elevator/l2-elevator-departure.js",
+	// The off-equator Mars space elevator, in both roles.
+	"./modules/space-elevator/space-elevator-departure.js",
+	"./modules/space-elevator/space-elevator-arrival.js",
 	// The two integrated departure flights: geocentric (Earth+Moon+Sun) and
 	// generic body-centric (body+Sun).
 	"./modules/departure-leg/departure-leg.js",

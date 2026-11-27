@@ -23,16 +23,24 @@
 // spec (modules/platform/platform-spec.js), which declares its own
 // applicability, so where a technology can be used is decided once, beside its
 // physics. Only `future` entries carry a hand-written list, having no platform
-// to ask yet.
+// to ask yet. A technology built for some bodies and not yet for others has a
+// future entry too, naming the built one in `untilBuilt`: it shows only where
+// the built entry does not apply.
 
 import { platformAppliesTo } from "../modules/platform/platform-spec.js";
 import { SKYHOOK } from "../modules/skyhook/skyhook.js";
 import { L1_ELEVATOR, L2_ELEVATOR } from "../modules/elevator/elevator.js";
+import { SPACE_ELEVATOR } from "../modules/space-elevator/space-elevator.js";
 
-// Does `opt` apply at `body`? Built entries ask their platform; future entries
-// use their own list.
-function optionAppliesTo(opt, body) {
+// Does `opt` apply at `body`, in `list`? Built entries ask their platform;
+// future entries use their own list, and stand aside where the entry they
+// wait on (`untilBuilt`) is built.
+function optionAppliesTo(opt, body, list) {
 	if (opt.platform) { return platformAppliesTo(opt.platform, body); }
+	if (opt.untilBuilt) {
+		var built = list.find(function (o) { return o.id === opt.untilBuilt; });
+		if (built && optionAppliesTo(built, body, list)) { return false; }
+	}
 	return opt.bodies === "*" || opt.bodies.indexOf(body) !== -1;
 }
 
@@ -46,7 +54,10 @@ export var DEPARTURE_TECH_OPTIONS = [
 	  moduleId: "l1-elevator", moduleUrl: "../modules/elevator/l1-elevator-departure.js" },
 	{ id: "l2-elevator", label: "L2 elevator", platform: L2_ELEVATOR,
 	  moduleId: "l2-elevator", moduleUrl: "../modules/elevator/l2-elevator-departure.js" },
-	{ id: "space-elevator", label: "Space elevator", bodies: "*", future: true },
+	// The off-equator Mars elevator (modules/space-elevator); elsewhere, future.
+	{ id: "space-elevator", label: "Space elevator", platform: SPACE_ELEVATOR,
+	  moduleId: "space-elevator", moduleUrl: "../modules/space-elevator/space-elevator-departure.js" },
+	{ id: "space-elevator-future", label: "Space elevator", bodies: "*", future: true, untilBuilt: "space-elevator" },
 	{ id: "mass-driver", label: "Mass driver", bodies: "*", future: true },
 	{ id: "chemical-rocket", label: "Chemical rocket", bodies: "*", future: true }
 ];
@@ -57,17 +68,20 @@ export var DEPARTURE_TECH_OPTIONS = [
 export function techOptionsFor(body) {
 	if (typeof body !== "string" || body === "") { return []; }
 	return DEPARTURE_TECH_OPTIONS.filter(function (opt) {
-		return optionAppliesTo(opt, body);
+		return optionAppliesTo(opt, body, DEPARTURE_TECH_OPTIONS);
 	});
 }
 
 // The ARRIVAL technologies — same catalog shape, filtered against the adopted
-// plan's arrival body instead of the chain's base. The one built entry is the
-// same skyhook platform in its arrival role: the tether run in reverse.
+// plan's arrival body instead of the chain's base. The built entries are the
+// departure platforms in their arrival role: the skyhook's tether run in
+// reverse, and the Mars elevator catching on its tether.
 export var ARRIVAL_TECH_OPTIONS = [
 	{ id: "arrival-skyhook", label: "Skyhook", platform: SKYHOOK,
 	  moduleId: "arrival-skyhook", moduleUrl: "../modules/skyhook/skyhook-arrival.js" },
-	{ id: "space-elevator-catch", label: "Space elevator", bodies: "*", future: true },
+	{ id: "arrival-space-elevator", label: "Space elevator", platform: SPACE_ELEVATOR,
+	  moduleId: "arrival-space-elevator", moduleUrl: "../modules/space-elevator/space-elevator-arrival.js" },
+	{ id: "space-elevator-catch", label: "Space elevator", bodies: "*", future: true, untilBuilt: "arrival-space-elevator" },
 	{ id: "ring-mass-driver", label: "Ring mass driver", bodies: "*", future: true },
 	{ id: "tugs", label: "Tugs", bodies: "*", future: true }
 ];
@@ -77,6 +91,6 @@ export var ARRIVAL_TECH_OPTIONS = [
 export function arrivalTechOptionsFor(body) {
 	if (typeof body !== "string" || body === "") { return []; }
 	return ARRIVAL_TECH_OPTIONS.filter(function (opt) {
-		return optionAppliesTo(opt, body);
+		return optionAppliesTo(opt, body, ARRIVAL_TECH_OPTIONS);
 	});
 }
