@@ -118,6 +118,13 @@ test("maths is kept literal for KaTeX; stray < is escaped", function () {
 	assert.doesNotMatch(h, /<em>b <\/em>/);
 });
 
+test("[:text](Wikipedia URL) is a preview link; other colon links drop the colon", function () {
+	var h = renderMarkdown("See [:space elevator](https://en.wikipedia.org/wiki/Space_elevator) and [:the BP](#balance-point).");
+	assert.match(h, /<a class="lore-link lore-wiki" href="https:\/\/en\.wikipedia\.org\/wiki\/Space_elevator" data-lore-wiki="1" target="_blank" rel="noopener">space elevator<\/a>/);
+	assert.match(h, /data-lore-ref="balance-point">the BP<\/a>/);
+	assert.match(renderMarkdown("[plain](https://en.wikipedia.org/wiki/Moon)"), /<a href="https:\/\/en\.wikipedia\.org\/wiki\/Moon" target="_blank" rel="noopener">plain<\/a>/);
+});
+
 test("raw HTML lines pass through", function () {
 	assert.equal(renderMarkdown('<iframe src="x"></iframe>'), '<iframe src="x"></iframe>');
 });

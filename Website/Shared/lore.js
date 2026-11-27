@@ -4,8 +4,9 @@
 //   tier 1  dotted underline in the text's own colour; a tooltip on hover,
 //           focus or tap — what a word means or how a control works
 //   tier 2  orange dotted underline; opens a pop-up beside the word, a speech
-//           bubble pointing at it, whose links to other entries expand in
-//           place (Nutshell-style)
+//           bubble pointing at it, whose links to other entries — and
+//           [:text](…) links to Wikipedia articles, which bring in the
+//           article's Wikipedia preview — expand in place (Nutshell-style)
 //   tier 3  an orange ⓘ after the word (or alone); opens the same pop-up,
 //           for central information. Only the ⓘ takes the mouse: the word
 //           is click-through, so a click on it does whatever it would do
@@ -32,6 +33,7 @@
 // marks whose entries have no text yet.
 
 import { parseLore, renderMarkdown } from "./lore-markdown.js";
+import { wikiRef, wikiSummaryUrl, wikiPreviewHTML } from "./wikipedia.js";
 import { create } from "./ui-components.js";
 
 export const LORE_ENTRIES_URL = new URL("../Lore/entries.md", import.meta.url).href;
@@ -367,10 +369,42 @@ function alertHTML(text) {
 	}).join("");
 }
 
-// ── Nested expansion (links between entries) ─────────────────────────────────
+// ── Nested expansion (links between entries, and Wikipedia previews) ─────────
+
+var wikiCache = {};   // article → Promise of its preview HTML, for this page visit
+
+function wikiPreview(ref) {
+	var key = ref.lang + ":" + ref.title;
+	if (!wikiCache[key]) {
+		wikiCache[key] = fetch(wikiSummaryUrl(ref))
+			.then(function (r) { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json(); })
+			.then(function (s) { return wikiPreviewHTML(s, ref); })
+			.catch(function (e) { delete wikiCache[key]; throw e; });
+	}
+	return wikiCache[key];
+}
+
+// Fill `body` with the Wikipedia preview for `link`, refitting the pop-up as
+// the text and then the picture arrive.
+function fillWiki(link, box, body) {
+	var ref = wikiRef(link.href);
+	body.innerHTML = '<p class="lore-pending-note">Loading from Wikipedia…</p>';
+	function refit() { if (popEl && popEl.contains(link)) placePop(); }
+	wikiPreview(ref).then(function (html) {
+		if (link._loreExp !== box) return;
+		body.innerHTML = html;
+		body.querySelectorAll("img").forEach(function (img) { img.addEventListener("load", refit); });
+		refit();
+	}, function (e) {
+		console.warn("Lore: Wikipedia preview for “" + ref.title + "” did not load — " + e.message);
+		if (link._loreExp !== box) return;
+		body.innerHTML = '<p class="lore-pending-note">Wikipedia could not be reached. <a href="' + ref.page.replace(/"/g, "&quot;") + '" target="_blank" rel="noopener">Open the article ↗</a></p>';
+		refit();
+	});
+}
 
 function toggleExpansion(link) {
-	var id = link.dataset.loreRef;
+	var id = link.dataset.loreRef, wiki = "loreWiki" in link.dataset;
 	if (link._loreExp) {
 		link._loreExp.remove();
 		link._loreExp = null;
@@ -380,18 +414,19 @@ function toggleExpansion(link) {
 	}
 	var host = link.closest(".lore-expansion");
 	var depth = host ? +host.dataset.depth + 1 : 1;
-	if (depth > MAX_DEPTH) { window.open(loreEntryUrl(id), "_blank", "noopener"); return; }
-	var e = loreEntry(id);
+	if (depth > MAX_DEPTH) { window.open(wiki ? link.href : loreEntryUrl(id), "_blank", "noopener"); return; }
 	// Opened right after the link, inside its paragraph (Nutshell-style); the
 	// paragraph's text carries on after it.
 	var box = document.createElement("span");
 	box.className = "lore-expansion";
 	box.dataset.depth = depth;
+	if (wiki) box.classList.add("lore-wiki-expansion");
 	var body = create("div", ["lore-body", "lore-expansion-body"], false, box);
-	var drawn = fill(body, loreBodyHTML(e));
+	var drawn = wiki ? Promise.resolve() : fill(body, loreBodyHTML(loreEntry(id)));
 	link.after(box);
 	link._loreExp = box;
 	link.classList.add("lore-open");
+	if (wiki) fillWiki(link, box, body);
 	if (popEl && popEl.contains(link)) { placePop(); drawn.then(placePop); }
 }
 
@@ -446,8 +481,10 @@ export function initLore() {
 			else showPop(al, alertHTML(loreAlertText(al)), "Alert");
 			return;
 		}
-		var link = ev.target.closest && ev.target.closest("a.lore-link[data-lore-ref]");
-		if (link) { ev.preventDefault(); toggleExpansion(link); return; }
+		var link = ev.target.closest && ev.target.closest("a.lore-link[data-lore-ref], a.lore-link[data-lore-wiki]");
+		// Ctrl/⌘/Shift-click on a Wikipedia preview link opens the article instead.
+		if (link && !("loreWiki" in link.dataset && (ev.ctrlKey || ev.metaKey || ev.shiftKey))) { ev.preventDefault(); toggleExpansion(link); return; }
+		if (link) return;
 		var el = markOf(ev.target);
 		if (el) { activate(el, ev); return; }
 		if (tipFor) hideTip();

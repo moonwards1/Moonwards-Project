@@ -30,6 +30,14 @@ a.lore-link.lore-open::after { content: "\2212"; }
 .lore-expansion { display: block; margin: 0.35em 0 0.45em; padding: 0.6em 0.8em 0.7em; border-left: 3px solid var(--lore-accent); background: rgba(217, 71, 31, 0.06); border-radius: 0 6px 6px 0; }
 .lore-expansion .lore-expansion { background: rgba(217, 71, 31, 0.05); }
 
+/* A Wikipedia preview in an expansion: the article's lead image, its opening
+   text and the credit line. The image keeps its shape while loading. */
+.lore-wiki-figure { margin: 0 0 0.6em; }
+.lore-wiki-figure a { display: block; }
+.lore-wiki-figure img { margin: 0 auto; max-height: 260px; object-fit: contain; height: auto; }
+.lore-wiki-credit { font-size: 0.8em; color: #6B5D50; margin-top: 0.4em; }
+.lore-wiki-credit a { color: inherit; }
+
 /* Tier 1 tooltip. */
 .lore-tip { position: fixed; z-index: 10000; max-width: min(340px, calc(100vw - 16px)); padding: 0.55em 0.75em; border-radius: 6px; background: var(--lore-ink); color: #FFF6EE; font: 400 13px/1.45 "Instrument Sans", system-ui, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.25); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity 0.12s; }
 .lore-tip.lore-on { opacity: 1; visibility: visible; }

@@ -15,10 +15,14 @@
 //
 // Body Markdown: paragraphs, ### / #### subheadings, - and 1. lists,
 // > quotes, **bold**, *italic*, `code`, [text](url), [text](#entry-id) for a
-// nested expansion of another entry, ![caption](image-or-video), $tex$, and
-// display maths as $$tex$$ (on one line, or with each $$ on a line of its
-// own), and raw HTML lines (a line that starts with "<").
+// nested expansion of another entry, [:text](Wikipedia article URL) for an
+// expansion holding that article's Wikipedia preview,
+// ![caption](image-or-video), $tex$, display maths as $$tex$$ (on one line,
+// or with each $$ on a line of its own), and raw HTML lines (a line that
+// starts with "<").
 // HTML comments are dropped everywhere.
+
+import { wikiRef } from "./wikipedia.js";
 
 // ── Parsing the file ─────────────────────────────────────────────────────────
 
@@ -160,6 +164,12 @@ function inline(text, base, already) {
 		return stash('<img class="lore-inline-img" src="' + escAttr(resolve(src, base)) + '" alt="' + escAttr(alt) + '">');
 	});
 	s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (_, label, href) {
+		// A leading colon on the text asks for an in-place expansion (Nutshell's
+		// syntax); for a Wikipedia article that is its preview.
+		var colon = /^:\s*/.exec(label);
+		if (colon) label = label.slice(colon[0].length);
+		var wiki = colon && wikiRef(href);
+		if (wiki) return stash('<a class="lore-link lore-wiki" href="' + escAttr(wiki.page) + '" data-lore-wiki="1" target="_blank" rel="noopener">' + label + "</a>");
 		if (href[0] === "#" && href.length > 1) {
 			var id = href.slice(1);
 			return stash('<a class="lore-link" href="#' + escAttr(id) + '" data-lore-ref="' + escAttr(id) + '">' + label + "</a>");

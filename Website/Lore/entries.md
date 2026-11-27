@@ -40,6 +40,12 @@ WRITING THE TEXT
   [text](#other-entry-id)          opens that entry in place, Nutshell-style
                                    (nests two deep; deeper opens the Lore page)
   [text](https://…)                an outside link, opens in a new tab
+  [:text](https://en.wikipedia.org/wiki/Article)
+                                   opens that article's Wikipedia preview in
+                                   place: its lead picture (animated GIFs
+                                   play) and opening text, with a credit line.
+                                   The colon makes the difference: without it
+                                   the link just opens Wikipedia in a new tab
   ![Caption](images/picture.png)   an image or video (.mp4/.webm) on its own
                                    line; paths are relative to this folder
   $v = \sqrt{GM/r}$                inline maths (KaTeX)
@@ -341,6 +347,8 @@ A foot at a higher altitude might be worth it for the lighter tether, simpler fo
 
 ## Mission Planner {#app-mission-planner tier=3}
 
+Here is an exact representation of the planets' voyages around the sun. Each orbit changes from light to dark at the point it crosses the [:ecliptic](https://en.wikipedia.org/wiki/Ecliptic) plane.
+
 ## Earth–Moon Traffic {#app-earth-moon-traffic tier=3}
 
 ## Mars System Traffic {#app-mars-system-traffic tier=3}
@@ -358,3 +366,9 @@ Ta;l
 ## Departure impulse {#mp-departure-impulse tier=3}
 
 ## Waypoints {#mp-waypoints tier=3}
+
+# Definitions
+
+## Ecliptic {#def-ecliptic}
+
+The ecliptic plane
