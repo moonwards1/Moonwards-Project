@@ -17,20 +17,25 @@
 
 var APPS = [
 	{
-		id: "planner", label: "Mission Planner", url: "MissionPlanner/planner.html",
+		id: "planner", label: "Mission Planner", note: "app-mission-planner", url: "MissionPlanner/planner.html",
 		intro: "<p>Plan a trip between bodies through the infrastructure at each end: a skyhook or space elevator releases the ship, it coasts, and infrastructure at the destination catches it. Change any stage and the whole mission recomputes.</p>" +
 			"<p>It shows how permanent infrastructure cuts the propellant a ship must carry, and makes launch windows longer and more frequent. Rockets and space tugs are modelled alongside, for comparison and for supporting roles.</p>"
 	},
 	{
-		id: "emtraffic", label: "Earth–Moon Traffic", url: "Calculators/Earth-Moon-Traffic-Plotter/earthMoonTraffic.html",
+		id: "emtraffic", label: "Earth–Moon Traffic", note: "app-earth-moon-traffic", url: "Calculators/Earth-Moon-Traffic-Plotter/earthMoonTraffic.html",
 		intro: "<p>To-scale 3D Earth–Moon system with its skyhooks turning on one clock, and the path of a ship released from either. Flights between facilities are being added.</p>"
 	},
 	{
-		id: "marstraffic", label: "Mars System Traffic", url: "Calculators/Mars-System-Traffic-Plotter/marsSystemTraffic.html",
+		id: "marstraffic", label: "Mars System Traffic", note: "app-mars-system-traffic", url: "Calculators/Mars-System-Traffic-Plotter/marsSystemTraffic.html",
 		intro: "<p>To-scale 3D Mars system on one clock: Mars turning, Phobos and Deimos on their orbits, and a skyhook built on Phobos that lets a ship go toward Mars, into orbit or away. A hanging skyhook, a space elevator and a mass driver, and the flights between them, are being added.</p>"
 	}
 ];
 var POP_FEATURES = "popup,width=1440,height=900";
+
+// A tab's tier-3 note (text in Lore/entries.md, "Apps"): an empty mark after the
+// label, so only its ⓘ opens the note and the label still just picks the app.
+// Not focusable on its own: it sits inside the tab's button.
+function noteMark(a) { return a.note ? '<span class="lore" data-lore="' + a.note + '"></span>' : ""; }
 
 export function mountApps(els) {
 	var state = {};   // app id → { frame, win, poll }
@@ -41,7 +46,7 @@ export function mountApps(els) {
 
 	function render() {
 		els.tabs.innerHTML = APPS.map(function (a) {
-			return '<button class="hm-tab" type="button" role="tab" data-app="' + a.id + '" aria-selected="' + (a.id === sel) + '" aria-controls="appWork">' + a.label + '</button>';
+			return '<button class="hm-tab" type="button" role="tab" data-app="' + a.id + '" aria-selected="' + (a.id === sel) + '" aria-controls="appWork">' + a.label + noteMark(a) + '</button>';
 		}).join("");
 		var a = app(sel), s = state[sel];
 		APPS.forEach(function (b) { if (state[b.id].frame) state[b.id].frame.hidden = b.id !== sel; });
@@ -101,6 +106,7 @@ export function mountApps(els) {
 	}
 
 	els.tabs.addEventListener("click", function (e) {
+		if (e.target.closest("[data-lore]")) return;   // the ⓘ opens its note and leaves the app as it is
 		var b = e.target.closest("[data-app]");
 		if (!b) return;
 		sel = b.dataset.app;
